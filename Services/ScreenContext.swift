@@ -92,7 +92,7 @@ final class ScreenContext: ObservableObject {
         pendingFrontRefresh = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
-            await self?.refresh(frontOnly: true, accurateFront: true)
+            await self?.refresh(frontOnly: true, accurateFront: false)
         }
     }
 
@@ -102,7 +102,7 @@ final class ScreenContext: ObservableObject {
         // Even weg van de Mac: niets bijhouden.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
-        await refresh(frontOnly: false, accurateFront: true)
+        await refresh(frontOnly: false, accurateFront: false)
     }
 
     // MARK: Voor een vraag
@@ -119,10 +119,10 @@ final class ScreenContext: ObservableObject {
         let stale = front == nil || Date().timeIntervalSince(front?.captured ?? .distantPast) > maxAge
             || front?.bundleID != (frontApp?.bundleIdentifier ?? "")
         if stale || windows.isEmpty {
-            await refresh(frontOnly: windows.count > 1, accurateFront: true)
+            await refresh(frontOnly: windows.count > 1, accurateFront: false)
         }
         if windows.isEmpty {
-            await refresh(frontOnly: false, accurateFront: true)
+            await refresh(frontOnly: false, accurateFront: false)
         }
         guard !windows.isEmpty else {
             if let bundle = frontApp?.bundleIdentifier, ScreenReader.excludedBundles.contains(bundle) {

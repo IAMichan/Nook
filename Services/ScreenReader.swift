@@ -68,7 +68,7 @@ final class ScreenReader {
             throw ScreenError.nothing
         }
 
-        let text = try await Self.recognize(image)
+        let text = try await Self.recognize(image, fast: true)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ScreenError.nothing }
         return ScreenSnapshot(appName: appName, windowTitle: target?.title ?? "", text: String(text.prefix(6000)))
     }
@@ -109,7 +109,7 @@ final class ScreenReader {
             configuration.height = min(Int(window.frame.height * 1.5), 2400)
             let filter = SCContentFilter(desktopIndependentWindow: window)
             guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
-                  let text = try? await Self.recognize(image) else { continue }
+                  let text = try? await Self.recognize(image, fast: true) else { continue }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             let share = index == 0 ? remaining : min(remaining, max(1200, totalLimit / 4))
