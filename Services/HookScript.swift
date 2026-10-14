@@ -60,7 +60,7 @@ enum HookScript {
     $event = {} unless ref($event) eq 'HASH';
     if ($event_name ne '' && !defined $event->{hook_event_name}) { $event->{hook_event_name} = $event_name; }
     unless ($agent_given) {
-        my $tag = first_text($event->{nook_agent}, $event->{coucou_agent});
+        my $tag = first_text($event->{nook_agent});
         $agent = $tag if defined $tag && $tag =~ /^[a-z0-9][a-z0-9_-]{0,31}$/;
     }
     fill_fields($event) unless $mode eq 'statusline';

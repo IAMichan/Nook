@@ -2,7 +2,6 @@ import SwiftUI
 import CryptoKit
 
 // Crypto-portfolio: openbare walletadressen en alleen-lezen beurssleutels, gewaardeerd in euro's.
-// Vrij naar het Portfolio van Coucou (MIT), herschreven voor Nook.
 //
 // Alles hier is alleen-lezen: saldo's opvragen en koersen ophalen. Nook plaatst nooit orders en verplaatst nooit geld.
 

@@ -57,7 +57,7 @@ Kun je geen argumenten meegeven, zet dan de naam in de JSON zelf:
 { "hook_event_name": "UserPromptSubmit", "session_id": "s1", "nook_agent": "mijn-tool", "prompt": "Schrijf de tests" }
 ```
 
-Het script neemt `nook_agent` over als er geen `--agent` is meegegeven (`--agent` wint altijd). Een ongeldige naam telt niet; de gebeurtenis komt dan bij Claude Code terecht. Voor bestaande koppelingen leest Nook ook `coucou_agent`.
+Het script neemt `nook_agent` over als er geen `--agent` is meegegeven (`--agent` wint altijd). Een ongeldige naam telt niet; de gebeurtenis komt dan bij Claude Code terecht.
 
 ### Rechtstreeks via de socket
 

@@ -105,8 +105,6 @@ Issues en pull requests zijn welkom. Lees eerst [CONTRIBUTING.md](CONTRIBUTING.m
 
 Het idee voor een app in de notch is geïnspireerd door [boring.notch](https://github.com/TheBoredTeam/boring.notch). Er is geen code van overgenomen.
 
-Veel ideeën voor de agent-koppeling (toestemming via `PermissionRequest`, vragen in de notch, veilig samenvoegen van `settings.json`, abonnementsgebruik via de statusregel, terminal naar voren halen, weekoverzicht) komen van [Coucou](https://github.com/Louis-CFM/coucou) (MIT) van Louis Raillé. De code is voor Nook opnieuw geschreven.
-
 ## Licentie
 
 [MIT](LICENSE) © 2026 Michan van der Hoek

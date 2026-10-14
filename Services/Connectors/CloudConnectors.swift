@@ -2,7 +2,6 @@ import SwiftUI
 
 // Koppelingen met online diensten: GitHub, Vercel, Stripe, Notion, Cal.com, n8n en Resend.
 // Elke koppeling leest alleen. Sleutels staan in de Keychain onder "connector.<id>.<veld>".
-// Endpoints en velden naar het voorbeeld van Coucou (MIT), opnieuw geschreven in de stijl van Nook.
 
 // MARK: Instellingen-velden
 

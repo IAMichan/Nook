@@ -62,7 +62,7 @@ final class NotchViewModel: ObservableObject {
         scheduleAutoClose()
     }
 
-    /// Het paneel klapt na een minuut zonder muis vanzelf dicht, net als bij Coucou.
+    /// Het paneel klapt na een minuut zonder muis vanzelf dicht.
     private func scheduleAutoClose() {
         autoCloseTask?.cancel()
         guard case .panel = state, !pointerInside else { return }

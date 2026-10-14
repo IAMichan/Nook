@@ -1035,7 +1035,7 @@ final class AppModel: ObservableObject {
         viewModel.finish(message)
     }
 
-    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei, zoals bij Coucou.
+    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei.
     /// Alleen als je niet met iets anders bezig bent in de notch; na een paar seconden gaat hij vanzelf weg.
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
