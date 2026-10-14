@@ -23,3 +23,13 @@ enum NotchState: Equatable {
     case card(NookCard)       // een vraag of suggestie
     case panel(PanelTab)      // uitgeklapt met tabs
 }
+
+extension NotchState {
+    /// Rust of muziek: de toestanden waarin hover het paneel mag openen.
+    var isResting: Bool {
+        switch self {
+        case .idle, .music: return true
+        default: return false
+        }
+    }
+}

@@ -21,8 +21,9 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Opent het paneel als je 0,4 seconde met de muis op de notch blijft hangen.
+    /// Staat standaard aan; uitzetten kan via de menubalk.
     var openOnHover: Bool {
-        get { UserDefaults.standard.bool(forKey: "openOnHover") }
+        get { UserDefaults.standard.object(forKey: "openOnHover") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "openOnHover") }
     }
 
@@ -136,11 +137,11 @@ final class NotchViewModel: ObservableObject {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
-        guard openOnHover, inside, case .idle = state else { return }
+        guard openOnHover, inside, state.isResting else { return }
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.pointerInside, case .idle = self.state {
+            if self.pointerInside, self.state.isResting {
                 self.show(.panel(.today))
             }
         }
