@@ -245,8 +245,7 @@ private struct AddAccountSheet: View {
                             Text(AgentProfile.tildePath(item.url.path)).font(.system(.body, design: .monospaced))
                             Spacer()
                             Button(tr("agents.add")) {
-                                let raw = String(item.url.lastPathComponent.drop { $0 != "-" && $0 != "_" }.dropFirst())
-                                app.addAccount(kind, label: raw.prefix(1).uppercased() + raw.dropFirst(), home: item.url)
+                                app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
                                 dismiss()
                             }
                         }

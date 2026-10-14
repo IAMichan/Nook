@@ -116,6 +116,8 @@ final class AgentProfileStore: ObservableObject {
 
     private static let profilesKey = "agentProfiles"
     private static let preferredKey = "agentPreferredProfiles"
+    /// Folders of accounts you removed from Nook: never adopted again automatically.
+    private static let dismissedKey = "agentDismissedHomes"
     /// Read by ClaudeCodeBrain across threads: config dir of preferred Claude account.
     nonisolated static let brainHomeKey = "claudeBrainConfigDir"
 
@@ -138,6 +140,11 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         syncBrainHome()
+    }
+
+    private var dismissed: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: Self.dismissedKey) }
     }
 
     func profiles(for kind: AgentKind) -> [AgentProfile] {
@@ -179,6 +186,7 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         if let existing = profile(kind: kind, home: folder.path) { return existing }
+        dismissed.remove(AgentProfile.normalize(folder.path))
         var id = "\(kind.rawValue)-\(slug)"
         var counter = 2
         while all.contains(where: { $0.id == id }) {
@@ -208,6 +216,7 @@ final class AgentProfileStore: ObservableObject {
     func remove(_ id: String) {
         guard let profile = profile(id: id), !profile.isDefault else { return }
         all.removeAll { $0.id == id }
+        dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
         save()
@@ -243,6 +252,33 @@ final class AgentProfileStore: ObservableObject {
     func setPreferred(_ profile: AgentProfile) {
         preferred[profile.kind] = profile.id
         save()
+    }
+
+    /// Adopts accounts that exist on this Mac but not yet in Nook: folders like ~/.claude-work with a login,
+    /// and the folder (CLAUDE_CONFIG_DIR or CODEX_HOME) of a running session. That way sessions of all your
+    /// accounts show up in one list. Accounts you removed from Nook stay out.
+    func adoptExisting(running: [(kind: AgentKind, home: String)] = []) {
+        let skip = dismissed
+        var folders = discover()
+        for item in running where !item.home.isEmpty && item.kind.supportsProfiles {
+            let url = URL(fileURLWithPath: AgentProfile.normalize(item.home), isDirectory: true)
+            guard profile(kind: item.kind, home: url.path) == nil,
+                  !folders.contains(where: { $0.url.standardizedFileURL.path == url.path }),
+                  FileManager.default.fileExists(atPath: url.path) else { continue }
+            folders.append((item.kind, url))
+        }
+        for folder in folders where !skip.contains(AgentProfile.normalize(folder.url.path)) {
+            _ = add(kind: folder.kind, label: Self.label(forFolder: folder.url), home: folder.url)
+        }
+    }
+
+    /// "~/.claude-work" → "Work"; a folder without a suffix is named after itself.
+    static func label(forFolder url: URL) -> String {
+        let folder = url.lastPathComponent
+        var name = String(folder.drop { $0 != "-" && $0 != "_" }.dropFirst())
+        if name.isEmpty { name = folder.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        if name.isEmpty { name = tr("agents.work") }
+        return String((name.prefix(1).uppercased() + name.dropFirst()).prefix(30))
     }
 
     /// Discovers profile folders (e.g. ~/.claude-work, ~/.codex-client) with existing logins not yet added to Nook.

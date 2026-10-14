@@ -108,7 +108,10 @@ struct SettingsView: View {
         .onChange(of: app.settingsSection) { _, _ in
             status = ""
             refreshTick += 1
-            if app.settingsSection == .agents { app.history.refresh() }
+            if app.settingsSection == .agents {
+                app.adoptAccounts()
+                app.history.refresh()
+            }
         }
         .onChange(of: app.agentConnect) { _, _ in refreshAgentStates() }
         .sheet(item: $pendingChange) { change in
