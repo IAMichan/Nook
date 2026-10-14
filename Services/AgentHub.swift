@@ -16,7 +16,35 @@ final class AgentHub: ObservableObject {
         didSet { Self.savePlanUsage(planUsage) }
     }
 
+    /// Hetzelfde voor extra Claude-accounts, per map (CLAUDE_CONFIG_DIR). Het eerste account staat in `planUsage`.
+    @Published private(set) var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
+        didSet {
+            if let data = try? JSONEncoder().encode(profilePlanUsage) { UserDefaults.standard.set(data, forKey: Self.profilePlanUsageKey) }
+        }
+    }
+
     private static let planUsageKey = "planUsage"
+    private static let profilePlanUsageKey = "profilePlanUsage"
+
+    private nonisolated static func loadProfilePlanUsage() -> [String: PlanUsage] {
+        guard let data = UserDefaults.standard.data(forKey: profilePlanUsageKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: PlanUsage].self, from: data)) ?? [:]
+    }
+
+    /// Het abonnementsgebruik van een Claude-account.
+    func subscriptionUsage(for profile: AgentProfile) -> PlanUsage? {
+        guard let home = profile.home else { return planUsage }
+        return profilePlanUsage[AgentProfile.normalize(home)]
+    }
+
+    /// De map van het account uit de omgeving van de hook; leeg als het de gewone map is.
+    private static func accountHome(_ env: [String: Any], agentID: String) -> String {
+        let kind: AgentKind = agentID == "codex" ? .codex : .claude
+        guard agentID == "codex" || agentID.hasPrefix("claude"),
+              let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
+        let home = AgentProfile.normalize(raw)
+        return home == AgentProfile.normalize(kind.defaultHome.path) ? "" : home
+    }
 
     private nonisolated static func loadPlanUsage() -> PlanUsage? {
         guard let data = UserDefaults.standard.data(forKey: planUsageKey) else { return nil }
@@ -48,6 +76,8 @@ final class AgentHub: ObservableObject {
         var lastMessage: String
         var updated: Date
         var hostBundleID: String
+        /// De map van het account (CLAUDE_CONFIG_DIR of CODEX_HOME); leeg voor de gewone map.
+        var home: String = ""
         var diff: [DiffLine]
         var linesAdded: Int
         var linesRemoved: Int
@@ -115,16 +145,19 @@ final class AgentHub: ObservableObject {
                 let key = "\(agent.name)|\(agent.cwd)"
                 guard !hooked.contains(key), seen.insert(key).inserted else { return nil }
                 // Al gekoppeld? Dan startte deze sessie vóór de koppeling en hoeft hij alleen opnieuw te starten.
+                let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
+                let kind = AgentKind(agentName: agent.name)
+                let accountHome = kind.flatMap { kind in
+                    kind.homeVariable.map { Self.accountHome([$0: agent.home], agentID: kind == .codex ? "codex" : "claude-code") }
+                } ?? ""
                 let linked = AgentConfigInstaller.Target.forAgent(named: agent.name)
-                    .map { AgentConfigInstaller.state(of: $0) == .installed } ?? false
+                    .map { AgentConfigInstaller.state(of: $0, home: accountHome.isEmpty ? nil : home) == .installed } ?? false
                 let steps: [AgentStep] = linked ? [
-                    AgentStep(mark: .done, text: "\(agent.name) is gekoppeld met Nook"),
-                    AgentStep(mark: .blocked, text: "Deze sessie startte vóór de koppeling, dus Nook ziet nog niet wat hij doet"),
-                    AgentStep(mark: .todo, text: "Start \(agent.name) opnieuw in de terminal, dan zie je hier voortgang en vragen")
+                    AgentStep(mark: .blocked, text: "Gestart vóór de koppeling: Nook kan niet meekijken"),
+                    AgentStep(mark: .todo, text: "Sluit hem af en start \(agent.name) opnieuw")
                 ] : [
-                    AgentStep(mark: .running, text: "\(agent.name) draait, maar is nog niet gekoppeld met Nook"),
-                    AgentStep(mark: .todo, text: "Koppel hem in Instellingen › Agents voor voortgang en goedkeuren vanuit de notch"),
-                    AgentStep(mark: .todo, text: "Daarna start je \(agent.name) opnieuw in de terminal")
+                    AgentStep(mark: .blocked, text: "Nog niet gekoppeld: Nook kan niet meekijken"),
+                    AgentStep(mark: .todo, text: "Koppel \(agent.name) en start hem opnieuw")
                 ]
                 return AgentSession(
                     id: "proc-\(agent.pid)",
@@ -135,7 +168,9 @@ final class AgentHub: ObservableObject {
                     placeholder: "Typ in de terminal van \(agent.name) om verder te gaan",
                     steps: steps,
                     diff: [],
-                    cwd: agent.cwd
+                    cwd: agent.cwd,
+                    home: accountHome,
+                    isLinked: linked
                 )
             }
         }
@@ -202,7 +237,10 @@ final class AgentHub: ObservableObject {
         let kind = Self.normalize((event["hook_event_name"] as? String) ?? (event["type"] as? String) ?? "")
 
         if mode == "statusline" {
-            if let usage = PlanUsage.parse(event) { planUsage = usage }
+            if let usage = PlanUsage.parse(event) {
+                let home = Self.accountHome(env, agentID: agentID)
+                if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
+            }
             connection.reply(nil)
             return
         }
@@ -251,6 +289,7 @@ final class AgentHub: ObservableObject {
         if let host = env["__CFBundleIdentifier"] as? String, !host.isEmpty {
             record.hostBundleID = host
         }
+        record.home = Self.accountHome(env, agentID: agentID)
         record.updated = Date()
 
         let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
@@ -575,6 +614,7 @@ final class AgentHub: ObservableObject {
                     diff: diff,
                     cwd: record.cwd,
                     hostBundleID: record.hostBundleID,
+                    home: record.home,
                     approvalID: approvals.first { $0.sessionKey == key }?.id,
                     linesAdded: record.linesAdded,
                     linesRemoved: record.linesRemoved,

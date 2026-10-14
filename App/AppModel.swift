@@ -28,6 +28,8 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Eerdere sessies en tokengebruik van Claude Code en Codex, voor de Agents-tab.
     let history = AgentHistory()
+    /// Je accounts per agent (persoonlijk, werk…) en welke de standaard is.
+    let profiles = AgentProfileStore()
     /// Zoeken op het web en webpagina's lezen, voor elk brein.
     let web = WebTools()
     let portfolio = PortfolioConnector()
@@ -67,7 +69,8 @@ final class AppModel: ObservableObject {
     /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
     @Published var demoMode = false
     /// Hoe ver het koppelen van een agent-account is (één klik in de Agents-tab of bij Instellingen).
-    @Published private(set) var agentConnect: [AgentKind: AgentConnectProgress] = [:]
+    /// Per account (`AgentProfile.id`).
+    @Published private(set) var agentConnect: [String: AgentConnectProgress] = [:]
     @Published private(set) var loops: [OpenLoop] = []
     @Published private(set) var upcoming: [CalEvent] = []
 
@@ -91,6 +94,13 @@ final class AppModel: ObservableObject {
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        profiles.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Komt er een account bij of gaat er een af, dan leest de geschiedenis meteen de juiste mappen.
+        profiles.$all.removeDuplicates().sink { [weak self] all in
+            guard let self else { return }
+            self.history.profiles = all
+            self.history.refresh(minimumInterval: 0)
+        }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // Alleen of Nook bezig is (voor zijn gezicht); de berichten zelf volgt de chat rechtstreeks.
@@ -1304,79 +1314,163 @@ final class AppModel: ObservableObject {
 
     // MARK: Agents koppelen
 
-    /// Is alles voor deze agent geregeld: programma aanwezig, ingelogd en alle koppelingen aan?
+    /// Is alles voor het eerste account van deze agent geregeld: programma aanwezig, ingelogd en alle koppelingen aan?
     func isFullyConnected(_ kind: AgentKind) -> Bool {
-        history.executables[kind] != nil && history.accounts[kind] != nil
-            && kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0) == .installed }
+        isFullyConnected(AgentProfile.defaultProfile(kind))
     }
 
-    /// Eén klik: koppelt alles voor deze agent. Ontbreekt het programma of ben je niet ingelogd, dan opent Nook
-    /// een Terminal-venster dat installeert en het inloggen start, en ziet daarna vanzelf dat je bent ingelogd.
-    func connect(_ kind: AgentKind) {
-        if agentConnect[kind]?.isBusy == true { return }
-        agentConnect[kind] = .working("Bezig met koppelen…")
+    func isFullyConnected(_ profile: AgentProfile) -> Bool {
+        history.executables[profile.kind] != nil && history.profileAccounts[profile.id] != nil
+            && profile.kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0, home: profile.home.map { _ in profile.homeURL }) == .installed }
+    }
 
+    /// Het account van een draaiende sessie, of nil als Nook het niet kent.
+    func profile(for session: AgentSession) -> AgentProfile? {
+        guard let kind = AgentKind(agentName: session.name) else { return nil }
+        return profiles.profile(kind: kind, home: session.home)
+    }
+
+    func profile(for session: PastSession) -> AgentProfile? {
+        profiles.profile(id: session.profileID) ?? profiles.profile(id: session.agent.rawValue)
+    }
+
+    func connect(_ kind: AgentKind) {
+        connect(profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind))
+    }
+
+    /// Eén klik: koppelt alles voor dit account. Ontbreekt het programma of ben je niet ingelogd, dan opent Nook
+    /// een Terminal-venster dat installeert en het inloggen start, en ziet daarna vanzelf dat je bent ingelogd.
+    func connect(_ profile: AgentProfile) {
+        let kind = profile.kind
+        if agentConnect[profile.id]?.isBusy == true { return }
+        agentConnect[profile.id] = .working("Bezig met koppelen…")
+
+        let home = profile.home.map { _ in profile.homeURL }
+        if home != nil { try? FileManager.default.createDirectory(at: profile.homeURL, withIntermediateDirectories: true) }
         var problems: [String] = []
-        for target in kind.targets where AgentConfigInstaller.state(of: target) != .installed {
+        for target in kind.targets where AgentConfigInstaller.state(of: target, home: home) != .installed {
             do {
-                _ = try AgentConfigInstaller.apply(AgentConfigInstaller.prepare(target, install: true))
+                _ = try AgentConfigInstaller.apply(AgentConfigInstaller.prepare(target, install: true, home: home))
             } catch {
                 problems.append("\(target.title): \(error.localizedDescription)")
             }
         }
         if !problems.isEmpty {
-            agentConnect[kind] = .failed(problems.joined(separator: "\n"))
+            agentConnect[profile.id] = .failed(problems.joined(separator: "\n"))
             return
         }
         // Nog geen brein? Dan denkt Nook voortaan met je Claude-abonnement.
         if kind == .claude, !settings.brainReady { settings.provider = .claudeCode }
 
         let hasProgram = history.executables[kind] != nil
-        let loggedIn = history.accounts[kind] != nil
+        let loggedIn = history.profileAccounts[profile.id] != nil
         guard !hasProgram || !loggedIn else {
-            finishConnect(kind)
+            finishConnect(profile)
             return
         }
 
-        var steps = ["echo " + TerminalLauncher.shellQuote("Nook koppelt \(kind.name). " + (hasProgram
-            ? "Log hieronder in; Nook ziet het vanzelf."
+        let who = profile.isDefault ? kind.name : "\(kind.name) (\(profile.label))"
+        var steps = ["echo " + TerminalLauncher.shellQuote("Nook koppelt \(who). " + (hasProgram
+            ? "Log hieronder in met het juiste account; Nook ziet het vanzelf."
             : "Eerst installeren, daarna inloggen. Nook ziet het vanzelf."))]
         if !hasProgram { steps.append(kind.installCommand) }
-        steps.append(kind.loginCommand)
+        steps.append(profile.commandPrefix + kind.loginCommand)
         do {
             try TerminalLauncher.run(command: steps.joined(separator: " && "),
                                      in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-connect-\(kind.rawValue)")
+                                     name: "nook-connect-\(profile.id)")
         } catch {
-            agentConnect[kind] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
+            agentConnect[profile.id] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
             return
         }
-        agentConnect[kind] = .waitingForLogin(hasProgram ? "Log in in het Terminal-venster…" : "Installeren en inloggen in Terminal…")
-        waitForLogin(kind)
+        agentConnect[profile.id] = .waitingForLogin(hasProgram ? "Log in in het Terminal-venster…" : "Installeren en inloggen in Terminal…")
+        waitForLogin(profile)
     }
 
     /// Kijkt een kwartier lang elke paar seconden of de agent er staat en je bent ingelogd.
-    private func waitForLogin(_ kind: AgentKind) {
+    private func waitForLogin(_ profile: AgentProfile) {
         Task { [weak self] in
             for _ in 0..<300 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard let self, case .waitingForLogin? = self.agentConnect[kind] else { return }
+                guard let self, case .waitingForLogin? = self.agentConnect[profile.id] else { return }
                 self.history.refresh(minimumInterval: 0)
-                if self.history.executables[kind] != nil, self.history.accounts[kind] != nil {
-                    self.finishConnect(kind)
+                if self.history.executables[profile.kind] != nil, self.history.profileAccounts[profile.id] != nil {
+                    self.finishConnect(profile)
                     return
                 }
             }
-            self?.agentConnect[kind] = .failed("Ik zag nog geen login. Ben je klaar in Terminal? Klik dan nog eens op Koppel.")
+            self?.agentConnect[profile.id] = .failed("Ik zag nog geen login. Ben je klaar in Terminal? Klik dan nog eens op Koppel.")
         }
     }
 
-    private func finishConnect(_ kind: AgentKind) {
+    private func finishConnect(_ profile: AgentProfile) {
+        let kind = profile.kind
         // Net geïnstalleerd? Dan opnieuw zoeken, zodat Claude Code ook als brein werkt.
         if kind == .claude { ClaudeCodeBrain.resetLocation(); settings.objectWillChange.send() }
-        let running = agentSessions.contains { AgentKind(agentName: $0.name) == kind }
-        agentConnect[kind] = .done(running ? "Alles gekoppeld. Start lopende \(kind.name)-sessies opnieuw." : "Alles gekoppeld.")
+        let running = agentSessions.contains { self.profile(for: $0)?.id == profile.id }
+        agentConnect[profile.id] = .done(running ? "Alles gekoppeld. Start lopende sessies opnieuw." : "Alles gekoppeld.")
         history.refresh(minimumInterval: 0)
+    }
+
+    // MARK: Accounts
+
+    /// Een extra account (bijvoorbeeld je werkaccount) met een eigen map, en meteen inloggen.
+    @discardableResult
+    func addAccount(_ kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
+        let profile = profiles.add(kind: kind, label: label, home: home)
+        viewModel.selectedAgentID = "account:" + profile.id
+        if history.profileAccounts[profile.id] == nil || !isFullyConnected(profile) { connect(profile) }
+        return profile
+    }
+
+    func removeAccount(_ profile: AgentProfile) {
+        profiles.remove(profile.id)
+        agentConnect[profile.id] = nil
+        viewModel.selectedAgentID = "account:" + profiles.preferredProfile(profile.kind).id
+    }
+
+    func makeDefault(_ profile: AgentProfile) {
+        profiles.setPreferred(profile)
+    }
+
+    /// Start de agent met dit account in een nieuw Terminal-venster, in `folder`.
+    func startSession(_ profile: AgentProfile, in folder: String) {
+        do {
+            try TerminalLauncher.run(command: profile.launchCommand, in: folder, name: "nook-start-\(profile.id)")
+            viewModel.show(.idle)
+        } catch {
+            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Laat je een map kiezen en start daar een sessie met dit account.
+    func startSessionChoosingFolder(_ profile: AgentProfile) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Start hier"
+        panel.message = "In welke map start \(profile.kind.name)?"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startSession(profile, in: url.path)
+    }
+
+    /// Mappen waar je met dit account onlangs werkte, nieuwste eerst.
+    func recentFolders(_ profile: AgentProfile, limit: Int = 5) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for session in history.sessions(for: profile) where !session.cwd.isEmpty {
+            guard seen.insert(session.cwd).inserted, FileManager.default.fileExists(atPath: session.cwd) else { continue }
+            result.append(session.cwd)
+            if result.count == limit { break }
+        }
+        return result
+    }
+
+    func copyLaunchCommand(_ profile: AgentProfile) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(profile.launchCommand, forType: .string)
     }
 
     /// Gaat verder met een eerdere sessie, in een nieuw Terminal-venster in de map van toen.
@@ -1394,11 +1488,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Het commando om een sessie te hervatten. `absolute` gebruikt het volledige pad als Nook weet waar de agent staat.
+    /// Het commando om een sessie te hervatten, met het account van toen. `absolute` gebruikt het volledige pad
+    /// als Nook weet waar de agent staat.
     func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
         var program = session.agent.command
         if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
-        return ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
+        let prefix = profile(for: session)?.commandPrefix ?? ""
+        return prefix + ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
     }
 
     func copyResumeCommand(_ session: PastSession) {

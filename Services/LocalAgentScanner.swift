@@ -5,6 +5,8 @@ struct DetectedAgent: Hashable {
     let pid: Int32
     let name: String
     let cwd: String
+    /// CLAUDE_CONFIG_DIR of CODEX_HOME uit de omgeving van het proces: met welk account hij draait. Leeg als onbekend.
+    var home: String = ""
 }
 
 /// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, Hermes, …) in de lijst met processen.
@@ -67,7 +69,26 @@ enum LocalAgentScanner {
                 else if line.hasPrefix("n"), let pid = current { folders[pid] = String(line.dropFirst()) }
             }
         }
-        return found.map { DetectedAgent(pid: $0.pid, name: $0.name, cwd: folders[$0.pid] ?? "") }
+        let homes = accountHomes(pids)
+        return found.map { DetectedAgent(pid: $0.pid, name: $0.name, cwd: folders[$0.pid] ?? "", home: homes[$0.pid] ?? "") }
+    }
+
+    /// Leest CLAUDE_CONFIG_DIR en CODEX_HOME uit de omgeving van je eigen processen (`ps -E`).
+    /// Lukt dat niet, dan blijft het leeg en hoort de sessie bij het eerste account.
+    private static func accountHomes(_ pids: String) -> [Int32: String] {
+        guard let out = run("/bin/ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) else { return [:] }
+        var result: [Int32: String] = [:]
+        for line in out.split(separator: "\n") {
+            let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            guard fields.count == 2, let pid = Int32(fields[0]) else { continue }
+            for token in fields[1].split(separator: " ") {
+                for variable in ["CLAUDE_CONFIG_DIR=", "CODEX_HOME="] where token.hasPrefix(variable) {
+                    let value = String(token.dropFirst(variable.count))
+                    if !value.isEmpty { result[pid] = value }
+                }
+            }
+        }
+        return result
     }
 
     /// Herkent een agent aan de opdrachtregel; apps (.app) en zoekopdrachten tellen niet mee.
