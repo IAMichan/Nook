@@ -143,3 +143,22 @@ final class SourceCapabilitiesTests: XCTestCase {
                        "API-sleutel · lezen: betalingen lezen · schrijven: niets")
     }
 }
+
+final class PrefetchTests: XCTestCase {
+    func testMailQuestionsFetchTheRightMail() {
+        let mail: Set<String> = ["calendar", "reminders", "mail"]
+        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: mail).map(\.tool), ["inbox_mail"])
+        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: mail).first?.input["unanswered_only"] as? Bool, true)
+        XCTAssertEqual(Prefetch.calls(for: "maak een grafiek van hoeveel mails ik nog niet heb gelezen", relevant: mail).map(\.tool), ["mail_unread"])
+        XCTAssertEqual(Prefetch.calls(for: "wat is er binnengekomen in mijn mail", relevant: mail).map(\.tool), ["inbox_mail"])
+    }
+
+    func testNothingToFetchForCoreOnly() {
+        XCTAssertTrue(Prefetch.calls(for: "hoe laat is mijn volgende afspraak", relevant: ["calendar", "reminders"]).isEmpty)
+    }
+
+    func testRouterAndPrefetchTogether() {
+        let relevant = SourceRouter.relevant(to: "Welke mail moet ik beantwoorden?", scope: .automatic, active: ["calendar", "mail", "github"])
+        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: relevant).map(\.tool), ["inbox_mail"])
+    }
+}

@@ -367,3 +367,43 @@ enum SourceCapabilities {
         return parts.joined(separator: " · ")
     }
 }
+
+/// Lookups Nook runs itself before asking the model. A small local model rarely calls tools on its own, so for the sources
+/// a question is about, Nook fetches the data first and hands it over; the model only has to read and answer.
+enum Prefetch {
+    struct Call {
+        let tool: String
+        let input: [String: Any]
+    }
+
+    private static let unread = #"ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read"#
+    private static let reply = #"beantwoord\w*|antwoord\w*|reageer|reageren|terugmail\w*|terugschrijv\w*|reply|respond|answer|follow.?up|opvolg\w*"#
+
+    /// One overview tool per service, used when the question is about that service.
+    private static let overviews: [(source: String, tool: String)] = [
+        ("github", "github_overview"), ("stripe", "stripe_payments"), ("vercel", "vercel_deployments"),
+        ("calcom", "calcom_bookings"), ("n8n", "n8n_status"), ("resend", "resend_overview"), ("portfolio", "portfolio_overview")
+    ]
+
+    /// At most `limit` calls, most specific first. `relevant` comes from `SourceRouter.relevant`.
+    static func calls(for text: String, relevant: Set<String>, limit: Int = 3) -> [Call] {
+        var calls: [Call] = []
+        if relevant.contains("mail") {
+            if matches(unread, text) {
+                calls.append(Call(tool: "mail_unread", input: [:]))
+            } else if matches(reply, text) {
+                calls.append(Call(tool: "inbox_mail", input: ["days": 14, "unanswered_only": true]))
+            } else {
+                calls.append(Call(tool: "inbox_mail", input: ["days": 7]))
+            }
+        }
+        for overview in overviews where relevant.contains(overview.source) {
+            calls.append(Call(tool: overview.tool, input: [:]))
+        }
+        return Array(calls.prefix(limit))
+    }
+
+    private static func matches(_ pattern: String, _ text: String) -> Bool {
+        text.range(of: #"(?<![\p{L}\d])(?:"# + pattern + ")", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
