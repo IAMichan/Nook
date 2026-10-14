@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         add(to: menu, title: "Praat met Nook   ⌥ spatie", action: #selector(talk))
         add(to: menu, title: "Kijk mee met mijn scherm   ⌥⌘N", action: #selector(lookAtScreen))
+        add(to: menu, title: "Weekoverzicht", action: #selector(weekRecap))
         menu.addItem(.separator())
 
         let demo = NSMenuItem(title: "Voorbeeldscènes", action: nil, keyEquivalent: "")
@@ -72,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
+    @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func quit() { NSApp.terminate(nil) }
 

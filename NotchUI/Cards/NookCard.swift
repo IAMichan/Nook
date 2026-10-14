@@ -29,12 +29,36 @@ struct PlanStep: Equatable, Identifiable {
     var tone: StepTone
 }
 
+/// Een keuzemogelijkheid bij een vraag van een agent.
+struct ChoiceOption: Equatable, Identifiable {
+    var id: String { label }
+    var label: String
+    var description: String
+}
+
+/// Een vraag met opties. `id` verwijst naar een handler die `NotchViewModel.choose` aanroept.
+struct ChoiceSet: Equatable {
+    var id: String
+    var options: [ChoiceOption]
+    var multiSelect: Bool
+}
+
+/// Eén regel in een overzicht, bijvoorbeeld "Tijd met agents · 6 u 12 min".
+struct Fact: Equatable, Identifiable {
+    var id: String { label }
+    var label: String
+    var value: String
+}
+
 enum CardDetail: Equatable {
     case none
     case event(top: String, big: String, line: String, subline: String)
     case command(String, note: String)
     case waveform
     case steps([PlanStep])
+    case choices(ChoiceSet)
+    case diff(title: String, lines: [DiffLine], note: String)
+    case facts([Fact])
 }
 
 struct NookCard: Equatable, Identifiable {
@@ -49,4 +73,6 @@ struct NookCard: Equatable, Identifiable {
     var contentHeight: CGFloat
     /// Toont een tekstveld om meteen door te vragen. Het veld heeft de focus zodra de kaart verschijnt.
     var input: Bool = false
+    /// Extra rustige knoppen naast de twee vaste (bijvoorbeeld "Altijd" en "In terminal").
+    var extra: [CardAction] = []
 }

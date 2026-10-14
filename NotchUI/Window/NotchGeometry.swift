@@ -27,10 +27,28 @@ struct NotchGeometry: Equatable {
         return NotchGeometry(screenFrame: frame, hasNotch: false, notchWidth: 180, notchHeight: menuBar)
     }
 
-    /// Kiest het scherm met een notch, anders het hoofdscherm.
-    static func preferredScreen() -> NSScreen {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 }
-            ?? NSScreen.main
+    /// Kiest het scherm volgens de instelling: "auto" (met notch, anders het hoofdscherm), "main",
+    /// "mouse" (waar de muis is) of de naam van een scherm. Is dat scherm er niet, dan geldt "auto".
+    static func preferredScreen(choice: String = "auto") -> NSScreen {
+        let screens = NSScreen.screens
+        let primary = screens.first ?? NSScreen.main
+        switch choice {
+        case "main":
+            if let primary { return primary }
+        case "mouse":
+            if let screen = screenWithMouse() { return screen }
+        case "auto":
+            break
+        default:
+            if let named = screens.first(where: { $0.localizedName == choice }) { return named }
+        }
+        return screens.first { $0.safeAreaInsets.top > 0 }
+            ?? primary
             ?? NSScreen.screens[0]
+    }
+
+    static func screenWithMouse() -> NSScreen? {
+        let point = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
     }
 }

@@ -16,7 +16,7 @@ final class NotchController {
     private var previousApp: NSRunningApplication?
 
     func start(app: AppModel) {
-        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen())
+        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen(choice: AppSettings.shared.screenChoice))
         viewModel.geometry = geometry
 
         let panel = NotchPanel()
@@ -39,6 +39,21 @@ final class NotchController {
         viewModel.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in self?.stateChanged(state) }
+            .store(in: &cancellables)
+
+        // Ander scherm gekozen in de instellingen, of Nook in rust verbergen aan of uit.
+        AppSettings.shared.$screenChoice
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.screenChanged() }
+            .store(in: &cancellables)
+        AppSettings.shared.$hideWhenIdle
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.viewModel.state.isResting else { return }
+                self.viewModel.show(self.viewModel.state)
+            }
             .store(in: &cancellables)
 
         NotificationCenter.default.addObserver(
@@ -81,9 +96,16 @@ final class NotchController {
     }
 
     private func screenChanged() {
-        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen())
+        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen(choice: AppSettings.shared.screenChoice))
         viewModel.geometry = geometry
         positionPanel()
+    }
+
+    /// "Volgt je muis": in rust springt Nook mee naar het scherm waar de muis is.
+    private func followMouseIfNeeded() {
+        guard AppSettings.shared.screenChoice == "mouse", viewModel.state.isResting,
+              let screen = NotchGeometry.screenWithMouse(), screen.frame != geometry.screenFrame else { return }
+        screenChanged()
     }
 
     /// De notch-vorm in schermcoördinaten (oorsprong linksonder).
@@ -111,6 +133,7 @@ final class NotchController {
 
     private func pointerMoved() {
         guard let panel else { return }
+        followMouseIfNeeded()
         let inside = surfaceRect().insetBy(dx: -4, dy: -4).contains(NSEvent.mouseLocation)
         if panel.ignoresMouseEvents == inside {
             panel.ignoresMouseEvents = !inside

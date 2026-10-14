@@ -34,7 +34,7 @@ Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in
 **De eerste keer**
 1. Menubalk-stip → **Instellingen…** → kies bij Brein een Anthropic API-sleutel (blijft in de Keychain) of **Gratis model op je Mac** (ingebouwd, MLX: klik Download, niets anders te installeren).
 2. Zet bij Machtigingen Agenda, Herinneringen, Microfoon en Scherm lezen aan zodra je ze wilt gebruiken.
-3. Voor je agents: **Installeer hook-script** en kopieer de configuratie voor Claude Code of Codex.
+3. Voor je agents: klik bij **Agents** op **Koppel…** naast Claude Code, Codex of Gemini CLI. Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
 
 Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tonen**.
 
@@ -48,7 +48,12 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
 | Muziek | Spotify en Muziek: nu speelt, bediening, Nook danst in de notch. |
-| Agents | Claude Code, Codex e.d. via hooks: wie draait, wat doet hij, wie wacht op je. Riskante Bash-commando's komen als vraag in de notch. |
+| Agents | Claude Code, Codex, Gemini CLI e.d.: wie draait, wat doet hij (met live diff en +/− regels), wie wacht op je. Vraagt je agent toestemming, dan kan dat in de notch: **Toestaan**, **Altijd**, **Weigeren** of **In terminal**. Antwoord je in de terminal, dan verdwijnt de vraag meteen uit de notch. Meerkeuzevragen van Claude Code (AskUserQuestion) beantwoord je ook in de notch. **Open terminal** haalt het venster van de agent naar voren. |
+| Abonnement | Hoeveel van je Claude-limiet (5 uur en week) je gebruikt, in de Agents-tab. |
+| Weekoverzicht | Op maandag in Vandaag (of via de menubalk): tijd met agents, sessies, regels code, toestemmingen, drukste dag. Alleen lokaal. |
+| Shelf | Sleep een bestand (tekst, pdf, Word, rtf) in de Shelf en klik erop om Nook er iets over te vragen. |
+| Snelle opdrachten | "Volgende nummer", "volume 30", "open Safari", "weekoverzicht": Nook herkent die zelf, zonder brein, dus meteen. |
+| Stem | Optioneel leest Nook antwoorden voor, en luistert hij naar "Hé Nook" (alleen als je Mac spraak zelf herkent). |
 | Besturen | Apps openen, links openen, volume, muziek, Opdrachten (Shortcuts), conceptmail in Mail. |
 
 ## Privacy en veiligheid
@@ -58,6 +63,8 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 - Tekst van je scherm, agenda-titels en tool-uitkomsten gaan als "onbetrouwbare data" naar het brein, met de opdracht daar geen instructies uit te volgen.
 - Wachtwoordmanagers worden nooit gelezen.
 - De hook-socket is alleen voor jouw gebruiker (rechten 0600 + controle op gebruikers-ID).
+- Instellingenbestanden van je agents past Nook alleen aan na een voorbeeld en jouw klik, met eerst een backup ernaast (`settings.json.nook-backup-…`). Een onleesbaar bestand of een onverwachte vorm laat Nook ongemoeid.
+- Het wekwoord staat standaard uit en werkt alleen met spraakherkenning op je eigen Mac.
 - Alles wat Nook uitvoert staat in een logboek (`nook.sqlite`, tabel `audit`).
 
 Een beveiligingsprobleem gevonden? Zie [SECURITY.md](SECURITY.md).
@@ -79,7 +86,7 @@ Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
 
 - Het ingebouwde gratis model gebruikt de Swift-pakketten mlx-swift-lm, swift-huggingface en swift-transformers. Die vragen Xcode 26 of nieuwer en een Apple Silicon-Mac. De eerste build haalt de pakketten op en duurt lang. Draai `xcodegen` opnieuw na een `git pull`.
 - De app is ad-hoc ondertekend. Daardoor ziet macOS elke nieuwe build als een andere app en kunnen machtigingen en Keychain-toegang opnieuw gevraagd worden. Met een eigen Developer ID-certificaat gebeurt dat niet.
-- De hooks voor Claude Code en Codex volgen hun documentatie, maar zijn nog niet getest met de huidige versies.
+- De hooks voor Claude Code, Codex en Gemini CLI volgen hun documentatie, maar zijn nog niet getest met de huidige versies. Het hook-script is een Perl-script (Perl staat standaard op macOS).
 - macOS heeft geen API om meldingen van andere apps te lezen, dus meldingen filteren zit er niet in. Meldingen van je agents lopen wel via Nook.
 
 ## Meedoen
@@ -89,6 +96,8 @@ Issues en pull requests zijn welkom. Lees eerst [CONTRIBUTING.md](CONTRIBUTING.m
 ## Dank
 
 Het idee voor een app in de notch is geïnspireerd door [boring.notch](https://github.com/TheBoredTeam/boring.notch). Er is geen code van overgenomen.
+
+Veel ideeën voor de agent-koppeling (toestemming via `PermissionRequest`, vragen in de notch, veilig samenvoegen van `settings.json`, abonnementsgebruik via de statusregel, terminal naar voren halen, weekoverzicht) komen van [Coucou](https://github.com/Louis-CFM/coucou) (MIT) van Louis Raillé. De code is voor Nook opnieuw geschreven.
 
 ## Licentie
 

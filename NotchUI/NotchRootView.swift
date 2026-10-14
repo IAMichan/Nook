@@ -67,15 +67,15 @@ struct NotchRootView: View {
         Group {
             switch viewModel.state {
             case .idle:
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest) {
-                    if app.todayItems.count > 0 {
-                        Text("\(app.todayItems.count)")
-                            .font(NookTheme.font(12, .semibold))
-                            .foregroundStyle(NookTheme.amber)
+                if app.settings.hideWhenIdle {
+                    Color.clear
+                } else {
+                    wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                        idleBadge
                     }
                 }
             case .music:
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest) {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .dance, animated: true) {
                     EqualizerBars(color: NookTheme.music, height: 14)
                 }
             case .done(let message):
@@ -86,7 +86,8 @@ struct NotchRootView: View {
                         card: card,
                         onAction: { viewModel.perform($0) },
                         onVoice: { viewModel.startListening() },
-                        onReply: { app.handleUserText($0) }
+                        onReply: { app.handleUserText($0) },
+                        onChoose: { viewModel.choose($0, $1) }
                     )
                 }
             case .panel(let tab):
@@ -102,15 +103,34 @@ struct NotchRootView: View {
 
     // MARK: Rust en muziek: Nook links van de notch, iets kleins rechts
 
+    /// Rechts in rust: wacht er een agent, dan amber; anders het aantal punten voor vandaag.
+    @ViewBuilder
+    private var idleBadge: some View {
+        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
+        if waiting > 0 {
+            HStack(spacing: 4) {
+                Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
+                Text("\(waiting)")
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(NookTheme.amber)
+            }
+        } else if app.todayItems.count > 0 {
+            Text("\(app.todayItems.count)")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(NookTheme.amber)
+        }
+    }
+
     private func wings<Right: View>(
         nh: CGFloat,
         nw: CGFloat,
         mood: NookMood,
+        animated: Bool,
         @ViewBuilder right: () -> Right
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
-            NookOrb(mood: mood, size: 24)
+            NookOrb(mood: mood, size: 24, animated: animated)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()

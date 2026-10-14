@@ -6,6 +6,7 @@ struct CardView: View {
     let onAction: (CardAction) -> Void
     let onVoice: () -> Void
     var onReply: (String) -> Void = { _ in }
+    var onChoose: (String, [String]) -> Void = { _, _ in }
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
@@ -37,6 +38,9 @@ struct CardView: View {
                 NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
                 if !card.secondary.label.isEmpty {
                     NookGhostButton(title: card.secondary.label) { onAction(card.secondary) }
+                }
+                ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
+                    NookGhostButton(title: action.label) { onAction(action) }
                 }
                 Spacer()
                 NookIconButton(systemName: "mic", label: "Aanpassen met je stem", action: onVoice)
@@ -98,6 +102,13 @@ struct CardView: View {
             WaveformDetail()
         case .steps(let steps):
             StepsDetail(steps: steps)
+        case .choices(let set):
+            ChoicesDetail(set: set) { labels in onChoose(set.id, labels) }
+                .id(set.id)   // nieuwe vraag, nieuwe keuzes
+        case .diff(let title, let lines, let note):
+            DiffDetail(title: title, lines: lines, note: note)
+        case .facts(let facts):
+            FactsDetail(facts: facts)
         }
     }
 }
@@ -204,6 +215,130 @@ private struct StepsDetail: View {
                             .font(NookTheme.font(12, .medium))
                             .foregroundStyle(color(step.tone))
                     }
+                }
+            }
+        }
+    }
+}
+
+/// De opties bij een vraag van een agent. Eén keuze: klikken is antwoorden. Meer keuzes: aanvinken en versturen.
+private struct ChoicesDetail: View {
+    let set: ChoiceSet
+    let onChoose: ([String]) -> Void
+    @State private var selected: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(set.options) { option in
+                ChoiceRow(option: option, multi: set.multiSelect, checked: selected.contains(option.label)) {
+                    if set.multiSelect {
+                        if selected.contains(option.label) { selected.remove(option.label) } else { selected.insert(option.label) }
+                    } else {
+                        onChoose([option.label])
+                    }
+                }
+            }
+            if set.multiSelect {
+                HStack {
+                    Spacer()
+                    NookPrimaryButton(title: selected.isEmpty ? "Kies iets" : "Verstuur (\(selected.count))") {
+                        guard !selected.isEmpty else { return }
+                        // In de volgorde van de opties, niet van het klikken.
+                        onChoose(set.options.map(\.label).filter { selected.contains($0) })
+                    }
+                    .opacity(selected.isEmpty ? 0.5 : 1)
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+}
+
+private struct ChoiceRow: View {
+    let option: ChoiceOption
+    let multi: Bool
+    let checked: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.label)
+                        .font(NookTheme.font(14, .medium))
+                        .foregroundStyle(NookTheme.paper)
+                    if !option.description.isEmpty {
+                        Text(option.description)
+                            .font(NookTheme.font(12))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Een bewerking van een agent: bestandsnaam, de gewijzigde regels en een korte toelichting.
+private struct DiffDetail: View {
+    let title: String
+    let lines: [DiffLine]
+    let note: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).foregroundStyle(NookTheme.textTertiary).padding(.bottom, 4)
+                    ForEach(lines) { line in
+                        Text(line.text).foregroundStyle(line.color).lineLimit(1)
+                    }
+                }
+                .font(NookTheme.mono(11.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 150)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+
+            Text(note)
+                .font(NookTheme.font(12.5))
+                .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
+/// Cijfers in twee kolommen, zoals het weekoverzicht.
+private struct FactsDetail: View {
+    let facts: [Fact]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 10) {
+            ForEach(facts) { fact in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(fact.value)
+                        .font(NookTheme.font(16, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    Text(fact.label)
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
                 }
             }
         }
