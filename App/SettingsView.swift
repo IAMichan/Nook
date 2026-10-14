@@ -11,6 +11,12 @@ struct SettingsView: View {
     @State private var keyDraft = ""
     @State private var status = ""
     @State private var refreshTick = 0
+    @State private var ollamaRunning: Bool?
+    @State private var installed: [String] = []
+    @State private var pulling: String?
+    @State private var pullStatus = ""
+    @State private var pullFraction: Double?
+    @State private var customModel = ""
     @State private var testing = false
     @State private var testResult: (ok: Bool, message: String)?
 
@@ -26,13 +32,45 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 520, height: 640)
-        .onAppear { refreshTick += 1 }
+        .onAppear {
+            refreshTick += 1
+            Task { await refreshOllama() }
+        }
     }
 
     // MARK: Brein
 
     private var brainSection: some View {
         Section("Brein") {
+            Picker("Nook denkt met", selection: $settings.useLocal) {
+                Text("Claude (API-sleutel)").tag(false)
+                Text("Gratis model op je Mac").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: settings.useLocal) { _, _ in
+                testResult = nil
+                Task { await refreshOllama() }
+            }
+
+            if settings.useLocal { localFields } else { claudeFields }
+
+            HStack {
+                Button("Test verbinding") { Task { await testConnection() } }
+                    .disabled(!settings.brainReady || testing)
+                if testing { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            if let result = testResult {
+                Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(result.ok ? Color.green : Color.red)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var claudeFields: some View {
+        Group {
             HStack {
                 SecureField("Anthropic API-sleutel (sk-ant-…)", text: $keyDraft)
                     .onSubmit(saveKey)
@@ -57,21 +95,110 @@ struct SettingsView: View {
                 }
                 .fixedSize()
             }
-            HStack {
-                Button("Test verbinding") { Task { await testConnection() } }
-                    .disabled(!settings.hasAPIKey || testing)
-                if testing { ProgressView().controlSize(.small) }
-                Spacer()
-            }
-            if let result = testResult {
-                Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(result.ok ? Color.green : Color.red)
-                    .textSelection(.enabled)
-            }
             Text("Wat je aan Nook vraagt, plus een korte samenvatting van je agenda en open punten, gaat naar de Claude API. Een Claude-abonnement (claude.ai) werkt hier niet: je hebt een API-sleutel met tegoed nodig.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var localFields: some View {
+        Group {
+            switch ollamaRunning {
+            case .none:
+                HStack { ProgressView().controlSize(.small); Text("Ollama zoeken…") }
+            case .some(false):
+                Label("Ollama draait nog niet", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Gratis modellen draaien via Ollama, een kleine app die ze op je Mac uitvoert. Installeer hem, open hem één keer, en kom hier terug.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Download Ollama") { NSWorkspace.shared.open(LocalModelService.downloadPage) }
+                    Button("Opnieuw controleren") { Task { await refreshOllama() } }
+                }
+                Text("Of via Terminal: brew install ollama && brew services start ollama")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            case .some(true):
+                Label("Ollama draait", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+
+                if !installed.isEmpty {
+                    Picker("Gebruik model", selection: $settings.localModel) {
+                        if !installed.contains(settings.localModel) { Text("Kies…").tag(settings.localModel) }
+                        ForEach(installed, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+
+                ForEach(LocalModelService.suggestions) { suggestion in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.title)
+                            Text(suggestion.detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if installed.contains(suggestion.id) {
+                            Image(systemName: "checkmark").foregroundStyle(.green)
+                        } else {
+                            Button("Installeer") { Task { await install(suggestion.id) } }
+                                .disabled(pulling != nil)
+                        }
+                    }
+                }
+
+                HStack {
+                    TextField("Ander model, bijv. mistral-small", text: $customModel)
+                        .onSubmit { Task { await install(customModel) } }
+                    Button("Installeer") { Task { await install(customModel) } }
+                        .disabled(customModel.trimmingCharacters(in: .whitespaces).isEmpty || pulling != nil)
+                }
+
+                if let pulling {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(pulling) downloaden… \(pullStatus)").font(.caption)
+                        if let pullFraction { ProgressView(value: pullFraction) } else { ProgressView() }
+                    }
+                }
+                Text("Gratis en privé: alles draait op je eigen Mac en niets gaat naar het internet. Het model moet tools kunnen aanroepen; kleine modellen zijn minder slim dan Claude. Zodra je een model kiest, gebruikt Nook dat in plaats van een API-sleutel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func refreshOllama() async {
+        guard settings.useLocal else { return }
+        do {
+            installed = try await LocalModelService.installedModels()
+            ollamaRunning = true
+            if settings.localModel.isEmpty, let first = installed.first { settings.localModel = first }
+        } catch {
+            ollamaRunning = false
+        }
+    }
+
+    private func install(_ raw: String) async {
+        let model = raw.trimmingCharacters(in: .whitespaces)
+        guard !model.isEmpty, pulling == nil else { return }
+        pulling = model
+        pullStatus = ""
+        pullFraction = nil
+        testResult = nil
+        defer { pulling = nil }
+        do {
+            try await LocalModelService.pull(model) { status, fraction in
+                Task { @MainActor in
+                    pullStatus = status
+                    pullFraction = fraction
+                }
+            }
+            await refreshOllama()
+            settings.localModel = model
+            customModel = ""
+            status = "\(model) is geïnstalleerd en wordt nu gebruikt."
+            await testConnection()
+        } catch {
+            testResult = (false, error.localizedDescription)
         }
     }
 
@@ -101,7 +228,7 @@ struct SettingsView: View {
         defer { testing = false }
         do {
             let reply = try await app.brain.test()
-            testResult = (true, "Verbonden met \(settings.model). Antwoord: “\(reply)”")
+            testResult = (true, "Verbonden met \(settings.activeModelName). Antwoord: “\(reply)”")
         } catch {
             testResult = (false, error.localizedDescription)
         }

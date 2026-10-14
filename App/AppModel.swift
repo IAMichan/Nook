@@ -165,7 +165,7 @@ final class AppModel: ObservableObject {
     func handleUserText(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             presentSetupCard()
             return
         }
@@ -345,7 +345,7 @@ final class AppModel: ObservableObject {
             voice.finishNow()
             return
         }
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             presentSetupCard()
             return
         }
@@ -396,7 +396,7 @@ final class AppModel: ObservableObject {
     // MARK: Meekijken
 
     func lookAtScreen(manual: Bool) {
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             if manual { presentSetupCard() }
             return
         }
@@ -424,7 +424,7 @@ final class AppModel: ObservableObject {
     }
 
     private func autoWatchTick() {
-        guard settings.autoWatch, settings.hasAPIKey, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
+        guard settings.autoWatch, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
         guard Date().timeIntervalSince(lastAutoRun) > 90 else { return }
         switch viewModel.state {
         case .idle, .music: break
@@ -552,7 +552,7 @@ final class AppModel: ObservableObject {
             id: token,
             mood: .waiting,
             context: "Eerst even instellen",
-            title: "Ik heb een API-sleutel nodig om te kunnen denken.",
+            title: "Ik heb een API-sleutel of een gratis lokaal model nodig om te kunnen denken.",
             detail: .none,
             primary: CardAction(label: "Open instellingen", outcome: .callback("\(token)#open", "")),
             secondary: CardAction(label: "Later", outcome: .dismiss),
