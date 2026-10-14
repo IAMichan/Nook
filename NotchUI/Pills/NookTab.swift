@@ -264,6 +264,30 @@ private struct ChatMessageView: View {
                 PlanBlock(message: message)
             }
 
+            // Wat Nook hierna voor je kan doen: één klik en hij gaat aan de slag.
+            if !message.streaming && !message.offers.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(message.offers, id: \.self) { offer in
+                        Button { app.handleUserText(offer) } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(NookTheme.iris)
+                                Text(offer)
+                                    .font(NookTheme.font(12, .medium))
+                                    .foregroundStyle(NookTheme.paper)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(NookTheme.smoke))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Nook: \(offer)")
+                    }
+                }
+            }
+
             if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
                 TypingIndicator(status: message.status)
             }

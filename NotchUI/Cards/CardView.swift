@@ -46,6 +46,8 @@ struct CardView: View {
 
             Spacer(minLength: 12)
 
+            if !card.offers.isEmpty { offerChips.padding(.bottom, 10) }
+
             if card.input { replyField.padding(.bottom, 10) }
 
             HStack(spacing: 4) {
@@ -61,7 +63,7 @@ struct CardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onExitCommand { onAction(card.primary) }
+        .onExitCommand { onAction(card.escape ?? card.primary) }
     }
 
     /// Korte zinnen groot; een langer antwoord in leesbare tekst, met **vet**, *schuin* en links.
@@ -77,6 +79,16 @@ struct CardView: View {
 
     private static func rich(_ text: String) -> AttributedString {
         MarkdownBlock.inline(MarkdownBlock.clean(text))
+    }
+
+    /// Wat Nook hierna kan doen: één klik en hij gaat ermee aan de slag.
+    private var offerChips: some View {
+        HStack(spacing: 6) {
+            ForEach(card.offers, id: \.self) { offer in
+                OfferChip(title: offer) { onReply(offer) }
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.
@@ -135,6 +147,35 @@ struct CardView: View {
 }
 
 // MARK: Detailregels
+
+/// Een aanbod van Nook als knop, met een sterretje ervoor.
+private struct OfferChip: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+                Text(title)
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
+            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("Nook: \(title)")
+    }
+}
 
 private struct EventDetail: View {
     let top: String

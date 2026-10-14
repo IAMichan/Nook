@@ -92,6 +92,8 @@ struct ChatMessage: Identifiable {
     /// Acties die Nook voorstelt; pas na "Uitvoeren" gebeuren ze echt.
     var actions: [PlannedAction] = []
     var planState: PlanState = .pending
+    /// Wat Nook hierna kan doen ("Zet het in mijn agenda"), als knoppen onder het antwoord.
+    var offers: [String] = []
 
     /// Hoe dit bericht in de geschiedenis voor het brein staat: tekst plus wat er verder gebeurde.
     var historyText: String {

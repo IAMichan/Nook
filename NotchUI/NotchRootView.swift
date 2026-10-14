@@ -56,6 +56,7 @@ struct NotchRootView: View {
         case .track(let title, let artist): return "track-\(title)-\(artist)"
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
+        case .nudge(_, let card): return "nudge-\(card.id)"
         case .panel: return "panel"   // wisselen van tab gebeurt binnen het paneel, zonder alles te vervangen
         }
     }
@@ -92,6 +93,8 @@ struct NotchRootView: View {
                 }
             case .done(let message):
                 doneStrip(message: message, nh: nh)
+            case .nudge(let line, _):
+                nudgeStrip(line: line, nh: nh)
             case .card(let card):
                 expanded(nh: nh, mood: card.mood) {
                     CardView(
@@ -200,6 +203,42 @@ struct NotchRootView: View {
             .padding(.horizontal, 20)
             .frame(height: 40)
         }
+    }
+
+    // MARK: Nook denkt mee
+
+    /// Een korte zin onder de notch, zoals "Zal ik dit in je agenda zetten?". Wijs of klik voor het hele voorstel.
+    private func nudgeStrip(line: String, nh: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                NookOrb(mood: .seen, size: 24, animated: true)
+                    .padding(.leading, 18)
+                Spacer()
+            }
+            .frame(height: nh)
+
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+                Text(line)
+                    .font(NookTheme.font(13.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 34)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { viewModel.openNudge() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Nook stelt voor: \(line)")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Uitgeklapt: Nook links, inhoud rechts

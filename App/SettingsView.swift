@@ -553,12 +553,29 @@ struct SettingsView: View {
                 }
                 Toggle(isOn: $settings.autoWatch) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Stel zelf iets voor als ik een afspraak of taak zie")
-                        Text("Elke anderhalve minuut kijkt Nook of er op je scherm iets te plannen of te onthouden is.")
+                        Text("Denk mee terwijl ik werk")
+                        Text("Ben je een tijdje met iets bezig, dan kijkt Nook mee. Kan hij iets voor je overnemen of weet hij een slimmere aanpak, dan biedt hij het aan naast de notch (\"Zal ik dit in je agenda zetten?\"). Zeg je vaker nee, dan houdt hij zich meer in. Stuurt dan af en toe de tekst van je voorste vensters naar je brein.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .disabled(settings.useLocal)
+                if !app.thinkAlong.mutedApps.isEmpty {
+                    LabeledContent("Niet meedenken in") {
+                        HStack {
+                            Text(app.thinkAlong.mutedApps.values.sorted().joined(separator: ", "))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                            Button("Wis") { app.thinkAlong.unmuteAll() }
+                        }
+                    }
+                }
+                Toggle(isOn: $settings.autoRunSafe) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Kleine dingen meteen doen")
+                        Text("Vraag je om muziek, volume, een app, een herinnering of een open punt, dan doet Nook het zonder eerst op Uitvoeren te wachten. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst, en voorstellen uit Meedenken ook.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
         }
     }
