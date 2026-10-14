@@ -103,7 +103,7 @@ struct AgentQuestionRequest: Identifiable {
 
 // MARK: Abonnementsgebruik
 
-struct PlanWindow: Equatable {
+struct PlanWindow: Equatable, Codable {
     var usedPercent: Double
     var resetsAt: Date
 
@@ -112,7 +112,7 @@ struct PlanWindow: Equatable {
 }
 
 /// Hoeveel van je Claude-abonnement (Pro/Max) je gebruikt, uit de statusregel van Claude Code.
-struct PlanUsage: Equatable {
+struct PlanUsage: Equatable, Codable {
     var fiveHour: PlanWindow?
     var sevenDay: PlanWindow?
     var updated: Date

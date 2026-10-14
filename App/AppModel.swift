@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     /// Agenda, mail, browser, GitHub, Stripe…: alles waar Nook context uit haalt.
     let connectors = ConnectorHub()
     let codex = CodexUsage()
+    /// Eerdere sessies en tokengebruik van Claude Code en Codex, voor de Agents-tab.
+    let history = AgentHistory()
     /// Zoeken op het web en webpagina's lezen, voor elk brein.
     let web = WebTools()
     let portfolio = PortfolioConnector()
@@ -76,6 +78,7 @@ final class AppModel: ObservableObject {
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
     }
 
@@ -909,6 +912,34 @@ final class AppModel: ObservableObject {
         if !TerminalLauncher.activate(sessionBundleID: session.hostBundleID) {
             viewModel.present(errorCard("Ik vind de terminal van \(session.name) niet. Staat hij nog open?"))
         }
+    }
+
+    /// Gaat verder met een eerdere sessie, in een nieuw Terminal-venster in de map van toen.
+    func resume(_ session: PastSession) {
+        guard FileManager.default.fileExists(atPath: session.cwd) else {
+            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
+            return
+        }
+        do {
+            try TerminalLauncher.run(command: resumeCommand(for: session, absolute: true), in: session.cwd,
+                                     name: "nook-resume-\(session.agent.rawValue)")
+            viewModel.show(.idle)
+        } catch {
+            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Het commando om een sessie te hervatten. `absolute` gebruikt het volledige pad als Nook weet waar de agent staat.
+    func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
+        var program = session.agent.command
+        if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
+        return ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
+    }
+
+    func copyResumeCommand(_ session: PastSession) {
+        let command = "cd \(TerminalLauncher.shellQuote(session.cwd)) && \(resumeCommand(for: session))"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
     }
 
     // MARK: Snelle opdrachten

@@ -33,6 +33,7 @@ enum LocalAgentScanner {
     ]
 
     private static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3"]
+    private static let backgroundModes: Set<String> = ["app-server", "mcp-server", "mcp", "proto"]
 
     static func scan() async -> [DetectedAgent] {
         await withCheckedContinuation { continuation in
@@ -43,15 +44,15 @@ enum LocalAgentScanner {
     }
 
     private static func scanNow() -> [DetectedAgent] {
-        guard let list = run("/bin/ps", ["-axo", "pid=,command="]) else { return [] }
+        guard let list = run("/bin/ps", ["-axo", "pid=,ppid=,command="]) else { return [] }
         let me = ProcessInfo.processInfo.processIdentifier
 
         var found: [(pid: Int32, name: String)] = []
         for line in list.split(separator: "\n") {
-            let trimmed = line.drop(while: { $0 == " " })
-            guard let space = trimmed.firstIndex(of: " "),
-                  let pid = Int32(trimmed[..<space]), pid != me else { continue }
-            let command = String(trimmed[trimmed.index(after: space)...])
+            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]),
+                  pid != me, parent != me else { continue }   // Nooks eigen hulpprocessen (codex app-server, claude -p) niet
+            let command = String(fields[2])
             if let name = identify(command) { found.append((pid, name)) }
         }
         guard !found.isEmpty else { return [] }
@@ -76,6 +77,8 @@ enum LocalAgentScanner {
 
         let tokens = lower.split(separator: " ").map(String.init)
         guard let first = tokens.first else { return nil }
+        // Achtergronddiensten van een agent (voor een editor of app) zijn geen sessie van jou.
+        if tokens.contains(where: { backgroundModes.contains($0) }) { return nil }
         let program = URL(fileURLWithPath: first).lastPathComponent
 
         // Het eerste woord, of bij node/python het script dat daarna komt.

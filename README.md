@@ -6,7 +6,7 @@
 
 Je persoonlijke agent in de notch van je Mac.
 
-> **English:** Nook is a personal AI assistant that lives in the MacBook notch. It keeps the text of every window on every display up to date locally, so any question is answered instantly with what you see, plus your calendar, reminders, mail, browser tabs, files and connected services (GitHub, Stripe, Vercel, Notion, Cal.com, n8n, Resend, crypto). It thinks with Claude, OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama, LM Studio or a built-in local model, shows what your coding agents are doing (Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, OpenCode, Amp, Hermes…), and controls music. Nothing runs without your explicit approval. The interface is in Dutch.
+> **English:** Nook is a personal AI assistant that lives in the MacBook notch. It keeps the text of every window on every display up to date locally, so any question is answered instantly with what you see, plus your calendar, reminders, mail, browser tabs, files and connected services (GitHub, Stripe, Vercel, Notion, Cal.com, n8n, Resend, crypto). It thinks with Claude, OpenAI, Google Gemini, Grok (xAI), Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Ollama, LM Studio or a built-in local model, shows what your coding agents are doing (Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, OpenCode, Amp, Hermes…), and controls music. Nothing runs without your explicit approval. The interface is in Dutch.
 
 > **Status:** vroege versie (0.1). De app compileert, maar is nog weinig in de praktijk getest. Verwacht ruwe randjes.
 
@@ -33,7 +33,7 @@ Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in
 
 **De eerste keer**
 Nook laat de eerste keer zelf een welkomstkaart zien. In **Instellingen › Overzicht** staat een checklist met wat er nog moet:
-1. **Brein**: Claude (API-sleutel), een andere AI (OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama, LM Studio) of **Gratis op je Mac** (ingebouwd, MLX).
+1. **Brein**: Claude (API-sleutel), een andere AI (OpenAI, Google Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Ollama, LM Studio) of **Gratis op je Mac** (ingebouwd, MLX).
 2. **Privacy en toegang**: Scherm lezen, Agenda, Herinneringen en Microfoon.
 3. **Koppelingen**: zet aan wat je wilt (Mail, browser, bestanden) en plak sleutels voor GitHub, Stripe en de rest.
 4. Voor je agents: klik bij **Agents** op **Koppel…** naast Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp of Hermes. Elke andere agent kan zich melden met `nook_agent`, zie [docs/AGENTS.md](docs/AGENTS.md). Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
@@ -48,7 +48,7 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Typen tegen Nook | ⌥⌘ spatie, waar je ook bent, of het veld onderaan Vandaag. Het antwoord verschijnt terwijl het geschreven wordt. |
 | Al je schermen | Nook houdt de tekst van al je vensters op al je schermen bij (lokaal, OCR) en gebruikt die bij elke vraag. Daardoor is een antwoord meteen klaar. Boven een antwoord zie je waar Nook keek. |
 | Koppelingen | Agenda, herinneringen, Mail (ongelezen en zoeken), browsertabs, recente bestanden en zoeken met Spotlight, klembord (standaard uit). Diensten met een eigen sleutel: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, Resend en een crypto-portfolio. Alles in de tab Koppelingen. |
-| Elk brein | Claude (met zoeken op het web), OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama en LM Studio, of het ingebouwde gratis model. |
+| Elk brein | Claude (met zoeken op het web), OpenAI, Google Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Ollama en LM Studio, of het ingebouwde gratis model. |
 | Meekijken | Zeg je "maak er een afspraak voor" of verwijs je naar iets met "hier", "dit" of "daar", dan leest Nook zelf eerst het voorste venster en haalt datum, tijd en plaats eruit. ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
