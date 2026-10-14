@@ -13,7 +13,8 @@ settings:
 packages:
   MLXSwiftLM:
     url: https://github.com/ml-explore/mlx-swift-lm
-    minorVersion: 3.32.3
+    # 3.31.x: nieuwere versies vragen een Swift-toolchain (6.3) die nog niet in Xcode 26.3 zit.
+    exactVersion: 3.31.4
   SwiftHuggingFace:
     url: https://github.com/huggingface/swift-huggingface
     minorVersion: 0.9.0
