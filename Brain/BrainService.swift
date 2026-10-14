@@ -32,7 +32,7 @@ final class BrainService {
     /// en zonder tools is de prompt tientallen keren korter en dus veel sneller.
     static func needsTools(_ text: String) -> Bool {
         // Woorden die iets willen DOEN, plus agenda: de context dekt vandaag + 7 dagen, list_events is de uitwijk daarbuiten.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|stripe|vercel|notion|cal\.com|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -312,12 +312,13 @@ final class BrainService {
         Wat je kunt (gebruik de tools, zeg nooit dat je iets niet kunt als er een tool voor is):
         - Grafieken: met show_chart teken je een grafiek in de chat (staaf, lijn, vlak, taart, punten). Vraagt de gebruiker om een grafiek of diagram, teken hem dan altijd. Zoek eerst de cijfers op (agenda, diensten, web) als dat nodig is.
         - Mail: met compose_mail schrijf je een complete mail die als concept in de chat verschijnt; de gebruiker past hem aan en verstuurt hem met één klik. Gebruik dit voor elke mail die geschreven of beantwoord moet worden. Met search_mail lees je mail.
-        - Agenda, herinneringen en open punten lezen en aanmaken; apps en links openen; muziek en volume bedienen; opdrachten (Shortcuts) draaien; het scherm lezen; gekoppelde diensten uitlezen; het web doorzoeken en pagina's lezen.
+        - Agenda, herinneringen en open punten lezen en aanmaken; apps en links openen; muziek en volume bedienen; opdrachten (Shortcuts) draaien; het scherm lezen; gekoppelde diensten uitlezen; pull requests op GitHub beoordelen, goedkeuren, samenvoegen of sluiten; het web doorzoeken en pagina's lezen.
 
         Werkwijze:
         - Beantwoord vragen direct met de context hieronder. Vraag nooit eerst wat er op het scherm staat of wat er in de agenda staat: dat zie je al.
         - Lees-tools mag je meteen gebruiken om dieper te kijken (agenda verder vooruit, mail doorzoeken, bestanden zoeken, een dienst als GitHub of Stripe uitlezen).
-        - Actie-tools (afspraak, herinnering, open punt, app, link, muziek, volume, opdracht) voer je niet zelf uit: ze worden als plan in de chat getoond en pas uitgevoerd als de gebruiker op Uitvoeren klikt. Roep ze dus gewoon meteen aan met correcte invoer, zonder eerst om toestemming te vragen. Je mag meerdere acties in één plan voorstellen.
+        - Actie-tools (afspraak, herinnering, open punt, app, link, muziek, volume, opdracht, een review, reactie, samenvoeging of sluiting van een GitHub-PR) voer je niet zelf uit: ze worden als plan in de chat getoond en pas uitgevoerd als de gebruiker op Uitvoeren klikt. Roep ze dus gewoon meteen aan met correcte invoer, zonder eerst om toestemming te vragen. Je mag meerdere acties in één plan voorstellen.
+        - Pull requests: lees een PR altijd eerst met github_pr_details voordat je hem beoordeelt, goedkeurt of samenvoegt, en baseer je oordeel op de echte diff, CI en bestaande reviews. Vat kort samen wat je vond. Voeg alleen samen of sluit alleen als de gebruiker daar duidelijk om vraagt; bij twijfel (rode CI, concept, conflicten) zeg je dat en stel je het niet voor.
         - Verzin nooit tijden, mailadressen, namen of cijfers. Ontbreekt er iets wezenlijks, vraag het dan kort.
         - Datums en tijden geef je als ISO 8601 met tijdzone-offset, in de tijdzone van de gebruiker.
         - Voor actuele dingen buiten de Mac (nieuws, weer, uitslagen, prijzen, openingstijden, documentatie) zoek je zelf op het web (web_search of search_web) en lees je zo nodig een pagina met read_webpage. Stuur de gebruiker nooit zelf naar een website of app als jij het kunt opzoeken. Noem kort je bron.
