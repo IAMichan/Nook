@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// De stemming van Nook. De ogen en de kleur van de orb volgen hieruit.
+/// Nook's mood. Determines eye shape and orb color.
 enum NookMood: Equatable {
-    case rest      // rust: ademt, knippert af en toe
-    case seen      // zag iets op je scherm
-    case listen    // luistert naar je stem
-    case think     // denkt na of plant
-    case waiting   // wacht op jouw goedkeuring
-    case remind    // herinnert je aan iets
-    case worry     // een agent heeft een probleem
-    case done      // klaar, tevreden
+    case rest      // idle: breathing, occasional blink
+    case seen      // noticed something on your screen
+    case listen    // listening to your voice
+    case think     // thinking or planning
+    case waiting   // awaiting your approval
+    case remind    // reminding you of something
+    case worry     // an agent ran into an issue
+    case done      // finished, content
 
     var color: Color {
         switch self {

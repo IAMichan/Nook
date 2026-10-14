@@ -1,7 +1,7 @@
 import Foundation
 
-/// Een JSON-object dat we doorgeven zoals het binnenkwam (tool-invoer, voorstellen voor regels).
-/// Vergelijkbaar via de gesorteerde JSON-tekst, zodat de tests het kunnen controleren.
+/// A JSON object passed along as received (tool input, rule suggestions).
+/// Comparable via sorted JSON text, allowing tests to verify it.
 struct JSONBox: Equatable, @unchecked Sendable {
     let object: Any
     let json: String
@@ -22,31 +22,31 @@ struct JSONBox: Equatable, @unchecked Sendable {
     static func == (lhs: JSONBox, rhs: JSONBox) -> Bool { lhs.json == rhs.json }
 }
 
-/// Tokens van één modelaanroep, zoals de agent ze meldt.
+/// Tokens from a single model call, as reported by the agent.
 struct TokenCounts: Equatable, Sendable {
     var input = 0
     var output = 0
     var cacheRead = 0
     var cacheWrite = 0
 
-    /// Wat er bij deze aanroep in de context zat.
+    /// Tokens present in context during this call.
     var context: Int { input + cacheRead + cacheWrite }
 }
 
 // MARK: Claude Code
 
-/// Wat Nook uit één regel `--output-format stream-json` van Claude Code haalt.
+/// What Nook extracts from one line of Claude Code's `--output-format stream-json`.
 enum ClaudeStreamEvent: Equatable, Sendable {
     case initialized(sessionID: String, model: String?)
-    /// Een stukje tekst terwijl het antwoord geschreven wordt (`--include-partial-messages`).
+    /// A text chunk while the response is streaming (`--include-partial-messages`).
     case textDelta(String)
-    /// Een volledig tekstblok van de assistent.
+    /// A complete text block from the assistant.
     case text(String)
     case thinking(String)
     case toolUse(id: String, name: String, input: JSONBox, nested: Bool)
     case toolResult(id: String, output: String, isError: Bool)
     case usage(messageID: String, tokens: TokenCounts, model: String?)
-    /// De agent vraagt toestemming (`--permission-prompt-tool stdio`).
+    /// The agent requests permission (`--permission-prompt-tool stdio`).
     case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
     case result(ClaudeTurnResult)
     case notice(String)
@@ -171,13 +171,13 @@ enum ClaudeStreamParser {
         )
     }
 
-    /// Tool-uitkomst: tekst, of een lijst blokken waarvan we de tekst nemen.
+    /// Tool result: text, or a list of blocks from which text is extracted.
     static func resultText(_ content: Any?) -> String {
         if let text = content as? String { return text }
         if let blocks = content as? [[String: Any]] {
             return blocks.compactMap { block -> String? in
                 if let text = block["text"] as? String { return text }
-                if (block["type"] as? String) == "image" { return "[afbeelding]" }
+                if (block["type"] as? String) == "image" { return "[image]" }
                 return nil
             }.joined(separator: "\n")
         }
@@ -186,34 +186,34 @@ enum ClaudeStreamParser {
 
     static func number(_ value: Any?) -> Double? {
         if let number = value as? NSNumber {
-            // JSON-booleans zijn ook NSNumber; die tellen niet als getal (een 0 of 1 wel).
+            // JSON booleans are also NSNumber; they do not count as numbers (0 or 1 do).
             return CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : number.doubleValue
         }
         if let text = value as? String { return Double(text) }
         return nil
     }
 
-    // MARK: Berichten naar Claude Code (stdin)
+    // MARK: Messages to Claude Code (stdin)
 
-    /// Een bericht van de gebruiker in het formaat van `--input-format stream-json`.
+    /// A user message in `--input-format stream-json` format.
     static func userMessage(_ text: String) -> String {
         line(["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""])
     }
 
-    /// Antwoord op een toestemmingsvraag. Bij "toestaan" stuurt Claude Code de originele invoer mee terug.
+    /// Response to a permission prompt. On "allow", Claude Code sends back the original input.
     static func permissionResponse(requestID: String, allow: Bool, input: JSONBox, rules: JSONBox? = nil, message: String = "") -> String {
         var decision: [String: Any]
         if allow {
             decision = ["behavior": "allow", "updatedInput": input.object]
             if let rules { decision["updatedPermissions"] = rules.object }
         } else {
-            decision = ["behavior": "deny", "message": message.isEmpty ? "Geweigerd door de gebruiker in Nook." : message]
+            decision = ["behavior": "deny", "message": message.isEmpty ? "Denied by user in Nook." : message]
         }
         return line(["type": "control_response",
                      "response": ["subtype": "success", "request_id": requestID, "response": decision]])
     }
 
-    /// Vraagt Claude Code de huidige beurt af te breken.
+    /// Requests Claude Code to interrupt the current turn.
     static func interruptRequest(id: String) -> String {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "interrupt"]])
     }
@@ -226,7 +226,7 @@ enum ClaudeStreamParser {
 
 // MARK: Codex
 
-/// Wat Nook uit één regel `codex exec --json` haalt.
+/// What Nook extracts from one line of `codex exec --json`.
 enum CodexStreamEvent: Equatable, Sendable {
     case threadStarted(String)
     case message(String)
@@ -257,7 +257,7 @@ enum CodexStreamParser {
             if let raw = object["usage"] as? [String: Any] {
                 let cached = Int(ClaudeStreamParser.number(raw["cached_input_tokens"]) ?? 0)
                 let input = Int(ClaudeStreamParser.number(raw["input_tokens"]) ?? 0)
-                // Codex telt de cache mee in input_tokens; apart gezet zodat het niet dubbel telt.
+                // Codex includes cached tokens in input_tokens; separated so they are not double-counted.
                 usage.inputTokens = max(0, input - cached)
                 usage.cacheReadTokens = cached
                 usage.outputTokens = Int(ClaudeStreamParser.number(raw["output_tokens"]) ?? 0)
@@ -265,10 +265,10 @@ enum CodexStreamParser {
             }
             return [.turnCompleted(usage)]
         case "turn.failed":
-            let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? "Codex stopte met een fout."
+            let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? "Codex stopped with an error."
             return [.failed(message)]
         case "error":
-            return [.failed((object["message"] as? String) ?? "Codex meldde een fout.")]
+            return [.failed((object["message"] as? String) ?? "Codex reported an error.")]
         case "item.started", "item.updated", "item.completed":
             guard let item = object["item"] as? [String: Any] else { return [] }
             return parseItem(item, finished: type == "item.completed")
@@ -279,7 +279,7 @@ enum CodexStreamParser {
 
     private static func parseItem(_ item: [String: Any], finished: Bool) -> [CodexStreamEvent] {
         let id = (item["id"] as? String) ?? UUID().uuidString
-        // Oudere versies noemen het veld "item_type".
+        // Older versions name the field "item_type".
         let kind = (item["type"] as? String) ?? (item["item_type"] as? String) ?? ""
         switch kind {
         case "agent_message", "assistant_message":
@@ -308,7 +308,7 @@ enum CodexStreamParser {
             let failed = (item["status"] as? String) == "failed"
             return [.toolCall(id: id, name: name, detail: detail, finished: finished, failed: failed)]
         case "error":
-            return [.failed((item["message"] as? String) ?? "Codex meldde een fout.")]
+            return [.failed((item["message"] as? String) ?? "Codex reported an error.")]
         default:
             return []
         }

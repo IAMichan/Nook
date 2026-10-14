@@ -1,23 +1,23 @@
 import Foundation
 
-/// Tools die iets in de chat laten zien: een grafiek of een mailconcept. Ze draaien meteen (zoals lees-tools),
-/// want er gebeurt nog niets buiten Nook: een mail gaat pas weg als de gebruiker zelf op "Versturen" klikt.
+/// Tools that display interactive content directly in chat: a chart or an email draft. They execute immediately (like read tools)
+/// because nothing happens outside Nook yet: an email is only sent when the user clicks "Send".
 @MainActor
 enum ChatTools {
     static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void) -> [ToolSpec] {
         let point: [String: Any] = [
             "type": "object",
             "properties": [
-                "label": ["type": "string", "description": "Categorie of moment op de x-as, bijvoorbeeld \"ma\", \"jan\" of \"Amsterdam\"."],
-                "value": ["type": "number", "description": "De waarde."]
+                "label": ["type": "string", "description": "Category or point on the x-axis, e.g. \"Mon\", \"Jan\", or \"Amsterdam\"."],
+                "value": ["type": "number", "description": "The numeric value."]
             ],
             "required": ["label", "value"]
         ]
         let series: [String: Any] = [
             "type": "object",
             "properties": [
-                "name": ["type": "string", "description": "Naam van de reeks (voor de legenda)."],
-                "points": ["type": "array", "items": point, "description": "De punten, in de volgorde waarin ze getoond worden."]
+                "name": ["type": "string", "description": "Name of the series (for the legend)."],
+                "points": ["type": "array", "items": point, "description": "The data points in display order."]
             ],
             "required": ["name", "points"]
         ]
@@ -25,48 +25,48 @@ enum ChatTools {
         return [
             ToolSpec(
                 name: "show_chart",
-                description: "Tekent een grafiek in de chat. Gebruik dit ALTIJD als de gebruiker om een grafiek, diagram, chart of visualisatie vraagt, en ook uit jezelf als cijfers (over tijd, of tussen een paar categorieën) als grafiek duidelijker zijn. Haal de cijfers eerst op met andere tools of het web als dat nodig is; gebruik alleen echte cijfers of cijfers van de gebruiker, verzin nooit data. Kies bar voor vergelijken, line of area voor verloop in de tijd, pie voor verdeling van een geheel (hooguit 6 delen), point voor losse metingen. Na het tekenen geef je in je antwoord in één of twee zinnen de belangrijkste conclusie; herhaal niet alle cijfers.",
+                description: "Renders a chart in chat. ALWAYS use this when the user asks for a chart, diagram, plot, or visualization, and also proactively when numerical trends or category comparisons are clearer as a visual. Fetch data first using other tools or web search if necessary; use only genuine figures or user-provided data, never fabricate. Choose bar for comparisons, line or area for trends over time, pie for breakdown of a whole (max 6 slices), point for scatter plots. After rendering, state the main takeaway in one or two sentences; do not repeat all raw numbers.",
                 schema: [
                     "type": "object",
                     "properties": [
-                        "title": ["type": "string", "description": "Korte titel boven de grafiek."],
-                        "type": ["type": "string", "enum": ChatChart.Kind.allCases.map(\.rawValue), "description": "Soort grafiek."],
-                        "unit": ["type": "string", "description": "Eenheid van de waarden, bijvoorbeeld \"€\", \"uur\" of \"%\". Optioneel."],
-                        "series": ["type": "array", "items": series, "description": "Eén of meer reeksen (hooguit 4 voor lijnen en staven). Bij pie precies één reeks."]
+                        "title": ["type": "string", "description": "Short title above the chart."],
+                        "type": ["type": "string", "enum": ChatChart.Kind.allCases.map(\.rawValue), "description": "Type of chart."],
+                        "unit": ["type": "string", "description": "Unit of measurement, e.g. \"€\", \"hours\", or \"%\". Optional."],
+                        "series": ["type": "array", "items": series, "description": "One or more data series (max 4 for lines and bars). For pie charts, exactly one series."]
                     ],
                     "required": ["title", "type", "series"]
                 ],
                 kind: .read,
-                summarize: { input in "Grafiek: \((input["title"] as? String) ?? "")" },
+                summarize: { input in "Chart: \((input["title"] as? String) ?? "")" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     guard let chart = ChatChart.parse(input) else {
-                        throw NookError("Geen bruikbare data: geef series met points (label en value).")
+                        throw NookError("No usable data: provide series with points (label and value).")
                     }
                     onChart(chart)
-                    return "De grafiek \"\(chart.title)\" staat nu in de chat bij je antwoord. Beschrijf hem niet opnieuw punt voor punt."
+                    return "The chart \"\(chart.title)\" is now displayed in chat with your answer. Do not describe it again point by point."
                 }
             ),
             ToolSpec(
                 name: "compose_mail",
-                description: "Schrijft een complete e-mail en toont die als concept in de chat. De gebruiker kan hem daar aanpassen en met één klik versturen of in Mail openen. Gebruik dit ALTIJD als de gebruiker vraagt een mail te schrijven, op te stellen, te beantwoorden of door te sturen. Schrijf de hele mail in body, met aanhef en afsluiting, in de toon en taal die passen bij de ontvanger. Zoek het adres op in de context, op het scherm of met search_mail; ken je het niet, laat to dan leeg en zeg dat in je antwoord. Herhaal de mail niet in je antwoord: zeg in één zin wat je schreef.",
+                description: "Composes a complete email and displays it as a draft in chat. The user can review/edit it there and send with one click or open in Mail. ALWAYS use this when the user asks to write, draft, reply to, or forward an email. Write the entire email in body, including greeting and sign-off, in appropriate tone and language for the recipient. Look up the address in context, on screen, or using search_mail; if unknown, leave to empty and mention it in your answer. Do not repeat the email body in your answer: summarize what you wrote in one sentence.",
                 schema: [
                     "type": "object",
                     "properties": [
-                        "to": ["type": "string", "description": "E-mailadres(sen) van de ontvanger, gescheiden door komma's. Leeg als onbekend."],
-                        "cc": ["type": "string", "description": "CC-adressen, optioneel."],
-                        "subject": ["type": "string", "description": "Onderwerp. Bij een antwoord: \"Re: \" plus het oorspronkelijke onderwerp."],
-                        "body": ["type": "string", "description": "De volledige tekst van de mail, zonder onderwerpregel."]
+                        "to": ["type": "string", "description": "Recipient email address(es), comma-separated. Empty if unknown."],
+                        "cc": ["type": "string", "description": "CC email address(es), optional."],
+                        "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
+                        "body": ["type": "string", "description": "Full text of the email, excluding subject line."]
                     ],
                     "required": ["subject", "body"]
                 ],
                 kind: .read,
-                summarize: { input in "Mail: \((input["subject"] as? String) ?? "")" },
+                summarize: { input in "Email: \((input["subject"] as? String) ?? "")" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     let subject = ((input["subject"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let body = ((input["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !body.isEmpty else { throw NookError("De inhoud van de mail ontbreekt.") }
+                    guard !body.isEmpty else { throw NookError("The email body is missing.") }
                     let draft = MailDraft(
                         to: ((input["to"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
                         cc: ((input["cc"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
@@ -74,7 +74,7 @@ enum ChatTools {
                         body: body
                     )
                     onMail(draft)
-                    return "Het mailconcept staat in de chat. De gebruiker controleert het en verstuurt het zelf met de knop Versturen."
+                    return "The email draft is displayed in chat. The user will review it and send it using the Send button."
                 }
             )
         ]

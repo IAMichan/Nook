@@ -226,6 +226,18 @@ extension AppModel {
         history.refresh(minimumInterval: 0)
     }
 
+    /// Voegt een account toe dat met een API-sleutel inlogt. Mislukt het bewaren van de sleutel, dan verdwijnt het account weer.
+    func addAccount(_ kind: AgentKind, label: String, apiKey: String) async throws {
+        let profile = profiles.add(kind: kind, label: label)
+        do {
+            try await setAPIKey(apiKey, for: profile)
+        } catch {
+            profiles.remove(profile.id)
+            throw error
+        }
+        connect(profiles.profile(id: profile.id) ?? profile)
+    }
+
     /// Terug naar inloggen via de agent zelf. Een Claude-sleutel wordt uit de Keychain gehaald.
     func useCLILogin(_ profile: AgentProfile) {
         if profile.kind == .claude { profiles.setAPIKey("", for: profile) }

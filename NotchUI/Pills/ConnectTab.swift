@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Alles waar Nook uit put, in één blik: een tegel per koppeling. Klik een tegel voor de details;
-/// een amber stip betekent dat er iets op jou wacht.
+/// Everything Nook draws from at a glance: one tile per connection. Click a tile for details;
+/// an amber dot indicates an item waiting for your attention.
 struct ConnectTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -10,7 +10,7 @@ struct ConnectTab: View {
     private var screen: ScreenContext { app.screenContext }
 
     var body: some View {
-        // `revision` lezen zorgt dat de tab ververst als een koppeling nieuwe gegevens heeft.
+        // Reading `revision` ensures the tab updates whenever a connection has new data.
         let _ = app.connectors.revision
         let sources = app.connectors.sources.filter { $0.isActive || $0.status.state != .off }
         let selected = sources.first { $0.id == selectedID } ?? sources.first
@@ -39,7 +39,7 @@ struct ConnectTab: View {
         }
     }
 
-    /// Wat Nook nu op je schermen ziet.
+    /// What Nook currently sees on your screens.
     private var screenTile: some View {
         HStack(spacing: 10) {
             Image(systemName: "rectangle.on.rectangle")
@@ -181,7 +181,7 @@ private struct ConnectorTile: View {
     }
 }
 
-/// De details van één koppeling: de items, met een link als die er is, en vragen die je erover kunt stellen.
+/// Details for a connection: items with links if available, and prompt suggestions.
 private struct ConnectorDetail: View {
     let source: ContextSource
     let refresh: () -> Void
@@ -253,7 +253,7 @@ private struct ConnectorDetail: View {
         return tr("connect.atTime", NookDates.time(date))
     }
 
-    /// Een paar vragen die je met één klik kunt stellen.
+    /// Suggested questions you can ask with a single click.
     static func suggestions(for id: String) -> [String] {
         switch id {
         case "calendar": return [tr("connect.suggestion.calendar1"), tr("connect.suggestion.calendar2")]

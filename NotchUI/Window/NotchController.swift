@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// Beheert het notch-paneel: positie, klikken doorlaten buiten de vorm en sluiten bij een klik elders.
+/// Manages the notch panel: positioning, click-through outside shape, and dismissal on external clicks.
 @MainActor
 final class NotchController {
-    /// Het paneel is vast groot (ruim genoeg voor de grootste toestand); SwiftUI tekent de notch-vorm erin.
+    /// The panel has a fixed bounding size (accommodating the largest state); SwiftUI renders the notch shape within it.
     static let panelSize = CGSize(width: 940, height: 540)
 
     let viewModel = NotchViewModel()
@@ -17,8 +17,8 @@ final class NotchController {
 
     private var dragStart: (mouse: NSPoint, centerX: CGFloat, top: CGFloat)?
 
-    /// Notch op elk scherm: op de andere schermen staat een rustende kopie. De echte Nook springt
-    /// in rust mee naar het scherm waar je muis is, zodat je hem daar kunt openen.
+    /// Notch on every screen: the other screens show an idle copy. When idle, the real Nook moves
+    /// to the screen with the mouse, so you can open it there.
     private var mirrors: [String: (panel: NotchPanel, viewModel: NotchViewModel)] = [:]
     private weak var app: AppModel?
 
@@ -34,13 +34,13 @@ final class NotchController {
         )
     }
 
-    /// Het scherm dat bij de huidige geometrie hoort (voor de zichtbare ruimte onder de menubalk).
+    /// The screen corresponding to current geometry (for visible area below menu bar).
     private var visibleFrame: NSRect {
         NSScreen.screens.first { $0.frame == geometry.screenFrame }?.visibleFrame ?? geometry.screenFrame
     }
 
-    /// Midden en bovenrand van de vorm in schermcoördinaten. Vast in de notch; zwevend volgens de bewaarde positie,
-    /// binnen het scherm gehouden.
+    /// Center and top edge of the shape in screen coordinates. Anchored to notch, or floating at saved position
+    /// clamped within screen bounds.
     private func anchor(size: CGSize) -> (centerX: CGFloat, top: CGFloat) {
         let s = geometry.screenFrame
         guard geometry.isFloating else { return (s.midX, s.maxY) }
@@ -76,7 +76,7 @@ final class NotchController {
         refreshMirrors()
         installMonitors()
 
-        // Nieuwe maat? Dan opnieuw bepalen of de muis nog boven de vorm hangt.
+        // Size changed? Re-evaluate whether pointer is still hovering over shape.
         viewModel.$size
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -85,7 +85,7 @@ final class NotchController {
             }
             .store(in: &cancellables)
 
-        // Een kaart met tekstveld krijgt meteen de toetsenbordfocus, zodat je kunt typen zonder te klikken.
+        // A card with text input immediately requests keyboard focus so typing works without clicking.
         viewModel.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
@@ -94,7 +94,7 @@ final class NotchController {
             }
             .store(in: &cancellables)
 
-        // Ander scherm gekozen in de instellingen, of Nook in rust verbergen aan of uit.
+        // Screen changed in settings, or idle hide toggled.
         AppSettings.shared.$screenChoice
             .dropFirst()
             .receive(on: RunLoop.main)
@@ -130,7 +130,7 @@ final class NotchController {
         }
     }
 
-    // MARK: Toetsenbordfocus
+    // MARK: Keyboard focus
 
     private func stateChanged(_ state: NotchState) {
         guard let panel else { return }
@@ -145,18 +145,18 @@ final class NotchController {
             panel.ignoresMouseEvents = false
             panel.makeKey()
         } else if panel.isKeyWindow {
-            // Tijdens het nadenken blijft de focus staan: het volgende antwoord heeft weer een tekstveld.
+            // Focus is preserved during thinking: subsequent response provides a follow-up text field.
             if case .card(let card) = state, card.id == "thinking" { return }
-            // In de chat blijf je typen.
+            // In chat, keep typing focus.
             if state == .panel(.nook) || state == .panel(.chat) { return }
-            // Klaar met typen: geef de focus terug aan de app waar je mee bezig was.
+            // Finished typing: return focus to previously active application.
             panel.resignKey()
             previousApp?.activate(options: [])
             previousApp = nil
         }
     }
 
-    // MARK: Positie
+    // MARK: Position
 
     private func positionPanel() {
         guard let panel else { return }
@@ -173,8 +173,8 @@ final class NotchController {
         refreshMirrors()
     }
 
-    /// Zwevend: de vorm volgt de muis zolang je sleept, ook naar een ander aangesloten scherm.
-    /// Positie en scherm worden direct bewaard.
+    /// Floating: shape tracks mouse while dragging, also onto another connected screen.
+    /// Position and screen are saved immediately.
     private func dragMoved() {
         guard geometry.isFloating else { return }
         let mouse = NSEvent.mouseLocation
@@ -186,7 +186,7 @@ final class NotchController {
         let centerX = start.centerX + mouse.x - start.mouse.x
         let top = start.top + mouse.y - start.mouse.y
 
-        // Over de rand naar een ander scherm: Nook verhuist mee en onthoudt dat scherm.
+        // Dragged across the edge onto another screen: Nook moves along and remembers that screen.
         if let target = NotchGeometry.screenWithMouse(), target.frame != geometry.screenFrame {
             geometry = NotchGeometry.make(for: target, floating: true)
             viewModel.geometry = geometry
@@ -194,21 +194,21 @@ final class NotchController {
         }
 
         settings.floatOffsetX = Double(centerX - geometry.screenFrame.midX)
-        // Y loopt omlaag: sleep je naar beneden, dan wordt de afstand onder de menubalk groter.
+        // Y axis runs downward: dragging downward increases distance below menu bar.
         settings.floatOffsetY = max(0, Double(visibleFrame.maxY - top))
         positionPanel()
     }
 
-    /// "Volgt je muis" of notch op elk scherm: in rust springt Nook mee naar het scherm waar de muis is.
+    /// "Follows mouse" or notch on every screen: when idle, Nook moves to whichever screen contains the cursor.
     private func followMouseIfNeeded() {
         guard settings.screenChoice == "mouse" || showsOnAllScreens, viewModel.state.isResting, dragStart == nil,
               let screen = NotchGeometry.screenWithMouse(), screen.frame != geometry.screenFrame else { return }
         screenChanged()
     }
 
-    // MARK: Notch op elk scherm
+    // MARK: Notch on every screen
 
-    /// Zet een rustende notch op elk scherm behalve het scherm waar de echte Nook staat.
+    /// Puts an idle notch on every screen except the one the real Nook is on.
     private func refreshMirrors() {
         let wanted = showsOnAllScreens
             ? NSScreen.screens.filter { $0.frame != geometry.screenFrame }
@@ -237,7 +237,7 @@ final class NotchController {
             host.frame = NSRect(origin: .zero, size: Self.panelSize)
             panel.contentView = host
             placeMirror(panel, on: screen.frame)
-            // Alleen om naar te kijken: de muis gaat erdoorheen, de echte Nook komt naar dit scherm zodra je muis er is.
+            // Display only: clicks pass through; the real Nook moves to this screen as soon as the mouse is on it.
             panel.ignoresMouseEvents = true
             panel.orderFrontRegardless()
             mirrors[key] = (panel, mirrorModel)
@@ -252,19 +252,19 @@ final class NotchController {
         )
     }
 
-    /// Houdt de kopieën gelijk aan de rusttoestand (muziek, verbergen in rust, agents).
+    /// Keeps the copies in sync with the idle state (music, hide when idle, agents).
     private func refreshMirrorContent() {
         for mirror in mirrors.values { mirror.viewModel.show(.idle) }
     }
 
-    /// De notch-vorm in schermcoördinaten (oorsprong linksonder).
+    /// Notch shape in screen coordinates (origin bottom-left).
     private func surfaceRect() -> NSRect {
         let size = viewModel.size
         let a = anchor(size: size)
         return NSRect(x: a.centerX - size.width / 2, y: a.top - size.height, width: size.width, height: size.height)
     }
 
-    // MARK: Muis
+    // MARK: Mouse
 
     private func installMonitors() {
         let moveMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
@@ -278,7 +278,7 @@ final class NotchController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             Task { @MainActor in self?.viewModel.clickedOutside() }
         }) { monitors.append(m) }
-        // Een klik in een ander venster van Nook zelf (Instellingen) is voor macOS geen globale klik.
+        // A click in another Nook window (Settings) is not treated as a global click by macOS.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             let window = event.windowNumber
             Task { @MainActor in

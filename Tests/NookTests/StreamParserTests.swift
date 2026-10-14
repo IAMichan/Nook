@@ -31,7 +31,7 @@ final class ClaudeStreamParserTests: XCTestCase {
         let line = #"{"type":"assistant","parent_tool_use_id":"toolu_parent","message":{"id":"m","content":[{"type":"text","text":"sub"},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/a"}}],"usage":{"input_tokens":1,"output_tokens":1}}}"#
         let events = ClaudeStreamParser.parse(line)
         XCTAssertEqual(events, [.toolUse(id: "t2", name: "Read", input: JSONBox(["file_path": "/a"]), nested: true)],
-                       "tekst en tokens van hulpagents tellen niet als eigen antwoord")
+                       "text and tokens from subagents do not count as top-level response")
     }
 
     func testToolResultStringAndBlocks() {
@@ -52,7 +52,7 @@ final class ClaudeStreamParserTests: XCTestCase {
         let line = #"""
         {"type":"result","subtype":"success","is_error":false,"duration_ms":4200,"num_turns":3,"result":"Klaar.","session_id":"abc","total_cost_usd":0.0421,"usage":{"input_tokens":12,"output_tokens":340,"cache_read_input_tokens":9000,"cache_creation_input_tokens":800},"modelUsage":{"claude-sonnet-4-5":{"inputTokens":12,"contextWindow":200000,"costUSD":0.04}},"permission_denials":[{"tool_name":"Bash"}]}
         """#
-        guard case .result(let result)? = ClaudeStreamParser.parse(line).first else { return XCTFail("geen result") }
+        guard case .result(let result)? = ClaudeStreamParser.parse(line).first else { return XCTFail("no result") }
         XCTAssertFalse(result.isError)
         XCTAssertEqual(result.text, "Klaar.")
         XCTAssertEqual(result.sessionID, "abc")
@@ -68,7 +68,7 @@ final class ClaudeStreamParserTests: XCTestCase {
 
     func testResultWithoutCostKeepsNil() {
         let line = #"{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"s"}"#
-        guard case .result(let result)? = ClaudeStreamParser.parse(line).first else { return XCTFail("geen result") }
+        guard case .result(let result)? = ClaudeStreamParser.parse(line).first else { return XCTFail("no result") }
         XCTAssertTrue(result.isError)
         XCTAssertNil(result.usage.reportedCostUSD)
         XCTAssertNil(result.usage.inputTokens)
@@ -81,12 +81,12 @@ final class ClaudeStreamParserTests: XCTestCase {
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"control_response","response":{}}"#), [])
     }
 
-    // MARK: Naar Claude Code
+    // MARK: Outgoing to Claude Code
 
     func testUserMessageShape() throws {
         let line = ClaudeStreamParser.userMessage("Hallo \"wereld\"\nregel 2")
         XCTAssertTrue(line.hasSuffix("\n"))
-        XCTAssertEqual(line.filter { $0 == "\n" }.count, 1, "precies één regel, ook met regeleinden in de tekst")
+        XCTAssertEqual(line.filter { $0 == "\n" }.count, 1, "exactly one line, even with embedded newlines in text")
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         XCTAssertEqual(object["type"] as? String, "user")
         let message = try XCTUnwrap(object["message"] as? [String: Any])
@@ -150,12 +150,12 @@ final class CodexStreamParserTests: XCTestCase {
 
     func testUsageSeparatesCache() {
         guard case .turnCompleted(let usage)? = CodexStreamParser.parse(#"{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":800,"output_tokens":50}}"#).first else {
-            return XCTFail("geen turn.completed")
+            return XCTFail("no turn.completed")
         }
-        XCTAssertEqual(usage.inputTokens, 200, "cache telt niet dubbel")
+        XCTAssertEqual(usage.inputTokens, 200, "cache is not double counted")
         XCTAssertEqual(usage.cacheReadTokens, 800)
         XCTAssertEqual(usage.outputTokens, 50)
-        XCTAssertNil(usage.reportedCostUSD, "Codex meldt geen kosten")
+        XCTAssertNil(usage.reportedCostUSD, "Codex does not report cost")
         XCTAssertNil(usage.contextWindow)
     }
 

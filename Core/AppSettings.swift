@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// De API-sleutel staat in de Keychain, nooit in een bestand.
+/// The API key is stored in the Keychain, never in a file.
 enum Keychain {
     static let service = "nl.imdigital.nook"
 
@@ -40,7 +40,7 @@ final class AppSettings: ObservableObject {
 
     private static let keyAccount = "anthropic-api-key"
 
-    /// Taal van de app-interface (Nederlands, English, Deutsch).
+    /// Language of the app interface (Nederlands, English, Deutsch).
     @Published var appLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(appLanguage.rawValue, forKey: "appLanguage")
@@ -48,7 +48,7 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Taal van Nooks antwoorden: een code uit `languages`, of "auto" (de taal van je vraag).
+    /// Language for Nook's responses: a code from `languages`, or "auto" (the language of your question).
     @Published var language: String {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
     }
@@ -58,26 +58,26 @@ final class AppSettings: ObservableObject {
         ("auto", "Taal van mijn vraag")
     ]
 
-    /// Zin voor in de prompt, bijvoorbeeld "Antwoord altijd in het Engels."
+    /// Prompt sentence, e.g. "Always respond in English."
     var languageInstruction: String {
-        if language == "auto" { return "Antwoord in de taal waarin de gebruiker schrijft." }
+        if language == "auto" { return "Respond in the language the user writes in." }
         let name = Self.languages.first { $0.code == language }?.name ?? "Nederlands"
-        return "Antwoord altijd in het \(name), ook als de gegevens of tools in een andere taal zijn."
+        return "Always respond in \(name), even if the data or tools are in a different language."
     }
 
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: "model") }
     }
-    /// Meedenken: Nook kijkt mee terwijl je werkt en biedt zelf hulp aan ("Zal ik dit voor je doen?"). Standaard uit.
+    /// Proactive assistance: Nook watches along while you work and offers suggestions ("Shall I do this for you?"). Off by default.
     @Published var autoWatch: Bool {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
     }
-    /// Kleine dingen waar jij om vraagt (muziek, volume, een app openen, een herinnering of open punt) meteen doen,
-    /// zonder eerst op Uitvoeren te drukken. Voorstellen uit Meedenken vragen altijd eerst. Standaard uit.
+    /// Immediately perform minor user requests (music, volume, opening an app, reminders, or open loops)
+    /// without pressing Run first. Proactive suggestions always ask first. Off by default.
     @Published var autoRunSafe: Bool {
         didSet { UserDefaults.standard.set(autoRunSafe, forKey: "autoRunSafe") }
     }
-    /// Gebruik een gratis lokaal model (ingebouwd, MLX) in plaats van de Claude API.
+    /// Use a free local model (built-in, MLX) instead of the Claude API.
     @Published var useLocal: Bool {
         didSet { UserDefaults.standard.set(useLocal, forKey: "useLocal") }
     }
@@ -86,17 +86,17 @@ final class AppSettings: ObservableObject {
     }
     @Published private(set) var hasAPIKey: Bool
 
-    /// Op welk scherm Nook staat: "auto" (scherm met notch, anders het hoofdscherm), "main", "mouse"
-    /// (volgt je muis) of de naam van een scherm.
+    /// Which display Nook is shown on: "auto" (display with notch, otherwise main display), "main", "mouse"
+    /// (follows mouse) or display name.
     @Published var screenChoice: String {
         didSet { UserDefaults.standard.set(screenChoice, forKey: "screenChoice") }
     }
-    /// Waar Nook staat: "notch" (vast in de notch bovenaan) of "floating" (een zwevend paneel dat je zelf versleept).
+    /// Where Nook is placed: "notch" (fixed at the top notch) or "floating" (draggable floating panel).
     @Published var placement: String {
         didSet { UserDefaults.standard.set(placement, forKey: "placement") }
     }
-    /// Positie van het zwevende paneel: afstand van het midden van het scherm (rechts is positief)
-    /// en afstand onder de menubalk. Wordt bewaard zodra je het paneel loslaat.
+    /// Position of the floating panel: offset from screen center (positive is right)
+    /// and distance below menu bar. Saved when panel is released.
     var floatOffsetX: Double {
         get { UserDefaults.standard.double(forKey: "floatOffsetX") }
         set { UserDefaults.standard.set(newValue, forKey: "floatOffsetX") }
@@ -105,58 +105,58 @@ final class AppSettings: ObservableObject {
         get { UserDefaults.standard.object(forKey: "floatOffsetY") as? Double ?? 8 }
         set { UserDefaults.standard.set(newValue, forKey: "floatOffsetY") }
     }
-    /// In de notch-stand: toon de notch op elk aangesloten scherm, niet alleen op het gekozen scherm.
+    /// Notch placement: show the notch on every connected screen, not just the chosen one.
     @Published var notchOnAllScreens: Bool {
         didSet { UserDefaults.standard.set(notchOnAllScreens, forKey: "notchOnAllScreens") }
     }
-    /// In rust alleen de notch zelf: Nook verschijnt pas als er iets is of als je erop wijst.
+    /// When idle, only the notch itself: Nook appears when hovered or when activity occurs.
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
     }
-    /// Een kort geluid als een agent op je wacht of klaar is.
+    /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
     }
-    /// Antwoorden voorlezen als je met je stem iets vroeg.
+    /// Read responses aloud when asked by voice.
     @Published var speakAnswers: Bool {
         didSet { UserDefaults.standard.set(speakAnswers, forKey: "speakAnswers") }
     }
-    /// Luisteren naar "Hé Nook" (alleen op je Mac).
+    /// Listen for "Hey Nook" wake word (local on Mac only).
     @Published var wakeWord: Bool {
         didSet { UserDefaults.standard.set(wakeWord, forKey: "wakeWord") }
     }
 
-    /// Met welke aanbieder Nook denkt als hij niet het ingebouwde model gebruikt.
+    /// Provider Nook uses for reasoning when not using the built-in model.
     @Published var provider: AIProvider {
         didSet {
             UserDefaults.standard.set(provider.rawValue, forKey: "provider")
             refreshProviderKey()
         }
     }
-    /// Model per aanbieder (voor Claude is dat `model`).
+    /// Model per provider (for Claude, `model` is used).
     @Published var providerModels: [String: String] {
         didSet { UserDefaults.standard.set(providerModels, forKey: "providerModels") }
     }
     @Published private(set) var hasProviderKey = false
 
-    /// Mag Claude op het web zoeken (Anthropic's eigen zoektool)? Alleen bij Claude.
+    /// Allow Claude to search the web (Anthropic native search tool). Claude only.
     @Published var webSearch: Bool {
         didSet { UserDefaults.standard.set(webSearch, forKey: "webSearch") }
     }
-    /// Houd de tekst van al je vensters op al je schermen live bij (lokaal), zodat elke vraag die context heeft.
+    /// Keep window text across all displays updated live (locally), providing context for queries.
     @Published var liveScreen: Bool {
         didSet { UserDefaults.standard.set(liveScreen, forKey: "liveScreen") }
     }
-    /// Stuur bij elke vraag mee wat er op je schermen staat (niet alleen als je "dit" of "hier" zegt).
+    /// Include display contents with every query (not only when saying "this" or "here").
     @Published var screenWithEveryQuestion: Bool {
         didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
     }
-    /// De welkomststappen zijn doorlopen.
+    /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
     }
 
-    /// Kan Nook nadenken? Met een lokaal model of een server op je Mac is een API-sleutel niet nodig.
+    /// Whether Nook can reason. Local models or local server backends do not require an API key.
     var brainReady: Bool {
         if useLocal { return !localModel.isEmpty }
         switch provider {
@@ -167,7 +167,7 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Het model dat bij de gekozen aanbieder hoort.
+    /// Model selected for the active provider.
     var activeProviderModel: String {
         provider == .claude ? model : (providerModels[provider.rawValue] ?? provider.defaultModel)
     }
@@ -176,14 +176,14 @@ final class AppSettings: ObservableObject {
         if provider == .claude { model = id } else { providerModels[provider.rawValue] = id }
     }
 
-    /// Naam van wat er nu denkt, voor in meldingen.
+    /// Name of the current reasoning engine, for notifications.
     var activeModelName: String {
         if useLocal { return localModel.split(separator: "/").last.map(String.init) ?? localModel }
         let name = activeProviderModel
-        return provider == .claude ? name : "\(provider.title) · \(name.isEmpty ? "eerste model" : name)"
+        return provider == .claude ? name : "\(provider.title) · \(name.isEmpty ? "first model" : name)"
     }
 
-    /// Sleutel van de gekozen (niet-Claude) aanbieder.
+    /// Key for the selected provider.
     var providerKey: String? {
         provider == .claude ? apiKey : Keychain.read(provider.keyAccount)
     }
@@ -192,14 +192,14 @@ final class AppSettings: ObservableObject {
         hasProviderKey = provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
     }
 
-    /// Bewaart de sleutel voor een andere aanbieder dan Claude.
+    /// Saves the key for a provider other than Claude.
     @discardableResult
     func saveProviderKey(_ key: String, for provider: AIProvider) -> String? {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
         let status = Keychain.write(trimmed, account: provider.keyAccount)
         refreshProviderKey()
         objectWillChange.send()
-        return status == errSecSuccess ? nil : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
+        return status == errSecSuccess ? nil : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
     }
 
     func hasKey(for provider: AIProvider) -> Bool {
@@ -210,7 +210,7 @@ final class AppSettings: ObservableObject {
     var apiKey: String? { cachedKey }
 
     private init() {
-        // Haiku is veel sneller dan Sonnet en genoeg voor Nooks taken. Eenmalig overzetten als je nog op de oude standaard zat.
+        // Haiku is much faster than Sonnet and sufficient for Nook's tasks. One-time migration for users on the old default.
         let defaults = UserDefaults.standard
         if !defaults.bool(forKey: "modelDefaultFast") {
             defaults.set(true, forKey: "modelDefaultFast")
@@ -239,20 +239,20 @@ final class AppSettings: ObservableObject {
         webSearch = defaults.object(forKey: "webSearch") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
-        // Wie Nook al gebruikte (sleutel of model aanwezig), hoeft de welkomststappen niet meer te zien.
+        // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key
         hasAPIKey = !(key ?? "").isEmpty
-        // Lokale waarden: `self` mag hier nog niet gelezen worden, want nog niet alles is ingesteld.
+        // Local values: `self` cannot be read yet, as initialization is in progress.
         onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
             || !(defaults.string(forKey: "localModel") ?? "").isEmpty
         refreshProviderKey()
     }
 
-    /// Bewaart de sleutel. De sleutel werkt in elk geval deze sessie; `keychainError` is gevuld als de Keychain weigerde.
+    /// Saves the key. Active for at least this session; `keychainError` is set if Keychain failed.
     @discardableResult
     func saveAPIKey(_ key: String) -> (keychainError: String?, looksValid: Bool) {
-        // Plakken geeft vaak spaties, regeleinden of aanhalingstekens mee.
+        // Pasting often includes whitespace, newlines, or quotes.
         let trimmed = key
             .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
         let status = Keychain.write(trimmed, account: Self.keyAccount)
@@ -260,11 +260,11 @@ final class AppSettings: ObservableObject {
         hasAPIKey = !trimmed.isEmpty
         refreshProviderKey()
         let error: String? = status == errSecSuccess ? nil
-            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
+            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
         return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))
     }
 
-    /// Alleen het einde van de sleutel, om te controleren welke er is opgeslagen.
+    /// Only the tail of the key, to verify which key is saved.
     var maskedKey: String? {
         guard let key = cachedKey, key.count > 12 else { return nil }
         return "\(key.prefix(7))…\(key.suffix(4))"

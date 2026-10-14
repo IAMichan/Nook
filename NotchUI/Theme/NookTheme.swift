@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension Color {
-    /// Maakt een kleur uit een hex-waarde, bijvoorbeeld `Color(hex: 0x8B7BFF)`.
+    /// Creates a color from a hex integer, e.g. `Color(hex: 0x8B7BFF)`.
     init(hex: UInt32, opacity: Double = 1) {
         let r = Double((hex >> 16) & 0xFF) / 255
         let g = Double((hex >> 8) & 0xFF) / 255
@@ -10,10 +10,10 @@ extension Color {
     }
 }
 
-/// Huisstijl van Nook. Kleur betekent altijd een toestand:
-/// iris = Nook zelf, mint = luistert of klaar, amber = wacht op jou, koraal = fout.
+/// Nook design system. Color consistently represents state:
+/// iris = Nook itself, mint = listening or done, amber = waiting on you, coral = error.
 enum NookTheme {
-    // Kleuren
+    // Colors
     static let notch = Color.black
     static let graphite = Color(hex: 0x16161B)
     static let smoke = Color(hex: 0x22222A)
@@ -35,7 +35,7 @@ enum NookTheme {
     static let mintSoft = Color(hex: 0x5FE3B0)
     static let music = Color(hex: 0xFF8A5B)
 
-    // Lettertypen: SF Pro voor tekst, SF Mono voor code en paden.
+    // Typography: SF Pro for text, SF Mono for code and paths.
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight)
     }
@@ -44,15 +44,15 @@ enum NookTheme {
         .system(size: size, weight: weight, design: .monospaced)
     }
 
-    // Beweging. Openen veert een heel klein beetje door; sluiten is rustig en zonder stuiter.
+    // Animation. Opening has a subtle overshoot; closing is smooth without bounce.
     static let open = Animation.spring(duration: 0.42, bounce: 0.25)
     static let close = Animation.spring(duration: 0.3, bounce: 0)
-    /// Wisselen binnen hetzelfde paneel (tabs): kleiner, strakker.
+    /// Tab switching within the same panel: tighter and snappier.
     static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
     static let spring = open
 }
 
-/// Inhoud van de notch: komt iets later binnen dan de vorm (scherp, dan zacht), en verdwijnt snel.
+/// Notch content: appears slightly after the shape (snappy fade-in) and dismisses quickly.
 private struct NotchContentFade: ViewModifier {
     var amount: CGFloat   // 1 = weg, 0 = zichtbaar
     func body(content: Content) -> some View {

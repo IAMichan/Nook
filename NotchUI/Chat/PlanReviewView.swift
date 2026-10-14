@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Wat Nook wil doen, stap voor stap, met alle details: waarheen, met welke inhoud, wat er verandert. Je kunt stappen
-/// uitzetten, tekst aanpassen, en pas na Uitvoeren gebeurt er iets. Lukt een stap niet, dan zie je precies welke wel
-/// en niet, en ga je veilig verder: wat al gelukt is, gebeurt niet nog een keer.
+/// What Nook plans to do, step by step, with full details: target, content, and expected changes. Steps can be
+/// toggled off and text adjusted before execution. If a step fails, you see exactly what succeeded and what failed,
+/// allowing you to resume safely without repeating completed actions.
 struct PlanReview: View {
     let message: ChatMessage
     @EnvironmentObject private var app: AppModel
@@ -15,7 +15,7 @@ struct PlanReview: View {
     private func included(_ index: Int) -> Bool { message.actionIncluded[safe: index] ?? true }
     private func problems(_ index: Int) -> [String] { message.actionProblems[safe: index] ?? [] }
 
-    /// Er valt nog iets te doen: wachtend, of na een fout.
+    /// Action remains to be taken: pending or following an error.
     private var open: Bool {
         switch message.planState {
         case .pending, .failed: return true
@@ -52,7 +52,7 @@ struct PlanReview: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(NookTheme.line2, lineWidth: 1))
     }
 
-    // MARK: Eén stap
+    // MARK: Single step
 
     @ViewBuilder
     private func stepView(_ index: Int, _ step: PlanStep) -> some View {
@@ -94,7 +94,7 @@ struct PlanReview: View {
         }
     }
 
-    /// Vinkje om de stap aan of uit te zetten zolang er nog niets gebeurde; daarna de uitkomst.
+    /// Checkbox to toggle the step before execution; shows the outcome afterwards.
     @ViewBuilder
     private func marker(_ index: Int, _ step: PlanStep) -> some View {
         switch state(index) {
@@ -143,7 +143,7 @@ struct PlanReview: View {
         }
     }
 
-    /// Alle velden van de stap, volledig. Tekstvelden zijn aan te passen zolang de stap nog niet gelukt is.
+    /// All step fields in full. Text fields are editable until the step has succeeded.
     @ViewBuilder
     private func details(_ index: Int) -> some View {
         let action = message.actions[index]
@@ -188,7 +188,7 @@ struct PlanReview: View {
         }
     }
 
-    // MARK: Knoppen
+    // MARK: Controls
 
     @ViewBuilder
     private var controls: some View {

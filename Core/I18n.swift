@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Ondersteunde talen voor de app-interface.
+/// Supported languages for the app interface.
 public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case nl = "nl"
     case en = "en"
@@ -18,8 +18,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Centrale vertaalbeheerder voor Nook.
-/// Ondersteunt directe vertaalsleutels en dynamisch wisselen van taal zonder herstart.
+/// Central translation manager for Nook.
+/// Supports direct translation keys and dynamic language switching without restart.
 public final class I18n: ObservableObject, @unchecked Sendable {
     public static let shared = I18n()
 
@@ -80,7 +80,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
     }
 }
 
-/// Vertaalt een sleutel naar de actieve taal.
+/// Translates a key to the active language.
 public func tr(_ key: String, _ args: CVarArg...) -> String {
     let lang = I18n.shared.currentLanguage
     let format = I18n.lookup(key, for: lang)
@@ -90,11 +90,11 @@ public func tr(_ key: String, _ args: CVarArg...) -> String {
     return String(format: format, locale: Locale(identifier: lang.rawValue), arguments: args)
 }
 
-// MARK: - Vertalingen (NL, EN, DE)
+// MARK: - Translations (NL, EN, DE)
 
 private let translations: [AppLanguage: [String: String]] = [
     .nl: [
-        // MARK: Menubalk & Algemeen
+        // MARK: Menu Bar & General
         "menu.talk": "Praat met Nook   ⌥ spatie",
         "menu.screen": "Kijk mee met mijn scherm   ⌥⌘N",
         "menu.weekRecap": "Weekoverzicht",
@@ -113,7 +113,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "tab.music": "Muziek",
         "tab.shelf": "Shelf",
 
-        // MARK: Knoppen & Acties
+        // MARK: Buttons & Actions
         "button.talk": "Praat met Nook",
         "button.settings": "Instellingen",
         "button.close": "Sluiten",
@@ -161,7 +161,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "button.pasteClipboard": "Plak uit klembord",
         "button.openAutomation": "Open Automatisering",
 
-        // MARK: Begroeting & Startpagina
+        // MARK: Greeting & Home
         "greeting.night": "Goedenacht",
         "greeting.morning": "Goedemorgen",
         "greeting.afternoon": "Goedemiddag",
@@ -190,7 +190,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.writeMail": "Schrijf een mail",
         "home.inputPrompt": "Vraag Nook iets…",
 
-        // MARK: Chat & Kaarten
+        // MARK: Chat & Cards
         "chat.emptyTitle": "Waar kan ik je mee helpen?",
         "chat.emptySubtitle": "Stel een vraag, vraag om een conceptmail, analyseer je dag of bedien je Mac.",
         "chat.followupPrompt": "Vraag door of reageer…",
@@ -250,7 +250,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.choices.choose": "Kies iets",
         "chat.choices.sendCount": "Verstuur (%d)",
 
-        // MARK: Muziek
+        // MARK: Music
         "music.deniedTitle": "Nook mag Spotify niet bedienen",
         "music.deniedDetail": "Zet Nook aan onder Systeeminstellingen › Privacy en beveiliging › Automatisering.",
         "music.nothingPlayingTitle": "Er speelt nu niets",
@@ -346,7 +346,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.status.connected": "Verbonden",
         "connect.refresh": "Ververs",
 
-        // MARK: Instellingen - Zijbalk
+        // MARK: Settings - Sidebar
         "settings.section.general": "Overzicht",
         "settings.section.general.sub": "Wat werkt er al, en wat nog niet",
         "settings.section.brain": "Brein",
@@ -362,7 +362,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy": "Privacy en toegang",
         "settings.section.privacy.sub": "Machtigingen en wat er je Mac verlaat",
 
-        // MARK: Instellingen - Overzicht
+        // MARK: Settings - Overview
         "settings.overview.readyToUse": "Klaar om te gebruiken",
         "settings.overview.countOf": "%d van %d",
         "settings.overview.howToUse": "Zo gebruik je Nook",
@@ -402,7 +402,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.checklist.connectors": "Koppel je diensten",
         "settings.checklist.connectors.detail": "%d bronnen actief. Mail, browser, GitHub, Stripe…",
 
-        // MARK: Instellingen - Brein
+        // MARK: Settings - Brain
         "settings.brain.thinksWith": "Nook denkt met",
         "settings.brain.claude": "Claude",
         "settings.brain.otherAI": "Andere AI",
@@ -423,7 +423,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.keySaved": "Sleutel bewaard in de Keychain.",
         "settings.brain.keyRemoved": "Sleutel verwijderd.",
 
-        // MARK: Instellingen - Assistent
+        // MARK: Settings - Assistant
         "settings.assistant.whatNookSees": "Wat Nook ziet",
         "settings.assistant.trackAllScreens": "Houd al mijn schermen bij",
         "settings.assistant.trackAllScreensDetail": "Nook leest de tekst van al je vensters op al je schermen, op je Mac. Daardoor is een antwoord direct klaar.",
@@ -441,7 +441,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.autoRunSafe": "Kleine dingen meteen doen",
         "settings.assistant.autoRunSafeDetail": "Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.",
 
-        // MARK: Instellingen - Koppelingen
+        // MARK: Settings - Integrations
         "settings.connections.onYourMac": "Op je Mac",
         "settings.connections.services": "Diensten",
         "settings.connections.crypto": "Crypto-portfolio",
@@ -454,7 +454,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.clipboardDetail": "Wat je net kopieerde. Wachtwoorden worden altijd overgeslagen.",
         "settings.connections.givePermission": "Geef toegang bij Privacy en toegang",
 
-        // MARK: Instellingen - Agents & Stem
+        // MARK: Settings - Agents & Voice
         "settings.agents.accounts": "Accounts",
         "settings.agents.accountsFooter": "Eén klik koppelt alles voor dat account. Staat de agent nog niet op je Mac of ben je niet ingelogd, dan opent Nook Terminal om te installeren en in te loggen. Van elk bestand dat Nook aanpast, komt eerst een backup.",
         "settings.agents.linkAgents": "Koppel je agents",
@@ -470,7 +470,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.voice.agentSound": "Geluid als een agent op je wacht of klaar is",
         "settings.voice.customSounds": "Eigen geluiden",
 
-        // MARK: Instellingen - Privacy
+        // MARK: Settings - Privacy
         "settings.privacy.permissions": "Machtigingen",
         "settings.privacy.screenReading": "Scherm lezen",
         "settings.privacy.screenReadingDetail": "Alle vensters op al je schermen",
@@ -493,7 +493,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.privacy.forgetScreenText": "Vergeet wat Nook nu zag",
         "settings.privacy.screenTextForgotten": "Schermtekst vergeten.",
 
-        // MARK: Notificaties & Kaarten
+        // MARK: Notifications & Cards
         "card.welcome.context": "Welkom bij Nook",
         "card.welcome.title": "Ik ben je assistent. Ik zie je schermen en ken je agenda, dus vraag me gewoon alles.",
         "card.welcome.step1": "1 · brein",
@@ -514,7 +514,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "card.error.context": "Dat lukte niet",
         "card.error.micPermission": "Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeeminstellingen › Privacy en beveiliging.",
 
-        // MARK: Aanvullende sleutels
+        // MARK: Additional keys
         "scene.idle": "Rust",
         "scene.music": "Muziek",
         "scene.suggestion": "Ziet je scherm",
@@ -585,8 +585,13 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.viewAccountUsage": "Gebruik, limieten en eerdere sessies van %@",
         "agents.viewUsage": "Bekijk gebruik en eerdere sessies",
         "agents.you": "Jij",
+        "agents.reply.continue": "Ga verder met deze sessie…",
+        "agents.reply.fork": "Stuur een bericht (start een kopie van de sessie)…",
+        "agents.reply.copy": "Typ een bericht (wordt gekopieerd naar de terminal)…",
+        "agents.reply.forkHint": "De sessie is nog bezig: je bericht opent een kopie van het gesprek in een nieuw Terminal-venster, zodat ze elkaar niet storen.",
+        "agents.reply.working": "%@ is bezig…",
 
-        // MARK: Aanvullende connector en instellingen sleutels
+        // MARK: Additional connector and settings keys
         "connect.field.apiKey": "API-sleutel",
         "connect.field.key": "Sleutel",
         "connect.field.token": "Token",
@@ -685,7 +690,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.changeNotice": "Dit verandert in %@. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.",
         "settings.agents.noChange": "Er verandert niets.",
 
-        // MARK: Agents: sessies en accounts
+        // MARK: Agents: sessions and accounts
         "agents.mode.sessions": "Sessies",
         "agents.untrackedHeader": "Draait zonder koppeling",
         "agents.mode.accounts": "Accounts",
@@ -829,7 +834,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "notbuilt.chat": "Sturen via een Discord-webhook of Telegram-bot als eigen bron. Telegram-berichten lezen kan met de bot (getUpdates); Discord lezen nog niet.",
     ],
     .en: [
-        // MARK: Menubalk & Algemeen
+        // MARK: Menu Bar & General
         "menu.talk": "Talk to Nook   ⌥ space",
         "menu.screen": "Look at my screen   ⌥⌘N",
         "menu.weekRecap": "Weekly recap",
@@ -848,7 +853,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "tab.music": "Music",
         "tab.shelf": "Shelf",
 
-        // MARK: Knoppen & Acties
+        // MARK: Buttons & Actions
         "button.talk": "Talk to Nook",
         "button.settings": "Settings",
         "button.close": "Close",
@@ -896,7 +901,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "button.pasteClipboard": "Paste from clipboard",
         "button.openAutomation": "Open Automation",
 
-        // MARK: Begroeting & Startpagina
+        // MARK: Greeting & Home
         "greeting.night": "Good night",
         "greeting.morning": "Good morning",
         "greeting.afternoon": "Good afternoon",
@@ -925,7 +930,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.writeMail": "Write an email",
         "home.inputPrompt": "Ask Nook anything…",
 
-        // MARK: Chat & Kaarten
+        // MARK: Chat & Cards
         "chat.emptyTitle": "How can I help you?",
         "chat.emptySubtitle": "Ask a question, request an email draft, analyze your day, or control your Mac.",
         "chat.followupPrompt": "Ask a follow-up or reply…",
@@ -985,7 +990,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.choices.choose": "Choose an option",
         "chat.choices.sendCount": "Send (%d)",
 
-        // MARK: Muziek
+        // MARK: Music
         "music.deniedTitle": "Nook cannot control Spotify",
         "music.deniedDetail": "Enable Nook under System Settings › Privacy & Security › Automation.",
         "music.nothingPlayingTitle": "Nothing playing right now",
@@ -1081,7 +1086,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.status.connected": "Connected",
         "connect.refresh": "Refresh",
 
-        // MARK: Instellingen - Zijbalk
+        // MARK: Settings - Sidebar
         "settings.section.general": "Overview",
         "settings.section.general.sub": "What works and what doesn't yet",
         "settings.section.brain": "Brain",
@@ -1097,7 +1102,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy": "Privacy and access",
         "settings.section.privacy.sub": "Permissions and what leaves your Mac",
 
-        // MARK: Instellingen - Overzicht
+        // MARK: Settings - Overview
         "settings.overview.readyToUse": "Ready to use",
         "settings.overview.countOf": "%d of %d",
         "settings.overview.howToUse": "How to use Nook",
@@ -1137,7 +1142,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.checklist.connectors": "Connect your services",
         "settings.checklist.connectors.detail": "%d sources active. Mail, browser, GitHub, Stripe…",
 
-        // MARK: Instellingen - Brein
+        // MARK: Settings - Brain
         "settings.brain.thinksWith": "Nook thinks with",
         "settings.brain.claude": "Claude",
         "settings.brain.otherAI": "Other AI",
@@ -1158,7 +1163,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.keySaved": "Key saved in Keychain.",
         "settings.brain.keyRemoved": "Key removed.",
 
-        // MARK: Instellingen - Assistent
+        // MARK: Settings - Assistant
         "settings.assistant.whatNookSees": "What Nook sees",
         "settings.assistant.trackAllScreens": "Track all my screens",
         "settings.assistant.trackAllScreensDetail": "Nook reads text from all windows across all screens, locally on your Mac. Replies are instantly ready.",
@@ -1176,7 +1181,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.autoRunSafe": "Perform small tasks immediately",
         "settings.assistant.autoRunSafeDetail": "Music, volume, an app, a reminder, or a to-do. Events, emails, links, commands, and services always ask first.",
 
-        // MARK: Instellingen - Koppelingen
+        // MARK: Settings - Integrations
         "settings.connections.onYourMac": "On your Mac",
         "settings.connections.services": "Services",
         "settings.connections.crypto": "Crypto portfolio",
@@ -1189,7 +1194,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.clipboardDetail": "What you just copied. Passwords are always skipped.",
         "settings.connections.givePermission": "Grant access in Privacy and access",
 
-        // MARK: Instellingen - Agents & Stem
+        // MARK: Settings - Agents & Voice
         "settings.agents.accounts": "Accounts",
         "settings.agents.accountsFooter": "One click connects everything for that account. If the agent isn't installed yet or you're not logged in, Nook opens Terminal. Every modified file gets backed up first.",
         "settings.agents.linkAgents": "Connect your agents",
@@ -1205,7 +1210,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.voice.agentSound": "Sound when an agent is waiting or finished",
         "settings.voice.customSounds": "Custom sounds",
 
-        // MARK: Instellingen - Privacy
+        // MARK: Settings - Privacy
         "settings.privacy.permissions": "Permissions",
         "settings.privacy.screenReading": "Screen recording",
         "settings.privacy.screenReadingDetail": "All windows on all your screens",
@@ -1228,7 +1233,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.privacy.forgetScreenText": "Forget what Nook just saw",
         "settings.privacy.screenTextForgotten": "Screen text forgotten.",
 
-        // MARK: Notificaties & Kaarten
+        // MARK: Notifications & Cards
         "card.welcome.context": "Welcome to Nook",
         "card.welcome.title": "I'm your assistant. I see your screens and know your calendar, so feel free to ask me anything.",
         "card.welcome.step1": "1 · brain",
@@ -1320,6 +1325,11 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.viewAccountUsage": "Usage, limits and past sessions of %@",
         "agents.viewUsage": "View usage and past sessions",
         "agents.you": "You",
+        "agents.reply.continue": "Continue this session…",
+        "agents.reply.fork": "Send a message (starts a copy of the session)…",
+        "agents.reply.copy": "Type a message (copied to the terminal)…",
+        "agents.reply.forkHint": "The session is still working: your message opens a copy of the conversation in a new Terminal window, so they don't interfere.",
+        "agents.reply.working": "%@ is working…",
 
         // MARK: Additional connector and settings keys
         "connect.field.apiKey": "API key",
@@ -1420,7 +1430,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.changeNotice": "This changes in %@. Your existing settings remain intact; a backup is created alongside the file.",
         "settings.agents.noChange": "No changes.",
 
-        // MARK: Agents: sessies en accounts
+        // MARK: Agents: sessions and accounts
         "agents.mode.sessions": "Sessions",
         "agents.untrackedHeader": "Running without link",
         "agents.mode.accounts": "Accounts",
@@ -1564,7 +1574,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "notbuilt.chat": "Send through a Discord webhook or Telegram bot as a custom source. Telegram messages can be read with the bot (getUpdates); Discord reading is not available yet.",
     ],
     .de: [
-        // MARK: Menubalk & Algemeen
+        // MARK: Menu Bar & General
         "menu.talk": "Mit Nook sprechen   ⌥ Leertaste",
         "menu.screen": "Auf meinen Bildschirm schauen   ⌥⌘N",
         "menu.weekRecap": "Wochenrückblick",
@@ -1583,7 +1593,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "tab.music": "Musik",
         "tab.shelf": "Ablage",
 
-        // MARK: Knoppen & Acties
+        // MARK: Buttons & Actions
         "button.talk": "Mit Nook sprechen",
         "button.settings": "Einstellungen",
         "button.close": "Schließen",
@@ -1631,7 +1641,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "button.pasteClipboard": "Aus Zwischenablage einfügen",
         "button.openAutomation": "Automation öffnen",
 
-        // MARK: Begroeting & Startpagina
+        // MARK: Greeting & Home
         "greeting.night": "Gute Nacht",
         "greeting.morning": "Guten Morgen",
         "greeting.afternoon": "Guten Tag",
@@ -1660,7 +1670,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.writeMail": "Schreibe eine E-Mail",
         "home.inputPrompt": "Frag Nook etwas…",
 
-        // MARK: Chat & Kaarten
+        // MARK: Chat & Cards
         "chat.emptyTitle": "Wie kann ich dir helfen?",
         "chat.emptySubtitle": "Stelle eine Frage, bitte um einen E-Mail-Entwurf, analysiere deinen Tag oder steuere deinen Mac.",
         "chat.followupPrompt": "Nachfragen oder antworten…",
@@ -1720,7 +1730,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.choices.choose": "Wähle eine Option",
         "chat.choices.sendCount": "Senden (%d)",
 
-        // MARK: Muziek
+        // MARK: Music
         "music.deniedTitle": "Nook darf Spotify nicht steuern",
         "music.deniedDetail": "Aktiviere Nook unter Systemeinstellungen › Datenschutz & Sicherheit › Automation.",
         "music.nothingPlayingTitle": "Es wird gerade nichts abgespielt",
@@ -1816,7 +1826,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.status.connected": "Verbunden",
         "connect.refresh": "Aktualisieren",
 
-        // MARK: Instellingen - Zijbalk
+        // MARK: Settings - Sidebar
         "settings.section.general": "Übersicht",
         "settings.section.general.sub": "Was bereits funktioniert und was noch nicht",
         "settings.section.brain": "Gehirn",
@@ -1832,7 +1842,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy": "Datenschutz und Zugriff",
         "settings.section.privacy.sub": "Berechtigungen und was deinen Mac verlässt",
 
-        // MARK: Instellingen - Overzicht
+        // MARK: Settings - Overview
         "settings.overview.readyToUse": "Einsatzbereit",
         "settings.overview.countOf": "%d von %d",
         "settings.overview.howToUse": "So nutzt du Nook",
@@ -1872,7 +1882,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.checklist.connectors": "Verbinde deine Dienste",
         "settings.checklist.connectors.detail": "%d Quellen aktiv. Mail, Browser, GitHub, Stripe…",
 
-        // MARK: Instellingen - Brein
+        // MARK: Settings - Brain
         "settings.brain.thinksWith": "Nook denkt mit",
         "settings.brain.claude": "Claude",
         "settings.brain.otherAI": "Andere KI",
@@ -1893,7 +1903,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.keySaved": "Schlüssel im Keychain gespeichert.",
         "settings.brain.keyRemoved": "Schlüssel entfernt.",
 
-        // MARK: Instellingen - Assistent
+        // MARK: Settings - Assistant
         "settings.assistant.whatNookSees": "Was Nook sieht",
         "settings.assistant.trackAllScreens": "Alle Bildschirme verfolgen",
         "settings.assistant.trackAllScreensDetail": "Nook liest Texte aller Fenster auf allen Bildschirmen lokal auf deinem Mac. Antworten sind sofort parat.",
@@ -1911,7 +1921,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.autoRunSafe": "Kleine Aufgaben sofort erledigen",
         "settings.assistant.autoRunSafeDetail": "Musik, Lautstärke, eine App, eine Erinnerung oder offener Punkt. Termine, E-Mails, Links, Befehle und Dienste fragen immer zuerst.",
 
-        // MARK: Instellingen - Koppelingen
+        // MARK: Settings - Integrations
         "settings.connections.onYourMac": "Auf deinem Mac",
         "settings.connections.services": "Dienste",
         "settings.connections.crypto": "Krypto-Portfolio",
@@ -1924,7 +1934,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.clipboardDetail": "Was du zuletzt kopiert hast. Passwörter werden immer übersprungen.",
         "settings.connections.givePermission": "Zugriff unter Datenschutz und Zugriff gewähren",
 
-        // MARK: Instellingen - Agents & Stem
+        // MARK: Settings - Agents & Voice
         "settings.agents.accounts": "Konten",
         "settings.agents.accountsFooter": "Ein Klick verbindet alles für dieses Konto. Ist der Agent noch nicht installiert oder bist du nicht angemeldet, öffnet Nook das Terminal. Für jede geänderte Datei wird zuerst ein Backup erstellt.",
         "settings.agents.linkAgents": "Agents verbinden",
@@ -1940,7 +1950,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.voice.agentSound": "Ton, wenn ein Agent wartet oder fertig ist",
         "settings.voice.customSounds": "Eigene Töne",
 
-        // MARK: Instellingen - Privacy
+        // MARK: Settings - Privacy
         "settings.privacy.permissions": "Berechtigungen",
         "settings.privacy.screenReading": "Bildschirmaufnahme",
         "settings.privacy.screenReadingDetail": "Alle Fenster auf allen Bildschirmen",
@@ -1963,7 +1973,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.privacy.forgetScreenText": "Vergessen, was Nook gerade gesehen hat",
         "settings.privacy.screenTextForgotten": "Bildschirmtext vergessen.",
 
-        // MARK: Notificaties & Kaarten
+        // MARK: Notifications & Cards
         "card.welcome.context": "Willkommen bei Nook",
         "card.welcome.title": "Ich bin dein Assistent. Ich sehe deine Bildschirme und kenne deinen Kalender, also frag mich einfach alles.",
         "card.welcome.step1": "1 · Gehirn",
@@ -1984,7 +1994,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "card.error.context": "Das hat nicht geklappt",
         "card.error.micPermission": "Nook darf noch nicht zuhören. Aktiviere Mikrofon und Spracherkennung unter Systemeinstellungen › Datenschutz & Sicherheit.",
 
-        // MARK: Zusätzliche Schlüssel
+        // MARK: Additional keys
         "scene.idle": "Ruhe",
         "scene.music": "Musik",
         "scene.suggestion": "Bildschirm im Blick",
@@ -2056,7 +2066,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.viewUsage": "Nutzung und frühere Sitzungen ansehen",
         "agents.you": "Du",
 
-        // MARK: Zusätzliche Connector- und Einstellungsschlüssel
+        // MARK: Additional connector and settings keys
         "connect.field.apiKey": "API-Schlüssel",
         "connect.field.key": "Schlüssel",
         "connect.field.token": "Token",
@@ -2155,7 +2165,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.changeNotice": "Dies ändert sich in %@. Deine eigenen Einstellungen bleiben erhalten; eine Sicherungskopie wird daneben angelegt.",
         "settings.agents.noChange": "Keine Änderungen.",
 
-        // MARK: Agents: sessies en accounts
+        // MARK: Agents: sessions and accounts
         "agents.mode.sessions": "Sitzungen",
         "agents.untrackedHeader": "Läuft ohne Verbindung",
         "agents.mode.accounts": "Konten",

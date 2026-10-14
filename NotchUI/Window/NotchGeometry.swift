@@ -1,13 +1,13 @@
 import AppKit
 
-/// De maten van de notch op één scherm. Macs zonder notch krijgen een gesimuleerde notch
-/// onder de menubalk, zodat Nook overal hetzelfde werkt.
+/// Notch dimensions on a single screen. Macs without a physical notch use a simulated notch
+/// below the menu bar, keeping Nook's behavior uniform across all Macs.
 struct NotchGeometry: Equatable {
     var screenFrame: CGRect
     var hasNotch: Bool
     var notchWidth: CGFloat
     var notchHeight: CGFloat
-    /// Zwevend paneel in plaats van in de notch: geen notch, ruimte voor een eigen positie.
+    /// Floating panel instead of anchored to notch: no physical notch, allows custom positioning.
     var isFloating = false
 
     static let placeholder = NotchGeometry(
@@ -32,8 +32,8 @@ struct NotchGeometry: Equatable {
         return NotchGeometry(screenFrame: frame, hasNotch: false, notchWidth: 180, notchHeight: menuBar)
     }
 
-    /// Kiest het scherm volgens de instelling: "auto" (met notch, anders het hoofdscherm), "main",
-    /// "mouse" (waar de muis is) of de naam van een scherm. Is dat scherm er niet, dan geldt "auto".
+    /// Selects screen according to preference: "auto" (notched screen, otherwise main), "main",
+    /// "mouse" (where cursor is located), or screen name. Falls back to "auto" if screen not found.
     static func preferredScreen(choice: String = "auto") -> NSScreen {
         let screens = NSScreen.screens
         let primary = screens.first ?? NSScreen.main

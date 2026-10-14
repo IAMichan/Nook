@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Een blok uit een antwoord in Markdown.
+/// A block within a Markdown answer.
 enum MarkdownBlock {
     case heading(level: Int, text: String)
     case paragraph(String)
@@ -11,7 +11,7 @@ enum MarkdownBlock {
     case table(header: [String], rows: [[String]])
     case rule
 
-    /// Ruimt rommel op die modellen soms schrijven: losse backslashes (harde regeleinden), `<br>` en Windows-regeleinden.
+    /// Cleans up artifacts models sometimes output: trailing backslashes (hard breaks), `<br>`, and Windows line endings.
     static func clean(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: #"<br\s*/?>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
@@ -60,7 +60,7 @@ enum MarkdownBlock {
                 index += 1
                 continue
             }
-            // Codeblok
+            // Code block
             if trimmed.hasPrefix("```") {
                 flush()
                 var code: [String] = []
@@ -73,7 +73,7 @@ enum MarkdownBlock {
                 blocks.append(.code(code.joined(separator: "\n")))
                 continue
             }
-            // Kopje
+            // Heading
             if match(trimmed, #"^#{1,6}\s"#) {
                 flush()
                 let level = trimmed.prefix { $0 == "#" }.count
@@ -81,14 +81,14 @@ enum MarkdownBlock {
                 index += 1
                 continue
             }
-            // Lijn
+            // Horizontal rule
             if match(trimmed, #"^([-*_]\s*){3,}$"#) {
                 flush()
                 blocks.append(.rule)
                 index += 1
                 continue
             }
-            // Tabel: een kopregel met | en daaronder een scheidingsregel.
+            // Table: a header row with | followed by a divider row.
             if trimmed.contains("|"), index + 1 < lines.count,
                match(lines[index + 1].trimmingCharacters(in: .whitespaces), #"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$"#) {
                 flush()
@@ -104,7 +104,7 @@ enum MarkdownBlock {
                 blocks.append(.table(header: header, rows: rows))
                 continue
             }
-            // Opsomming
+            // Bulleted list
             if match(line, bullet) {
                 flush()
                 var items: [String] = []
@@ -124,7 +124,7 @@ enum MarkdownBlock {
                 blocks.append(.bullets(items))
                 continue
             }
-            // Genummerde lijst
+            // Numbered list
             if match(line, number) {
                 flush()
                 var items: [(number: String, text: String)] = []
@@ -134,7 +134,7 @@ enum MarkdownBlock {
                     let text = current.replacingOccurrences(of: number, with: "", options: .regularExpression)
                     items.append((digits + ".", text))
                     index += 1
-                    // Een witregel tussen de punten hoort er nog bij.
+                    // Blank lines between list items are treated as part of the list.
                     if index + 1 < lines.count, lines[index].trimmingCharacters(in: .whitespaces).isEmpty, match(lines[index + 1], number) {
                         index += 1
                     }
@@ -142,7 +142,7 @@ enum MarkdownBlock {
                 blocks.append(.numbered(items))
                 continue
             }
-            // Citaat
+            // Blockquote
             if trimmed.hasPrefix(">") {
                 flush()
                 var quote: [String] = []
@@ -160,14 +160,14 @@ enum MarkdownBlock {
         return blocks
     }
 
-    /// Vet, schuin, code en links binnen een regel.
+    /// Bold, italic, code, and links within an inline span.
     static func inline(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 
-/// Toont een antwoord met kopjes, lijstjes, tabellen en codeblokken, in Nooks huisstijl.
+/// Renders an answer with headings, lists, tables, and code blocks, in Nook's visual style.
 struct MarkdownView: View {
     let text: String
     var size: CGFloat = 14

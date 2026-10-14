@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Welke weergave de werkruimte rechts toont.
+/// Active content view displayed in workspace main area.
 enum WorkspacePane: String, CaseIterable, Identifiable {
     case sessions, worktrees, usage
     var id: String { rawValue }
@@ -14,7 +14,7 @@ enum WorkspacePane: String, CaseIterable, Identifiable {
     }
 }
 
-/// De werkruimte: links projecten en sessies, in het midden de sessie, rechts de details.
+/// Workspace view: left sidebar (projects/sessions), center stage (session), right panel (inspector).
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -62,7 +62,7 @@ struct WorkspaceView: View {
         }
     }
 
-    /// De inspector hoort bij een sessie; bij Worktrees en Gebruik staat hij dicht.
+    /// Inspector accompanies session view; remains closed for Worktrees and Usage tabs.
     private var inspectorBinding: Binding<Bool> {
         Binding(
             get: { showInspector && pane == .sessions && workspace.selectedRunID != nil },
@@ -113,7 +113,7 @@ struct WorkspaceView: View {
             .labelStyle(.titleOnly)
             .frame(width: 300)
             .background {
-                // ⌘1, ⌘2, ⌘3 wisselen van weergave.
+                // ⌘1, ⌘2, ⌘3 switch views.
                 ForEach(Array(WorkspacePane.allCases.enumerated()), id: \.element) { index, item in
                     Button("") { pane = item }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
@@ -135,7 +135,7 @@ struct WorkspaceView: View {
     }
 }
 
-/// Snel het standaardaccount per agent wisselen. Lopende en eerdere sessies houden hun eigen account.
+/// Quickly switch default account per agent. Active and past sessions retain their configured account.
 struct DefaultAccountMenu: View {
     @EnvironmentObject private var app: AppModel
 
@@ -164,7 +164,7 @@ struct DefaultAccountMenu: View {
     }
 }
 
-/// Hoe Nook een account noemt: de naam die je koos, of de organisatie, of "Persoonlijk".
+/// Display name for an account: custom label, organization name, or "Personal".
 enum AccountLabel {
     @MainActor
     static func name(_ profile: AgentProfile, app: AppModel) -> String {
@@ -174,7 +174,7 @@ enum AccountLabel {
         return tr("agents.personal")
     }
 
-    /// "Werk · michiel@… " of "Werk (niet ingelogd)".
+    /// "Work · user@… " or "Work (not logged in)".
     @MainActor
     static func line(_ profile: AgentProfile, app: AppModel) -> String {
         let name = name(profile, app: app)

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Het Nook-tabblad: de startpagina van Nook met je dagoverzicht, actieve koppelingen en suggesties.
+/// The Nook tab: Nook's home view with your daily overview, active connections, and suggestions.
 struct NookHomeTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -15,12 +15,12 @@ struct NookHomeTab: View {
                 .padding(.top, 10)
         }
         .onAppear {
-            // Even wachten tot het paneel de toetsenbordfocus heeft.
+            // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
     }
 
-    // MARK: De startpagina: je dag en context
+    // MARK: Home view: your day and context
 
     private var start: some View {
         let items = app.todayItems
@@ -77,7 +77,7 @@ struct NookHomeTab: View {
         .buttonStyle(.plain)
     }
 
-    /// In één regel waar Nook nu bij kan: zo weet je meteen dat je er alles aan kunt vragen.
+    /// A single line summarizing what Nook can access: clarifies what you can ask about.
     private var awareness: some View {
         let _ = app.connectors.revision
         var parts: [String] = []
@@ -99,7 +99,7 @@ struct NookHomeTab: View {
         }
     }
 
-    /// Vragen die je met één klik stelt; ze passen bij wat je nu doet (venster, afspraak, agents, moment van de dag).
+    /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
     private var suggestions: some View {
         SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
     }
@@ -154,7 +154,7 @@ struct NookHomeTab: View {
 
 typealias NookTab = NookHomeTab
 
-/// Het Chat-tabblad: je actieve gesprek met Nook.
+/// The Chat tab: your active conversation with Nook.
 struct NookChatTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -188,12 +188,12 @@ private struct NookChatView: View {
             }
         }
         .onAppear {
-            // Even wachten tot het paneel de toetsenbordfocus heeft.
+            // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
     }
 
-    // MARK: Zonder gesprek in chat: uitnodigende start
+    // MARK: Empty chat state: welcoming start
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -211,12 +211,12 @@ private struct NookChatView: View {
         }
     }
 
-    /// Vragen die je met één klik stelt; ze passen bij wat je nu doet (venster, afspraak, agents, moment van de dag).
+    /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
     private var suggestions: some View {
         SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
     }
 
-    // MARK: Het gesprek
+    // MARK: Conversation
 
     private var thread: some View {
         ZStack(alignment: .topTrailing) {
@@ -243,7 +243,7 @@ private struct NookChatView: View {
             }
 
             if let title = chat.active?.title {
-                // De Nook waar je in zit, en hoe je een nieuwe begint.
+                // The current Nook conversation and option to start a new one.
                 HStack(spacing: 6) {
                     Text(title)
                         .font(NookTheme.font(11.5, .medium))
@@ -260,17 +260,17 @@ private struct NookChatView: View {
         }
     }
 
-    /// Verandert zolang het antwoord binnenkomt, zodat de chat meescrollt.
+    /// Updates as streamed responses arrive, keeping the chat scrolled to bottom.
     private var scrollKey: String {
         guard let last = chat.messages.last else { return "" }
         return "\(last.id)-\(last.text.count)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)-\(last.retrieval.count)-\(last.references.count)"
     }
 
-    // MARK: Invoer
+    // MARK: Input
 
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Welke bronnen deze Nook mag gebruiken, wat er meegaat, en een bestand om mee te sturen.
+            // Allowed sources for this Nook, context payload, and optional file attachment.
             HStack(spacing: 8) {
                 ScopeMenu(chat: chat)
                 if let name = app.attachmentName {
@@ -328,7 +328,7 @@ private struct NookChatView: View {
     }
 }
 
-// MARK: Eén bericht
+// MARK: Single message
 
 private struct ChatMessageView: View {
     let message: ChatMessage
@@ -359,7 +359,7 @@ private struct ChatMessageView: View {
 
     private var nook: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Waar Nook keek en hoe dat ging: doorzocht, niets gevonden of mislukt.
+            // Where Nook looked and the outcome: searched, empty, or failed.
             RetrievalStrip(message: message)
 
             if message.isError {
@@ -405,7 +405,7 @@ private struct ChatMessageView: View {
                 PlanReview(message: message)
             }
 
-            // Wat Nook hierna voor je kan doen: één klik en hij gaat aan de slag.
+            // What Nook can do next: one click to execute.
             if !message.streaming && !message.offers.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(message.offers, id: \.self) { offer in
@@ -451,7 +451,7 @@ private struct ChatMessageView: View {
     }
 }
 
-/// Drie zachte puntjes terwijl Nook nadenkt, met wat hij nu doet.
+/// Three gentle dots while Nook is thinking, along with its current activity.
 private struct TypingIndicator: View {
     let status: String
 
@@ -479,10 +479,10 @@ private struct TypingIndicator: View {
     }
 }
 
-// MARK: Je Nooks
+// MARK: Your Nooks
 
-/// Al je Nooks onder elkaar: elk gesprek is een eigen Nook die aan één ding werkt. Bezig, wacht op jou of klaar
-/// zie je aan het stipje. Een nieuwe begin je bovenaan; rechtsklik om er een weg te halen.
+/// All your Nooks listed: each conversation is a dedicated Nook working on a specific task. Busy, waiting for you, or done
+/// is indicated by the dot. Start a new one at the top; right-click to delete.
 private struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -578,7 +578,7 @@ private struct NookRow: View {
     }
 }
 
-/// Bezig (paars, ademt), wacht op jou (amber), nieuw antwoord (mint) of rustig (grijs).
+/// Busy (purple, breathing), waiting for you (amber), new response (mint), or idle (gray).
 private struct StatusDot: View {
     let status: Conversation.Status
 
@@ -601,9 +601,9 @@ private struct StatusDot: View {
     }
 }
 
-// MARK: Hulpjes
+// MARK: Starters
 
-/// Vragen om mee te beginnen, als kleine knoppen naast elkaar.
+/// Suggested conversation starters as compact buttons.
 private struct SuggestionRow: View {
     let questions: [String]
     let ask: (String) -> Void

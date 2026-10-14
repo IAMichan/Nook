@@ -1,7 +1,7 @@
 import AppKit
 
-/// Haalt het venster naar voren waarin een agent draait: de app uit de hook (Terminal, iTerm, VS Code…),
-/// of anders de eerste bekende terminal die open staat.
+/// Brings forward the window in which an agent is running: the app from the hook (Terminal, iTerm, VS Code…),
+/// or otherwise the first known open terminal.
 enum TerminalLauncher {
     static let knownTerminals = [
         "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
@@ -9,14 +9,14 @@ enum TerminalLauncher {
         "com.todesktop.230313mzl4w4u92", "dev.zed.Zed"
     ]
 
-    /// Volgorde waarin Nook het probeert: eerst de app van de sessie, dan de bekende terminals.
+    /// Order in which Nook tries: first the session's app, then the known terminals.
     static func candidates(sessionBundleID: String?) -> [String] {
         let own = sessionBundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !own.isEmpty else { return knownTerminals }
         return [own] + knownTerminals.filter { $0 != own }
     }
 
-    /// Geeft false als er geen passende app open staat.
+    /// Returns false if no matching app is open.
     @MainActor
     @discardableResult
     static func activate(sessionBundleID: String?) -> Bool {
@@ -29,8 +29,8 @@ enum TerminalLauncher {
         return false
     }
 
-    /// Opent een nieuw Terminal-venster dat `command` uitvoert in `folder`, via je eigen shell (met je PATH, nvm enzovoort).
-    /// Een .command-bestand heeft geen extra toestemming nodig, anders dan AppleScript.
+    /// Opens a new Terminal window that runs `command` in `folder`, via your own shell (with your PATH, nvm, etc.).
+    /// A .command file does not require extra permissions, unlike AppleScript.
     static func run(command: String, in folder: String, name: String) throws {
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
         let script = """
@@ -43,16 +43,16 @@ enum TerminalLauncher {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).command")
         try script.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
-        guard NSWorkspace.shared.open(url) else { throw NookError("macOS weigerde het script te openen.") }
+        guard NSWorkspace.shared.open(url) else { throw NookError("macOS refused to open the script.") }
     }
 
-    /// Zet tekst tussen enkele aanhalingstekens voor de shell.
+    /// Quotes text with single quotes for the shell.
     static func shellQuote(_ text: String) -> String {
         if !text.isEmpty, text.allSatisfy({ $0.isLetter || $0.isNumber || "-_./:=@".contains($0) }) { return text }
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// "Terminal", "iTerm", "VS Code"… voor op een knop.
+    /// "Terminal", "iTerm", "VS Code"… for use on a button.
     static func name(for bundleID: String?) -> String {
         switch bundleID ?? "" {
         case "com.apple.Terminal": return "Terminal"

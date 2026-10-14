@@ -1,21 +1,21 @@
 import Foundation
 
-// De poort voor acties. Een tool-aanroep van het brein is alleen een voorstel; hier wordt hij gecontroleerd voordat
-// de gebruiker hem ziet, en opnieuw vlak voordat hij echt wordt uitgevoerd (het brein kan zich vergissen of door
-// tekst van derden op een dwaalspoor zijn gezet). Elke stap van een plan heeft een eigen toestand, zodat een plan dat
-// halverwege mislukt veilig verder kan zonder dat iets wat al gelukt is nog een keer gebeurt.
+// Action gateway. A tool call from the brain is merely a proposal; it is validated here before
+// the user sees it, and again right before it is actually executed (the brain can make mistakes or be misled
+// by third-party text). Each step in a plan maintains its own state, so a plan that
+// fails midway can safely resume without repeating completed steps.
 
-/// Hoe het met één stap van een plan gaat.
+/// The execution state of a single step in a plan.
 enum ActionStepState: Codable, Equatable {
     case pending
     case running
     case done(String)
     case failed(String)
-    /// Kwam niet aan de beurt omdat een eerdere stap faalde.
+    /// Was not reached because an earlier step failed.
     case notRun
-    /// Door de gebruiker uitgevinkt.
+    /// Unchecked by the user.
     case skipped
-    /// Precies deze actie is kort geleden al uitgevoerd; niet nog een keer zonder dat de gebruiker dat zegt.
+    /// This exact action was executed recently; will not repeat without explicit user confirmation.
     case duplicate(String)
 
     var isFinished: Bool {
@@ -25,7 +25,7 @@ enum ActionStepState: Codable, Equatable {
         }
     }
 
-    /// Mag (opnieuw) proberen.
+    /// Whether this step is eligible to run (or retry).
     var canRun: Bool {
         switch self {
         case .pending, .failed, .notRun: return true
@@ -34,7 +34,7 @@ enum ActionStepState: Codable, Equatable {
     }
 }
 
-/// Eén invulveld van een voorstel, voor het overzicht vóór Uitvoeren en om het aan te passen.
+/// A single input field for an action proposal, shown for review before execution and allowing edits.
 struct ActionField: Equatable, Identifiable {
     var key: String
     var label: String
@@ -45,18 +45,18 @@ struct ActionField: Equatable, Identifiable {
 }
 
 enum ActionGate {
-    /// Acties die je gerust twee keer doet: geen dubbelcontrole.
+    /// Actions safe to repeat without deduplication checks.
     static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url"]
-    /// Hoe lang een uitgevoerde actie als "al gedaan" telt.
+    /// Window duration within which an action is considered a duplicate.
     static let duplicateWindow: TimeInterval = 12 * 3600
 
-    // MARK: Controleren
+    // MARK: Validation
 
-    /// Maakt invoer netjes (spaties eraf, "12" wordt 12 bij een getal) zonder de betekenis te veranderen.
+    /// Normalizes input (trims whitespace, converts numeric strings like "12" to integers) without changing semantic meaning.
     static func normalized(_ input: [String: Any], schema: [String: Any]) -> [String: Any] {
         let properties = (schema["properties"] as? [String: [String: Any]]) ?? [:]
         var result: [String: Any] = [:]
-        // Velden die de tool niet kent, gaan eruit: die kan de tool niet gebruiken en de gebruiker kan ze niet zien.
+        // Strip unrecognized fields: the tool cannot use them and the user cannot inspect them.
         for (key, value) in input where properties.isEmpty || properties[key] != nil {
             let type = properties[key]?["type"] as? String
             switch (value, type) {
@@ -73,8 +73,8 @@ enum ActionGate {
         return result
     }
 
-    /// Wat er mis is met een voorstel; leeg = in orde. Kijkt naar het schema van de tool en naar velden met een
-    /// vaste betekenis (datums, links, mailadressen, repositories).
+    /// Problems with a proposed action; empty if valid. Validates against the tool's schema and fields with
+    /// fixed semantics (dates, URLs, email addresses, repositories).
     static func problems(tool: String, input: [String: Any], schema: [String: Any], parseDate: (String) -> Date?) -> [String] {
         var problems: [String] = []
         let properties = (schema["properties"] as? [String: [String: Any]]) ?? [:]
@@ -99,7 +99,7 @@ enum ActionGate {
                     problems.append("\(label(key, properties)) moet een van deze zijn: \(options.joined(separator: ", ")).")
                 }
             case "integer":
-                // Uit JSON komt een NSNumber; een heel getal is goed.
+                // JSON deserialization yields NSNumber; whole numbers are acceptable.
                 let whole = (value as? Int) != nil || (value as? NSNumber).map { $0.doubleValue == $0.doubleValue.rounded() } == true
                 if !whole { problems.append("\(label(key, properties)) moet een heel getal zijn.") }
             case "number":
@@ -113,7 +113,7 @@ enum ActionGate {
             }
         }
 
-        // Velden met een vaste betekenis.
+        // Fields with fixed semantics.
         var dates: [String: Date] = [:]
         for key in ["start", "end", "due", "from", "to", "date"] {
             guard let text = input[key] as? String, !text.isEmpty, properties[key]?["description"].map({ "\($0)".contains("ISO") }) ?? false else { continue }
@@ -138,7 +138,7 @@ enum ActionGate {
         return problems
     }
 
-    /// eigenaar/naam, zonder ".." of "." als deel: anders wijst het pad naar een ander deel van de API.
+    /// owner/name without "." or ".." components: prevents traversal to unrelated API paths.
     static func isRepository(_ text: String) -> Bool {
         guard text.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil else { return false }
         return !text.split(separator: "/").contains { $0 == "." || $0 == ".." }
@@ -161,10 +161,10 @@ enum ActionGate {
         return known[key] ?? key
     }
 
-    // MARK: Voor het overzicht
+    // MARK: Presentation fields
 
-    /// Alle invoer van een voorstel als velden, in de volgorde van het schema (verplichte eerst). Volledige tekst,
-    /// niet ingekort: wat er straks gebeurt, moet je vooraf helemaal kunnen lezen.
+    /// All input fields of a proposal, formatted in schema order (required fields first). Full text,
+    /// unabridged: the user must be able to review the entire payload before execution.
     static func fields(_ input: [String: Any], schema: [String: Any]) -> [ActionField] {
         let properties = (schema["properties"] as? [String: [String: Any]]) ?? [:]
         let required = (schema["required"] as? [String]) ?? []
@@ -203,9 +203,9 @@ enum ActionGate {
         return key.prefix(1).uppercased() + key.dropFirst()
     }
 
-    // MARK: Dubbel uitvoeren voorkomen
+    // MARK: Duplicate prevention
 
-    /// Vaste sleutel voor "precies deze actie": dezelfde tool met dezelfde invoer geeft dezelfde sleutel.
+    /// Deterministic identity key for an action: identical tool and input yield the same key.
     static func identity(tool: String, input: [String: Any]) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data()
         var hash: UInt64 = 0xcbf29ce484222325
@@ -217,8 +217,8 @@ enum ActionGate {
     }
 }
 
-/// Voert een goedgekeurd plan uit, stap voor stap. Wat al gelukt is, gebeurt nooit nog een keer; stopt bij de eerste
-/// fout (latere stappen kunnen ervan afhangen) en laat zien wat wel en niet gebeurde.
+/// Executes an approved plan step by step. Succeeded steps are never re-run; halts on the first
+/// failure (subsequent steps may depend on it) and tracks which steps succeeded or failed.
 @MainActor
 struct PlanRunner {
     struct Step {
@@ -226,15 +226,15 @@ struct PlanRunner {
         var input: [String: Any]
     }
 
-    /// Controle vlak voor uitvoeren (tool nog beschikbaar, invoer klopt, bron toegestaan). Leeg = in orde.
+    /// Pre-execution validation (tool available, valid input, source permitted). Empty if valid.
     var check: (Step) -> [String]
     var execute: (Step) async throws -> String
-    /// Wanneer deze actie al eens lukte (binnen het venster), anders nil.
+    /// Timestamp if this action succeeded previously within the duplicate window, otherwise nil.
     var executedBefore: (String) -> Date?
     var recordExecuted: (String, Step, String) -> Void
     var progress: ([ActionStepState]) -> Void = { _ in }
 
-    /// `include`: welke stappen de gebruiker aan liet staan. `force`: stappen die toch mogen, ook als ze dubbel lijken.
+    /// `include`: which steps the user kept enabled. `force`: steps permitted to run despite being duplicates.
     func run(_ steps: [Step], states initial: [ActionStepState], include: [Bool], force: Set<Int> = []) async -> [ActionStepState] {
         var states = initial.count == steps.count ? initial : Array(repeating: .pending, count: steps.count)
         var stopped = false
@@ -285,7 +285,7 @@ struct PlanRunner {
 }
 
 extension Array {
-    /// Het element op `index`, of nil als de lijst zo lang niet is.
+    /// Returns element at `index`, or nil if index is out of bounds.
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }

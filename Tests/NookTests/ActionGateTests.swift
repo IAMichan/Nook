@@ -3,8 +3,8 @@ import XCTest
 @testable import NookCore
 #endif
 
-/// Controle van voorstellen en het uitvoeren van plannen: validatie, dubbel uitvoeren, gedeeltelijk mislukken.
-/// De tools zijn nep; er gebeurt niets buiten de test.
+/// Suggestion verification and plan execution: validation, duplicate execution, partial failure.
+/// Mock tools are used; nothing executes outside the test.
 @MainActor
 final class ActionGateTests: XCTestCase {
     private let eventSchema: [String: Any] = [
@@ -71,7 +71,7 @@ final class ActionGateTests: XCTestCase {
     func testNormalizedTrimsAndCoerces() {
         let schema: [String: Any] = ["type": "object", "properties": ["number": ["type": "integer"], "title": ["type": "string"]]]
         let result = ActionGate.normalized(["number": "12", "title": "  Hallo \n", "extra": "x"], schema: schema)
-        XCTAssertNil(result["extra"], "Onbekende velden gaan eruit")
+        XCTAssertNil(result["extra"], "Unknown fields are stripped")
         XCTAssertEqual(result["number"] as? Int, 12)
         XCTAssertEqual(result["title"] as? String, "Hallo")
     }
@@ -80,7 +80,7 @@ final class ActionGateTests: XCTestCase {
         let body = String(repeating: "Lange tekst. ", count: 20)
         let fields = ActionGate.fields(["start": "2026-10-16T14:00:00+02:00", "title": "Koffie", "end": body], schema: eventSchema)
         XCTAssertEqual(fields.map(\.key), ["title", "start", "end"])
-        XCTAssertEqual(fields.last?.value, body, "Niets ingekort")
+        XCTAssertEqual(fields.last?.value, body, "Nothing truncated")
         XCTAssertTrue(fields.last?.multiline ?? false)
     }
 
@@ -92,7 +92,7 @@ final class ActionGateTests: XCTestCase {
         XCTAssertNotEqual(a, c)
     }
 
-    // MARK: Plannen uitvoeren
+    // MARK: Plan Execution
 
     private func steps(_ count: Int) -> [PlanRunner.Step] {
         (0..<count).map { PlanRunner.Step(tool: "create_reminder", input: ["title": "Taak \($0)"]) }
@@ -120,7 +120,7 @@ final class ActionGateTests: XCTestCase {
 
         failSecond = false
         let second = await runner.run(plan, states: first, include: [true, true, true])
-        XCTAssertEqual(executed, ["Taak 0", "Taak 1", "Taak 2"], "Taak 0 wordt niet opnieuw gemaakt")
+        XCTAssertEqual(executed, ["Taak 0", "Taak 1", "Taak 2"], "Task 0 is not recreated")
         XCTAssertEqual(second.map(\.isFinished), [true, true, true])
     }
 
@@ -139,7 +139,7 @@ final class ActionGateTests: XCTestCase {
         let runner = PlanRunner(check: { _ in [] }, execute: { _ in executed += 1; return "ok" },
                                 executedBefore: { _ in earlier }, recordExecuted: { _, _, _ in })
         let first = await runner.run(steps(1), states: [], include: [true])
-        guard case .duplicate = first[0] else { return XCTFail("Hoort als dubbel te staan") }
+        guard case .duplicate = first[0] else { return XCTFail("Expected duplicate status") }
         XCTAssertEqual(executed, 0)
         let forced = await runner.run(steps(1), states: first, include: [true], force: [0])
         XCTAssertEqual(forced, [.done("ok")])
@@ -162,6 +162,6 @@ final class ActionGateTests: XCTestCase {
         let states = await runner.run([PlanRunner.Step(tool: "send_to_source", input: [:]), PlanRunner.Step(tool: "create_reminder", input: [:])],
                                       states: [], include: [true, true])
         XCTAssertEqual(states, [.failed("Deze bron staat uit voor dit gesprek."), .notRun])
-        XCTAssertEqual(executed, 0, "Een tool-aanroep van het model wordt niet zomaar uitgevoerd")
+        XCTAssertEqual(executed, 0, "A model tool call is not blindly executed")
     }
 }

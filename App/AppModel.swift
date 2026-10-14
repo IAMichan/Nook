@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 import PDFKit
 import UniformTypeIdentifiers
 
-/// Knoopt alles aan elkaar: services, brein en notch. De UI praat alleen met dit object.
+/// Orchestrates services, brain, and notch UI. The UI interacts solely with this object.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -21,25 +21,25 @@ final class AppModel: ObservableObject {
     let recap = RecapStore()
     let speech = SpeechOutput()
     let wake = WakeWordService()
-    /// Wat er op al je schermen staat, live bijgehouden (lokaal).
+    /// Real-time on-screen content across all displays, indexed locally.
     let screenContext = ScreenContext()
-    /// Agenda, mail, browser, GitHub, Stripe…: alles waar Nook context uit haalt.
+    /// Calendar, mail, browser, GitHub, Stripe, etc.: context sources for Nook.
     let connectors = ConnectorHub()
     let codex = CodexUsage()
-    /// Eerdere sessies en tokengebruik van Claude Code en Codex, voor de Agents-tab.
+    /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.
     let history = AgentHistory()
-    /// Je accounts per agent (persoonlijk, werk…) en welke de standaard is.
+    /// Configured accounts per agent (personal, work, etc.) and active defaults.
     let profiles = AgentProfileStore()
-    /// Zoeken op het web en webpagina's lezen, voor elk brein.
+    /// Web search and webpage reading, available across all providers.
     let web = WebTools()
     let portfolio = PortfolioConnector()
-    /// Meedenken: wanneer Nook ongevraagd meekijkt en iets aanbiedt.
+    /// Proactive assistance: evaluates screen context and offers assistance when appropriate.
     let thinkAlong = ThinkAlong()
-    /// Het gesprek met Nook in de chat.
+    /// Conversation state and history in chat.
     let chat = NookChat()
-    /// Coding-agents die Nook zelf start en volgt, in hun eigen venster.
+    /// Coding agents spawned and tracked by Nook in dedicated terminal windows.
     let workspace = WorkspaceManager()
-    /// Welk onderdeel van Instellingen open staat.
+    /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .general
 
     private(set) lazy var tools: NookTools = {
@@ -53,31 +53,31 @@ final class AppModel: ObservableObject {
         return tools
     }()
 
-    /// Grafieken en mailconcepten: die komen in het bericht waar Nook nu aan schrijft.
+    /// Charts and mail drafts: attached to the message currently being streamed.
     private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
         onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
         onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
     )
 
-    /// Nooks eigen tools plus de lees-tools van alle koppelingen die aan staan.
+    /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
-        // Claude via de API zoekt met Anthropic's eigen zoektool; de rest (ook lokaal) met Nooks zoektool.
+        // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
         return tools.specs + chatTools + connectors.tools + webSpecs
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
-    /// Alles wat Nook kan, ook van koppelingen die nu uit staan: voor het overzicht bij Instellingen › Koppelingen.
+    /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
         tools.specs + chatTools + connectors.hubTools + connectors.sources.flatMap { $0.tools } + web.specs(includeSearch: true)
     }
 
-    /// Tools voor één vraag in de chat: alleen van bronnen die mogen, en elke lees-tool via het grootboek, zodat
-    /// zichtbaar is waar Nook keek, wat het opleverde en wat faalde.
+    /// Tools available for a chat prompt: scoped to permitted sources and tracked via ledger
+    /// to record what Nook inspected, returned, or failed.
     func scopedTools(_ scope: SourceScope, ledger: RetrievalLedger?) -> [ToolSpec] {
         allTools.filter { scope.allowsTool($0.name) }.map { spec in
-            // Alleen echte lees-tools van een bron; een grafiek of mailconcept tekenen is geen opzoeken (en mag nooit uit een cache komen).
+            // Read tools only; drawing a chart or drafting an email is not a retrieval tool (and never cached).
             guard spec.kind == .read, let ledger, SourceCatalog.source(forTool: spec.name) != nil else { return spec }
             let run = spec.run
             return ToolSpec(
@@ -91,9 +91,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
+    /// Mock demo content for UI preview without real credentials.
     @Published var demoMode = false
-    /// Hoe ver het koppelen van een agent-account is (één klik in de Agents-tab of bij Instellingen).
+    /// Integration progress for an agent profile (one-click setup in Agents tab or Settings).
     /// Per account (`AgentProfile.id`).
     @Published private(set) var agentConnect: [String: AgentConnectProgress] = [:]
     @Published private(set) var loops: [OpenLoop] = []
@@ -107,13 +107,13 @@ final class AppModel: ObservableObject {
     private var lastScreenHash: Int?
     private var lastAutoRun = Date.distantPast
     private var autoBusy = false
-    /// De vraag kwam via je stem: dan mag het antwoord ook hardop.
+    /// Prompt was spoken: enables spoken voice response.
     private var spokenRequest = false
-    /// Een bestand uit de Shelf waar je net een vraag over stelt.
+    /// File from Shelf attached as prompt context.
     private var attachment: (name: String, text: String, date: Date)? {
         didSet { attachmentName = attachment?.name }
     }
-    /// Voor het invoerveld: welk bestand er nu meegaat.
+    /// Attachment indicator for the input field: file currently included.
     @Published private(set) var attachmentName: String?
 
     private init() {
@@ -124,7 +124,7 @@ final class AppModel: ObservableObject {
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         profiles.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        // Komt er een account bij of gaat er een af, dan leest de geschiedenis meteen de juiste mappen.
+        // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
             guard let self else { return }
             self.history.profiles = all
@@ -132,7 +132,7 @@ final class AppModel: ObservableObject {
         }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        // Of er een Nook werkt (voor zijn gezicht en de notch in rust); de berichten zelf volgt de chat rechtstreeks.
+        // Tracks whether any conversation is active (for orb mood and idle notch state); chat handles messages directly.
         chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -152,7 +152,7 @@ final class AppModel: ObservableObject {
         reloadLoops()
         nowPlaying.start()
 
-        // Altijd de nieuwste versie van het hook-script, zodat bestaande koppelingen meegroeien.
+        // Always install newest hook script version so existing integrations stay up to date.
         try? HookScript.install()
         hub.recap = recap
         startWorkspace()
@@ -163,7 +163,7 @@ final class AppModel: ObservableObject {
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()
 
-        // Begint of stopt een agent, dan verandert wat de notch in rust laat zien.
+        // Agent start/stop events update the idle notch indicator.
         hub.$sessions
             .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" } }
             .removeDuplicates()
@@ -174,7 +174,7 @@ final class AppModel: ObservableObject {
             }
             .store(in: &bag)
 
-        // Wekwoord: alleen luisteren als je het aanzet, en even niet zolang Nook al luistert.
+        // Wake word: only listen when enabled, and pause while Nook is already listening.
         wake.onWake = { [weak self] in self?.toggleVoice() }
         settings.$wakeWord
             .receive(on: RunLoop.main)
@@ -187,7 +187,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] listening in if !listening { self?.updateWakeWord() } }
             .store(in: &bag)
 
-        // Muziek die begint of stopt, verandert wat de notch in rust laat zien.
+        // Music playback changes update the idle notch indicator.
         nowPlaying.$current
             .map { $0?.isPlaying == true }
             .removeDuplicates()
@@ -203,7 +203,7 @@ final class AppModel: ObservableObject {
             }
             .store(in: &bag)
 
-        // Een nieuw nummer: de notch zegt even wat er nu speelt.
+        // Track change: notch temporarily shows currently playing track.
         nowPlaying.$current
             .compactMap { $0 }
             .removeDuplicates { $0.title == $1.title && $0.artist == $1.artist && $0.app == $1.app }
@@ -218,7 +218,7 @@ final class AppModel: ObservableObject {
             HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
         ].compactMap { $0 }
 
-        // Koppelingen: lokaal (agenda, herinneringen, mail, browser, bestanden, klembord) en diensten met een sleutel.
+        // Connectors: local (calendar, reminders, mail, browser, files, clipboard) and authenticated services.
         connectors.register([
             CalendarConnector(calendar: calendar),
             RemindersConnector(calendar: calendar),
@@ -232,7 +232,7 @@ final class AppModel: ObservableObject {
         connectors.start()
         codex.start()
 
-        // Alle schermen live bijhouden, zodat elke vraag meteen weet wat je ziet.
+        // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
         settings.$liveScreen
             .removeDuplicates()
@@ -254,20 +254,20 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self?.refreshUpcoming() }
         }
 
-        // Meedenken: elke paar seconden kijken of je lang genoeg met iets bezig bent. Dat kost niets; het brein komt
-        // pas in actie als ThinkAlong het moment goed vindt.
+        // ThinkAlong: evaluates dwell time periodically. Zero cost; model is only
+        // invoked when ThinkAlong determines assistance is genuinely helpful.
         watchTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.thinkAlongTick() }
         }
     }
 
-    // MARK: Gegevens voor de UI
+    // MARK: Data for UI
 
     var agentSessions: [AgentSession] {
         demoMode ? DemoContent.agents : hub.sessions + hub.detected
     }
 
-    /// Gekoppelde agents die nu werken of op je wachten (niet alleen "draait als proces").
+    /// Connected agents actively working or awaiting approval/input.
     var activeAgents: [AgentSession] {
         agentSessions.filter { !$0.isDetected && ($0.status == .running || $0.status == .waiting || $0.approvalID != nil) }
     }
@@ -276,7 +276,7 @@ final class AppModel: ObservableObject {
         if demoMode { return DemoContent.today }
         var items: [TodayItem] = []
 
-        // Een aanbod van Nook waar je nog niet op reageerde.
+        // Proactive offer from Nook awaiting user reaction.
         if let missed = missedNudge, Date().timeIntervalSince(missed.date) < 45 * 60 {
             items.append(TodayItem(
                 id: "nudge-\(missed.card.id)",
@@ -313,7 +313,7 @@ final class AppModel: ObservableObject {
                 action: "Bereid voor",
                 color: NookTheme.iris,
                 target: .action { [weak self] in
-                    self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": wat moet ik weten en wat staat er op mijn schermen dat erbij hoort?")
+                    self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": what do I need to know and what on my screen is relevant?")
                 }
             ))
         }
@@ -356,10 +356,10 @@ final class AppModel: ObservableObject {
 
     private var settingsWindow: NSWindow?
 
-    /// Eigen venster: de Settings-scene opent niet betrouwbaar in een app zonder Dock-icoon.
+    /// Custom window: standard Settings scene does not open reliably in an accessory app.
     func openSettings(section: SettingsSection? = nil) {
         if let section { settingsSection = section }
-        // Het paneel hangt boven alle vensters: blijft het open, dan ligt het over Instellingen en vangt het de klikken.
+        // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView().environmentObject(self))
@@ -379,15 +379,15 @@ final class AppModel: ObservableObject {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    // MARK: Vragen aan Nook
+    // MARK: Asking Nook
 
     func handleUserText(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        // Korte vaste opdrachten doet Nook zelf, zonder brein: meteen klaar.
+        // Short deterministic commands handled locally without querying the brain: instant execution.
         if let intent = LocalIntent.parse(text) {
-            // In de chat blijft het gesprek staan: muziek en tijd beantwoordt Nook daar gewoon.
+            // In chat mode, keep the flow: music and time queries are replied to inline.
             if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
                 chat.append(ChatMessage(role: .nook, text: reply))
@@ -406,17 +406,17 @@ final class AppModel: ObservableObject {
 
     // MARK: Chat
 
-    /// Per Nook het bericht waar hij nu aan schrijft, en de taak die dat doet. Meerdere Nooks kunnen tegelijk werken.
+    /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.
     private var replies: [UUID: UUID] = [:]
     private var chatTasks: [UUID: Task<Void, Never>] = [:]
 
-    /// Opent de chat. `focus`: meteen kunnen typen.
+    /// Opens chat view. `focus`: activates text field for typing.
     func showChat(focus: Bool = true) {
         viewModel.focusChat = focus
         viewModel.show(.panel(.chat))
     }
 
-    /// Een nieuwe Nook. Een Nook die nog bezig is, werkt gewoon door.
+    /// Starts a new conversation. Any running background conversation continues.
     func newChat() {
         chat.startNew()
         attachment = nil
@@ -428,7 +428,7 @@ final class AppModel: ObservableObject {
         showChat()
     }
 
-    /// Stopt de Nook die je nu ziet.
+    /// Cancels generation for the active conversation.
     func stopChat() {
         guard let id = chat.activeID else { return }
         stop(conversation: id)
@@ -454,7 +454,7 @@ final class AppModel: ObservableObject {
         spokenRequest = false
     }
 
-    /// Grafieken en mailconcepten die tools tijdens het denken maken, komen bij het antwoord van de Nook die ze maakte.
+    /// Collects charts and mail drafts produced by tools for the conversation that spawned them.
     private func attachToReply(_ change: (inout ChatMessage) -> Void) {
         let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
         if let id = target, chat.message(id) != nil {
@@ -466,7 +466,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Stelt een vraag in de chat: het antwoord verschijnt terwijl het geschreven wordt.
+    /// Submits a query in chat: response streams in real-time.
     private func ask(_ text: String) {
         let conversation = chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
@@ -478,7 +478,7 @@ final class AppModel: ObservableObject {
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
-        // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
+        // If prompt originated from a card or voice, reveal chat. If user is already typing in chat, stay there.
         if viewModel.state != .panel(.chat) {
             warmUp()
             showChat()
@@ -493,11 +493,11 @@ final class AppModel: ObservableObject {
     }
 
     private func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
-        // Welke bronnen mogen: de bronkiezer van deze Nook, plus wat de vraag zelf zegt ("alleen mijn agenda en mail").
+        // Scope permitted sources: conversation scope plus query-level constraints ("only my calendar and mail").
         let requested = SourceScope.parse(text)
         let scope = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
 
-        // Een vraag over een bestand uit de Shelf, of over wat er op je schermen staat.
+        // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var context: String?
         let screenAllowed = scope.allows(SourceCatalog.screen)
@@ -512,7 +512,7 @@ final class AppModel: ObservableObject {
             do {
                 snapshot = try await screenSnapshot()
             } catch {
-                // Geen schermtoegang: gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
+                // Missing screen recording permission: reply without screen content unless explicitly requested.
                 if Self.refersToScreen(text) {
                     finishReply(id, error: error.localizedDescription, conversation: conversation)
                     return
@@ -526,7 +526,7 @@ final class AppModel: ObservableObject {
             sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
         }
 
-        // Alleen wat voor deze vraag relevant is gaat volledig mee; de rest als één regel.
+        // Only sources relevant to this query are included in full; others as one-line summaries.
         var activeIDs = Set(connectors.active.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
         let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
@@ -539,7 +539,7 @@ final class AppModel: ObservableObject {
             $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…"
         }
 
-        // Wat Nook opzoekt, verschijnt live boven het antwoord.
+        // Live retrieval steps appear above the streaming response.
         let ledger = RetrievalLedger()
         ledger.onChange = { [weak self, weak ledger] in
             guard let self, let ledger, self.replies[conversation] == id else { return }
@@ -557,11 +557,11 @@ final class AppModel: ObservableObject {
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
 
-        // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
+        // If asking for a chart, Nook renders it natively; raw code/JSON should not appear in chat.
         let wantsChart = ChartRescue.wantsChart(text)
         var request = text
         if retry {
-            request += "\n\n(Teken de grafiek nu echt met de tool show_chart, met echte cijfers uit de context, de tools of het web. Schrijf geen code, geen JSON en geen tabel als vervanging.)"
+            request += "\n\n(Render the chart now using the show_chart tool with real numbers from context, tools, or web. Do not write code, JSON, or a table as a substitute.)"
         }
 
         do {
@@ -584,11 +584,11 @@ final class AppModel: ObservableObject {
                 }
             )
             guard !Task.isCancelled, replies[conversation] == id else { return }
-            // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
+            // Follow-up actions suggested by Nook appear as interactive buttons below response.
             let split = FollowUps.split(plan.text)
             var rawBody = split.body
 
-            // Schreef het brein de grafiek als code, JSON of tabel? Dan tekent Nook hem alsnog zelf.
+            // Did the model write chart code, JSON, or a table? Parse and rescue into native chart.
             var rescued: [ChatChart] = []
             let alreadyDrawn = !(chat.message(id)?.charts.isEmpty ?? true)
             if !alreadyDrawn {
@@ -600,7 +600,7 @@ final class AppModel: ObservableObject {
                 if rescued.isEmpty, wantsChart, let table = ChartRescue.chartFromTable(rawBody, title: Conversation.title(from: text)) {
                     rescued = [table]
                 }
-                // Nog steeds geen grafiek: één keer opnieuw, met de opdracht hem echt te tekenen.
+                // Still missing chart: retry once with strict instruction to invoke show_chart.
                 if rescued.isEmpty, wantsChart, !retry, !settings.useLocal {
                     chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
                     await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
@@ -608,14 +608,14 @@ final class AppModel: ObservableObject {
                 }
             }
 
-            // Verwijzingen naar bronnen die Nook niet echt ophaalde, gaan eruit.
+            // Strip citations pointing to sources that were not actually retrieved.
             let references = ledger.references
             var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
                 body = "Ik zie niets waar je iets aan hebt."
             }
             let cited = Citations.used(in: body)
-            // Eerst de bronnen waar het antwoord naar verwijst, dan wat verder bekeken werd.
+            // Prioritize cited references first, followed by other retrieved sources.
             let shown = references.filter { cited.contains($0.number) } + references.filter { !cited.contains($0.number) }
             var notices = ledger.failures.map { step -> String in
                 if case .failed(let error) = step.outcome { return tr("chat.notice.sourceFailed", step.sourceTitle, error) }
@@ -654,7 +654,7 @@ final class AppModel: ObservableObject {
             chatTasks[conversation] = nil
             chat.setBusy(false, conversation: conversation)
             nookFinished(conversation)
-            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette (alleen als alles klopt).
+            // Automatically execute safe small actions if auto-run is enabled and inputs validate.
             if canRunWithoutAsking(plan), problems.allSatisfy(\.isEmpty) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
@@ -679,7 +679,7 @@ final class AppModel: ObservableObject {
         chat.setBusy(false, conversation: conversation)
     }
 
-    /// Een Nook is klaar terwijl je naar iets anders keek: hij laat het even weten.
+    /// Conversation finished in background while looking elsewhere: display notification.
     private func nookFinished(_ id: UUID) {
         let watching = viewModel.state == .panel(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
@@ -701,16 +701,16 @@ final class AppModel: ObservableObject {
         viewModel.present(card)
     }
 
-    /// Haalt resten van tool-aanroepen en losse backslashes uit een antwoord.
+    /// Cleans residual raw tool call tags and stray backslashes from model output.
     private static func cleanReply(_ text: String) -> String {
         var cleaned = text
-        // Een denkblok of tool-aanroep als tekst hoort niet in de chat.
+        // Reasoning blocks or tool syntax as raw text should not appear in chat.
         cleaned = cleaned.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: #"(?m)^\s*\{\s*"(name|tool)"\s*:.*\}\s*$"#, with: "", options: .regularExpression)
         return MarkdownBlock.clean(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// De regels van een plan, zoals ze in de chat en op een kaart staan.
+    /// Formatted plan steps as presented in chat and action cards.
     func planSteps(_ actions: [PlannedAction]) -> [PlanStep] {
         actions.enumerated().map { index, action in
             let spec = allTools.first { $0.name == action.tool }
@@ -719,7 +719,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Wat er mis is met een voorgestelde actie: de tool bestaat niet (meer), de bron mag niet, of de invoer klopt niet.
+    /// Validation issues for proposed action: missing tool, disallowed source, or invalid input.
     func actionProblems(_ action: PlannedAction, scope: SourceScope) -> [String] {
         guard let spec = allTools.first(where: { $0.name == action.tool }), spec.kind == .action else {
             return [tr("chat.plan.unavailable", action.tool)]
@@ -730,8 +730,8 @@ final class AppModel: ObservableObject {
         return ActionGate.problems(tool: action.tool, input: action.input, schema: spec.schema, parseDate: NookDates.parse)
     }
 
-    /// Voert de stappen uit die aan staan. Opnieuw aanroepen na een fout gaat verder waar het bleef: wat al lukte, gebeurt
-    /// nooit nog een keer. `force`: stappen die toch mogen, ook al lijken ze kort geleden al uitgevoerd.
+    /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:
+    /// already completed steps are skipped. `force`: allows running steps previously flagged as duplicate.
     func runPlan(_ id: UUID, force: Set<Int> = []) {
         guard let message = chat.message(id), !message.actions.isEmpty, message.planState != .running, message.planState != .cancelled else { return }
         if case .done = message.planState, force.isEmpty { return }
@@ -755,7 +755,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Eén regel over hoe een plan afliep.
+    /// Summary line describing plan completion.
     static func planOutcome(_ states: [ActionStepState]) -> ChatMessage.PlanState {
         var done: [String] = []
         var failure: String?
@@ -805,7 +805,7 @@ final class AppModel: ObservableObject {
         chat.update(id) { $0.planState = .cancelled }
     }
 
-    /// Een stap aan- of uitzetten voordat je uitvoert.
+    /// Toggle an individual action step before running.
     func setActionIncluded(_ id: UUID, index: Int, _ on: Bool) {
         chat.update(id) { message in
             guard index < message.actionIncluded.count, message.actionStates[safe: index]?.isFinished != true || !on else { return }
@@ -813,7 +813,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// De gebruiker past een voorstel aan (bijvoorbeeld de tekst van een bericht). Wordt meteen opnieuw gecontroleerd.
+    /// Modifies proposed action inputs (e.g. message text) and re-validates.
     func editAction(_ id: UUID, index: Int, key: String, value: String) {
         guard let message = chat.message(id), index < message.actions.count else { return }
         if case .done = message.actionStates[safe: index] ?? .pending { return }
@@ -830,13 +830,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// De volledige invoer van een stap, voor het overzicht vóór Uitvoeren.
+    /// Detailed input payload for an action step before execution.
     func actionFields(_ action: PlannedAction) -> [ActionField] {
         let schema = allTools.first { $0.name == action.tool }?.schema ?? [:]
         return ActionGate.fields(action.input, schema: schema)
     }
 
-    // MARK: Bronnen in de chat
+    // MARK: Sources in Chat
 
     func scope(of conversation: UUID?) -> SourceScope {
         conversation.flatMap { chat.conversation($0)?.scope } ?? .automatic
@@ -847,20 +847,20 @@ final class AppModel: ObservableObject {
         chat.setScope(scope, conversation: id)
     }
 
-    /// Opent een bron uit een antwoord, alleen als het een veilige link is (https, een bestand in je eigen map, een mail).
+    /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
     func openReference(_ reference: SourceReference) {
         guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
         if url.isFileURL, !FileText.isAllowed(url) { return }
         NSWorkspace.shared.open(url)
     }
 
-    /// Stelt de laatste vraag van deze Nook opnieuw.
+    /// Retries the last user question in the conversation.
     func retryLast() {
         guard let id = chat.activeID, let question = chat.lastQuestion(in: id) else { return }
         ask(question)
     }
 
-    /// Kies een bestand om mee te sturen (zoals slepen naar de Shelf).
+    /// Select a file to attach to context (analogous to dropping onto Shelf).
     func attachFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -905,7 +905,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// De tekst van al je vensters: uit de live cache als die aan staat, anders nu even alles lezen.
+    /// Text from all visible windows: from live cache if enabled, or read on-demand.
     func screenSnapshot() async throws -> ScreenSnapshot {
         let local = settings.useLocal
         if settings.liveScreen {
@@ -915,7 +915,7 @@ final class AppModel: ObservableObject {
         return try await screen.captureAll(maxWindows: local ? 3 : 6, totalLimit: local ? 3500 : 9000)
     }
 
-    /// Woorden en zinnen waaruit blijkt dat het verzoek over iets op het scherm gaat.
+    /// Keywords and phrases indicating a query refers to on-screen content.
     private static let screenCue = try? NSRegularExpression(
         pattern: #"\b(hier\w*|dit|deze|daar\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
         options: [.caseInsensitive]
@@ -926,7 +926,7 @@ final class AppModel: ObservableObject {
         return screenCue.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
-    // Het gesprek van zojuist, zodat een vervolgvraag ("ja, doe maar") begrepen wordt.
+    // Recent chat history so follow-ups ("yes, proceed") maintain context.
     private var recentExchanges: [(date: Date, user: String, nook: String)] = []
 
     private var isFollowUp: Bool {
@@ -945,7 +945,7 @@ final class AppModel: ObservableObject {
         if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
         lastSources = sources
-        // Adressen die de gebruiker ziet of noemt, mag het brein openen (en alleen die, plus zoekresultaten).
+        // Allow opening URLs seen on screen or cited by user, plus verified search results.
         web.note(userText)
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines().joined(separator: "\n"))
@@ -959,7 +959,7 @@ final class AppModel: ObservableObject {
                 tools: allTools,
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
-            // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
+            // Follow-up actions suggested by Nook appear as interactive buttons below response.
             let split = FollowUps.split(plan.text)
             plan.text = split.body
 
@@ -973,7 +973,7 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
+            // Automatically execute safe actions requested directly if auto-run is enabled.
             if !silentIfNone, canRunWithoutAsking(plan) {
                 remember(user: userText, nook: plan.text.isEmpty ? "(meteen uitgevoerd)" : plan.text)
                 speakIfAsked(plan.text.isEmpty ? "Gedaan." : plan.text)
@@ -1004,7 +1004,7 @@ final class AppModel: ObservableObject {
     private var lastSources: [String] = []
     private var streamedLines = 0
 
-    /// Het antwoord verschijnt terwijl het geschreven wordt. Groeit de tekst een regel, dan groeit de kaart mee.
+    /// Response streams in real-time. As text wraps to new lines, the card expands.
     private func showStreaming(_ text: String, sources: [String]) {
         let body = FollowUps.streamingBody(text)
         guard !body.isEmpty else { return }
@@ -1032,7 +1032,7 @@ final class AppModel: ObservableObject {
         if case .card(let shown) = viewModel.state, shown.id == "thinking" {
             viewModel.show(.card(card))
         } else {
-            // Een vraag van een agent kan het denkkaartje opzij hebben gezet: dat hoeft niet meer terug.
+            // An urgent agent prompt may have dismissed the thinking card; do not re-present.
             viewModel.removePending(id: "thinking")
             viewModel.present(card)
         }
@@ -1042,29 +1042,29 @@ final class AppModel: ObservableObject {
         contextSummary(scope: .automatic, relevant: nil).text
     }
 
-    /// De context voor het brein. `relevant` nil = alles volledig (kaarten in de notch); anders gaan alleen relevante bronnen
-    /// volledig mee en de rest als één regel. Wat de gebruiker uitsloot, gaat helemaal niet mee.
+    /// Prepares context payload. `relevant` nil = full context; otherwise only relevant sources
+    /// are included in full and others as single-line summaries. Excluded sources are omitted.
     private func contextSummary(scope: SourceScope, relevant: Set<String>?) -> (text: String, titles: [String]) {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
         if relevant != nil {
-            lines.append("Bronnen voor deze vraag:")
+            lines.append("Sources for this question:")
             lines.append("- Keuze: \(scope.label())")
             if !scope.excluded.isEmpty || scope.mode == .only {
                 let blocked = SourceCatalog.all.filter { !scope.allows($0.id) }.map { $0.title }
-                lines.append("- Niet gebruiken (keuze van de gebruiker): " + blocked.joined(separator: ", "))
+                lines.append("- Do not use (user preference): " + blocked.joined(separator: ", "))
             }
             if !scope.focus.isEmpty {
-                lines.append("- Genoemd door de gebruiker, kijk daar zeker: " + scope.focus.map(SourceCatalog.title).sorted().joined(separator: ", "))
+                lines.append("- Specifically requested by user, prioritize: " + scope.focus.map(SourceCatalog.title).sorted().joined(separator: ", "))
             }
             let unavailable = connectors.sources.filter { !$0.isActive && scope.allows($0.id) }.map { $0.title }
-            if !unavailable.isEmpty { lines.append("- Niet gekoppeld of uit: " + unavailable.joined(separator: ", ")) }
+            if !unavailable.isEmpty { lines.append("- Not connected or disabled: " + unavailable.joined(separator: ", ")) }
         }
 
-        // Agenda (vanaf het begin van vandaag), herinneringen, mail, browser, diensten: alles uit de cache van de koppelingen.
+        // Calendar (from start of today), reminders, mail, browser, services: cached connector state.
         if scope.allows("calendar"), !connectors.active.contains(where: { $0.id == "calendar" }) {
-            lines.append(calendar.hasEventAccess ? "Agenda: staat uit bij Koppelingen." : "Agenda: geen toegang.")
+            lines.append(calendar.hasEventAccess ? "Calendar: disabled in Connectors." : "Agenda: geen toegang.")
         }
         let sourceContext = connectors.contextLines(scope: scope, full: relevant)
         lines.append(contentsOf: sourceContext.lines)
@@ -1098,7 +1098,7 @@ final class AppModel: ObservableObject {
         return (lines.joined(separator: "\n"), sourceContext.fullTitles)
     }
 
-    // MARK: Plan en uitvoeren
+    // MARK: Plan Execution
 
     private func planCard(_ plan: BrainPlan, context: String?, offers: [String] = []) -> NookCard {
         guard !plan.actions.isEmpty else { return answerCard(plan.text, offers: offers) }
@@ -1147,8 +1147,8 @@ final class AppModel: ObservableObject {
         )
     }
 
-    /// Acties die Nook zonder vragen mag doen als je "Kleine dingen meteen doen" aanzette: makkelijk terug te draaien
-    /// en zonder gevolgen voor anderen. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.
+    /// Safe actions that can run without prompt when Auto-run Safe Actions is enabled: easily reversible
+    /// and without side effects on third parties. Events, emails, links, shortcuts require approval.
     static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"]
 
     private func canRunWithoutAsking(_ plan: BrainPlan) -> Bool {
@@ -1168,9 +1168,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Voert goedgekeurde acties uit, één voor één; stopt bij de eerste fout. Alles komt in het logboek.
-    /// Dezelfde controle als in de chat: een tool die niet (meer) bestaat of foute invoer wordt niet stilletjes overgeslagen
-    /// maar meldt een fout, en een actie die kort geleden al lukte gebeurt niet nog een keer.
+    /// Executes approved actions sequentially; stops at first error. Logged to ledger.
+    /// Validates tool availability and parameters; reports errors and avoids re-running recent duplicates.
+    /// Reports failure clearly and deduplicates recently completed actions.
     private func perform(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
         let steps = actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }
         let states = await planRunner(scope: .automatic).run(steps, states: [], include: Array(repeating: true, count: steps.count))
@@ -1187,9 +1187,9 @@ final class AppModel: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    // MARK: Spraak
+    // MARK: Voice
 
-    /// Maakt de volgende vraag sneller: zet de verbinding open of laadt het lokale model alvast.
+    /// Prewarms connection or preloads local model to minimize latency for subsequent queries.
     func warmUp() {
         if settings.useLocal {
             EmbeddedModel.shared.preload(settings.localModel)
@@ -1270,7 +1270,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    // MARK: Meekijken
+    // MARK: Screen Context
 
     func lookAtScreen(manual: Bool) {
         guard settings.brainReady else {
@@ -1289,7 +1289,7 @@ final class AppModel: ObservableObject {
                 }
                 lastScreenHash = hash
                 await runBrain(
-                    userText: "Dit is wat de gebruiker nu op het scherm heeft. Zie je iets waar je hem mee kunt helpen, zoals een afspraak, een belofte of een taak? Stel dan een passende actie voor. Zo niet: NONE.",
+                    userText: "This is what the user currently has on screen. Do you see anything you can help with, such as an event, a commitment, or a task? Propose an appropriate action. If nothing relevant: NONE.",
                     snapshot: snapshot,
                     silentIfNone: !manual,
                     context: "Ik zag in \(snapshot.appName)"
@@ -1300,18 +1300,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Meedenken
+    // MARK: ThinkAlong
 
-    /// Een aanbod waar je nog niet op reageerde; staat een tijdje in Vandaag.
+    /// Pending proactive offer awaiting response, displayed temporarily in Today.
     @Published private var missedNudge: (line: String, card: NookCard, app: String, date: Date)?
 
-    /// Ben je een tijdje met iets bezig, dan kijkt Nook even mee en biedt hij hulp aan als hij echt iets kan doen.
+    /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     private func thinkAlongTick() {
         guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, !demoMode,
               CGPreflightScreenCaptureAccess(), viewModel.state.isResting else { return }
         let frontApp = NSWorkspace.shared.frontmostApplication
         let bundle = frontApp?.bundleIdentifier ?? ""
-        // Venstertitel en inhoud uit de live cache; zonder cache telt alleen de app en kijkt Nook hooguit eens per vijf minuten.
+        // Window title and contents from live cache; throttled to at most once per 5 minutes without cache.
         let front = screenContext.windows.first { $0.isFront && $0.bundleID == bundle }
         let window = front?.title ?? ""
         let print = front?.fingerprint ?? UInt64(Date().timeIntervalSince1970 / 300)
@@ -1340,7 +1340,7 @@ final class AppModel: ObservableObject {
         """
         let earlier = thinkAlong.recentOffers
         if !earlier.isEmpty {
-            request += " Dit bood je onlangs al aan, herhaal het niet: " + earlier.joined(separator: "; ") + "."
+            request += " You recently offered this; do not repeat it: " + earlier.joined(separator: "; ") + "."
         }
         web.note(snapshot.text)
 
@@ -1369,7 +1369,7 @@ final class AppModel: ObservableObject {
         remember(user: "(Nook keek ongevraagd mee in \(appName))", nook: body.isEmpty ? line : body)
     }
 
-    /// De korte zin naast de notch: de eerste zin van het aanbod, hooguit zo'n zestig tekens.
+    /// Concise teaser beside notch: first sentence of the offer, max ~60 characters.
     private static func nudgeLine(body: String, fallback: String?) -> String {
         let first = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         var line = first
@@ -1381,7 +1381,7 @@ final class AppModel: ObservableObject {
         return line.count > 64 ? String(line.prefix(62)) + "…" : line
     }
 
-    /// Het hele aanbod: wat Nook zag, wat hij wil doen, en "Doe maar", "Nee" of "Niet in deze app".
+    /// Full proposal: what Nook observed, suggested action, with Accept, Dismiss, or Mute in App.
     private func nudgeCard(_ plan: BrainPlan, offers: [String], bundleID: String, appName: String) -> NookCard {
         let token = "nudge-" + UUID().uuidString
         viewModel.register("\(token)#yes") { [weak self] in
@@ -1425,7 +1425,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    /// Eén keer na de update: vertellen dat Nook kan meedenken en kleine dingen zelf kan doen.
+    /// One-time post-update banner explaining ThinkAlong and auto-run features.
     func presentThinkAlongIntro() {
         guard settings.brainReady, !settings.useLocal, !settings.autoWatch else { return }
         UserDefaults.standard.set(true, forKey: "thinkAlongIntro")
@@ -1508,7 +1508,7 @@ final class AppModel: ObservableObject {
         NookSound.play(.attention)
     }
 
-    /// Meerkeuzevragen van een agent, één voor één. Na de laatste gaat het antwoord in één keer terug.
+    /// Interactive multiple-choice prompts from an agent. Returns collected answers upon completion.
     private func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = []) {
         guard index < request.items.count else { return }
         let item = request.items[index]
@@ -1560,18 +1560,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Een vraag van een agent is afgehandeld: kaart weg, en als jij in Nook antwoordde een korte bevestiging.
+    /// Agent question handled: dismisses card and provides brief confirmation if answered in Nook.
     private func cardGone(_ token: String, message: String?) {
         var visible = false
         if case .card(let shown) = viewModel.state, shown.id == token { visible = true }
         viewModel.dismissCard(id: token)
         guard visible, let message else { return }
-        if case .card = viewModel.state { return }   // de volgende vraag staat al klaar
+        if case .card = viewModel.state { return }   // next question is already queued
         viewModel.finish(message)
     }
 
-    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei.
-    /// Alleen als je niet met iets anders bezig bent in de notch; na een paar seconden gaat hij vanzelf weg.
+    /// Agent finished, failed, or awaiting input: dedicated notification card with agent message.
+    /// Displayed unless user is active in notch; auto-dismisses after a short timeout.
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
         switch viewModel.state {
@@ -1617,7 +1617,7 @@ final class AppModel: ObservableObject {
         )
         viewModel.show(.card(card))
 
-        // Vanzelf weg na 5 seconden, behalve als je met de muis op de kaart staat.
+        // Auto-dismisses after 5 seconds unless hovered.
         Task { [weak self] in
             for _ in 0..<20 {
                 try? await Task.sleep(nanoseconds: 5_200_000_000)
@@ -1630,16 +1630,50 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Brengt het venster naar voren waarin deze agent draait.
+    /// Activates the window running this agent.
     func openTerminal(for session: AgentSession) {
         if !TerminalLauncher.activate(sessionBundleID: session.hostBundleID) {
             viewModel.present(errorCard("Ik vind de terminal van \(session.name) niet. Staat hij nog open?"))
         }
     }
 
-    // MARK: Agents koppelen
+    /// Whether Nook can continue this session's conversation itself (Claude Code with a known session id).
+    func canContinue(_ session: AgentSession) -> Bool {
+        AgentKind(agentName: session.name) == .claude && !session.sessionID.isEmpty
+            && !session.cwd.isEmpty && ClaudeCodeBrain.executable != nil
+    }
 
-    /// Is alles voor het eerste account van deze agent geregeld: programma aanwezig, ingelogd en alle koppelingen aan?
+    /// Sends a message to a session. Claude Code: continues the conversation in a new Terminal window; while the
+    /// original is still working it forks the conversation, so two processes never write to the same session.
+    /// Other agents: copies the text and brings their terminal forward.
+    func send(_ text: String, to session: AgentSession) {
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        guard canContinue(session), let program = ClaudeCodeBrain.executable else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(message, forType: .string)
+            openTerminal(for: session)
+            return
+        }
+        guard FileManager.default.fileExists(atPath: session.cwd) else {
+            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
+            return
+        }
+        var arguments = ["--resume", session.sessionID]
+        if session.status == .running || session.status == .waiting { arguments.append("--fork-session") }
+        arguments.append(message)
+        let prefix = profile(for: session)?.commandPrefix ?? ""
+        let command = prefix + ([program] + arguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
+        do {
+            try TerminalLauncher.run(command: command, in: session.cwd, name: "nook-send-claude")
+        } catch {
+            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
+        }
+    }
+
+    // MARK: Agent Integration
+
+    /// Checks whether primary account for this agent is fully set up: binary found, authenticated, hooks enabled.
     func isFullyConnected(_ kind: AgentKind) -> Bool {
         isFullyConnected(AgentProfile.defaultProfile(kind))
     }
@@ -1649,7 +1683,7 @@ final class AppModel: ObservableObject {
             && profile.kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0, home: profile.home.map { _ in profile.homeURL }) == .installed }
     }
 
-    /// Het account van een draaiende sessie, of nil als Nook het niet kent.
+    /// Resolves account profile for a running session, or nil if unknown.
     func profile(for session: AgentSession) -> AgentProfile? {
         guard let kind = AgentKind(agentName: session.name) else { return nil }
         return profiles.profile(kind: kind, home: session.home)
@@ -1663,8 +1697,8 @@ final class AppModel: ObservableObject {
         connect(profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind))
     }
 
-    /// Eén klik: koppelt alles voor dit account. Ontbreekt het programma of ben je niet ingelogd, dan opent Nook
-    /// een Terminal-venster dat installeert en het inloggen start, en ziet daarna vanzelf dat je bent ingelogd.
+    /// One-click setup: configures hooks and profile. If CLI is missing or unauthenticated, Nook
+    /// opens a Terminal window to install and log in, automatically detecting completion.
     func connect(_ profile: AgentProfile) {
         let kind = profile.kind
         if agentConnect[profile.id]?.isBusy == true { return }
@@ -1684,11 +1718,13 @@ final class AppModel: ObservableObject {
             agentConnect[profile.id] = .failed(problems.joined(separator: "\n"))
             return
         }
-        // Nog geen brein? Dan denkt Nook voortaan met je Claude-abonnement.
+        // No brain configured yet? Default to using Claude Code CLI.
         if kind == .claude, !settings.brainReady { settings.provider = .claudeCode }
 
         let hasProgram = history.executables[kind] != nil
+        // An account that signs in with a key it already holds needs no Terminal login.
         let loggedIn = history.profileAccounts[profile.id] != nil
+            || (profile.usesAPIKey && (profile.kind != .claude || profiles.hasAPIKey(profile)))
         guard !hasProgram || !loggedIn else {
             finishConnect(profile)
             return
@@ -1712,7 +1748,7 @@ final class AppModel: ObservableObject {
         waitForLogin(profile)
     }
 
-    /// Kijkt een kwartier lang elke paar seconden of de agent er staat en je bent ingelogd.
+    /// Polls periodically for up to 15 minutes to verify agent installation and login status.
     private func waitForLogin(_ profile: AgentProfile) {
         Task { [weak self] in
             for _ in 0..<300 {
@@ -1730,7 +1766,7 @@ final class AppModel: ObservableObject {
 
     private func finishConnect(_ profile: AgentProfile) {
         let kind = profile.kind
-        // Net geïnstalleerd? Dan opnieuw zoeken, zodat Claude Code ook als brein werkt.
+        // Newly installed? Rescan so Claude Code is immediately available as a provider.
         if kind == .claude { ClaudeCodeBrain.resetLocation(); settings.objectWillChange.send() }
         let running = agentSessions.contains { self.profile(for: $0)?.id == profile.id }
         agentConnect[profile.id] = .done(running ? "Alles gekoppeld. Start lopende sessies opnieuw." : "Alles gekoppeld.")
@@ -1739,7 +1775,7 @@ final class AppModel: ObservableObject {
 
     // MARK: Accounts
 
-    /// Een extra account (bijvoorbeeld je werkaccount) met een eigen map, en meteen inloggen.
+    /// Adds a profile (e.g. work account) with dedicated config directory and initiates login.
     @discardableResult
     func addAccount(_ kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
         let profile = profiles.add(kind: kind, label: label, home: home)
@@ -1758,7 +1794,7 @@ final class AppModel: ObservableObject {
         profiles.setPreferred(profile)
     }
 
-    /// Start de agent met dit account in een nieuw Terminal-venster, in `folder`.
+    /// Launches agent with this profile in a new Terminal window within `folder`.
     func startSession(_ profile: AgentProfile, in folder: String) {
         do {
             try TerminalLauncher.run(command: profile.launchCommand, in: folder, name: "nook-start-\(profile.id)")
@@ -1768,7 +1804,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Laat je een map kiezen en start daar een sessie met dit account.
+    /// Prompts for directory and starts a session with this profile.
     func startSessionChoosingFolder(_ profile: AgentProfile) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -1781,7 +1817,7 @@ final class AppModel: ObservableObject {
         startSession(profile, in: url.path)
     }
 
-    /// Mappen waar je met dit account onlangs werkte, nieuwste eerst.
+    /// Recent directories worked in with this profile, sorted newest first.
     func recentFolders(_ profile: AgentProfile, limit: Int = 5) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
@@ -1798,7 +1834,7 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(profile.launchCommand, forType: .string)
     }
 
-    /// Gaat verder met een eerdere sessie, in een nieuw Terminal-venster in de map van toen.
+    /// Resumes a past session in a new Terminal window within its original directory.
     func resume(_ session: PastSession) {
         guard FileManager.default.fileExists(atPath: session.cwd) else {
             viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
@@ -1813,8 +1849,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Het commando om een sessie te hervatten, met het account van toen. `absolute` gebruikt het volledige pad
-    /// als Nook weet waar de agent staat.
+    /// Command string to resume session with original profile. `absolute` uses full path
+    /// when the binary path is known.
     func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
         var program = session.agent.command
         if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
@@ -1828,7 +1864,7 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(command, forType: .string)
     }
 
-    // MARK: Snelle opdrachten
+    // MARK: Quick Commands
 
     private func handleLocalIntent(_ intent: LocalIntent) {
         spokenRequest = false
@@ -1861,7 +1897,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Snelle opdrachten die in de chat meteen klaar zijn, zonder kaart. Nil: gewoon de kaart tonen.
+    /// Quick commands resolved immediately in chat without card UI. Nil: present standard card.
     private func quickReplyInChat(_ intent: LocalIntent) -> String? {
         switch intent {
         case .media(let action):
@@ -1881,7 +1917,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Een actie die Nook zelf herkende: meteen als plan klaarzetten, zonder het brein.
+    /// Deterministically recognized action: prepared directly as an action plan without calling the brain.
     private func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
         if canRunWithoutAsking(plan) {
@@ -1891,7 +1927,7 @@ final class AppModel: ObservableObject {
         viewModel.show(.card(planCard(plan, context: "Snelle opdracht")))
     }
 
-    // MARK: Weekoverzicht
+    // MARK: Week Recap
 
     func showWeekRecap() {
         let now = Date()
@@ -1940,7 +1976,7 @@ final class AppModel: ObservableObject {
         viewModel.show(.card(card))
     }
 
-    /// Op maandag een regel in de tab Nook met het overzicht van vorige week, tot je het bekeken hebt.
+    /// Weekly recap banner displayed in Nook tab on Mondays until viewed.
     private func weeklyRecapItem() -> TodayItem? {
         let now = Date()
         var calendar = Calendar(identifier: .iso8601)
@@ -1962,9 +1998,9 @@ final class AppModel: ObservableObject {
         "\(Int(date.timeIntervalSince1970))"
     }
 
-    // MARK: Bestanden
+    // MARK: Files
 
-    /// Een bestand uit de Shelf: lees de tekst (op je Mac) en vraag wat je wilt weten.
+    /// Shelf file: reads extracted text locally and answers user questions about it.
     func askAbout(_ url: URL) {
         do {
             let text = try FileText.read(url)
@@ -1978,7 +2014,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Kaarten
+    // MARK: Cards
 
     private func presentLoop(_ loop: OpenLoop) {
         let token = "loop-" + loop.id
@@ -1999,13 +2035,13 @@ final class AppModel: ObservableObject {
         viewModel.show(.card(card))
     }
 
-    /// ⌥⌘ spatie: meteen typen in de chat, waar je ook bent.
+    /// ⌥⌘ Space shortcut: immediately focus chat input from anywhere.
     func openAsk() {
         warmUp()
         showChat(focus: true)
     }
 
-    /// De eerste keer: in drie stappen klaar. Alles staat ook in Instellingen.
+    /// First-run onboarding card: 3-step setup guide.
     func presentWelcome() {
         let token = "welcome"
         viewModel.register("\(token)#setup") { [weak self] in
@@ -2032,7 +2068,7 @@ final class AppModel: ObservableObject {
         viewModel.present(card)
     }
 
-    /// Een bestand uit de Shelf als bijlage in een nieuwe mail zetten (Mail.app). Jij verstuurt zelf.
+    /// Attaches a Shelf file to a new email draft in Mail.app. Requires user to send.
     func mailFile(_ url: URL) {
         let path = ScriptText.quote(url.path)
         let script = """

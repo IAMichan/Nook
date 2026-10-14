@@ -1,10 +1,10 @@
 import SwiftUI
 import AppKit
 
-// Wat Nook bij een antwoord gebruikte: waar hij keek (en of dat lukte), naar welke bronnen het antwoord verwijst,
-// en wat je moet weten als iets niet gelezen kon worden. Plus de bronkiezer en het overzicht van wat er meegaat.
+// What Nook used for an answer: where it looked (and whether that succeeded), which sources the answer cites,
+// and what you need to know if something could not be read. Plus the source picker and summary of included context.
 
-/// De regel boven een antwoord: welke bronnen mochten, welke context meeging en waar Nook in keek, met de uitkomst.
+/// The strip above an answer: which sources were allowed, what context was included, and where Nook looked, with outcomes.
 struct RetrievalStrip: View {
     let message: ChatMessage
     @State private var showDetails = false
@@ -26,7 +26,7 @@ struct RetrievalStrip: View {
         for source in message.sources {
             result.append(Chip(id: "ctx-" + source, label: source, symbol: "eye", color: NookTheme.textTertiary, help: tr("chat.sources.contextHelp")))
         }
-        // Per bron één chip, ook als Nook er meerdere keren in keek.
+        // One chip per source, even if Nook inspected it multiple times.
         var order: [String] = []
         var grouped: [String: [RetrievalStep]] = [:]
         for step in message.retrieval {
@@ -90,7 +90,7 @@ struct RetrievalStrip: View {
         }
     }
 
-    /// Precies wat er gebeurde: welke context meeging en elke zoekactie met zoekterm en uitkomst.
+    /// Exact breakdown of events: included context and each retrieval step with query and outcome.
     private var details: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(tr("chat.sources.detailsTitle")).font(.headline)
@@ -131,7 +131,7 @@ struct RetrievalStrip: View {
     }
 }
 
-/// Waarschuwingen bij een antwoord, zoals een bron die niet gelezen kon worden.
+/// Warnings for an answer, such as a source that could not be read.
 struct NoticeList: View {
     let notices: [String]
 
@@ -153,7 +153,7 @@ struct NoticeList: View {
     }
 }
 
-/// De bronnen waar het antwoord op steunt, genummerd zoals in de tekst. Klikken opent het origineel.
+/// The sources backing the answer, numbered as cited in the text. Clicking opens the original.
 struct ReferenceList: View {
     let references: [SourceReference]
     let cited: Set<Int>
@@ -227,9 +227,9 @@ private struct ReferenceRow: View {
     }
 }
 
-// MARK: Invoer: bronkiezer, context en bijlage
+// MARK: Input: source picker, context, and attachment
 
-/// Welke bronnen deze Nook mag gebruiken. Automatisch = Nook kiest zelf uit alles wat gekoppeld is.
+/// Which sources this Nook is allowed to use. Automatic = Nook selects autonomously from all connected sources.
 struct ScopeMenu: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -304,7 +304,7 @@ struct ScopeMenu: View {
     }
 }
 
-/// Wat er bij een vraag meegaat naar het brein, en waarheen. Zo is altijd te zien wat Nook gebruikt.
+/// What context is sent with a query to the brain, and destination. Keeps Nook's data usage transparent.
 struct ContextInspector: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -376,7 +376,7 @@ struct ContextInspector: View {
     }
 }
 
-/// Het bestand dat bij je volgende vraag meegaat, met een kruisje om het weg te halen.
+/// The file attached to your next query, with a dismiss button to remove it.
 struct AttachmentChip: View {
     let name: String
     let remove: () -> Void

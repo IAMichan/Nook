@@ -1,9 +1,9 @@
 import Foundation
 import Darwin
 
-/// Eén verbinding van het hook-script. Antwoorden kan maar één keer, ook als jouw klik en een time-out
-/// tegelijk komen. Verbreekt de agent zelf de verbinding (je antwoordde in de terminal, of de agent stopte),
-/// dan hoort Nook dat via `onPeerClosed`, zodat een kaart in de notch meteen kan verdwijnen.
+/// A single connection from the hook script. Replying can only happen once, even if your click and a timeout
+/// occur at the same time. If the agent itself disconnects (you answered in the terminal, or the agent exited),
+/// Nook learns this via `onPeerClosed`, allowing a card in the notch to be dismissed immediately.
 final class HookConnection: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()
@@ -20,7 +20,7 @@ final class HookConnection: @unchecked Sendable {
         if !finished { source?.cancel() }
     }
 
-    /// Begint te letten op het sluiten van de andere kant. De verbinding sluit zichzelf via de cancel-handler.
+    /// Starts monitoring the peer for disconnect. The connection closes its file descriptor via the cancel handler.
     func start(queue: DispatchQueue) {
         let fd = self.fd
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -36,7 +36,7 @@ final class HookConnection: @unchecked Sendable {
         return !finished
     }
 
-    /// Wordt op de main thread aangeroepen als de agent ophangt voordat Nook antwoordde.
+    /// Invoked on the main thread if the agent disconnects before Nook responded.
     func onPeerClosed(_ handler: @escaping () -> Void) {
         lock.lock()
         let early = closedBeforeHandler
@@ -46,7 +46,7 @@ final class HookConnection: @unchecked Sendable {
         if early { DispatchQueue.main.async(execute: handler) }
     }
 
-    /// Stuurt het antwoord (of niets) en sluit. Geeft false als er al geantwoord was of de agent al weg is.
+    /// Sends the reply (or nothing) and closes. Returns false if already answered or if the agent has disconnected.
     @discardableResult
     func reply(_ response: Data?) -> Bool {
         lock.lock()
@@ -78,7 +78,7 @@ final class HookConnection: @unchecked Sendable {
         var byte: UInt8 = 0
         let peeked = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
         if peeked > 0 {
-            // Onverwachte extra data: weggooien, de verbinding blijft open.
+            // Unexpected extra data: discard, connection remains open.
             var buffer = [UInt8](repeating: 0, count: 4096)
             _ = read(fd, &buffer, buffer.count)
             return
@@ -101,8 +101,8 @@ final class HookConnection: @unchecked Sendable {
     }
 }
 
-/// Kleine lokale server waar agents (via hun hook-script) gebeurtenissen naartoe sturen.
-/// Alleen jijzelf kunt erbij: het socketbestand is 0600 en elke verbinding wordt op gebruikers-ID gecontroleerd.
+/// Lightweight local server where agents send events (via their hook script).
+/// Restricted to the current user: socket file is 0600 and every connection is verified against the user ID.
 final class UnixSocketServer {
     private let path: String
     private var listenFD: Int32 = -1
@@ -110,7 +110,7 @@ final class UnixSocketServer {
     private let clientQueue = DispatchQueue(label: "nl.imdigital.nook.hub.client", attributes: .concurrent)
     private let watchQueue = DispatchQueue(label: "nl.imdigital.nook.hub.watch")
 
-    /// Wordt aangeroepen met één regel JSON en de verbinding om (eenmalig) op te antwoorden.
+    /// Called with one line of JSON and the connection to reply on (once).
     var onMessage: ((Data, HookConnection) -> Void)?
 
     init(path: String) {
@@ -122,14 +122,14 @@ final class UnixSocketServer {
         unlink(path)
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw NookError("Socket maken mislukt.") }
+        guard fd >= 0 else { throw NookError("Failed to create socket.") }
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8CString)
         guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
             close(fd)
-            throw NookError("Pad naar de socket is te lang.")
+            throw NookError("Socket path is too long.")
         }
         withUnsafeMutableBytes(of: &addr.sun_path) { raw in
             for (index, byte) in bytes.enumerated() {
@@ -143,13 +143,13 @@ final class UnixSocketServer {
         }
         guard bound == 0 else {
             close(fd)
-            throw NookError("Socket koppelen mislukt (\(String(cString: strerror(errno)))).")
+            throw NookError("Failed to bind socket (\(String(cString: strerror(errno)))).")
         }
         chmod(path, 0o600)
 
         guard listen(fd, 16) == 0 else {
             close(fd)
-            throw NookError("Luisteren op de socket mislukt.")
+            throw NookError("Failed to listen on socket.")
         }
         listenFD = fd
         acceptQueue.async { [weak self] in self?.acceptLoop(fd) }

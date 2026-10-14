@@ -10,13 +10,13 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var doneButtonTitle = tr("button.close")
     private var doneButtonAction: (() -> Void)?
 
-    /// De chat moet meteen de toetsenbordfocus krijgen (na een vraag of ⌥⌘ spatie), niet bij gewoon hoveren.
+    /// Chat should immediately receive keyboard focus (following a prompt or ⌥⌘ Space), but not on hover.
     var focusChat = false
 
-    /// Wordt gezet door AppModel; geeft toegang tot echte data en acties.
+    /// Set by AppModel; provides access to live data and actions.
     weak var app: AppModel?
 
-    /// Alleen in zwevende stand: de controller verplaatst het paneel terwijl je sleept.
+    /// Floating mode only: the controller repositions the panel during dragging.
     var onDragMoved: (() -> Void)?
     var onDragEnded: (() -> Void)?
 
@@ -28,8 +28,8 @@ final class NotchViewModel: ObservableObject {
         didSet { size = layoutSize(for: state) }
     }
 
-    /// Opent het paneel als je 0,4 seconde met de muis op de notch blijft hangen.
-    /// Staat standaard aan; uitzetten kan via de menubalk.
+    /// Opens the panel when hovering over the notch for 0.4 seconds.
+    /// Enabled by default; can be disabled via the menu bar.
     var openOnHover: Bool {
         get { UserDefaults.standard.object(forKey: "openOnHover") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "openOnHover") }
@@ -39,10 +39,10 @@ final class NotchViewModel: ObservableObject {
     private var hoverTask: Task<Void, Never>?
     private var autoCloseTask: Task<Void, Never>?
 
-    /// Draait of wacht er een gekoppelde agent? Dan is de notch in rust "aan het werk".
+    /// Is a connected agent running or waiting? If so, the notch appears active when idle.
     var agentsActive: Bool { !(app?.activeAgents.isEmpty ?? true) }
 
-    // MARK: Toestanden
+    // MARK: States
 
     func show(_ new: NotchState) {
         doneTask?.cancel()
@@ -66,14 +66,14 @@ final class NotchViewModel: ObservableObject {
         scheduleAutoClose()
     }
 
-    /// Het paneel klapt na een minuut zonder muis vanzelf dicht.
+    /// Automatically collapses the panel after one minute without mouse activity.
     private func scheduleAutoClose() {
         autoCloseTask?.cancel()
         guard case .panel = state, !pointerInside else { return }
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             guard !Task.isCancelled, let self, !self.pointerInside, case .panel(let tab) = self.state else { return }
-            // Midden in een gesprek klapt de chat niet vanzelf dicht; probeer het later nog eens.
+            // Chat does not auto-collapse during a conversation; retry later.
             if (tab == .nook || tab == .chat), self.app?.chat.isRecentlyActive == true {
                 self.scheduleAutoClose()
                 return
@@ -82,10 +82,10 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    // MARK: Kaarten van buiten
+    // MARK: External cards
 
-    /// Een vraag van een agent: gaat voor op het paneel en op gewone kaarten (die schuiven terug in de wachtrij).
-    /// Staat er al zo'n vraag, dan komt deze erachter, vóór de gewone kaarten.
+    /// An agent prompt: takes priority over the panel and regular cards (which return to the queue).
+    /// If such a prompt is already shown, this queues behind it, ahead of regular cards.
     func presentUrgent(_ card: NookCard) {
         var urgent = card
         urgent.urgent = true
@@ -101,12 +101,12 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Haalt een kaart alleen uit de wachtrij, niet uit beeld.
+    /// Removes a card from the queue only, not from view.
     func removePending(id: String) {
         pending.removeAll { $0.id == id }
     }
 
-    /// Toont een kaart meteen als Nook in rust is, anders komt hij in de wachtrij.
+    /// Displays a card immediately if Nook is idle, otherwise enqueues it.
     func present(_ card: NookCard) {
         switch state {
         case .idle, .music, .track, .done, .nudge:
@@ -120,7 +120,7 @@ final class NotchViewModel: ObservableObject {
         callbacks[id] = action
     }
 
-    /// Voor kaarten met opties (`CardDetail.choices`): de handler krijgt de gekozen labels.
+    /// For cards with options (`CardDetail.choices`): handler receives the selected labels.
     func registerChoice(_ id: String, _ handler: @escaping ([String]) -> Void) {
         choiceHandlers[id] = handler
     }
@@ -130,19 +130,19 @@ final class NotchViewModel: ObservableObject {
         handler(labels)
     }
 
-    /// Staat deze kaart nu in beeld of in de wachtrij?
+    /// Is this card currently visible or queued?
     func hasCard(id: String) -> Bool {
         if case .card(let current) = state, current.id == id { return true }
         return pending.contains { $0.id == id }
     }
 
-    /// Ververst de inhoud van de kaart die nu zichtbaar is (zelfde maat, dus zonder animatie), bijvoorbeeld tijdens het praten.
+    /// Updates the currently visible card in-place (same dimensions, avoiding animation), e.g. while speaking.
     func updateCard(_ card: NookCard) {
         guard case .card(let current) = state, current.id == card.id else { return }
         state = .card(card)
     }
 
-    /// Haalt een kaart weg, of hij nu zichtbaar is of nog wacht.
+    /// Dismisses a card, whether currently visible or queued.
     func dismissCard(id: String) {
         pending.removeAll { $0.id == id }
         if case .card(let current) = state, current.id == id { show(.idle) }
@@ -173,7 +173,7 @@ final class NotchViewModel: ObservableObject {
             for key in callbacks.keys where key.hasPrefix(base) { callbacks[key] = nil }
             action?()
             if message.isEmpty {
-                // De actie kan zelf al een nieuwe kaart hebben getoond; laat die staan.
+                // The action may have already presented a new card; preserve it.
                 if case .card(let shown) = state, shown.id.hasPrefix(base) { show(.idle) }
             } else {
                 finish(message)
@@ -181,7 +181,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Toont een korte bevestiging en gaat na een paar seconden terug naar rust.
+    /// Displays a brief confirmation and returns to idle after a few seconds.
     func finish(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {
         doneButtonTitle = button
         doneButtonAction = action
@@ -193,7 +193,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Een nieuw nummer: de notch wordt even breder en zegt wat er nu speelt. Alleen in rust, nooit over een kaart of paneel heen.
+    /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
     func announce(_ info: NowPlayingInfo) {
         guard state.isResting else { return }
         show(.track(title: info.title, artist: info.artist))
@@ -204,8 +204,8 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Een aanbod van Nook naast de notch. Alleen in rust: nooit over een kaart, paneel of vraag van een agent heen.
-    /// Na een tijdje zonder reactie verdwijnt het vanzelf (de app bewaart het dan in Vandaag).
+    /// A suggestion from Nook next to the notch. Idle only: never over a card, panel, or agent prompt.
+    /// Dismisses automatically after a timeout (saved to Today).
     @discardableResult
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
         guard state.isResting, pending.isEmpty else { return false }
@@ -218,13 +218,13 @@ final class NotchViewModel: ObservableObject {
         return true
     }
 
-    /// Van de korte zin naar de hele kaart.
+    /// Expands the short summary into the full card.
     func openNudge() {
         guard case .nudge(_, let card) = state else { return }
         show(.card(card))
     }
 
-    /// De knop rechts in de bevestigingsstrook.
+    /// Button on the right of the confirmation strip.
     func doneButtonPressed() {
         let action = doneButtonAction
         if let action { action() } else { show(.idle) }
@@ -234,14 +234,14 @@ final class NotchViewModel: ObservableObject {
         if let app { app.toggleVoice() } else { show(.card(DemoContent.card(for: .listening))) }
     }
 
-    // MARK: Muis
+    // MARK: Mouse
 
     func pointerChanged(inside: Bool) {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
         scheduleAutoClose()
-        // Nook bood iets aan: wijzen is genoeg om het hele voorstel te zien, ook als openen bij hover uit staat.
+        // Nook made an offer: hovering reveals the full proposal even if hover-to-open is disabled.
         if inside, case .nudge = state {
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 180_000_000)
@@ -251,7 +251,7 @@ final class NotchViewModel: ObservableObject {
             return
         }
         guard openOnHover, inside, state.isResting else { return }
-        // Werkt er een agent, dan opent hover sneller en meteen op Agents.
+        // If an agent is running, hover opens faster and navigates directly to Agents.
         let working = agentsActive
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: working ? 200_000_000 : 400_000_000)
@@ -263,7 +263,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Klikken op de notch opent meteen het paneel (de startpagina), zonder hover-vertraging.
+    /// Clicking the notch opens the panel immediately (home tab), without hover delay.
     func openPanel() {
         hoverTask?.cancel()
         let working = agentsActive
@@ -271,25 +271,25 @@ final class NotchViewModel: ObservableObject {
         show(.panel(working ? .agents : .nook))
     }
 
-    /// Een klik buiten de notch sluit het paneel. Kaarten blijven staan tot je kiest.
+    /// Clicking outside the notch closes the panel. Cards remain until an option is selected.
     func clickedOutside() {
         if case .panel = state { show(.idle) }
     }
 
-    // MARK: Maten
+    // MARK: Dimensions
 
     func layoutSize(for state: NotchState) -> CGSize {
         let nw = geometry.notchWidth
         let nh = geometry.notchHeight
-        let chrome = nh + 14 + 22   // ruimte onder de notch en onderrand
-        // Zwevend in rust: alleen Nook zelf, geen balk eromheen.
+        let chrome = nh + 14 + 22   // spacing below notch and bottom margin
+        // Floating and idle: just Nook itself, no bar around it.
         if geometry.isFloating, state.isResting {
             return CGSize(width: Self.floatingOrbSide, height: Self.floatingOrbSide)
         }
         switch state {
         case .idle:
             if app?.settings.hideWhenIdle == true, !geometry.isFloating, !agentsActive, !(app?.chat.anyBusy ?? false) {
-                // Alleen de notch zelf; zonder notch een dun randje bovenaan om naar te wijzen.
+                // The physical notch area; without a notch, a thin hover trigger strip at the top.
                 return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
             }
             return CGSize(width: nw + 100, height: nh)
@@ -315,10 +315,10 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Zwevend in rust: het vlak rond Nook (de bol plus wat ruimte voor zijn gloed en een badge).
+    /// Floating and idle: the area around Nook (the orb plus room for its glow and a badge).
     static let floatingOrbSide: CGFloat = 44
 
-    /// Zwevend en in rust: dan is er geen zwarte vorm, alleen Nook.
+    /// Floating and idle: no black shape, just Nook.
     var isBareOrb: Bool { geometry.isFloating && state.isResting }
 
     var cornerRadius: CGFloat {
@@ -331,7 +331,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Hoe Nook zich voelt in de uitgeklapte toestanden.
+    /// Nook's mood when expanded.
     func mood(for panelTab: PanelTab) -> NookMood {
         switch panelTab {
         case .agents:
