@@ -203,7 +203,9 @@ final class AppSettings: ObservableObject {
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key
         hasAPIKey = !(key ?? "").isEmpty
-        onboardingDone = defaults.bool(forKey: "onboardingDone") || hasAPIKey || !localModel.isEmpty
+        // Lokale waarden: `self` mag hier nog niet gelezen worden, want nog niet alles is ingesteld.
+        onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
+            || !(defaults.string(forKey: "localModel") ?? "").isEmpty
         refreshProviderKey()
     }
 

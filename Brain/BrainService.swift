@@ -383,7 +383,7 @@ final class BrainService {
     }
 
     private func send(_ body: [String: Any], key: String) async throws -> [String: Any] {
-        let request = try request(body, key: key)
+        let request = try self.request(body, key: key)
         let data: Data
         let response: URLResponse
         do {
@@ -400,7 +400,7 @@ final class BrainService {
     /// Streamt het antwoord (server-sent events): `onText` krijgt telkens de tekst tot nu toe, zodat je het antwoord
     /// ziet verschijnen terwijl het nog geschreven wordt. Geeft aan het eind hetzelfde bericht terug als `send`.
     private func stream(_ body: [String: Any], key: String, onText: @escaping (String) -> Void) async throws -> [String: Any] {
-        let request = try request(body, key: key)
+        let request = try self.request(body, key: key)
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do {

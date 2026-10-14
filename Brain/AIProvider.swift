@@ -197,8 +197,10 @@ enum OpenAICompatibleBrain {
                 if let spec = tools.first(where: { $0.name == name }) {
                     switch spec.kind {
                     case .read:
-                        do { content = "<tool_data>\n\(try await spec.run(input))\n</tool_data>" }
-                        catch { content = "Fout: \(error.localizedDescription)" }
+                        do {
+                            let output = try await spec.run(input)
+                            content = "<tool_data>\n\(output)\n</tool_data>"
+                        } catch { content = "Fout: \(error.localizedDescription)" }
                     case .action:
                         actions.append(PlannedAction(tool: name, input: input))
                         content = "Voorgesteld aan de gebruiker. Wordt pas uitgevoerd na bevestiging."
