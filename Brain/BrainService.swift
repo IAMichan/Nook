@@ -32,7 +32,7 @@ final class BrainService {
     /// en zonder tools is de prompt tientallen keren korter en dus veel sneller.
     static func needsTools(_ text: String) -> Bool {
         // Woorden die iets willen DOEN, plus agenda: de context dekt vandaag + 7 dagen, list_events is de uitwijk daarbuiten.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -288,6 +288,7 @@ final class BrainService {
         """
         Je bent Nook, de assistent in de notch van de Mac van de gebruiker. Wees kort (één tot drie zinnen). \(settings.languageInstruction)
         De agenda van de komende dagen staat in de context onder "Agenda": beantwoord agendavragen daarmee (buiten die periode: list_events) en zeg nooit dat je geen toegang hebt.
+        Vraagt de gebruiker of hij op een dag of moment vrij is, gebruik dan check_availability: dat kijkt in al zijn agenda's. Meld in welke agenda's je keek.
         Tijdzone: \(TimeZone.current.identifier). Datum en tijd staan in de context onder "Nu".
         Vraagt de gebruiker om een grafiek, gebruik show_chart. Moet er een mail geschreven worden, gebruik compose_mail.
         Voer acties uit door de juiste tool aan te roepen; ze worden eerst aan de gebruiker getoond ter goedkeuring. Verzin nooit tijden of namen: ontbreekt er iets, vraag het.
@@ -325,6 +326,16 @@ final class BrainService {
 
         Agenda:
         - De agenda van de komende dagen staat in de context onder "Agenda". Beantwoord vragen over afspraken, vrije momenten en drukte daarmee. Ligt de gevraagde periode buiten die context, gebruik dan list_events. Zeg nooit dat je geen toegang hebt als de context afspraken (of "geen afspraken") toont.
+
+        Beschikbaarheid:
+        - Vraagt de gebruiker of hij op een dag of tijd vrij, bezet of beschikbaar is ("ben ik 13 oktober beschikbaar?", "wanneer heb ik tijd?", "past vrijdag 14:00?"), roep dan METEEN check_availability aan. Die kijkt in álle agenda's tegelijk (Apple Agenda met alle accounts erin, agenda's via een ICS-adres en Cal.com), niet alleen in de lijst "Agenda" in de context.
+        - Zeg in je antwoord kort welke agenda's je controleerde en antwoord duidelijk: vrij, deels vrij (met de vrije tijden) of bezet (met wat er staat). Staat er in de uitkomst dat een agenda niet gelezen kon worden, zeg dat erbij.
+        - Een datum zonder jaar die al voorbij is bedoelt het eerstvolgende jaar waarin hij nog komt; noem de volledige datum zodat de gebruiker kan corrigeren.
+        - Ontbreekt er een agenda of app waar de gebruiker ook mee werkt? Vraag dan één keer kort welke hij nog gebruikt en leg uit hoe hij die koppelt (Instellingen › Koppelingen). Vraag niet opnieuw als hij al antwoordde.
+
+        Andere apps en bronnen:
+        - Gaat een vraag over een app of dienst waarvan je geen gegevens of tool hebt (taken, facturen, notities, klanten, slimme woning…), roep dan list_sources aan, vraag welke app de gebruiker daarvoor gebruikt en zeg hoe die te koppelen is: een eigen bron (alle apps met een web-API, daarna lees je ze met read_source), een ICS-adres voor agenda's, of een opdracht (Shortcuts) voor een app zonder API. Verzin nooit gegevens.
+        - Heb je een eigen bron (zie de context), gebruik dan read_source om erin te kijken zonder eerst te vragen.
 
         Wat de gebruiker ziet:
         - <screen_content> bevat de tekst van alle zichtbare vensters op al zijn schermen, het voorste venster eerst. Zoek zelf het venster dat bij de vraag past; "dit", "hier", "daar" en "die mail" verwijzen meestal naar het voorste venster. Ontbreekt <screen_content>, haal het dan op met read_screen.

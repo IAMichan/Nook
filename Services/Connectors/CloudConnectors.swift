@@ -49,7 +49,9 @@ enum CloudConnectors {
             NotionConnector(),
             CalcomConnector(),
             N8nConnector(),
-            ResendConnector()
+            ResendConnector(),
+            CalendarFeedsConnector(),
+            CustomSourcesConnector()
         ]
     }
 }
@@ -1296,6 +1298,7 @@ final class CalcomConnector: CloudConnectorConfig {
         let id: String
         let title: String
         let start: Date
+        let end: Date?
         let status: String
         let attendee: String?
         let url: URL?
@@ -1379,6 +1382,7 @@ final class CalcomConnector: CloudConnectorConfig {
             id: uid ?? CloudHelp.string(b["id"]) ?? UUID().uuidString,
             title: (b["title"] as? String) ?? "Afspraak",
             start: start,
+            end: CloudHelp.date(b["end"]) ?? CloudHelp.date(b["endTime"]),
             status: ((b["status"] as? String) ?? "accepted").lowercased(),
             attendee: attendee,
             url: uid.flatMap { URL(string: "https://app.cal.com/booking/\($0)") }
@@ -1432,6 +1436,21 @@ final class CalcomConnector: CloudConnectorConfig {
             if let url = b.url { text += " · \(url.absoluteString)" }
             return text
         }.joined(separator: "\n")
+    }
+}
+
+extension CalcomConnector: AgendaSource {
+    func agendaNames() -> [String] { ["Cal.com-boekingen"] }
+
+    func agendaEntries(from: Date, to: Date) async throws -> AgendaResult {
+        guard let key = CloudHelp.secret(CalcomConnector.keyAccount) else { throw CloudHelp.notSetUp("Cal.com") }
+        let list = try await fetch(key: key, count: 100)
+        let entries = list.compactMap { booking -> AgendaEntry? in
+            let end = booking.end ?? booking.start.addingTimeInterval(1800)
+            guard booking.start < to, end > from else { return nil }
+            return AgendaEntry(title: booking.title, start: booking.start, end: end, busy: true, calendar: "Cal.com")
+        }
+        return AgendaResult(entries: entries)
     }
 }
 

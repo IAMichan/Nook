@@ -62,6 +62,11 @@ enum NookDates {
         formatter("d").string(from: date)
     }
 
+    /// "woensdag 14 oktober 2026"
+    static func day(_ date: Date) -> String {
+        formatter("EEEE d MMMM yyyy").string(from: date)
+    }
+
     /// "woensdag 14 oktober 2026 08:31"
     static func long(_ date: Date) -> String {
         formatter("EEEE d MMMM yyyy HH:mm").string(from: date)

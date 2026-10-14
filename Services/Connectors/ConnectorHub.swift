@@ -70,6 +70,7 @@ final class ConnectorHub: ObservableObject {
             guard !part.isEmpty else { continue }
             lines.append(contentsOf: part)
         }
+        if let coverage = agendaCoverageLine { lines.append(coverage) }
         return lines
     }
 
@@ -78,5 +79,5 @@ final class ConnectorHub: ObservableObject {
         active.filter { !$0.contextLines().isEmpty }.map { $0.title }
     }
 
-    var tools: [ToolSpec] { active.flatMap { $0.tools } }
+    var tools: [ToolSpec] { hubTools + active.flatMap { $0.tools } }
 }
