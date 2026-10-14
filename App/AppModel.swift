@@ -380,6 +380,16 @@ final class AppModel: ObservableObject {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// Runs a system permission request from Settings. The macOS prompt takes focus and,
+    /// as an accessory app, Settings would sink behind other windows; bring it back afterwards.
+    func requestPermission(_ request: @escaping @MainActor () async -> Void) {
+        Task { @MainActor in
+            await request()
+            NSApp.activate(ignoringOtherApps: true)
+            settingsWindow?.makeKeyAndOrderFront(nil)
+        }
+    }
+
     // MARK: Asking Nook
 
     func handleUserText(_ raw: String) {
