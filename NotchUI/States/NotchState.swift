@@ -7,12 +7,12 @@ enum PanelTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .nook: return "Nook"
-        case .chat: return "Chat"
-        case .agents: return "Agents"
-        case .connect: return "Koppelingen"
-        case .music: return "Muziek"
-        case .shelf: return "Shelf"
+        case .nook: return tr("tab.nook")
+        case .chat: return tr("tab.chat")
+        case .agents: return tr("tab.agents")
+        case .connect: return tr("tab.connect")
+        case .music: return tr("tab.music")
+        case .shelf: return tr("tab.shelf")
         }
     }
 }

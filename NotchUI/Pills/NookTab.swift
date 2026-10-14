@@ -58,11 +58,11 @@ struct NookHomeTab: View {
                 Circle()
                     .fill(app.chat.busy ? NookTheme.iris : NookTheme.mint)
                     .frame(width: 6, height: 6)
-                Text(app.chat.busy ? "Nook denkt na in de chat…" : "Lopend gesprek (\(app.chat.messages.count) berichten)")
+                Text(app.chat.busy ? tr("home.chatBusyBanner") : tr("home.chatActiveBanner", app.chat.messages.count))
                     .font(NookTheme.font(12.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
-                Text("Naar chat")
+                Text(tr("home.toChat"))
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.iris)
                 Image(systemName: "chevron.right")
@@ -83,7 +83,7 @@ struct NookHomeTab: View {
         var parts: [String] = []
         let screen = app.screenContext
         if !screen.windows.isEmpty {
-            parts.append("\(screen.windows.count) vensters" + (screen.displayCount > 1 ? " op \(screen.displayCount) schermen" : ""))
+            parts.append(tr("home.awareness.windows", screen.windows.count) + (screen.displayCount > 1 ? tr("home.awareness.screens", screen.displayCount) : ""))
         }
         for source in app.connectors.active.prefix(4) where source.status.state == .ok && !source.status.headline.isEmpty {
             parts.append("\(source.title.lowercased()): \(source.status.headline.lowercased())")
@@ -92,7 +92,7 @@ struct NookHomeTab: View {
             Circle()
                 .fill(parts.isEmpty ? NookTheme.textTertiary : NookTheme.mint)
                 .frame(width: 6, height: 6)
-            Text(parts.isEmpty ? "Ik zie nog niets. Geef me toegang bij Instellingen, dan help ik je met alles." : "Ik zie " + parts.joined(separator: " · "))
+            Text(parts.isEmpty ? tr("home.awareness.empty") : tr("home.awareness.prefix", parts.joined(separator: " · ")))
                 .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
@@ -101,12 +101,12 @@ struct NookHomeTab: View {
 
     /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
     private var suggestions: some View {
-        var questions = ["Vat mijn dag samen"]
+        var questions = [tr("home.suggestions.summarizeDay")]
         let ids = Set(app.connectors.active.map { $0.id })
-        if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
-        questions.append("Maak een grafiek van mijn agenda deze week")
-        if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
-        questions.append("Schrijf een mail")
+        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
+        questions.append(tr("home.suggestions.calendarChart"))
+        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
+        questions.append(tr("home.suggestions.writeMail"))
         return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
     }
 
@@ -129,7 +129,7 @@ struct NookHomeTab: View {
             TextField(
                 "",
                 text: $question,
-                prompt: Text("Vraag Nook iets…").foregroundStyle(NookTheme.textTertiary),
+                prompt: Text(tr("home.inputPrompt")).foregroundStyle(NookTheme.textTertiary),
                 axis: .vertical
             )
             .textFieldStyle(.plain)
@@ -139,8 +139,8 @@ struct NookHomeTab: View {
             .focused($inputFocused)
             .onSubmit(send)
 
-            NookIconButton(systemName: "mic", label: "Praat met Nook", size: 28) { viewModel.startListening() }
-            NookIconButton(systemName: "arrow.up", label: "Verstuur", filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
+            NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
         }
         .padding(.leading, 16)
         .padding(.trailing, 6)
@@ -197,11 +197,11 @@ private struct NookChatView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Waar kan ik je mee helpen?")
+            Text(tr("chat.emptyTitle"))
                 .font(NookTheme.font(20, .semibold))
                 .foregroundStyle(NookTheme.paper)
 
-            Text("Stel een vraag, vraag om een conceptmail, analyseer je dag of bedien je Mac.")
+            Text(tr("chat.emptySubtitle"))
                 .font(NookTheme.font(13.5))
                 .foregroundStyle(NookTheme.textSecondary)
 
@@ -213,12 +213,12 @@ private struct NookChatView: View {
 
     /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
     private var suggestions: some View {
-        var questions = ["Vat mijn dag samen"]
+        var questions = [tr("home.suggestions.summarizeDay")]
         let ids = Set(app.connectors.active.map { $0.id })
-        if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
-        questions.append("Maak een grafiek van mijn agenda deze week")
-        if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
-        questions.append("Schrijf een mail")
+        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
+        questions.append(tr("home.suggestions.calendarChart"))
+        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
+        questions.append(tr("home.suggestions.writeMail"))
         return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
     }
 
@@ -248,7 +248,7 @@ private struct NookChatView: View {
                 }
             }
 
-            NookIconButton(systemName: "square.and.pencil", label: "Nieuw gesprek", size: 28) {
+            NookIconButton(systemName: "square.and.pencil", label: tr("chat.newChat"), size: 28) {
                 app.newChat()
             }
             .background(Circle().fill(NookTheme.notch))
@@ -269,7 +269,7 @@ private struct NookChatView: View {
             TextField(
                 "",
                 text: $question,
-                prompt: Text(chat.isEmpty ? "Vraag Nook iets…" : "Vraag door of reageer…").foregroundStyle(NookTheme.textTertiary),
+                prompt: Text(chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
                 axis: .vertical
             )
             .textFieldStyle(.plain)
@@ -280,10 +280,10 @@ private struct NookChatView: View {
             .onSubmit(send)
 
             if chat.busy {
-                NookIconButton(systemName: "stop.fill", label: "Stop", size: 28) { app.stopChat() }
+                NookIconButton(systemName: "stop.fill", label: tr("button.stop"), size: 28) { app.stopChat() }
             } else {
-                NookIconButton(systemName: "mic", label: "Praat met Nook", size: 28) { viewModel.startListening() }
-                NookIconButton(systemName: "arrow.up", label: "Verstuur", filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
+                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
             }
         }
         .padding(.leading, 16)
@@ -455,16 +455,16 @@ private struct PlanBlock: View {
             HStack(spacing: 6) {
                 switch message.planState {
                 case .pending:
-                    SmallPrimaryButton(title: "Uitvoeren", systemName: "checkmark") { app.runPlan(message.id) }
-                    SmallGhostButton(title: "Annuleren") { app.cancelPlan(message.id) }
+                    SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
+                    SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
                 case .running:
                     ProgressView().controlSize(.small)
-                    Text("Bezig…").font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("chat.plan.running")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
                 case .done(let result):
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(NookTheme.mint)
                     Text(result).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.mint)
                 case .cancelled:
-                    Text("Geannuleerd").font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+                    Text(tr("chat.plan.cancelled")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
                 case .failed(let error):
                     Text(error).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)

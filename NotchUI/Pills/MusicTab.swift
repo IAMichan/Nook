@@ -19,13 +19,13 @@ struct MusicTab: View {
 
     private var denied: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Nook mag Spotify niet bedienen")
+            Text(tr("music.deniedTitle"))
                 .font(NookTheme.font(17, .semibold))
                 .foregroundStyle(NookTheme.paper)
-            Text("Zet Nook aan onder Systeeminstellingen › Privacy en beveiliging › Automatisering.")
+            Text(tr("music.deniedDetail"))
                 .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.textSecondary)
-            Button("Open Automatisering") {
+            Button(tr("button.openAutomation")) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
                     NSWorkspace.shared.open(url)
                 }
@@ -39,13 +39,13 @@ struct MusicTab: View {
 
     private var nothingPlaying: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Er speelt nu niets")
+            Text(tr("music.nothingPlayingTitle"))
                 .font(NookTheme.font(17, .semibold))
                 .foregroundStyle(NookTheme.paper)
-            Text("Start een nummer in Spotify of Muziek, dan zie je het hier.")
+            Text(tr("music.nothingPlayingDetail"))
                 .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.textSecondary)
-            Text("De eerste keer vraagt macOS of Nook die apps mag bedienen.")
+            Text(tr("music.permissionNote"))
                 .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.textTertiary)
         }
@@ -71,15 +71,15 @@ struct MusicTab: View {
                 MusicScrubBar(info: info) { seconds in app.nowPlaying.seek(to: seconds) }
 
                 HStack(spacing: 4) {
-                    MusicToggleButton(systemName: "shuffle", label: "Willekeurig", isOn: info.shuffle) {
+                    MusicToggleButton(systemName: "shuffle", label: tr("music.shuffle"), isOn: info.shuffle) {
                         app.nowPlaying.setShuffle(!info.shuffle)
                     }
-                    NookIconButton(systemName: "backward.fill", label: "Vorige") { app.nowPlaying.control(.previous) }
-                    NookIconButton(systemName: info.isPlaying ? "pause.fill" : "play.fill", label: info.isPlaying ? "Pauze" : "Afspelen", filled: true, size: 38) {
+                    NookIconButton(systemName: "backward.fill", label: tr("music.previous")) { app.nowPlaying.control(.previous) }
+                    NookIconButton(systemName: info.isPlaying ? "pause.fill" : "play.fill", label: info.isPlaying ? tr("music.pause") : tr("music.play"), filled: true, size: 38) {
                         app.nowPlaying.control(.playPause)
                     }
-                    NookIconButton(systemName: "forward.fill", label: "Volgende") { app.nowPlaying.control(.next) }
-                    MusicToggleButton(systemName: "repeat", label: "Herhalen", isOn: info.repeating) {
+                    NookIconButton(systemName: "forward.fill", label: tr("music.next")) { app.nowPlaying.control(.next) }
+                    MusicToggleButton(systemName: "repeat", label: tr("music.repeat"), isOn: info.repeating) {
                         app.nowPlaying.setRepeat(!info.repeating)
                     }
                     Spacer(minLength: 12)
@@ -92,7 +92,7 @@ struct MusicTab: View {
     }
 
     private func subtitle(_ info: NowPlayingInfo) -> String {
-        let appName = info.app == "Music" ? "Muziek" : info.app
+        let appName = info.app == "Music" ? tr("tab.music") : info.app
         return info.artist.isEmpty ? appName : "\(info.artist) · \(appName)"
     }
 
@@ -189,8 +189,8 @@ private struct MusicScrubBar: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: active)
         .accessibilityElement()
-        .accessibilityLabel("Voortgang")
-        .accessibilityValue("\(musicClock(fraction * duration)) van \(musicClock(duration))")
+        .accessibilityLabel(tr("music.progress"))
+        .accessibilityValue("\(musicClock(fraction * duration)) / \(musicClock(duration))")
     }
 }
 
@@ -223,7 +223,7 @@ private struct MusicToggleButton: View {
         .animation(.easeOut(duration: 0.15), value: isOn)
         .help(label)
         .accessibilityLabel(label)
-        .accessibilityValue(isOn ? "Aan" : "Uit")
+        .accessibilityValue(isOn ? tr("music.on") : tr("music.off"))
     }
 }
 
@@ -263,8 +263,8 @@ private struct MusicVolumeControl: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(shown > 0 ? "Dempen" : "Geluid aan")
-            .accessibilityLabel(shown > 0 ? "Dempen" : "Geluid aan")
+            .help(shown > 0 ? tr("music.mute") : tr("music.unmute"))
+            .accessibilityLabel(shown > 0 ? tr("music.mute") : tr("music.unmute"))
 
             GeometryReader { geo in
                 let width = max(1, geo.size.width)
@@ -290,8 +290,8 @@ private struct MusicVolumeControl: View {
             }
             .frame(width: 84, height: 16)
             .accessibilityElement()
-            .accessibilityLabel("Volume")
-            .accessibilityValue("\(shown) procent")
+            .accessibilityLabel(tr("music.volume"))
+            .accessibilityValue(tr("music.percent", shown))
         }
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)

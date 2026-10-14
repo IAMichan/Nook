@@ -40,13 +40,21 @@ final class AppSettings: ObservableObject {
 
     private static let keyAccount = "anthropic-api-key"
 
+    /// Taal van de app-interface (Nederlands, English, Deutsch).
+    @Published var appLanguage: AppLanguage {
+        didSet {
+            UserDefaults.standard.set(appLanguage.rawValue, forKey: "appLanguage")
+            I18n.shared.language = appLanguage
+        }
+    }
+
     /// Taal van Nooks antwoorden: een code uit `languages`, of "auto" (de taal van je vraag).
     @Published var language: String {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
     }
 
     static let languages: [(code: String, name: String)] = [
-        ("nl", "Nederlands"), ("en", "Engels"), ("de", "Duits"), ("fr", "Frans"), ("es", "Spaans"),
+        ("nl", "Nederlands"), ("en", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"),
         ("auto", "Taal van mijn vraag")
     ]
 
@@ -191,6 +199,11 @@ final class AppSettings: ObservableObject {
             if defaults.string(forKey: "model") == "claude-sonnet-5-5" { defaults.removeObject(forKey: "model") }
         }
         model = defaults.string(forKey: "model") ?? "claude-haiku-5-5"
+        if let stored = defaults.string(forKey: "appLanguage"), let lang = AppLanguage(rawValue: stored) {
+            appLanguage = lang
+        } else {
+            appLanguage = I18n.shared.language
+        }
         language = defaults.string(forKey: "language") ?? "nl"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")

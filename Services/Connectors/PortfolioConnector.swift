@@ -147,17 +147,17 @@ enum PortfolioExchange: String, CaseIterable, Identifiable, Sendable {
 
     var needsPassphrase: Bool { self == .okx }
 
-    var keyLabel: String { self == .coinbase ? "Sleutelnaam (organizations/…/apiKeys/…)" : "API-sleutel" }
-    var secretLabel: String { self == .coinbase ? "Privésleutel (-----BEGIN EC PRIVATE KEY-----…)" : "API-secret" }
+    var keyLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseKeyLabel") : tr("portfolio.exchange.apiKey") }
+    var secretLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseSecretLabel") : tr("portfolio.exchange.apiSecret") }
 
     /// Uitleg voor het aanmaken van een sleutel met alleen leesrechten.
     var help: String {
         switch self {
-        case .binance: return "API-beheer › nieuwe sleutel met alleen ‘Lezen’. Zet handelen en opnemen uit."
-        case .okx: return "API › nieuwe sleutel met alleen ‘Read’. De passphrase kies je zelf bij het aanmaken."
-        case .bybit: return "API › ‘Read-Only’. Nook leest je Unified Trading-account."
-        case .kraken: return "API › nieuwe sleutel met alleen ‘Query Funds’."
-        case .coinbase: return "Coinbase Developer Platform › API-sleutel met ECDSA (niet Ed25519) en alleen ‘View’. Plak de sleutelnaam en de privésleutel."
+        case .binance: return tr("portfolio.exchange.help.binance")
+        case .okx: return tr("portfolio.exchange.help.okx")
+        case .bybit: return tr("portfolio.exchange.help.bybit")
+        case .kraken: return tr("portfolio.exchange.help.kraken")
+        case .coinbase: return tr("portfolio.exchange.help.coinbase")
         }
     }
 
@@ -387,7 +387,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         next.updated = Date()
         if !sources.isEmpty && errors.count == sources.count {
             next.state = .error(errors.values.sorted().first ?? "Niets opgehaald.")
-            next.headline = "Niet opgehaald"
+            next.headline = tr("connector.notYetFetched")
         } else {
             next.state = .ok
             next.headline = PortfolioFormat.eur(totalEUR)

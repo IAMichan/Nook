@@ -59,7 +59,7 @@ struct CardView: View {
                     NookGhostButton(title: action.label) { onAction(action) }
                 }
                 Spacer()
-                NookIconButton(systemName: "mic", label: "Aanpassen met je stem", action: onVoice)
+                NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +97,7 @@ struct CardView: View {
             TextField(
                 "",
                 text: $reply,
-                prompt: Text("Vraag door of reageer…").foregroundStyle(NookTheme.textTertiary)
+                prompt: Text(tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary)
             )
             .textFieldStyle(.plain)
             .font(NookTheme.font(14))
@@ -305,7 +305,7 @@ private struct ChoicesDetail: View {
             if set.multiSelect {
                 HStack {
                     Spacer()
-                    NookPrimaryButton(title: selected.isEmpty ? "Kies iets" : "Verstuur (\(selected.count))") {
+                    NookPrimaryButton(title: selected.isEmpty ? tr("chat.choices.choose") : tr("chat.choices.sendCount", selected.count)) {
                         guard !selected.isEmpty else { return }
                         // In de volgorde van de opties, niet van het klikken.
                         onChoose(set.options.map(\.label).filter { selected.contains($0) })

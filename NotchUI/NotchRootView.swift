@@ -245,7 +245,7 @@ struct NotchRootView: View {
         .contentShape(Rectangle())
         .onTapGesture { viewModel.openNudge() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Nook stelt voor: \(line)")
+        .accessibilityLabel(tr("notch.nudgeProposal", line))
         .accessibilityAddTraits(.isButton)
     }
 
@@ -263,7 +263,7 @@ struct NotchRootView: View {
                 NookOrb(mood: mood, size: 46)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Ga naar startpagina")
+            .accessibilityLabel(tr("notch.goToHome"))
             inner()
         }
         .padding(.top, nh + 14)
@@ -296,6 +296,6 @@ private struct AgentDots: View {
                 }
             }
         }
-        .accessibilityLabel("\(sessions.count) agents actief")
+        .accessibilityLabel(tr("notch.agentsActive", sessions.count))
     }
 }

@@ -7,7 +7,7 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
     @Published private(set) var pointerInside = false
     @Published var selectedAgentID: String = "cc"
-    @Published private(set) var doneButtonTitle = "Sluiten"
+    @Published private(set) var doneButtonTitle = tr("button.close")
     private var doneButtonAction: (() -> Void)?
 
     /// De chat moet meteen de toetsenbordfocus krijgen (na een vraag of ⌥⌘ spatie), niet bij gewoon hoveren.
@@ -178,7 +178,7 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Toont een korte bevestiging en gaat na een paar seconden terug naar rust.
-    func finish(_ message: String, button: String = "Sluiten", action: (() -> Void)? = nil) {
+    func finish(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {
         doneButtonTitle = button
         doneButtonAction = action
         show(.done(message))

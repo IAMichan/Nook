@@ -188,10 +188,10 @@ final class GitHubConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let tokenAccount = "connector.github.token"
-    static let fields = [
-        ConnectorField(account: GitHubConnector.tokenAccount, label: "Token", placeholder: "ghp_… of github_pat_…", secret: true)
-    ]
-    static let helpText = "Het makkelijkst: klik 'Koppel met GitHub' hierboven. Lukt dat niet? Klik 'Maak een token', de rechten staan dan al goed, en plak het token hier. Nook leest je pull requests en kan ze, na jouw goedkeuring, beoordelen, samenvoegen of sluiten; daarvoor moet het token schrijfrechten op pull requests hebben."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: GitHubConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ghp_… / github_pat_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.github.help") }
     static let signupURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,read:user&description=Nook")
 
     private enum CI { case unknown, pending, passing, failing }
@@ -358,9 +358,9 @@ final class GitHubConnector: CloudConnectorConfig {
         snapshot = s
         let failing = s.mine.filter { $0.ci == .failing }
 
-        var headline = CloudHelp.plural(s.mineTotal, "open PR", "open PR's")
+        var headline = tr("connect.github.openPrs", s.mineTotal)
         if s.reviewTotal > 0 {
-            headline += " · " + CloudHelp.plural(s.reviewTotal, "review", "reviews") + " voor jou"
+            headline += " · " + tr("connect.github.reviewsForYou", s.reviewTotal)
         }
         let detail: String
         if !failing.isEmpty {
@@ -724,11 +724,13 @@ final class VercelConnector: CloudConnectorConfig {
 
     static let tokenAccount = "connector.vercel.token"
     static let teamAccount = "connector.vercel.team"
-    static let fields = [
-        ConnectorField(account: VercelConnector.tokenAccount, label: "Token", placeholder: "Vercel-token", secret: true),
-        ConnectorField(account: VercelConnector.teamAccount, label: "Team-ID", placeholder: "team_… (optioneel)", secret: false)
-    ]
-    static let helpText = "Maak een token onder Account › Tokens, met als scope alleen het team of account dat Nook mag zien. Team-ID is alleen nodig voor deploys van een team."
+    static var fields: [ConnectorField] {
+        [
+            ConnectorField(account: VercelConnector.tokenAccount, label: tr("connect.field.token"), placeholder: tr("connect.vercel.tokenPlaceholder"), secret: true),
+            ConnectorField(account: VercelConnector.teamAccount, label: tr("connect.vercel.teamId"), placeholder: tr("connect.vercel.teamPlaceholder"), secret: false)
+        ]
+    }
+    static var helpText: String { tr("connect.vercel.help") }
     static let signupURL = URL(string: "https://vercel.com/account/tokens")
 
     private struct Deployment {
@@ -871,13 +873,13 @@ final class VercelConnector: CloudConnectorConfig {
 
         let headline: String
         if !broken.isEmpty {
-            headline = "Deploy mislukt: " + broken.prefix(2).map { $0.project }.joined(separator: ", ")
+            headline = tr("connect.vercel.deployFailed", broken.prefix(2).map { $0.project }.joined(separator: ", "))
         } else if let first = busy.first {
-            headline = "Bezig: \(first.project)"
+            headline = tr("connect.vercel.deployBusy", first.project)
         } else if latest.isEmpty {
-            headline = "Nog geen deploys"
+            headline = tr("connect.vercel.noDeploys")
         } else {
-            headline = "Alles live"
+            headline = tr("connect.vercel.allLive")
         }
         var detail = ""
         if let last = list.first {
@@ -929,10 +931,10 @@ final class StripeConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.stripe.key"
-    static let fields = [
-        ConnectorField(account: StripeConnector.keyAccount, label: "Sleutel", placeholder: "rk_live_…", secret: true)
-    ]
-    static let helpText = "Gebruik bij voorkeur een beperkte sleutel (restricted key) met alleen leesrechten op Charges. Nook leest alleen; er gaat nooit geld weg."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: StripeConnector.keyAccount, label: tr("connect.field.key"), placeholder: "rk_live_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.stripe.help") }
     static let signupURL = URL(string: "https://dashboard.stripe.com/apikeys")
 
     private struct Payment {
@@ -1092,7 +1094,7 @@ final class StripeConnector: CloudConnectorConfig {
             return ConnectorItem(id: p.id, title: "\(CloudHelp.money(p.amount, currency: p.currency)) · \(CloudHelp.short(p.who, 40))",
                                  subtitle: subtitle, tone: tone(p), url: dashboardURL(p, testMode: s.testMode))
         }
-        status = ConnectorStatus(state: .ok, headline: "\(revenueText(s)) vandaag", detail: detail, items: items,
+        status = ConnectorStatus(state: .ok, headline: tr("connect.stripe.revenueToday", revenueText(s)), detail: detail, items: items,
                                  updated: Date(), needsAttention: !failed.isEmpty)
     }
 
@@ -1127,10 +1129,10 @@ final class NotionConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let tokenAccount = "connector.notion.token"
-    static let fields = [
-        ConnectorField(account: NotionConnector.tokenAccount, label: "Token", placeholder: "ntn_… of secret_…", secret: true)
-    ]
-    static let helpText = "Maak een interne integratie met alleen 'Read content'. Deel daarna de pagina's die Nook mag zien met die integratie (••• › Verbindingen)."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: NotionConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ntn_… / secret_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.notion.help") }
     static let signupURL = URL(string: "https://www.notion.so/profile/integrations")
 
     private struct Page {
@@ -1249,7 +1251,7 @@ final class NotionConnector: CloudConnectorConfig {
                           tone: .neutral, url: p.url)
         }
         status = ConnectorStatus(state: .ok,
-                                 headline: list.isEmpty ? "Geen gedeelde pagina's" : CloudHelp.plural(list.count, "pagina", "pagina's") + " recent bewerkt",
+                                 headline: list.isEmpty ? tr("connect.notion.noPages") : tr("connect.notion.recentlyEdited", list.count),
                                  detail: detail, items: items, updated: Date(), needsAttention: false)
     }
 
@@ -1284,10 +1286,10 @@ final class CalcomConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.calcom.key"
-    static let fields = [
-        ConnectorField(account: CalcomConnector.keyAccount, label: "API-sleutel", placeholder: "cal_live_…", secret: true)
-    ]
-    static let helpText = "Maak een API-sleutel onder Instellingen › Developer › API keys. Nook leest alleen je komende boekingen."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: CalcomConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: "cal_live_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.calcom.help") }
     static let signupURL = URL(string: "https://app.cal.com/settings/developer/api-keys")
 
     private struct Booking {
@@ -1400,9 +1402,9 @@ final class CalcomConnector: CloudConnectorConfig {
 
         let headline: String
         if let next = list.first {
-            headline = "Volgende: \(NookDates.short(next.start))"
+            headline = tr("connect.calcom.next", NookDates.short(next.start))
         } else {
-            headline = "Geen komende boekingen"
+            headline = tr("connect.calcom.noBookings")
         }
         var detail = "\(today) vandaag · \(list.count) komend"
         if !pending.isEmpty { detail += " · \(pending.count) te bevestigen" }
@@ -1446,11 +1448,13 @@ final class N8nConnector: CloudConnectorConfig {
 
     static let urlAccount = "connector.n8n.url"
     static let keyAccount = "connector.n8n.key"
-    static let fields = [
-        ConnectorField(account: N8nConnector.urlAccount, label: "Adres", placeholder: "https://n8n.jouwdomein.nl", secret: false),
-        ConnectorField(account: N8nConnector.keyAccount, label: "API-sleutel", placeholder: "n8n API-sleutel", secret: true)
-    ]
-    static let helpText = "Maak een sleutel in n8n onder Settings › n8n API. Nook leest alleen je workflows en mislukte runs; het start of wijzigt niets."
+    static var fields: [ConnectorField] {
+        [
+            ConnectorField(account: N8nConnector.urlAccount, label: tr("connect.n8n.address"), placeholder: "https://n8n.example.com", secret: false),
+            ConnectorField(account: N8nConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: tr("connect.n8n.keyPlaceholder"), secret: true)
+        ]
+    }
+    static var helpText: String { tr("connect.n8n.help") }
     static let signupURL = URL(string: "https://docs.n8n.io/api/authentication/")
 
     private struct Failure {
@@ -1583,7 +1587,7 @@ final class N8nConnector: CloudConnectorConfig {
                                  tone: isRecent ? .bad : .neutral, url: f.url)
         }
         status = ConnectorStatus(state: .ok,
-                                 headline: CloudHelp.plural(s.active, "actieve workflow", "actieve workflows"),
+                                 headline: tr("connect.n8n.activeWorkflows", s.active),
                                  detail: detail, items: Array(items), updated: Date(), needsAttention: !recent.isEmpty)
     }
 
@@ -1619,10 +1623,10 @@ final class ResendConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.resend.key"
-    static let fields = [
-        ConnectorField(account: ResendConnector.keyAccount, label: "API-sleutel", placeholder: "re_…", secret: true)
-    ]
-    static let helpText = "Maak een sleutel met 'Full access': alleen daarmee kan Nook je verzonden mails en domeinen lezen. Nook verstuurt zelf nooit mail."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: ResendConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: "re_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.resend.help") }
     static let signupURL = URL(string: "https://resend.com/api-keys")
 
     private struct Domain {
@@ -1765,11 +1769,11 @@ final class ResendConnector: CloudConnectorConfig {
 
         let headline: String
         if let first = unverified.first {
-            headline = "Domein niet klaar: \(first.name)"
+            headline = tr("connect.resend.domainNotReady", first.name)
         } else if s.emails.isEmpty {
-            headline = CloudHelp.plural(s.domains.count, "domein", "domeinen") + " in orde"
+            headline = tr("connect.resend.domainsOk", s.domains.count)
         } else {
-            headline = CloudHelp.plural(s.emails.count, "recente mail", "recente mails")
+            headline = tr("connect.resend.recentMails", s.emails.count)
         }
         let detail = troubled.isEmpty
             ? "Geen bounces"
