@@ -873,7 +873,8 @@ final class AppModel: ObservableObject {
             presentSetupCard()
             return
         }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             guard await voice.requestPermissions() else {
                 viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
                 return
