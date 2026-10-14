@@ -102,10 +102,11 @@ final class AgentHub: ObservableObject {
                     file: agent.cwd.isEmpty ? "draait op deze Mac" : Self.shortPath(agent.cwd),
                     placeholder: "Typ in de terminal van \(agent.name) om verder te gaan",
                     steps: [
-                        AgentStep(mark: .running, text: "Draait op deze Mac"),
-                        AgentStep(mark: .todo, text: "Koppel hooks (Instellingen › Agents) voor voortgang en goedkeuring")
+                        AgentStep(mark: .running, text: "\(agent.name) draait, maar Nook ziet nog niet wat hij doet"),
+                        AgentStep(mark: .todo, text: "Wil je voortgang zien en iets kunnen goedkeuren? Klik op 'Koppel in Instellingen' hieronder"),
+                        AgentStep(mark: .todo, text: "Daarna start je \(agent.name) opnieuw in de terminal")
                     ],
-                    diff: agent.cwd.isEmpty ? [] : [DiffLine(kind: .context, text: agent.cwd)]
+                    diff: []
                 )
             }
         }
