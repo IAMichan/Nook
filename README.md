@@ -6,7 +6,7 @@
 
 Je persoonlijke agent in de notch van je Mac.
 
-> **English:** Nook is a personal AI agent that lives in the MacBook notch. It listens on request, reads your screen locally (OCR) and proposes calendar events, reminders and tasks, shows what your coding agents (Claude Code, Codex) are doing, and controls music. Nothing runs without your explicit approval. The interface is in Dutch.
+> **English:** Nook is a personal AI assistant that lives in the MacBook notch. It keeps the text of every window on every display up to date locally, so any question is answered instantly with what you see, plus your calendar, reminders, mail, browser tabs, files and connected services (GitHub, Stripe, Vercel, Notion, Cal.com, n8n, Resend, crypto). It thinks with Claude, OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama, LM Studio or a built-in local model, shows what your coding agents are doing (Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, OpenCode, Amp, Hermes…), and controls music. Nothing runs without your explicit approval. The interface is in Dutch.
 
 > **Status:** vroege versie (0.1). De app compileert, maar is nog weinig in de praktijk getest. Verwacht ruwe randjes.
 
@@ -32,9 +32,11 @@ Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./updat
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in de menubalk.
 
 **De eerste keer**
-1. Menubalk-stip → **Instellingen…** → kies bij Brein een Anthropic API-sleutel (blijft in de Keychain) of **Gratis model op je Mac** (ingebouwd, MLX: klik Download, niets anders te installeren).
-2. Zet bij Machtigingen Agenda, Herinneringen, Microfoon en Scherm lezen aan zodra je ze wilt gebruiken.
-3. Voor je agents: klik bij **Agents** op **Koppel…** naast Claude Code, Codex of Gemini CLI. Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
+Nook laat de eerste keer zelf een welkomstkaart zien. In **Instellingen › Overzicht** staat een checklist met wat er nog moet:
+1. **Brein**: Claude (API-sleutel), een andere AI (OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama, LM Studio) of **Gratis op je Mac** (ingebouwd, MLX).
+2. **Privacy en toegang**: Scherm lezen, Agenda, Herinneringen en Microfoon.
+3. **Koppelingen**: zet aan wat je wilt (Mail, browser, bestanden) en plak sleutels voor GitHub, Stripe en de rest.
+4. Voor je agents: klik bij **Agents** op **Koppel…** naast Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp of Hermes. Elke andere agent kan zich melden met `nook_agent`, zie [docs/AGENTS.md](docs/AGENTS.md). Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
 
 Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tonen**.
 
@@ -43,23 +45,27 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Wat | Hoe |
 |---|---|
 | Praten tegen Nook | ⌥ spatie (of de microfoonknop). Herkenning op je Mac; daarna denkt het brein mee. |
-| Typen tegen Nook | Veld onderaan de tab Vandaag. |
+| Typen tegen Nook | ⌥⌘ spatie, waar je ook bent, of het veld onderaan Vandaag. Het antwoord verschijnt terwijl het geschreven wordt. |
+| Al je schermen | Nook houdt de tekst van al je vensters op al je schermen bij (lokaal, OCR) en gebruikt die bij elke vraag. Daardoor is een antwoord meteen klaar. Boven een antwoord zie je waar Nook keek. |
+| Koppelingen | Agenda, herinneringen, Mail (ongelezen en zoeken), browsertabs, recente bestanden en zoeken met Spotlight, klembord (standaard uit). Diensten met een eigen sleutel: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, Resend en een crypto-portfolio. Alles in de tab Koppelingen. |
+| Elk brein | Claude (met zoeken op het web), OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama en LM Studio, of het ingebouwde gratis model. |
 | Meekijken | Zeg je "maak er een afspraak voor" of verwijs je naar iets met "hier", "dit" of "daar", dan leest Nook zelf eerst het voorste venster en haalt datum, tijd en plaats eruit. ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
-| Muziek | Spotify en Muziek: nu speelt, bediening, Nook danst in de notch. |
+| Muziek | Spotify en Muziek: hoes, doorspoelen, shuffle, herhalen en volume. |
 | Agents | Claude Code, Codex, Gemini CLI e.d.: wie draait, wat doet hij (met live diff en +/− regels), wie wacht op je. Vraagt je agent toestemming, dan kan dat in de notch: **Toestaan**, **Altijd**, **Weigeren** of **In terminal**. Antwoord je in de terminal, dan verdwijnt de vraag meteen uit de notch. Meerkeuzevragen van Claude Code (AskUserQuestion) beantwoord je ook in de notch. **Open terminal** haalt het venster van de agent naar voren. Werkt er een agent, dan zie je dat in rust in de notch (een stipje per sessie); wijs ernaar en de Agents-tab gaat open. Is hij klaar, dan krijg je een kaartje met wat hij zei. |
-| Abonnement | Hoeveel van je Claude-limiet (5 uur en week) je gebruikt, in de Agents-tab. |
+| Abonnement | Hoeveel van je Claude- en Codex-limiet (5 uur en week) je gebruikt. |
 | Weekoverzicht | Op maandag in Vandaag (of via de menubalk): tijd met agents, sessies, regels code, toestemmingen, drukste dag. Alleen lokaal. |
-| Shelf | Sleep een bestand (tekst, pdf, Word, rtf) in de Shelf en klik erop om Nook er iets over te vragen. |
+| Shelf | Sleep een bestand (tekst, pdf, Word, rtf) in de Shelf en klik erop om Nook er iets over te vragen, of rechtsklik om het als bijlage in een nieuwe mail te zetten. |
 | Snelle opdrachten | "Volgende nummer", "volume 30", "open Safari", "weekoverzicht": Nook herkent die zelf, zonder brein, dus meteen. |
+| Eigen geluiden | Zet `attention`, `done` of `error` (.wav, .mp3, .aiff, .m4a) in de geluidenmap (Instellingen › Stem en geluid). |
 | Stem | Optioneel leest Nook antwoorden voor, en luistert hij naar "Hé Nook" (alleen als je Mac spraak zelf herkent). |
 | Besturen | Apps openen, links openen, volume, muziek, Opdrachten (Shortcuts), conceptmail in Mail. |
 
 ## Privacy en veiligheid
 
 - Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Nook verstuurt zelf nooit mail of berichten.
-- Wat naar Anthropic gaat: wat je zegt of typt (als tekst), herkende schermtekst als je Nook laat meekijken, en de agenda- en taakgegevens die nodig zijn voor een voorstel. Het schermbeeld zelf verlaat je Mac niet. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
+- Wat naar de AI-aanbieder gaat die je kiest: wat je zegt of typt (als tekst), de herkende tekst van je vensters (uit te zetten bij Instellingen › Assistent) en een korte samenvatting uit je koppelingen. Dat gebeurt alleen als je iets vraagt. Het schermbeeld zelf verlaat je Mac nooit. Met Ollama, LM Studio of het ingebouwde model blijft alles op je Mac. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
 - Tekst van je scherm, agenda-titels en tool-uitkomsten gaan als "onbetrouwbare data" naar het brein, met de opdracht daar geen instructies uit te volgen.
 - Wachtwoordmanagers worden nooit gelezen.
 - De hook-socket is alleen voor jouw gebruiker (rechten 0600 + controle op gebruikers-ID).

@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
     }
 
     // MARK: Opstarten

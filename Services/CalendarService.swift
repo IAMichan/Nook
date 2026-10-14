@@ -56,7 +56,12 @@ final class CalendarService {
     func incompleteReminders() async -> [ReminderItem] {
         guard hasReminderAccess else { return [] }
         let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
-        return await withCheckedContinuation { continuation in
+        return await Self.fetch(store, predicate)
+    }
+
+    /// Buiten de main actor: EventKit roept de callback aan op een eigen thread.
+    private nonisolated static func fetch(_ store: EKEventStore, _ predicate: NSPredicate) async -> [ReminderItem] {
+        await withCheckedContinuation { continuation in
             store.fetchReminders(matching: predicate) { reminders in
                 let items = (reminders ?? []).map { reminder in
                     ReminderItem(

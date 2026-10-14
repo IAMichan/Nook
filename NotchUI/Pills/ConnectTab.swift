@@ -5,8 +5,9 @@ import SwiftUI
 struct ConnectTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    @ObservedObject private var screen = AppModel.shared.screenContext
     @State private var selectedID: String?
+
+    private var screen: ScreenContext { app.screenContext }
 
     var body: some View {
         // `revision` lezen zorgt dat de tab ververst als een koppeling nieuwe gegevens heeft.
