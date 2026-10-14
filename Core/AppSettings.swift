@@ -73,6 +73,28 @@ final class AppSettings: ObservableObject {
     }
     @Published private(set) var hasAPIKey: Bool
 
+    /// Op welk scherm Nook staat: "auto" (scherm met notch, anders het hoofdscherm), "main", "mouse"
+    /// (volgt je muis) of de naam van een scherm.
+    @Published var screenChoice: String {
+        didSet { UserDefaults.standard.set(screenChoice, forKey: "screenChoice") }
+    }
+    /// In rust alleen de notch zelf: Nook verschijnt pas als er iets is of als je erop wijst.
+    @Published var hideWhenIdle: Bool {
+        didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
+    }
+    /// Een kort geluid als een agent op je wacht of klaar is.
+    @Published var sounds: Bool {
+        didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
+    }
+    /// Antwoorden voorlezen als je met je stem iets vroeg.
+    @Published var speakAnswers: Bool {
+        didSet { UserDefaults.standard.set(speakAnswers, forKey: "speakAnswers") }
+    }
+    /// Luisteren naar "Hé Nook" (alleen op je Mac).
+    @Published var wakeWord: Bool {
+        didSet { UserDefaults.standard.set(wakeWord, forKey: "wakeWord") }
+    }
+
     /// Kan Nook nadenken? Met een lokaal model is een API-sleutel niet nodig.
     var brainReady: Bool { useLocal ? !localModel.isEmpty : hasAPIKey }
     /// Naam van wat er nu denkt, voor in meldingen.
@@ -93,6 +115,11 @@ final class AppSettings: ObservableObject {
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         useLocal = UserDefaults.standard.bool(forKey: "useLocal")
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
+        screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
+        hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        sounds = defaults.object(forKey: "sounds") as? Bool ?? true
+        speakAnswers = defaults.bool(forKey: "speakAnswers")
+        wakeWord = defaults.bool(forKey: "wakeWord")
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key
         hasAPIKey = !(key ?? "").isEmpty

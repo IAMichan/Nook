@@ -2,6 +2,8 @@ import SwiftUI
 import Combine
 import AppKit
 import Carbon.HIToolbox
+import PDFKit
+import UniformTypeIdentifiers
 
 /// Knoopt alles aan elkaar: services, brein en notch. De UI praat alleen met dit object.
 @MainActor
@@ -16,6 +18,9 @@ final class AppModel: ObservableObject {
     let hub = AgentHub()
     let voice = VoiceService()
     let screen = ScreenReader()
+    let recap = RecapStore()
+    let speech = SpeechOutput()
+    let wake = WakeWordService()
 
     private(set) lazy var tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
         self?.reloadLoops()
@@ -35,6 +40,10 @@ final class AppModel: ObservableObject {
     private var lastScreenHash: Int?
     private var lastAutoRun = Date.distantPast
     private var autoBusy = false
+    /// De vraag kwam via je stem: dan mag het antwoord ook hardop.
+    private var spokenRequest = false
+    /// Een bestand uit de Shelf waar je net een vraag over stelt.
+    private var attachment: (name: String, text: String, date: Date)?
 
     private init() {
         hub.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -51,9 +60,28 @@ final class AppModel: ObservableObject {
         reloadLoops()
         nowPlaying.start()
 
+        // Altijd de nieuwste versie van het hook-script, zodat bestaande koppelingen meegroeien.
+        try? HookScript.install()
+        hub.recap = recap
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
+        hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
+        hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }
+        hub.onQuestionGone = { [weak self] id, message in self?.cardGone("question-" + id, message: message) }
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()
+
+        // Wekwoord: alleen luisteren als je het aanzet, en even niet zolang Nook al luistert.
+        wake.onWake = { [weak self] in self?.toggleVoice() }
+        settings.$wakeWord
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateWakeWord() }
+            .store(in: &bag)
+        voice.$isListening
+            .removeDuplicates()
+            .dropFirst()
+            .debounce(for: .milliseconds(600), scheduler: RunLoop.main)
+            .sink { [weak self] listening in if !listening { self?.updateWakeWord() } }
+            .store(in: &bag)
 
         // Muziek die begint of stopt, verandert wat de notch in rust laat zien.
         nowPlaying.$current
@@ -120,6 +148,8 @@ final class AppModel: ObservableObject {
             ))
         }
 
+        if let recapItem = weeklyRecapItem() { items.append(recapItem) }
+
         for loop in loops.prefix(3) {
             items.append(TodayItem(
                 id: "loop-\(loop.id)",
@@ -165,11 +195,28 @@ final class AppModel: ObservableObject {
     func handleUserText(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+
+        // Korte vaste opdrachten doet Nook zelf, zonder brein: meteen klaar.
+        if let intent = LocalIntent.parse(text) {
+            handleLocalIntent(intent)
+            return
+        }
+
         guard settings.brainReady else {
             presentSetupCard()
             return
         }
         let title = "“\(String(text.prefix(100)))”"
+
+        // Een vraag over een bestand uit de Shelf.
+        if let file = attachment, Date().timeIntervalSince(file.date) < 300 {
+            attachment = (file.name, file.text, Date())
+            viewModel.show(.card(thinkingCard(context: "Ik lees \(file.name)…", title: title)))
+            let limit = settings.useLocal ? 12_000 : 40_000
+            let snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
+            Task { await runBrain(userText: text, snapshot: snapshot, silentIfNone: false, context: "Over \(file.name)") }
+            return
+        }
 
         // Verwijst de gebruiker naar iets op het scherm ("maak er een afspraak voor"), lees dat dan meteen mee.
         if Self.refersToScreen(text) {
@@ -243,6 +290,7 @@ final class AppModel: ObservableObject {
 
             if !silentIfNone {
                 remember(user: userText, nook: plan.text.isEmpty ? "(acties voorgesteld, wachten op goedkeuring)" : plan.text)
+                speakIfAsked(plan.text.isEmpty ? "Ik heb een plan klaargezet." : plan.text)
             }
             let card = planCard(plan, context: context)
             if silentIfNone {
@@ -252,9 +300,16 @@ final class AppModel: ObservableObject {
             }
         } catch {
             if !silentIfNone {
+                spokenRequest = false
                 replaceThinking(with: errorCard(error.localizedDescription))
             }
         }
+    }
+
+    private func speakIfAsked(_ text: String) {
+        defer { spokenRequest = false }
+        guard spokenRequest, settings.speakAnswers else { return }
+        speech.speak(text, language: settings.language)
     }
 
     private func replaceThinking(with card: NookCard) {
@@ -300,6 +355,10 @@ final class AppModel: ObservableObject {
 
         if let playing = nowPlaying.current {
             lines.append("Speelt nu: \(playing.title) – \(playing.artist)")
+        }
+
+        if let usage = hub.planUsage {
+            lines.append("Claude-abonnement gebruikt: \(usage.label)" + (usage.resetLabel.map { " (\($0))" } ?? ""))
         }
         return lines.joined(separator: "\n")
     }
@@ -422,6 +481,8 @@ final class AppModel: ObservableObject {
                 return
             }
             warmUp()
+            wake.stop()
+            speech.stop()
             viewModel.register("listening#done") { [weak self] in self?.voice.finishNow() }
             viewModel.register("listening#cancel") { [weak self] in self?.voice.cancel() }
             viewModel.show(.card(listeningCard("")))
@@ -444,7 +505,22 @@ final class AppModel: ObservableObject {
         if trimmed.isEmpty {
             viewModel.dismissCard(id: "listening")
         } else {
+            spokenRequest = true
             handleUserText(trimmed)
+        }
+    }
+
+    private func updateWakeWord() {
+        guard settings.wakeWord else {
+            wake.stop()
+            return
+        }
+        guard !voice.isListening, !wake.isRunning else { return }
+        do {
+            try wake.start()
+        } catch {
+            settings.wakeWord = false
+            viewModel.present(errorCard(error.localizedDescription))
         }
     }
 
@@ -507,34 +583,123 @@ final class AppModel: ObservableObject {
     // MARK: Agents
 
     private func presentApproval(_ request: ApprovalRequest) {
-        let token = "approval-" + UUID().uuidString
+        let token = "approval-" + request.id
         let danger = request.assessment.level == .danger
+        let id = request.id
 
-        viewModel.register("\(token)#yes") { request.reply(.allow) }
-        viewModel.register("\(token)#no") { request.reply(.deny) }
+        viewModel.register("\(token)#yes") { [weak self] in self?.hub.decide(id, .allow) }
+        viewModel.register("\(token)#always") { [weak self] in self?.hub.decide(id, .always) }
+        viewModel.register("\(token)#no") { [weak self] in self?.hub.decide(id, .deny) }
+        viewModel.register("\(token)#terminal") { [weak self] in
+            guard let self else { return }
+            let host = self.hub.sessions.first { $0.id == request.sessionKey }?.hostBundleID
+            self.hub.decide(id, .terminal)
+            TerminalLauncher.activate(sessionBundleID: host)
+        }
+
+        var context = "\(request.agentName) · \(request.project)"
+        let others = hub.approvals.count - 1
+        if others > 0 { context += " · nog \(others) wachtend" }
+
+        let detail: CardDetail
+        let height: CGFloat
+        if request.diff.isEmpty {
+            detail = .command(String(request.summary.prefix(160)), note: request.assessment.note)
+            height = 214
+        } else {
+            detail = .diff(title: request.summary, lines: request.diff, note: request.assessment.note)
+            height = 150 + min(166, CGFloat(request.diff.count) * 15 + 34)
+        }
+
+        var extra = [CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", ""))]
+        if request.canAlways {
+            extra.insert(CardAction(label: "Altijd", outcome: .callback("\(token)#always", "")), at: 0)
+        }
 
         let card = NookCard(
             id: token,
             mood: danger ? .worry : .waiting,
-            context: "\(request.agentName) · \(request.project)",
-            title: danger ? request.assessment.title : "Mag \(request.agentName) dit uitvoeren?",
-            detail: .command(String(request.command.prefix(160)), note: request.assessment.note),
-            primary: CardAction(label: "Toestaan", outcome: .callback("\(token)#yes", "Toegestaan")),
-            secondary: CardAction(label: "Weigeren", outcome: .callback("\(token)#no", "Geweigerd")),
-            contentHeight: 214
+            context: context,
+            title: request.title,
+            detail: detail,
+            primary: CardAction(label: "Toestaan", outcome: .callback("\(token)#yes", "")),
+            secondary: CardAction(label: "Weigeren", outcome: .callback("\(token)#no", "")),
+            contentHeight: height,
+            extra: extra
         )
         viewModel.present(card)
+        NookSound.play(.attention)
+    }
 
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 95_000_000_000)
-            self?.viewModel.dismissCard(id: token)
+    /// Meerkeuzevragen van een agent, één voor één. Na de laatste gaat het antwoord in één keer terug.
+    private func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = []) {
+        guard index < request.items.count else { return }
+        let item = request.items[index]
+        let token = "question-" + request.id
+        let choiceID = "\(token)#choice\(index)"
+
+        viewModel.registerChoice(choiceID) { [weak self] labels in
+            guard let self else { return }
+            let all = selections + [labels]
+            if index + 1 < request.items.count {
+                self.presentQuestion(request, index: index + 1, selections: all)
+            } else {
+                self.hub.answerQuestion(request.id, selections: all)
+            }
+        }
+        viewModel.register("\(token)#terminal") { [weak self] in
+            guard let self else { return }
+            let host = self.hub.sessions.first { $0.id == request.sessionKey }?.hostBundleID
+            self.hub.answerQuestionInTerminal(request.id)
+            TerminalLauncher.activate(sessionBundleID: host)
+        }
+
+        var context = "\(request.agentName) · \(request.project) vraagt"
+        if !item.header.isEmpty { context += " · \(item.header)" }
+        if request.items.count > 1 { context += " · \(index + 1) van \(request.items.count)" }
+
+        let titleLines = max(1, Int(ceil(Double(item.question.count) / 46.0)))
+        let optionsHeight = item.options.reduce(CGFloat(0)) { $0 + ($1.description.isEmpty ? 40 : 58) }
+        let card = NookCard(
+            id: token,
+            mood: .waiting,
+            context: context,
+            title: item.question,
+            detail: .choices(ChoiceSet(
+                id: choiceID,
+                options: item.options.map { ChoiceOption(label: $0.label, description: $0.description) },
+                multiSelect: item.multiSelect
+            )),
+            primary: CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", "")),
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0))
+        )
+        if index == 0 {
+            viewModel.present(card)
+            NookSound.play(.attention)
+        } else {
+            viewModel.show(.card(card))
         }
     }
 
+    /// Een vraag van een agent is afgehandeld: kaart weg, en als jij in Nook antwoordde een korte bevestiging.
+    private func cardGone(_ token: String, message: String?) {
+        var visible = false
+        if case .card(let shown) = viewModel.state, shown.id == token { visible = true }
+        viewModel.dismissCard(id: token)
+        guard visible, let message else { return }
+        if case .card = viewModel.state { return }   // de volgende vraag staat al klaar
+        viewModel.finish(message)
+    }
+
     private func agentNeedsAttention(_ session: AgentSession) {
-        let message = session.status == .done
-            ? "\(session.name) is klaar · \(session.project)"
-            : "\(session.name) wacht op je · \(session.project)"
+        NookSound.play(session.status == .done ? .done : .attention)
+        let message: String
+        switch session.status {
+        case .done: message = "\(session.name) is klaar · \(session.project)"
+        case .failed: message = "\(session.name) liep vast · \(session.project)"
+        default: message = "\(session.name) wacht op je · \(session.project)"
+        }
         switch viewModel.state {
         case .idle, .music, .done:
             viewModel.finish(message, button: "Bekijk") { [weak self] in
@@ -544,6 +709,164 @@ final class AppModel: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Brengt het venster naar voren waarin deze agent draait.
+    func openTerminal(for session: AgentSession) {
+        if !TerminalLauncher.activate(sessionBundleID: session.hostBundleID) {
+            viewModel.present(errorCard("Ik vind de terminal van \(session.name) niet. Staat hij nog open?"))
+        }
+    }
+
+    // MARK: Snelle opdrachten
+
+    private func handleLocalIntent(_ intent: LocalIntent) {
+        spokenRequest = false
+        switch intent {
+        case .media(let action):
+            let command: NowPlayingService.Command
+            let message: String
+            switch action {
+            case "next": command = .next; message = "Volgend nummer"
+            case "previous": command = .previous; message = "Vorig nummer"
+            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? "Gepauzeerd" : "Muziek hervat"
+            }
+            nowPlaying.control(command)
+            viewModel.finish(message)
+        case .volume(let level):
+            proposeQuick(tool: "set_volume", input: ["level": level])
+        case .volumeStep(let step):
+            let current = Int(SystemControl.appleScript("output volume of (get volume settings)") ?? "") ?? 50
+            proposeQuick(tool: "set_volume", input: ["level": max(0, min(100, current + step))])
+        case .openApp(let name):
+            proposeQuick(tool: "open_app", input: ["name": name])
+        case .showTab(let tab):
+            viewModel.show(.panel(tab))
+        case .weekRecap:
+            showWeekRecap()
+        case .time:
+            let text = "Het is \(NookDates.time(Date()))."
+            viewModel.show(.card(answerCard(text)))
+            if settings.speakAnswers { speech.speak(text, language: settings.language) }
+        }
+    }
+
+    /// Een actie die Nook zelf herkende: meteen als plan klaarzetten, zonder het brein.
+    private func proposeQuick(tool: String, input: [String: Any]) {
+        let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
+        viewModel.show(.card(planCard(plan, context: "Snelle opdracht")))
+    }
+
+    // MARK: Weekoverzicht
+
+    func showWeekRecap() {
+        let now = Date()
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        var summary = recap.summary(weekOf: now)
+        var label = "Deze week"
+        let lastWeek = recap.summary(weekOf: now.addingTimeInterval(-7 * 86_400))
+        if (calendar.component(.weekday, from: now) == 2 || summary.isEmpty), !lastWeek.isEmpty {
+            summary = lastWeek
+            label = "Vorige week"
+        }
+        UserDefaults.standard.set(Self.weekKey(lastWeek.start), forKey: "recapSeen")
+
+        guard !summary.isEmpty else {
+            viewModel.show(.card(answerCard("Ik heb nog niets bijgehouden. Koppel je agents bij Instellingen › Agents, dan zie je hier wat ze voor je deden.")))
+            return
+        }
+
+        var facts = [
+            Fact(label: "tijd met agents", value: RecapStore.duration(summary.activeSeconds)),
+            Fact(label: "sessies", value: "\(summary.sessions)"),
+            Fact(label: "opdrachten", value: "\(summary.prompts)"),
+            Fact(label: "regels erbij / eraf", value: "+\(summary.linesAdded) −\(summary.linesRemoved)"),
+            Fact(label: "commando's", value: "\(summary.commands)"),
+            Fact(label: "toegestaan / geweigerd", value: "\(summary.allowed) / \(summary.denied)")
+        ]
+        if let day = summary.busiestDay {
+            facts.append(Fact(label: "drukste dag", value: NookDates.weekday(day) + " · " + RecapStore.duration(summary.busiestSeconds)))
+        }
+        if let project = summary.topProject {
+            facts.append(Fact(label: "meeste tijd in", value: project))
+        }
+
+        let who = summary.topAgent.map { "\($0) en co" } ?? "Je agents"
+        let card = NookCard(
+            id: "recap",
+            mood: .done,
+            context: "\(label) · vanaf \(NookDates.dayMonth(summary.start))",
+            title: "\(who) werkten \(RecapStore.duration(summary.activeSeconds)) voor je.",
+            detail: .facts(facts),
+            primary: CardAction(label: "Oké", outcome: .dismiss),
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 140 + CGFloat((facts.count + 1) / 2) * 44
+        )
+        viewModel.show(.card(card))
+    }
+
+    /// Op maandag een regel in Vandaag met het overzicht van vorige week, tot je het bekeken hebt.
+    private func weeklyRecapItem() -> TodayItem? {
+        let now = Date()
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        guard calendar.component(.weekday, from: now) == 2 else { return nil }
+        let lastWeek = recap.summary(weekOf: now.addingTimeInterval(-7 * 86_400))
+        guard !lastWeek.isEmpty, UserDefaults.standard.string(forKey: "recapSeen") != Self.weekKey(lastWeek.start) else { return nil }
+        return TodayItem(
+            id: "recap",
+            title: "Je week met agents",
+            subtitle: "\(RecapStore.duration(lastWeek.activeSeconds)) · \(lastWeek.sessions) sessies",
+            action: "Bekijk",
+            color: NookTheme.mint,
+            target: .action { [weak self] in self?.showWeekRecap() }
+        )
+    }
+
+    private static func weekKey(_ date: Date) -> String {
+        "\(Int(date.timeIntervalSince1970))"
+    }
+
+    // MARK: Bestanden
+
+    /// Een bestand uit de Shelf: lees de tekst (op je Mac) en vraag wat je wilt weten.
+    func askAbout(_ url: URL) {
+        do {
+            let text = try Self.readText(url)
+            attachment = (url.lastPathComponent, text, Date())
+            let card = NookCard(
+                id: "attach-" + UUID().uuidString,
+                mood: .seen,
+                context: "Bestand · \(url.lastPathComponent)",
+                title: "Wat wil je weten over dit bestand?",
+                detail: .none,
+                primary: CardAction(label: "Sluiten", outcome: .dismiss),
+                secondary: CardAction(label: "", outcome: .dismiss),
+                contentHeight: 150,
+                input: true
+            )
+            viewModel.show(.card(card))
+        } catch {
+            viewModel.show(.card(errorCard(error.localizedDescription)))
+        }
+    }
+
+    private static func readText(_ url: URL) throws -> String {
+        let type = UTType(filenameExtension: url.pathExtension) ?? .data
+        var text: String?
+        if type.conforms(to: .pdf) {
+            text = PDFDocument(url: url)?.string
+        } else if type.conforms(to: .rtf) || type.conforms(to: .rtfd) || ["doc", "docx", "odt", "html", "htm"].contains(url.pathExtension.lowercased()) {
+            text = (try? NSAttributedString(url: url, options: [:], documentAttributes: nil))?.string
+        } else {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if size < 5_000_000 { text = try? String(contentsOf: url, encoding: .utf8) }
+        }
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NookError("Ik kan in \(url.lastPathComponent) geen tekst lezen. Tekst, pdf, Word en rtf lukken wel.")
+        }
+        return text
     }
 
     // MARK: Kaarten

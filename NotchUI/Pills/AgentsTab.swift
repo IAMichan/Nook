@@ -45,12 +45,19 @@ struct AgentsTab: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 6)
-                ForEach(sessions) { session in
-                    AgentRow(session: session, selected: session.id == selected.id) {
-                        viewModel.selectedAgentID = session.id
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(sessions) { session in
+                            AgentRow(session: session, selected: session.id == selected.id) {
+                                viewModel.selectedAgentID = session.id
+                            }
+                        }
                     }
                 }
                 Spacer(minLength: 0)
+                if let usage = app.demoMode ? nil : app.hub.planUsage {
+                    PlanUsageView(usage: usage)
+                }
             }
             .frame(width: 220)
 
@@ -101,7 +108,15 @@ struct AgentsTab: View {
             .clipped()
 
             HStack(spacing: 4) {
-                if app.demoMode {
+                if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
+                    NookPrimaryButton(title: "Toestaan") { app.hub.decide(id, .allow) }
+                    if request.canAlways {
+                        NookGhostButton(title: "Altijd") { app.hub.decide(id, .always) }
+                    }
+                    NookGhostButton(title: "Weigeren") { app.hub.decide(id, .deny) }
+                    Spacer()
+                    terminalButton(session)
+                } else if app.demoMode {
                     if session.status == .waiting {
                         NookPrimaryButton(title: "Toestaan") { viewModel.finish("Toegestaan · npm install draait") }
                         NookGhostButton(title: "Weigeren") { viewModel.show(.idle) }
@@ -122,10 +137,59 @@ struct AgentsTab: View {
                     Text(session.placeholder)
                         .font(NookTheme.font(12.5))
                         .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                    Spacer()
+                    terminalButton(session)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func terminalButton(_ session: AgentSession) -> some View {
+        NookGhostButton(title: "Open \(TerminalLauncher.name(for: session.hostBundleID))") {
+            app.openTerminal(for: session)
+        }
+    }
+}
+
+/// Je Claude-abonnement: hoeveel van de 5-uurs- en weeklimiet al op is.
+private struct PlanUsageView: View {
+    let usage: PlanUsage
+
+    private var color: Color {
+        switch usage.highest {
+        case ..<60: return NookTheme.mint
+        case ..<85: return NookTheme.amber
+        default: return NookTheme.coral
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("Claude-abonnement")
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Spacer()
+                Text(usage.label)
+                    .font(NookTheme.mono(11, .medium))
+                    .foregroundStyle(color)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(NookTheme.line2)
+                    Capsule().fill(color).frame(width: geo.size.width * CGFloat(min(100, usage.highest) / 100))
+                }
+            }
+            .frame(height: 3)
+            if let reset = usage.resetLabel {
+                Text(reset)
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .padding(10)
     }
 }
 

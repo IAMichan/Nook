@@ -7,7 +7,7 @@ struct DetectedAgent: Hashable {
     let cwd: String
 }
 
-/// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode) in de lijst met processen.
+/// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, …) in de lijst met processen.
 /// Zo staan ze meteen in Nook; hooks zijn alleen nodig voor details en goedkeuring.
 enum LocalAgentScanner {
     private struct Kind {
@@ -21,7 +21,11 @@ enum LocalAgentScanner {
         Kind(name: "Codex", commands: ["codex"], packages: ["@openai/codex"]),
         Kind(name: "Gemini CLI", commands: ["gemini"], packages: ["@google/gemini-cli"]),
         Kind(name: "Aider", commands: ["aider"], packages: []),
-        Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"])
+        Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
+        Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
+        Kind(name: "Amp", commands: ["amp"], packages: ["@sourcegraph/amp"]),
+        Kind(name: "Cursor Agent", commands: ["cursor-agent"], packages: []),
+        Kind(name: "Qwen Code", commands: ["qwen"], packages: ["@qwen-code/qwen-code"])
     ]
 
     private static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3"]

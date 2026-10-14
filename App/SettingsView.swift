@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import AVFoundation
 import Speech
 import EventKit
@@ -16,20 +17,34 @@ struct SettingsView: View {
     @State private var installFraction: Double = 0
     @State private var testing = false
     @State private var testResult: (ok: Bool, message: String)?
+    @State private var pendingChange: AgentConfigInstaller.Change?
+    @State private var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
 
     var body: some View {
         Form {
             brainSection
+            agentsSection
+            notchSection
+            voiceSection
             watchSection
             permissionsSection
-            agentsSection
             if !status.isEmpty {
                 Section { Text(status).font(.callout).foregroundStyle(.secondary) }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 640)
-        .onAppear { refreshTick += 1 }
+        .frame(width: 540, height: 720)
+        .onAppear {
+            refreshTick += 1
+            refreshAgentStates()
+        }
+        .sheet(item: $pendingChange) { change in
+            ConfigPreview(change: change) {
+                pendingChange = nil
+            } onConfirm: {
+                write(change)
+            }
+        }
     }
 
     // MARK: Brein
@@ -234,27 +249,170 @@ struct SettingsView: View {
 
     private var agentsSection: some View {
         Section("Agents") {
-            Button("Installeer hook-script") {
-                do {
-                    let url = try HookScript.install()
-                    status = "Script staat in \(url.path)"
-                } catch {
-                    status = "Installeren mislukte: \(error.localizedDescription)"
-                }
+            ForEach(AgentConfigInstaller.Target.allCases) { target in
+                agentRow(target)
             }
-            Button("Kopieer Claude Code-configuratie") {
-                _ = try? HookScript.install()
-                HookScript.copyToPasteboard(HookScript.claudeCodeConfig())
-                status = "Gekopieerd. Voeg het samen met het \"hooks\"-deel van ~/.claude/settings.json."
-            }
-            Button("Kopieer Codex-configuratie") {
-                _ = try? HookScript.install()
-                HookScript.copyToPasteboard(HookScript.codexConfig())
-                status = "Gekopieerd. Zet de regel in ~/.codex/config.toml."
-            }
-            Text("Nook past de instellingen van je agents nooit zelf aan. Bash-commando's die niet duidelijk onschuldig zijn, komen als vraag in de notch; de rest loopt zoals je agent het zelf al deed. Als Nook niet draait, doen de hooks niets.")
+            Text("Nook laat eerst precies zien wat er in het instellingenbestand verandert en maakt een backup voordat er iets wordt geschreven. Toestemming vraagt Nook alleen als je agent het jou zelf ook zou vragen; antwoord je in de terminal, dan verdwijnt de vraag uit de notch. Als Nook niet draait, doen de hooks niets.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Button("Weekoverzicht wissen") { app.recap.clear(); status = "Weekoverzicht gewist." }
+                .font(.caption)
+        }
+    }
+
+    private func agentRow(_ target: AgentConfigInstaller.Target) -> some View {
+        let state = agentStates[target] ?? .notInstalled
+        return HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.title)
+                Text(stateText(state, target: target))
+                    .font(.caption)
+                    .foregroundStyle(stateColor(state))
+            }
+            Spacer()
+            switch state {
+            case .notInstalled:
+                Button("Koppel…") { prepare(target, install: true) }
+            case .outdated:
+                Button("Werk bij…") { prepare(target, install: true) }
+                Button("Ontkoppel…") { prepare(target, install: false) }
+            case .installed:
+                Button("Ontkoppel…") { prepare(target, install: false) }
+            case .unreadable:
+                EmptyView()
+            }
+        }
+    }
+
+    private func stateText(_ state: AgentConfigInstaller.State, target: AgentConfigInstaller.Target) -> String {
+        switch state {
+        case .notInstalled: return target.detail
+        case .installed: return "Gekoppeld · \(target.displayPath)"
+        case .outdated: return "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de notch"
+        case .unreadable(let message): return message
+        }
+    }
+
+    private func stateColor(_ state: AgentConfigInstaller.State) -> Color {
+        switch state {
+        case .installed: return .green
+        case .outdated: return .orange
+        case .unreadable: return .red
+        case .notInstalled: return .secondary
+        }
+    }
+
+    private func refreshAgentStates() {
+        var states: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
+        for target in AgentConfigInstaller.Target.allCases {
+            states[target] = AgentConfigInstaller.state(of: target)
+        }
+        agentStates = states
+    }
+
+    private func prepare(_ target: AgentConfigInstaller.Target, install: Bool) {
+        do {
+            pendingChange = try AgentConfigInstaller.prepare(target, install: install)
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func write(_ change: AgentConfigInstaller.Change) {
+        pendingChange = nil
+        do {
+            let backup = try AgentConfigInstaller.apply(change)
+            let verb = change.install ? "gekoppeld" : "ontkoppeld"
+            status = "\(change.target.title) is \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
+                + (change.install && change.target != .claudeStatusLine ? " Start de agent opnieuw om het te laten werken." : "")
+        } catch {
+            status = error.localizedDescription
+        }
+        refreshAgentStates()
+    }
+
+    // MARK: Notch
+
+    private var notchSection: some View {
+        Section("Notch") {
+            Picker("Scherm", selection: $settings.screenChoice) {
+                Text("Automatisch (met notch)").tag("auto")
+                Text("Hoofdscherm").tag("main")
+                Text("Volgt je muis").tag("mouse")
+                ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            Toggle("Verberg Nook in rust", isOn: $settings.hideWhenIdle)
+            Toggle("Geluid als een agent op je wacht of klaar is", isOn: $settings.sounds)
+            Text("Verborgen zie je in rust alleen de notch; wijs ernaar om Nook te openen. Zonder notch blijft er een dun randje bovenaan het scherm.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Stem
+
+    private var voiceSection: some View {
+        Section("Stem") {
+            Toggle("Antwoorden voorlezen als ik iets zeg", isOn: $settings.speakAnswers)
+            Toggle("Luister naar “Hé Nook”", isOn: $settings.wakeWord)
+                .disabled(!WakeWordService.supported)
+            Text(WakeWordService.supported
+                 ? "Met het wekwoord luistert Nook steeds mee, maar de herkenning gebeurt alleen op je Mac en er wordt niets bewaard. Je ziet dan het oranje microfoonlampje. Het kost wat batterij."
+                 : "Deze Mac kan Nederlandse spraak niet zelf herkennen, dus het wekwoord kan niet aan (er gaat nooit geluid naar buiten). Met ⌥ spatie praat je altijd.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Wat er in het instellingenbestand van een agent verandert, voordat het geschreven wordt.
+private struct ConfigPreview: View {
+    let change: AgentConfigInstaller.Change
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(change.install ? "\(change.target.title) koppelen" : "\(change.target.title) ontkoppelen")
+                .font(.headline)
+            Text("Dit verandert in \(change.target.displayPath). Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if change.preview.isEmpty {
+                        Text("Er verandert niets.").foregroundStyle(.secondary)
+                    }
+                    ForEach(change.preview) { line in
+                        Text(line.text)
+                            .foregroundStyle(color(line.kind))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+            }
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            HStack {
+                Spacer()
+                Button("Annuleer", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(change.install ? "Koppel" : "Ontkoppel", action: onConfirm)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 520)
+    }
+
+    private func color(_ kind: DiffLine.Kind) -> Color {
+        switch kind {
+        case .add: return .green
+        case .remove: return .red
+        case .context: return .secondary
         }
     }
 }

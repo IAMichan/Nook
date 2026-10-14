@@ -1,45 +1,20 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Shelf: sleep bestanden hierheen om ze even te bewaren. Nu nog alleen in het geheugen.
+/// Shelf: sleep bestanden hierheen om ze even te bewaren. Klik op een bestand om Nook er iets over te vragen.
+/// Nu nog alleen in het geheugen.
 struct ShelfTab: View {
+    @EnvironmentObject private var app: AppModel
     @State private var files: [URL] = []
     @State private var targeted = false
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(files, id: \.self) { url in
-                VStack(spacing: 10) {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                        .resizable()
-                        .frame(width: 36, height: 36)
-                    Text(url.lastPathComponent)
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .padding(.horizontal, 8)
-                .frame(width: 108, height: 104)
-                .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
+                ShelfItem(url: url) { app.askAbout(url) }
             }
 
-            VStack(spacing: 4) {
-                Text("Sleep bestanden hierheen")
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(NookTheme.paper)
-                Text("bewaren, AirDrop of vraag Nook erover")
-                    .font(NookTheme.font(12.5))
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 104)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(
-                        targeted ? NookTheme.iris : NookTheme.line2,
-                        style: StrokeStyle(lineWidth: 1, dash: [4, 4])
-                    )
-            )
+            dropZone
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $targeted) { providers in
             for provider in providers {
@@ -52,5 +27,59 @@ struct ShelfTab: View {
             }
             return true
         }
+    }
+
+    private var dropZone: some View {
+        VStack(spacing: 4) {
+            Text("Sleep bestanden hierheen")
+                .font(NookTheme.font(12.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+            Text("klik er daarna op om Nook erover te vragen")
+                .font(NookTheme.font(12.5))
+                .foregroundStyle(NookTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(
+                    targeted ? NookTheme.iris : NookTheme.line2,
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                )
+        )
+    }
+}
+
+private struct ShelfItem: View {
+    let url: URL
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 36, height: 36)
+                Text(url.lastPathComponent)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, 8)
+            .frame(width: 108, height: 104)
+            .background(RoundedRectangle(cornerRadius: 14).fill(hovering ? NookTheme.smoke : NookTheme.field))
+            .overlay(alignment: .topTrailing) {
+                if hovering {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NookTheme.iris)
+                        .padding(8)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Vraag Nook over \(url.lastPathComponent)")
     }
 }

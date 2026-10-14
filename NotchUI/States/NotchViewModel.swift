@@ -14,6 +14,7 @@ final class NotchViewModel: ObservableObject {
     weak var app: AppModel?
 
     private var callbacks: [String: () -> Void] = [:]
+    private var choiceHandlers: [String: ([String]) -> Void] = [:]
     private var pending: [NookCard] = []
 
     var geometry: NotchGeometry = .placeholder {
@@ -67,6 +68,22 @@ final class NotchViewModel: ObservableObject {
 
     func register(_ id: String, _ action: @escaping () -> Void) {
         callbacks[id] = action
+    }
+
+    /// Voor kaarten met opties (`CardDetail.choices`): de handler krijgt de gekozen labels.
+    func registerChoice(_ id: String, _ handler: @escaping ([String]) -> Void) {
+        choiceHandlers[id] = handler
+    }
+
+    func choose(_ id: String, _ labels: [String]) {
+        guard let handler = choiceHandlers.removeValue(forKey: id) else { return }
+        handler(labels)
+    }
+
+    /// Staat deze kaart nu in beeld of in de wachtrij?
+    func hasCard(id: String) -> Bool {
+        if case .card(let current) = state, current.id == id { return true }
+        return pending.contains { $0.id == id }
     }
 
     /// Ververst de inhoud van de kaart die nu zichtbaar is (zelfde maat, dus zonder animatie), bijvoorbeeld tijdens het praten.
@@ -165,6 +182,10 @@ final class NotchViewModel: ObservableObject {
         let chrome = nh + 14 + 22   // ruimte onder de notch en onderrand
         switch state {
         case .idle:
+            if app?.settings.hideWhenIdle == true {
+                // Alleen de notch zelf; zonder notch een dun randje bovenaan om naar te wijzen.
+                return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
+            }
             return CGSize(width: nw + 100, height: nh)
         case .music:
             return CGSize(width: nw + 130, height: nh)

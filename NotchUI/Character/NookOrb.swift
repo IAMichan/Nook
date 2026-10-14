@@ -4,9 +4,11 @@ import SwiftUI
 struct NookOrb: View {
     var mood: NookMood
     var size: CGFloat = 46
+    /// Uit in rust: dan staat Nook stil en kost hij geen rekenkracht.
+    var animated: Bool = true
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !animated)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             orb(at: t)
         }
