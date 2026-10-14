@@ -263,12 +263,33 @@ private struct NookChatView: View {
     /// Verandert zolang het antwoord binnenkomt, zodat de chat meescrollt.
     private var scrollKey: String {
         guard let last = chat.messages.last else { return "" }
-        return "\(last.id)-\(last.text.count)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)"
+        return "\(last.id)-\(last.text.count)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)-\(last.retrieval.count)-\(last.references.count)"
     }
 
     // MARK: Invoer
 
     private var inputBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Welke bronnen deze Nook mag gebruiken, wat er meegaat, en een bestand om mee te sturen.
+            HStack(spacing: 8) {
+                ScopeMenu(chat: chat)
+                if let name = app.attachmentName {
+                    AttachmentChip(name: name) { app.clearAttachment() }
+                }
+                Spacer(minLength: 0)
+                if !chat.busy, let last = chat.messages.last, last.role == .nook, last.isError || !last.notices.isEmpty {
+                    SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
+                }
+                NookIconButton(systemName: "paperclip", label: tr("chat.attach"), size: 26) { app.attachFile() }
+                    .help(tr("chat.attach"))
+                ContextInspector(chat: chat)
+            }
+            .padding(.horizontal, 4)
+            inputField
+        }
+    }
+
+    private var inputField: some View {
         HStack(spacing: 8) {
             TextField(
                 "",
@@ -338,19 +359,8 @@ private struct ChatMessageView: View {
 
     private var nook: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !message.sources.isEmpty {
-                HStack(spacing: 5) {
-                    ForEach(message.sources.prefix(5), id: \.self) { source in
-                        Text(source)
-                            .font(NookTheme.font(10.5, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(NookTheme.graphite))
-                            .lineLimit(1)
-                    }
-                }
-            }
+            // Waar Nook keek en hoe dat ging: doorzocht, niets gevonden of mislukt.
+            RetrievalStrip(message: message)
 
             if message.isError {
                 VStack(alignment: .leading, spacing: 6) {
@@ -359,7 +369,10 @@ private struct ChatMessageView: View {
                         .foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                    SmallGhostButton(title: "Instellingen") { app.openSettings() }
+                    HStack(spacing: 4) {
+                        SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
+                        SmallGhostButton(title: "Instellingen") { app.openSettings() }
+                    }
                 }
             } else if !message.text.isEmpty {
                 MarkdownView(text: message.text)
@@ -380,8 +393,16 @@ private struct ChatMessageView: View {
                 .id(mail.id)
             }
 
+            if !message.notices.isEmpty && !message.streaming {
+                NoticeList(notices: message.notices)
+            }
+
+            if !message.references.isEmpty && !message.streaming {
+                ReferenceList(references: message.references, cited: Citations.used(in: message.text))
+            }
+
             if !message.actions.isEmpty {
-                PlanBlock(message: message)
+                PlanReview(message: message)
             }
 
             // Wat Nook hierna voor je kan doen: één klik en hij gaat aan de slag.
@@ -427,67 +448,6 @@ private struct ChatMessageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-    }
-}
-
-/// Wat Nook wil doen, met Uitvoeren en Annuleren. Er gebeurt niets voordat je klikt.
-private struct PlanBlock: View {
-    let message: ChatMessage
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(app.planSteps(message.actions)) { step in
-                HStack(spacing: 10) {
-                    Text("\(step.number)")
-                        .font(NookTheme.font(10.5, .bold))
-                        .foregroundStyle(color(step.tone))
-                        .frame(width: 18, height: 18)
-                        .overlay(Circle().stroke(color(step.tone), lineWidth: 1.5))
-                    Text(step.text)
-                        .font(NookTheme.font(13.5))
-                        .foregroundStyle(NookTheme.paper)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !step.tag.isEmpty {
-                        Text(step.tag)
-                            .font(NookTheme.font(11.5, .medium))
-                            .foregroundStyle(color(step.tone))
-                    }
-                }
-            }
-
-            HStack(spacing: 6) {
-                switch message.planState {
-                case .pending:
-                    SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
-                    SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
-                case .running:
-                    ProgressView().controlSize(.small)
-                    Text(tr("chat.plan.running")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
-                case .done(let result):
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(NookTheme.mint)
-                    Text(result).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.mint)
-                case .cancelled:
-                    Text(tr("chat.plan.cancelled")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
-                case .failed(let error):
-                    Text(error).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-            }
-            .padding(.top, 2)
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(NookTheme.line2, lineWidth: 1))
-    }
-
-    private func color(_ tone: StepTone) -> Color {
-        switch tone {
-        case .good: return NookTheme.mint
-        case .neutral: return NookTheme.textSecondary
-        case .caution: return NookTheme.amber
-        }
     }
 }
 

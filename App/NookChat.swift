@@ -86,12 +86,27 @@ struct ChatMessage: Identifiable {
     var status = ""
     var streaming = false
     var isError = false
+    /// Context die meeging zonder tool: het scherm, een bestand uit de Shelf.
     var sources: [String] = []
+    /// Waar Nook voor dit antwoord echt in keek, met de uitkomst per bron.
+    var retrieval: [RetrievalStep] = []
+    /// Genummerde bronnen uit wat Nook ophaalde; het antwoord verwijst ernaar met [1], [2].
+    var references: [SourceReference] = []
+    /// Bronnen waarvan de samenvatting volledig meeging (de rest alleen als één regel).
+    var contextSources: [String] = []
+    /// Welke bronnen mochten, als de gebruiker dat beperkte ("Alleen Agenda en Mail").
+    var scopeLabel = ""
+    /// Wat de gebruiker moet weten over dit antwoord, zoals een bron die niet gelezen kon worden.
+    var notices: [String] = []
     var charts: [ChatChart] = []
     var mails: [MailDraft] = []
     /// Acties die Nook voorstelt; pas na "Uitvoeren" gebeuren ze echt.
     var actions: [PlannedAction] = []
     var planState: PlanState = .pending
+    /// Per stap van het plan: hoe het ging, of hij aan staat en wat er mis is met de invoer.
+    var actionStates: [ActionStepState] = []
+    var actionIncluded: [Bool] = []
+    var actionProblems: [[String]] = []
     /// Wat Nook hierna kan doen ("Zet het in mijn agenda"), als knoppen onder het antwoord.
     var offers: [String] = []
 
@@ -109,18 +124,56 @@ struct ChatMessage: Identifiable {
             }
             parts.append("[mailconcept aan \(mail.to.isEmpty ? "?" : mail.to), onderwerp \"\(mail.subject)\", \(state)]")
         }
+        if !retrieval.isEmpty {
+            let searched = retrieval.map { step -> String in
+                switch step.outcome {
+                case .failed(let error): return "\(step.sourceTitle) (fout: \(error))"
+                case .empty: return "\(step.sourceTitle) (niets gevonden)"
+                default: return step.sourceTitle + (step.query.isEmpty ? "" : " \"\(step.query)\"")
+                }
+            }
+            parts.append("[doorzocht: \(searched.joined(separator: ", "))]")
+        }
+        if !references.isEmpty {
+            // Zodat een vervolgvraag ("stuur dat naar dezelfde persoon") weet waar het over ging.
+            let list = references.prefix(8).map { "[\($0.number)] \($0.title)" + ($0.detail.isEmpty ? "" : " — \($0.detail)") }
+            parts.append("[bronnen bij dit antwoord: \(list.joined(separator: "; "))]")
+        }
         if !actions.isEmpty {
-            let names = actions.map(\.tool).joined(separator: ", ")
             let state: String
             switch planState {
             case .pending, .running: state = "wacht op goedkeuring"
             case .done: state = "uitgevoerd"
             case .cancelled: state = "geannuleerd door de gebruiker"
-            case .failed(let error): state = "mislukt: \(error)"
+            case .failed(let error): state = "niet helemaal gelukt: \(error)"
             }
-            parts.append("[voorgestelde acties: \(names) — \(state)]")
+            var steps: [String] = []
+            for (index, action) in actions.enumerated() {
+                let outcome: String
+                switch index < actionStates.count ? actionStates[index] : .pending {
+                case .done(let result): outcome = "gelukt: \(result)"
+                case .failed(let error): outcome = "mislukt: \(error)"
+                case .notRun: outcome = "niet uitgevoerd"
+                case .skipped: outcome = "overgeslagen door de gebruiker"
+                case .duplicate(let when): outcome = "niet opnieuw gedaan, al uitgevoerd op \(when)"
+                case .running: outcome = "bezig"
+                case .pending: outcome = planState == .cancelled ? "geannuleerd" : "wacht"
+                }
+                steps.append("\(index + 1). \(action.tool) \(Self.compactInput(action.input)) → \(outcome)")
+            }
+            parts.append("[voorgestelde acties — \(state)]\n" + steps.joined(separator: "\n"))
         }
         return parts.joined(separator: "\n")
+    }
+
+    /// De invoer van een actie, kort, voor de geschiedenis van het brein.
+    static func compactInput(_ input: [String: Any]) -> String {
+        let pairs = input.keys.sorted().compactMap { key -> String? in
+            guard let value = input[key] else { return nil }
+            let text = "\(value)".replacingOccurrences(of: "\n", with: " ")
+            return "\(key)=\(text.count > 120 ? String(text.prefix(119)) + "…" : text)"
+        }
+        return "(" + pairs.joined(separator: ", ") + ")"
     }
 }
 
@@ -136,6 +189,8 @@ struct Conversation: Identifiable {
     var busy = false
     /// Klaar terwijl je naar iets anders keek.
     var unread = false
+    /// Welke bronnen deze Nook mag gebruiken (de bronkiezer naast het invoerveld).
+    var scope = SourceScope.automatic
 
     var isEmpty: Bool { messages.isEmpty }
 
@@ -304,6 +359,17 @@ final class NookChat: ObservableObject {
         }
     }
 
+    func setScope(_ scope: SourceScope, conversation id: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].scope = scope
+        scheduleSave()
+    }
+
+    /// De laatste vraag van de gebruiker in een Nook, voor Opnieuw proberen.
+    func lastQuestion(in id: UUID) -> String? {
+        conversation(id)?.messages.last(where: { $0.role == .user })?.text
+    }
+
     func setBusy(_ value: Bool, conversation id: UUID) {
         guard let index = index(of: id) else { return }
         conversations[index].busy = value
@@ -387,6 +453,8 @@ private struct StoredConversation: Codable {
     var updated: Date
     var unread: Bool
     var messages: [StoredMessage]
+    /// Later toegevoegd: optioneel, zodat oudere nooks.json gewoon blijft laden.
+    var scope: SourceScope?
 
     @MainActor
     init(_ conversation: Conversation) {
@@ -396,11 +464,13 @@ private struct StoredConversation: Codable {
         updated = conversation.updated
         unread = conversation.unread
         messages = conversation.messages.compactMap { StoredMessage($0) }
+        scope = conversation.scope == .automatic ? nil : conversation.scope
     }
 
     func restored() -> Conversation {
         var conversation = Conversation(id: id, title: title, created: created, updated: updated)
         conversation.unread = unread
+        conversation.scope = scope ?? .automatic
         conversation.messages = messages.map { $0.restored() }
         return conversation
     }
@@ -415,21 +485,34 @@ private struct StoredMessage: Codable {
     var charts: [StoredChart]
     var mails: [StoredMail]
     var offers: [String]
+    // Later toegevoegd: optioneel, zodat oudere nooks.json gewoon blijft laden.
+    var retrieval: [RetrievalStep]?
+    var references: [SourceReference]?
+    var contextSources: [String]?
+    var scopeLabel: String?
+    var notices: [String]?
 
     @MainActor
     init?(_ message: ChatMessage) {
         var text = message.text
         if !message.actions.isEmpty {
-            // Een plan staat als regel in de tekst: wat er was voorgesteld en hoe het afliep.
-            let steps = AppModel.shared.planSteps(message.actions).map(\.text).joined(separator: ", ")
-            let state: String
-            switch message.planState {
-            case .done(let result): state = result
-            case .cancelled: state = "geannuleerd"
-            case .failed(let error): state = "mislukt: \(error)"
-            case .pending, .running: state = "niet uitgevoerd"
+            // Een plan staat als regels in de tekst: wat er was voorgesteld en hoe elke stap afliep.
+            // De acties zelf worden niet bewaard: na een herstart voert Nook niets meer uit.
+            let steps = AppModel.shared.planSteps(message.actions)
+            var lines: [String] = []
+            for (index, step) in steps.enumerated() {
+                let state: String
+                switch index < message.actionStates.count ? message.actionStates[index] : .pending {
+                case .done(let result): state = "✓ " + result
+                case .failed(let error): state = "✗ mislukt: \(error)"
+                case .duplicate(let when): state = "al gedaan op \(when)"
+                case .skipped: state = "overgeslagen"
+                case .notRun, .running: state = "niet uitgevoerd"
+                case .pending: state = message.planState == .cancelled ? "geannuleerd" : "niet uitgevoerd"
+                }
+                lines.append("\(index + 1). \(step.text) · \(state)")
             }
-            text += (text.isEmpty ? "" : "\n\n") + "_Plan: \(steps) · \(state)_"
+            text += (text.isEmpty ? "" : "\n\n") + "_Plan:_\n" + lines.map { "_\($0)_" }.joined(separator: "\n")
         }
         guard !text.isEmpty || !message.charts.isEmpty || !message.mails.isEmpty else { return nil }
         user = message.role == .user
@@ -440,6 +523,11 @@ private struct StoredMessage: Codable {
         charts = message.charts.map(StoredChart.init)
         mails = message.mails.map(StoredMail.init)
         offers = message.offers
+        retrieval = message.retrieval.isEmpty ? nil : message.retrieval
+        references = message.references.isEmpty ? nil : message.references
+        contextSources = message.contextSources.isEmpty ? nil : message.contextSources
+        scopeLabel = message.scopeLabel.isEmpty ? nil : message.scopeLabel
+        notices = message.notices.isEmpty ? nil : message.notices
     }
 
     func restored() -> ChatMessage {
@@ -450,6 +538,11 @@ private struct StoredMessage: Codable {
         message.charts = charts.map { $0.restored() }
         message.mails = mails.map { $0.restored() }
         message.offers = offers
+        message.retrieval = retrieval ?? []
+        message.references = references ?? []
+        message.contextSources = contextSources ?? []
+        message.scopeLabel = scopeLabel ?? ""
+        message.notices = notices ?? []
         return message
     }
 }

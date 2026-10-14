@@ -69,7 +69,7 @@ enum ClaudeCodeBrain {
                 case .read:
                     do {
                         let output = try await spec.run(call.input)
-                        results.append("Resultaat van \(call.name):\n<tool_data>\n\(output)\n</tool_data>")
+                        results.append("Resultaat van \(call.name):\n" + UntrustedText.wrap(output))
                     } catch {
                         results.append("Fout bij \(call.name): \(error.localizedDescription)")
                     }

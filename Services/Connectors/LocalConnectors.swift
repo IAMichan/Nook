@@ -217,7 +217,7 @@ final class MailConnector: ContextSource {
         )
     }
 
-    private static func name(_ sender: String) -> String {
+    nonisolated static func name(_ sender: String) -> String {
         // "Lisa de Vries <lisa@…>" → "Lisa de Vries"
         if let range = sender.range(of: " <") { return String(sender[..<range.lowerBound]).replacingOccurrences(of: "\"", with: "") }
         return sender
@@ -236,21 +236,27 @@ final class MailConnector: ContextSource {
         [
             ToolSpec(
                 name: "search_mail",
-                description: "Zoekt in de inbox van de app Mail op onderwerp of afzender en geeft de nieuwste treffers met het begin van de tekst. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'.",
-                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Woord uit het onderwerp of (deel van) de afzender."]], "required": ["query"]],
+                description: "Zoekt in de app Mail op onderwerp of afzender (inbox) of op onderwerp of ontvanger (verzonden) en geeft de nieuwste treffers met het begin van de tekst en een link naar het bericht. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'. Zoek met mailbox sent naar wat de gebruiker zelf schreef of beloofde.",
+                schema: ["type": "object", "properties": [
+                    "query": ["type": "string", "description": "Woord uit het onderwerp, of (deel van) de afzender of ontvanger."],
+                    "mailbox": ["type": "string", "enum": ["inbox", "sent"], "description": "inbox (standaard) of sent (verzonden)."] as [String: Any]
+                ], "required": ["query"]],
                 kind: .read,
                 summarize: { _ in "Mail doorzoeken" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open.") }
+                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open. Open Mail, dan kan Nook erin zoeken.") }
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
                     let q = ScriptText.quote(query)
+                    let box = sent ? "sent mailbox" : "inbox"
+                    let filter = sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
                     let script = """
                     tell application "Mail"
-                        set found to (messages of inbox whose subject contains \(q) or sender contains \(q))
+                        set found to (messages of \(box) whose \(filter))
                         set n to count of found
-                        if n > 6 then set n to 6
+                        if n > 8 then set n to 8
                         set out to ""
                         repeat with i from 1 to n
                             set m to item i of found
@@ -259,17 +265,54 @@ final class MailConnector: ContextSource {
                                 set body to content of m
                             end try
                             if (length of body) > 700 then set body to text 1 thru 700 of body
-                            set out to out & "### " & (subject of m) & " | van " & (sender of m) & " | " & ((date received of m) as «class isot» as string) & linefeed & body & linefeed & linefeed
+                            set mid to ""
+                            try
+                                set mid to message id of m
+                            end try
+                            set rcpt to ""
+                            try
+                                set rcpt to address of item 1 of to recipients of m
+                            end try
+                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
                         end repeat
                         return out
                     end tell
                     """
                     let result = await ScriptText.run(script)
-                    let text = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    return text.isEmpty ? "Geen mail gevonden voor \"\(query)\"." : text
+                    if result.errorNumber == -1743 {
+                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                    }
+                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !raw.isEmpty else { return "Geen mail gevonden voor \"\(query)\"" + (sent ? " in verzonden." : ".") }
+                    return MailConnector.format(raw, sent: sent)
                 }
             )
         ]
+    }
+
+    /// Maakt de treffers leesbaar voor het brein, met een verwijzing per bericht (een message:-link opent hem in Mail).
+    nonisolated static func format(_ raw: String, sent: Bool) -> String {
+        var blocks: [String] = []
+        var refs: [String] = []
+        for chunk in raw.components(separatedBy: "<<<MSG>>>") where !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let lines = chunk.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            let header = String(lines.first ?? "").components(separatedBy: "|||")
+            guard header.count >= 5 else { continue }
+            let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let who = sent ? "aan \(header[2])" : "van \(header[1])"
+            blocks.append("### \(header[0]) | \(who) | \(header[3])\n\(body)")
+            refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(geen onderwerp)" : header[0], url: messageLink(header[4]),
+                                             detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
+        }
+        return (blocks + refs).joined(separator: "\n\n")
+    }
+
+    /// message:%3C…%3E opent het bericht in Mail. Alleen met een echt message-id, anders geen link.
+    nonisolated static func messageLink(_ id: String) -> String? {
+        let trimmed = id.trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
+        guard !trimmed.isEmpty, trimmed.contains("@"),
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "@.-_"))) else { return nil }
+        return "message:%3C\(encoded)%3E"
     }
 }
 
@@ -471,7 +514,11 @@ final class FilesConnector: ContextSource {
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
                     let hits = (byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20)
                     if hits.isEmpty { return "Niets gevonden voor \"\(query)\"." }
-                    return hits.map { $0.path.replacingOccurrences(of: home, with: "~") }.joined(separator: "\n")
+                    let paths = hits.map { $0.path.replacingOccurrences(of: home, with: "~") }
+                    let refs = hits.prefix(8).map {
+                        ReferenceParser.line(title: $0.lastPathComponent, url: $0.absoluteString, detail: $0.deletingLastPathComponent().path.replacingOccurrences(of: home, with: "~"))
+                    }
+                    return (paths + refs).joined(separator: "\n")
                 }
             ),
             ToolSpec(
@@ -486,7 +533,10 @@ final class FilesConnector: ContextSource {
                     let url = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath)
                     guard FileText.isAllowed(url) else { throw NookError("Dat bestand mag Nook niet lezen.") }
                     let text = try FileText.read(url)
-                    return String(text.prefix(15_000))
+                    let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map { "bewerkt \(NookDates.short($0))" } ?? ""
+                    var output = String(text.prefix(15_000))
+                    if text.count > 15_000 { output += "\n… (ingekort: de eerste 15.000 tekens van \(text.count))" }
+                    return output + "\n" + ReferenceParser.line(title: url.lastPathComponent, url: url.absoluteString, detail: modified)
                 }
             )
         ]

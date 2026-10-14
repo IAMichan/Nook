@@ -55,6 +55,7 @@ struct SettingsView: View {
     @State private var keyDraft = ""
     @State private var status = ""
     @State private var refreshTick = 0
+    @State private var connectionSearch = ""
     @ObservedObject private var local = EmbeddedModel.shared
     @State private var installing: String?
     @State private var installFraction: Double = 0
@@ -557,6 +558,13 @@ struct SettingsView: View {
     private var connectionsSection: some View {
         Group {
             Section {
+                TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
+                Text(tr("settings.connections.legend"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
                 let sources = localSources
                 ForEach(sources.indices, id: \.self) { index in
                     localRow(sources[index])
@@ -567,17 +575,47 @@ struct SettingsView: View {
                 Text(tr("settings.connections.footer"))
             }
             Section(tr("settings.connections.services")) {
-                CloudConnectorSettings(connectors: app.connectors.sources) { app.connectors.refreshAll() }
+                CloudConnectorSettings(connectors: app.connectors.sources.filter { matchesSearch($0) }, capabilities: capabilityLine) {
+                    app.connectors.refreshAll()
+                }
             }
-            Section(tr("settings.connections.crypto")) {
-                PortfolioSettings(portfolio: app.portfolio)
+            if matchesSearch(title: app.portfolio.title) {
+                Section(tr("settings.connections.crypto")) {
+                    PortfolioSettings(portfolio: app.portfolio)
+                }
+            }
+            Section {
+                ForEach(NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }, id: \.name) { item in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                        Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } header: {
+                Text(tr("settings.connections.notBuiltIn"))
+            } footer: {
+                Text(tr("settings.connections.notBuiltInFooter"))
             }
         }
     }
 
     private var localSources: [ContextSource] {
         let ids = ["calendar", "reminders", "mail", "browser", "files", "clipboard"]
-        return ids.compactMap { app.connectors.source(id: $0) }
+        return ids.compactMap { app.connectors.source(id: $0) }.filter { matchesSearch($0) }
+    }
+
+    private func matchesSearch(_ source: ContextSource) -> Bool {
+        matchesSearch(title: source.title + " " + capabilityLine(source.id))
+    }
+
+    private func matchesSearch(title: String) -> Bool {
+        let query = connectionSearch.trimmingCharacters(in: .whitespaces)
+        return query.isEmpty || title.localizedCaseInsensitiveContains(query)
+    }
+
+    /// Hoe een koppeling gekoppeld is en wat hij kan lezen en (na jouw OK) doen.
+    private func capabilityLine(_ id: String) -> String {
+        SourceCapabilities.line(id, tools: app.knownTools.map { ($0.name, $0.kind == .action) })
     }
 
     private func localRow(_ source: ContextSource) -> some View {
@@ -596,6 +634,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
                     Text(localDetail(source)).font(.caption).foregroundStyle(.secondary)
+                    Text(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? ""))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

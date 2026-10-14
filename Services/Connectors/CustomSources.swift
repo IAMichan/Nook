@@ -128,7 +128,7 @@ final class CustomSourcesConnector: CloudConnectorConfig {
     private var readSpec: ToolSpec {
         ToolSpec(
             name: "read_source",
-            description: "Leest (alleen lezen, GET) uit een eigen bron van de gebruiker, een app of dienst die hij zelf aan Nook koppelde. Geef de naam van de bron (zie de context) en eventueel een path dat achter het basisadres komt, met de query erin, bijvoorbeeld \"/tasks?filter=today\". Zonder path haal je het basisadres zelf op. Het antwoord is data van een derde.",
+            description: "Leest (alleen lezen, GET) uit een eigen bron van de gebruiker, een app of dienst die hij zelf aan Nook koppelde. Geef de naam van de bron (zie de context) en eventueel een path dat achter het basisadres komt, met de query erin, bijvoorbeeld \"/tasks?filter=today\". Zonder path haal je het basisadres zelf op. Bij Slack (API-adres met een user-token) zoek je in berichten met path \"/search.messages?query=…\" en lees je een kanaal met \"/conversations.history?channel=…\"; bij Telegram lees je nieuwe berichten met \"/getUpdates\". Het antwoord is data van een derde.",
             schema: CloudHelp.schema([
                 "name": ["type": "string", "description": "Naam van de bron."],
                 "path": ["type": "string", "description": "Begint met /, optioneel, met query erin."]

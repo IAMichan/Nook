@@ -79,9 +79,15 @@ final class NookTools {
                     await calendar.requestEvents()
                     let events = calendar.events(from: from, to: to)
                     if events.isEmpty { return "Geen afspraken in deze periode (of geen toegang tot de agenda)." }
-                    return events.prefix(40).map {
+                    // Met id (voor update_event) en als bron om naar te verwijzen.
+                    let lines = events.prefix(40).map {
                         "\($0.title) | \(NookDates.iso($0.start)) – \(NookDates.iso($0.end))" + ($0.location.isEmpty ? "" : " | \($0.location)")
-                    }.joined(separator: "\n")
+                            + ($0.calendar.isEmpty ? "" : " | agenda \($0.calendar)") + " | id \($0.id)"
+                    }
+                    let refs = events.prefix(10).map {
+                        ReferenceParser.line(title: $0.title, url: nil, detail: NookDates.short($0.start) + ($0.calendar.isEmpty ? "" : " · \($0.calendar)"))
+                    }
+                    return (lines + refs).joined(separator: "\n")
                 }
             ),
             ToolSpec(
@@ -107,7 +113,9 @@ final class NookTools {
                 run: { [store = self.store] _ in
                     let loops = store.openLoops()
                     if loops.isEmpty { return "Geen open punten." }
-                    return loops.map { "- \($0.title) (sinds \(NookDates.short($0.created)))" }.joined(separator: "\n")
+                    return loops.map {
+                        "- \($0.title) (sinds \(NookDates.short($0.created))" + ($0.due.map { ", uiterlijk \(NookDates.short($0))" } ?? "") + ") [id \($0.id.prefix(8))]"
+                    }.joined(separator: "\n")
                 }
             ),
             ToolSpec(
@@ -118,13 +126,15 @@ final class NookTools {
                     "start": string("Begin, ISO 8601 met tijdzone."),
                     "end": string("Einde, ISO 8601 met tijdzone. Standaard een uur na het begin."),
                     "location": string("Plaats, optioneel."),
-                    "notes": string("Notities, optioneel.")
+                    "notes": string("Notities, optioneel."),
+                    "calendar": string("Naam van de agenda waarin hij moet, optioneel. Zonder naam de standaardagenda.")
                 ], required: ["title", "start"]),
                 kind: .action,
                 summarize: { input in
                     let title = (input["title"] as? String) ?? "Afspraak"
                     let start = NookTools.parseDate(input, "start").map(NookDates.short) ?? "?"
-                    return "Agenda: \(title) · \(start)"
+                    let target = ((input["calendar"] as? String).map { " · \($0)" }) ?? ""
+                    return "Agenda: \(title) · \(start)\(target)"
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
@@ -132,11 +142,42 @@ final class NookTools {
                         throw NookError("Titel of begintijd ontbreekt.")
                     }
                     let end = self.date(input, "end") ?? start.addingTimeInterval(3600)
-                    try await self.calendar.createEvent(
+                    guard end > start else { throw NookError("Het einde ligt niet na het begin.") }
+                    let id = try await self.calendar.createEvent(
                         title: title, start: start, end: end,
+                        location: self.text(input, "location"), notes: self.text(input, "notes"),
+                        calendarName: self.text(input, "calendar")
+                    )
+                    return "Afspraak gemaakt: \(title) op \(NookDates.short(start))" + (id.isEmpty ? "" : " (id \(id))")
+                }
+            ),
+            ToolSpec(
+                name: "update_event",
+                description: "Past een bestaande afspraak aan: titel, tijd, plaats of notities. Gebruik het id uit list_events of uit de uitkomst van create_event. Alleen wat je meegeeft verandert; zonder end schuift de afspraak met dezelfde duur mee. Deelnemers uitnodigen kan Nook niet (macOS staat dat niet toe): stel daarvoor een mail voor.",
+                schema: object([
+                    "id": string("Id van de afspraak."),
+                    "title": string("Nieuwe titel, optioneel."),
+                    "start": string("Nieuw begin, ISO 8601 met tijdzone. Optioneel."),
+                    "end": string("Nieuw einde, ISO 8601 met tijdzone. Optioneel."),
+                    "location": string("Nieuwe plaats, optioneel."),
+                    "notes": string("Nieuwe notities, optioneel.")
+                ], required: ["id"]),
+                kind: .action,
+                summarize: { input in
+                    var parts: [String] = []
+                    if let title = input["title"] as? String { parts.append("titel \"\(title)\"") }
+                    if let start = NookTools.parseDate(input, "start") { parts.append("naar \(NookDates.short(start))") }
+                    if let location = input["location"] as? String { parts.append("plaats \(location)") }
+                    return "Agenda aanpassen: " + (parts.isEmpty ? "afspraak" : parts.joined(separator: ", "))
+                },
+                tag: { _ in ("wijzigt", .caution) },
+                run: { [weak self] input in
+                    guard let self, let id = self.text(input, "id") else { throw NookError("Het id van de afspraak ontbreekt.") }
+                    let changed = try await self.calendar.updateEvent(
+                        id: id, title: self.text(input, "title"), start: self.date(input, "start"), end: self.date(input, "end"),
                         location: self.text(input, "location"), notes: self.text(input, "notes")
                     )
-                    return "Afspraak gemaakt: \(title)"
+                    return "Afspraak aangepast (\(changed))"
                 }
             ),
             ToolSpec(
@@ -155,8 +196,21 @@ final class NookTools {
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let title = self.text(input, "title") else { throw NookError("De titel ontbreekt.") }
-                    try await self.calendar.createReminder(title: title, due: self.date(input, "due"))
-                    return "Herinnering gemaakt: \(title)"
+                    let id = try await self.calendar.createReminder(title: title, due: self.date(input, "due"))
+                    return "Herinnering gemaakt: \(title) (id \(id))"
+                }
+            ),
+            ToolSpec(
+                name: "complete_reminder",
+                description: "Vinkt een open herinnering af in Herinneringen. Geef het id (uit de uitkomst van create_reminder) of de exacte titel uit de context.",
+                schema: object(["reminder": string("Id of exacte titel van de herinnering.")], required: ["reminder"]),
+                kind: .action,
+                summarize: { input in "Herinnering afvinken: \((input["reminder"] as? String) ?? "?")" },
+                tag: { _ in ("", .good) },
+                run: { [weak self] input in
+                    guard let self, let target = self.text(input, "reminder") else { throw NookError("Welke herinnering?") }
+                    let title = try await self.calendar.completeReminder(target)
+                    return "Afgevinkt: \(title)"
                 }
             ),
             ToolSpec(
@@ -171,9 +225,25 @@ final class NookTools {
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let title = self.text(input, "title") else { throw NookError("De titel ontbreekt.") }
-                    self.store.addLoop(title: title, source: "Nook", due: self.date(input, "due"))
+                    let loop = self.store.addLoop(title: title, source: "Nook", due: self.date(input, "due"))
                     self.onLoopsChanged()
-                    return "Open punt toegevoegd: \(title)"
+                    return "Open punt toegevoegd: \(title) [id \(loop.id.prefix(8))]"
+                }
+            ),
+            ToolSpec(
+                name: "complete_open_loop",
+                description: "Zet een open punt van Nook op afgerond. Geef het id tussen haken uit de context of list_open_loops, of de exacte titel.",
+                schema: object(["loop": string("Id (de eerste acht tekens volstaan) of exacte titel.")], required: ["loop"]),
+                kind: .action,
+                summarize: { input in "Open punt afronden: \((input["loop"] as? String) ?? "?")" },
+                tag: { _ in ("", .good) },
+                run: { [weak self] input in
+                    guard let self, let target = self.text(input, "loop") else { throw NookError("Welk open punt?") }
+                    guard let loop = self.store.completeLoop(matching: target) else {
+                        throw NookError("Geen open punt gevonden voor \(target).")
+                    }
+                    self.onLoopsChanged()
+                    return "Afgerond: \(loop.title)"
                 }
             ),
             ToolSpec(

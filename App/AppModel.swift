@@ -66,6 +66,29 @@ final class AppModel: ObservableObject {
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
+    /// Alles wat Nook kan, ook van koppelingen die nu uit staan: voor het overzicht bij Instellingen › Koppelingen.
+    var knownTools: [ToolSpec] {
+        tools.specs + chatTools + connectors.hubTools + connectors.sources.flatMap { $0.tools } + web.specs(includeSearch: true)
+    }
+
+    /// Tools voor één vraag in de chat: alleen van bronnen die mogen, en elke lees-tool via het grootboek, zodat
+    /// zichtbaar is waar Nook keek, wat het opleverde en wat faalde.
+    func scopedTools(_ scope: SourceScope, ledger: RetrievalLedger?) -> [ToolSpec] {
+        allTools.filter { scope.allowsTool($0.name) }.map { spec in
+            // Alleen echte lees-tools van een bron; een grafiek of mailconcept tekenen is geen opzoeken (en mag nooit uit een cache komen).
+            guard spec.kind == .read, let ledger, SourceCatalog.source(forTool: spec.name) != nil else { return spec }
+            let run = spec.run
+            return ToolSpec(
+                name: spec.name, description: spec.description, schema: spec.schema, kind: spec.kind,
+                summarize: spec.summarize, tag: spec.tag,
+                run: { input in
+                    let output = try await ledger.run(tool: spec.name, input: input, operation: run)
+                    return output
+                }
+            )
+        }
+    }
+
     /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
     @Published var demoMode = false
     /// Hoe ver het koppelen van een agent-account is (één klik in de Agents-tab of bij Instellingen).
@@ -85,7 +108,11 @@ final class AppModel: ObservableObject {
     /// De vraag kwam via je stem: dan mag het antwoord ook hardop.
     private var spokenRequest = false
     /// Een bestand uit de Shelf waar je net een vraag over stelt.
-    private var attachment: (name: String, text: String, date: Date)?
+    private var attachment: (name: String, text: String, date: Date)? {
+        didSet { attachmentName = attachment?.name }
+    }
+    /// Voor het invoerveld: welk bestand er nu meegaat.
+    @Published private(set) var attachmentName: String?
 
     private init() {
         hub.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -411,6 +438,9 @@ final class AppModel: ObservableObject {
             chat.update(id) { message in
                 message.streaming = false
                 message.status = ""
+                for index in message.retrieval.indices where message.retrieval[index].outcome == .running {
+                    message.retrieval[index].outcome = .failed("gestopt")
+                }
                 if message.text.isEmpty && message.charts.isEmpty && message.mails.isEmpty && message.actions.isEmpty {
                     message.text = "Gestopt."
                 }
@@ -460,16 +490,21 @@ final class AppModel: ObservableObject {
     }
 
     private func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
+        // Welke bronnen mogen: de bronkiezer van deze Nook, plus wat de vraag zelf zegt ("alleen mijn agenda en mail").
+        let requested = SourceScope.parse(text)
+        let scope = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
+
         // Een vraag over een bestand uit de Shelf, of over wat er op je schermen staat.
         var snapshot: ScreenSnapshot?
         var context: String?
+        let screenAllowed = scope.allows(SourceCatalog.screen)
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = "Ik lees \(file.name)…" }
             let limit = settings.useLocal ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             context = file.name
-        } else if Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
+        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
             do {
                 snapshot = try await screenSnapshot()
@@ -487,12 +522,37 @@ final class AppModel: ObservableObject {
         if let context { sources.append(context) } else if let snapshot {
             sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
         }
-        sources.append(contentsOf: connectors.contributingTitles.prefix(4))
-        chat.update(id) { $0.sources = sources; $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…" }
+
+        // Alleen wat voor deze vraag relevant is gaat volledig mee; de rest als één regel.
+        var activeIDs = Set(connectors.active.map { $0.id })
+        activeIDs.insert(SourceCatalog.loops)
+        let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
+        let summary = contextSummary(scope: scope, relevant: relevant)
+        let scopeLabel = scope.isRestricted ? scope.label() : ""
+        chat.update(id) {
+            $0.sources = sources
+            $0.contextSources = summary.titles
+            $0.scopeLabel = scopeLabel
+            $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…"
+        }
+
+        // Wat Nook opzoekt, verschijnt live boven het antwoord.
+        let ledger = RetrievalLedger()
+        ledger.onChange = { [weak self, weak ledger] in
+            guard let self, let ledger, self.replies[conversation] == id else { return }
+            let steps = ledger.steps
+            self.chat.update(id) { message in
+                message.retrieval = steps
+                if let running = steps.last(where: { $0.outcome == .running }), message.text.isEmpty {
+                    message.status = "Ik kijk in \(running.sourceTitle)…"
+                }
+            }
+        }
+        let tools = scopedTools(scope, ledger: ledger)
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
-        web.note(connectors.contextLines().joined(separator: "\n"))
+        web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
 
         // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
         let wantsChart = ChartRescue.wantsChart(text)
@@ -506,10 +566,10 @@ final class AppModel: ObservableObject {
                 userText: request,
                 followUp: !history.isEmpty,
                 history: history,
-                context: contextSummary(),
+                context: summary.text,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
-                tools: allTools,
+                tools: tools,
                 onText: { [weak self] partial in
                     guard let self, self.replies[conversation] == id else { return }
                     var visible = FollowUps.streamingBody(partial)
@@ -545,14 +605,36 @@ final class AppModel: ObservableObject {
                 }
             }
 
-            var body = Self.cleanReply(rawBody)
+            // Verwijzingen naar bronnen die Nook niet echt ophaalde, gaan eruit.
+            let references = ledger.references
+            var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
                 body = "Ik zie niets waar je iets aan hebt."
             }
+            let cited = Citations.used(in: body)
+            // Eerst de bronnen waar het antwoord naar verwijst, dan wat verder bekeken werd.
+            let shown = references.filter { cited.contains($0.number) } + references.filter { !cited.contains($0.number) }
+            var notices = ledger.failures.map { step -> String in
+                if case .failed(let error) = step.outcome { return tr("chat.notice.sourceFailed", step.sourceTitle, error) }
+                return ""
+            }
+            if !ledger.failures.isEmpty { notices.append(tr("chat.notice.incomplete")) }
+            let actions = plan.actions.map { action -> PlannedAction in
+                var copy = action
+                if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }
+                return copy
+            }
+            let problems = actions.map { actionProblems($0, scope: scope) }
             chat.update(id) { message in
                 message.text = body
                 message.charts.append(contentsOf: rescued)
-                message.actions = plan.actions
+                message.retrieval = ledger.steps
+                message.references = Array(shown.prefix(12))
+                message.notices = notices.filter { !$0.isEmpty }
+                message.actions = actions
+                message.actionStates = Array(repeating: .pending, count: actions.count)
+                message.actionIncluded = Array(repeating: true, count: actions.count)
+                message.actionProblems = problems
                 message.offers = split.offers
                 message.streaming = false
                 message.status = ""
@@ -569,8 +651,8 @@ final class AppModel: ObservableObject {
             chatTasks[conversation] = nil
             chat.setBusy(false, conversation: conversation)
             nookFinished(conversation)
-            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
-            if canRunWithoutAsking(plan) { runPlan(id) }
+            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette (alleen als alles klopt).
+            if canRunWithoutAsking(plan), problems.allSatisfy(\.isEmpty) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
@@ -634,22 +716,165 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func runPlan(_ id: UUID) {
-        guard let message = chat.message(id), message.planState == .pending, !message.actions.isEmpty else { return }
+    /// Wat er mis is met een voorgestelde actie: de tool bestaat niet (meer), de bron mag niet, of de invoer klopt niet.
+    func actionProblems(_ action: PlannedAction, scope: SourceScope) -> [String] {
+        guard let spec = allTools.first(where: { $0.name == action.tool }), spec.kind == .action else {
+            return [tr("chat.plan.unavailable", action.tool)]
+        }
+        guard scope.allowsTool(action.tool) else {
+            return [tr("chat.plan.notAllowed", SourceCatalog.source(forTool: action.tool).map(SourceCatalog.title) ?? action.tool)]
+        }
+        return ActionGate.problems(tool: action.tool, input: action.input, schema: spec.schema, parseDate: NookDates.parse)
+    }
+
+    /// Voert de stappen uit die aan staan. Opnieuw aanroepen na een fout gaat verder waar het bleef: wat al lukte, gebeurt
+    /// nooit nog een keer. `force`: stappen die toch mogen, ook al lijken ze kort geleden al uitgevoerd.
+    func runPlan(_ id: UUID, force: Set<Int> = []) {
+        guard let message = chat.message(id), !message.actions.isEmpty, message.planState != .running, message.planState != .cancelled else { return }
+        if case .done = message.planState, force.isEmpty { return }
+        let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
+        let steps = message.actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }
+        store.audit(tool: "plan_goedgekeurd", args: planSteps(message.actions).enumerated()
+            .filter { index, _ in index < message.actionIncluded.count ? message.actionIncluded[index] : true }
+            .map(\.element.text).joined(separator: " | "), result: "")
         chat.update(id) { $0.planState = .running }
+        let runner = planRunner(scope: scope) { [weak self] states in
+            self?.chat.update(id) { $0.actionStates = states }
+        }
         Task {
-            let outcome = await perform(message.actions)
-            if let failure = outcome.failure {
-                chat.update(id) { $0.planState = .failed(failure) }
-            } else {
-                let summary = outcome.results.count == 1 ? outcome.results[0] : "\(outcome.results.count) acties uitgevoerd"
-                chat.update(id) { $0.planState = .done(summary) }
+            let states = await runner.run(steps, states: message.actionStates, include: message.actionIncluded, force: force)
+            reloadLoops()
+            await refreshUpcoming()
+            chat.update(id) { message in
+                message.actionStates = states
+                message.planState = Self.planOutcome(states)
             }
         }
     }
 
+    /// Eén regel over hoe een plan afliep.
+    static func planOutcome(_ states: [ActionStepState]) -> ChatMessage.PlanState {
+        var done: [String] = []
+        var failure: String?
+        for (index, state) in states.enumerated() {
+            switch state {
+            case .done(let result): done.append(result)
+            case .failed(let error): failure = failure ?? tr("chat.plan.stepFailed", index + 1, error)
+            case .duplicate: failure = failure ?? tr("chat.plan.duplicateHint")
+            default: break
+            }
+        }
+        if let failure {
+            return .failed(done.isEmpty ? failure : tr("chat.plan.partial", done.count, states.count, failure))
+        }
+        if done.isEmpty { return .done(tr("chat.plan.nothingRun")) }
+        return .done(done.count == 1 ? done[0] : tr("chat.plan.allDone", done.count))
+    }
+
+    private func planRunner(scope: SourceScope, progress: @escaping ([ActionStepState]) -> Void = { _ in }) -> PlanRunner {
+        PlanRunner(
+            check: { [weak self] step in
+                guard let self else { return ["Nook is niet beschikbaar."] }
+                return self.actionProblems(PlannedAction(tool: step.tool, input: step.input), scope: scope)
+            },
+            execute: { [weak self] step in
+                guard let self, let spec = self.allTools.first(where: { $0.name == step.tool }), spec.kind == .action else {
+                    throw NookError(tr("chat.plan.unavailable", step.tool))
+                }
+                let args = Self.json(step.input)
+                do {
+                    let result = try await spec.run(step.input)
+                    self.store.audit(tool: step.tool, args: args, result: result)
+                    return result
+                } catch {
+                    self.store.audit(tool: step.tool, args: args, result: "FOUT: \(error.localizedDescription)")
+                    throw error
+                }
+            },
+            executedBefore: { [weak self] key in self?.store.executedAction(key, within: ActionGate.duplicateWindow) },
+            recordExecuted: { [weak self] key, step, result in self?.store.recordExecuted(key, tool: step.tool, result: result) },
+            progress: progress
+        )
+    }
+
     func cancelPlan(_ id: UUID) {
+        store.audit(tool: "plan_geannuleerd", args: chat.message(id).map { planSteps($0.actions).map(\.text).joined(separator: " | ") } ?? "", result: "")
         chat.update(id) { $0.planState = .cancelled }
+    }
+
+    /// Een stap aan- of uitzetten voordat je uitvoert.
+    func setActionIncluded(_ id: UUID, index: Int, _ on: Bool) {
+        chat.update(id) { message in
+            guard index < message.actionIncluded.count, message.actionStates[safe: index]?.isFinished != true || !on else { return }
+            message.actionIncluded[index] = on
+        }
+    }
+
+    /// De gebruiker past een voorstel aan (bijvoorbeeld de tekst van een bericht). Wordt meteen opnieuw gecontroleerd.
+    func editAction(_ id: UUID, index: Int, key: String, value: String) {
+        guard let message = chat.message(id), index < message.actions.count else { return }
+        if case .done = message.actionStates[safe: index] ?? .pending { return }
+        let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
+        var action = message.actions[index]
+        action.input[key] = value
+        if let spec = allTools.first(where: { $0.name == action.tool }) {
+            action.input = ActionGate.normalized(action.input, schema: spec.schema)
+        }
+        let problems = actionProblems(action, scope: scope)
+        chat.update(id) { message in
+            message.actions[index] = action
+            if index < message.actionProblems.count { message.actionProblems[index] = problems }
+        }
+    }
+
+    /// De volledige invoer van een stap, voor het overzicht vóór Uitvoeren.
+    func actionFields(_ action: PlannedAction) -> [ActionField] {
+        let schema = allTools.first { $0.name == action.tool }?.schema ?? [:]
+        return ActionGate.fields(action.input, schema: schema)
+    }
+
+    // MARK: Bronnen in de chat
+
+    func scope(of conversation: UUID?) -> SourceScope {
+        conversation.flatMap { chat.conversation($0)?.scope } ?? .automatic
+    }
+
+    func setScope(_ scope: SourceScope) {
+        let id = chat.ensureActive()
+        chat.setScope(scope, conversation: id)
+    }
+
+    /// Opent een bron uit een antwoord, alleen als het een veilige link is (https, een bestand in je eigen map, een mail).
+    func openReference(_ reference: SourceReference) {
+        guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
+        if url.isFileURL, !FileText.isAllowed(url) { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Stelt de laatste vraag van deze Nook opnieuw.
+    func retryLast() {
+        guard let id = chat.activeID, let question = chat.lastQuestion(in: id) else { return }
+        ask(question)
+    }
+
+    /// Kies een bestand om mee te sturen (zoals slepen naar de Shelf).
+    func attachFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard FileText.isAllowed(url) else {
+            viewModel.show(.card(errorCard(tr("chat.attach.notAllowed"))))
+            return
+        }
+        askAbout(url)
+    }
+
+    func clearAttachment() {
+        attachment = nil
     }
 
     func sendMail(_ draft: MailDraft) {
@@ -811,14 +1036,35 @@ final class AppModel: ObservableObject {
     }
 
     private func contextSummary() -> String {
+        contextSummary(scope: .automatic, relevant: nil).text
+    }
+
+    /// De context voor het brein. `relevant` nil = alles volledig (kaarten in de notch); anders gaan alleen relevante bronnen
+    /// volledig mee en de rest als één regel. Wat de gebruiker uitsloot, gaat helemaal niet mee.
+    private func contextSummary(scope: SourceScope, relevant: Set<String>?) -> (text: String, titles: [String]) {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
+        if relevant != nil {
+            lines.append("Bronnen voor deze vraag:")
+            lines.append("- Keuze: \(scope.label())")
+            if !scope.excluded.isEmpty || scope.mode == .only {
+                let blocked = SourceCatalog.all.filter { !scope.allows($0.id) }.map { $0.title }
+                lines.append("- Niet gebruiken (keuze van de gebruiker): " + blocked.joined(separator: ", "))
+            }
+            if !scope.focus.isEmpty {
+                lines.append("- Genoemd door de gebruiker, kijk daar zeker: " + scope.focus.map(SourceCatalog.title).sorted().joined(separator: ", "))
+            }
+            let unavailable = connectors.sources.filter { !$0.isActive && scope.allows($0.id) }.map { $0.title }
+            if !unavailable.isEmpty { lines.append("- Niet gekoppeld of uit: " + unavailable.joined(separator: ", ")) }
+        }
+
         // Agenda (vanaf het begin van vandaag), herinneringen, mail, browser, diensten: alles uit de cache van de koppelingen.
-        if !connectors.active.contains(where: { $0.id == "calendar" }) {
+        if scope.allows("calendar"), !connectors.active.contains(where: { $0.id == "calendar" }) {
             lines.append(calendar.hasEventAccess ? "Agenda: staat uit bij Koppelingen." : "Agenda: geen toegang.")
         }
-        lines.append(contentsOf: connectors.contextLines())
+        let sourceContext = connectors.contextLines(scope: scope, full: relevant)
+        lines.append(contentsOf: sourceContext.lines)
 
         if !recentExchanges.isEmpty {
             lines.append("Gesprek zojuist (voor vervolgvragen):")
@@ -827,9 +1073,9 @@ final class AppModel: ObservableObject {
             }
         }
 
-        if !loops.isEmpty {
-            lines.append("Open punten:")
-            for loop in loops.prefix(10) { lines.append("- \(loop.title)") }
+        if !loops.isEmpty, scope.allows(SourceCatalog.loops) {
+            lines.append("Open punten (id tussen haken, voor complete_open_loop):")
+            for loop in loops.prefix(10) { lines.append("- \(loop.title) [\(loop.id.prefix(8))]") }
         }
 
         let sessions = hub.sessions
@@ -846,7 +1092,7 @@ final class AppModel: ObservableObject {
             lines.append("Claude-abonnement gebruikt: \(usage.label)" + (usage.resetLabel.map { " (\($0))" } ?? ""))
         }
         if let codexLine = codex.contextLine { lines.append(codexLine) }
-        return lines.joined(separator: "\n")
+        return (lines.joined(separator: "\n"), sourceContext.fullTitles)
     }
 
     // MARK: Plan en uitvoeren
@@ -900,7 +1146,7 @@ final class AppModel: ObservableObject {
 
     /// Acties die Nook zonder vragen mag doen als je "Kleine dingen meteen doen" aanzette: makkelijk terug te draaien
     /// en zonder gevolgen voor anderen. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.
-    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder"]
+    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"]
 
     private func canRunWithoutAsking(_ plan: BrainPlan) -> Bool {
         settings.autoRunSafe && !plan.actions.isEmpty && plan.actions.allSatisfy { Self.safeTools.contains($0.tool) }
@@ -920,25 +1166,17 @@ final class AppModel: ObservableObject {
     }
 
     /// Voert goedgekeurde acties uit, één voor één; stopt bij de eerste fout. Alles komt in het logboek.
+    /// Dezelfde controle als in de chat: een tool die niet (meer) bestaat of foute invoer wordt niet stilletjes overgeslagen
+    /// maar meldt een fout, en een actie die kort geleden al lukte gebeurt niet nog een keer.
     private func perform(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
-        var results: [String] = []
-        var failure: String?
-        for action in actions {
-            guard let spec = allTools.first(where: { $0.name == action.tool }) else { continue }
-            let args = Self.json(action.input)
-            do {
-                let result = try await spec.run(action.input)
-                store.audit(tool: action.tool, args: args, result: result)
-                results.append(result)
-            } catch {
-                store.audit(tool: action.tool, args: args, result: "FOUT: \(error.localizedDescription)")
-                failure = error.localizedDescription
-                break
-            }
-        }
+        let steps = actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }
+        let states = await planRunner(scope: .automatic).run(steps, states: [], include: Array(repeating: true, count: steps.count))
         reloadLoops()
         await refreshUpcoming()
-        return (results, failure)
+        var results: [String] = []
+        for state in states { if case .done(let result) = state { results.append(result) } }
+        if case .failed(let failure) = Self.planOutcome(states) { return (results, failure) }
+        return (results, nil)
     }
 
     private static func json(_ object: [String: Any]) -> String {
