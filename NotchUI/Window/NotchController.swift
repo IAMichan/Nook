@@ -69,7 +69,11 @@ final class NotchController {
 
     private func stateChanged(_ state: NotchState) {
         guard let panel else { return }
-        if case .card(let card) = state, card.input {
+        let chatFocus = state == .panel(.nook) && viewModel.focusChat
+        viewModel.focusChat = false
+        var wantsKeys = chatFocus
+        if case .card(let card) = state, card.input { wantsKeys = true }
+        if wantsKeys {
             guard !panel.isKeyWindow else { return }
             let front = NSWorkspace.shared.frontmostApplication
             if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
@@ -78,6 +82,8 @@ final class NotchController {
         } else if panel.isKeyWindow {
             // Tijdens het nadenken blijft de focus staan: het volgende antwoord heeft weer een tekstveld.
             if case .card(let card) = state, card.id == "thinking" { return }
+            // In de chat blijf je typen.
+            if state == .panel(.nook) { return }
             // Klaar met typen: geef de focus terug aan de app waar je mee bezig was.
             panel.resignKey()
             previousApp?.activate(options: [])

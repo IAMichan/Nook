@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
     let portfolio = PortfolioConnector()
     /// Meedenken: wanneer Nook ongevraagd meekijkt en iets aanbiedt.
     let thinkAlong = ThinkAlong()
+    /// Het gesprek met Nook in de chat.
+    let chat = NookChat()
     /// Welk onderdeel van Instellingen open staat.
     @Published var settingsSection: SettingsSection = .general
 
@@ -45,12 +47,18 @@ final class AppModel: ObservableObject {
         return tools
     }()
 
+    /// Grafieken en mailconcepten: die komen in het bericht waar Nook nu aan schrijft.
+    private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
+        onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
+        onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
+    )
+
     /// Nooks eigen tools plus de lees-tools van alle koppelingen die aan staan.
     var allTools: [ToolSpec] {
         // Claude via de API zoekt met Anthropic's eigen zoektool; de rest (ook lokaal) met Nooks zoektool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        return tools.specs + connectors.tools + webSpecs
+        return tools.specs + chatTools + connectors.tools + webSpecs
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
@@ -80,6 +88,8 @@ final class AppModel: ObservableObject {
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Alleen of Nook bezig is (voor zijn gezicht); de berichten zelf volgt de chat rechtstreeks.
+        chat.$busy.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
     }
 
     // MARK: Opstarten
@@ -323,6 +333,12 @@ final class AppModel: ObservableObject {
 
         // Korte vaste opdrachten doet Nook zelf, zonder brein: meteen klaar.
         if let intent = LocalIntent.parse(text) {
+            // In de chat blijft het gesprek staan: muziek en tijd beantwoordt Nook daar gewoon.
+            if viewModel.state == .panel(.nook), let reply = quickReplyInChat(intent) {
+                chat.append(ChatMessage(role: .user, text: text))
+                chat.append(ChatMessage(role: .nook, text: reply))
+                return
+            }
             handleLocalIntent(intent)
             return
         }
@@ -331,46 +347,234 @@ final class AppModel: ObservableObject {
             presentSetupCard()
             return
         }
-        let title = "“\(String(text.prefix(100)))”"
+        ask(text)
+    }
 
-        // Een vraag over een bestand uit de Shelf.
-        if let file = attachment, Date().timeIntervalSince(file.date) < 300 {
-            attachment = (file.name, file.text, Date())
-            viewModel.show(.card(thinkingCard(context: "Ik lees \(file.name)…", title: title)))
-            let limit = settings.useLocal ? 12_000 : 40_000
-            let snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
-            Task { await runBrain(userText: text, snapshot: snapshot, silentIfNone: false, context: "Over \(file.name)") }
-            return
-        }
+    // MARK: Chat
 
-        // Nook ziet wat jij ziet: bij elke vraag (of als je naar iets op je scherm verwijst) gaat de tekst van je vensters mee.
-        // Die komt uit de live cache, dus dit kost meestal geen merkbare tijd.
-        let wantsScreen = Self.refersToScreen(text)
-            || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal)
-        if wantsScreen {
-            let cached = screenContext.cachedSnapshot() != nil
-            viewModel.show(.card(thinkingCard(context: cached ? "Even nadenken…" : "Ik kijk even mee…", title: title)))
-            Task {
-                do {
-                    let snapshot = try await screenSnapshot()
-                    await runBrain(userText: text, snapshot: snapshot, silentIfNone: false, context: nil)
-                } catch let error as ScreenError {
-                    // Geen schermtoegang: dan gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
-                    if Self.refersToScreen(text) {
-                        replaceThinking(with: errorCard(error.localizedDescription))
-                    } else {
-                        await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil)
-                    }
-                } catch {
-                    replaceThinking(with: errorCard(error.localizedDescription))
+    /// Het bericht waar Nook nu aan schrijft (voor grafieken en mailconcepten die tools tijdens het denken maken).
+    private var replyID: UUID?
+    private var chatTask: Task<Void, Never>?
+
+    /// Opent de chat. `focus`: meteen kunnen typen.
+    func showChat(focus: Bool = true) {
+        viewModel.focusChat = focus
+        viewModel.show(.panel(.nook))
+    }
+
+    func newChat() {
+        stopChat()
+        chat.clear()
+        attachment = nil
+        showChat()
+    }
+
+    func stopChat() {
+        chatTask?.cancel()
+        chatTask = nil
+        if let id = replyID {
+            chat.update(id) { message in
+                message.streaming = false
+                message.status = ""
+                if message.text.isEmpty && message.charts.isEmpty && message.mails.isEmpty && message.actions.isEmpty {
+                    message.text = "Gestopt."
                 }
             }
-            return
         }
+        replyID = nil
+        chat.setBusy(false)
+        spokenRequest = false
+    }
 
-        let loading = settings.useLocal && !EmbeddedModel.shared.isLoaded
-        viewModel.show(.card(thinkingCard(context: loading ? "Lokaal model laden…" : "Even nadenken…", title: title)))
-        Task { await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil) }
+    private func attachToReply(_ change: (inout ChatMessage) -> Void) {
+        if let id = replyID, chat.message(id) != nil {
+            chat.update(id, change)
+        } else {
+            var message = ChatMessage(role: .nook, text: "")
+            change(&message)
+            chat.append(message)
+        }
+    }
+
+    /// Stelt een vraag in de chat: het antwoord verschijnt terwijl het geschreven wordt.
+    private func ask(_ text: String) {
+        if chat.busy { stopChat() }
+        let question = ChatMessage(role: .user, text: text)
+        chat.append(question)
+        var reply = ChatMessage(role: .nook, text: "")
+        reply.streaming = true
+        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? "Lokaal model laden…" : "Even nadenken…"
+        chat.append(reply)
+        replyID = reply.id
+        chat.setBusy(true)
+        // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
+        if viewModel.state != .panel(.nook) {
+            warmUp()
+            showChat()
+        }
+        let history = chat.history(before: question.id)
+        chatTask = Task { [weak self] in await self?.answer(text, history: history, replyID: reply.id) }
+    }
+
+    private func answer(_ text: String, history: [ChatTurn], replyID id: UUID) async {
+        // Een vraag over een bestand uit de Shelf, of over wat er op je schermen staat.
+        var snapshot: ScreenSnapshot?
+        var context: String?
+        if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
+            attachment = (file.name, file.text, Date())
+            chat.update(id) { $0.status = "Ik lees \(file.name)…" }
+            let limit = settings.useLocal ? 12_000 : 40_000
+            snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
+            context = file.name
+        } else if Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
+            if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
+            do {
+                snapshot = try await screenSnapshot()
+            } catch {
+                // Geen schermtoegang: gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
+                if Self.refersToScreen(text) {
+                    finishReply(id, error: error.localizedDescription)
+                    return
+                }
+            }
+        }
+        guard !Task.isCancelled else { return }
+
+        var sources: [String] = []
+        if let context { sources.append(context) } else if let snapshot {
+            sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
+        }
+        sources.append(contentsOf: connectors.contributingTitles.prefix(4))
+        chat.update(id) { $0.sources = sources; $0.status = "Even nadenken…" }
+
+        web.note(text)
+        if let snapshot { web.note(snapshot.text) }
+        web.note(connectors.contextLines().joined(separator: "\n"))
+
+        do {
+            let plan = try await brain.run(
+                userText: text,
+                followUp: !history.isEmpty,
+                history: history,
+                context: contextSummary(),
+                untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
+                untrusted: snapshot?.text,
+                tools: allTools,
+                onText: { [weak self] partial in
+                    guard let self, self.replyID == id else { return }
+                    self.chat.update(id) { message in
+                        message.text = Self.cleanReply(FollowUps.streamingBody(partial))
+                        message.status = ""
+                    }
+                }
+            )
+            guard !Task.isCancelled, replyID == id else { return }
+            // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
+            let split = FollowUps.split(plan.text)
+            var body = Self.cleanReply(split.body)
+            if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
+                body = "Ik zie niets waar je iets aan hebt."
+            }
+            chat.update(id) { message in
+                message.text = body
+                message.actions = plan.actions
+                message.offers = split.offers
+                message.streaming = false
+                message.status = ""
+                if body.isEmpty && message.charts.isEmpty && message.mails.isEmpty && plan.actions.isEmpty {
+                    message.text = "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
+                }
+            }
+            if let message = chat.message(id) {
+                let spoken = !message.text.isEmpty ? message.text
+                    : (!message.mails.isEmpty ? "Ik heb een mail voor je klaargezet." : (!message.charts.isEmpty ? "Hier is je grafiek." : "Ik heb een plan klaargezet."))
+                speakIfAsked(spoken)
+            }
+            self.replyID = nil
+            chat.setBusy(false)
+            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
+            if canRunWithoutAsking(plan) { runPlan(id) }
+        } catch {
+            guard !Task.isCancelled, replyID == id else { return }
+            finishReply(id, error: error.localizedDescription)
+        }
+    }
+
+    private func finishReply(_ id: UUID, error: String) {
+        chat.update(id) { message in
+            message.streaming = false
+            message.status = ""
+            if message.text.isEmpty {
+                message.text = error
+                message.isError = true
+            } else {
+                message.text += "\n\n_\(error)_"
+            }
+        }
+        replyID = nil
+        spokenRequest = false
+        chat.setBusy(false)
+    }
+
+    /// Haalt resten van tool-aanroepen en losse backslashes uit een antwoord.
+    private static func cleanReply(_ text: String) -> String {
+        var cleaned = text
+        // Een denkblok of tool-aanroep als tekst hoort niet in de chat.
+        cleaned = cleaned.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: #"(?m)^\s*\{\s*"(name|tool)"\s*:.*\}\s*$"#, with: "", options: .regularExpression)
+        return MarkdownBlock.clean(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// De regels van een plan, zoals ze in de chat en op een kaart staan.
+    func planSteps(_ actions: [PlannedAction]) -> [PlanStep] {
+        actions.enumerated().map { index, action in
+            let spec = allTools.first { $0.name == action.tool }
+            let tag = spec?.tag(action.input) ?? ("", .neutral)
+            return PlanStep(number: index + 1, text: spec?.summarize(action.input) ?? action.tool, tag: tag.0, tone: tag.1)
+        }
+    }
+
+    func runPlan(_ id: UUID) {
+        guard let message = chat.message(id), message.planState == .pending, !message.actions.isEmpty else { return }
+        chat.update(id) { $0.planState = .running }
+        Task {
+            let outcome = await perform(message.actions)
+            if let failure = outcome.failure {
+                chat.update(id) { $0.planState = .failed(failure) }
+            } else {
+                let summary = outcome.results.count == 1 ? outcome.results[0] : "\(outcome.results.count) acties uitgevoerd"
+                chat.update(id) { $0.planState = .done(summary) }
+            }
+        }
+    }
+
+    func cancelPlan(_ id: UUID) {
+        chat.update(id) { $0.planState = .cancelled }
+    }
+
+    func sendMail(_ draft: MailDraft) {
+        chat.updateMail(draft.id) { $0 = draft; $0.state = .sending }
+        Task {
+            do {
+                try await MailSender.deliver(draft, send: true)
+                store.audit(tool: "send_mail", args: "\(draft.to) · \(draft.subject)", result: "verstuurd")
+                chat.updateMail(draft.id) { $0.state = .sent }
+            } catch {
+                chat.updateMail(draft.id) { $0.state = .failed(error.localizedDescription) }
+            }
+        }
+    }
+
+    func openMail(_ draft: MailDraft) {
+        chat.updateMail(draft.id) { $0 = draft }
+        Task {
+            do {
+                try await MailSender.deliver(draft, send: false)
+                chat.updateMail(draft.id) { $0.state = .opened }
+            } catch {
+                chat.updateMail(draft.id) { $0.state = .failed(error.localizedDescription) }
+            }
+        }
     }
 
     /// De tekst van al je vensters: uit de live cache als die aan staat, anders nu even alles lezen.
@@ -554,7 +758,7 @@ final class AppModel: ObservableObject {
         let title = plan.text.isEmpty ? "Zo regel ik het:" : String(plan.text.prefix(160))
         let titleLines = max(1, Int(ceil(Double(title.count) / 46.0)))
 
-        let steps = planSteps(plan)
+        let steps = planSteps(plan.actions)
 
         var detail: CardDetail = .steps(steps)
         var detailHeight = CGFloat(steps.count * 30)
@@ -594,20 +798,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    /// Eén regel per actie, zoals "Agenda: Koffie met Lisa · vr 16 okt 14:00".
-    private func planSteps(_ plan: BrainPlan) -> [PlanStep] {
-        plan.actions.enumerated().map { index, action in
-            let spec = allTools.first { $0.name == action.tool }
-            let tag = spec?.tag(action.input) ?? ("", .neutral)
-            return PlanStep(
-                number: index + 1,
-                text: spec?.summarize(action.input) ?? action.tool,
-                tag: tag.0,
-                tone: tag.1
-            )
-        }
-    }
-
     /// Acties die Nook zonder vragen mag doen als je "Kleine dingen meteen doen" aanzette: makkelijk terug te draaien
     /// en zonder gevolgen voor anderen. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.
     static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder"]
@@ -618,34 +808,37 @@ final class AppModel: ObservableObject {
 
     private func execute(_ plan: BrainPlan) {
         Task {
-            var results: [String] = []
-            var failure: String?
-
-            for action in plan.actions {
-                guard let spec = allTools.first(where: { $0.name == action.tool }) else { continue }
-                let args = Self.json(action.input)
-                do {
-                    let result = try await spec.run(action.input)
-                    store.audit(tool: action.tool, args: args, result: result)
-                    results.append(result)
-                } catch {
-                    store.audit(tool: action.tool, args: args, result: "FOUT: \(error.localizedDescription)")
-                    failure = error.localizedDescription
-                    break
-                }
-            }
-
-            reloadLoops()
-            await refreshUpcoming()
-
-            if let failure {
+            let outcome = await perform(plan.actions)
+            if let failure = outcome.failure {
                 viewModel.present(errorCard(failure))
-            } else if results.count == 1 {
-                viewModel.finish(results[0])
+            } else if outcome.results.count == 1 {
+                viewModel.finish(outcome.results[0])
             } else {
-                viewModel.finish("\(results.count) acties uitgevoerd")
+                viewModel.finish("\(outcome.results.count) acties uitgevoerd")
             }
         }
+    }
+
+    /// Voert goedgekeurde acties uit, één voor één; stopt bij de eerste fout. Alles komt in het logboek.
+    private func perform(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
+        var results: [String] = []
+        var failure: String?
+        for action in actions {
+            guard let spec = allTools.first(where: { $0.name == action.tool }) else { continue }
+            let args = Self.json(action.input)
+            do {
+                let result = try await spec.run(action.input)
+                store.audit(tool: action.tool, args: args, result: result)
+                results.append(result)
+            } catch {
+                store.audit(tool: action.tool, args: args, result: "FOUT: \(error.localizedDescription)")
+                failure = error.localizedDescription
+                break
+            }
+        }
+        reloadLoops()
+        await refreshUpcoming()
+        return (results, failure)
     }
 
     private static func json(_ object: [String: Any]) -> String {
@@ -823,7 +1016,7 @@ final class AppModel: ObservableObject {
         if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }
         guard !body.isEmpty || !plan.actions.isEmpty else { return }
 
-        let line = Self.nudgeLine(body: body, fallback: planSteps(plan).first.map { "Zal ik dit doen? \($0.text)" })
+        let line = Self.nudgeLine(body: body, fallback: planSteps(plan.actions).first.map { "Zal ik dit doen? \($0.text)" })
         guard !line.isEmpty, !thinkAlong.alreadyOffered(line) else { return }
 
         let offer = BrainPlan(text: body, actions: plan.actions)
@@ -864,7 +1057,7 @@ final class AppModel: ObservableObject {
             self?.missedNudge = nil
         }
 
-        let steps = planSteps(plan)
+        let steps = planSteps(plan.actions)
         let title = plan.text.isEmpty ? "Zal ik dit voor je doen?" : String(plan.text.prefix(600))
         let long = title.count > 140
         let lines = min(8, max(1, Int(ceil(Double(title.count) / (long ? 62.0 : 46.0)))))
@@ -1035,7 +1228,7 @@ final class AppModel: ObservableObject {
         viewModel.finish(message)
     }
 
-    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei, zoals bij Coucou.
+    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei.
     /// Alleen als je niet met iets anders bezig bent in de notch; na een paar seconden gaat hij vanzelf weg.
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
@@ -1135,6 +1328,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Snelle opdrachten die in de chat meteen klaar zijn, zonder kaart. Nil: gewoon de kaart tonen.
+    private func quickReplyInChat(_ intent: LocalIntent) -> String? {
+        switch intent {
+        case .media(let action):
+            let command: NowPlayingService.Command
+            let message: String
+            switch action {
+            case "next": command = .next; message = "Volgend nummer."
+            case "previous": command = .previous; message = "Vorig nummer."
+            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? "Gepauzeerd." : "Muziek hervat."
+            }
+            nowPlaying.control(command)
+            return message
+        case .time:
+            return "Het is \(NookDates.time(Date()))."
+        default:
+            return nil
+        }
+    }
+
     /// Een actie die Nook zelf herkende: meteen als plan klaarzetten, zonder het brein.
     private func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
@@ -1194,7 +1407,7 @@ final class AppModel: ObservableObject {
         viewModel.show(.card(card))
     }
 
-    /// Op maandag een regel in Vandaag met het overzicht van vorige week, tot je het bekeken hebt.
+    /// Op maandag een regel in de tab Nook met het overzicht van vorige week, tot je het bekeken hebt.
     private func weeklyRecapItem() -> TodayItem? {
         let now = Date()
         var calendar = Calendar(identifier: .iso8601)
@@ -1223,18 +1436,10 @@ final class AppModel: ObservableObject {
         do {
             let text = try FileText.read(url)
             attachment = (url.lastPathComponent, text, Date())
-            let card = NookCard(
-                id: "attach-" + UUID().uuidString,
-                mood: .seen,
-                context: "Bestand · \(url.lastPathComponent)",
-                title: "Wat wil je weten over dit bestand?",
-                detail: .none,
-                primary: CardAction(label: "Sluiten", outcome: .dismiss),
-                secondary: CardAction(label: "", outcome: .dismiss),
-                contentHeight: 150,
-                input: true
-            )
-            viewModel.show(.card(card))
+            var message = ChatMessage(role: .nook, text: "Ik heb **\(url.lastPathComponent)** gelezen. Wat wil je erover weten? Ik kan het samenvatten, er een grafiek of mail van maken, of acties eruit halen.")
+            message.sources = ["Bestand"]
+            chat.append(message)
+            showChat()
         } catch {
             viewModel.show(.card(errorCard(error.localizedDescription)))
         }
@@ -1261,21 +1466,10 @@ final class AppModel: ObservableObject {
         viewModel.show(.card(card))
     }
 
-    /// ⌥⌘ spatie: meteen typen, waar je ook bent.
+    /// ⌥⌘ spatie: meteen typen in de chat, waar je ook bent.
     func openAsk() {
-        let card = NookCard(
-            id: "ask-" + UUID().uuidString,
-            mood: .listen,
-            context: screenContext.windows.isEmpty ? "Vraag Nook iets" : "Ik zie \(screenContext.windows.count) vensters" + (screenContext.displayCount > 1 ? " op \(screenContext.displayCount) schermen" : ""),
-            title: "Waar kan ik je mee helpen?",
-            detail: .none,
-            primary: CardAction(label: "Sluiten", outcome: .dismiss),
-            secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: 150,
-            input: true
-        )
         warmUp()
-        viewModel.show(.card(card))
+        showChat(focus: true)
     }
 
     /// De eerste keer: in drie stappen klaar. Alles staat ook in Instellingen.
