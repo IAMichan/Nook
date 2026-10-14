@@ -112,6 +112,15 @@ final class SourceScopeTests: XCTestCase {
         XCTAssertEqual(relevant, ["calendar", "mail", "github"])
     }
 
+    func testRouterIncludesAppUserWorkedIn() {
+        let active: Set<String> = ["calendar", "mail", "github"]
+        let relevant = SourceRouter.relevant(to: "maak een grafiek van wat er nog openstaat", scope: .automatic, active: active, frontApp: "mail")
+        XCTAssertTrue(relevant.contains("mail"))
+        XCTAssertFalse(relevant.contains("github"))
+        XCTAssertEqual(SourceCatalog.source(forBundle: "com.apple.mail"), "mail")
+        XCTAssertEqual(SourceCatalog.source(forTool: "mail_unread"), "mail")
+    }
+
     func testRouterRespectsOnlyScope() {
         let active: Set<String> = ["calendar", "mail", "github"]
         let relevant = SourceRouter.relevant(to: "summarize everything", scope: SourceScope(mode: .only, included: ["github"]), active: active)

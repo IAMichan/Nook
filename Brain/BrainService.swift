@@ -314,7 +314,7 @@ final class BrainService {
 
         Wat je kunt (gebruik de tools, zeg nooit dat je iets niet kunt als er een tool voor is):
         - Grafieken: met show_chart teken je een grafiek in de chat (staaf, lijn, vlak, taart, punten). Vraagt de gebruiker om een grafiek of diagram, teken hem dan altijd. Zoek eerst de cijfers op (agenda, diensten, web) als dat nodig is. Schrijf nooit code (Python, JavaScript, Mermaid) of JSON voor een grafiek: die kan de gebruiker niet zien. Alleen show_chart tekent echt.
-        - Mail: met compose_mail schrijf je een complete mail die als concept in de chat verschijnt; de gebruiker past hem aan en verstuurt hem met één klik. Gebruik dit voor elke mail die geschreven of beantwoord moet worden. Met search_mail lees je mail.
+        - Mail: met compose_mail schrijf je een complete mail die als concept in de chat verschijnt; de gebruiker past hem aan en verstuurt hem met één klik. Gebruik dit voor elke mail die geschreven of beantwoord moet worden. Met search_mail lees je mail; met mail_unread tel je ongelezen mail (totaal, per dag, account en afzender), ook als cijfers voor een grafiek.
         - Agenda, herinneringen en open punten lezen en aanmaken; apps en links openen; muziek en volume bedienen; opdrachten (Shortcuts) draaien; het scherm lezen; gekoppelde diensten uitlezen; pull requests op GitHub beoordelen, goedkeuren, samenvoegen of sluiten; het web doorzoeken en pagina's lezen.
 
         Werkwijze:

@@ -70,7 +70,7 @@ enum SourceCatalog {
         "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
         "check_availability": "calendar",
         "create_reminder": "reminders", "complete_reminder": "reminders",
-        "search_mail": "mail",
+        "search_mail": "mail", "mail_unread": "mail",
         "search_files": "files", "read_file": "files",
         "read_screen": screen,
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
@@ -80,6 +80,22 @@ enum SourceCatalog {
         "calcom_bookings": "calcom", "n8n_status": "n8n", "resend_overview": "resend",
         "portfolio_overview": "portfolio"
     ]
+
+    /// Apps die bij een bron horen: werk je daar net in, dan gaat een vraag waarschijnlijk over die bron.
+    private static let bundles: [String: String] = [
+        "com.apple.mail": "mail", "com.microsoft.Outlook": "mail", "com.readdle.smartemail-Mac": "mail",
+        "com.apple.iCal": "calendar", "com.flexibits.fantastical2.mac": "calendar",
+        "com.apple.reminders": "reminders",
+        "com.apple.Safari": "browser", "com.google.Chrome": "browser", "company.thebrowser.Browser": "browser",
+        "com.brave.Browser": "browser", "com.microsoft.edgemac": "browser",
+        "com.apple.finder": "files", "com.apple.Preview": "files",
+        "notion.id": "notion", "com.github.GitHubClient": "github",
+        "com.tinyspeck.slackmacgap": "customsources", "com.microsoft.teams2": "customsources"
+    ]
+
+    static func source(forBundle bundleID: String) -> String? {
+        bundles[bundleID]
+    }
 
     static func source(forTool name: String) -> String? {
         if let exact = exactTools[name] { return exact }
@@ -298,10 +314,12 @@ enum SourceRouter {
     /// Brede vragen ("vat mijn week samen", "wat is er gebeurd") mogen overal kijken.
     private static let broad = #"samenvat\w*|vat\b.*samen|overzicht|summar\w*|zusammenfass\w*|alles|everything|all (my|of)|wat is er gebeurd|what happened|deze week|this week|diese woche|bereid\w* .*voor|prepare|voorbereid\w*"#
 
-    static func relevant(to text: String, scope: SourceScope, active: Set<String>) -> Set<String> {
+    /// `frontApp`: de bron van de app waarin de gebruiker net werkte (Mail, Safari…); die gaat altijd volledig mee.
+    static func relevant(to text: String, scope: SourceScope, active: Set<String>, frontApp: String? = nil) -> Set<String> {
         let allowed = active.filter { scope.allows($0) }
         if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil { return allowed }
         var wanted = core.union(scope.focus)
+        if let frontApp { wanted.insert(frontApp) }
         if scope.mode == .only { wanted.formUnion(scope.included) }
         for intent in intents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
             wanted.formUnion(intent.ids)
@@ -317,7 +335,7 @@ enum SourceCapabilities {
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
         "create_event": "afspraak maken", "update_event": "afspraak aanpassen",
         "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
-        "search_mail": "mail zoeken (inbox en verzonden)", "compose_mail": "mailconcept (jij verstuurt)",
+        "search_mail": "mail zoeken (inbox en verzonden)", "mail_unread": "ongelezen mail tellen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen", "read_screen": "scherm lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
         "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",

@@ -115,6 +115,9 @@ final class AppModel: ObservableObject {
     }
     /// Voor het invoerveld: welk bestand er nu meegaat.
     @Published private(set) var attachmentName: String?
+    /// De app waarin je werkte voordat je Nook iets vroeg (Nook zelf telt niet mee).
+    private var workingApp: (bundleID: String, name: String)?
+    private var appObserver: NSObjectProtocol?
 
     private init() {
         hub.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -148,6 +151,21 @@ final class AppModel: ObservableObject {
     func start() {
         viewModel.app = self
         notch.start(app: self)
+
+        // Welke app je gebruikte, zodat "hoeveel mails heb ik nog niet gelezen" vanuit Mail ook echt over Mail gaat.
+        if let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           let bundle = app.bundleIdentifier {
+            workingApp = (bundle, app.localizedName ?? bundle)
+        }
+        appObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+                  let bundle = app.bundleIdentifier else { return }
+            let name = app.localizedName ?? bundle
+            Task { @MainActor in self?.workingApp = (bundle, name) }
+        }
 
         reloadLoops()
         nowPlaying.start()
@@ -529,8 +547,14 @@ final class AppModel: ObservableObject {
         // Alleen wat voor deze vraag relevant is gaat volledig mee; de rest als één regel.
         var activeIDs = Set(connectors.active.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
-        let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
-        let summary = contextSummary(scope: scope, relevant: relevant)
+        // De app waarin je net werkte, telt als context: vanuit Mail gaat een vraag over mail.
+        let workingSource = workingApp.flatMap { SourceCatalog.source(forBundle: $0.bundleID) }.flatMap { scope.allows($0) ? $0 : nil }
+        let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs, frontApp: workingSource)
+        var summary = contextSummary(scope: scope, relevant: relevant)
+        if let app = workingApp {
+            let source = workingSource.map { " (bron: \(SourceCatalog.title($0)))" } ?? ""
+            summary.text += "\nDe gebruiker werkte net in \(app.name)\(source). Noemt de vraag geen andere bron, dan gaat hij daar waarschijnlijk over."
+        }
         let scopeLabel = scope.isRestricted ? scope.label() : ""
         chat.update(id) {
             $0.sources = sources
@@ -642,7 +666,9 @@ final class AppModel: ObservableObject {
                 message.streaming = false
                 message.status = ""
                 if body.isEmpty && message.charts.isEmpty && message.mails.isEmpty && plan.actions.isEmpty {
-                    message.text = "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
+                    message.text = wantsChart
+                        ? "Ik vond geen cijfers om een grafiek van te maken. Zeg erbij waar ik moet kijken?"
+                        : "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
                 }
             }
             if let message = chat.message(id) {

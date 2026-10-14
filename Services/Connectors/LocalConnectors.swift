@@ -224,8 +224,10 @@ final class MailConnector: ContextSource {
     }
 
     func contextLines() -> [String] {
-        guard unreadCount > 0 else { return [] }
-        var lines = ["Mail: \(unreadCount) ongelezen in de inbox. Nieuwste:"]
+        guard status.state == .ok else { return [] }
+        // Ook "niets ongelezen" is een antwoord: zonder deze regel weet het brein niet dat het Mail al zag.
+        guard unreadCount > 0 else { return ["Mail: geen ongelezen mail in de inbox."] }
+        var lines = ["Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread). Nieuwste:"]
         for message in unread.prefix(10) {
             lines.append("- \(message.subject) | van \(message.sender) | \(message.date)")
         }
@@ -234,6 +236,23 @@ final class MailConnector: ContextSource {
 
     var tools: [ToolSpec] {
         [
+            ToolSpec(
+                name: "mail_unread",
+                description: "Telt de ongelezen mail in de inbox van de app Mail, vers opgehaald: het totaal, per account, per dag van ontvangst (de laatste 14 dagen) en de afzenders met de meeste ongelezen mail. Gebruik dit voor vragen als 'hoeveel mail heb ik nog niet gelezen' en voor een grafiek van ongelezen mail.",
+                schema: ["type": "object", "properties": [String: Any]()],
+                kind: .read,
+                summarize: { _ in "Ongelezen mail tellen" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open. Open Mail, dan kan Nook je ongelezen mail tellen.") }
+                    let result = await ScriptText.run(MailStats.unreadScript)
+                    if result.errorNumber == -1743 {
+                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                    }
+                    guard let raw = result.text else { throw NookError("Mail gaf geen antwoord.") }
+                    return MailStats.unread(raw, now: Date())
+                }
+            ),
             ToolSpec(
                 name: "search_mail",
                 description: "Zoekt in de app Mail op onderwerp of afzender (inbox) of op onderwerp of ontvanger (verzonden) en geeft de nieuwste treffers met het begin van de tekst en een link naar het bericht. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'. Zoek met mailbox sent naar wat de gebruiker zelf schreef of beloofde.",
