@@ -94,6 +94,8 @@ struct AgentSession: Identifiable, Equatable {
     var cwd: String = ""
     /// De app waarin de agent draait (Terminal, iTerm, VS Code…), voor "Open terminal".
     var hostBundleID: String = ""
+    /// De map van het account (CLAUDE_CONFIG_DIR, CODEX_HOME); leeg voor het eerste account.
+    var home: String = ""
     /// Een verzoek dat nu op jouw antwoord wacht.
     var approvalID: String? = nil
     /// Regels erbij en eraf in deze sessie.
@@ -101,6 +103,8 @@ struct AgentSession: Identifiable, Equatable {
     var linesRemoved: Int = 0
     /// Eén zin uit het laatste antwoord of bericht van de agent.
     var summary: String = ""
+    /// Alleen bij een gevonden proces: de agent is gekoppeld, maar deze sessie startte daarvoor.
+    var isLinked: Bool = false
     /// Komt van een draaiend proces, niet van hooks.
     var isDetected: Bool { status == .detected }
 }

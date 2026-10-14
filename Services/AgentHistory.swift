@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Welke agent een eerdere sessie of account hoort bij. Van Claude Code en Codex leest Nook ook de sessies;
 /// van Gemini CLI alleen met welk Google-account je bent ingelogd.
-enum AgentKind: String, CaseIterable, Identifiable {
+enum AgentKind: String, CaseIterable, Identifiable, Codable {
     case claude, codex, gemini
 
     var id: String { rawValue }
@@ -94,6 +94,15 @@ enum AgentKind: String, CaseIterable, Identifiable {
         return paths.map { "\($0)/\(command)" }
     }
 
+    /// De gewone map van de agent, waar het eerste account staat.
+    var defaultHome: URL {
+        switch self {
+        case .claude: return HistoryScanner.claudeHome
+        case .codex: return CodexUsage.codexHome
+        case .gemini: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true)
+        }
+    }
+
     init?(agentName: String) {
         switch agentName {
         case "Claude Code", "Claude (app)": self = .claude
@@ -145,6 +154,8 @@ struct PastSession: Identifiable, Equatable {
     var tokens: TokenTally
     var lastPrompt: String
     var lastReply: String
+    /// Met welk account (`AgentProfile.id`) deze sessie liep.
+    var profileID = ""
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
@@ -215,16 +226,28 @@ struct AgentUsageSummary: Equatable {
 @MainActor
 final class AgentHistory: ObservableObject {
     @Published private(set) var sessions: [PastSession] = []
-    @Published private(set) var accounts: [AgentKind: AgentAccount] = [:]
-    @Published private(set) var usage: [AgentKind: AgentUsageSummary] = [:]
+    /// Per account (`AgentProfile.id`): met wie je bent ingelogd.
+    @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
+    /// Per account: tokens en sessies van vandaag en deze week.
+    @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
     /// Welke agents op deze Mac staan (er is een ~/.claude of ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
     /// Agents waarvan het programma op deze Mac staat.
     @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
 
+    /// Welke accounts Nook leest; AppModel houdt dit gelijk met `AgentProfileStore`.
+    var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
+
     private let scanner = HistoryScanner()
     private var lastRefresh = Date.distantPast
+
+    /// Het eerste account van elke agent (de gewone map, zoals `claude` in je terminal hem gebruikt).
+    var accounts: [AgentKind: AgentAccount] {
+        var result: [AgentKind: AgentAccount] = [:]
+        for kind in AgentKind.allCases { result[kind] = profileAccounts[kind.rawValue] }
+        return result
+    }
 
     /// Ververst als het langer dan `minimumInterval` geleden is. De Agents-tab roept dit aan als hij opent.
     func refresh(minimumInterval: TimeInterval = 20) {
@@ -233,14 +256,15 @@ final class AgentHistory: ObservableObject {
         lastRefresh = Date()
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
+        let homes = profiles.map { ProfileHome(id: $0.id, kind: $0.kind, url: $0.homeURL, isDefault: $0.isDefault) }
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let result = scanner.scan(excludingFolder: ownFolder)
+            let result = scanner.scan(homes, excludingFolder: ownFolder)
             Task { @MainActor in
                 guard let self else { return }
                 self.loading = false
                 if self.sessions != result.sessions { self.sessions = result.sessions }
-                if self.accounts != result.accounts { self.accounts = result.accounts }
-                if self.usage != result.usage { self.usage = result.usage }
+                if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
+                if self.profileUsage != result.usage { self.profileUsage = result.usage }
                 if self.installed != result.installed { self.installed = result.installed }
                 if self.executables != result.executables { self.executables = result.executables }
             }
@@ -250,6 +274,18 @@ final class AgentHistory: ObservableObject {
     func sessions(for agent: AgentKind) -> [PastSession] {
         sessions.filter { $0.agent == agent }
     }
+
+    func sessions(for profile: AgentProfile) -> [PastSession] {
+        sessions.filter { $0.profileID == profile.id }
+    }
+}
+
+/// Een account zoals de scanner het nodig heeft: welke map, van welke agent.
+struct ProfileHome: Sendable {
+    var id: String
+    var kind: AgentKind
+    var url: URL
+    var isDefault: Bool
 }
 
 // MARK: Lezen
@@ -258,8 +294,8 @@ final class AgentHistory: ObservableObject {
 private final class HistoryScanner: @unchecked Sendable {
     struct Result {
         var sessions: [PastSession]
-        var accounts: [AgentKind: AgentAccount]
-        var usage: [AgentKind: AgentUsageSummary]
+        var accounts: [String: AgentAccount]
+        var usage: [String: AgentUsageSummary]
         var installed: Set<AgentKind>
         var executables: [AgentKind: String]
     }
@@ -299,60 +335,61 @@ private final class HistoryScanner: @unchecked Sendable {
         return formatter
     }()
 
-    func scan(excludingFolder ownFolder: String) -> Result {
+    func scan(_ homes: [ProfileHome], excludingFolder ownFolder: String) -> Result {
         lock.lock()
         defer { lock.unlock() }
 
         let fm = FileManager.default
         let since = Date().addingTimeInterval(-Double(Self.days) * 86_400)
         var installed: Set<AgentKind> = []
-        var files: [(url: URL, agent: AgentKind, key: CacheKey)] = []
+        var files: [(url: URL, agent: AgentKind, profile: String, key: CacheKey)] = []
+        var seenFolders = Set<String>()
 
-        let claudeHome = Self.claudeHome
-        if fm.fileExists(atPath: claudeHome.path) {
-            installed.insert(.claude)
-            files += claudeFiles(claudeHome, since: since).map { ($0.url, .claude, $0.key) }
-        }
-        let codexHome = CodexUsage.codexHome
-        if fm.fileExists(atPath: codexHome.path) {
-            installed.insert(.codex)
-            files += codexFiles(codexHome, since: since).map { ($0.url, .codex, $0.key) }
+        for home in homes where home.kind != .gemini {
+            // Twee accounts met dezelfde map: maar één keer lezen.
+            guard fm.fileExists(atPath: home.url.path), seenFolders.insert(home.url.standardizedFileURL.path).inserted else { continue }
+            installed.insert(home.kind)
+            let found = home.kind == .claude ? claudeFiles(home.url, since: since) : codexFiles(home.url, since: since)
+            files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
         files.sort { $0.key.modified > $1.key.modified }
         files = Array(files.prefix(Self.maxFiles))
 
         var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
-        var parsedAll: [(AgentKind, Parsed)] = []
+        var parsedAll: [(profile: String, parsed: Parsed)] = []
         for file in files {
             let path = file.url.path
-            let parsed: Parsed
+            var parsed: Parsed
             if let hit = cache[path], hit.key == file.key {
                 parsed = hit.parsed
             } else {
                 parsed = file.agent == .claude ? parseClaude(file.url) : parseCodex(file.url)
             }
+            parsed.session?.profileID = file.profile
             fresh[path] = (file.key, parsed)
-            parsedAll.append((file.agent, parsed))
+            parsedAll.append((file.profile, parsed))
         }
         cache = fresh
 
         // Sessies voor de lijst: zonder de gesprekken die Nook zelf via Claude Code voert (zijn eigen map).
-        let sessions = parsedAll.compactMap { $0.1.session }
+        let sessions = parsedAll.compactMap { $0.parsed.session }
             .filter { $0.prompts > 0 && $0.cwd != ownFolder }
             .sorted { $0.ended > $1.ended }
 
-        var usage: [AgentKind: AgentUsageSummary] = [:]
-        for agent in installed {
-            usage[agent] = summarize(parsedAll.filter { $0.0 == agent }.map { $0.1 }, excludingFolder: ownFolder)
-        }
-
-        var accounts: [AgentKind: AgentAccount] = [:]
-        if installed.contains(.claude), let account = claudeAccount() { accounts[.claude] = account }
-        if installed.contains(.codex), let account = codexAccount(codexHome) { accounts[.codex] = account }
-        let geminiHome = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true)
-        if fm.fileExists(atPath: geminiHome.path) {
-            installed.insert(.gemini)
-            if let account = geminiAccount(geminiHome) { accounts[.gemini] = account }
+        var usage: [String: AgentUsageSummary] = [:]
+        var accounts: [String: AgentAccount] = [:]
+        for home in homes where fm.fileExists(atPath: home.url.path) {
+            switch home.kind {
+            case .claude:
+                usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
+                if let account = claudeAccount(home.url, isDefault: home.isDefault) { accounts[home.id] = account }
+            case .codex:
+                usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
+                if let account = codexAccount(home.url) { accounts[home.id] = account }
+            case .gemini:
+                installed.insert(.gemini)
+                if let account = geminiAccount(home.url) { accounts[home.id] = account }
+            }
         }
 
         let executables = locateExecutables()
@@ -583,12 +620,13 @@ private final class HistoryScanner: @unchecked Sendable {
         return true
     }
 
-    /// ~/.claude.json: met welk account Claude Code is ingelogd.
-    private func claudeAccount() -> AgentAccount? {
+    /// ~/.claude.json: met welk account Claude Code is ingelogd. Met een eigen map (CLAUDE_CONFIG_DIR) staat het
+    /// bestand in die map.
+    private func claudeAccount(_ configHome: URL, isDefault: Bool) -> AgentAccount? {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        var candidates = [home.appendingPathComponent(".claude.json"), Self.claudeHome.appendingPathComponent(".config.json")]
-        if ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] != nil {
-            candidates.insert(Self.claudeHome.appendingPathComponent(".claude.json"), at: 0)
+        var candidates = [configHome.appendingPathComponent(".claude.json"), configHome.appendingPathComponent(".config.json")]
+        if isDefault && ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] == nil {
+            candidates.insert(home.appendingPathComponent(".claude.json"), at: 0)
         }
         for url in candidates {
             guard let data = try? Data(contentsOf: url),

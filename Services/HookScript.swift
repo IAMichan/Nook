@@ -69,7 +69,7 @@ enum HookScript {
     $mode = 'permission' if $name eq 'PermissionRequest' || $name eq 'permissionRequest';
 
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
-        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT);
+        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME);
 
     # nook_show_step: een agent die alleen "klaar" meldt, krijgt de stap toch te zien (eerst begonnen, dan klaar).
     my @events = ($event);

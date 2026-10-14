@@ -53,6 +53,16 @@ enum AgentConfigInstaller {
             }
         }
 
+        /// Het bestand voor een account met een eigen map (CLAUDE_CONFIG_DIR, CODEX_HOME). Nil: de gewone map.
+        func fileURL(home: URL?) -> URL {
+            guard let home else { return fileURL }
+            switch self {
+            case .claudeHooks, .claudeStatusLine: return home.appendingPathComponent("settings.json")
+            case .codex: return home.appendingPathComponent("hooks.json")
+            default: return fileURL
+            }
+        }
+
         var displayPath: String {
             switch self {
             case .claudeHooks, .claudeStatusLine: return "~/.claude/settings.json"
@@ -146,11 +156,12 @@ enum AgentConfigInstaller {
 
     // MARK: Toestand
 
-    static func state(of target: Target) -> State {
+    /// `home`: de map van een extra account; nil voor de gewone map van de agent.
+    static func state(of target: Target, home: URL? = nil) -> State {
         if target.isPlugin { return pluginState(target) }
         let root: [String: Any]
         do {
-            root = try read(target.fileURL).object
+            root = try read(target.fileURL(home: home)).object
         } catch {
             return .unreadable(error.localizedDescription)
         }
@@ -194,10 +205,11 @@ enum AgentConfigInstaller {
 
     // MARK: Voorstel maken
 
-    static func prepare(_ target: Target, install: Bool) throws -> Change {
+    static func prepare(_ target: Target, install: Bool, home: URL? = nil) throws -> Change {
         _ = try? HookScript.install()
         if target.isPlugin { return try preparePlugin(target, install: install) }
-        let snapshot = try read(target.fileURL)
+        let fileURL = target.fileURL(home: home)
+        let snapshot = try read(fileURL)
         var root = snapshot.object
         var previous: Data?
         var removePrevious = false
@@ -325,7 +337,7 @@ enum AgentConfigInstaller {
             let ours = currentCommand.contains(marker)
             if install {
                 var line = current ?? ["type": "command"]
-                if let current, !ours {
+                if let current, !ours, home == nil {
                     // De statusregel die je al had, blijft zichtbaar: Nook roept hem zelf aan.
                     previous = try JSONSerialization.data(withJSONObject: current, options: [.sortedKeys])
                 }
@@ -360,7 +372,7 @@ enum AgentConfigInstaller {
         // Een ontbrekend bestand dat ook niet hoeft te komen: niets te doen.
         let files: [FileChange] = snapshot.original == nil && updated == nil
             ? []
-            : [FileChange(url: target.fileURL, original: snapshot.original, updated: updated)]
+            : [FileChange(url: fileURL, original: snapshot.original, updated: updated)]
         return Change(
             target: target,
             install: install,
