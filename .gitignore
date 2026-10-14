@@ -7,3 +7,8 @@ build/
 *.xcworkspace
 App/Info.plist
 App/Nook.entitlements
+.swiftpm/
+*.sqlite
+*.sqlite-*
+.env
+.env.*
