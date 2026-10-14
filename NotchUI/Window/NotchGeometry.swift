@@ -7,13 +7,18 @@ struct NotchGeometry: Equatable {
     var hasNotch: Bool
     var notchWidth: CGFloat
     var notchHeight: CGFloat
+    /// Zwevend paneel in plaats van in de notch: geen notch, ruimte voor een eigen positie.
+    var isFloating = false
 
     static let placeholder = NotchGeometry(
         screenFrame: .zero, hasNotch: false, notchWidth: 180, notchHeight: 34
     )
 
-    static func make(for screen: NSScreen) -> NotchGeometry {
+    static func make(for screen: NSScreen, floating: Bool = false) -> NotchGeometry {
         let frame = screen.frame
+        if floating {
+            return NotchGeometry(screenFrame: frame, hasNotch: false, notchWidth: 64, notchHeight: 34, isFloating: true)
+        }
         let inset = screen.safeAreaInsets.top
         if inset > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
             return NotchGeometry(

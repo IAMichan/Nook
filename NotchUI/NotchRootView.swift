@@ -8,11 +8,13 @@ struct NotchRootView: View {
     var body: some View {
         let size = viewModel.size
         let radius = viewModel.cornerRadius
+        let floating = viewModel.geometry.isFloating
+        let topRadius = floating ? radius : 0
         let shape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
+            topLeadingRadius: topRadius,
             bottomLeadingRadius: radius,
             bottomTrailingRadius: radius,
-            topTrailingRadius: 0,
+            topTrailingRadius: topRadius,
             style: .continuous
         )
 
@@ -25,7 +27,8 @@ struct NotchRootView: View {
             .frame(width: size.width, height: size.height, alignment: .top)
             .background(shape.fill(NookTheme.notch))
             .clipShape(shape)
-            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : 0), radius: 18, x: 0, y: 8)
+            .overlay(shape.strokeBorder(Color.white.opacity(floating ? 0.1 : 0), lineWidth: 1))
+            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // Een lichte zwelling als de muis op de notch staat: laat zien dat hij reageert.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
             .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
@@ -78,6 +81,7 @@ struct NotchRootView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { viewModel.openPanel() }
+                    .floatingDrag(viewModel)
                 } else if app.chat.anyBusy {
                     // Een Nook werkt op de achtergrond aan iets: hij denkt zichtbaar mee.
                     wings(nh: nh, nw: nw, mood: .think, animated: true) {
@@ -85,7 +89,8 @@ struct NotchRootView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { viewModel.openPanel() }
-                } else if app.settings.hideWhenIdle {
+                    .floatingDrag(viewModel)
+                } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                     Color.clear
                 } else {
                     wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
@@ -93,6 +98,7 @@ struct NotchRootView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { viewModel.openPanel() }
+                    .floatingDrag(viewModel)
                 }
             case .music:
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
@@ -100,12 +106,14 @@ struct NotchRootView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
             case .track(let title, let artist):
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                     trackLabel(title: title, artist: artist)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
             case .done(let message):
                 doneStrip(message: message, nh: nh)
             case .nudge(let line, _):
@@ -203,6 +211,8 @@ struct NotchRootView: View {
                 Spacer()
             }
             .frame(height: nh)
+            .contentShape(Rectangle())
+            .floatingDrag(viewModel)
 
             HStack(spacing: 10) {
                 Image(systemName: "checkmark")
@@ -251,6 +261,7 @@ struct NotchRootView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { viewModel.openNudge() }
+        .floatingDrag(viewModel)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("notch.nudgeProposal", line))
         .accessibilityAddTraits(.isButton)
@@ -276,6 +287,15 @@ struct NotchRootView: View {
         .padding(.top, nh + 14)
         .padding(.horizontal, 28)
         .padding(.bottom, 22)
+        .overlay(alignment: .top) {
+            // Zwevend: sleep aan de bovenrand om het paneel te verplaatsen.
+            if viewModel.geometry.isFloating {
+                Color.clear
+                    .frame(height: nh)
+                    .contentShape(Rectangle())
+                    .floatingDrag(viewModel)
+            }
+        }
     }
 }
 
@@ -304,5 +324,16 @@ private struct AgentDots: View {
             }
         }
         .accessibilityLabel(tr("notch.agentsActive", sessions.count))
+    }
+}
+
+private extension View {
+    /// In zwevende stand kun je Nook aan dit onderdeel verslepen. Tikken blijft gewoon werken.
+    func floatingDrag(_ viewModel: NotchViewModel) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { _ in if viewModel.geometry.isFloating { viewModel.onDragMoved?() } }
+                .onEnded { _ in if viewModel.geometry.isFloating { viewModel.onDragEnded?() } }
+        )
     }
 }

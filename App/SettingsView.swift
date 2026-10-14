@@ -219,6 +219,13 @@ struct SettingsView: View {
                 Text(tr("settings.overview.howToUseFooter"))
             }
             Section(tr("settings.notch.title")) {
+                Picker(tr("settings.notch.placement"), selection: $settings.placement) {
+                    Text(tr("settings.notch.placementNotch")).tag("notch")
+                    Text(tr("settings.notch.placementFloating")).tag("floating")
+                }
+                if settings.placement == "floating" {
+                    Text(tr("settings.notch.placementHint")).font(.caption).foregroundStyle(.secondary)
+                }
                 Picker(tr("settings.notch.screen"), selection: $settings.screenChoice) {
                     Text(tr("settings.notch.auto")).tag("auto")
                     Text(tr("settings.notch.main")).tag("main")

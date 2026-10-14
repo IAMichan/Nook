@@ -91,6 +91,20 @@ final class AppSettings: ObservableObject {
     @Published var screenChoice: String {
         didSet { UserDefaults.standard.set(screenChoice, forKey: "screenChoice") }
     }
+    /// Waar Nook staat: "notch" (vast in de notch bovenaan) of "floating" (een zwevend paneel dat je zelf versleept).
+    @Published var placement: String {
+        didSet { UserDefaults.standard.set(placement, forKey: "placement") }
+    }
+    /// Positie van het zwevende paneel: afstand van het midden van het scherm (rechts is positief)
+    /// en afstand onder de menubalk. Wordt bewaard zodra je het paneel loslaat.
+    var floatOffsetX: Double {
+        get { UserDefaults.standard.double(forKey: "floatOffsetX") }
+        set { UserDefaults.standard.set(newValue, forKey: "floatOffsetX") }
+    }
+    var floatOffsetY: Double {
+        get { UserDefaults.standard.object(forKey: "floatOffsetY") as? Double ?? 8 }
+        set { UserDefaults.standard.set(newValue, forKey: "floatOffsetY") }
+    }
     /// In rust alleen de notch zelf: Nook verschijnt pas als er iets is of als je erop wijst.
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
@@ -210,6 +224,7 @@ final class AppSettings: ObservableObject {
         useLocal = UserDefaults.standard.bool(forKey: "useLocal")
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
+        placement = defaults.string(forKey: "placement") ?? "notch"
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")

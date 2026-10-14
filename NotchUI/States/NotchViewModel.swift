@@ -16,6 +16,10 @@ final class NotchViewModel: ObservableObject {
     /// Wordt gezet door AppModel; geeft toegang tot echte data en acties.
     weak var app: AppModel?
 
+    /// Alleen in zwevende stand: de controller verplaatst het paneel terwijl je sleept.
+    var onDragMoved: (() -> Void)?
+    var onDragEnded: (() -> Void)?
+
     private var callbacks: [String: () -> Void] = [:]
     private var choiceHandlers: [String: ([String]) -> Void] = [:]
     private var pending: [NookCard] = []
@@ -280,7 +284,7 @@ final class NotchViewModel: ObservableObject {
         let chrome = nh + 14 + 22   // ruimte onder de notch en onderrand
         switch state {
         case .idle:
-            if app?.settings.hideWhenIdle == true, !agentsActive, !(app?.chat.anyBusy ?? false) {
+            if app?.settings.hideWhenIdle == true, !geometry.isFloating, !agentsActive, !(app?.chat.anyBusy ?? false) {
                 // Alleen de notch zelf; zonder notch een dun randje bovenaan om naar te wijzen.
                 return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
             }
@@ -307,10 +311,13 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    private var nookFloatingPill: CGFloat { geometry.notchHeight / 2 }
+
     var cornerRadius: CGFloat {
         switch state {
-        case .idle: return 14
-        case .music, .track, .done, .nudge: return 16
+        case .idle: return geometry.isFloating ? nookFloatingPill : 14
+        case .music, .track: return geometry.isFloating ? nookFloatingPill : 16
+        case .done, .nudge: return 16
         case .card: return 30
         case .panel: return 32
         }

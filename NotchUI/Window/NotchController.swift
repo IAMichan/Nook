@@ -15,17 +15,47 @@ final class NotchController {
     private var cancellables = Set<AnyCancellable>()
     private var previousApp: NSRunningApplication?
 
-    static func panelFrame(for geometry: NotchGeometry) -> NSRect {
+    private var dragStart: (mouse: NSPoint, offsetX: Double, offsetY: Double)?
+
+    private var settings: AppSettings { AppSettings.shared }
+
+    private func makeGeometry() -> NotchGeometry {
+        NotchGeometry.make(
+            for: NotchGeometry.preferredScreen(choice: settings.screenChoice),
+            floating: settings.placement == "floating"
+        )
+    }
+
+    /// Het scherm dat bij de huidige geometrie hoort (voor de zichtbare ruimte onder de menubalk).
+    private var visibleFrame: NSRect {
+        NSScreen.screens.first { $0.frame == geometry.screenFrame }?.visibleFrame ?? geometry.screenFrame
+    }
+
+    /// Midden en bovenrand van de vorm in schermcoördinaten. Vast in de notch; zwevend volgens de bewaarde positie,
+    /// binnen het scherm gehouden.
+    private func anchor(size: CGSize) -> (centerX: CGFloat, top: CGFloat) {
         let s = geometry.screenFrame
-        let size = panelSize
-        return NSRect(x: s.midX - size.width / 2, y: s.maxY - size.height, width: size.width, height: size.height)
+        guard geometry.isFloating else { return (s.midX, s.maxY) }
+        let v = visibleFrame
+        let halfW = size.width / 2
+        let centerX = min(max(s.midX + settings.floatOffsetX, s.minX + halfW), s.maxX - halfW)
+        let top = min(max(v.maxY - settings.floatOffsetY, v.minY + size.height), v.maxY)
+        return (centerX, top)
+    }
+
+    private func panelFrame() -> NSRect {
+        let a = anchor(size: viewModel.size)
+        let size = Self.panelSize
+        return NSRect(x: a.centerX - size.width / 2, y: a.top - size.height, width: size.width, height: size.height)
     }
 
     func start(app: AppModel) {
-        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen(choice: AppSettings.shared.screenChoice))
+        geometry = makeGeometry()
         viewModel.geometry = geometry
+        viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
+        viewModel.onDragEnded = { [weak self] in self?.dragStart = nil }
 
-        let initialFrame = Self.panelFrame(for: geometry)
+        let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
         let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel).environmentObject(app))
         host.sizingOptions = []
@@ -39,7 +69,10 @@ final class NotchController {
         // Nieuwe maat? Dan opnieuw bepalen of de muis nog boven de vorm hangt.
         viewModel.$size
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.pointerMoved() }
+            .sink { [weak self] _ in
+                self?.positionPanel()
+                self?.pointerMoved()
+            }
             .store(in: &cancellables)
 
         // Een kaart met tekstveld krijgt meteen de toetsenbordfocus, zodat je kunt typen zonder te klikken.
@@ -50,6 +83,11 @@ final class NotchController {
 
         // Ander scherm gekozen in de instellingen, of Nook in rust verbergen aan of uit.
         AppSettings.shared.$screenChoice
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.screenChanged() }
+            .store(in: &cancellables)
+        AppSettings.shared.$placement
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
@@ -102,15 +140,27 @@ final class NotchController {
 
     private func positionPanel() {
         guard let panel else { return }
-        let frame = Self.panelFrame(for: geometry)
+        let frame = panelFrame()
         if panel.frame != frame {
             panel.setFrame(frame, display: false)
         }
     }
 
     private func screenChanged() {
-        geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen(choice: AppSettings.shared.screenChoice))
+        geometry = makeGeometry()
         viewModel.geometry = geometry
+        positionPanel()
+    }
+
+    /// Zwevend: de vorm volgt de muis zolang je sleept; de positie wordt direct bewaard.
+    private func dragMoved() {
+        guard geometry.isFloating else { return }
+        let mouse = NSEvent.mouseLocation
+        let start = dragStart ?? (mouse: mouse, offsetX: settings.floatOffsetX, offsetY: settings.floatOffsetY)
+        dragStart = start
+        settings.floatOffsetX = start.offsetX + Double(mouse.x - start.mouse.x)
+        // Y loopt omlaag: sleep je naar beneden, dan wordt de afstand onder de menubalk groter.
+        settings.floatOffsetY = max(0, start.offsetY - Double(mouse.y - start.mouse.y))
         positionPanel()
     }
 
@@ -124,8 +174,8 @@ final class NotchController {
     /// De notch-vorm in schermcoördinaten (oorsprong linksonder).
     private func surfaceRect() -> NSRect {
         let size = viewModel.size
-        let s = geometry.screenFrame
-        return NSRect(x: s.midX - size.width / 2, y: s.maxY - size.height, width: size.width, height: size.height)
+        let a = anchor(size: size)
+        return NSRect(x: a.centerX - size.width / 2, y: a.top - size.height, width: size.width, height: size.height)
     }
 
     // MARK: Muis
