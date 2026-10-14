@@ -5,6 +5,8 @@ struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
     @Namespace private var underline
+    @ObservedObject private var settings = AppSettings.shared
+    private var large: Bool { settings.panelLarge }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -50,6 +52,13 @@ struct PanelView: View {
             Spacer()
             HStack(spacing: 2) {
                 NookIconButton(systemName: "mic", label: tr("button.talk")) { viewModel.startListening() }
+                NookIconButton(
+                    systemName: large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                    label: tr(large ? "button.shrink" : "button.enlarge")
+                ) {
+                    AppSettings.shared.panelLarge.toggle()
+                    viewModel.show(.panel(tab))
+                }
                 NookIconButton(systemName: "gearshape", label: tr("button.settings")) { viewModel.app?.openSettings() }
                 NookIconButton(systemName: "xmark", label: tr("button.close")) { viewModel.show(.idle) }
             }

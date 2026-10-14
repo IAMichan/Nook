@@ -136,6 +136,10 @@ final class AppSettings: ObservableObject {
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
     }
+    /// Larger panel (wider and taller) for chat and agents.
+    @Published var panelLarge: Bool {
+        didSet { UserDefaults.standard.set(panelLarge, forKey: "panelLarge") }
+    }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
@@ -253,6 +257,7 @@ final class AppSettings: ObservableObject {
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
