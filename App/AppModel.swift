@@ -89,7 +89,7 @@ final class AppModel: ObservableObject {
     // MARK: Gegevens voor de UI
 
     var agentSessions: [AgentSession] {
-        demoMode ? DemoContent.agents : hub.sessions
+        demoMode ? DemoContent.agents : hub.sessions + hub.detected
     }
 
     var todayItems: [TodayItem] {
