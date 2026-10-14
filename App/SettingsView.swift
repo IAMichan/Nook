@@ -43,6 +43,10 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             .onChange(of: settings.useLocal) { _, _ in testResult = nil }
 
+            Picker("Taal van antwoorden", selection: $settings.language) {
+                ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
+            }
+
             if settings.useLocal { localFields } else { claudeFields }
 
             HStack {

@@ -269,11 +269,11 @@ final class AppModel: ObservableObject {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
-        let events = calendar.events(from: now, to: now.addingTimeInterval(3 * 86_400))
+        let events = calendar.events(from: now, to: now.addingTimeInterval(7 * 86_400))
         if calendar.hasEventAccess {
-            lines.append("Agenda, komende drie dagen:")
+            lines.append("Agenda (Nook heeft toegang), komende zeven dagen:")
             if events.isEmpty { lines.append("- geen afspraken") }
-            for event in events.prefix(15) {
+            for event in events.prefix(25) {
                 lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))")
             }
         } else {
@@ -581,8 +581,8 @@ final class AppModel: ObservableObject {
     }
 
     private func answerCard(_ text: String) -> NookCard {
-        let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(240))
-        let lines = max(1, Int(ceil(Double(body.count) / 46.0)))
+        let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
+        let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
         return NookCard(
             id: token,

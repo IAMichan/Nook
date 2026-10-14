@@ -40,6 +40,23 @@ final class AppSettings: ObservableObject {
 
     private static let keyAccount = "anthropic-api-key"
 
+    /// Taal van Nooks antwoorden: een code uit `languages`, of "auto" (de taal van je vraag).
+    @Published var language: String {
+        didSet { UserDefaults.standard.set(language, forKey: "language") }
+    }
+
+    static let languages: [(code: String, name: String)] = [
+        ("nl", "Nederlands"), ("en", "Engels"), ("de", "Duits"), ("fr", "Frans"), ("es", "Spaans"),
+        ("auto", "Taal van mijn vraag")
+    ]
+
+    /// Zin voor in de prompt, bijvoorbeeld "Antwoord altijd in het Engels."
+    var languageInstruction: String {
+        if language == "auto" { return "Antwoord in de taal waarin de gebruiker schrijft." }
+        let name = Self.languages.first { $0.code == language }?.name ?? "Nederlands"
+        return "Antwoord altijd in het \(name), ook als de gegevens of tools in een andere taal zijn."
+    }
+
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: "model") }
     }
@@ -72,6 +89,7 @@ final class AppSettings: ObservableObject {
             if defaults.string(forKey: "model") == "claude-sonnet-5-5" { defaults.removeObject(forKey: "model") }
         }
         model = defaults.string(forKey: "model") ?? "claude-haiku-5-5"
+        language = defaults.string(forKey: "language") ?? "nl"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         useLocal = UserDefaults.standard.bool(forKey: "useLocal")
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""

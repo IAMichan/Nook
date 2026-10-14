@@ -16,11 +16,15 @@ struct CardView: View {
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
 
-            Text(card.title)
-                .font(NookTheme.font(18, .semibold))
-                .foregroundStyle(NookTheme.paper)
+            if card.input {
+                // Lange antwoorden scrollen en zijn te selecteren; ze worden nooit afgekapt.
+                ScrollView(showsIndicators: false) {
+                    titleText.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 .padding(.top, 6)
-                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                titleText.padding(.top, 6)
+            }
 
             detail
                 .padding(.top, 14)
@@ -40,6 +44,14 @@ struct CardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onExitCommand { onAction(card.primary) }
+    }
+
+    private var titleText: some View {
+        Text(card.title)
+            .font(NookTheme.font(18, .semibold))
+            .foregroundStyle(NookTheme.paper)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 
     /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.
