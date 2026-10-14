@@ -245,6 +245,12 @@ final class AgentHub: ObservableObject {
             return
         }
 
+        // Sessies die Nook zelf in de werkruimte draait, volgt de werkruimte al (met eigen goedkeuringen): hier niet dubbel.
+        if let run = env["NOOK_RUN_ID"] as? String, !run.isEmpty {
+            connection.reply(nil)
+            return
+        }
+
         let cwd = (event["cwd"] as? String) ?? (event["workdir"] as? String) ?? ""
         let sessionID = (event["session_id"] as? String)
             ?? (event["thread-id"] as? String)

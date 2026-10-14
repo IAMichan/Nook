@@ -1814,3 +1814,42 @@ final class ResendConnector: CloudConnectorConfig {
         return out.joined(separator: "\n")
     }
 }
+
+// MARK: Pull requests uit de werkruimte
+
+/// Een pull request openen met de GitHub-koppeling die je al hebt. Alleen na jouw klik in de werkruimte.
+enum GitHubPullRequests {
+    /// Is de GitHub-koppeling aan en is er een token? Anders opent Nook de vergelijkpagina op github.com.
+    static var isAvailable: Bool {
+        ConnectorToggle.isOn("github") && CloudHelp.secret(GitHubConnector.tokenAccount) != nil
+    }
+
+    static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool) async throws -> URL {
+        guard let token = CloudHelp.secret(GitHubConnector.tokenAccount), ConnectorToggle.isOn("github") else {
+            throw CloudHelp.notSetUp("GitHub")
+        }
+        let url = try CloudHelp.url("https://api.github.com/repos/\(repo)/pulls")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "title": title, "body": body, "head": head, "base": base, "draft": draft
+        ])
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (200..<300).contains(status), let link = object["html_url"] as? String, let result = URL(string: link) else {
+            var message = (object["message"] as? String) ?? "GitHub gaf een fout (\(status))."
+            if let errors = object["errors"] as? [[String: Any]] {
+                let details = errors.compactMap { $0["message"] as? String }
+                if !details.isEmpty { message += " " + details.joined(separator: " ") }
+            }
+            throw NookError("GitHub: \(message)")
+        }
+        return result
+    }
+}

@@ -646,6 +646,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            WorkspaceSettingsSection()
             Section(tr("settings.agents.weekRecap")) {
                 HStack {
                     Button(tr("button.view")) { app.showWeekRecap() }
@@ -1013,3 +1014,69 @@ private struct Keycap: View {
     }
 }
 
+
+
+/// Voorkeuren voor de werkruimte: wat "Nieuwe sessie" voorstelt, waar worktrees komen, editor en terminal.
+private struct WorkspaceSettingsSection: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var ws = WorkspaceSettings.shared
+
+    var body: some View {
+        Section {
+            Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
+                ForEach(RunProvider.allCases) { Text($0.displayName).tag($0) }
+            }
+            ForEach(RunProvider.allCases) { provider in
+                Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+                    get: { ws.model(for: provider) },
+                    set: { ws.setModel($0, for: provider) }
+                )) {
+                    ForEach(Array(Set(provider.suggestedModels + [ws.model(for: provider)])).sorted(), id: \.self) { model in
+                        Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                    }
+                }
+            }
+            Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
+                ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
+            }
+            Picker(tr("settings.ws.permission"), selection: $ws.defaultPermission) {
+                ForEach(PermissionPolicy.allCases) { Text($0.label).tag($0) }
+            }
+            Picker(tr("settings.ws.isolation"), selection: $ws.defaultIsolation) {
+                ForEach(IsolationMode.allCases) { Text($0.label).tag($0) }
+            }
+            LabeledContent(tr("settings.ws.worktreeRoot")) {
+                HStack {
+                    Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Button(tr("ws.new.change")) {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.canCreateDirectories = true
+                        if panel.runModal() == .OK, let url = panel.url { ws.worktreeRoot = url.path }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            Picker(tr("settings.ws.editor"), selection: $ws.editorBundleID) {
+                Text(tr("settings.ws.finder")).tag("")
+                ForEach(WorkspaceSettings.installed(WorkspaceSettings.editorCandidates)) { Text($0.name).tag($0.bundleID) }
+            }
+            Picker(tr("settings.ws.terminal"), selection: $ws.terminalBundleID) {
+                ForEach(WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates)) { Text($0.name).tag($0.bundleID) }
+            }
+            Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
+                Text(tr("settings.ws.never")).tag(0)
+                Text(tr("settings.ws.days", 7)).tag(7)
+                Text(tr("settings.ws.days", 30)).tag(30)
+                Text(tr("settings.ws.days", 90)).tag(90)
+            }
+            Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
+            Button(tr("settings.ws.open")) { app.openWorkspace() }
+        } header: {
+            Text(tr("settings.ws.title"))
+        } footer: {
+            Text(tr("settings.ws.footer"))
+        }
+    }
+}

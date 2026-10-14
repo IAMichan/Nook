@@ -73,7 +73,31 @@ targets:
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
+  # Tests voor de werkruimte: compileert alleen de losse Foundation-bestanden, zonder de app te starten.
+  NookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Services/Workspace/WorkspaceModels.swift
+      - path: Services/Workspace/AgentStreamParsers.swift
+      - path: Services/Workspace/GitService.swift
+      - path: Services/Workspace/RunStore.swift
+      - path: Services/Workspace/AgentProcess.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
 schemes:
+  NookTests:
+    build:
+      targets:
+        NookTests: [test]
+    test:
+      config: Debug
+      targets:
+        - NookTests
   Nook:
     build:
       targets:

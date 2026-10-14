@@ -37,6 +37,8 @@ final class AppModel: ObservableObject {
     let thinkAlong = ThinkAlong()
     /// Het gesprek met Nook in de chat.
     let chat = NookChat()
+    /// Coding-agents die Nook zelf start en volgt, in hun eigen venster.
+    let workspace = WorkspaceManager()
     /// Welk onderdeel van Instellingen open staat.
     @Published var settingsSection: SettingsSection = .general
 
@@ -126,6 +128,7 @@ final class AppModel: ObservableObject {
         // Altijd de nieuwste versie van het hook-script, zodat bestaande koppelingen meegroeien.
         try? HookScript.install()
         hub.recap = recap
+        startWorkspace()
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
         hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }

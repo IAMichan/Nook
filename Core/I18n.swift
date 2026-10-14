@@ -57,14 +57,11 @@ public final class I18n: ObservableObject, @unchecked Sendable {
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        if let val = translations[lang]?[key] {
+        if let val = translations[lang]?[key] ?? workspaceTranslations[lang]?[key] {
             return val
         }
-        if lang != .nl, let val = translations[.nl]?[key] {
-            return val
-        }
-        if lang != .en, let val = translations[.en]?[key] {
-            return val
+        for fallback in [AppLanguage.nl, .en] where fallback != lang {
+            if let val = translations[fallback]?[key] ?? workspaceTranslations[fallback]?[key] { return val }
         }
         return key
     }
@@ -661,7 +658,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook gebruikt je eigen login. Ben je nog niet ingelogd, typ dan eenmalig `claude` in de terminal. Antwoorden duren een paar tellen langer dan met een API-sleutel.",
         "settings.brain.claudeNotFound": "Claude Code staat niet op deze Mac",
         "settings.brain.claudeInstallHint": "Installeer het met `curl -fsSL https://claude.ai/install.sh | bash` in de terminal, log in met `claude` en klik dan op Zoek opnieuw.",
-        "button.searchAgain": "Zoek opnieuw",
         "settings.brain.moreAboutClaudeCode": "Meer over Claude Code",
         "settings.brain.noModelsFound": "Geen modellen gevonden.",
         "settings.brain.modelsFound": "%lld modellen gevonden. Kies er een via Kies.",
@@ -1306,7 +1302,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook uses your existing login. If not logged in yet, run `claude` once in terminal. Responses take slightly longer than with an API key.",
         "settings.brain.claudeNotFound": "Claude Code is not installed on this Mac",
         "settings.brain.claudeInstallHint": "Install it with `curl -fsSL https://claude.ai/install.sh | bash` in terminal, log in with `claude`, then click Search again.",
-        "button.searchAgain": "Search again",
         "settings.brain.moreAboutClaudeCode": "More about Claude Code",
         "settings.brain.noModelsFound": "No models found.",
         "settings.brain.modelsFound": "%lld models found. Select one via Choose.",
@@ -1951,7 +1946,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook nutzt deinen eigenen Login. Wenn du noch nicht eingeloggt bist, gib einmalig `claude` im Terminal ein. Antworten dauern etwas länger als mit einem API-Schlüssel.",
         "settings.brain.claudeNotFound": "Claude Code ist auf diesem Mac nicht installiert",
         "settings.brain.claudeInstallHint": "Installiere es mit `curl -fsSL https://claude.ai/install.sh | bash` im Terminal, logge dich mit `claude` ein und klicke auf Erneut suchen.",
-        "button.searchAgain": "Erneut suchen",
         "settings.brain.moreAboutClaudeCode": "Mehr über Claude Code",
         "settings.brain.noModelsFound": "Keine Modelle gefunden.",
         "settings.brain.modelsFound": "%lld Modelle gefunden. Wähle eines über Auswählen.",
