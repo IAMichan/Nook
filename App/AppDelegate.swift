@@ -18,9 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            let image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Nook")
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.menuBarIcon()
         }
 
         let menu = NSMenu()
@@ -56,6 +54,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         item.menu = menu
         statusItem = item
+    }
+
+    /// Een scherm met de notch erin: zelf getekend, zodat het scherp blijft op elk scherm
+    /// en als template-afbeelding meekleurt met een lichte of donkere menubalk.
+    private static func menuBarIcon() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            NSColor.black.set()
+
+            let line: CGFloat = 1.5
+            let screen = NSBezierPath(
+                roundedRect: NSRect(x: 1.75, y: 3.25, width: 14.5, height: 11.5),
+                xRadius: 3, yRadius: 3
+            )
+            screen.lineWidth = line
+            screen.stroke()
+
+            // De notch hangt aan de bovenrand; de bovenste hoeken vallen weg in de lijn.
+            let notch = NSBezierPath(
+                roundedRect: NSRect(x: 6, y: 2.5, width: 6, height: 4),
+                xRadius: 1.5, yRadius: 1.5
+            )
+            notch.fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Nook"
+        return image
     }
 
     @discardableResult
