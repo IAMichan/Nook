@@ -24,18 +24,25 @@ struct PanelView: View {
                     Button {
                         viewModel.show(.panel(t))
                     } label: {
-                        Text(t.title)
-                            .font(NookTheme.font(13.5, .medium))
-                            .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
-                            .padding(.vertical, 6)
-                            .overlay(alignment: .bottom) {
-                                if t == tab {
-                                    Rectangle()
-                                        .fill(NookTheme.paper)
-                                        .frame(height: 1.5)
-                                        .matchedGeometryEffect(id: "underline", in: underline)
-                                }
+                        HStack(spacing: 6) {
+                            Text(t.title)
+                                .font(NookTheme.font(13.5, .medium))
+                                .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
+                            if t == .chat, viewModel.app?.chat.busy == true {
+                                Circle()
+                                    .fill(NookTheme.iris)
+                                    .frame(width: 5, height: 5)
                             }
+                        }
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .bottom) {
+                            if t == tab {
+                                Rectangle()
+                                    .fill(NookTheme.paper)
+                                    .frame(height: 1.5)
+                                    .matchedGeometryEffect(id: "underline", in: underline)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -52,7 +59,8 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .nook: NookTab(viewModel: viewModel)
+        case .nook: NookHomeTab(viewModel: viewModel)
+        case .chat: NookChatTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
         case .connect: ConnectTab(viewModel: viewModel)
         case .music: MusicTab()

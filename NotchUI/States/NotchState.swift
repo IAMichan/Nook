@@ -1,13 +1,14 @@
 import Foundation
 
 enum PanelTab: String, CaseIterable, Identifiable {
-    case nook, agents, connect, music, shelf
+    case nook, chat, agents, connect, music, shelf
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .nook: return "Nook"
+        case .chat: return "Chat"
         case .agents: return "Agents"
         case .connect: return "Koppelingen"
         case .music: return "Muziek"

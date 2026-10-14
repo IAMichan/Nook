@@ -43,7 +43,8 @@ enum LocalIntent: Equatable {
         if matches(#"harder|luider|volume (omhoog|hoger)|louder|volume up"#) { return .volumeStep(10) }
         if matches(#"zachter|stiller|volume (omlaag|lager)|quieter|volume down"#) { return .volumeStep(-10) }
         if matches(#"(laat )?(mijn |de )?(agents|agenten)( zien| tab)?|(show )?agents"#) { return .showTab(.agents) }
-        if matches(#"(open |toon )?(vandaag|today|nook|chat|de chat)"#) { return .showTab(.nook) }
+        if matches(#"(open |toon )?(vandaag|today|nook|home|startpagina)"#) { return .showTab(.nook) }
+        if matches(#"(open |toon )?(de )?chat"#) { return .showTab(.chat) }
         if matches(#"(open |toon )?(mijn |de )?(koppelingen|diensten|integraties|connections)( tab)?"#) { return .showTab(.connect) }
         if matches(#"(open |toon )?(de )?(muziek|music)( tab)?"#) { return .showTab(.music) }
         if matches(#"(mijn |het )?(weekoverzicht|week ?recap|weekrecap|weekly recap)|hoe was mijn week"#) { return .weekRecap }
