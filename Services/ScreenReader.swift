@@ -81,8 +81,37 @@ final class ScreenReader {
         }
     }
 
-    /// Leest de vensters van één open app, ook als die achter andere vensters ligt. `query` is de naam ("Notities",
-    /// "Slack") of een deel van de bundel-id. Zo kan Nook in elke app kijken, ook zonder koppeling.
+    /// Mappen waarin Nook naar apps zoekt die nog dicht zijn.
+    private static var appFolders: [URL] {
+        let fm = FileManager.default
+        var folders = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/System/Applications"),
+                       URL(fileURLWithPath: "/Applications/Utilities"), URL(fileURLWithPath: "/System/Applications/Utilities")]
+        folders.append(fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications"))
+        return folders
+    }
+
+    /// Zoekt een geïnstalleerde app op naam, ook in de taal van de Mac ("Notities" vindt Notes.app).
+    static func installedApp(named query: String) -> URL? {
+        let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        let fm = FileManager.default
+        var loose: URL?
+        for folder in appFolders {
+            guard let items = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { continue }
+            for url in items where url.pathExtension == "app" {
+                let file = url.deletingPathExtension().lastPathComponent.lowercased()
+                let shown = (fm.displayName(atPath: url.path) as NSString).deletingPathExtension.lowercased()
+                if file == wanted || shown == wanted { return url }
+                if loose == nil, file.contains(wanted) || shown.contains(wanted) { loose = url }
+            }
+        }
+        return loose
+    }
+
+    /// Leest de vensters van één app, ook als die achter andere vensters ligt, verborgen is of nog dicht is.
+    /// `query` is de naam ("Notities", "Slack") of een deel van de bundel-id. Is de app dicht, dan start Nook hem op de
+    /// achtergrond (zonder hem naar voren te halen), leest hem en sluit hem daarna weer. Verborgen apps gaan na het lezen
+    /// terug in hun schuilplaats. Zo kan Nook in elke app kijken, ook zonder koppeling.
     func captureApp(_ query: String, totalLimit: Int = 8000) async throws -> ScreenSnapshot {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
@@ -90,33 +119,72 @@ final class ScreenReader {
         }
         let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !wanted.isEmpty else { throw NookError("Welke app?") }
-        if let excluded = NSWorkspace.shared.runningApplications.first(where: {
-            Self.excludedBundles.contains($0.bundleIdentifier ?? "") && ($0.localizedName ?? "").lowercased() == wanted
-        }) {
-            throw ScreenError.excluded(excluded.localizedName ?? query)
-        }
         let apps = Self.openApps()
         let exact = apps.filter { ($0.localizedName ?? "").lowercased() == wanted }
         let loose = apps.filter {
             ($0.localizedName ?? "").lowercased().contains(wanted) || ($0.bundleIdentifier ?? "").lowercased().contains(wanted)
         }
-        guard let app = exact.first ?? loose.first else {
-            let open = apps.compactMap(\.localizedName).sorted().joined(separator: ", ")
-            throw NookError("\(query) is niet open. Open apps: \(open). Stel open_app voor als de gebruiker hem wil openen.")
+
+        let front = NSWorkspace.shared.frontmostApplication
+        var app = exact.first ?? loose.first
+        var launched = false
+        var unhid = false
+        if app == nil {
+            // Dicht: zoek hem op en start hem op de achtergrond.
+            guard let url = Self.installedApp(named: query) else {
+                throw NookError("Ik vind geen app die \(query) heet op deze Mac.")
+            }
+            if let bundle = Bundle(url: url)?.bundleIdentifier, Self.excludedBundles.contains(bundle) {
+                throw ScreenError.excluded(FileManager.default.displayName(atPath: url.path))
+            }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            configuration.addsToRecentItems = false
+            app = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            launched = app != nil
+        }
+        guard let app else { throw NookError("\(query) wilde niet starten.") }
+        if let bundle = app.bundleIdentifier, Self.excludedBundles.contains(bundle) {
+            throw ScreenError.excluded(app.localizedName ?? query)
         }
         let name = app.localizedName ?? query
-
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        let windows = content.windows.filter {
-            $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 200 && $0.frame.height > 100
-        }.sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }.prefix(3)
-        guard !windows.isEmpty else {
-            throw NookError("\(name) is open maar heeft geen zichtbaar venster (verborgen of in het Dock). Vraag de gebruiker het venster te tonen.")
+        if app.isHidden {
+            app.unhide()
+            unhid = true
         }
+        defer {
+            // Netjes achterlaten: wat Nook opende gaat weer dicht, wat verborgen was weer weg, en de focus blijft waar hij was.
+            if launched { app.terminate() } else if unhid { app.hide() }
+            if let front, front.processIdentifier != app.processIdentifier, NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
+                front.activate(options: [])
+            }
+        }
+
+        // Wachten tot er een venster is. Heeft een open app geen venster (Mail met het venster dicht), dan vraagt Nook
+        // de app er een te openen, zoals een klik op het Dock-icoon, maar zonder hem naar voren te halen.
+        var windows: [SCWindow] = []
+        var reopened = false
+        for attempt in 0..<24 {
+            windows = await Self.windows(of: app)
+            if !windows.isEmpty { break }
+            if !reopened, attempt >= (launched ? 8 : 0), let url = app.bundleURL {
+                reopened = true
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = false
+                configuration.addsToRecentItems = false
+                _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        guard !windows.isEmpty else {
+            throw NookError("\(name) laat geen venster zien (misschien geminimaliseerd of in een ander bureaublad), dus ik kan er niet in lezen.")
+        }
+        // Een net gestarte app heeft even nodig om zijn inhoud te laden.
+        if launched || reopened { try? await Task.sleep(nanoseconds: 1_200_000_000) }
 
         var sections: [String] = []
         var remaining = totalLimit
-        for window in windows where remaining > 200 {
+        for window in windows.prefix(3) where remaining > 200 {
             let configuration = SCStreamConfiguration()
             configuration.width = min(Int(window.frame.width * 1.5), 2400)
             configuration.height = min(Int(window.frame.height * 1.5), 2400)
@@ -131,7 +199,16 @@ final class ScreenReader {
             sections.append("### \(name)\(title)\n\(chunk)")
         }
         guard !sections.isEmpty else { throw ScreenError.nothing }
-        return ScreenSnapshot(appName: name, windowTitle: name, text: sections.joined(separator: "\n\n"))
+        let note = launched ? "(\(name) was dicht; Nook opende hem even op de achtergrond om te lezen en sloot hem weer.)\n\n" : ""
+        return ScreenSnapshot(appName: name, windowTitle: name, text: note + sections.joined(separator: "\n\n"))
+    }
+
+    /// De vensters van een app op het scherm (ook onder andere vensters), grootste eerst.
+    private static func windows(of app: NSRunningApplication) async -> [SCWindow] {
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return [] }
+        return content.windows.filter {
+            $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 200 && $0.frame.height > 100
+        }.sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
     }
 
     /// Leest alle zichtbare vensters op alle schermen (voorste eerst), zodat Nook uit het geheel context kan halen.

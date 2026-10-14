@@ -1077,7 +1077,7 @@ final class AppModel: ObservableObject {
             // Elke open app is ook een bron: zonder koppeling leest read_app wat erin staat.
             if scope.allows(SourceCatalog.screen) {
                 let apps = ScreenReader.openApps().compactMap(\.localizedName).sorted()
-                if !apps.isEmpty { lines.append("- Open apps (lees er een met read_app): " + apps.joined(separator: ", ")) }
+                if !apps.isEmpty { lines.append("- Open apps (lees er een met read_app; dat kan ook met apps die dicht zijn): " + apps.joined(separator: ", ")) }
             }
         }
 
