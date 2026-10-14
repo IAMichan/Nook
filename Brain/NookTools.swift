@@ -104,6 +104,18 @@ final class NookTools {
                 }
             ),
             ToolSpec(
+                name: "read_app",
+                description: "Leest wat er in de vensters van één open app staat (OCR, lokaal), ook als die app achter andere vensters ligt. Gebruik dit voor vragen over een app zonder eigen koppeling (Notities, Berichten, WhatsApp, Slack, Teams, Things, Spotify, Excel, Figma…) of als je in een specifieke app wilt kijken. Welke apps open zijn, staat in de context onder \"Open apps\".",
+                schema: object(["app": string("Naam van de app, zoals die onder \"Open apps\" staat.")], required: ["app"]),
+                kind: .read,
+                summarize: { input in "\((input["app"] as? String) ?? "App") lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { [screen = self.screen] input in
+                    guard let app = input["app"] as? String else { throw NookError("De appnaam ontbreekt.") }
+                    return try await screen.captureApp(app).text
+                }
+            ),
+            ToolSpec(
                 name: "list_open_loops",
                 description: "Geeft de open punten die Nook voor de gebruiker bijhoudt (dingen die nog gedaan moeten worden).",
                 schema: object([:], required: []),

@@ -532,11 +532,13 @@ final class AppModel: ObservableObject {
         let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
         let summary = contextSummary(scope: scope, relevant: relevant)
         let scopeLabel = scope.isRestricted ? scope.label() : ""
+        // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
+        let wantsChart = ChartRescue.wantsChart(text)
         chat.update(id) {
             $0.sources = sources
             $0.contextSources = summary.titles
             $0.scopeLabel = scopeLabel
-            $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…"
+            $0.status = retry ? (wantsChart ? "Ik teken de grafiek…" : "Ik zoek verder…") : "Even nadenken…"
         }
 
         // Wat Nook opzoekt, verschijnt live boven het antwoord.
@@ -557,11 +559,11 @@ final class AppModel: ObservableObject {
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
 
-        // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
-        let wantsChart = ChartRescue.wantsChart(text)
         var request = text
         if retry {
-            request += "\n\n(Teken de grafiek nu echt met de tool show_chart, met echte cijfers uit de context, de tools of het web. Schrijf geen code, geen JSON en geen tabel als vervanging.)"
+            request += wantsChart
+                ? "\n\n(Teken de grafiek nu echt met de tool show_chart, met echte cijfers uit de context, de tools of het web. Schrijf geen code, geen JSON en geen tabel als vervanging.)"
+                : "\n\n(Je gaf nog geen antwoord. Bedenk welke bron het antwoord heeft: een gekoppelde bron, een open app (read_app), het scherm, een bestand of het web. Haal het op met de passende tool en beantwoord dan de vraag. Lukt het echt niet, zeg dan kort waar je keek en wat er ontbrak.)"
         }
 
         do {
@@ -606,6 +608,16 @@ final class AppModel: ObservableObject {
                     await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                     return
                 }
+            }
+
+            // Geen antwoord, geen grafiek, geen concept, geen plan: één keer opnieuw, met de opdracht zelf de bron te zoeken.
+            let bare = rawBody.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            let nothing = (bare.isEmpty || bare.uppercased() == "NONE") && rescued.isEmpty
+                && (chat.message(id)?.charts.isEmpty ?? true) && (chat.message(id)?.mails.isEmpty ?? true) && plan.actions.isEmpty
+            if nothing, !retry, !settings.useLocal {
+                chat.update(id) { $0.text = ""; $0.status = "Ik zoek verder…" }
+                await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                return
             }
 
             // Verwijzingen naar bronnen die Nook niet echt ophaalde, gaan eruit.
@@ -1062,6 +1074,11 @@ final class AppModel: ObservableObject {
             }
             let unavailable = connectors.sources.filter { !$0.isActive && !$0.canLookUp && scope.allows($0.id) }.map { $0.title }
             if !unavailable.isEmpty { lines.append("- Niet gekoppeld of uit: " + unavailable.joined(separator: ", ")) }
+            // Elke open app is ook een bron: zonder koppeling leest read_app wat erin staat.
+            if scope.allows(SourceCatalog.screen) {
+                let apps = ScreenReader.openApps().compactMap(\.localizedName).sorted()
+                if !apps.isEmpty { lines.append("- Open apps (lees er een met read_app): " + apps.joined(separator: ", ")) }
+            }
         }
 
         // Agenda (vanaf het begin van vandaag), herinneringen, mail, browser, diensten: alles uit de cache van de koppelingen.
