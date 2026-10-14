@@ -28,7 +28,7 @@ final class GitParsingTests: XCTestCase {
         XCTAssertEqual(counts["Sources/App.swift"]?.added, 3)
         XCTAssertEqual(counts["Sources/App.swift"]?.removed, 1)
         XCTAssertNotNil(counts["image.png"])
-        XCTAssertNil(counts["image.png"]?.added ?? nil, "binair: geen regels")
+        XCTAssertNil(counts["image.png"]?.added ?? nil, "binary: no line count")
         XCTAssertEqual(counts["new.swift"]?.added, 5)
         XCTAssertNil(counts["old.swift"])
     }
@@ -72,14 +72,14 @@ final class GitParsingTests: XCTestCase {
     }
 }
 
-/// Echte Git-repositories in een tijdelijke map: worktree maken, wijzigen, committen en veilig opruimen.
+/// Real Git repositories in a temporary directory: worktree creation, edits, commits, and clean teardown.
 final class GitServiceIntegrationTests: XCTestCase {
     private var git: GitService!
     private var root: String!
     private var repo: String!
 
     override func setUpWithError() throws {
-        guard let found = GitService.locate() else { throw XCTSkip("Git staat niet op deze machine") }
+        guard let found = GitService.locate() else { throw XCTSkip("Git is not installed on this machine") }
         git = found
         setenv("GIT_AUTHOR_NAME", "Nook Test", 1)
         setenv("GIT_AUTHOR_EMAIL", "test@nook.invalid", 1)
@@ -101,7 +101,7 @@ final class GitServiceIntegrationTests: XCTestCase {
 
     func testRepositoryInfo() throws {
         XCTAssertEqual(git.repositoryRoot(for: repo).map(WorkspacePathPolicy.normalize), WorkspacePathPolicy.normalize(repo))
-        XCTAssertNil(git.repositoryRoot(for: root), "de bovenliggende map is geen repository")
+        XCTAssertNil(git.repositoryRoot(for: root), "the parent directory is not a repository")
         XCTAssertEqual(git.currentBranch(repo), "main")
         XCTAssertTrue(git.hasCommits(repo))
         XCTAssertEqual(try git.branches(repo).local, ["main"])
@@ -114,26 +114,26 @@ final class GitServiceIntegrationTests: XCTestCase {
         try git.addWorktree(repo: repo, path: path, branch: "nook/taak-a", base: "main")
         XCTAssertTrue(FileManager.default.fileExists(atPath: path + "/README.md"))
         XCTAssertEqual(git.currentBranch(path), "nook/taak-a")
-        XCTAssertEqual(git.currentBranch(repo), "main", "de eigen checkout verandert nooit van branch")
+        XCTAssertEqual(git.currentBranch(repo), "main", "the primary checkout never changes branch")
 
-        // Een tweede worktree van dezelfde repository: echt los van de eerste.
+        // A second worktree from the same repository: completely isolated from the first.
         let other = root + "/worktrees/repo/taak-b"
         try git.addWorktree(repo: repo, path: other, branch: "nook/taak-b", base: "main")
         try "a\n".write(toFile: path + "/a.txt", atomically: true, encoding: .utf8)
         XCTAssertEqual(try git.status(path).files.map(\.path), ["a.txt"])
-        XCTAssertTrue(try git.status(other).isClean, "wijzigingen in de ene worktree zie je niet in de andere")
+        XCTAssertTrue(try git.status(other).isClean, "changes in one worktree are not visible in the other")
         XCTAssertTrue(try git.status(repo).isClean)
 
-        // Status telt regels van nieuwe bestanden.
+        // Status counts lines in newly added files.
         let status = try git.status(path)
         XCTAssertEqual(status.files.first?.kind, .untracked)
         XCTAssertEqual(status.files.first?.added, 1)
 
-        // Weghalen met wijzigingen weigert zonder force.
+        // Removing dirty worktree fails without force.
         XCTAssertThrowsError(try git.removeWorktree(repo: repo, path: path, force: false))
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
 
-        // Committen en voorsprong op de basis.
+        // Committing and divergence from base.
         let sha = try git.commit(path, message: "voeg a toe", paths: ["a.txt"])
         XCTAssertFalse(sha.isEmpty)
         XCTAssertTrue(try git.status(path).isClean)
@@ -145,7 +145,7 @@ final class GitServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(list.count, 3)
         XCTAssertTrue(list[0].isMain)
 
-        // Nu schoon: weghalen lukt; de branch en zijn commit blijven.
+        // Clean now: removal succeeds; the branch and commit are preserved.
         try git.removeWorktree(repo: repo, path: path, force: false)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         XCTAssertTrue(git.localBranchExists("nook/taak-a", in: repo))
@@ -154,10 +154,10 @@ final class GitServiceIntegrationTests: XCTestCase {
 
     func testWorktreeGuards() throws {
         XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "nook/x", base: "bestaat-niet"))
-        XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "main", base: "main"), "bestaande branch")
+        XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "main", base: "main"), "existing branch")
         XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "bad name", base: "main"))
-        XCTAssertThrowsError(try git.removeWorktree(repo: repo, path: repo, force: true), "nooit de hoofdmap")
-        XCTAssertThrowsError(try git.removeWorktree(repo: repo, path: root, force: true), "nooit een map die geen worktree is")
+        XCTAssertThrowsError(try git.removeWorktree(repo: repo, path: repo, force: true), "never the root worktree")
+        XCTAssertThrowsError(try git.removeWorktree(repo: repo, path: root, force: true), "never a non-worktree directory")
         XCTAssertTrue(FileManager.default.fileExists(atPath: repo + "/README.md"))
     }
 
@@ -192,7 +192,7 @@ final class GitServiceIntegrationTests: XCTestCase {
     }
 
     func testCloneLocalRepositoryIsRefusedButHTTPSShapeAccepted() throws {
-        // Een pad is geen geldig kloon-adres; zo kan een opdracht nooit lokale bestanden als bron gebruiken.
+        // A local path is not a valid clone URL; preventing arbitrary local files as clone source.
         XCTAssertThrowsError(try git.clone(url: repo, into: root + "/clones"))
     }
 }

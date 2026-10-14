@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Haalt het icoon (favicon) van de dienst achter een koppeling op, van de dienst zelf, en bewaart het op je Mac.
-/// Er gaat alleen een verzoek naar het domein dat jij zelf hebt ingesteld.
+/// Fetches the service icon (favicon) directly from the connected service and caches it on your Mac.
+/// Only contacts the specific domain you configured.
 @MainActor
 final class FaviconStore: ObservableObject {
     static let shared = FaviconStore()
@@ -22,7 +22,7 @@ final class FaviconStore: ObservableObject {
         domain.range(of: #"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"#, options: .regularExpression) != nil && domain.contains(".")
     }
 
-    /// Het icoon als het er al is; anders begint het ophalen en komt het zo via `revision`.
+    /// The icon if already cached; otherwise triggers a fetch and updates via `revision`.
     func image(for domain: String) -> NSImage? {
         let key = domain.lowercased()
         guard Self.valid(key) else { return nil }
@@ -64,7 +64,7 @@ final class FaviconStore: ObservableObject {
     }
 }
 
-/// Het icoon van een dienst, of een systeemsymbool zolang dat er nog niet is.
+/// The service icon, or a system symbol fallback while loading.
 struct SiteIcon: View {
     let domain: String?
     let fallback: String

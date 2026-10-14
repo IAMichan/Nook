@@ -1,25 +1,25 @@
 import Foundation
 
-// Welke bronnen Nook bij een vraag gebruikt. Drie dingen lopen hier samen:
-// - de catalogus: welke bronnen er zijn, wat voor soort koppeling het is en welke tools erbij horen;
-// - de reikwijdte (SourceScope): wat de gebruiker toestaat, met de bronkiezer in de chat of in de vraag zelf
-//   ("alleen mijn agenda en mail", "zonder mijn scherm");
-// - de routering (SourceRouter): welke toegestane bronnen voor deze vraag de moeite waard zijn om volledig mee te sturen.
-// Alles hier is gewone Foundation-code zonder UI, zodat het los te testen is.
+// Which sources Nook uses for a query. Three concerns converge here:
+// - the catalog: what sources exist, what kind of connection it is, and which tools belong to it;
+// - the scope (SourceScope): what the user allows, via the source picker in the chat or within the query itself
+//   ("only my calendar and mail", "without my screen");
+// - the routing (SourceRouter): which allowed sources are worth sending in full for this query.
+// Everything here is standard Foundation code without UI, so it can be tested in isolation.
 
-/// Wat voor soort koppeling een bron is. Zo kan de gebruiker zien hoe iets gekoppeld is en wat dat betekent.
+/// What kind of connection a source uses, showing the user how it is connected and what that entails.
 enum SourceKind: String, Codable, CaseIterable {
-    /// Op je Mac: Agenda, Herinneringen, Mail, browser, bestanden, klembord, scherm.
+    /// On your Mac: Calendar, Reminders, Mail, browser, files, clipboard, screen.
     case builtIn
-    /// Inloggen bij de dienst zelf (GitHub).
+    /// Signing in to the service itself (GitHub).
     case oauth
-    /// Een sleutel die je zelf plakt (Stripe, Vercel, Notion…).
+    /// An API key pasted manually (Stripe, Vercel, Notion…).
     case apiKey
-    /// Een eigen bron met een web-API of webhook.
+    /// A custom source with a web API or webhook.
     case custom
-    /// Het open internet.
+    /// The open web.
     case web
-    /// Nooks eigen gegevens (open punten).
+    /// Nook's own data (open loops).
     case nook
 }
 
@@ -30,7 +30,7 @@ struct SourceDescriptor: Equatable {
 }
 
 enum SourceCatalog {
-    /// Pseudo-bronnen die geen koppeling zijn maar wel aan of uit kunnen per vraag.
+    /// Pseudo-sources that are not external integrations but can be toggled on or off per query.
     static let screen = "screen"
     static let web = "web"
     static let loops = "loops"
@@ -65,7 +65,7 @@ enum SourceCatalog {
         descriptor(id)?.title ?? id
     }
 
-    /// Tools die bij een bron horen. Tools zonder bron (grafiek, app openen, muziek…) mogen altijd.
+    /// Tools associated with a source. Tools without a source (charts, open app, music…) are always allowed.
     private static let exactTools: [String: String] = [
         "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
         "check_availability": "calendar",
@@ -87,8 +87,8 @@ enum SourceCatalog {
         return nil
     }
 
-    /// Hoe de gebruiker een bron noemt (Nederlands, Engels, Duits). Eén woord kan meerdere bronnen dekken:
-    /// "agenda" is Apple Agenda, je ICS-agenda's en Cal.com samen.
+    /// How the user refers to a source (Dutch, English, German). A single word can cover multiple sources:
+    /// "agenda" covers Apple Calendar, your ICS calendars, and Cal.com combined.
     static let aliases: [(pattern: String, ids: [String])] = [
         (#"agenda'?s?|kalender\w*|calendars?|ical"#, ["calendar", "icalfeeds", "calcom"]),
         (#"cal\.com"#, ["calcom"]),
@@ -111,7 +111,7 @@ enum SourceCatalog {
         (#"slack|teams|discord|telegram|eigen bronn?e?n?|custom sources?"#, ["customsources"])
     ]
 
-    /// Alle bronnen die in de tekst genoemd worden, met waar ze staan.
+    /// All sources mentioned in the text, along with their locations.
     static func mentions(in text: String) -> [(range: Range<String.Index>, ids: [String])] {
         var found: [(Range<String.Index>, [String])] = []
         for alias in aliases {
@@ -124,16 +124,16 @@ enum SourceCatalog {
     }
 }
 
-/// Welke bronnen Nook mag gebruiken. Automatisch = alles wat aan staat, Nook kiest zelf wat relevant is.
+/// Which sources Nook may use. Automatic = everything enabled; Nook decides what is relevant.
 struct SourceScope: Equatable, Codable {
     enum Mode: String, Codable { case automatic, only }
 
     var mode: Mode = .automatic
-    /// Bij `.only`: alleen deze bronnen.
+    /// In `.only` mode: only these sources.
     var included: Set<String> = []
-    /// Nooit deze bronnen, ook niet automatisch.
+    /// Never use these sources, even automatically.
     var excluded: Set<String> = []
-    /// Genoemd in de vraag zonder beperking ("kijk in Slack en GitHub"): eerst daar zoeken, volledig meesturen.
+    /// Mentioned in the query without restriction ("search Slack and GitHub"): prioritize searching there, send full context.
     var focus: Set<String> = []
 
     static let automatic = SourceScope()
@@ -146,14 +146,14 @@ struct SourceScope: Equatable, Codable {
         return true
     }
 
-    /// Mag deze tool? Tools zonder bron (grafiek, app openen) altijd.
+    /// Whether this tool is permitted. Tools without a source (charts, open app) are always allowed.
     func allowsTool(_ name: String) -> Bool {
         guard let source = SourceCatalog.source(forTool: name) else { return true }
         return allows(source)
     }
 
-    /// De keuze in de chat plus wat de vraag zelf zegt. Wat de vraag zegt, gaat voor, maar een bron die de gebruiker
-    /// in de bronkiezer uitzette, komt niet terug doordat de vraag hem noemt.
+    /// The chat picker selection combined with what the query specifies. The query takes precedence, but a source disabled
+    /// in the picker by the user is not re-enabled simply by being mentioned in the query.
     func merged(with request: SourceScope?) -> SourceScope {
         guard let request else { return self }
         var result = self
@@ -168,7 +168,7 @@ struct SourceScope: Equatable, Codable {
         return result
     }
 
-    /// Korte uitleg voor in de chat, bijvoorbeeld "Alleen Agenda en Mail" of "Zonder Scherm".
+    /// Short description for chat display, e.g. "Alleen Agenda en Mail" or "Zonder Scherm".
     func label(title: (String) -> String = SourceCatalog.title) -> String {
         var parts: [String] = []
         if mode == .only {
@@ -193,7 +193,7 @@ struct SourceScope: Equatable, Codable {
         return names.dropLast().joined(separator: ", ") + " en " + names.last!
     }
 
-    // MARK: Uit de vraag halen
+    // MARK: Parsing from query
 
     private static let onlyCue = #"\b(alleen|uitsluitend|enkel|only|exclusively|nur|ausschlie(ß|ss)lich)\b"#
     private static let exceptCue = #"\b(zonder|behalve|exclusief|without|except|excluding|ohne|au(ß|ss)er)\b"#
@@ -201,8 +201,8 @@ struct SourceScope: Equatable, Codable {
     private static let useVerb = #"\b(gebruik\w*|zoek\w*|doorzoek\w*|kijk\w*|lees\w*|use|using|search\w*|look\w*|read\w*|check\w*|benutz\w*|verwend\w*|durchsuch\w*|such\w*|schau\w*)\b"#
     private static let allCue = #"\b(alle|all)\b[^.;!?]{0,25}\b(bronnen|sources|quellen)\b"#
 
-    /// Haalt een beperking uit de vraag: "alleen mijn agenda en mail", "zoek in Slack en GitHub, maar niet op mijn scherm",
-    /// "gebruik alle bronnen". Geeft nil als de vraag niets over bronnen zegt.
+    /// Extracts a scope restriction from the query: "only my calendar and mail", "search Slack and GitHub, but not my screen",
+    /// "use all sources". Returns nil if the query mentions no sources.
     static func parse(_ text: String) -> SourceScope? {
         var scope = SourceScope()
         var said = false
@@ -215,7 +215,7 @@ struct SourceScope: Equatable, Codable {
             let except = clause.range(of: exceptCue, options: [.regularExpression, .caseInsensitive])
             let negations = ranges(of: negationCue, in: clause)
             let verbs = ranges(of: useVerb, in: clause)
-            // "do not use …", "niet gebruiken": de ontkenning hoort bij het gebruiken zelf.
+            // "do not use …", "niet gebruiken": the negation applies to usage itself.
             let negatedVerb = negations.contains { negation in
                 verbs.contains { verb in
                     let gap = verb.lowerBound > negation.upperBound
@@ -227,7 +227,7 @@ struct SourceScope: Equatable, Codable {
 
             for mention in mentions {
                 let ids = Set(mention.ids)
-                // "niet in mijn mail", "not my screen", "geen scherm", of "gebruik mijn scherm niet".
+                // "niet in mijn mail", "not my screen", "geen scherm", or "gebruik mijn scherm niet".
                 let negatedMention = negations.contains { negation in
                     if negation.upperBound <= mention.range.lowerBound {
                         return clause.distance(from: negation.upperBound, to: mention.range.lowerBound) <= 16
@@ -263,7 +263,7 @@ struct SourceScope: Equatable, Codable {
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text) }
     }
 
-    /// Stukken zin: een beperking geldt binnen een zin of bijzin ("…, maar niet mijn scherm").
+    /// Sentence clauses: a restriction applies within a sentence or clause ("…, but not my screen").
     private static func clauses(_ text: String) -> [String] {
         let marked = text.replacingOccurrences(
             of: #"[.;!?\n]|,|\b(maar|but|aber|en daarna|and then|dann)\b"#,
@@ -273,10 +273,10 @@ struct SourceScope: Equatable, Codable {
     }
 }
 
-/// Welke bronnen voor deze vraag volledig mee moeten. De rest krijgt het brein als één regel ("Mail: 12 ongelezen,
-/// doorzoek met search_mail"), zodat het weet dat ze er zijn zonder dat alles bij elke vraag meegaat.
+/// Which sources should be sent in full for this query. The rest are sent as a single summary line ("Mail: 12 unread,
+/// search with search_mail"), so the brain knows they exist without sending full content on every turn.
 enum SourceRouter {
-    /// Altijd volledig: klein en bijna altijd nuttig om de dag te snappen.
+    /// Always sent in full: compact and almost always useful for understanding the day.
     static let core: Set<String> = ["calendar", "reminders", SourceCatalog.loops]
 
     private static let intents: [(pattern: String, ids: [String])] = [
@@ -295,7 +295,7 @@ enum SourceRouter {
         (#"slack|teams|discord|telegram|kanaal|channel"#, ["customsources"])
     ]
 
-    /// Brede vragen ("vat mijn week samen", "wat is er gebeurd") mogen overal kijken.
+    /// Broad queries ("summarize my week", "what happened") may consult all available sources.
     private static let broad = #"samenvat\w*|vat\b.*samen|overzicht|summar\w*|zusammenfass\w*|alles|everything|all (my|of)|wat is er gebeurd|what happened|deze week|this week|diese woche|bereid\w* .*voor|prepare|voorbereid\w*"#
 
     static func relevant(to text: String, scope: SourceScope, active: Set<String>) -> Set<String> {
@@ -311,7 +311,7 @@ enum SourceRouter {
     }
 }
 
-/// Wat een koppeling kan, in gewone woorden, voor de instellingen: hoe hij gekoppeld is en welke lees- en schrijfacties er zijn.
+/// What a connection can do, in plain language, for settings: how it connects and what read and write actions are available.
 enum SourceCapabilities {
     private static let phrases: [String: String] = [
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
@@ -342,7 +342,7 @@ enum SourceCapabilities {
         }
     }
 
-    /// Lees- en schrijfacties voor een bron, uit de tools die er nu zijn (naam → is het een actie).
+    /// Read and write capabilities for a source, derived from current tools (name → whether it is an action).
     static func describe(_ sourceID: String, tools: [(name: String, isAction: Bool)]) -> (reads: [String], writes: [String]) {
         var reads: [String] = []
         var writes: [String] = []
@@ -357,7 +357,7 @@ enum SourceCapabilities {
         return (reads, writes)
     }
 
-    /// Eén regel: "API-sleutel · lezen: betalingen lezen · schrijven: —".
+    /// Single line summary: "API key · reading: read payments · writing: —".
     static func line(_ sourceID: String, tools: [(name: String, isAction: Bool)]) -> String {
         let kind = SourceCatalog.descriptor(sourceID).map { kindLabel($0.kind) } ?? ""
         let ops = describe(sourceID, tools: tools)

@@ -1,15 +1,15 @@
 import Foundation
 
-/// Vraag je om een grafiek, dan wil je een grafiek zien, geen code. Modellen schrijven soms toch JSON, Chart.js, Mermaid,
-/// Python of een tabel in plaats van show_chart aan te roepen. Dit haalt daar de cijfers uit en maakt er een echte grafiek van.
+/// When you ask for a chart, you want to see a chart, not code. Models sometimes output JSON, Chart.js, Mermaid,
+/// Python, or a table instead of calling show_chart. This extracts data from those formats and renders a real chart.
 enum ChartRescue {
-    /// Gaat het verzoek over een grafiek?
+    /// Does the request ask for a chart?
     static func wantsChart(_ text: String) -> Bool {
         let pattern = #"grafiek|diagram|\bchart|\bplot|visualis|grafisch|staafje|taartje|\bgraph"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    /// Haalt grafieken uit codeblokken en geeft de tekst zonder die blokken terug. Lege codeblokken verdwijnen ook.
+    /// Extracts charts from code blocks and returns the text without them. Empty code blocks are also removed.
     static func extract(from text: String, title: String) -> (text: String, charts: [ChatChart]) {
         guard let regex = try? NSRegularExpression(pattern: "```([A-Za-z0-9_+-]*)[^\\n]*\\n([\\s\\S]*?)```", options: []) else {
             return (text, [])
@@ -17,7 +17,7 @@ enum ChartRescue {
         var result = text
         var charts: [ChatChart] = []
         let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        // Van achter naar voor, zodat de posities van eerdere blokken kloppen.
+        // Reverse order so that indices of preceding blocks remain valid.
         for match in matches.reversed() {
             guard let whole = Range(match.range, in: text),
                   let langRange = Range(match.range(at: 1), in: text),
@@ -33,7 +33,7 @@ enum ChartRescue {
                 result.removeSubrange(range)
             }
         }
-        // Een kaal JSON-object zonder codeblok (bijvoorbeeld van een tekstprotocol-brein).
+        // Bare JSON object without code block (e.g. from a text-protocol brain).
         if charts.isEmpty, let open = result.firstIndex(of: "{"), let close = result.lastIndex(of: "}"), open < close {
             let candidate = String(result[open...close])
             if let object = json(candidate), let chart = chart(fromJSON: object, title: title) {
@@ -46,21 +46,21 @@ enum ChartRescue {
         return (cleaned, charts)
     }
 
-    /// Tijdens het schrijven: verberg codeblokken die op een grafiek lijken (ook als ze nog niet af zijn).
+    /// While streaming: hide code blocks that resemble charts (even if incomplete).
     static func hidingChartCode(_ text: String) -> String {
         var visible = text.replacingOccurrences(
             of: "```(json|chart|vega|vega-lite|mermaid|javascript|js|python|py|swift)?[^\\n]*\\n[\\s\\S]*?```",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
-        // Een blok dat nog open staat: alles vanaf het openen weglaten.
+        // An open/incomplete code block: strip everything from the opening fence onward.
         if visible.components(separatedBy: "```").count % 2 == 0, let open = visible.range(of: "```", options: .backwards) {
             visible = String(visible[..<open.lowerBound])
         }
         return visible
     }
 
-    /// Een Markdown-tabel met cijfers als staafgrafiek (of lijn, bij een reeks over de tijd).
+    /// Converts a Markdown table with numeric data into a bar chart (or line chart for time series).
     static func chartFromTable(_ text: String, title: String) -> ChatChart? {
         for block in MarkdownBlock.parse(text) {
             guard case .table(let header, let rows) = block, rows.count >= 2, header.count >= 2 else { continue }
@@ -79,14 +79,14 @@ enum ChartRescue {
         return nil
     }
 
-    // MARK: Uit code
+    // MARK: From code
 
     private static func chart(fromCode body: String, language: String, title: String) -> ChatChart? {
         if language == "mermaid" || body.hasPrefix("pie") || body.hasPrefix("xychart") {
             return mermaid(body, title: title)
         }
         if let object = json(body), let chart = chart(fromJSON: object, title: title) { return chart }
-        // JavaScript-objecten (Chart.js) zijn vaak bijna JSON: probeer het object eruit te halen.
+        // JavaScript objects (Chart.js) are often almost JSON: attempt to extract the object.
         if let open = body.firstIndex(of: "{"), let close = body.lastIndex(of: "}"), open < close,
            let object = json(String(body[open...close])), let chart = chart(fromJSON: object, title: title) {
             return chart
@@ -95,7 +95,7 @@ enum ChartRescue {
     }
 
     private static func json(_ text: String) -> [String: Any]? {
-        // Komma's voor een sluithaakje en sleutels zonder aanhalingstekens komen veel voor; die eerst rechtzetten.
+        // Trailing commas before closing brackets and unquoted keys are common; sanitize them first.
         var fixed = text.replacingOccurrences(of: #",\s*([}\]])"#, with: "$1", options: .regularExpression)
         if let object = (try? JSONSerialization.jsonObject(with: Data(fixed.utf8))) as? [String: Any] { return object }
         fixed = fixed.replacingOccurrences(of: #"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:"#, with: "$1\"$2\":", options: .regularExpression)
@@ -104,7 +104,7 @@ enum ChartRescue {
     }
 
     private static func chart(fromJSON object: [String: Any], title: String) -> ChatChart? {
-        // Een tool-aanroep als tekst: {"name": "show_chart", "parameters": {...}}.
+        // A tool call formatted as raw text: {"name": "show_chart", "parameters": {...}}.
         if let name = (object["name"] as? String) ?? (object["tool"] as? String), name == "show_chart" {
             let input = (object["parameters"] as? [String: Any]) ?? (object["arguments"] as? [String: Any]) ?? (object["input"] as? [String: Any]) ?? [:]
             return ChatChart.parse(input)
@@ -137,7 +137,7 @@ enum ChartRescue {
                 }
             }
         }
-        // Nooks eigen vorm, of iets wat erop lijkt (series/points, data met label/value).
+        // Nook's native format, or similar structures (series/points, data with label/value).
         if var chart = ChatChart.parse(object) {
             if chart.title.isEmpty { chart.title = title }
             return chart
@@ -145,7 +145,7 @@ enum ChartRescue {
         return nil
     }
 
-    /// Mermaid: `pie` met `"Label" : 42`, of `xychart-beta` met `x-axis [a, b]` en `bar [1, 2]` / `line [...]`.
+    /// Mermaid: `pie` with `"Label" : 42`, or `xychart-beta` with `x-axis [a, b]` and `bar [1, 2]` / `line [...]`.
     private static func mermaid(_ body: String, title: String) -> ChatChart? {
         let lines = body.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
         var heading = title
@@ -177,7 +177,7 @@ enum ChartRescue {
         return ChatChart(title: heading, kind: kind, unit: "", series: Array(series.prefix(4)))
     }
 
-    /// Python, JavaScript of Swift: een lijst met namen en een even lange lijst met getallen.
+    /// Python, JavaScript, or Swift: a list of labels and an equal-length list of numbers.
     private static func chart(fromLists body: String, title: String) -> ChatChart? {
         guard let regex = try? NSRegularExpression(pattern: #"\[([^\[\]]+)\]"#) else { return nil }
         let lists = regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap { match -> [String]? in
@@ -201,7 +201,7 @@ enum ChartRescue {
         return ChatChart(title: heading, kind: kind, unit: "", series: Array(series))
     }
 
-    // MARK: Hulpjes
+    // MARK: Helpers
 
     private static func list(in line: String) -> [String] {
         guard let open = line.firstIndex(of: "["), let close = line.lastIndex(of: "]"), open < close else { return [] }
@@ -218,7 +218,7 @@ enum ChartRescue {
         }
     }
 
-    /// Een getal uit tekst als "€ 1.234,50", "12%", "3,5 uur" of gewoon 42.
+    /// Parses a number from strings like "€ 1,234.50", "12%", "3.5 hours" or simply 42.
     static func number(_ raw: Any?) -> Double? {
         if let value = raw as? Double { return value }
         if let value = raw as? Int { return Double(value) }
@@ -229,7 +229,7 @@ enum ChartRescue {
         text = text.filter { $0.isNumber || $0 == "," || $0 == "." }
         guard text.contains(where: \.isNumber) else { return nil }
         if text.contains(",") && text.contains(".") {
-            // De laatste is het decimaalteken: 1.234,50 of 1,234.50.
+            // The last separator is the decimal point: 1.234,50 or 1,234.50.
             if let comma = text.lastIndex(of: ","), let dot = text.lastIndex(of: "."), comma > dot {
                 text = text.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
             } else {

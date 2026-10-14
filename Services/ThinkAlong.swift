@@ -2,16 +2,16 @@ import Foundation
 import AppKit
 import CoreGraphics
 
-/// Meedenken: bepaalt wanneer Nook ongevraagd even meekijkt en wanneer hij iets mag aanbieden.
-/// Het denkwerk zelf doet AppModel; dit houdt het rustig en leert van je reacties.
+/// Think-along: determines when Nook proactively observes and when it may offer assistance.
+/// The thinking itself is done by AppModel; this keeps suggestions calm and learns from your responses.
 ///
-/// - Pas als je een tijdje met hetzelfde venster bezig bent (niet bij elke klik naar een andere app).
-/// - Hetzelfde venster pas na een paar minuten opnieuw, en alleen als er iets veranderde.
-/// - Zeg je een paar keer nee, dan wacht Nook steeds langer. Zeg je ja, dan weer gewoon.
-/// - "Niet in deze app" onthoudt Nook voorgoed (terug te zetten in Instellingen).
+/// - Only after staying with the same window for a while (not on every switch between apps).
+/// - Revisits the same window only after a few minutes, and only if something changed.
+/// - If declined multiple times, Nook waits progressively longer. If accepted, resets back to normal.
+/// - Remembers "Not in this app" permanently (resettable in Settings).
 @MainActor
 final class ThinkAlong: ObservableObject {
-    /// Apps waarin Nook nooit meedenkt (bundle-ID → naam), op jouw verzoek.
+    /// Apps where Nook never proactively assists (bundle ID → name), at your request.
     @Published private(set) var mutedApps: [String: String]
 
     private var focusKey = ""
@@ -22,7 +22,7 @@ final class ThinkAlong: ObservableObject {
     private var offered: [(date: Date, text: String)] = []
     private var declines = 0
 
-    /// Zo lang moet je met hetzelfde venster bezig zijn voor Nook meekijkt.
+    /// Duration of focus on the same window required before Nook observes.
     private let settle: TimeInterval = 25
     private let minLookGap: TimeInterval = 120
     private let sameWindowGap: TimeInterval = 240
@@ -32,16 +32,16 @@ final class ThinkAlong: ObservableObject {
         mutedApps = (UserDefaults.standard.dictionary(forKey: "thinkAlongMuted") as? [String: String]) ?? [:]
     }
 
-    /// Hoe lang Nook na een aanbod wacht: langer na elk nee, tot hooguit een half uur.
+    /// How long Nook waits after an offer: longer after each decline, up to at most half an hour.
     private var offerGap: TimeInterval {
         min(1800, baseOfferGap * pow(2, Double(min(declines, 4))))
     }
 
-    /// Moet Nook nu meekijken? `bundleID` en `window` beschrijven het voorste venster, `print` de inhoud ervan.
+    /// Should Nook observe now? `bundleID` and `window` describe the frontmost window, `print` its content fingerprint.
     func shouldLook(bundleID: String, window: String, print: UInt64, now: Date = Date()) -> Bool {
         guard !bundleID.isEmpty, bundleID != Bundle.main.bundleIdentifier, mutedApps[bundleID] == nil,
               !ScreenReader.excludedBundles.contains(bundleID) else { return false }
-        // Even weg van je Mac: dan valt er niets mee te denken.
+        // Away from the Mac: nothing to proactively assist with.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 120 else { return false }
 
@@ -69,14 +69,14 @@ final class ThinkAlong: ObservableObject {
         }
     }
 
-    /// Bood Nook dit (of iets vrijwel gelijks) de afgelopen uren al aan?
+    /// Did Nook already offer this (or something nearly identical) in recent hours?
     func alreadyOffered(_ text: String) -> Bool {
         let key = Self.normalize(text)
         let cutoff = Date().addingTimeInterval(-4 * 3600)
         return offered.contains { $0.date > cutoff && $0.text == key }
     }
 
-    /// Wat Nook onlangs aanbood, zodat het brein zichzelf niet herhaalt.
+    /// Recent offers made by Nook, so the brain does not repeat itself.
     var recentOffers: [String] {
         let cutoff = Date().addingTimeInterval(-4 * 3600)
         return offered.filter { $0.date > cutoff }.suffix(6).map { $0.text }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum NookDates {
-    /// Leest ISO 8601 met of zonder tijdzone. Zonder tijdzone geldt de tijdzone van je Mac.
+    /// Parses ISO 8601 with or without timezone. Without timezone, the Mac's current timezone is used.
     static func parse(_ string: String) -> Date? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         let iso = ISO8601DateFormatter()
@@ -34,7 +34,7 @@ enum NookDates {
         return f
     }
 
-    /// "vr 16 okt 14:00"
+    /// "Fri 16 Oct 14:00"
     static func short(_ date: Date) -> String {
         formatter("EEE d MMM HH:mm").string(from: date)
     }
@@ -43,17 +43,17 @@ enum NookDates {
         formatter("HH:mm").string(from: date)
     }
 
-    /// "VR"
+    /// "FRI"
     static func weekdayCaps(_ date: Date) -> String {
         formatter("EEE").string(from: date).replacingOccurrences(of: ".", with: "").uppercased()
     }
 
-    /// "woensdag"
+    /// "Wednesday"
     static func weekday(_ date: Date) -> String {
         formatter("EEEE").string(from: date)
     }
 
-    /// "12 okt"
+    /// "12 Oct"
     static func dayMonth(_ date: Date) -> String {
         formatter("d MMM").string(from: date)
     }
@@ -62,12 +62,12 @@ enum NookDates {
         formatter("d").string(from: date)
     }
 
-    /// "woensdag 14 oktober 2026"
+    /// "Wednesday 14 October 2026"
     static func day(_ date: Date) -> String {
         formatter("EEEE d MMMM yyyy").string(from: date)
     }
 
-    /// "net", "14:20", "gisteren", "ma" of "12 okt": hoe lang geleden, zo kort mogelijk.
+    /// "just now", "14:20", "yesterday", "Mon" or "12 Oct": compact relative timestamp.
     static func relative(_ date: Date) -> String {
         let calendar = Calendar.current
         if Date().timeIntervalSince(date) < 90 { return "net" }
@@ -77,7 +77,7 @@ enum NookDates {
         return dayMonth(date)
     }
 
-    /// "woensdag 14 oktober 2026 08:31"
+    /// "Wednesday 14 October 2026 08:31"
     static func long(_ date: Date) -> String {
         formatter("EEEE d MMMM yyyy HH:mm").string(from: date)
     }

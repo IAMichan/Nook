@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Globale sneltoets zonder extra machtigingen (Carbon RegisterEventHotKey).
+/// Global hotkey without additional permissions (Carbon RegisterEventHotKey).
 final class HotKey {
     private static var handlers: [UInt32: () -> Void] = [:]
     private static var handlerInstalled = false

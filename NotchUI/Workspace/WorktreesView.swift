@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Alle worktrees van je repositories: bij welke sessie ze horen, wat er veranderd is en wat je ermee kunt.
+/// All repository worktrees: associated session, modified files, and available actions.
 struct WorktreesView: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var confirm: WorktreeRow?

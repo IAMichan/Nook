@@ -1,9 +1,9 @@
 import Foundation
 
-/// Verstuurt of opent een mail via de app Mail. Alleen na een klik van de gebruiker op "Versturen" of "Open in Mail".
+/// Sends or opens an email via the Mail app. Only after the user clicks "Send" or "Open in Mail".
 @MainActor
 enum MailSender {
-    /// Adressen uit "lisa@x.nl, Bram <bram@y.nl>; …".
+    /// Parses email addresses from "lisa@x.nl, Bram <bram@y.nl>; …".
     static func addresses(_ text: String) -> [String] {
         text.components(separatedBy: CharacterSet(charactersIn: ",;\n"))
             .map { part -> String in
@@ -20,14 +20,14 @@ enum MailSender {
         address.range(of: #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#, options: .regularExpression) != nil
     }
 
-    /// `send: true` verstuurt meteen; anders opent het concept in Mail zodat je het daar afmaakt.
+    /// `send: true` sends immediately; otherwise opens the draft in Mail so you can finish it there.
     static func deliver(_ draft: MailDraft, send: Bool) async throws {
         let to = addresses(draft.to)
         let cc = addresses(draft.cc)
         if send {
-            guard !to.isEmpty else { throw NookError("Vul eerst een ontvanger in.") }
+            guard !to.isEmpty else { throw NookError("Please enter a recipient first.") }
             if let wrong = (to + cc).first(where: { !isValidAddress($0) }) {
-                throw NookError("\"\(wrong)\" is geen geldig mailadres.")
+                throw NookError("\"\(wrong)\" is not a valid email address.")
             }
         }
         var recipients = ""
@@ -48,9 +48,9 @@ enum MailSender {
         let result = await ScriptText.run(script)
         if let error = result.errorNumber {
             if error == -1743 {
-                throw NookError("Geef Nook toestemming voor Mail bij Systeeminstellingen › Privacy en beveiliging › Automatisering.")
+                throw NookError("Grant Nook permission for Mail in System Settings › Privacy & Security › Automation.")
             }
-            throw NookError(send ? "Versturen via Mail lukte niet (fout \(error)). Is er een account ingesteld in Mail?" : "Mail openen lukte niet (fout \(error)).")
+            throw NookError(send ? "Sending via Mail failed (error \(error)). Is an account configured in Mail?" : "Opening Mail failed (error \(error)).")
         }
     }
 }

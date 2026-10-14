@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// "Nieuwe sessie": kies een map, schrijf de opdracht, kies agent, account en isolatie, en start meteen.
+/// "New session": choose folder, enter task prompt, select agent, account, and isolation, then launch.
 struct NewSessionSheet: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -57,10 +57,10 @@ struct NewSessionSheet: View {
         }
     }
 
-    /// Vaste ID voor dit scherm, zodat de voorgestelde branchnaam niet bij elke letter verspringt.
+    /// Stable ID for this sheet so suggested branch name does not recalculate on every keystroke.
     @State private var pendingID = UUID()
 
-    // MARK: Werkmap
+    // MARK: Working directory
 
     private var recentProjects: [String] {
         var seen = Set<String>()
@@ -155,7 +155,7 @@ struct NewSessionSheet: View {
         }
     }
 
-    // MARK: Opdracht
+    // MARK: Task prompt
 
     private var taskSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -292,7 +292,7 @@ struct NewSessionSheet: View {
         }
     }
 
-    // MARK: Isolatie
+    // MARK: Isolation
 
     private var worktreeAllowed: Bool {
         guard let project, project.verdict == .ok else { return false }
@@ -403,7 +403,7 @@ struct NewSessionSheet: View {
         }
     }
 
-    // MARK: Onderaan
+    // MARK: Bottom bar
 
     private var footer: some View {
         HStack(spacing: 10) {
@@ -444,7 +444,7 @@ struct NewSessionSheet: View {
         Text(text).font(NookTheme.font(12.5)).foregroundStyle(WS.secondary).frame(width: 96, alignment: .leading)
     }
 
-    // MARK: Acties
+    // MARK: Actions
 
     private func prepare() {
         config.provider = settings.defaultProvider
@@ -540,7 +540,7 @@ struct NewSessionSheet: View {
         error = nil
         stage = config.isolation == .worktree ? tr("ws.new.stageWorktree") : tr("ws.new.stageAgent")
         var request = config
-        // In Plan-modus leest de agent alleen; de veiligste rechten die hij kent gaan mee voor als je later verder gaat.
+        // In Plan mode, the agent is read-only; safest available permissions are passed along for when you proceed later.
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
         let finalConfig = request
         let shared = allowShared
@@ -555,7 +555,7 @@ struct NewSessionSheet: View {
                 onStarted(id)
                 dismiss()
             } catch let failure {
-                // Niets aangemaakt (behalve wat de fout zelf zegt): opnieuw proberen maakt geen dubbele sessie.
+                // Nothing was created (except as indicated by error): retrying will not create duplicate sessions.
                 error = failure.localizedDescription
                 starting = false
             }

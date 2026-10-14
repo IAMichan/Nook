@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Eén witte hoofdknop per kaart.
+/// Primary white button for a card.
 struct NookPrimaryButton: View {
     let title: String
     let action: () -> Void
@@ -22,7 +22,7 @@ struct NookPrimaryButton: View {
     }
 }
 
-/// De rustige tekstknop naast de hoofdknop.
+/// Subtle secondary button alongside the primary button.
 struct NookGhostButton: View {
     let title: String
     let action: () -> Void
@@ -44,7 +44,7 @@ struct NookGhostButton: View {
     }
 }
 
-/// Ronde icoonknop (microfoon, sluiten, afspelen…).
+/// Circular icon button (mic, close, play, etc.).
 struct NookIconButton: View {
     let systemName: String
     let label: String
