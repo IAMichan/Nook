@@ -52,7 +52,7 @@ Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
 
 ## Let op
 
-- Deze code is geschreven zonder compiler en nog nooit gedraaid. Verwacht een paar kleine foutmeldingen bij de eerste build; plak ze terug en ze zijn snel opgelost.
+- De code compileert zonder fouten of waarschuwingen (Xcode 16.4, macOS 15); GitHub Actions bouwt hem bij elke push (`.github/workflows/build.yml`). De app is nog niet gestart: machtigingen, de hook-socket en de Claude-koppeling zijn nog niet in de praktijk getest.
 - Met ad-hoc ondertekening ziet macOS elke nieuwe build als een andere app: machtigingen en Keychain-toegang kunnen opnieuw gevraagd worden. Met een eigen Developer ID-certificaat verdwijnt dat.
 - De hook-opzet voor Claude Code en Codex is gebaseerd op hun documentatie maar niet getest tegen de huidige versies.
 - Er is geen API om meldingen van andere apps te lezen; "meldingen filteren" is daarom niet gebouwd. Meldingen van je agents lopen wel via Nook.
