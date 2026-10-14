@@ -53,6 +53,7 @@ struct NotchRootView: View {
         switch viewModel.state {
         case .idle: return "idle"
         case .music: return "music"
+        case .track(let title, let artist): return "track-\(title)-\(artist)"
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
         case .panel: return "panel"   // wisselen van tab gebeurt binnen het paneel, zonder alles te vervangen
@@ -77,6 +78,10 @@ struct NotchRootView: View {
             case .music:
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest) {
                     EqualizerBars(color: NookTheme.music, height: 14)
+                }
+            case .track(let title, let artist):
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest) {
+                    trackLabel(title: title, artist: artist)
                 }
             case .done(let message):
                 doneStrip(message: message, nh: nh)
@@ -117,6 +122,30 @@ struct NotchRootView: View {
                 .frame(width: wing, height: nh)
         }
         .frame(height: nh)
+    }
+
+    /// Rechts van de notch: welk nummer er nu begint.
+    private func trackLabel(title: String, artist: String) -> some View {
+        HStack(spacing: 8) {
+            EqualizerBars(color: NookTheme.music, height: 12)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                if !artist.isEmpty {
+                    Text(artist)
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
     }
 
     // MARK: Net iets gedaan

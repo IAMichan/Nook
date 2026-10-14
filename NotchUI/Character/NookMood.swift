@@ -8,13 +8,12 @@ enum NookMood: Equatable {
     case think     // denkt na of plant
     case waiting   // wacht op jouw goedkeuring
     case remind    // herinnert je aan iets
-    case dance     // danst op de muziek
     case worry     // een agent heeft een probleem
     case done      // klaar, tevreden
 
     var color: Color {
         switch self {
-        case .rest, .seen, .think, .dance: return NookTheme.iris
+        case .rest, .seen, .think: return NookTheme.iris
         case .listen, .done: return NookTheme.mint
         case .waiting, .remind: return NookTheme.amber
         case .worry: return NookTheme.coral
@@ -29,7 +28,6 @@ enum NookMood: Equatable {
         case .think: return "denkt mee"
         case .waiting: return "wacht op jou"
         case .remind: return "herinnert"
-        case .dance: return "luistert mee"
         case .worry: return "let op"
         case .done: return "klaar"
         }
