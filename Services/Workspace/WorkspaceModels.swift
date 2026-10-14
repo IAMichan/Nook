@@ -1,9 +1,9 @@
 import Foundation
 
-// De werkruimte voor coding-agents: sessies die Nook zelf start en volgt (niet in een terminal).
-// Alles in dit bestand is alleen Foundation, zodat de tests het los kunnen gebruiken.
+// The workspace for coding agents: sessions that Nook launches and tracks directly (not in a terminal).
+// Everything in this file depends only on Foundation so tests can use it independently.
 
-/// Welke agent een werkruimte-sessie draait. Alleen agents met een echte headless-modus die Nook kan volgen.
+/// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude, codex
 
@@ -16,7 +16,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Wat deze agent in de headless-modus echt kan. De UI toont wat er niet is als "niet beschikbaar".
+    /// Capabilities supported by this agent in headless mode. The UI presents missing features as unavailable.
     var capabilities: ProviderCapabilities {
         switch self {
         case .claude:
@@ -30,7 +30,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Modellen die je snel kiest. Leeg betekent: de standaard van de agent zelf. Je kunt ook een eigen naam typen.
+    /// Quick-select models. Empty means: agent default. Custom names can also be typed.
     var suggestedModels: [String] {
         switch self {
         case .claude: return ["", "sonnet", "opus", "haiku"]
@@ -50,45 +50,45 @@ struct ProviderCapabilities: Equatable, Sendable {
     var policies: [PermissionPolicy]
 }
 
-/// Agent: mag werken. Plan: alleen lezen en een plan maken, niets aanpassen.
+/// Agent: permitted to execute. Plan: read-only analysis and plan creation, no modifications.
 enum ExecutionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case agent, plan
     var id: String { rawValue }
 }
 
-/// Wat de agent zonder te vragen mag.
+/// What the agent is allowed to do without confirmation.
 enum PermissionPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
-    /// Elke bewerking en elk commando vraagt eerst (alleen Claude Code).
+    /// Prompt before every edit and command (Claude Code only).
     case ask
-    /// Bestanden in de werkmap aanpassen mag; commando's vragen eerst (Claude) of draaien in de sandbox (Codex).
+    /// Editing files in the workspace directory is allowed; commands prompt first (Claude) or run sandboxed (Codex).
     case acceptEdits
-    /// Alles zonder vragen. Alleen als je dat bewust kiest.
+    /// Allow everything without prompts. Use only when explicitly desired.
     case bypass
     var id: String { rawValue }
 }
 
-/// In de map zelf werken, of in een eigen Git-worktree met een eigen branch.
+/// Work directly in the project folder, or in a separate Git worktree with its own branch.
 enum IsolationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case folder, worktree
     var id: String { rawValue }
 }
 
-/// De toestand van een sessie. Elke wijziging gaat via `RunStatus.canMove(to:)`.
+/// State of a session. All transitions must go through `RunStatus.canMove(to:)`.
 enum RunStatus: String, Codable, CaseIterable, Sendable {
-    /// Map of worktree klaarzetten, agent starten.
+    /// Setting up folder or worktree, launching agent.
     case preparing
-    /// De agent werkt.
+    /// The agent is running.
     case running
-    /// De agent wacht op jouw goedkeuring voor een tool.
+    /// The agent is waiting for your tool approval.
     case waitingApproval
-    /// De beurt is klaar; je kunt verder met een nieuw bericht.
+    /// The turn has finished; you can proceed with a new message.
     case completed
-    /// Er ging iets mis.
+    /// Something went wrong.
     case failed
-    /// Jij stopte hem, of het proces verdween (bijvoorbeeld na een herstart van Nook).
+    /// Stopped by user, or process terminated (for example, after relaunching Nook).
     case stopped
 
-    /// Er hoort een proces bij dat nu draait.
+    /// Corresponds to an actively running process.
     var isActive: Bool {
         switch self {
         case .preparing, .running, .waitingApproval: return true
@@ -106,24 +106,24 @@ enum RunStatus: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Na een herstart draait er geen proces meer: een sessie die "actief" was, is gestopt.
+    /// After a restart no process is running: an "active" session is marked stopped.
     var afterRelaunch: RunStatus { isActive ? .stopped : self }
 }
 
-/// Tokens en kosten. Nil betekent: de agent gaf dit niet door. Nooit raden.
+/// Tokens and costs. Nil means: the agent did not report this. Never guess.
 struct RunUsage: Codable, Equatable, Sendable {
     var inputTokens: Int?
     var outputTokens: Int?
     var cacheReadTokens: Int?
     var cacheWriteTokens: Int?
-    /// Kosten zoals de agent ze zelf berekent (Claude Code: tegen API-prijzen, ook als je een abonnement hebt).
+    /// Cost as calculated by the agent itself (Claude Code: at API rates, even with a subscription).
     var reportedCostUSD: Double?
-    /// Tokens in de context bij de laatste modelaanroep.
+    /// Tokens in context during the latest model call.
     var contextTokens: Int?
-    /// Maximale contextgrootte van het model, als de agent die doorgeeft.
+    /// Maximum context window of the model, if reported by the agent.
     var contextWindow: Int?
     var turns = 0
-    /// Hoe lang de agent in totaal werkte, in seconden (som van de beurten).
+    /// Total time the agent worked, in seconds (sum of turns).
     var activeSeconds: Double = 0
 
     var totalTokens: Int? {
@@ -136,7 +136,7 @@ struct RunUsage: Codable, Equatable, Sendable {
         return min(1, Double(contextTokens) / Double(contextWindow))
     }
 
-    /// Telt een afgeronde beurt op. Velden die de beurt niet kent, blijven zoals ze waren.
+    /// Adds a completed turn. Fields not present in the turn remain unchanged.
     mutating func add(_ turn: TurnUsage) {
         inputTokens = Self.sum(inputTokens, turn.inputTokens)
         outputTokens = Self.sum(outputTokens, turn.outputTokens)
@@ -157,7 +157,7 @@ struct RunUsage: Codable, Equatable, Sendable {
     }
 }
 
-/// Wat één beurt (één proces) aan gebruik meldde.
+/// Usage reported by a single turn (one process).
 struct TurnUsage: Equatable, Sendable {
     var inputTokens: Int?
     var outputTokens: Int?
