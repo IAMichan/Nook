@@ -16,6 +16,8 @@ final class VoiceService: ObservableObject {
     private var onPartial: ((String) -> Void)?
     private var onFinish: ((String) -> Void)?
 
+    private var hasTap = false
+
     static var permissionsGranted: Bool {
         AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
             && SFSpeechRecognizer.authorizationStatus() == .authorized
@@ -49,8 +51,12 @@ final class VoiceService: ObservableObject {
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.removeTap(onBus: 0)
+        if hasTap {
+            input.removeTap(onBus: 0)
+            hasTap = false
+        }
         Self.installTap(on: input, format: format, request: request)
+        hasTap = true
         engine.prepare()
         try engine.start()
         isListening = true
@@ -121,8 +127,13 @@ final class VoiceService: ObservableObject {
     private func teardown() {
         silenceTimer?.invalidate()
         silenceTimer = nil
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        if engine.isRunning {
+            engine.stop()
+        }
+        if hasTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasTap = false
+        }
         request?.endAudio()
         task?.cancel()
         request = nil

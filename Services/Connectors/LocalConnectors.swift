@@ -53,11 +53,11 @@ final class CalendarConnector: ContextSource {
         let today = upcoming.filter { Calendar.current.isDateInToday($0.start) }
         var next = ""
         if let first = upcoming.first {
-            next = first.start <= now ? "Nu: \(first.title)" : "Hierna: \(first.title) om \(NookDates.time(first.start))"
+            next = first.start <= now ? tr("connect.local.calendarNow", first.title) : tr("connect.local.calendarNext", first.title, NookDates.time(first.start))
         }
         status = ConnectorStatus(
             state: .ok,
-            headline: today.isEmpty ? "Vandaag niets meer" : "\(today.count) \(today.count == 1 ? "afspraak" : "afspraken") vandaag",
+            headline: today.isEmpty ? tr("connect.local.calendarEmpty") : tr("connect.local.calendarToday", today.count),
             detail: next,
             items: upcoming.prefix(5).map {
                 ConnectorItem(
@@ -111,13 +111,13 @@ final class RemindersConnector: ContextSource {
         let overdue = reminders.filter { ($0.due ?? .distantFuture) < now }
         status = ConnectorStatus(
             state: .ok,
-            headline: reminders.isEmpty ? "Niets open" : "\(reminders.count) open",
-            detail: overdue.isEmpty ? "" : "\(overdue.count) te laat",
+            headline: reminders.isEmpty ? tr("connect.local.remindersEmpty") : tr("connect.local.remindersOpen", reminders.count),
+            detail: overdue.isEmpty ? "" : tr("connect.local.remindersOverdue", overdue.count),
             items: reminders.prefix(5).map {
                 ConnectorItem(
                     id: $0.id,
                     title: $0.title,
-                    subtitle: $0.due.map { "Uiterlijk \(NookDates.short($0))" } ?? $0.list,
+                    subtitle: $0.due.map { tr("connect.local.remindersDue", NookDates.short($0)) } ?? $0.list,
                     tone: ($0.due ?? .distantFuture) < now ? .attention : .neutral
                 )
             },
@@ -197,8 +197,8 @@ final class MailConnector: ContextSource {
         }
         status = ConnectorStatus(
             state: .ok,
-            headline: unreadCount == 0 ? "Alles gelezen" : "\(unreadCount) ongelezen",
-            detail: unread.first.map { "Laatste: \(Self.name($0.sender))" } ?? "",
+            headline: unreadCount == 0 ? tr("connect.local.mailAllRead") : tr("connect.local.mailUnread", unreadCount),
+            detail: unread.first.map { tr("connect.local.mailLast", Self.name($0.sender)) } ?? "",
             items: unread.prefix(5).enumerated().map { index, message in
                 ConnectorItem(id: "mail-\(index)", title: message.subject, subtitle: Self.name(message.sender), tone: .neutral)
             },
@@ -338,8 +338,8 @@ final class BrowserConnector: ContextSource {
         let active = collected.filter(\.active)
         status = ConnectorStatus(
             state: .ok,
-            headline: "\(collected.count) tabbladen open",
-            detail: active.first.map { "Nu: \($0.title)" } ?? "",
+            headline: tr("connect.local.browserTabsOpen", collected.count),
+            detail: active.first.map { tr("connect.local.browserNow", $0.title) } ?? "",
             items: (active + collected.filter { !$0.active }).prefix(5).enumerated().map { index, tab in
                 ConnectorItem(id: "tab-\(index)", title: tab.title, subtitle: URL(string: tab.url)?.host ?? tab.browser,
                               tone: tab.active ? .good : .neutral, url: URL(string: tab.url))
@@ -427,8 +427,8 @@ final class FilesConnector: ContextSource {
         recent = dated.sorted { $0.1 > $1.1 }.prefix(15).map { $0.0 }
         status = ConnectorStatus(
             state: .ok,
-            headline: "\(recent.count) recente bestanden",
-            detail: recent.first.map { "Laatst: \($0.lastPathComponent)" } ?? "",
+            headline: tr("connect.local.filesRecent", recent.count),
+            detail: recent.first.map { tr("connect.local.filesLast", $0.lastPathComponent) } ?? "",
             items: recent.prefix(5).enumerated().map { index, url in
                 ConnectorItem(id: "file-\(index)", title: url.lastPathComponent, subtitle: url.deletingLastPathComponent().lastPathComponent)
             },
@@ -507,11 +507,11 @@ final class ClipboardConnector: ContextSource {
 
     func refresh() async {
         guard isActive else {
-            status = ConnectorStatus(state: .off, detail: "Staat uit (aan te zetten bij Instellingen › Koppelingen)")
+            status = ConnectorStatus(state: .off, detail: tr("connect.local.clipboardOff"))
             return
         }
         let text = current
-        status = ConnectorStatus(state: .ok, headline: text == nil ? "Leeg" : "Tekst gekopieerd",
+        status = ConnectorStatus(state: .ok, headline: text == nil ? tr("connect.local.clipboardEmpty") : tr("connect.local.clipboardCopied"),
                                  detail: text.map { String($0.prefix(80)) } ?? "", updated: Date())
     }
 

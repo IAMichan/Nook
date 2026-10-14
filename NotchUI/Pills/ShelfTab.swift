@@ -13,11 +13,11 @@ struct ShelfTab: View {
             ForEach(files, id: \.self) { url in
                 ShelfItem(url: url) { app.askAbout(url) }
                     .contextMenu {
-                        Button("Vraag Nook erover") { app.askAbout(url) }
-                        Button("Verstuur per mail…") { app.mailFile(url) }
-                        Button("Toon in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        Button(tr("shelf.askAbout")) { app.askAbout(url) }
+                        Button(tr("shelf.mailFile")) { app.mailFile(url) }
+                        Button(tr("shelf.showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                         Divider()
-                        Button("Haal van de Shelf") { files.removeAll { $0 == url } }
+                        Button(tr("shelf.removeFromShelf")) { files.removeAll { $0 == url } }
                     }
             }
 
@@ -38,10 +38,10 @@ struct ShelfTab: View {
 
     private var dropZone: some View {
         VStack(spacing: 4) {
-            Text("Sleep bestanden hierheen")
+            Text(tr("shelf.dropTitle"))
                 .font(NookTheme.font(12.5, .medium))
                 .foregroundStyle(NookTheme.paper)
-            Text("klik om te vragen, rechtsklik om te mailen")
+            Text(tr("shelf.dropDetail"))
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.textSecondary)
         }
@@ -87,6 +87,6 @@ private struct ShelfItem: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Vraag Nook over \(url.lastPathComponent)")
+        .help(tr("shelf.askHelp", url.lastPathComponent))
     }
 }

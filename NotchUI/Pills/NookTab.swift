@@ -1,8 +1,167 @@
 import SwiftUI
 import AppKit
 
-/// Het Nook-tabblad: je chat met Nook. Zonder gesprek zie je je dag en een paar vragen om mee te beginnen.
-struct NookTab: View {
+/// Het Nook-tabblad: de startpagina van Nook met je dagoverzicht, actieve koppelingen en suggesties.
+struct NookHomeTab: View {
+    @ObservedObject var viewModel: NotchViewModel
+    @EnvironmentObject private var app: AppModel
+    @State private var question = ""
+    @FocusState private var inputFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            start
+            inputBar
+                .padding(.top, 10)
+        }
+        .onAppear {
+            // Even wachten tot het paneel de toetsenbordfocus heeft.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
+        }
+    }
+
+    // MARK: De startpagina: je dag en context
+
+    private var start: some View {
+        let items = app.todayItems
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
+                .font(NookTheme.font(20, .semibold))
+                .foregroundStyle(NookTheme.paper)
+
+            awareness
+                .padding(.top, 4)
+
+            if !app.chat.isEmpty {
+                activeChatBanner
+                    .padding(.top, 8)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(items.prefix(4)) { item in
+                    TodayRow(item: item) { open(item) }
+                }
+            }
+            .padding(.top, 8)
+
+            Spacer(minLength: 10)
+
+            suggestions
+        }
+    }
+
+    private var activeChatBanner: some View {
+        Button {
+            viewModel.show(.panel(.chat))
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(app.chat.busy ? NookTheme.iris : NookTheme.mint)
+                    .frame(width: 6, height: 6)
+                Text(app.chat.busy ? tr("home.chatBusyBanner") : tr("home.chatActiveBanner", app.chat.messages.count))
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                Spacer()
+                Text(tr("home.toChat"))
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.iris)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// In één regel waar Nook nu bij kan: zo weet je meteen dat je er alles aan kunt vragen.
+    private var awareness: some View {
+        let _ = app.connectors.revision
+        var parts: [String] = []
+        let screen = app.screenContext
+        if !screen.windows.isEmpty {
+            parts.append(tr("home.awareness.windows", screen.windows.count) + (screen.displayCount > 1 ? tr("home.awareness.screens", screen.displayCount) : ""))
+        }
+        for source in app.connectors.active.prefix(4) where source.status.state == .ok && !source.status.headline.isEmpty {
+            parts.append("\(source.title.lowercased()): \(source.status.headline.lowercased())")
+        }
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(parts.isEmpty ? NookTheme.textTertiary : NookTheme.mint)
+                .frame(width: 6, height: 6)
+            Text(parts.isEmpty ? tr("home.awareness.empty") : tr("home.awareness.prefix", parts.joined(separator: " · ")))
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
+    private var suggestions: some View {
+        var questions = [tr("home.suggestions.summarizeDay")]
+        let ids = Set(app.connectors.active.map { $0.id })
+        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
+        questions.append(tr("home.suggestions.calendarChart"))
+        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
+        questions.append(tr("home.suggestions.writeMail"))
+        return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
+    }
+
+    private func open(_ item: TodayItem) {
+        switch item.target {
+        case .card(let scene):
+            viewModel.show(.card(DemoContent.card(for: scene)))
+        case .agent(let id):
+            viewModel.selectedAgentID = id
+            viewModel.show(.panel(.agents))
+        case .action(let run):
+            run()
+        case .none:
+            break
+        }
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 8) {
+            TextField(
+                "",
+                text: $question,
+                prompt: Text(tr("home.inputPrompt")).foregroundStyle(NookTheme.textTertiary),
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .font(NookTheme.font(14))
+            .foregroundStyle(NookTheme.paper)
+            .lineLimit(1...5)
+            .focused($inputFocused)
+            .onSubmit(send)
+
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
+            NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: 42)
+        .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
+        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+    }
+
+    private func send() {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        question = ""
+        app.handleUserText(text)
+    }
+}
+
+typealias NookTab = NookHomeTab
+
+/// Het Chat-tabblad: je actieve gesprek met Nook.
+struct NookChatTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
 
@@ -21,7 +180,7 @@ private struct NookChatView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if chat.isEmpty {
-                start
+                emptyState
             } else {
                 thread
             }
@@ -34,76 +193,33 @@ private struct NookChatView: View {
         }
     }
 
-    // MARK: Zonder gesprek: je dag
+    // MARK: Zonder gesprek in chat: uitnodigende start
 
-    private var start: some View {
-        let items = app.todayItems
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(tr("chat.emptyTitle"))
                 .font(NookTheme.font(20, .semibold))
                 .foregroundStyle(NookTheme.paper)
 
-            awareness
-                .padding(.top, 4)
+            Text(tr("chat.emptySubtitle"))
+                .font(NookTheme.font(13.5))
+                .foregroundStyle(NookTheme.textSecondary)
 
-            VStack(spacing: 0) {
-                ForEach(items.prefix(4)) { item in
-                    TodayRow(item: item) { open(item) }
-                }
-            }
-            .padding(.top, 12)
-
-            Spacer(minLength: 10)
+            Spacer()
 
             suggestions
         }
     }
 
-    /// In één regel waar Nook nu bij kan: zo weet je meteen dat je er alles aan kunt vragen.
-    private var awareness: some View {
-        let _ = app.connectors.revision
-        var parts: [String] = []
-        let screen = app.screenContext
-        if !screen.windows.isEmpty {
-            parts.append("\(screen.windows.count) vensters" + (screen.displayCount > 1 ? " op \(screen.displayCount) schermen" : ""))
-        }
-        for source in app.connectors.active.prefix(4) where source.status.state == .ok && !source.status.headline.isEmpty {
-            parts.append("\(source.title.lowercased()): \(source.status.headline.lowercased())")
-        }
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(parts.isEmpty ? NookTheme.textTertiary : NookTheme.mint)
-                .frame(width: 6, height: 6)
-            Text(parts.isEmpty ? "Ik zie nog niets. Geef me toegang bij Instellingen, dan help ik je met alles." : "Ik zie " + parts.joined(separator: " · "))
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
-        }
-    }
-
     /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
     private var suggestions: some View {
-        var questions = ["Vat mijn dag samen"]
+        var questions = [tr("home.suggestions.summarizeDay")]
         let ids = Set(app.connectors.active.map { $0.id })
-        if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
-        questions.append("Maak een grafiek van mijn agenda deze week")
-        if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
-        questions.append("Schrijf een mail")
+        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
+        questions.append(tr("home.suggestions.calendarChart"))
+        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
+        questions.append(tr("home.suggestions.writeMail"))
         return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
-    }
-
-    private func open(_ item: TodayItem) {
-        switch item.target {
-        case .card(let scene):
-            viewModel.show(.card(DemoContent.card(for: scene)))
-        case .agent(let id):
-            viewModel.selectedAgentID = id
-            viewModel.show(.panel(.agents))
-        case .action(let run):
-            run()
-        case .none:
-            break
-        }
     }
 
     // MARK: Het gesprek
@@ -132,7 +248,7 @@ private struct NookChatView: View {
                 }
             }
 
-            NookIconButton(systemName: "square.and.pencil", label: "Nieuw gesprek", size: 28) {
+            NookIconButton(systemName: "square.and.pencil", label: tr("chat.newChat"), size: 28) {
                 app.newChat()
             }
             .background(Circle().fill(NookTheme.notch))
@@ -153,7 +269,7 @@ private struct NookChatView: View {
             TextField(
                 "",
                 text: $question,
-                prompt: Text(chat.isEmpty ? "Vraag Nook iets…" : "Vraag door of reageer…").foregroundStyle(NookTheme.textTertiary),
+                prompt: Text(chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
                 axis: .vertical
             )
             .textFieldStyle(.plain)
@@ -164,10 +280,10 @@ private struct NookChatView: View {
             .onSubmit(send)
 
             if chat.busy {
-                NookIconButton(systemName: "stop.fill", label: "Stop", size: 28) { app.stopChat() }
+                NookIconButton(systemName: "stop.fill", label: tr("button.stop"), size: 28) { app.stopChat() }
             } else {
-                NookIconButton(systemName: "mic", label: "Praat met Nook", size: 28) { viewModel.startListening() }
-                NookIconButton(systemName: "arrow.up", label: "Verstuur", filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
+                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
             }
         }
         .padding(.leading, 16)
@@ -339,16 +455,16 @@ private struct PlanBlock: View {
             HStack(spacing: 6) {
                 switch message.planState {
                 case .pending:
-                    SmallPrimaryButton(title: "Uitvoeren", systemName: "checkmark") { app.runPlan(message.id) }
-                    SmallGhostButton(title: "Annuleren") { app.cancelPlan(message.id) }
+                    SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
+                    SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
                 case .running:
                     ProgressView().controlSize(.small)
-                    Text("Bezig…").font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("chat.plan.running")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
                 case .done(let result):
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(NookTheme.mint)
                     Text(result).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.mint)
                 case .cancelled:
-                    Text("Geannuleerd").font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+                    Text(tr("chat.plan.cancelled")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
                 case .failed(let error):
                     Text(error).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)

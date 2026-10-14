@@ -1,7 +1,8 @@
 import SwiftUI
 
 // Koppelingen met online diensten: GitHub, Vercel, Stripe, Notion, Cal.com, n8n en Resend.
-// Elke koppeling leest alleen. Sleutels staan in de Keychain onder "connector.<id>.<veld>".
+// Koppelingen lezen alleen, behalve GitHub: daar kan Nook pull requests beoordelen en samenvoegen, altijd pas na jouw goedkeuring.
+// Sleutels staan in de Keychain onder "connector.<id>.<veld>".
 
 // MARK: Instellingen-velden
 
@@ -187,11 +188,11 @@ final class GitHubConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let tokenAccount = "connector.github.token"
-    static let fields = [
-        ConnectorField(account: GitHubConnector.tokenAccount, label: "Token", placeholder: "ghp_… of github_pat_…", secret: true)
-    ]
-    static let helpText = "Maak een token met alleen leesrechten. Klassiek: scope repo (of public_repo). Fine-grained: Pull requests, Commit statuses en Checks op alleen-lezen."
-    static let signupURL = URL(string: "https://github.com/settings/tokens")
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: GitHubConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ghp_… / github_pat_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.github.help") }
+    static let signupURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,read:user&description=Nook")
 
     private enum CI { case unknown, pending, passing, failing }
 
@@ -259,7 +260,7 @@ final class GitHubConnector: CloudConnectorConfig {
                     return try await self.overview()
                 }
             )
-        ]
+        ] + pullRequestTools
     }
 
     // MARK: Ophalen
@@ -357,9 +358,9 @@ final class GitHubConnector: CloudConnectorConfig {
         snapshot = s
         let failing = s.mine.filter { $0.ci == .failing }
 
-        var headline = CloudHelp.plural(s.mineTotal, "open PR", "open PR's")
+        var headline = tr("connect.github.openPrs", s.mineTotal)
         if s.reviewTotal > 0 {
-            headline += " · " + CloudHelp.plural(s.reviewTotal, "review", "reviews") + " voor jou"
+            headline += " · " + tr("connect.github.reviewsForYou", s.reviewTotal)
         }
         let detail: String
         if !failing.isEmpty {
@@ -437,6 +438,279 @@ final class GitHubConnector: CloudConnectorConfig {
     }
 }
 
+// MARK: GitHub: pull requests beoordelen en samenvoegen
+
+/// Invoer van de PR-tools: welke repo en welke pull request. Buiten de main actor, zodat de samenvattingen van de tools hem kunnen gebruiken.
+enum GitHubPR {
+    static let repoPattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+
+    static func target(_ input: [String: Any]) throws -> (repo: String, number: Int) {
+        let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard repo.range(of: repoPattern, options: .regularExpression) != nil else {
+            throw NookError("De repository moet eigenaar/naam zijn, bijvoorbeeld IAMichan/nook.")
+        }
+        guard let number = CloudHelp.int(input["number"]), number > 0 else {
+            throw NookError("Het nummer van de pull request ontbreekt.")
+        }
+        return (repo, number)
+    }
+
+    /// "IAMichan/nook#23", voor in het plan.
+    static func ref(_ input: [String: Any]) -> String {
+        guard let parsed = try? GitHubPR.target(input) else { return "pull request" }
+        return "\(parsed.repo)#\(parsed.number)"
+    }
+
+    static func text(_ input: [String: Any], _ key: String) -> String? {
+        let value = (input[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty ?? true) ? nil : value
+    }
+
+    static func schema(_ extra: [String: [String: Any]] = [:], required: [String] = []) -> [String: Any] {
+        var properties: [String: [String: Any]] = [
+            "repo": ["type": "string", "description": "Repository als eigenaar/naam, bijvoorbeeld IAMichan/nook."],
+            "number": ["type": "integer", "description": "Nummer van de pull request."]
+        ]
+        for (key, value) in extra { properties[key] = value }
+        return ["type": "object", "properties": properties, "required": ["repo", "number"] + required]
+    }
+}
+
+extension GitHubConnector {
+    /// Lezen draait meteen; alles wat iets verandert op GitHub komt eerst als plan langs de gebruiker.
+    var pullRequestTools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "github_pr_details",
+                description: "Leest één pull request volledig: titel, beschrijving, auteur, status, CI, bestaande reviews en de gewijzigde bestanden met hun diff. Gebruik dit ALTIJD eerst als de gebruiker een PR wil laten beoordelen, goedkeuren of samenvoegen, en lees de diff echt voordat je een oordeel geeft.",
+                schema: GitHubPR.schema(),
+                kind: .read,
+                summarize: { input in "GitHub lezen: \(GitHubPR.ref(input))" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    return try await self.pullRequestDetails(repo: target.repo, number: target.number)
+                }
+            ),
+            ToolSpec(
+                name: "github_review_pr",
+                description: "Geeft een review op een pull request: goedkeuren (APPROVE), wijzigingen vragen (REQUEST_CHANGES) of alleen een opmerking (COMMENT). Beoordeel eerst de diff met github_pr_details. Bij REQUEST_CHANGES en COMMENT is een tekst verplicht. Je kunt je eigen pull request niet goedkeuren.",
+                schema: GitHubPR.schema([
+                    "event": ["type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "Het oordeel."],
+                    "body": ["type": "string", "description": "De tekst van de review. Verplicht bij REQUEST_CHANGES en COMMENT."]
+                ], required: ["event"]),
+                kind: .action,
+                summarize: { input in
+                    let ref = GitHubPR.ref(input)
+                    let note = GitHubPR.text(input, "body").map { " · " + CloudHelp.short($0, 50) } ?? ""
+                    switch ((input["event"] as? String) ?? "").uppercased() {
+                    case "APPROVE": return "GitHub: \(ref) goedkeuren" + note
+                    case "REQUEST_CHANGES": return "GitHub: wijzigingen vragen op \(ref)" + note
+                    default: return "GitHub: review op \(ref)" + note
+                    }
+                },
+                tag: { input in
+                    ((input["event"] as? String) ?? "").uppercased() == "REQUEST_CHANGES" ? ("Blokkeert", .caution) : ("", .good)
+                },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    let event = ((input["event"] as? String) ?? "").uppercased()
+                    guard ["APPROVE", "REQUEST_CHANGES", "COMMENT"].contains(event) else {
+                        throw NookError("Het oordeel moet APPROVE, REQUEST_CHANGES of COMMENT zijn.")
+                    }
+                    let body = GitHubPR.text(input, "body")
+                    if event != "APPROVE" && body == nil { throw NookError("Bij dit oordeel hoort een tekst.") }
+                    var payload: [String: Any] = ["event": event]
+                    if let body = body { payload["body"] = body }
+                    _ = try await self.send("POST", "/repos/\(target.repo)/pulls/\(target.number)/reviews", body: payload)
+                    switch event {
+                    case "APPROVE": return "Goedgekeurd: \(target.repo)#\(target.number)"
+                    case "REQUEST_CHANGES": return "Wijzigingen gevraagd op \(target.repo)#\(target.number)"
+                    default: return "Review geplaatst op \(target.repo)#\(target.number)"
+                    }
+                }
+            ),
+            ToolSpec(
+                name: "github_comment_pr",
+                description: "Plaatst een gewone reactie onder een pull request, zonder een oordeel.",
+                schema: GitHubPR.schema([
+                    "body": ["type": "string", "description": "De tekst van de reactie."]
+                ], required: ["body"]),
+                kind: .action,
+                summarize: { input in
+                    "GitHub: reageer op \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50)
+                },
+                tag: { _ in ("", .good) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    guard let body = GitHubPR.text(input, "body") else { throw NookError("De tekst van de reactie ontbreekt.") }
+                    _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
+                    return "Reactie geplaatst op \(target.repo)#\(target.number)"
+                }
+            ),
+            ToolSpec(
+                name: "github_merge_pr",
+                description: "Voegt een pull request samen. Dit is moeilijk terug te draaien: gebruik het alleen als de gebruiker het duidelijk vraagt, en kijk eerst met github_pr_details of de CI groen is en de PR geen concept is. Kies de methode die de gebruiker noemt; zonder voorkeur 'merge'.",
+                schema: GitHubPR.schema([
+                    "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Hoe samenvoegen. Standaard merge."]
+                ]),
+                kind: .action,
+                summarize: { input in
+                    let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
+                    return "GitHub: \(GitHubPR.ref(input)) samenvoegen (\(method))"
+                },
+                tag: { _ in ("Samenvoegen", .caution) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
+                    guard ["merge", "squash", "rebase"].contains(method) else {
+                        throw NookError("De methode moet merge, squash of rebase zijn.")
+                    }
+                    let result = try await self.send("PUT", "/repos/\(target.repo)/pulls/\(target.number)/merge",
+                                                     body: ["merge_method": method])
+                    if (result["merged"] as? Bool) == false {
+                        throw NookError((result["message"] as? String) ?? "GitHub voegde de pull request niet samen.")
+                    }
+                    return "Samengevoegd (\(method)): \(target.repo)#\(target.number)"
+                }
+            ),
+            ToolSpec(
+                name: "github_close_pr",
+                description: "Sluit een pull request zonder samen te voegen. Alleen als de gebruiker dat duidelijk vraagt.",
+                schema: GitHubPR.schema(),
+                kind: .action,
+                summarize: { input in "GitHub: \(GitHubPR.ref(input)) sluiten" },
+                tag: { _ in ("Sluiten", .caution) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    _ = try await self.send("PATCH", "/repos/\(target.repo)/pulls/\(target.number)", body: ["state": "closed"])
+                    return "Gesloten: \(target.repo)#\(target.number)"
+                }
+            )
+        ]
+    }
+
+    // MARK: Schrijven
+
+    /// Doet een schrijfactie bij GitHub en geeft GitHubs eigen foutmelding door, zodat Nook kan uitleggen waarom iets niet lukt.
+    fileprivate func send(_ method: String, _ path: String, body: [String: Any]) async throws -> [String: Any] {
+        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
+            throw CloudHelp.notSetUp("GitHub")
+        }
+        let url = try CloudHelp.url("https://api.github.com" + path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (200..<300).contains(status) else {
+            let message = (object["message"] as? String) ?? "GitHub gaf een fout (\(status))."
+            switch status {
+            case 401:
+                throw NookError("GitHub weigerde de koppeling (401). Koppel opnieuw bij Instellingen › Koppelingen.")
+            case 403, 404:
+                throw NookError("GitHub liet dit niet toe (\(status)): \(message) Heeft de koppeling schrijfrechten op pull requests? Koppel anders opnieuw met 'Koppel met GitHub'.")
+            default:
+                throw NookError("GitHub: \(message)")
+            }
+        }
+        return object
+    }
+
+    // MARK: Lezen
+
+    /// De PR met alles wat nodig is om hem te beoordelen. Begrensd, zodat een grote diff het gesprek niet vult.
+    fileprivate func pullRequestDetails(repo: String, number: Int) async throws -> String {
+        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
+            throw CloudHelp.notSetUp("GitHub")
+        }
+        let auth = headers(token)
+        let base = "https://api.github.com/repos/\(repo)/pulls/\(number)"
+        let pull = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url(base), headers: auth))
+        let files = CloudHelp.list(try await ConnectorHTTP.json(try CloudHelp.url(base, "/files", query: [("per_page", "30")]), headers: auth))
+        var reviews: [[String: Any]] = []
+        if let raw = try? await ConnectorHTTP.json(try CloudHelp.url(base, "/reviews", query: [("per_page", "30")]), headers: auth) {
+            reviews = CloudHelp.list(raw)
+        }
+        let ci = await ciState(repo: repo, number: number, auth: auth)
+
+        let author = (CloudHelp.object(pull["user"])["login"] as? String) ?? "?"
+        let head = CloudHelp.object(pull["head"])
+        let baseRef = CloudHelp.object(pull["base"])
+        let merged = (pull["merged"] as? Bool) ?? false
+        let state = merged ? "samengevoegd" : ((pull["state"] as? String) == "open" ? "open" : "gesloten")
+
+        var out = ["\(repo)#\(number) '\((pull["title"] as? String) ?? "Zonder titel")' door @\(author)"]
+        var facts = ["status: \(state)"]
+        if (pull["draft"] as? Bool) == true { facts.append("concept") }
+        if let mergeable = pull["mergeable"] as? Bool {
+            facts.append(mergeable ? "geen conflicten" : "conflicten")
+        }
+        if let mergeState = pull["mergeable_state"] as? String, mergeState != "unknown" { facts.append("mergeable_state: \(mergeState)") }
+        let label = ciLabel(ci)
+        if !label.isEmpty { facts.append(label) }
+        out.append(facts.joined(separator: " · "))
+        let fromRef = (head["ref"] as? String) ?? "?"
+        let toRef = (baseRef["ref"] as? String) ?? "?"
+        let added = CloudHelp.int(pull["additions"]) ?? 0
+        let removed = CloudHelp.int(pull["deletions"]) ?? 0
+        let changed = CloudHelp.int(pull["changed_files"]) ?? files.count
+        let fileCount = CloudHelp.plural(changed, "bestand", "bestanden")
+        out.append("Van \(fromRef) naar \(toRef) · +\(added) −\(removed) in \(fileCount)")
+        if let url = pull["html_url"] as? String { out.append(url) }
+
+        if let body = (pull["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
+            out.append("")
+            out.append("Beschrijving:")
+            out.append(String(body.prefix(1500)))
+        }
+
+        if !reviews.isEmpty {
+            out.append("")
+            out.append("Reviews:")
+            for review in reviews.suffix(10) {
+                let who = (CloudHelp.object(review["user"])["login"] as? String) ?? "?"
+                var line = "- @\(who): \((review["state"] as? String) ?? "?")"
+                if let text = (review["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    line += " · " + CloudHelp.short(text, 160)
+                }
+                out.append(line)
+            }
+        }
+
+        out.append("")
+        out.append("Gewijzigde bestanden:")
+        var budget = 12000
+        for file in files {
+            let name = (file["filename"] as? String) ?? "?"
+            var block = "### \(name) (\((file["status"] as? String) ?? "gewijzigd"), +\(CloudHelp.int(file["additions"]) ?? 0) −\(CloudHelp.int(file["deletions"]) ?? 0))"
+            if let patch = file["patch"] as? String, budget > 0 {
+                let cut = String(patch.prefix(min(1500, budget)))
+                budget -= cut.count
+                block += "\n" + cut + (cut.count < patch.count ? "\n… (diff ingekort)" : "")
+            } else if file["patch"] == nil {
+                block += "\n(geen diff beschikbaar: binair of te groot)"
+            } else {
+                block += "\n(diff weggelaten om het kort te houden)"
+            }
+            out.append(block)
+        }
+        if (CloudHelp.int(pull["changed_files"]) ?? 0) > files.count {
+            out.append("… en nog meer bestanden (alleen de eerste \(files.count) zijn opgehaald)")
+        }
+        return out.joined(separator: "\n")
+    }
+}
+
 // MARK: Vercel
 
 @MainActor
@@ -450,11 +724,13 @@ final class VercelConnector: CloudConnectorConfig {
 
     static let tokenAccount = "connector.vercel.token"
     static let teamAccount = "connector.vercel.team"
-    static let fields = [
-        ConnectorField(account: VercelConnector.tokenAccount, label: "Token", placeholder: "Vercel-token", secret: true),
-        ConnectorField(account: VercelConnector.teamAccount, label: "Team-ID", placeholder: "team_… (optioneel)", secret: false)
-    ]
-    static let helpText = "Maak een token onder Account › Tokens, met als scope alleen het team of account dat Nook mag zien. Team-ID is alleen nodig voor deploys van een team."
+    static var fields: [ConnectorField] {
+        [
+            ConnectorField(account: VercelConnector.tokenAccount, label: tr("connect.field.token"), placeholder: tr("connect.vercel.tokenPlaceholder"), secret: true),
+            ConnectorField(account: VercelConnector.teamAccount, label: tr("connect.vercel.teamId"), placeholder: tr("connect.vercel.teamPlaceholder"), secret: false)
+        ]
+    }
+    static var helpText: String { tr("connect.vercel.help") }
     static let signupURL = URL(string: "https://vercel.com/account/tokens")
 
     private struct Deployment {
@@ -597,13 +873,13 @@ final class VercelConnector: CloudConnectorConfig {
 
         let headline: String
         if !broken.isEmpty {
-            headline = "Deploy mislukt: " + broken.prefix(2).map { $0.project }.joined(separator: ", ")
+            headline = tr("connect.vercel.deployFailed", broken.prefix(2).map { $0.project }.joined(separator: ", "))
         } else if let first = busy.first {
-            headline = "Bezig: \(first.project)"
+            headline = tr("connect.vercel.deployBusy", first.project)
         } else if latest.isEmpty {
-            headline = "Nog geen deploys"
+            headline = tr("connect.vercel.noDeploys")
         } else {
-            headline = "Alles live"
+            headline = tr("connect.vercel.allLive")
         }
         var detail = ""
         if let last = list.first {
@@ -655,10 +931,10 @@ final class StripeConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.stripe.key"
-    static let fields = [
-        ConnectorField(account: StripeConnector.keyAccount, label: "Sleutel", placeholder: "rk_live_…", secret: true)
-    ]
-    static let helpText = "Gebruik bij voorkeur een beperkte sleutel (restricted key) met alleen leesrechten op Charges. Nook leest alleen; er gaat nooit geld weg."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: StripeConnector.keyAccount, label: tr("connect.field.key"), placeholder: "rk_live_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.stripe.help") }
     static let signupURL = URL(string: "https://dashboard.stripe.com/apikeys")
 
     private struct Payment {
@@ -818,7 +1094,7 @@ final class StripeConnector: CloudConnectorConfig {
             return ConnectorItem(id: p.id, title: "\(CloudHelp.money(p.amount, currency: p.currency)) · \(CloudHelp.short(p.who, 40))",
                                  subtitle: subtitle, tone: tone(p), url: dashboardURL(p, testMode: s.testMode))
         }
-        status = ConnectorStatus(state: .ok, headline: "\(revenueText(s)) vandaag", detail: detail, items: items,
+        status = ConnectorStatus(state: .ok, headline: tr("connect.stripe.revenueToday", revenueText(s)), detail: detail, items: items,
                                  updated: Date(), needsAttention: !failed.isEmpty)
     }
 
@@ -853,10 +1129,10 @@ final class NotionConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let tokenAccount = "connector.notion.token"
-    static let fields = [
-        ConnectorField(account: NotionConnector.tokenAccount, label: "Token", placeholder: "ntn_… of secret_…", secret: true)
-    ]
-    static let helpText = "Maak een interne integratie met alleen 'Read content'. Deel daarna de pagina's die Nook mag zien met die integratie (••• › Verbindingen)."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: NotionConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ntn_… / secret_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.notion.help") }
     static let signupURL = URL(string: "https://www.notion.so/profile/integrations")
 
     private struct Page {
@@ -975,7 +1251,7 @@ final class NotionConnector: CloudConnectorConfig {
                           tone: .neutral, url: p.url)
         }
         status = ConnectorStatus(state: .ok,
-                                 headline: list.isEmpty ? "Geen gedeelde pagina's" : CloudHelp.plural(list.count, "pagina", "pagina's") + " recent bewerkt",
+                                 headline: list.isEmpty ? tr("connect.notion.noPages") : tr("connect.notion.recentlyEdited", list.count),
                                  detail: detail, items: items, updated: Date(), needsAttention: false)
     }
 
@@ -1010,10 +1286,10 @@ final class CalcomConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.calcom.key"
-    static let fields = [
-        ConnectorField(account: CalcomConnector.keyAccount, label: "API-sleutel", placeholder: "cal_live_…", secret: true)
-    ]
-    static let helpText = "Maak een API-sleutel onder Instellingen › Developer › API keys. Nook leest alleen je komende boekingen."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: CalcomConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: "cal_live_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.calcom.help") }
     static let signupURL = URL(string: "https://app.cal.com/settings/developer/api-keys")
 
     private struct Booking {
@@ -1126,9 +1402,9 @@ final class CalcomConnector: CloudConnectorConfig {
 
         let headline: String
         if let next = list.first {
-            headline = "Volgende: \(NookDates.short(next.start))"
+            headline = tr("connect.calcom.next", NookDates.short(next.start))
         } else {
-            headline = "Geen komende boekingen"
+            headline = tr("connect.calcom.noBookings")
         }
         var detail = "\(today) vandaag · \(list.count) komend"
         if !pending.isEmpty { detail += " · \(pending.count) te bevestigen" }
@@ -1172,11 +1448,13 @@ final class N8nConnector: CloudConnectorConfig {
 
     static let urlAccount = "connector.n8n.url"
     static let keyAccount = "connector.n8n.key"
-    static let fields = [
-        ConnectorField(account: N8nConnector.urlAccount, label: "Adres", placeholder: "https://n8n.jouwdomein.nl", secret: false),
-        ConnectorField(account: N8nConnector.keyAccount, label: "API-sleutel", placeholder: "n8n API-sleutel", secret: true)
-    ]
-    static let helpText = "Maak een sleutel in n8n onder Settings › n8n API. Nook leest alleen je workflows en mislukte runs; het start of wijzigt niets."
+    static var fields: [ConnectorField] {
+        [
+            ConnectorField(account: N8nConnector.urlAccount, label: tr("connect.n8n.address"), placeholder: "https://n8n.example.com", secret: false),
+            ConnectorField(account: N8nConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: tr("connect.n8n.keyPlaceholder"), secret: true)
+        ]
+    }
+    static var helpText: String { tr("connect.n8n.help") }
     static let signupURL = URL(string: "https://docs.n8n.io/api/authentication/")
 
     private struct Failure {
@@ -1309,7 +1587,7 @@ final class N8nConnector: CloudConnectorConfig {
                                  tone: isRecent ? .bad : .neutral, url: f.url)
         }
         status = ConnectorStatus(state: .ok,
-                                 headline: CloudHelp.plural(s.active, "actieve workflow", "actieve workflows"),
+                                 headline: tr("connect.n8n.activeWorkflows", s.active),
                                  detail: detail, items: Array(items), updated: Date(), needsAttention: !recent.isEmpty)
     }
 
@@ -1345,10 +1623,10 @@ final class ResendConnector: CloudConnectorConfig {
     @Published private(set) var status = ConnectorStatus()
 
     static let keyAccount = "connector.resend.key"
-    static let fields = [
-        ConnectorField(account: ResendConnector.keyAccount, label: "API-sleutel", placeholder: "re_…", secret: true)
-    ]
-    static let helpText = "Maak een sleutel met 'Full access': alleen daarmee kan Nook je verzonden mails en domeinen lezen. Nook verstuurt zelf nooit mail."
+    static var fields: [ConnectorField] {
+        [ConnectorField(account: ResendConnector.keyAccount, label: tr("connect.field.apiKey"), placeholder: "re_…", secret: true)]
+    }
+    static var helpText: String { tr("connect.resend.help") }
     static let signupURL = URL(string: "https://resend.com/api-keys")
 
     private struct Domain {
@@ -1491,11 +1769,11 @@ final class ResendConnector: CloudConnectorConfig {
 
         let headline: String
         if let first = unverified.first {
-            headline = "Domein niet klaar: \(first.name)"
+            headline = tr("connect.resend.domainNotReady", first.name)
         } else if s.emails.isEmpty {
-            headline = CloudHelp.plural(s.domains.count, "domein", "domeinen") + " in orde"
+            headline = tr("connect.resend.domainsOk", s.domains.count)
         } else {
-            headline = CloudHelp.plural(s.emails.count, "recente mail", "recente mails")
+            headline = tr("connect.resend.recentMails", s.emails.count)
         }
         let detail = troubled.isEmpty
             ? "Geen bounces"

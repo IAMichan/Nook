@@ -24,27 +24,34 @@ struct PanelView: View {
                     Button {
                         viewModel.show(.panel(t))
                     } label: {
-                        Text(t.title)
-                            .font(NookTheme.font(13.5, .medium))
-                            .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
-                            .padding(.vertical, 6)
-                            .overlay(alignment: .bottom) {
-                                if t == tab {
-                                    Rectangle()
-                                        .fill(NookTheme.paper)
-                                        .frame(height: 1.5)
-                                        .matchedGeometryEffect(id: "underline", in: underline)
-                                }
+                        HStack(spacing: 6) {
+                            Text(t.title)
+                                .font(NookTheme.font(13.5, .medium))
+                                .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
+                            if t == .chat, viewModel.app?.chat.busy == true {
+                                Circle()
+                                    .fill(NookTheme.iris)
+                                    .frame(width: 5, height: 5)
                             }
+                        }
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .bottom) {
+                            if t == tab {
+                                Rectangle()
+                                    .fill(NookTheme.paper)
+                                    .frame(height: 1.5)
+                                    .matchedGeometryEffect(id: "underline", in: underline)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
             Spacer()
             HStack(spacing: 2) {
-                NookIconButton(systemName: "mic", label: "Praat met Nook") { viewModel.startListening() }
-                NookIconButton(systemName: "gearshape", label: "Instellingen") { viewModel.app?.openSettings() }
-                NookIconButton(systemName: "xmark", label: "Sluiten") { viewModel.show(.idle) }
+                NookIconButton(systemName: "mic", label: tr("button.talk")) { viewModel.startListening() }
+                NookIconButton(systemName: "gearshape", label: tr("button.settings")) { viewModel.app?.openSettings() }
+                NookIconButton(systemName: "xmark", label: tr("button.close")) { viewModel.show(.idle) }
             }
         }
     }
@@ -52,7 +59,8 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .nook: NookTab(viewModel: viewModel)
+        case .nook: NookHomeTab(viewModel: viewModel)
+        case .chat: NookChatTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
         case .connect: ConnectTab(viewModel: viewModel)
         case .music: MusicTab()

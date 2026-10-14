@@ -351,7 +351,7 @@ final class AppModel: ObservableObject {
         // Korte vaste opdrachten doet Nook zelf, zonder brein: meteen klaar.
         if let intent = LocalIntent.parse(text) {
             // In de chat blijft het gesprek staan: muziek en tijd beantwoordt Nook daar gewoon.
-            if viewModel.state == .panel(.nook), let reply = quickReplyInChat(intent) {
+            if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
                 chat.append(ChatMessage(role: .nook, text: reply))
                 return
@@ -376,7 +376,7 @@ final class AppModel: ObservableObject {
     /// Opent de chat. `focus`: meteen kunnen typen.
     func showChat(focus: Bool = true) {
         viewModel.focusChat = focus
-        viewModel.show(.panel(.nook))
+        viewModel.show(.panel(.chat))
     }
 
     func newChat() {
@@ -425,7 +425,7 @@ final class AppModel: ObservableObject {
         replyID = reply.id
         chat.setBusy(true)
         // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
-        if viewModel.state != .panel(.nook) {
+        if viewModel.state != .panel(.chat) {
             warmUp()
             showChat()
         }
@@ -883,7 +883,8 @@ final class AppModel: ObservableObject {
             presentSetupCard()
             return
         }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             guard await voice.requestPermissions() else {
                 viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
                 return

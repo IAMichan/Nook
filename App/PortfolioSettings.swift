@@ -15,7 +15,7 @@ struct PortfolioSettings: View {
                 walletRow(wallet)
             }
 
-            Picker("Netwerk", selection: $network) {
+            Picker(tr("portfolio.network"), selection: $network) {
                 ForEach(PortfolioNetwork.allCases) { item in
                     Text(item.name).tag(item)
                 }
@@ -27,7 +27,7 @@ struct PortfolioSettings: View {
                     .font(.system(.body, design: .monospaced))
                     .autocorrectionDisabled()
                     .onSubmit(addWallet)
-                Button("Voeg toe", action: addWallet)
+                Button(tr("button.add"), action: addWallet)
                     .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let message = walletError {
@@ -35,14 +35,14 @@ struct PortfolioSettings: View {
                     .font(.callout)
                     .foregroundStyle(Color.red)
             }
-            Text("Alleen openbare adressen: Nook leest het saldo via openbare diensten van het netwerk. Deel nooit je seed phrase of privésleutel.")
+            Text(tr("portfolio.walletHint"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             ForEach(PortfolioExchange.allCases) { exchange in
                 PortfolioExchangeFields(portfolio: portfolio, exchange: exchange)
             }
-            Text("Gebruik sleutels met alleen leesrechten. Nook leest saldo’s en plaatst nooit orders of opnames. Koersen komen van Coinbase en worden in euro getoond.")
+            Text(tr("portfolio.exchangeHint"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -66,7 +66,7 @@ struct PortfolioSettings: View {
                         .foregroundStyle(Color.red)
                 }
                 .buttonStyle(.borderless)
-                .help("Verwijder dit adres")
+                .help(tr("portfolio.removeAddress"))
             }
             if let message = portfolio.error(for: wallet) {
                 Text(message)
@@ -108,10 +108,10 @@ private struct PortfolioExchangeFields: View {
                 SecureField("Passphrase", text: $passphrase)
             }
             HStack {
-                Button("Bewaar", action: save)
+                Button(tr("button.save"), action: save)
                     .disabled(!canSave)
                 if portfolio.isConfigured(exchange) {
-                    Button("Verwijder", role: .destructive) {
+                    Button(tr("button.delete"), role: .destructive) {
                         portfolio.removeExchange(exchange)
                         saveError = nil
                     }
@@ -132,7 +132,7 @@ private struct PortfolioExchangeFields: View {
                 Text(exchange.name)
                 Spacer()
                 if portfolio.isConfigured(exchange) {
-                    Label("Ingesteld", systemImage: "checkmark.circle.fill")
+                    Label(tr("portfolio.configured"), systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(Color.green)
                 }

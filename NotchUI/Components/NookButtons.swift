@@ -14,6 +14,8 @@ struct NookPrimaryButton: View {
                 .padding(.horizontal, 18)
                 .frame(height: 38)
                 .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+                .scaleEffect(hovering ? 1.02 : 1)
+                .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -34,6 +36,8 @@ struct NookGhostButton: View {
                 .padding(.horizontal, 12)
                 .frame(height: 38)
                 .contentShape(Rectangle())
+                .scaleEffect(hovering ? 1.02 : 1)
+                .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -58,6 +62,8 @@ struct NookIconButton: View {
                 .background(
                     Circle().fill(filled ? NookTheme.paper : (hovering ? NookTheme.smoke : Color.clear))
                 )
+                .scaleEffect(hovering ? 1.06 : 1)
+                .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

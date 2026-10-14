@@ -257,9 +257,9 @@ final class AgentHistory: ObservableObject {
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
         let homes = profiles.map { ProfileHome(id: $0.id, kind: $0.kind, url: $0.homeURL, isDefault: $0.isDefault) }
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             let result = scanner.scan(homes, excludingFolder: ownFolder)
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 guard let self else { return }
                 self.loading = false
                 if self.sessions != result.sessions { self.sessions = result.sessions }

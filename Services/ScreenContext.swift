@@ -42,6 +42,8 @@ final class ScreenContext: ObservableObject {
     private let interval: TimeInterval = 7
     /// Andere vensters dan het voorste worden hooguit zo vaak opnieuw bekeken.
     private let backgroundMaxAge: TimeInterval = 30
+    private var lastFailure: Date?
+    private let failureCooldown: TimeInterval = 60
 
     var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
@@ -81,23 +83,26 @@ final class ScreenContext: ObservableObject {
         cache = [:]
         windows = []
         lastUpdate = nil
+        lastFailure = nil
     }
 
     private func scheduleFrontRefresh() {
+        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         pendingFrontRefresh?.cancel()
         pendingFrontRefresh = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
-            await self?.refresh(frontOnly: true, accurateFront: true)
+            await self?.refresh(frontOnly: true, accurateFront: false)
         }
     }
 
     private func tick() async {
         guard enabled(), hasPermission else { return }
+        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         // Even weg van de Mac: niets bijhouden.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
-        await refresh(frontOnly: false, accurateFront: true)
+        await refresh(frontOnly: false, accurateFront: false)
     }
 
     // MARK: Voor een vraag
@@ -114,10 +119,10 @@ final class ScreenContext: ObservableObject {
         let stale = front == nil || Date().timeIntervalSince(front?.captured ?? .distantPast) > maxAge
             || front?.bundleID != (frontApp?.bundleIdentifier ?? "")
         if stale || windows.isEmpty {
-            await refresh(frontOnly: windows.count > 1, accurateFront: true)
+            await refresh(frontOnly: windows.count > 1, accurateFront: false)
         }
         if windows.isEmpty {
-            await refresh(frontOnly: false, accurateFront: true)
+            await refresh(frontOnly: false, accurateFront: false)
         }
         guard !windows.isEmpty else {
             if let bundle = frontApp?.bundleIdentifier, ScreenReader.excludedBundles.contains(bundle) {
@@ -165,7 +170,14 @@ final class ScreenContext: ObservableObject {
         busy = true
         defer { busy = false }
 
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            lastFailure = nil
+        } catch {
+            lastFailure = Date()
+            return
+        }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let names = Self.displayNames()
 

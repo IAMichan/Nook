@@ -62,15 +62,15 @@ struct ConnectTab: View {
     }
 
     private var screenHeadline: String {
-        guard app.settings.liveScreen else { return "Schermen: uit" }
-        guard screen.hasPermission else { return "Schermen: geen toestemming" }
-        if screen.windows.isEmpty { return "Schermen: even kijken…" }
+        guard app.settings.liveScreen else { return tr("connect.screenOff") }
+        guard screen.hasPermission else { return tr("connect.screenNoPermission") }
+        if screen.windows.isEmpty { return tr("connect.screenLooking") }
         let displays = screen.displayCount
-        return "Ik zie \(screen.windows.count) vensters" + (displays > 1 ? " op \(displays) schermen" : "")
+        return tr("connect.screenISee", screen.windows.count, displays > 1 ? tr("connect.screenDisplays", displays) : "")
     }
 
     private var screenDetail: String {
-        guard app.settings.liveScreen, screen.hasPermission else { return "Aan te zetten bij Instellingen › Assistent" }
+        guard app.settings.liveScreen, screen.hasPermission else { return tr("connect.screenEnableHint") }
         return screen.windows.prefix(4).map(\.app).joined(separator: " · ")
     }
 
@@ -80,10 +80,10 @@ struct ConnectTab: View {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
-                Text("Koppel meer")
+                Text(tr("connect.addMore"))
                     .font(NookTheme.font(12.5, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
-                Text("GitHub, Stripe, Notion…")
+                Text(tr("connect.addMoreServices"))
                     .font(NookTheme.font(11))
                     .foregroundStyle(NookTheme.textTertiary)
             }
@@ -97,10 +97,10 @@ struct ConnectTab: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Nog niets gekoppeld")
+            Text(tr("connect.emptyTitle"))
                 .font(NookTheme.font(16, .semibold))
                 .foregroundStyle(NookTheme.paper)
-            Text("Geef Nook toegang tot je agenda en herinneringen, open Mail, of koppel GitHub, Stripe en andere diensten. Dan kan hij vragen beantwoorden met alles wat jij weet.")
+            Text(tr("connect.emptyDetail"))
                 .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -158,10 +158,10 @@ private struct ConnectorTile: View {
 
     private func headline(_ status: ConnectorStatus) -> String {
         switch status.state {
-        case .off: return "Uit"
-        case .loading: return "Even laden…"
-        case .error: return "Lukt niet"
-        case .ok: return status.headline.isEmpty ? "Bijgewerkt" : status.headline
+        case .off: return tr("connect.status.off")
+        case .loading: return tr("connect.status.loading")
+        case .error: return tr("connect.status.error")
+        case .ok: return status.headline.isEmpty ? tr("connect.status.updated") : status.headline
         }
     }
 
@@ -205,7 +205,7 @@ private struct ConnectorDetail: View {
                         .font(NookTheme.font(11))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                NookIconButton(systemName: "arrow.clockwise", label: "Ververs", action: refresh)
+                NookIconButton(systemName: "arrow.clockwise", label: tr("connect.refresh"), action: refresh)
             }
 
             if case .error(let message) = status.state {
@@ -252,24 +252,24 @@ private struct ConnectorDetail: View {
 
     private static func ago(_ date: Date) -> String {
         let seconds = Int(Date().timeIntervalSince(date))
-        if seconds < 60 { return "zojuist" }
-        if seconds < 3600 { return "\(seconds / 60) min geleden" }
-        return "om \(NookDates.time(date))"
+        if seconds < 60 { return tr("agents.justNow") }
+        if seconds < 3600 { return tr("agents.minAgo", seconds / 60) }
+        return tr("connect.atTime", NookDates.time(date))
     }
 
     /// Een paar vragen die je met één klik kunt stellen.
     static func suggestions(for id: String) -> [String] {
         switch id {
-        case "calendar": return ["Wanneer ben ik vrij deze week?", "Wat staat er morgen?"]
-        case "reminders": return ["Wat moet ik vandaag nog doen?"]
-        case "mail": return ["Vat mijn ongelezen mail samen", "Welke mail moet ik beantwoorden?"]
-        case "browser": return ["Vat mijn open tabbladen samen"]
-        case "files": return ["Waar werkte ik gisteren aan?"]
-        case "github": return ["Wat wacht er op mij op GitHub?"]
-        case "stripe": return ["Hoeveel heb ik vandaag verdiend?"]
-        case "vercel": return ["Gaat er iets mis bij Vercel?"]
-        case "portfolio": return ["Hoe staat mijn portfolio ervoor?"]
-        default: return ["Vat \(id) samen"]
+        case "calendar": return [tr("connect.suggestion.calendar1"), tr("connect.suggestion.calendar2")]
+        case "reminders": return [tr("connect.suggestion.reminders")]
+        case "mail": return [tr("connect.suggestion.mail1"), tr("connect.suggestion.mail2")]
+        case "browser": return [tr("connect.suggestion.browser")]
+        case "files": return [tr("connect.suggestion.files")]
+        case "github": return [tr("home.suggestions.github")]
+        case "stripe": return [tr("connect.suggestion.stripe")]
+        case "vercel": return [tr("connect.suggestion.vercel")]
+        case "portfolio": return [tr("connect.suggestion.portfolio")]
+        default: return [tr("connect.suggestion.default", id)]
         }
     }
 }

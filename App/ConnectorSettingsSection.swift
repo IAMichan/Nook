@@ -1,5 +1,6 @@
 import SwiftUI
 import Security
+import AppKit
 
 /// Rijen voor de online koppelingen (GitHub, Stripe…) in de instellingen. Zet hem in een `Section("Diensten")` binnen een Form.
 struct CloudConnectorSettings: View {
@@ -35,10 +36,17 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     /// Welke geheime velden al een waarde in de Keychain hebben.
     @State private var stored: Set<String> = []
     @State private var note = ""
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
+                if connector.id == "github" && GitHubSignIn.isAvailable {
+                    gitHubSignInButton
+                    Text(tr("connector.orPasteToken"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(connector.configFields, id: \.account) { field in
                     fieldRow(field)
                 }
@@ -48,14 +56,17 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if let url = connector.signupURL {
-                        Link("Maak een sleutel", destination: url)
+                        Link(tr("connector.createKey"), destination: url)
                             .font(.callout)
                     }
                     Spacer()
-                    if configured {
-                        Button("Wis") { clear() }
+                    if !connector.configFields.isEmpty {
+                        Button(tr("button.pasteClipboard")) { pasteFromClipboard() }
                     }
-                    Button("Bewaar") { save() }
+                    if configured {
+                        Button(tr("button.clear")) { clear() }
+                    }
+                    Button(tr("button.save")) { save() }
                         .disabled(!hasDraft)
                 }
                 if !note.isEmpty {
@@ -83,7 +94,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { expanded.toggle() } }
-                Toggle("Aan", isOn: Binding(get: { isOn }, set: { setOn($0) }))
+                Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -91,6 +102,42 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             }
         }
         .onAppear { load() }
+        .onChange(of: gitHubSignIn.phase) { _, phase in
+            guard connector.id == "github", phase == .done else { return }
+            load()
+            refreshNow()
+        }
+    }
+
+    // MARK: GitHub in één klik
+
+    @ViewBuilder
+    private var gitHubSignInButton: some View {
+        switch gitHubSignIn.phase {
+        case .waiting(let code, let uri):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("connector.githubCodeHint"))
+                    .font(.callout)
+                Text(code)
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                HStack {
+                    Button(tr("connector.reopenGitHub")) { NSWorkspace.shared.open(uri) }
+                    Spacer()
+                    Button(tr("button.cancel")) { gitHubSignIn.cancel() }
+                }
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Button(tr("button.tryAgain")) { gitHubSignIn.start() }
+            }
+        case .idle, .done:
+            Button(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub")) { gitHubSignIn.start() }
+                .buttonStyle(.borderedProminent)
+        }
     }
 
     // MARK: Velden
@@ -99,14 +146,33 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     private func fieldRow(_ field: ConnectorField) -> some View {
         let binding = Binding<String>(
             get: { drafts[field.account] ?? "" },
-            set: { drafts[field.account] = $0 }
+            set: { new in
+                let old = drafts[field.account] ?? ""
+                drafts[field.account] = new
+                // Plakken zet in één keer veel tekst neer: dan bewaren we meteen, zonder extra knop.
+                if new.count - old.count >= 8 { save() }
+            }
         )
         if field.secret {
             SecureField(field.label, text: binding,
-                        prompt: Text(stored.contains(field.account) ? "Bewaard in je Keychain" : field.placeholder))
+                        prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder))
+                .onSubmit { save() }
         } else {
             TextField(field.label, text: binding, prompt: Text(field.placeholder))
+                .onSubmit { save() }
         }
+    }
+
+    /// Neemt wat er op het klembord staat, en bewaart het meteen in het eerste geheime veld.
+    private func pasteFromClipboard() {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !ConnectorField.clean(text).isEmpty,
+              let field = connector.configFields.first(where: { $0.secret }) ?? connector.configFields.first else {
+            note = tr("connector.nothingOnClipboard")
+            return
+        }
+        drafts[field.account] = text
+        save()
     }
 
     private var hasDraft: Bool {
@@ -120,14 +186,14 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     // MARK: Status
 
     private var stateText: String {
-        if !configured { return "Niet ingesteld" }
-        if !isOn { return "Uit" }
+        if !configured { return tr("connector.notConfigured") }
+        if !isOn { return tr("connect.status.off") }
         switch connector.status.state {
-        case .off: return "Nog niet opgehaald"
-        case .loading: return "Bezig…"
+        case .off: return tr("connector.notYetFetched")
+        case .loading: return tr("chat.plan.running")
         case .ok:
             let headline = connector.status.headline
-            return headline.isEmpty ? "Verbonden" : headline
+            return headline.isEmpty ? tr("connect.status.connected") : headline
         case .error(let message): return message
         }
     }
@@ -170,7 +236,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             if Keychain.write(cleaned, account: field.account) != errSecSuccess { failed = true }
         }
         load()
-        note = failed ? "De Keychain weigerde de sleutel. Probeer het nog eens." : "Bewaard. Nook haalt de gegevens op…"
+        note = failed ? tr("connector.keychainDenied") : tr("connector.savedFetching")
         refreshNow()
     }
 
@@ -179,7 +245,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             Keychain.write("", account: field.account)
         }
         load()
-        note = "Sleutels gewist."
+        note = tr("connector.keysCleared")
         refreshNow()
     }
 
