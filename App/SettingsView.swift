@@ -660,7 +660,7 @@ struct SettingsView: View {
         let program = app.history.executables[kind] != nil
         let account = app.history.accounts[kind]
         let linkedAll = kind.targets.allSatisfy { (agentStates[$0] ?? .notInstalled) == .installed }
-        let progress = app.agentConnect[kind]
+        let progress = app.agentConnect[kind.rawValue]
         let complete = program && account != nil && linkedAll
         let detail: String = {
             if let progress, progress.isBusy || !complete { return progress.text }

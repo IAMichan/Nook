@@ -28,6 +28,8 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Eerdere sessies en tokengebruik van Claude Code en Codex, voor de Agents-tab.
     let history = AgentHistory()
+    /// Je accounts per agent (persoonlijk, werk…) en welke de standaard is.
+    let profiles = AgentProfileStore()
     /// Zoeken op het web en webpagina's lezen, voor elk brein.
     let web = WebTools()
     let portfolio = PortfolioConnector()
@@ -67,7 +69,8 @@ final class AppModel: ObservableObject {
     /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
     @Published var demoMode = false
     /// Hoe ver het koppelen van een agent-account is (één klik in de Agents-tab of bij Instellingen).
-    @Published private(set) var agentConnect: [AgentKind: AgentConnectProgress] = [:]
+    /// Per account (`AgentProfile.id`).
+    @Published private(set) var agentConnect: [String: AgentConnectProgress] = [:]
     @Published private(set) var loops: [OpenLoop] = []
     @Published private(set) var upcoming: [CalEvent] = []
 
@@ -91,10 +94,24 @@ final class AppModel: ObservableObject {
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        profiles.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Komt er een account bij of gaat er een af, dan leest de geschiedenis meteen de juiste mappen.
+        profiles.$all.removeDuplicates().sink { [weak self] all in
+            guard let self else { return }
+            self.history.profiles = all
+            self.history.refresh(minimumInterval: 0)
+        }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        // Alleen of Nook bezig is (voor zijn gezicht); de berichten zelf volgt de chat rechtstreeks.
-        chat.$busy.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Of er een Nook werkt (voor zijn gezicht en de notch in rust); de berichten zelf volgt de chat rechtstreeks.
+        chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.objectWillChange.send()
+                if self.viewModel.state.isResting { self.viewModel.show(self.viewModel.state) }
+            }
+            .store(in: &bag)
     }
 
     // MARK: Opstarten
@@ -359,9 +376,9 @@ final class AppModel: ObservableObject {
 
     // MARK: Chat
 
-    /// Het bericht waar Nook nu aan schrijft (voor grafieken en mailconcepten die tools tijdens het denken maken).
-    private var replyID: UUID?
-    private var chatTask: Task<Void, Never>?
+    /// Per Nook het bericht waar hij nu aan schrijft, en de taak die dat doet. Meerdere Nooks kunnen tegelijk werken.
+    private var replies: [UUID: UUID] = [:]
+    private var chatTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Opent de chat. `focus`: meteen kunnen typen.
     func showChat(focus: Bool = true) {
@@ -369,17 +386,28 @@ final class AppModel: ObservableObject {
         viewModel.show(.panel(.chat))
     }
 
+    /// Een nieuwe Nook. Een Nook die nog bezig is, werkt gewoon door.
     func newChat() {
-        stopChat()
-        chat.clear()
+        chat.startNew()
         attachment = nil
         showChat()
     }
 
+    func openConversation(_ id: UUID) {
+        chat.select(id)
+        showChat()
+    }
+
+    /// Stopt de Nook die je nu ziet.
     func stopChat() {
-        chatTask?.cancel()
-        chatTask = nil
-        if let id = replyID {
+        guard let id = chat.activeID else { return }
+        stop(conversation: id)
+    }
+
+    private func stop(conversation: UUID) {
+        chatTasks[conversation]?.cancel()
+        chatTasks[conversation] = nil
+        if let id = replies[conversation] {
             chat.update(id) { message in
                 message.streaming = false
                 message.status = ""
@@ -388,13 +416,15 @@ final class AppModel: ObservableObject {
                 }
             }
         }
-        replyID = nil
-        chat.setBusy(false)
+        replies[conversation] = nil
+        chat.setBusy(false, conversation: conversation)
         spokenRequest = false
     }
 
+    /// Grafieken en mailconcepten die tools tijdens het denken maken, komen bij het antwoord van de Nook die ze maakte.
     private func attachToReply(_ change: (inout ChatMessage) -> Void) {
-        if let id = replyID, chat.message(id) != nil {
+        let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
+        if let id = target, chat.message(id) != nil {
             chat.update(id, change)
         } else {
             var message = ChatMessage(role: .nook, text: "")
@@ -405,25 +435,31 @@ final class AppModel: ObservableObject {
 
     /// Stelt een vraag in de chat: het antwoord verschijnt terwijl het geschreven wordt.
     private func ask(_ text: String) {
-        if chat.busy { stopChat() }
+        let conversation = chat.ensureActive()
+        if chat.isBusy(conversation) { stop(conversation: conversation) }
         let question = ChatMessage(role: .user, text: text)
-        chat.append(question)
+        chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
         reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? "Lokaal model laden…" : "Even nadenken…"
-        chat.append(reply)
-        replyID = reply.id
-        chat.setBusy(true)
+        chat.append(reply, to: conversation)
+        replies[conversation] = reply.id
+        chat.setBusy(true, conversation: conversation)
         // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
         if viewModel.state != .panel(.chat) {
             warmUp()
             showChat()
         }
         let history = chat.history(before: question.id)
-        chatTask = Task { [weak self] in await self?.answer(text, history: history, replyID: reply.id) }
+        let replyID = reply.id
+        chatTasks[conversation] = Task { [weak self] in
+            await ReplyContext.$messageID.withValue(replyID) {
+                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+            }
+        }
     }
 
-    private func answer(_ text: String, history: [ChatTurn], replyID id: UUID) async {
+    private func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
         // Een vraag over een bestand uit de Shelf, of over wat er op je schermen staat.
         var snapshot: ScreenSnapshot?
         var context: String?
@@ -440,7 +476,7 @@ final class AppModel: ObservableObject {
             } catch {
                 // Geen schermtoegang: gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
                 if Self.refersToScreen(text) {
-                    finishReply(id, error: error.localizedDescription)
+                    finishReply(id, error: error.localizedDescription, conversation: conversation)
                     return
                 }
             }
@@ -452,15 +488,22 @@ final class AppModel: ObservableObject {
             sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
         }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
-        chat.update(id) { $0.sources = sources; $0.status = "Even nadenken…" }
+        chat.update(id) { $0.sources = sources; $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…" }
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines().joined(separator: "\n"))
 
+        // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
+        let wantsChart = ChartRescue.wantsChart(text)
+        var request = text
+        if retry {
+            request += "\n\n(Teken de grafiek nu echt met de tool show_chart, met echte cijfers uit de context, de tools of het web. Schrijf geen code, geen JSON en geen tabel als vervanging.)"
+        }
+
         do {
             let plan = try await brain.run(
-                userText: text,
+                userText: request,
                 followUp: !history.isEmpty,
                 history: history,
                 context: contextSummary(),
@@ -468,22 +511,47 @@ final class AppModel: ObservableObject {
                 untrusted: snapshot?.text,
                 tools: allTools,
                 onText: { [weak self] partial in
-                    guard let self, self.replyID == id else { return }
+                    guard let self, self.replies[conversation] == id else { return }
+                    var visible = FollowUps.streamingBody(partial)
+                    if wantsChart { visible = ChartRescue.hidingChartCode(visible) }
                     self.chat.update(id) { message in
-                        message.text = Self.cleanReply(FollowUps.streamingBody(partial))
+                        message.text = Self.cleanReply(visible)
                         message.status = ""
                     }
                 }
             )
-            guard !Task.isCancelled, replyID == id else { return }
+            guard !Task.isCancelled, replies[conversation] == id else { return }
             // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
             let split = FollowUps.split(plan.text)
-            var body = Self.cleanReply(split.body)
+            var rawBody = split.body
+
+            // Schreef het brein de grafiek als code, JSON of tabel? Dan tekent Nook hem alsnog zelf.
+            var rescued: [ChatChart] = []
+            let alreadyDrawn = !(chat.message(id)?.charts.isEmpty ?? true)
+            if !alreadyDrawn {
+                let extracted = ChartRescue.extract(from: rawBody, title: Conversation.title(from: text))
+                if !extracted.charts.isEmpty || wantsChart {
+                    rawBody = extracted.text
+                    rescued = extracted.charts
+                }
+                if rescued.isEmpty, wantsChart, let table = ChartRescue.chartFromTable(rawBody, title: Conversation.title(from: text)) {
+                    rescued = [table]
+                }
+                // Nog steeds geen grafiek: één keer opnieuw, met de opdracht hem echt te tekenen.
+                if rescued.isEmpty, wantsChart, !retry, !settings.useLocal {
+                    chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                    return
+                }
+            }
+
+            var body = Self.cleanReply(rawBody)
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
                 body = "Ik zie niets waar je iets aan hebt."
             }
             chat.update(id) { message in
                 message.text = body
+                message.charts.append(contentsOf: rescued)
                 message.actions = plan.actions
                 message.offers = split.offers
                 message.streaming = false
@@ -497,17 +565,19 @@ final class AppModel: ObservableObject {
                     : (!message.mails.isEmpty ? "Ik heb een mail voor je klaargezet." : (!message.charts.isEmpty ? "Hier is je grafiek." : "Ik heb een plan klaargezet."))
                 speakIfAsked(spoken)
             }
-            self.replyID = nil
-            chat.setBusy(false)
+            replies[conversation] = nil
+            chatTasks[conversation] = nil
+            chat.setBusy(false, conversation: conversation)
+            nookFinished(conversation)
             // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
             if canRunWithoutAsking(plan) { runPlan(id) }
         } catch {
-            guard !Task.isCancelled, replyID == id else { return }
-            finishReply(id, error: error.localizedDescription)
+            guard !Task.isCancelled, replies[conversation] == id else { return }
+            finishReply(id, error: error.localizedDescription, conversation: conversation)
         }
     }
 
-    private func finishReply(_ id: UUID, error: String) {
+    private func finishReply(_ id: UUID, error: String, conversation: UUID) {
         chat.update(id) { message in
             message.streaming = false
             message.status = ""
@@ -518,9 +588,32 @@ final class AppModel: ObservableObject {
                 message.text += "\n\n_\(error)_"
             }
         }
-        replyID = nil
+        replies[conversation] = nil
+        chatTasks[conversation] = nil
         spokenRequest = false
-        chat.setBusy(false)
+        chat.setBusy(false, conversation: conversation)
+    }
+
+    /// Een Nook is klaar terwijl je naar iets anders keek: hij laat het even weten.
+    private func nookFinished(_ id: UUID) {
+        let watching = viewModel.state == .panel(.chat) && chat.activeID == id
+        guard !watching, let conversation = chat.conversation(id) else { return }
+        chat.markUnread(id)
+        let token = "nookdone-" + UUID().uuidString
+        viewModel.register("\(token)#open") { [weak self] in self?.openConversation(id) }
+        let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
+        let lines = max(1, min(3, Int(ceil(Double(preview.count) / 46.0))))
+        let card = NookCard(
+            id: token,
+            mood: .done,
+            context: tr("nooks.finished", conversation.title),
+            title: preview,
+            detail: .none,
+            primary: CardAction(label: tr("nooks.view"), outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
+            contentHeight: 100 + CGFloat(lines) * 24
+        )
+        viewModel.present(card)
     }
 
     /// Haalt resten van tool-aanroepen en losse backslashes uit een antwoord.
@@ -1305,79 +1398,163 @@ final class AppModel: ObservableObject {
 
     // MARK: Agents koppelen
 
-    /// Is alles voor deze agent geregeld: programma aanwezig, ingelogd en alle koppelingen aan?
+    /// Is alles voor het eerste account van deze agent geregeld: programma aanwezig, ingelogd en alle koppelingen aan?
     func isFullyConnected(_ kind: AgentKind) -> Bool {
-        history.executables[kind] != nil && history.accounts[kind] != nil
-            && kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0) == .installed }
+        isFullyConnected(AgentProfile.defaultProfile(kind))
     }
 
-    /// Eén klik: koppelt alles voor deze agent. Ontbreekt het programma of ben je niet ingelogd, dan opent Nook
-    /// een Terminal-venster dat installeert en het inloggen start, en ziet daarna vanzelf dat je bent ingelogd.
-    func connect(_ kind: AgentKind) {
-        if agentConnect[kind]?.isBusy == true { return }
-        agentConnect[kind] = .working("Bezig met koppelen…")
+    func isFullyConnected(_ profile: AgentProfile) -> Bool {
+        history.executables[profile.kind] != nil && history.profileAccounts[profile.id] != nil
+            && profile.kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0, home: profile.home.map { _ in profile.homeURL }) == .installed }
+    }
 
+    /// Het account van een draaiende sessie, of nil als Nook het niet kent.
+    func profile(for session: AgentSession) -> AgentProfile? {
+        guard let kind = AgentKind(agentName: session.name) else { return nil }
+        return profiles.profile(kind: kind, home: session.home)
+    }
+
+    func profile(for session: PastSession) -> AgentProfile? {
+        profiles.profile(id: session.profileID) ?? profiles.profile(id: session.agent.rawValue)
+    }
+
+    func connect(_ kind: AgentKind) {
+        connect(profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind))
+    }
+
+    /// Eén klik: koppelt alles voor dit account. Ontbreekt het programma of ben je niet ingelogd, dan opent Nook
+    /// een Terminal-venster dat installeert en het inloggen start, en ziet daarna vanzelf dat je bent ingelogd.
+    func connect(_ profile: AgentProfile) {
+        let kind = profile.kind
+        if agentConnect[profile.id]?.isBusy == true { return }
+        agentConnect[profile.id] = .working("Bezig met koppelen…")
+
+        let home = profile.home.map { _ in profile.homeURL }
+        if home != nil { try? FileManager.default.createDirectory(at: profile.homeURL, withIntermediateDirectories: true) }
         var problems: [String] = []
-        for target in kind.targets where AgentConfigInstaller.state(of: target) != .installed {
+        for target in kind.targets where AgentConfigInstaller.state(of: target, home: home) != .installed {
             do {
-                _ = try AgentConfigInstaller.apply(AgentConfigInstaller.prepare(target, install: true))
+                _ = try AgentConfigInstaller.apply(AgentConfigInstaller.prepare(target, install: true, home: home))
             } catch {
                 problems.append("\(target.title): \(error.localizedDescription)")
             }
         }
         if !problems.isEmpty {
-            agentConnect[kind] = .failed(problems.joined(separator: "\n"))
+            agentConnect[profile.id] = .failed(problems.joined(separator: "\n"))
             return
         }
         // Nog geen brein? Dan denkt Nook voortaan met je Claude-abonnement.
         if kind == .claude, !settings.brainReady { settings.provider = .claudeCode }
 
         let hasProgram = history.executables[kind] != nil
-        let loggedIn = history.accounts[kind] != nil
+        let loggedIn = history.profileAccounts[profile.id] != nil
         guard !hasProgram || !loggedIn else {
-            finishConnect(kind)
+            finishConnect(profile)
             return
         }
 
-        var steps = ["echo " + TerminalLauncher.shellQuote("Nook koppelt \(kind.name). " + (hasProgram
-            ? "Log hieronder in; Nook ziet het vanzelf."
+        let who = profile.isDefault ? kind.name : "\(kind.name) (\(profile.label))"
+        var steps = ["echo " + TerminalLauncher.shellQuote("Nook koppelt \(who). " + (hasProgram
+            ? "Log hieronder in met het juiste account; Nook ziet het vanzelf."
             : "Eerst installeren, daarna inloggen. Nook ziet het vanzelf."))]
         if !hasProgram { steps.append(kind.installCommand) }
-        steps.append(kind.loginCommand)
+        steps.append(profile.commandPrefix + kind.loginCommand)
         do {
             try TerminalLauncher.run(command: steps.joined(separator: " && "),
                                      in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-connect-\(kind.rawValue)")
+                                     name: "nook-connect-\(profile.id)")
         } catch {
-            agentConnect[kind] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
+            agentConnect[profile.id] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
             return
         }
-        agentConnect[kind] = .waitingForLogin(hasProgram ? "Log in in het Terminal-venster…" : "Installeren en inloggen in Terminal…")
-        waitForLogin(kind)
+        agentConnect[profile.id] = .waitingForLogin(hasProgram ? "Log in in het Terminal-venster…" : "Installeren en inloggen in Terminal…")
+        waitForLogin(profile)
     }
 
     /// Kijkt een kwartier lang elke paar seconden of de agent er staat en je bent ingelogd.
-    private func waitForLogin(_ kind: AgentKind) {
+    private func waitForLogin(_ profile: AgentProfile) {
         Task { [weak self] in
             for _ in 0..<300 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard let self, case .waitingForLogin? = self.agentConnect[kind] else { return }
+                guard let self, case .waitingForLogin? = self.agentConnect[profile.id] else { return }
                 self.history.refresh(minimumInterval: 0)
-                if self.history.executables[kind] != nil, self.history.accounts[kind] != nil {
-                    self.finishConnect(kind)
+                if self.history.executables[profile.kind] != nil, self.history.profileAccounts[profile.id] != nil {
+                    self.finishConnect(profile)
                     return
                 }
             }
-            self?.agentConnect[kind] = .failed("Ik zag nog geen login. Ben je klaar in Terminal? Klik dan nog eens op Koppel.")
+            self?.agentConnect[profile.id] = .failed("Ik zag nog geen login. Ben je klaar in Terminal? Klik dan nog eens op Koppel.")
         }
     }
 
-    private func finishConnect(_ kind: AgentKind) {
+    private func finishConnect(_ profile: AgentProfile) {
+        let kind = profile.kind
         // Net geïnstalleerd? Dan opnieuw zoeken, zodat Claude Code ook als brein werkt.
         if kind == .claude { ClaudeCodeBrain.resetLocation(); settings.objectWillChange.send() }
-        let running = agentSessions.contains { AgentKind(agentName: $0.name) == kind }
-        agentConnect[kind] = .done(running ? "Alles gekoppeld. Start lopende \(kind.name)-sessies opnieuw." : "Alles gekoppeld.")
+        let running = agentSessions.contains { self.profile(for: $0)?.id == profile.id }
+        agentConnect[profile.id] = .done(running ? "Alles gekoppeld. Start lopende sessies opnieuw." : "Alles gekoppeld.")
         history.refresh(minimumInterval: 0)
+    }
+
+    // MARK: Accounts
+
+    /// Een extra account (bijvoorbeeld je werkaccount) met een eigen map, en meteen inloggen.
+    @discardableResult
+    func addAccount(_ kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
+        let profile = profiles.add(kind: kind, label: label, home: home)
+        viewModel.selectedAgentID = "account:" + profile.id
+        if history.profileAccounts[profile.id] == nil || !isFullyConnected(profile) { connect(profile) }
+        return profile
+    }
+
+    func removeAccount(_ profile: AgentProfile) {
+        profiles.remove(profile.id)
+        agentConnect[profile.id] = nil
+        viewModel.selectedAgentID = "account:" + profiles.preferredProfile(profile.kind).id
+    }
+
+    func makeDefault(_ profile: AgentProfile) {
+        profiles.setPreferred(profile)
+    }
+
+    /// Start de agent met dit account in een nieuw Terminal-venster, in `folder`.
+    func startSession(_ profile: AgentProfile, in folder: String) {
+        do {
+            try TerminalLauncher.run(command: profile.launchCommand, in: folder, name: "nook-start-\(profile.id)")
+            viewModel.show(.idle)
+        } catch {
+            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Laat je een map kiezen en start daar een sessie met dit account.
+    func startSessionChoosingFolder(_ profile: AgentProfile) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Start hier"
+        panel.message = "In welke map start \(profile.kind.name)?"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startSession(profile, in: url.path)
+    }
+
+    /// Mappen waar je met dit account onlangs werkte, nieuwste eerst.
+    func recentFolders(_ profile: AgentProfile, limit: Int = 5) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for session in history.sessions(for: profile) where !session.cwd.isEmpty {
+            guard seen.insert(session.cwd).inserted, FileManager.default.fileExists(atPath: session.cwd) else { continue }
+            result.append(session.cwd)
+            if result.count == limit { break }
+        }
+        return result
+    }
+
+    func copyLaunchCommand(_ profile: AgentProfile) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(profile.launchCommand, forType: .string)
     }
 
     /// Gaat verder met een eerdere sessie, in een nieuw Terminal-venster in de map van toen.
@@ -1395,11 +1572,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Het commando om een sessie te hervatten. `absolute` gebruikt het volledige pad als Nook weet waar de agent staat.
+    /// Het commando om een sessie te hervatten, met het account van toen. `absolute` gebruikt het volledige pad
+    /// als Nook weet waar de agent staat.
     func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
         var program = session.agent.command
         if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
-        return ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
+        let prefix = profile(for: session)?.commandPrefix ?? ""
+        return prefix + ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
     }
 
     func copyResumeCommand(_ session: PastSession) {

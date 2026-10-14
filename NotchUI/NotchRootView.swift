@@ -82,6 +82,14 @@ struct NotchRootView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { viewModel.openPanel() }
                     .floatingDrag(viewModel)
+                } else if app.chat.anyBusy {
+                    // Een Nook werkt op de achtergrond aan iets: hij denkt zichtbaar mee.
+                    wings(nh: nh, nw: nw, mood: .think, animated: true) {
+                        idleBadge
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
+                    .floatingDrag(viewModel)
                 } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                     Color.clear
                 } else {
