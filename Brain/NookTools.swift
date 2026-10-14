@@ -84,15 +84,14 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "read_screen",
-                description: "Leest de tekst van het voorste venster op de Mac van de gebruiker (OCR, lokaal). Gebruik dit METEEN, zonder eerst te vragen wat er staat, zodra de gebruiker verwijst naar iets dat hij ziet of net las: 'hier', 'dit', 'daar', 'die mail', 'maak er een afspraak voor', 'zet dat in mijn agenda'. Haal daarna titel, datum, tijd, plaats en deelnemers uit die tekst.",
+                description: "Leest de tekst van alle zichtbare vensters op alle schermen van de Mac van de gebruiker, het voorste venster eerst (OCR, lokaal). Zoek zelf in welk venster de relevante context staat. Gebruik dit METEEN, zonder eerst te vragen wat er staat, zodra de gebruiker verwijst naar iets dat hij ziet of net las: 'hier', 'dit', 'daar', 'die mail', 'maak er een afspraak voor', 'zet dat in mijn agenda'. Haal daarna titel, datum, tijd, plaats en deelnemers uit die tekst.",
                 schema: object([:], required: []),
                 kind: .read,
                 summarize: { _ in "Scherm lezen" },
                 tag: { _ in ("", .neutral) },
                 run: { [screen = self.screen] _ in
-                    let snapshot = try await screen.capture()
-                    let title = snapshot.windowTitle.isEmpty ? "" : " — \(snapshot.windowTitle)"
-                    return "Voorste venster: \(snapshot.appName)\(title)\n\(snapshot.text)"
+                    let snapshot = try await screen.captureAll()
+                    return snapshot.text
                 }
             ),
             ToolSpec(
