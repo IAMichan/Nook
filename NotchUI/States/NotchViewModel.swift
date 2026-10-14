@@ -304,10 +304,11 @@ final class NotchViewModel: ObservableObject {
         case .card(let card):
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
+            let big = AppSettings.shared.panelLarge
             switch tab {
             case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
-            case .chat: return CGSize(width: 860, height: min(chrome + 440, NotchController.panelSize.height))
-            case .agents: return CGSize(width: 860, height: chrome + 386)
+            case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
+            case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 386), NotchController.panelSize.height))
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
             case .connect: return CGSize(width: 820, height: chrome + 330)

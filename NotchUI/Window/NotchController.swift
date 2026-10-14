@@ -6,7 +6,7 @@ import Combine
 @MainActor
 final class NotchController {
     /// The panel has a fixed bounding size (accommodating the largest state); SwiftUI renders the notch shape within it.
-    static let panelSize = CGSize(width: 940, height: 540)
+    static let panelSize = CGSize(width: 1280, height: 900)
 
     let viewModel = NotchViewModel()
     private var panel: NotchPanel?
