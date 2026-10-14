@@ -34,7 +34,7 @@ struct AgentsTab: View {
 
     var body: some View {
         let live = app.agentSessions
-        let past = app.demoMode ? [] : Array(app.history.sessions.prefix(40))
+        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace.prefix(40))
         let selection = resolve(live: live, past: past)
         VStack(alignment: .leading, spacing: 12) {
             header(live: live, past: past, selection: selection)
@@ -60,6 +60,9 @@ struct AgentsTab: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            if !selection.isAccounts && !app.demoMode {
+                usageStrip
             }
         }
         .onAppear {
@@ -104,6 +107,7 @@ struct AgentsTab: View {
                 ForEach(switcherKinds) { kind in
                     accountSwitcher(kind)
                 }
+                WorkspaceButton(workspace: app.workspace) { app.openWorkspace() }
             }
         }
     }
@@ -187,8 +191,9 @@ struct AgentsTab: View {
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
-        if let first = live.first { return .live(first) }
+        if let first = live.first(where: { !$0.isDetected }) { return .live(first) }
         if let first = past.first { return .past(first) }
+        if let first = live.first { return .live(first) }
         return .nothing
     }
 
@@ -211,27 +216,36 @@ struct AgentsTab: View {
 
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 4) {
-                SectionHeader(title: tr("agents.nowActive"), trailing: live.isEmpty ? nil : "\(live.count)")
-                if live.isEmpty {
+                if !tracked.isEmpty {
+                    SectionHeader(title: tr("agents.nowActive"), trailing: "\(tracked.count)")
+                    ForEach(tracked) { session in
+                        LiveCard(session: session, account: accountTag(session), selected: current == session.id) {
+                            viewModel.selectedAgentID = session.id
+                        }
+                    }
+                }
+                if !untracked.isEmpty {
+                    SectionHeader(title: tr("agents.untrackedHeader"), trailing: "\(untracked.count)")
+                        .padding(.top, tracked.isEmpty ? 0 : 12)
+                    ForEach(untracked) { session in
+                        UntrackedRow(session: session, account: accountTag(session), selected: current == session.id) {
+                            viewModel.selectedAgentID = session.id
+                        }
+                    }
+                }
+                if live.isEmpty && past.isEmpty {
                     Text(tr("agents.noneWorkingNow"))
                         .font(NookTheme.font(12.5))
                         .foregroundStyle(NookTheme.textTertiary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                 }
-                ForEach(tracked) { session in
-                    LiveCard(session: session, account: accountTag(session), selected: current == session.id) {
-                        viewModel.selectedAgentID = session.id
-                    }
-                }
-                ForEach(untracked) { session in
-                    UntrackedRow(session: session, account: accountTag(session), selected: current == session.id) {
-                        viewModel.selectedAgentID = session.id
-                    }
+                if !app.demoMode {
+                    WorkspaceRunsSection(workspace: app.workspace) { id in app.openWorkspace(run: id) }
                 }
                 if !past.isEmpty {
                     SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
-                        .padding(.top, 12)
+                        .padding(.top, live.isEmpty ? 0 : 12)
                     ForEach(past) { session in
                         PastRow(session: session, account: accountTag(session), selected: current == "past:" + session.id) {
                             viewModel.selectedAgentID = "past:" + session.id
@@ -254,6 +268,68 @@ struct AgentsTab: View {
         return displayName(profile)
     }
 
+    /// Altijd zichtbaar onderaan Sessies: hoe vol de limieten van al je accounts zitten, ook als er niets draait.
+    @ViewBuilder
+    private var usageStrip: some View {
+        let profiles = app.profiles.all.filter {
+            app.history.executables[$0.kind] != nil || app.history.profileAccounts[$0.id] != nil
+        }
+        if !profiles.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Rectangle().fill(NookTheme.line).frame(height: 1)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(profiles) { profile in
+                            usageChip(profile)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func usageChip(_ profile: AgentProfile) -> some View {
+        let windows = limits(for: profile)
+        let several = app.profiles.profiles(for: profile.kind).count > 1
+        let name = several ? "\(profile.kind.shortName) · \(displayName(profile))" : profile.kind.shortName
+        return Button { viewModel.selectedAgentID = "account:" + profile.id } label: {
+            HStack(spacing: 8) {
+                Circle().fill(profile.kind.color).frame(width: 6, height: 6)
+                Text(name)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                if app.history.profileAccounts[profile.id] == nil {
+                    Text(tr("agents.notLoggedInShort"))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.amber)
+                } else if windows.isEmpty {
+                    Text(tr("agents.noLimitsYet"))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                } else {
+                    ForEach(windows) { window in
+                        HStack(spacing: 4) {
+                            Text(window.label.lowercased())
+                                .foregroundStyle(NookTheme.textTertiary)
+                            Text("\(Int(window.percent.rounded()))%")
+                                .font(NookTheme.mono(11, .semibold))
+                                .foregroundStyle(AgentFormat.color(percent: window.percent))
+                        }
+                        .font(NookTheme.font(11.5))
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Capsule().fill(NookTheme.field))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr("agents.viewAccount"))
+    }
+
     /// Niets aan de hand en nog geen geschiedenis: zeg hoe je begint.
     private var nothingRunning: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -267,7 +343,8 @@ struct AgentsTab: View {
             Spacer(minLength: 0)
             if !app.demoMode {
                 HStack(spacing: 4) {
-                    startMenu(app.profiles.preferredProfile(.claude), primary: true)
+                    NookPrimaryButton(title: tr("ws.newSession")) { app.openWorkspace(newSession: true) }
+                    startMenu(app.profiles.preferredProfile(.claude), primary: false)
                     NookGhostButton(title: tr("agents.mode.accounts")) {
                         viewModel.selectedAgentID = "account:" + app.profiles.preferredProfile(.claude).id
                     }
@@ -407,6 +484,28 @@ struct AgentsTab: View {
                 .font(NookTheme.font(13))
                 .lineLimit(1)
             }
+        }
+
+        if session.status == .waiting && session.approvalID == nil && !app.demoMode {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "questionmark.bubble")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(NookTheme.amber)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
+                        .font(NookTheme.font(13, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(tr("agents.waitingInTerminalDetail"))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
         }
 
         if !session.diff.isEmpty || !session.file.isEmpty {
@@ -650,6 +749,10 @@ struct AgentsTab: View {
 
                 if !gap.program && !gap.login {
                     accountActions(profile)
+                }
+
+                if !gap.program {
+                    AccountSignIn(profile: profile)
                 }
 
                 if windows.isEmpty {
@@ -1668,6 +1771,206 @@ private struct ShimmerText: View {
                         endPoint: .trailing
                     )
                 )
+        }
+    }
+}
+
+
+// MARK: Werkruimte in de notch
+
+/// "Werkruimte" bovenin de Agents-tab, met een tellertje als er sessies werken of op je wachten.
+private struct WorkspaceButton: View {
+    @ObservedObject var workspace: WorkspaceManager
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let waiting = workspace.runs.filter { $0.status == .waitingApproval }.count
+        let active = workspace.activeRuns.count
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.split.3x1")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(tr("ws.windowTitle"))
+                    .font(NookTheme.font(12, .semibold))
+                if waiting > 0 || active > 0 {
+                    Text("\(waiting > 0 ? waiting : active)")
+                        .font(NookTheme.mono(10.5, .semibold))
+                        .foregroundStyle(waiting > 0 ? NookTheme.amber : NookTheme.iris)
+                }
+            }
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Capsule().fill(NookTheme.field))
+            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("ws.openHelp"))
+    }
+}
+
+/// Sessies uit de werkruimte die nu werken of net klaar zijn, met een klik erheen.
+private struct WorkspaceRunsSection: View {
+    @ObservedObject var workspace: WorkspaceManager
+    let open: (UUID) -> Void
+
+    var body: some View {
+        let recent = workspace.runs
+            .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 6 * 3600) }
+            .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
+            .prefix(5)
+        if !recent.isEmpty {
+            SectionHeader(title: tr("ws.windowTitle"), trailing: nil)
+                .padding(.top, 12)
+            ForEach(Array(recent)) { run in
+                Button { open(run.id) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: run.status.symbol)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(run.status.color)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(run.title)
+                                .font(NookTheme.font(12.5, .medium))
+                                .foregroundStyle(NookTheme.paper.opacity(0.92))
+                                .lineLimit(1)
+                            Text([run.projectName, run.provider.kind.shortName, run.status.label].joined(separator: " · "))
+                                .font(NookTheme.font(11.5))
+                                .foregroundStyle(run.status == .waitingApproval ? NookTheme.amber : NookTheme.textTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+
+// MARK: Inloggen per account
+
+/// Hoe dit account inlogt (abonnement of API-sleutel), en opnieuw inloggen of uitloggen.
+/// Een sleutel wordt nooit getoond: alleen of er een is.
+private struct AccountSignIn: View {
+    @EnvironmentObject private var app: AppModel
+    let profile: AgentProfile
+    @State private var key = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if profile.kind == .gemini {
+                Text(tr("accounts.geminiSingle"))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 8) {
+                    Text(tr("accounts.method"))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Picker("", selection: Binding(
+                        get: { profile.auth ?? .cli },
+                        set: { method in
+                            if method == .cli { app.useCLILogin(profile) } else { app.profiles.setAuth(profile.id, .apiKey) }
+                        }
+                    )) {
+                        Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
+                        Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 260)
+                    Spacer()
+                }
+                if profile.usesAPIKey {
+                    keyRow
+                } else {
+                    HStack(spacing: 6) {
+                        NookGhostButton(title: tr("accounts.reauth")) { app.reauthenticate(profile) }
+                            .help(tr("accounts.reauthHelp"))
+                        if app.history.profileAccounts[profile.id] != nil {
+                            NookGhostButton(title: tr("accounts.logout")) { app.logout(profile) }
+                                .help(tr("accounts.logoutHelp"))
+                        }
+                        Spacer()
+                    }
+                }
+                Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let error {
+                    Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft)
+                }
+                Text(tr("accounts.isolationNote"))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
+    }
+
+    @ViewBuilder
+    private var keyRow: some View {
+        let stored = profile.kind == .claude ? app.profiles.hasAPIKey(profile) : app.history.profileAccounts[profile.id] != nil
+        HStack(spacing: 8) {
+            if stored && key.isEmpty {
+                Label(tr("accounts.keyStored"), systemImage: "key.fill")
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.mint)
+                Spacer()
+                if profile.kind == .claude {
+                    NookGhostButton(title: tr("accounts.removeKey")) {
+                        app.profiles.setAPIKey("", for: profile)
+                        app.history.refresh(minimumInterval: 0)
+                    }
+                } else {
+                    NookGhostButton(title: tr("accounts.logout")) { app.logout(profile) }
+                }
+            } else {
+                SecureField("", text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.mono(12.5))
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(Capsule().fill(NookTheme.smoke))
+                    .onSubmit(save)
+                if saving {
+                    ProgressView().controlSize(.small)
+                } else {
+                    NookGhostButton(title: tr("accounts.saveKey"), action: save)
+                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let value = key
+        guard !value.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        saving = true
+        error = nil
+        Task {
+            do {
+                try await app.setAPIKey(value, for: profile)
+                key = ""
+            } catch let failure {
+                error = failure.localizedDescription
+            }
+            saving = false
         }
     }
 }

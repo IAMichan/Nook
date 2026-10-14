@@ -75,6 +75,7 @@ targets:
         ENABLE_PREVIEWS: YES
   # Tests van de kern van de chat (bronkeuze, opzoeken en bronverwijzingen, controle en uitvoeren van acties).
   # Die code gebruikt alleen Foundation, dus de bestanden gaan rechtstreeks in de testbundel: geen app nodig om te testen.
+  # Ook de kern van de werkruimte (modellen, stream-parsers, Git, opslag, procesafhandeling).
   NookTests:
     type: bundle.unit-test
     platform: macOS
@@ -83,6 +84,11 @@ targets:
       - path: Brain/SourceScope.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
+      - path: Services/Workspace/WorkspaceModels.swift
+      - path: Services/Workspace/AgentStreamParsers.swift
+      - path: Services/Workspace/GitService.swift
+      - path: Services/Workspace/RunStore.swift
+      - path: Services/Workspace/AgentProcess.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

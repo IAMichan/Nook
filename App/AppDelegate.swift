@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var talkItem: NSMenuItem?
     private var screenItem: NSMenuItem?
     private var weekRecapItem: NSMenuItem?
+    private var workspaceItem: NSMenuItem?
     private var demoScenesItem: NSMenuItem?
     private var demoSubmenu: NSMenu?
     private var hoverItem: NSMenuItem?
@@ -19,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.accessory)
         model.start()
         installStatusItem()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
+        model.workspace.shutdown()
     }
 
     // MARK: Menubalk
@@ -35,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         talkItem = add(to: menu, title: tr("menu.talk"), action: #selector(talk))
         screenItem = add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen))
         weekRecapItem = add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap))
+        workspaceItem = add(to: menu, title: tr("menu.workspace"), action: #selector(openWorkspace), key: "w")
+        workspaceItem?.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
         let demo = NSMenuItem(title: tr("menu.demoScenes"), action: nil, keyEquivalent: "")
@@ -101,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         talkItem?.title = tr("menu.talk")
         screenItem?.title = tr("menu.screen")
         weekRecapItem?.title = tr("menu.weekRecap")
+        workspaceItem?.title = tr("menu.workspace")
         demoScenesItem?.title = tr("menu.demoScenes")
         if let demoSubmenu = demoSubmenu {
             for item in demoSubmenu.items {
@@ -121,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
+    @objc private func openWorkspace() { model.openWorkspace() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func showScene(_ sender: NSMenuItem) {

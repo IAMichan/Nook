@@ -40,3 +40,6 @@ jobs:
       - name: Errors and warnings
         if: always()
         run: grep -E "error:|warning:" build.log | sort -u || true
+      - name: Test failures
+        if: failure()
+        run: grep -E "error:|failed|XCTAssert" test.log | sort -u | head -100 || true

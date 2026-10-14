@@ -1,0 +1,259 @@
+import Foundation
+
+/// Hoe Nook een agent start: programma, argumenten (als lijst, nooit via een shell), omgeving en map.
+struct LaunchSpec: Equatable, Sendable {
+    var executable: String
+    var arguments: [String]
+    /// Alleen wat Nook toevoegt aan je eigen omgeving (PATH, accountmap, NOOK_RUN_ID).
+    var extraEnvironment: [String: String]
+    var workingDirectory: String
+    /// Regels die meteen naar stdin gaan.
+    var initialInput: [String]
+    /// Blijft stdin open (voor goedkeuringen en afbreken)? Anders krijgt de agent /dev/null.
+    var keepsInputOpen: Bool
+
+    /// Voor op het scherm: zonder de omgeving en met lange teksten ingekort, zodat er nooit iets gevoeligs in staat.
+    var displayCommand: String {
+        let program = URL(fileURLWithPath: executable).lastPathComponent
+        let shown = arguments.map { argument -> String in
+            let short = argument.count > 48 ? String(argument.prefix(45)) + "…" : argument
+            return short.contains(" ") ? "\"\(short)\"" : short
+        }
+        return ([program] + shown).joined(separator: " ")
+    }
+}
+
+/// Bouwt het commando per agent. Los te testen: er draait hier niets.
+enum AgentCommand {
+    struct Input: Sendable {
+        var provider: RunProvider
+        var executable: String
+        var prompt: String
+        var model: String
+        var mode: ExecutionMode
+        var permission: PermissionPolicy
+        var instructions: String
+        var workingDirectory: String
+        /// Om verder te gaan in een eerdere sessie van de agent.
+        var resumeSessionID: String?
+        /// CLAUDE_CONFIG_DIR of CODEX_HOME van het gekozen account; leeg voor het eerste account.
+        var accountEnvironment: [String: String]
+        var runID: UUID
+    }
+
+    static func spec(_ input: Input) -> LaunchSpec {
+        var environment = input.accountEnvironment
+        environment["NOOK_RUN_ID"] = input.runID.uuidString
+        switch input.provider {
+        case .claude:
+            var arguments = [
+                "-p",
+                "--input-format", "stream-json",
+                "--output-format", "stream-json",
+                "--verbose",
+                "--include-partial-messages",
+                // Toestemmingsvragen komen als control_request op stdout; Nook antwoordt via stdin.
+                "--permission-prompt-tool", "stdio",
+                "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission)
+            ]
+            if !input.model.isEmpty { arguments += ["--model", input.model] }
+            if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--resume", resume] }
+            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
+            return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                              workingDirectory: input.workingDirectory,
+                              initialInput: [ClaudeStreamParser.userMessage(input.prompt)], keepsInputOpen: true)
+
+        case .codex:
+            var arguments = ["exec", "--json", "--skip-git-repo-check",
+                             "--sandbox", codexSandbox(mode: input.mode, permission: input.permission),
+                             "--cd", input.workingDirectory]
+            if !input.model.isEmpty { arguments += ["--model", input.model] }
+            var prompt = input.prompt
+            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Codex exec kent geen aparte systeemprompt: de instructies gaan voor de eerste opdracht.
+            if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
+            if input.mode == .plan, input.resumeSessionID == nil {
+                prompt = "Maak alleen een plan; pas niets aan.\n\n" + prompt
+            }
+            if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["resume", resume] }
+            // "--" zodat een opdracht die met een streepje begint nooit als optie wordt gelezen.
+            arguments += ["--", prompt]
+            return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                              workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+        }
+    }
+
+    static func claudePermissionMode(mode: ExecutionMode, permission: PermissionPolicy) -> String {
+        if mode == .plan { return "plan" }
+        switch permission {
+        case .ask: return "default"
+        case .acceptEdits: return "acceptEdits"
+        case .bypass: return "bypassPermissions"
+        }
+    }
+
+    static func codexSandbox(mode: ExecutionMode, permission: PermissionPolicy) -> String {
+        if mode == .plan { return "read-only" }
+        switch permission {
+        case .ask: return "read-only"
+        case .acceptEdits: return "workspace-write"
+        case .bypass: return "danger-full-access"
+        }
+    }
+
+    /// PATH met de plekken waar node en de agents meestal staan, ook als Nook vanuit de Finder start.
+    static func environment(base: [String: String], executable: String, extra: [String: String]) -> [String: String] {
+        var env = base
+        let home = env["HOME"] ?? NSHomeDirectory()
+        let paths = [URL(fileURLWithPath: executable).deletingLastPathComponent().path,
+                     "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.bun/bin", "\(home)/.volta/bin"]
+        env["PATH"] = (paths + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
+        // Nooks eigen denkwerk via Claude Code zet dit; een werkruimte-sessie is een echte agent-sessie.
+        env["NOOK_INTERNAL"] = nil
+        for (key, value) in extra { env[key] = value }
+        return env
+    }
+}
+
+/// Eén draaiend agent-proces. Levert regels van stdout één voor één af, op een eigen wachtrij.
+/// Stoppen is altijd veilig: eerst netjes (SIGINT), na een paar seconden hard.
+final class AgentProcess: @unchecked Sendable {
+    let spec: LaunchSpec
+    private let process = Process()
+    private var input: FileHandle?
+    private let queue = DispatchQueue(label: "nook.agent-process")
+    private var buffer = Data()
+    private var stderrTail = Data()
+    private let lock = NSLock()
+    private var finished = false
+
+    /// Elke volledige regel van stdout.
+    var onLine: (@Sendable (String) -> Void)?
+    /// Het proces is klaar: exitcode en de laatste regels van stderr.
+    var onExit: (@Sendable (Int32, String) -> Void)?
+
+    init(spec: LaunchSpec) {
+        self.spec = spec
+    }
+
+    var pid: Int32 { process.processIdentifier }
+    var isRunning: Bool { process.isRunning }
+
+    func start(baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) throws {
+        process.executableURL = URL(fileURLWithPath: spec.executable)
+        process.arguments = spec.arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: spec.workingDirectory, isDirectory: true)
+        process.environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
+
+        let out = Pipe()
+        let err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
+        if spec.keepsInputOpen {
+            let pipe = Pipe()
+            process.standardInput = pipe
+            input = pipe.fileHandleForWriting
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
+
+        out.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard let self else { return }
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                self.queue.async { self.flushRemainder() }
+            } else {
+                self.queue.async { self.consume(data) }
+            }
+        }
+        err.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard let self else { return }
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                self.queue.async {
+                    self.stderrTail.append(data)
+                    if self.stderrTail.count > 8_192 { self.stderrTail = self.stderrTail.suffix(8_192) }
+                }
+            }
+        }
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            // Even wachten zodat de laatste regels van stdout eerst verwerkt zijn.
+            self.queue.asyncAfter(deadline: .now() + 0.3) {
+                self.flushRemainder()
+                let tail = String(decoding: self.stderrTail, as: UTF8.self)
+                self.markFinished()
+                self.onExit?(process.terminationStatus, tail)
+            }
+        }
+        // SIGPIPE zou Nook laten stoppen als de agent wegvalt terwijl we schrijven.
+        signal(SIGPIPE, SIG_IGN)
+        try process.run()
+        for line in spec.initialInput { send(line) }
+    }
+
+    /// Schrijft een regel naar stdin (een bericht, een antwoord op een toestemmingsvraag).
+    func send(_ line: String) {
+        lock.lock()
+        let handle = finished ? nil : input
+        lock.unlock()
+        guard let handle, let data = line.data(using: .utf8) else { return }
+        do {
+            try handle.write(contentsOf: data)
+        } catch {
+            // Het proces is al weg; de afsluiting meldt zich via onExit.
+        }
+    }
+
+    /// Sluit stdin: de agent rondt af en stopt.
+    func closeInput() {
+        lock.lock()
+        let handle = input
+        input = nil
+        lock.unlock()
+        try? handle?.close()
+    }
+
+    /// Netjes stoppen: SIGINT, en na `grace` seconden hard als hij er nog is.
+    func stop(grace: TimeInterval = 4) {
+        guard process.isRunning else { return }
+        process.interrupt()
+        let process = process
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
+            if process.isRunning { process.terminate() }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace + 4) {
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+    }
+
+    private func markFinished() {
+        lock.lock()
+        finished = true
+        let handle = input
+        input = nil
+        lock.unlock()
+        try? handle?.close()
+    }
+
+    private func consume(_ data: Data) {
+        buffer.append(data)
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer[buffer.startIndex..<newline]
+            buffer.removeSubrange(buffer.startIndex...newline)
+            let line = String(decoding: lineData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !line.isEmpty { onLine?(line) }
+        }
+    }
+
+    private func flushRemainder() {
+        guard !buffer.isEmpty else { return }
+        let line = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        buffer.removeAll()
+        if !line.isEmpty { onLine?(line) }
+    }
+}

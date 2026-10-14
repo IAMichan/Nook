@@ -12,6 +12,14 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     var label: String
     /// Nil: de gewone map van de agent. Anders het volledige pad van de eigen map.
     var home: String?
+    /// Hoe dit account inlogt. Nil: via de agent zelf (abonnement/OAuth in de terminal).
+    var auth: AgentAuthMethod? = nil
+
+    /// Inloggen met een API-sleutel in plaats van een abonnement.
+    var usesAPIKey: Bool { auth == .apiKey }
+
+    /// Onder deze naam staat de API-sleutel van dit account in de Keychain (alleen Claude Code; Codex bewaart hem zelf).
+    var keychainAccount: String { "agent.apikey." + id }
 
     var isDefault: Bool { home == nil }
 
@@ -27,8 +35,13 @@ struct AgentProfile: Codable, Identifiable, Hashable {
 
     /// "CLAUDE_CONFIG_DIR=~/.claude-werk " voor voor een commando in de terminal; leeg voor het eerste account.
     var commandPrefix: String {
-        guard let home, let variable = kind.homeVariable else { return "" }
-        return "\(variable)=\(AgentProfile.shellPath(home)) "
+        var prefix = ""
+        if let home, let variable = kind.homeVariable { prefix = "\(variable)=\(AgentProfile.shellPath(home)) " }
+        // De sleutel zelf staat nooit in het commando: de shell haalt hem op het moment zelf uit de Keychain.
+        if kind == .claude, usesAPIKey {
+            prefix = "ANTHROPIC_API_KEY=\"$(security find-generic-password -s \(Keychain.service) -a \(keychainAccount) -w)\" " + prefix
+        }
+        return prefix
     }
 
     /// Het commando waarmee je de agent met dit account start.
@@ -62,6 +75,16 @@ struct AgentProfile: Codable, Identifiable, Hashable {
         let full = normalize(path)
         return full.hasPrefix(home + "/") ? "~" + full.dropFirst(home.count) : full
     }
+}
+
+/// Hoe een account inlogt.
+enum AgentAuthMethod: String, Codable, CaseIterable, Identifiable {
+    /// Via de agent zelf: je abonnement (Claude Pro/Max, ChatGPT) of een login die de CLI bewaart.
+    case cli
+    /// Met een API-sleutel. Claude Code: in de Keychain van Nook; Codex: bewaard door `codex login --with-api-key`.
+    case apiKey
+
+    var id: String { rawValue }
 }
 
 extension AgentKind {
@@ -185,8 +208,36 @@ final class AgentProfileStore: ObservableObject {
     func remove(_ id: String) {
         guard let profile = profile(id: id), !profile.isDefault else { return }
         all.removeAll { $0.id == id }
+        Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
         save()
+    }
+
+    func setAuth(_ id: String, _ method: AgentAuthMethod) {
+        guard let index = all.firstIndex(where: { $0.id == id }) else { return }
+        all[index].auth = method == .cli ? nil : method
+        save()
+    }
+
+    /// Bewaart (of wist, bij een lege tekst) de API-sleutel van een Claude-account in de Keychain.
+    func setAPIKey(_ key: String, for profile: AgentProfile) {
+        Keychain.write(key.trimmingCharacters(in: .whitespacesAndNewlines), account: profile.keychainAccount)
+        objectWillChange.send()
+    }
+
+    func hasAPIKey(_ profile: AgentProfile) -> Bool {
+        guard profile.kind == .claude else { return false }
+        return !(Keychain.read(profile.keychainAccount) ?? "").isEmpty
+    }
+
+    /// Voor een sessie die Nook zelf start: de omgeving van dit account, met de sleutel als het met een sleutel inlogt.
+    /// Gaat rechtstreeks naar het proces; komt nooit op het scherm of in een bestand.
+    func launchEnvironment(_ profile: AgentProfile) -> [String: String] {
+        var env = profile.environment
+        if profile.kind == .claude, profile.usesAPIKey, let key = Keychain.read(profile.keychainAccount), !key.isEmpty {
+            env["ANTHROPIC_API_KEY"] = key
+        }
+        return env
     }
 
     func setPreferred(_ profile: AgentProfile) {

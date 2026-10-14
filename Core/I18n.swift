@@ -57,14 +57,11 @@ public final class I18n: ObservableObject, @unchecked Sendable {
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        if let val = translations[lang]?[key] {
+        if let val = translations[lang]?[key] ?? workspaceTranslations[lang]?[key] {
             return val
         }
-        if lang != .nl, let val = translations[.nl]?[key] {
-            return val
-        }
-        if lang != .en, let val = translations[.en]?[key] {
-            return val
+        for fallback in [AppLanguage.nl, .en] where fallback != lang {
+            if let val = translations[fallback]?[key] ?? workspaceTranslations[fallback]?[key] { return val }
         }
         return key
     }
@@ -674,7 +671,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook gebruikt je eigen login. Ben je nog niet ingelogd, typ dan eenmalig `claude` in de terminal. Antwoorden duren een paar tellen langer dan met een API-sleutel.",
         "settings.brain.claudeNotFound": "Claude Code staat niet op deze Mac",
         "settings.brain.claudeInstallHint": "Installeer het met `curl -fsSL https://claude.ai/install.sh | bash` in de terminal, log in met `claude` en klik dan op Zoek opnieuw.",
-        "button.searchAgain": "Zoek opnieuw",
         "settings.brain.moreAboutClaudeCode": "Meer over Claude Code",
         "settings.brain.noModelsFound": "Geen modellen gevonden.",
         "settings.brain.modelsFound": "%lld modellen gevonden. Kies er een via Kies.",
@@ -689,6 +685,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Agents: sessies en accounts
         "agents.mode.sessions": "Sessies",
+        "agents.untrackedHeader": "Draait zonder koppeling",
         "agents.mode.accounts": "Accounts",
         "agents.switcher.defaultFor": "Standaardaccount voor %@",
         "agents.switcher.add": "Account toevoegen…",
@@ -696,7 +693,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.switcher.help": "Wissel van %@-account. Nieuwe sessies vanuit Nook gebruiken het standaardaccount.",
         "agents.noneWorkingNow": "Er werkt nu geen agent",
         "agents.recent": "Recent",
-        "agents.nothingRunningDetail": "Start Claude Code, Codex of Gemini CLI in je terminal; hij staat hier binnen tien seconden. Gekoppelde agents laten hier live zien wat ze doen, en je keurt hun vragen goed vanuit de notch.",
+        "agents.nothingRunningDetail": "Start een agent in je terminal; hij verschijnt hier vanzelf. Onderaan zie je altijd het gebruik van je accounts.",
         "agents.viewAccount": "Bekijk dit account: gebruik, limieten en eerdere sessies",
         "agents.untracked.startedBefore": "Gestart vóór de koppeling",
         "agents.untracked.notLinked": "%@ is nog niet gekoppeld",
@@ -742,6 +739,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.noLimitsClaudeAccount": "Ze verschijnen zodra je dit account weer gebruikt (alleen bij Pro en Max).",
         "agents.pastedText": "Geplakte tekst",
         "agents.live.waiting": "Wacht op jou",
+        "agents.waitingInTerminal": "Er staat een vraag klaar in de terminal",
+        "agents.waitingInTerminalDetail": "Nook kan deze niet zelf goedkeuren. Open de terminal om te antwoorden.",
         "agents.live.running": "Bezig",
         "agents.live.failed": "Fout",
         "agents.live.done": "Klaar",
@@ -1405,7 +1404,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook uses your existing login. If not logged in yet, run `claude` once in terminal. Responses take slightly longer than with an API key.",
         "settings.brain.claudeNotFound": "Claude Code is not installed on this Mac",
         "settings.brain.claudeInstallHint": "Install it with `curl -fsSL https://claude.ai/install.sh | bash` in terminal, log in with `claude`, then click Search again.",
-        "button.searchAgain": "Search again",
         "settings.brain.moreAboutClaudeCode": "More about Claude Code",
         "settings.brain.noModelsFound": "No models found.",
         "settings.brain.modelsFound": "%lld models found. Select one via Choose.",
@@ -1420,6 +1418,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Agents: sessies en accounts
         "agents.mode.sessions": "Sessions",
+        "agents.untrackedHeader": "Running without link",
         "agents.mode.accounts": "Accounts",
         "agents.switcher.defaultFor": "Default account for %@",
         "agents.switcher.add": "Add account…",
@@ -1427,7 +1426,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.switcher.help": "Switch %@ account. New sessions started from Nook use the default account.",
         "agents.noneWorkingNow": "No agent is working right now",
         "agents.recent": "Recent",
-        "agents.nothingRunningDetail": "Start Claude Code, Codex or Gemini CLI in your terminal; it shows up here within ten seconds. Linked agents show live what they are doing, and you approve their requests from the notch.",
+        "agents.nothingRunningDetail": "Start an agent in your terminal; it shows up here by itself. Below you always see your accounts' usage.",
         "agents.viewAccount": "View this account: usage, limits and past sessions",
         "agents.untracked.startedBefore": "Started before linking",
         "agents.untracked.notLinked": "%@ is not linked yet",
@@ -1473,6 +1472,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.noLimitsClaudeAccount": "They appear once you use this account again (Pro and Max only).",
         "agents.pastedText": "Pasted text",
         "agents.live.waiting": "Waiting for you",
+        "agents.waitingInTerminal": "A question is waiting in the terminal",
+        "agents.waitingInTerminalDetail": "Nook can't approve this one itself. Open the terminal to answer.",
         "agents.live.running": "Working",
         "agents.live.failed": "Error",
         "agents.live.done": "Done",
@@ -2136,7 +2137,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.claudeLoginHint": "Nook nutzt deinen eigenen Login. Wenn du noch nicht eingeloggt bist, gib einmalig `claude` im Terminal ein. Antworten dauern etwas länger als mit einem API-Schlüssel.",
         "settings.brain.claudeNotFound": "Claude Code ist auf diesem Mac nicht installiert",
         "settings.brain.claudeInstallHint": "Installiere es mit `curl -fsSL https://claude.ai/install.sh | bash` im Terminal, logge dich mit `claude` ein und klicke auf Erneut suchen.",
-        "button.searchAgain": "Erneut suchen",
         "settings.brain.moreAboutClaudeCode": "Mehr über Claude Code",
         "settings.brain.noModelsFound": "Keine Modelle gefunden.",
         "settings.brain.modelsFound": "%lld Modelle gefunden. Wähle eines über Auswählen.",
@@ -2151,6 +2151,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Agents: sessies en accounts
         "agents.mode.sessions": "Sitzungen",
+        "agents.untrackedHeader": "Läuft ohne Verbindung",
         "agents.mode.accounts": "Konten",
         "agents.switcher.defaultFor": "Standardkonto für %@",
         "agents.switcher.add": "Konto hinzufügen…",
@@ -2204,6 +2205,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.noLimitsClaudeAccount": "Sie erscheinen, sobald du dieses Konto wieder nutzt (nur Pro und Max).",
         "agents.pastedText": "Eingefügter Text",
         "agents.live.waiting": "Wartet auf dich",
+        "agents.waitingInTerminal": "Im Terminal wartet eine Frage",
+        "agents.waitingInTerminalDetail": "Nook kann das nicht selbst bestätigen. Öffne das Terminal, um zu antworten.",
         "agents.live.running": "Arbeitet",
         "agents.live.failed": "Fehler",
         "agents.live.done": "Fertig",

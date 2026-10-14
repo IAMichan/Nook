@@ -256,7 +256,10 @@ final class AgentHistory: ObservableObject {
         lastRefresh = Date()
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
-        let homes = profiles.map { ProfileHome(id: $0.id, kind: $0.kind, url: $0.homeURL, isDefault: $0.isDefault) }
+        let homes = profiles.map { profile in
+            ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
+                        apiKey: profile.kind == .claude && profile.usesAPIKey && !(Keychain.read(profile.keychainAccount) ?? "").isEmpty)
+        }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let result = scanner.scan(homes, excludingFolder: ownFolder)
             Task { @MainActor in
@@ -286,6 +289,8 @@ struct ProfileHome: Sendable {
     var kind: AgentKind
     var url: URL
     var isDefault: Bool
+    /// Dit account logt in met een API-sleutel uit Nooks Keychain (Claude Code).
+    var apiKey = false
 }
 
 // MARK: Lezen
@@ -382,7 +387,12 @@ private final class HistoryScanner: @unchecked Sendable {
             switch home.kind {
             case .claude:
                 usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
-                if let account = claudeAccount(home.url, isDefault: home.isDefault) { accounts[home.id] = account }
+                if home.apiKey {
+                    // Met een sleutel telt die, ook als er in de map nog een oude login staat.
+                    accounts[home.id] = AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "API")
+                } else if let account = claudeAccount(home.url, isDefault: home.isDefault) {
+                    accounts[home.id] = account
+                }
             case .codex:
                 usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
                 if let account = codexAccount(home.url) { accounts[home.id] = account }
