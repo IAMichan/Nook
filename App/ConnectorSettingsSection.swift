@@ -1,5 +1,6 @@
 import SwiftUI
 import Security
+import AppKit
 
 /// Rijen voor de online koppelingen (GitHub, Stripe…) in de instellingen. Zet hem in een `Section("Diensten")` binnen een Form.
 struct CloudConnectorSettings: View {
@@ -35,10 +36,17 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     /// Welke geheime velden al een waarde in de Keychain hebben.
     @State private var stored: Set<String> = []
     @State private var note = ""
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
+                if connector.id == "github" && GitHubSignIn.isAvailable {
+                    gitHubSignInButton
+                    Text("Of plak zelf een token:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(connector.configFields, id: \.account) { field in
                     fieldRow(field)
                 }
@@ -91,6 +99,42 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             }
         }
         .onAppear { load() }
+        .onChange(of: gitHubSignIn.phase) { _, phase in
+            guard connector.id == "github", phase == .done else { return }
+            load()
+            refreshNow()
+        }
+    }
+
+    // MARK: GitHub in één klik
+
+    @ViewBuilder
+    private var gitHubSignInButton: some View {
+        switch gitHubSignIn.phase {
+        case .waiting(let code, let uri):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Plak deze code op GitHub. Hij staat al op je klembord.")
+                    .font(.callout)
+                Text(code)
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Open GitHub opnieuw") { NSWorkspace.shared.open(uri) }
+                    Spacer()
+                    Button("Annuleer") { gitHubSignIn.cancel() }
+                }
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Button("Probeer opnieuw") { gitHubSignIn.start() }
+            }
+        case .idle, .done:
+            Button(configured ? "Koppel GitHub opnieuw" : "Koppel met GitHub") { gitHubSignIn.start() }
+                .buttonStyle(.borderedProminent)
+        }
     }
 
     // MARK: Velden
