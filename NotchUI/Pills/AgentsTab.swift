@@ -784,10 +784,6 @@ struct AgentsTab: View {
                     connectBar(profile)
                 }
 
-                if !gap.program && !gap.login {
-                    accountActions(profile)
-                }
-
                 if !gap.program {
                     Button { app.openSettings(section: .agents) } label: {
                         Label(tr("accounts.manageInSettings"), systemImage: "gearshape")
@@ -880,44 +876,6 @@ struct AgentsTab: View {
         if !account.organization.isEmpty { parts.append(account.organization) }
         if !profile.isDefault { parts.append(profile.displayHome) }
         return parts.joined(separator: " · ")
-    }
-
-    /// Account actions: start a session, or copy the command for your own terminal.
-    /// Choosing the default account lives in Settings, not here.
-    private func accountActions(_ profile: AgentProfile) -> some View {
-        let several = app.profiles.profiles(for: profile.kind).count > 1
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                startMenu(profile, primary: true)
-                Spacer()
-            }
-            if profile.kind.supportsProfiles && (several || !profile.isDefault) {
-                HStack(spacing: 8) {
-                    Text(tr("agents.inYourTerminal"))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Text(profile.launchCommand)
-                        .font(NookTheme.mono(11.5, .medium))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                    Button {
-                        app.copyLaunchCommand(profile)
-                        copiedID = "cmd:" + profile.id
-                    } label: {
-                        Image(systemName: copiedID == "cmd:" + profile.id ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(tr("button.copyCommand"))
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 9).fill(NookTheme.field))
-            }
-        }
     }
 
     /// "Start session": in a recent working directory, or choose another.
