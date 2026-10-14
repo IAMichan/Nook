@@ -22,7 +22,7 @@ final class ConnectorHub: ObservableObject {
         sources.first { $0.id == id }
     }
 
-    var active: [ContextSource] { sources.filter(\.isActive) }
+    var active: [ContextSource] { sources.filter { $0.isActive } }
 
     /// Koppelingen waar iets op jou wacht (falende CI, herinnering te laat…).
     var needingAttention: [ContextSource] { active.filter { $0.status.needsAttention } }
@@ -75,8 +75,8 @@ final class ConnectorHub: ObservableObject {
 
     /// Welke bronnen er nu iets aan de context bijdragen, voor het "Ik keek in…"-regeltje boven een antwoord.
     var contributingTitles: [String] {
-        active.filter { !$0.contextLines().isEmpty }.map(\.title)
+        active.filter { !$0.contextLines().isEmpty }.map { $0.title }
     }
 
-    var tools: [ToolSpec] { active.flatMap(\.tools) }
+    var tools: [ToolSpec] { active.flatMap { $0.tools } }
 }

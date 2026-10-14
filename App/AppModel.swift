@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     /// Agenda, mail, browser, GitHub, Stripe…: alles waar Nook context uit haalt.
     let connectors = ConnectorHub()
     let codex = CodexUsage()
+    /// Zoeken op het web en webpagina's lezen, voor elk brein.
+    let web = WebTools()
     let portfolio = PortfolioConnector()
     /// Welk onderdeel van Instellingen open staat.
     @Published var settingsSection: SettingsSection = .general
@@ -42,7 +44,12 @@ final class AppModel: ObservableObject {
     }()
 
     /// Nooks eigen tools plus de lees-tools van alle koppelingen die aan staan.
-    var allTools: [ToolSpec] { tools.specs + connectors.tools }
+    var allTools: [ToolSpec] {
+        // Claude via de API zoekt met Anthropic's eigen zoektool; de rest (ook lokaal) met Nooks zoektool.
+        let ownSearch = settings.useLocal || settings.provider != .claude
+        let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
+        return tools.specs + connectors.tools + webSpecs
+    }
     private(set) lazy var brain = BrainService(settings: settings)
 
     /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
@@ -384,6 +391,10 @@ final class AppModel: ObservableObject {
         if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
         lastSources = sources
+        // Adressen die de gebruiker ziet of noemt, mag het brein openen (en alleen die, plus zoekresultaten).
+        web.note(userText)
+        if let snapshot { web.note(snapshot.text) }
+        web.note(connectors.contextLines().joined(separator: "\n"))
         do {
             let plan = try await brain.run(
                 userText: userText,

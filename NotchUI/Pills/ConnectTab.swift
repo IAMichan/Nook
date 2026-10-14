@@ -20,9 +20,9 @@ struct ConnectTab: View {
                 screenTile
                 ScrollView(showsIndicators: false) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
-                        ForEach(sources, id: \.id) { source in
-                            ConnectorTile(source: source, selected: source.id == selected?.id) {
-                                selectedID = source.id
+                        ForEach(sources.indices, id: \.self) { index in
+                            ConnectorTile(source: sources[index], selected: sources[index].id == selected?.id) {
+                                selectedID = sources[index].id
                             }
                         }
                         addTile

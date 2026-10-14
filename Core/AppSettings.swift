@@ -130,6 +130,7 @@ final class AppSettings: ObservableObject {
         if useLocal { return !localModel.isEmpty }
         switch provider {
         case .claude: return hasAPIKey
+        case .claudeCode: return ClaudeCodeBrain.executable != nil
         case .ollama, .lmstudio: return !activeProviderModel.isEmpty || provider == .lmstudio
         default: return hasProviderKey && !activeProviderModel.isEmpty
         }

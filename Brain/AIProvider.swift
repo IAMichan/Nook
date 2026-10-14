@@ -3,13 +3,14 @@ import Foundation
 /// Met wie Nook denkt. Claude is de standaard; de andere aanbieders praten allemaal het OpenAI-protocol
 /// (chat/completions met function calling), dus één client dekt ze allemaal. Ollama en LM Studio draaien op je eigen Mac.
 enum AIProvider: String, CaseIterable, Identifiable {
-    case claude, openai, gemini, deepseek, qwen, moonshot, ollama, lmstudio
+    case claude, claudeCode, openai, gemini, deepseek, qwen, moonshot, ollama, lmstudio
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .claude: return "Claude"
+        case .claudeCode: return "Claude Code (je abonnement)"
         case .openai: return "OpenAI"
         case .gemini: return "Gemini"
         case .deepseek: return "DeepSeek"
@@ -22,7 +23,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     /// Draait op je eigen Mac; geen sleutel nodig.
     var isLocalServer: Bool { self == .ollama || self == .lmstudio }
-    var needsKey: Bool { !isLocalServer }
+    var needsKey: Bool { !isLocalServer && self != .claudeCode }
 
     var keyAccount: String { self == .claude ? "anthropic-api-key" : "\(rawValue)-api-key" }
 
@@ -34,13 +35,14 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .deepseek: return "DeepSeek API-sleutel"
         case .qwen: return "DashScope API-sleutel"
         case .moonshot: return "Moonshot API-sleutel"
-        case .ollama, .lmstudio: return ""
+        case .ollama, .lmstudio, .claudeCode: return ""
         }
     }
 
     var keyURL: URL? {
         switch self {
         case .claude: return URL(string: "https://console.anthropic.com/settings/keys")
+        case .claudeCode: return URL(string: "https://claude.com/product/claude-code")
         case .openai: return URL(string: "https://platform.openai.com/api-keys")
         case .gemini: return URL(string: "https://aistudio.google.com/apikey")
         case .deepseek: return URL(string: "https://platform.deepseek.com/api_keys")
@@ -54,7 +56,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     /// Basisadres van de OpenAI-compatibele API (niet voor Claude).
     var baseURL: String {
         switch self {
-        case .claude: return "https://api.anthropic.com/v1"
+        case .claude, .claudeCode: return "https://api.anthropic.com/v1"
         case .openai: return "https://api.openai.com/v1"
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta/openai"
         case .deepseek: return "https://api.deepseek.com/v1"
@@ -69,6 +71,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .claude: return "claude-haiku-5-5"
+        case .claudeCode: return "haiku"
         case .openai: return "gpt-4.1-mini"
         case .gemini: return "gemini-2.5-flash"
         case .deepseek: return "deepseek-chat"
@@ -83,6 +86,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var suggestedModels: [String] {
         switch self {
         case .claude: return ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+        case .claudeCode: return ["haiku", "sonnet", "opus"]
         case .openai: return ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"]
         case .gemini: return ["gemini-2.5-flash", "gemini-2.5-pro"]
         case .deepseek: return ["deepseek-chat", "deepseek-reasoner"]
@@ -94,6 +98,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     /// Haalt de modellen op die deze aanbieder voor jouw sleutel heeft.
     func listModels(key: String?) async throws -> [String] {
+        if self == .claudeCode { return suggestedModels }
         guard let url = URL(string: baseURL + "/models" + (self == .claude ? "?limit=100" : "")) else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 8

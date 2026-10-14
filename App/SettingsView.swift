@@ -257,16 +257,18 @@ struct SettingsView: View {
 
     private var brainKind: Binding<BrainKind> {
         Binding(
-            get: { settings.useLocal ? .local : (settings.provider == .claude ? .claude : .other) },
+            get: { settings.useLocal ? .local : ([.claude, .claudeCode].contains(settings.provider) ? .claude : .other) },
             set: { kind in
                 testResult = nil
                 fetchedModels = []
                 switch kind {
                 case .local: settings.useLocal = true
-                case .claude: settings.useLocal = false; settings.provider = .claude
+                case .claude:
+                    settings.useLocal = false
+                    if settings.provider != .claudeCode { settings.provider = .claude }
                 case .other:
                     settings.useLocal = false
-                    if settings.provider == .claude { settings.provider = .openai }
+                    if [.claude, .claudeCode].contains(settings.provider) { settings.provider = .openai }
                 }
             }
         )
@@ -287,7 +289,7 @@ struct SettingsView: View {
             if settings.useLocal {
                 Section("Ingebouwd model") { localFields }
             } else {
-                Section(settings.provider == .claude ? "Claude" : "Aanbieder") { providerFields }
+                Section([.claude, .claudeCode].contains(settings.provider) ? "Claude" : "Aanbieder") { providerFields }
             }
 
             Section {
@@ -312,15 +314,24 @@ struct SettingsView: View {
 
     private var brainExplanation: String {
         if settings.useLocal { return "Draait helemaal op je Mac, zonder internet en zonder sleutel. Minder slim dan Claude." }
-        if settings.provider == .claude { return "Aanbevolen: het snelst en het slimst met tools, en Nook kan dan ook op het web zoeken." }
-        return "OpenAI, Gemini, DeepSeek, Qwen, Moonshot, of Ollama en LM Studio op je eigen Mac."
+        if [.claude, .claudeCode].contains(settings.provider) {
+            return "Aanbevolen. Met een API-sleutel is Nook het snelst; met je Claude-abonnement (Pro of Max) werkt het via Claude Code op je Mac, zonder sleutel."
+        }
+        return "OpenAI, Gemini, DeepSeek, Qwen, Moonshot, of Ollama en LM Studio op je eigen Mac. Zoeken op het web werkt met elk brein."
     }
 
     private var providerFields: some View {
         Group {
-            if settings.provider != .claude {
+            if [.claude, .claudeCode].contains(settings.provider) {
+                Picker("Verbinden via", selection: $settings.provider) {
+                    Text("API-sleutel").tag(AIProvider.claude)
+                    Text("Mijn abonnement (Claude Code)").tag(AIProvider.claudeCode)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: settings.provider) { _, _ in testResult = nil }
+            } else {
                 Picker("Aanbieder", selection: $settings.provider) {
-                    ForEach(AIProvider.allCases.filter { $0 != .claude }) { Text($0.title).tag($0) }
+                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode }) { Text($0.title).tag($0) }
                 }
                 .onChange(of: settings.provider) { _, _ in
                     fetchedModels = []
@@ -328,7 +339,9 @@ struct SettingsView: View {
                 }
             }
 
-            if settings.provider.needsKey {
+            if settings.provider == .claudeCode {
+                claudeCodeStatus
+            } else if settings.provider.needsKey {
                 HStack {
                     SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
                         .onSubmit(saveKey)
@@ -376,6 +389,30 @@ struct SettingsView: View {
                 Text("Haiku is het snelst en ruim slim genoeg voor de meeste vragen. Een Claude-abonnement (claude.ai) werkt hier niet: je hebt een API-sleutel met tegoed nodig.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Claude Code gevonden? Dan is er niets meer te doen dan testen.
+    private var claudeCodeStatus: some View {
+        let _ = refreshTick
+        let path = ClaudeCodeBrain.executable
+        return VStack(alignment: .leading, spacing: 6) {
+            if let path {
+                Label("Claude Code gevonden: \(path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Nook gebruikt je eigen login. Ben je nog niet ingelogd, typ dan eenmalig `claude` in de terminal. Antwoorden duren een paar tellen langer dan met een API-sleutel.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Label("Claude Code staat niet op deze Mac", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Installeer het met `curl -fsSL https://claude.ai/install.sh | bash` in de terminal, log in met `claude` en klik dan op Zoek opnieuw.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Zoek opnieuw") { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
+                    if let url = settings.provider.keyURL { Link("Meer over Claude Code", destination: url) }
+                }
             }
         }
     }
@@ -510,11 +547,10 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.webSearch) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Zoek op het web als dat nodig is")
-                        Text("Voor nieuws, weer, uitslagen en prijzen. Alleen met Claude.")
+                        Text("Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .disabled(settings.useLocal || settings.provider != .claude)
                 Toggle(isOn: $settings.autoWatch) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Stel zelf iets voor als ik een afspraak of taak zie")
@@ -532,8 +568,9 @@ struct SettingsView: View {
     private var connectionsSection: some View {
         Group {
             Section("Op je Mac") {
-                ForEach(localSources, id: \.id) { source in
-                    localRow(source)
+                let sources = localSources
+                ForEach(sources.indices, id: \.self) { index in
+                    localRow(sources[index])
                 }
                 Text("Mail en je browser lees ik alleen als die apps open zijn. macOS vraagt de eerste keer om toestemming.")
                     .font(.caption).foregroundStyle(.secondary)

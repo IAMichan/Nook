@@ -57,7 +57,7 @@ struct TodayTab: View {
     /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
     private var suggestions: some View {
         var questions = ["Wat staat er op mijn schermen?", "Vat mijn dag samen"]
-        let ids = Set(app.connectors.active.map(\.id))
+        let ids = Set(app.connectors.active.map { $0.id })
         if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
         if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
         if !ids.contains("mail") && !ids.contains("github") { questions.append("Wanneer ben ik vrij deze week?") }
