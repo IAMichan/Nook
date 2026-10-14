@@ -45,10 +45,10 @@ enum NookTheme {
     }
 
     // Beweging. Openen veert een heel klein beetje door; sluiten is rustig en zonder stuiter.
-    static let open = Animation.spring(duration: 0.52, bounce: 0.2)
-    static let close = Animation.spring(duration: 0.4, bounce: 0)
+    static let open = Animation.spring(duration: 0.42, bounce: 0.25)
+    static let close = Animation.spring(duration: 0.3, bounce: 0)
     /// Wisselen binnen hetzelfde paneel (tabs): kleiner, strakker.
-    static let swap = Animation.spring(duration: 0.38, bounce: 0.08)
+    static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
     static let spring = open
 }
 
