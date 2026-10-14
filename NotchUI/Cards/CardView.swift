@@ -104,6 +104,7 @@ struct CardView: View {
             StepsDetail(steps: steps)
         case .choices(let set):
             ChoicesDetail(set: set) { labels in onChoose(set.id, labels) }
+                .id(set.id)   // nieuwe vraag, nieuwe keuzes
         case .diff(let title, let lines, let note):
             DiffDetail(title: title, lines: lines, note: note)
         case .facts(let facts):
