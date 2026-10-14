@@ -1,6 +1,6 @@
 import Foundation
 
-/// Draait een programma met een lijst argumenten (nooit via een shell) en geeft uitvoer en foutuitvoer terug.
+/// Runs an executable with argument list (never via shell) and returns stdout and stderr.
 enum ProcessRunner {
     struct Output: Sendable {
         var status: Int32
@@ -22,7 +22,7 @@ enum ProcessRunner {
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
 
-        // Beide pijpen tegelijk leegmaken, anders loopt een proces met veel uitvoer vast.
+        // Drain both pipes concurrently, otherwise a process with heavy output deadlocks.
         let outData = DataBox()
         let errData = DataBox()
         let group = DispatchGroup()
@@ -50,7 +50,7 @@ enum ProcessRunner {
                       timedOut: timedOut)
     }
 
-    /// Uitvoer die een achtergrondtaak vult; gelezen pas na `DispatchGroup.wait`.
+    /// Output populated by background task; read only after `DispatchGroup.wait`.
     private final class DataBox: @unchecked Sendable {
         var data = Data()
     }
@@ -62,7 +62,7 @@ struct GitError: LocalizedError, Equatable {
     var errorDescription: String? { message }
 }
 
-/// Soort wijziging van een bestand, zoals Git hem meldt.
+/// Kind of file change as reported by Git.
 enum GitChangeKind: String, Codable, Sendable {
     case added, modified, deleted, renamed, copied, untracked, conflicted, typeChanged
 
@@ -113,12 +113,12 @@ struct GitWorktree: Equatable, Identifiable, Sendable {
     var id: String { path }
 }
 
-/// Alles wat Nook met Git doet. Elke functie is synchroon: roep hem aan buiten de hoofdthread.
-/// Argumenten gaan als lijst naar Git, dus een branchnaam of pad kan nooit als shell-commando worden uitgevoerd.
+/// All Git operations used by Nook. Every function is synchronous: call from off the main thread.
+/// Arguments pass as a list to Git, so branch names or paths can never execute as shell commands.
 struct GitService: Sendable {
     let executable: String
 
-    /// Zoekt Git. Nil als het er niet is (op macOS: zonder Command Line Tools werkt /usr/bin/git niet).
+    /// Locates Git. Nil if unavailable (on macOS: without Command Line Tools, /usr/bin/git does not work).
     static func locate(fileManager: FileManager = .default) -> GitService? {
         for path in ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"] where fileManager.isExecutableFile(atPath: path) {
             let service = GitService(executable: path)
@@ -132,7 +132,7 @@ struct GitService: Sendable {
 
     private var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
-        // Nooit blijven hangen op een wachtwoordvraag; je eigen credential helper (Keychain) werkt gewoon.
+        // Never block on password prompt; credential helper (Keychain) continues to work.
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         env["LC_ALL"] = "C"
@@ -143,28 +143,28 @@ struct GitService: Sendable {
         try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
     }
 
-    /// Draait git en gooit een fout met Gits eigen melding als het niet lukt.
+    /// Runs git and throws an error with Git's error output on failure.
     @discardableResult
     func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 60, okStatuses: Set<Int32> = [0]) throws -> String {
         let output = try raw(["-C", directory] + arguments, in: directory, timeout: timeout)
-        if output.timedOut { throw GitError("git \(arguments.first ?? "") duurde te lang en is gestopt.") }
+        if output.timedOut { throw GitError("git \(arguments.first ?? "") timed out and was stopped.") }
         guard okStatuses.contains(output.status) else {
             let message = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw GitError(message.isEmpty ? "git \(arguments.first ?? "") mislukte (\(output.status))." : message)
+            throw GitError(message.isEmpty ? "git \(arguments.first ?? "") failed (\(output.status))." : message)
         }
         return output.stdout
     }
 
     // MARK: Repository
 
-    /// De root van de repository waar `path` in ligt, of nil als het geen repository is.
+    /// Root of repository containing `path`, or nil if not a repository.
     func repositoryRoot(for path: String) -> String? {
         guard let text = try? run(["rev-parse", "--show-toplevel"], in: path) else { return nil }
         let root = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return root.isEmpty ? nil : root
     }
 
-    /// De gedeelde .git-map: dezelfde voor de hoofdmap en al zijn worktrees.
+    /// Shared .git directory: identical across root workspace and all its worktrees.
     func commonDirectory(for path: String) -> String? {
         guard let text = try? run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: path) else { return nil }
         let dir = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -181,7 +181,7 @@ struct GitService: Sendable {
         return name.isEmpty ? nil : name
     }
 
-    /// Lokale branches, en branches van remotes (zonder origin/HEAD).
+    /// Local branches and remote branches (excluding origin/HEAD).
     func branches(_ repo: String) throws -> (local: [String], remote: [String]) {
         let text = try run(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], in: repo)
         var local: [String] = []
@@ -196,7 +196,7 @@ struct GitService: Sendable {
         return (local, remote)
     }
 
-    /// De standaard-branch van de remote (origin/main), anders de huidige branch.
+    /// Default remote base branch (origin/main), otherwise current branch.
     func defaultBaseBranch(_ repo: String) -> String? {
         if let text = try? run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], in: repo) {
             let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -217,7 +217,7 @@ struct GitService: Sendable {
         (try? run(["show-ref", "--verify", "--quiet", "refs/heads/" + name], in: repo)) != nil
     }
 
-    /// Vraagt Git zelf of dit een geldige branchnaam is.
+    /// Asks Git whether this is a valid branch name.
     func isValidBranchName(_ name: String, in repo: String) -> Bool {
         guard WorktreeNaming.isPlausibleBranchName(name) else { return false }
         return (try? run(["check-ref-format", "--branch", name], in: repo)) != nil
@@ -232,12 +232,12 @@ struct GitService: Sendable {
         return (text?.isEmpty ?? true) ? nil : text
     }
 
-    // MARK: Status en wijzigingen
+    // MARK: Status and changes
 
     func status(_ directory: String) throws -> GitStatus {
         let text = try run(["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"], in: directory)
         var status = Self.parseStatus(text)
-        // Regels erbij: voor wat Git volgt uit de diff, voor nieuwe bestanden uit het bestand zelf.
+        // Lines added/removed: from diff for tracked files, from the file itself for untracked.
         if let numstat = try? run(["diff", "--numstat", "-z", "HEAD"], in: directory) {
             let counts = Self.parseNumstat(numstat)
             for index in status.files.indices {
@@ -253,7 +253,7 @@ struct GitService: Sendable {
         return status
     }
 
-    /// Hoeveel commits deze branch voor (en achter) loopt op `base`.
+    /// Number of commits this branch is ahead of (and behind) `base`.
     func divergence(_ directory: String, base: String) -> (ahead: Int, behind: Int)? {
         guard let text = try? run(["rev-list", "--left-right", "--count", base + "...HEAD"], in: directory) else { return nil }
         let parts = text.split(whereSeparator: { $0 == "\t" || $0 == " " || $0 == "\n" }).compactMap { Int($0) }
@@ -261,10 +261,10 @@ struct GitService: Sendable {
         return (ahead: parts[1], behind: parts[0])
     }
 
-    /// De diff van één bestand ten opzichte van HEAD (of de lege boom als er nog geen commits zijn).
+    /// Diff of a single file relative to HEAD (or empty tree if no commits exist yet).
     func diff(_ directory: String, file: GitFileChange) throws -> String {
         if file.kind == .untracked {
-            // Exitcode 1 betekent hier "er zijn verschillen", geen fout.
+            // Exit code 1 means "differences exist" here, not an error.
             return try run(["diff", "--no-color", "--no-index", "--", "/dev/null", file.path], in: directory, okStatuses: [0, 1])
         }
         let base = hasCommits(directory) ? "HEAD" : Self.emptyTree
@@ -282,50 +282,50 @@ struct GitService: Sendable {
         Self.parseWorktrees(try run(["worktree", "list", "--porcelain"], in: repo))
     }
 
-    /// Maakt een nieuwe worktree met een nieuwe branch vanaf `base`. Je huidige map en branch blijven zoals ze zijn.
+    /// Creates a new worktree with a new branch from `base`. Current directory and branch remain unchanged.
     func addWorktree(repo: String, path: String, branch: String, base: String) throws {
-        guard hasCommits(repo) else { throw GitError("Deze repository heeft nog geen commits; een worktree kan pas na de eerste commit.") }
-        guard refExists(base, in: repo) else { throw GitError("De basis-branch '\(base)' bestaat niet.") }
-        guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is geen geldige branchnaam.") }
-        guard !localBranchExists(branch, in: repo) else { throw GitError("De branch '\(branch)' bestaat al. Kies een andere naam.") }
-        guard !FileManager.default.fileExists(atPath: path) else { throw GitError("De map \(path) bestaat al.") }
+        guard hasCommits(repo) else { throw GitError("This repository has no commits yet; a worktree requires an initial commit.") }
+        guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
+        guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is not a valid branch name.") }
+        guard !localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' already exists. Choose a different name.") }
+        guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
         try run(["worktree", "add", "-b", branch, path, base], in: repo, timeout: 180)
     }
 
-    /// Haalt een worktree weg. Alleen een worktree die Git voor deze repository kent, en nooit de hoofdmap.
-    /// Zonder `force` weigert Git als er nog niet-gecommitte wijzigingen zijn.
+    /// Removes a worktree. Only worktrees registered by Git for this repository, and never the main root.
+    /// Without `force`, Git rejects removal if uncommitted changes exist.
     func removeWorktree(repo: String, path: String, force: Bool) throws {
         let target = WorkspacePathPolicy.normalize(path)
         let known = try worktrees(repo)
         guard let match = known.first(where: { WorkspacePathPolicy.normalize($0.path) == target }) else {
-            throw GitError("Git kent geen worktree op \(path).")
+            throw GitError("Git does not recognize a worktree at \(path).")
         }
-        guard !match.isMain else { throw GitError("Dit is de hoofdmap van de repository; die haalt Nook nooit weg.") }
+        guard !match.isMain else { throw GitError("This is the main repository directory; Nook never deletes it.") }
         var arguments = ["worktree", "remove"]
         if force { arguments.append("--force") }
         arguments.append(match.path)
         try run(arguments, in: repo, timeout: 120)
     }
 
-    /// Verwijdert een branch alleen als hij al is samengevoegd (`git branch -d`, nooit -D).
+    /// Deletes a branch only if already merged (`git branch -d`, never -D).
     func deleteMergedBranch(repo: String, branch: String) throws {
         try run(["branch", "-d", branch], in: repo)
     }
 
-    // MARK: Klonen
+    // MARK: Clone
 
-    /// Alleen gewone Git-adressen (https, ssh, git@host:pad); nooit iets dat als optie gelezen kan worden.
+    /// Only standard Git URLs (https, ssh, git@host:path); never anything that could be parsed as a flag.
     static func isCloneURL(_ url: String) -> Bool {
         let clean = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, !clean.hasPrefix("-"), !clean.contains(" "), clean.count < 500 else { return false }
         if clean.hasPrefix("https://") || clean.hasPrefix("ssh://") { return URL(string: clean)?.host != nil }
-        // scp-stijl: git@github.com:owner/repo.git
+        // scp style: git@github.com:owner/repo.git
         return clean.range(of: #"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._/~-]+$"#, options: .regularExpression) != nil
     }
 
-    /// De mapnaam die git clone zelf zou kiezen: "repo" uit ".../repo.git".
+    /// Folder name git clone would choose: "repo" from ".../repo.git".
     static func cloneFolderName(_ url: String) -> String {
         var last = url.trimmingCharacters(in: .whitespacesAndNewlines)
         while last.hasSuffix("/") { last.removeLast() }
@@ -334,40 +334,40 @@ struct GitService: Sendable {
         return WorktreeNaming.slug(last, limit: 60)
     }
 
-    /// Kloont naar <parent>/<naam>. De map mag nog niet bestaan.
+    /// Clones into <parent>/<name>. The directory must not already exist.
     func clone(url: String, into parent: String) throws -> String {
         let clean = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Self.isCloneURL(clean) else { throw GitError("Dit lijkt geen Git-adres (https://… of git@host:pad).") }
+        guard Self.isCloneURL(clean) else { throw GitError("Not a recognized Git URL (https://… or git@host:path).") }
         let target = URL(fileURLWithPath: parent, isDirectory: true).appendingPathComponent(Self.cloneFolderName(clean)).path
-        guard !FileManager.default.fileExists(atPath: target) else { throw GitError("De map \(target) bestaat al.") }
+        guard !FileManager.default.fileExists(atPath: target) else { throw GitError("Directory \(target) already exists.") }
         try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
         let output = try raw(["clone", "--", clean, target], in: parent, timeout: 900)
         guard output.status == 0 else {
             let message = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw GitError(message.isEmpty ? "Klonen mislukte." : message)
+            throw GitError(message.isEmpty ? "Clone failed." : message)
         }
         return target
     }
 
-    // MARK: Committen en pushen
+    // MARK: Committing and Pushing
 
-    /// Zet precies deze bestanden klaar en commit ze met jouw bericht.
+    /// Stages precisely these files and commits them with your message.
     func commit(_ directory: String, message: String, paths: [String]) throws -> String {
         let clean = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { throw GitError("Een commit heeft een bericht nodig.") }
-        guard !paths.isEmpty else { throw GitError("Kies minstens één bestand.") }
+        guard !clean.isEmpty else { throw GitError("A commit requires a message.") }
+        guard !paths.isEmpty else { throw GitError("Select at least one file.") }
         try run(["add", "-A", "--"] + paths, in: directory)
         try run(["commit", "-m", clean], in: directory, timeout: 120)
         return try run(["rev-parse", "--short", "HEAD"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Pusht de huidige branch naar `remote` en zet de upstream. Nooit force.
+    /// Pushes the current branch to `remote` and sets upstream. Never force.
     func push(_ directory: String, remote: String, branch: String) throws {
-        guard remotes(directory).contains(remote) else { throw GitError("Er is geen remote '\(remote)'.") }
+        guard remotes(directory).contains(remote) else { throw GitError("Remote '\(remote)' does not exist.") }
         try run(["push", "--set-upstream", remote, "HEAD:refs/heads/" + branch], in: directory, timeout: 300)
     }
 
-    // MARK: Lezen van Git-uitvoer (los te testen)
+    // MARK: Parsing Git Output (testable independently)
 
     static func parseStatus(_ text: String) -> GitStatus {
         var status = GitStatus()
@@ -439,7 +439,7 @@ struct GitService: Sendable {
         if parts.count > 1 { status.upstream = parts[1] }
     }
 
-    /// `git diff --numstat -z`: per pad hoeveel regels erbij en eraf (nil bij binaire bestanden).
+    /// `git diff --numstat -z`: lines added and removed per path (nil for binary files).
     static func parseNumstat(_ text: String) -> [String: (added: Int?, removed: Int?)] {
         var result: [String: (added: Int?, removed: Int?)] = [:]
         var fields = text.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)[...]
@@ -451,7 +451,7 @@ struct GitService: Sendable {
             let removed = Int(parts[1])
             var path = parts[2]
             if path.isEmpty {
-                // Hernoemd: daarna volgen het oude en het nieuwe pad.
+                // Renamed: followed by old and new path.
                 fields = fields.dropFirst()
                 path = fields.first ?? ""
                 fields = fields.dropFirst()
@@ -488,7 +488,7 @@ struct GitService: Sendable {
         return result
     }
 
-    /// Regels in een nieuw tekstbestand; nil voor grote of binaire bestanden.
+    /// Lines in a new text file; nil for large or binary files.
     static func lineCount(of path: String) -> Int? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
               let size = attributes[.size] as? Int, size < 2_000_000,
