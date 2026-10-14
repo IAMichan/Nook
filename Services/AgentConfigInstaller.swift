@@ -1,8 +1,8 @@
 import Foundation
 
-/// Koppelt Nook aan je agents door hun instellingenbestand aan te passen, maar alleen na jouw OK:
-/// Nook leest het bestand, laat precies zien wat er verandert, maakt een backup met datum
-/// en schrijft pas als het bestand sinds het voorbeeld niet is veranderd. Bestaande instellingen blijven staan.
+/// Connects Nook to your agents by updating their configuration file, but only after your confirmation:
+/// Nook reads the file, displays an exact diff of the changes, creates a timestamped backup,
+/// and only writes if the file has not changed since the preview. Existing settings are preserved.
 enum AgentConfigInstaller {
     enum Target: String, CaseIterable, Identifiable {
         case claudeHooks, claudeStatusLine, codex, gemini, antigravity, cursor, copilot, muse, openCode, amp, hermes
@@ -12,7 +12,7 @@ enum AgentConfigInstaller {
         var title: String {
             switch self {
             case .claudeHooks: return "Claude Code"
-            case .claudeStatusLine: return "Claude-abonnement in de notch"
+            case .claudeStatusLine: return "Claude subscription in the notch"
             case .codex: return "Codex"
             case .gemini: return "Gemini CLI"
             case .antigravity: return "Antigravity"
@@ -27,16 +27,16 @@ enum AgentConfigInstaller {
 
         var detail: String {
             switch self {
-            case .claudeHooks: return "Voortgang, toestemming en vragen in de notch"
-            case .claudeStatusLine: return "Je 5-uurs- en weeklimiet (Pro/Max), via de statusregel"
-            case .codex: return "Voortgang en toestemming in de notch"
-            case .gemini, .antigravity, .cursor, .copilot, .muse: return "Voortgang in de notch"
-            case .openCode, .amp: return "Voortgang in de notch, via een kleine plugin"
-            case .hermes: return "Voortgang in de notch, via een plugin. Zet hem daarna aan met: hermes plugins enable nook"
+            case .claudeHooks: return "Progress, permissions, and prompts in the notch"
+            case .claudeStatusLine: return "Your 5-hour and weekly limits (Pro/Max), via the status line"
+            case .codex: return "Progress and permissions in the notch"
+            case .gemini, .antigravity, .cursor, .copilot, .muse: return "Progress in the notch"
+            case .openCode, .amp: return "Progress in the notch, via a small plugin"
+            case .hermes: return "Progress in the notch, via a plugin. Enable it afterwards with: hermes plugins enable nook"
             }
         }
 
-        /// Het (eerste) bestand dat Nook aanpast of maakt.
+        /// The (primary) file modified or created by Nook.
         var fileURL: URL {
             let home = FileManager.default.homeDirectoryForCurrentUser
             switch self {
@@ -53,7 +53,7 @@ enum AgentConfigInstaller {
             }
         }
 
-        /// Het bestand voor een account met een eigen map (CLAUDE_CONFIG_DIR, CODEX_HOME). Nil: de gewone map.
+        /// The file for an account with a custom directory (CLAUDE_CONFIG_DIR, CODEX_HOME). Nil: the default directory.
         func fileURL(home: URL?) -> URL {
             guard let home else { return fileURL }
             switch self {
@@ -78,7 +78,7 @@ enum AgentConfigInstaller {
             }
         }
 
-        /// De koppeling voor een agent zoals Nook hem op je Mac ziet draaien ("Claude Code", "Codex"…).
+        /// Configuration target for an agent as Nook detects it running on your Mac ("Claude Code", "Codex"...).
         static func forAgent(named name: String) -> Target? {
             switch name {
             case "Claude Code": return .claudeHooks
@@ -95,7 +95,7 @@ enum AgentConfigInstaller {
             }
         }
 
-        /// Agents die een eigen pluginbestand van Nook laden, in plaats van hook-commando's in hun JSON.
+        /// Agents that load a dedicated Nook plugin file, rather than hook commands in their JSON.
         var isPlugin: Bool {
             switch self {
             case .openCode, .amp, .hermes: return true
@@ -103,7 +103,7 @@ enum AgentConfigInstaller {
             }
         }
 
-        /// De bestanden van een plugin met hun inhoud; leeg voor agents met JSON-instellingen.
+        /// Plugin files and their contents; empty for agents with JSON settings.
         var pluginFiles: [(url: URL, contents: String)] {
             switch self {
             case .openCode: return [(url: fileURL, contents: AgentPlugins.openCode)]
@@ -120,28 +120,28 @@ enum AgentConfigInstaller {
     enum State: Equatable {
         case notInstalled
         case installed
-        /// Gekoppeld met een oudere versie van Nook: bijwerken geeft toestemming via PermissionRequest en vragen.
+        /// Connected with an older version of Nook: updating grants permission via PermissionRequest and prompts.
         case outdated
         case unreadable(String)
     }
 
-    /// Eén bestand in een wijziging. `updated == nil` betekent: het bestand verdwijnt
-    /// (alleen bij een bestand dat helemaal van Nook is, zoals een plugin).
+    /// A single file in a change. `updated == nil` means: the file is removed
+    /// (only for files owned entirely by Nook, such as plugins).
     struct FileChange {
         let url: URL
         let original: Data?
         let updated: Data?
     }
 
-    /// Een voorgestelde wijziging. Pas `apply` schrijft hem weg.
+    /// A proposed change. Only `apply` writes it to disk.
     struct Change: Identifiable {
         let id = UUID()
         let target: Target
         let install: Bool
-        /// Het eerste bestand is `target.fileURL`; een plugin kan er meer hebben (Hermes: plugin.yaml).
+        /// The first file is `target.fileURL`; a plugin may have multiple (Hermes: plugin.yaml).
         let files: [FileChange]
         let preview: [DiffLine]
-        /// Wat er voor de statusregel apart bewaard of weggegooid moet worden.
+        /// Saved state to preserve or discard for the status line.
         let previousStatusLine: Data?
         let removePreviousStatusLine: Bool
 
@@ -150,13 +150,13 @@ enum AgentConfigInstaller {
     }
 
     private static let marker = "nook-hook"
-    /// De naam van Nooks eigen groep in ~/.gemini/config/hooks.json (Antigravity).
+    /// Name of Nook's dedicated group in ~/.gemini/config/hooks.json (Antigravity).
     private static let antigravityGroup = "nook"
     static let previousStatusLineURL = NookPaths.supportDirectory.appendingPathComponent("statusline-previous.json")
 
-    // MARK: Toestand
+    // MARK: State
 
-    /// `home`: de map van een extra account; nil voor de gewone map van de agent.
+    /// `home`: directory of a secondary account; nil for the default agent directory.
     static func state(of target: Target, home: URL? = nil) -> State {
         if target.isPlugin { return pluginState(target) }
         let root: [String: Any]
@@ -189,7 +189,7 @@ enum AgentConfigInstaller {
         }
     }
 
-    /// Een plugin is gekoppeld als al zijn bestanden er staan en van Nook zijn.
+    /// A plugin is installed when all its files exist and originate from Nook.
     private static func pluginState(_ target: Target) -> State {
         var present = 0
         let files = target.pluginFiles
@@ -203,7 +203,7 @@ enum AgentConfigInstaller {
         return present == files.count && present > 0 ? .installed : .notInstalled
     }
 
-    // MARK: Voorstel maken
+    // MARK: Preparing Changes
 
     static func prepare(_ target: Target, install: Bool, home: URL? = nil) throws -> Change {
         _ = try? HookScript.install()
@@ -213,7 +213,7 @@ enum AgentConfigInstaller {
         var root = snapshot.object
         var previous: Data?
         var removePrevious = false
-        // Alleen voor een bestand dat helemaal van Nook is: na het ontkoppelen mag het weg.
+        // Only for files wholly owned by Nook: deleted after disconnecting.
         var removeFile = false
 
         switch target {
@@ -245,7 +245,7 @@ enum AgentConfigInstaller {
                 }
                 var waiting = group(HookScript.command("--agent codex --wait"), timeout: 120)
                 if var inner = waiting["hooks"] as? [[String: Any]], !inner.isEmpty {
-                    inner[0]["statusMessage"] = "Wacht op je antwoord in de notch (Nook)"
+                    inner[0]["statusMessage"] = "Waiting for your response in the notch (Nook)"
                     waiting["hooks"] = inner
                 }
                 try append(&hooks, event: "PermissionRequest", group: waiting)
@@ -256,7 +256,7 @@ enum AgentConfigInstaller {
             var hooks = try hooksObject(root)
             hooks = try withoutNook(hooks)
             if install {
-                // Gemini gebruikt eigen namen en time-outs in milliseconden; Nook krijgt de gewone naam mee.
+                // Gemini uses proprietary names and millisecond timeouts; Nook receives canonical names.
                 for (event, name, timeout) in [("SessionStart", "SessionStart", 10_000), ("SessionEnd", "SessionEnd", 10_000),
                                                ("BeforeTool", "PreToolUse", 5_000), ("AfterTool", "PostToolUse", 5_000),
                                                ("BeforeAgent", "UserPromptSubmit", 5_000), ("AfterAgent", "Stop", 5_000)] {
@@ -267,10 +267,10 @@ enum AgentConfigInstaller {
             set(&root, "hooks", hooks)
 
         case .antigravity:
-            // Antigravity (agy) kent benoemde groepen bovenin het bestand; die van Nook heet "nook".
-            // Tools krijgen een matcher-groep, de rest een handler zonder; time-outs in seconden.
+            // Antigravity (agy) defines top-level named groups; Nook's group is named "nook".
+            // Tools receive a matcher group, others a plain handler; timeouts in seconds.
             if let existing = root[antigravityGroup], !containsMarker(existing) {
-                throw NookError("\(target.displayPath) heeft al een groep \"\(antigravityGroup)\" die niet van Nook is. Nook heeft niets aangeraakt.")
+                throw NookError("\(target.displayPath) already has a group \"\(antigravityGroup)\" that does not belong to Nook. Nook made no changes.")
             }
             root.removeValue(forKey: antigravityGroup)
             if install {
@@ -285,8 +285,8 @@ enum AgentConfigInstaller {
             }
 
         case .cursor:
-            // {"version": 1, "hooks": {"stop": [{"command": …}]}}: Cursor zet de naam zelf in de JSON
-            // en krijgt nooit een antwoord terug, dus Nook beslist niets voor Cursor.
+            // {"version": 1, "hooks": {"stop": [{"command": ...}]}}: Cursor includes the event name in the JSON
+            // and never awaits a response, so Nook makes no decisions for Cursor.
             var hooks = try hooksObject(root)
             hooks = try withoutNook(hooks)
             if install {
@@ -299,8 +299,8 @@ enum AgentConfigInstaller {
             set(&root, "hooks", hooks)
 
         case .copilot:
-            // Een eigen bestand in Copilots map met hooks: camelCase-namen, {"bash": …, "timeoutSec": N}.
-            // Copilot zet de naam niet in de JSON, dus die gaat mee op de opdrachtregel.
+            // Dedicated file in Copilot's hooks directory: camelCase names, {"bash": ..., "timeoutSec": N}.
+            // Copilot omits the event name from JSON, so it is passed on the command line.
             var hooks = try hooksObject(root)
             hooks = try withoutNook(hooks)
             if install {
@@ -314,11 +314,11 @@ enum AgentConfigInstaller {
                 root["version"] = 1
             }
             set(&root, "hooks", hooks)
-            // Staat er na het ontkoppelen niets van een ander meer in, dan was het bestand van Nook en gaat het weg.
+            // If no third-party configuration remains after uninstalling, the file was Nook-owned and is removed.
             if !install, root.keys.allSatisfy({ $0 == "version" }) { removeFile = true }
 
         case .muse:
-            // Net als Claude Code, maar met een matcher en time-outs in milliseconden.
+            // Similar to Claude Code, but using a matcher and millisecond timeouts.
             var hooks = try hooksObject(root)
             hooks = try withoutNook(hooks)
             if install {
@@ -338,7 +338,7 @@ enum AgentConfigInstaller {
             if install {
                 var line = current ?? ["type": "command"]
                 if let current, !ours, home == nil {
-                    // De statusregel die je al had, blijft zichtbaar: Nook roept hem zelf aan.
+                    // The existing statusline remains visible: Nook invokes it directly.
                     previous = try JSONSerialization.data(withJSONObject: current, options: [.sortedKeys])
                 }
                 line["type"] = "command"
@@ -369,7 +369,7 @@ enum AgentConfigInstaller {
             LineDiff.lines(String(decoding: before, as: UTF8.self)),
             LineDiff.lines(String(decoding: updated ?? Data(), as: UTF8.self))
         )
-        // Een ontbrekend bestand dat ook niet hoeft te komen: niets te doen.
+        // Non-existent file that does not need to be created: nothing to do.
         let files: [FileChange] = snapshot.original == nil && updated == nil
             ? []
             : [FileChange(url: fileURL, original: snapshot.original, updated: updated)]
@@ -383,8 +383,8 @@ enum AgentConfigInstaller {
         )
     }
 
-    /// Een plugin is een eigen bestand van Nook: koppelen schrijft het (opnieuw), ontkoppelen haalt het weg.
-    /// Een bestand met dezelfde naam dat niet van Nook is, blijft altijd staan.
+    /// A plugin is Nook's own file: linking writes (or rewrites) it, unlinking removes it.
+    /// A file with the same name that does not belong to Nook is never touched.
     private static func preparePlugin(_ target: Target, install: Bool) throws -> Change {
         var files: [FileChange] = []
         var preview: [DiffLine] = []
@@ -413,20 +413,20 @@ enum AgentConfigInstaller {
         )
     }
 
-    // MARK: Wegschrijven
+    // MARK: Applying Changes
 
-    /// Schrijft de wijziging, met eerst een backup. Is een bestand sinds het voorbeeld veranderd, dan gebeurt er niets.
+    /// Writes the change after creating a backup. If a file changed since the preview, nothing is written.
     @discardableResult
     static func apply(_ change: Change) throws -> URL? {
         let fm = FileManager.default
         for file in change.files {
             let current = fm.fileExists(atPath: file.url.path) ? try? Data(contentsOf: file.url) : nil
             guard current == file.original else {
-                throw NookError("\(change.target.displayPath) is veranderd sinds het voorbeeld. Er is niets geschreven; bekijk het opnieuw.")
+                throw NookError("\(change.target.displayPath) has changed since the preview. Nothing was written; please review again.")
             }
         }
 
-        // Wat gelijk blijft, hoeft geen backup en wordt niet opnieuw geschreven.
+        // Content that remains unchanged does not need a backup and is not rewritten.
         let pending = change.files.filter { $0.original != $0.updated }
 
         let formatter = DateFormatter()
@@ -440,7 +440,7 @@ enum AgentConfigInstaller {
             do {
                 try fm.copyItem(at: file.url, to: backupURL)
             } catch {
-                throw NookError("Kon geen backup maken van \(change.target.displayPath). Er is niets geschreven.")
+                throw NookError("Could not create a backup of \(change.target.displayPath). Nothing was written.")
             }
             if backup == nil { backup = backupURL }
         }
@@ -454,7 +454,7 @@ enum AgentConfigInstaller {
                     try fm.removeItem(at: file.url)
                 }
             } catch {
-                throw NookError("Kon \(change.target.displayPath) niet schrijven: \(error.localizedDescription). De backup staat ernaast.")
+                throw NookError("Could not write \(change.target.displayPath): \(error.localizedDescription). The backup is located next to it.")
             }
         }
 
@@ -467,42 +467,42 @@ enum AgentConfigInstaller {
         return backup
     }
 
-    // MARK: Hulpfuncties
+    // MARK: Helper Functions
 
     private struct Snapshot {
         var object: [String: Any]
         var original: Data?
     }
 
-    /// Een ontbrekend bestand telt als leeg; een onleesbaar of ongeldig bestand nooit.
+    /// A missing file counts as empty; an unreadable or invalid file never does.
     private static func read(_ url: URL) throws -> Snapshot {
         guard FileManager.default.fileExists(atPath: url.path) else { return Snapshot(object: [:], original: nil) }
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
-            throw NookError("\(url.path) is niet te lezen. Nook heeft niets aangeraakt.")
+            throw NookError("\(url.path) cannot be read. Nook did not touch anything.")
         }
         if data.allSatisfy({ $0 == 32 || $0 == 10 || $0 == 13 || $0 == 9 }) {
             return Snapshot(object: [:], original: data)
         }
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw NookError("\(url.path) is geen geldige JSON (of bevat commentaar). Nook heeft niets aangeraakt.")
+            throw NookError("\(url.path) is not valid JSON (or contains comments). Nook did not touch anything.")
         }
         return Snapshot(object: object, original: data)
     }
 
-    /// De inhoud van een pluginbestand van Nook, nil als het er niet is. Onleesbaar, of niet van Nook: dan nooit aanraken.
+    /// The contents of a Nook plugin file, or nil if it does not exist. If unreadable or not created by Nook: never touch it.
     private static func readPlugin(_ url: URL) throws -> Data? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
-            throw NookError("\(url.path) is niet te lezen. Nook heeft niets aangeraakt.")
+            throw NookError("\(url.path) cannot be read. Nook did not touch anything.")
         }
         guard String(decoding: data, as: UTF8.self).contains(AgentPlugins.marker) else {
-            throw NookError("\(url.path) bestaat al en is niet door Nook gemaakt. Nook heeft niets aangeraakt.")
+            throw NookError("\(url.path) already exists and was not created by Nook. Nook did not touch anything.")
         }
         return data
     }
@@ -510,7 +510,7 @@ enum AgentConfigInstaller {
     private static func hooksObject(_ root: [String: Any]) throws -> [String: Any] {
         guard let value = root["hooks"] else { return [:] }
         guard let hooks = value as? [String: Any] else {
-            throw NookError("\"hooks\" heeft een onverwachte vorm. Nook heeft niets aangeraakt.")
+            throw NookError("\"hooks\" has an unexpected structure. Nook did not touch anything.")
         }
         return hooks
     }
@@ -525,27 +525,27 @@ enum AgentConfigInstaller {
         return group
     }
 
-    /// Eén hook zonder groep eromheen (Antigravity, voor gebeurtenissen buiten tools).
+    /// Single hook without an enclosing group (Antigravity, for non-tool events).
     private static func handler(_ command: String, timeout: Int) -> [String: Any] {
         ["type": "command", "command": command, "timeout": timeout]
     }
 
     private static func append(_ hooks: inout [String: Any], event: String, group: [String: Any]) throws {
         if let raw = hooks[event], !(raw is [Any]) {
-            throw NookError("\"hooks\".\(event) heeft een onverwachte vorm. Nook heeft niets aangeraakt.")
+            throw NookError("\"hooks\".\(event) has an unexpected structure. Nook did not touch anything.")
         }
         var groups = (hooks[event] as? [Any]) ?? []
         groups.append(group)
         hooks[event] = groups
     }
 
-    /// Haalt alleen Nooks eigen regels weg; groepen die daarna leeg zijn, verdwijnen ook.
+    /// Removes only Nook's own entries; groups that become empty are removed as well.
     private static func withoutNook(_ hooks: [String: Any]) throws -> [String: Any] {
         var result: [String: Any] = [:]
         for (event, value) in hooks {
             guard let groups = value as? [Any] else {
                 if containsMarker(value) {
-                    throw NookError("\"hooks\".\(event) heeft een onverwachte vorm. Nook heeft niets aangeraakt.")
+                    throw NookError("\"hooks\".\(event) has an unexpected structure. Nook did not touch anything.")
                 }
                 result[event] = value
                 continue
@@ -557,7 +557,7 @@ enum AgentConfigInstaller {
                     continue
                 }
                 if let command = group["command"] as? String, command.contains(marker) { continue }
-                // Een losse regel zonder "hooks" (Copilot: "bash") van Nook.
+                // A standalone entry without "hooks" (Copilot: "bash") from Nook.
                 if group["hooks"] == nil, containsMarker(group) { continue }
                 if let inner = group["hooks"] as? [Any] {
                     let filtered = inner.filter { !containsMarker($0) }

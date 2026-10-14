@@ -1,7 +1,7 @@
 import Foundation
 
-/// Herkent aan een adres welke dienst erachter zit (Slack, Discord, Teams, Telegram, een webhook…), zodat Nook
-/// het juiste icoon laat zien en weet hoe een bericht erheen moet.
+/// Identifies the underlying service from an endpoint URL (Slack, Discord, Teams, Telegram, webhooks, etc.),
+/// enabling Nook to display appropriate branding and format outgoing payloads.
 enum KnownService {
     enum Style {
         case slackWebhook, slackAPI, discord, teams, telegram, genericWebhook
@@ -9,11 +9,11 @@ enum KnownService {
 
     struct Info: Equatable {
         let name: String
-        /// Het domein waar het icoon (favicon) vandaan komt.
+        /// The domain providing the service icon (favicon).
         let domain: String
-        /// Hoe een bericht naar deze dienst gaat; nil = alleen lezen.
+        /// How messages are delivered to this service; nil = read-only.
         let send: Style?
-        /// Een webhook is alleen om naartoe te sturen: er valt niets uit te lezen.
+        /// A webhook is an ingest endpoint: it cannot be queried for data.
         let readable: Bool
     }
 
@@ -49,7 +49,7 @@ enum KnownService {
         return Info(name: domain, domain: domain, send: nil, readable: true)
     }
 
-    /// Het hoofddomein voor het icoon: api.todoist.com → todoist.com, app.example.co.uk → example.co.uk.
+    /// Root domain for branding icons: api.todoist.com → todoist.com, app.example.co.uk → example.co.uk.
     static func iconDomain(for url: URL) -> String {
         let labels = (url.host ?? "").lowercased().split(separator: ".").map(String.init)
         guard labels.count > 2 else { return labels.joined(separator: ".") }
@@ -58,14 +58,14 @@ enum KnownService {
         return labels.suffix(take).joined(separator: ".")
     }
 
-    /// Wat er naar de dienst gaat. `to` is een kanaal, persoon of ontvanger; of die nodig is hangt van de dienst af.
+    /// Formats payload for delivery. `to` specifies channel, recipient, or user handle depending on service.
     static func payload(_ style: Style, message: String, to: String) throws -> [String: Any] {
         switch style {
         case .slackWebhook:
-            // Een Slack-webhook hoort bij één kanaal; een ontvanger komt dan vooraan in het bericht.
+            // A Slack incoming webhook is bound to a single channel; prepend recipient if given.
             return ["text": to.isEmpty ? message : "\(to) \(message)"]
         case .slackAPI:
-            guard !to.isEmpty else { throw NookError("Naar welk Slack-kanaal of welke persoon moet het bericht? Geef bijvoorbeeld #algemeen.") }
+            guard !to.isEmpty else { throw NookError("Which Slack channel or recipient should receive the message? For example, #general.") }
             return ["channel": to, "text": message]
         case .discord:
             return ["content": to.isEmpty ? message : "\(to) \(message)"]

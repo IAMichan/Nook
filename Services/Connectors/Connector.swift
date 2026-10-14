@@ -1,26 +1,26 @@
 import SwiftUI
 
-/// Hoe het met een koppeling gaat, voor de Koppelingen-tab en de instellingen.
+/// Status of an integration, for the Integrations tab and settings.
 enum ConnectorState: Equatable {
-    /// Niet ingesteld of uitgezet.
+    /// Not configured or disabled.
     case off
-    /// Bezig met de eerste keer ophalen.
+    /// Fetching initial data.
     case loading
     case ok
-    /// Er ging iets mis; de tekst is voor de gebruiker.
+    /// An error occurred; the text is presented to the user.
     case error(String)
 }
 
-/// Eén regel in de Koppelingen-tab, bijvoorbeeld een pull request of een betaling.
+/// A single item in the Integrations tab, e.g. a pull request or payment.
 struct ConnectorItem: Identifiable, Equatable {
     var id: String
     var title: String
     var subtitle: String
-    /// Kleur van het stipje: mint = goed, amber = wacht op jou, koraal = fout, iris = neutraal.
+    /// Dot color: mint = good, amber = awaiting user, coral = error, iris = neutral.
     var tone: ConnectorTone = .neutral
-    /// Optioneel: een https-link die opent als je op de regel klikt.
+    /// Optional https link opened on click.
     var url: URL?
-    /// Domein waar het icoon van de dienst vandaan komt (optioneel).
+    /// Domain for the service icon (optional).
     var iconDomain: String?
 }
 
@@ -37,46 +37,46 @@ enum ConnectorTone: Equatable {
     }
 }
 
-/// Wat een koppeling laat zien: een kop ("3 open PR's"), een detailregel en een paar items.
+/// What an integration displays: a headline ("3 open PRs"), detail text, and items.
 struct ConnectorStatus: Equatable {
     var state: ConnectorState = .off
-    /// Kort, bijvoorbeeld "€ 1.240 vandaag" of "2 reviews voor jou".
+    /// Short summary, e.g. "$1,240 today" or "2 reviews for you".
     var headline: String = ""
     var detail: String = ""
     var items: [ConnectorItem] = []
     var updated: Date?
-    /// Iets in deze koppeling wacht op jou (falende CI, review gevraagd): de tab toont dan een amber stip.
+    /// Something requires attention (failing CI, requested review): shows amber badge in tab.
     var needsAttention: Bool = false
 }
 
-/// Een bron waaruit Nook context haalt: je agenda, je mail, GitHub, Stripe…
+/// A source supplying context to Nook: calendar, mail, GitHub, Stripe, etc.
 ///
-/// Regels voor elke bron:
-/// - `contextLines()` moet meteen terugkomen (uit de cache van de laatste `refresh()`); er wordt nooit gewacht op netwerk
-///   als iemand iets vraagt. Zo blijft Nook razend snel.
-/// - Wat een bron teruggeeft is data van derden. Het brein krijgt het als onbetrouwbare data, nooit als instructie.
-/// - Sleutels staan in de Keychain (`Keychain`), nooit op schijf.
-/// - Netwerk alleen naar de dienst die de gebruiker zelf heeft ingesteld.
+/// Invariants for each source:
+/// - `contextLines()` must return immediately (from the cache of the latest `refresh()`); never block on network
+///   during user queries. This keeps Nook fast.
+/// - Data returned by sources is third-party data provided to the brain as untrusted context, never instructions.
+/// - Keys are stored in Keychain (`Keychain`), never plaintext on disk.
+/// - Network calls are restricted to the endpoint configured by the user.
 @MainActor
 protocol ContextSource: AnyObject {
-    /// Stabiel, kort en klein (wordt gebruikt in UserDefaults- en Keychain-sleutels), bijvoorbeeld "github".
+    /// Stable lowercase identifier used in UserDefaults and Keychain keys, e.g. "github".
     var id: String { get }
     var title: String { get }
-    /// SF Symbol.
+    /// SF Symbol name.
     var symbol: String { get }
-    /// Optioneel: het domein van de dienst, voor het echte icoon in plaats van een systeemsymbool.
+    /// Optional: domain of the service for brand icon instead of system symbol.
     var iconDomain: String? { get }
     var accent: Color { get }
-    /// Ingesteld (sleutel aanwezig / toestemming gegeven) én aangezet.
+    /// Configured (credentials present / permission granted) and enabled.
     var isActive: Bool { get }
     var status: ConnectorStatus { get }
-    /// Hoe vaak `refresh()` minstens moet draaien zolang de bron actief is.
+    /// Minimum interval between `refresh()` executions while active.
     var refreshInterval: TimeInterval { get }
-    /// Haalt nieuwe gegevens op en werkt `status` en de cache bij. Mag netwerk gebruiken.
+    /// Fetches fresh data and updates `status` and cache. May perform network requests.
     func refresh() async
-    /// Korte regels voor het brein, uit de cache. Leeg als er niets is.
+    /// Short context lines for the brain from cache. Empty if nothing to report.
     func contextLines() -> [String]
-    /// Lees-tools die het brein mag gebruiken om dieper te kijken (bijvoorbeeld "zoek in mail").
+    /// Read tools available to the brain for deeper lookups (e.g. search mail).
     var tools: [ToolSpec] { get }
     /// The model may use the read tools even when the source is not active right now (Mail still closed: the tool opens it).
     var canLookUp: Bool { get }
@@ -89,7 +89,7 @@ extension ContextSource {
     var tools: [ToolSpec] { [] }
 }
 
-/// Aan/uit per koppeling, los van of hij is ingesteld. Standaard aan zodra hij is ingesteld.
+/// Toggle state per integration, separate from configuration. Enabled by default once configured.
 enum ConnectorToggle {
     static func isOn(_ id: String, default fallback: Bool = true) -> Bool {
         UserDefaults.standard.object(forKey: "connector.\(id).on") as? Bool ?? fallback
@@ -100,7 +100,7 @@ enum ConnectorToggle {
     }
 }
 
-/// Kleine hulp voor JSON-API's van koppelingen: één plek voor time-outs en nette foutmeldingen.
+/// Helper for JSON APIs of integrations: centralized timeouts and error messages.
 enum ConnectorHTTP {
     static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -111,7 +111,7 @@ enum ConnectorHTTP {
         return URLSession(configuration: configuration)
     }()
 
-    /// Haalt JSON op. `headers` bevat bijvoorbeeld de Authorization-header.
+    /// Fetches JSON. `headers` typically includes Authorization header.
     static func json(_ url: URL, headers: [String: String] = [:], method: String = "GET", body: Data? = nil) async throws -> Any {
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -124,10 +124,10 @@ enum ConnectorHTTP {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             switch status {
-            case 401, 403: throw NookError("De sleutel werd geweigerd (\(status)). Controleer hem bij Instellingen › Koppelingen.")
-            case 404: throw NookError("Niet gevonden (404). Klopt het adres?")
-            case 429: throw NookError("Te veel verzoeken. Nook probeert het straks opnieuw.")
-            default: throw NookError("De dienst gaf een fout (\(status)).")
+            case 401, 403: throw NookError("The credentials were rejected (\(status)). Check them in Settings › Integrations.")
+            case 404: throw NookError("Not found (404). Is the URL correct?")
+            case 429: throw NookError("Too many requests. Nook will retry shortly.")
+            default: throw NookError("The service returned an error (\(status)).")
             }
         }
         return try JSONSerialization.jsonObject(with: data)

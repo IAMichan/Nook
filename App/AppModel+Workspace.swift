@@ -20,7 +20,7 @@ extension RunProvider {
     }
 }
 
-/// Het venster van de werkruimte. Eén venster; openen brengt het naar voren.
+/// The workspace window controller. A single window; opening brings it to front.
 @MainActor
 final class WorkspaceWindowController {
     static let shared = WorkspaceWindowController()
@@ -54,9 +54,9 @@ final class WorkspaceWindowController {
 }
 
 extension AppModel {
-    // MARK: Werkruimte
+    // MARK: - Workspace
 
-    /// Verbindt de werkruimte met de rest van Nook. Eén keer, bij het opstarten.
+    /// Connects the workspace to the rest of Nook. Run once at startup.
     func startWorkspace() {
         workspace.executable = { [weak self] provider in
             self?.history.executables[provider.kind]
@@ -70,7 +70,7 @@ extension AppModel {
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
     }
 
-    /// Opent de werkruimte, eventueel meteen op een sessie.
+    /// Opens the workspace, optionally directly focused on a run.
     func openWorkspace(run id: UUID? = nil, newSession: Bool = false) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if let id { workspace.selectedRunID = id }
@@ -78,19 +78,19 @@ extension AppModel {
         if newSession { NotificationCenter.default.post(name: .nookWorkspaceNewSession, object: nil) }
     }
 
-    /// Account van een werkruimte-sessie.
+    /// Profile associated with a workspace run.
     func profile(for run: WorkspaceRun) -> AgentProfile? {
         profiles.profile(id: run.profileID)
     }
 
-    /// Eerdere sessies uit de transcripten, zonder die van de werkruimte (die staan daar al, met meer detail).
+    /// Earlier sessions from transcripts, excluding workspace runs (which are already listed there in more detail).
     var pastSessionsOutsideWorkspace: [PastSession] {
         let own = Set(workspace.runs.compactMap(\.providerSessionID))
         return history.sessions.filter { !own.contains($0.sessionID) }
     }
 
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
-        // Kijk je al naar deze sessie in de werkruimte, dan staat de vraag daar; geen kaart erbovenop.
+        // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
         let token = "wsapproval-" + pending.id
         let runID = run.id
@@ -135,7 +135,7 @@ extension AppModel {
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
-        // Alleen melden als je niet al in de werkruimte kijkt.
+        // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)
         switch viewModel.state {
@@ -147,9 +147,9 @@ extension AppModel {
         viewModel.finish(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
     }
 
-    // MARK: Accounts
+    // MARK: - Accounts
 
-    /// Opnieuw inloggen met dit account, in een eigen Terminal-venster. Andere accounts en lopende sessies merken er niets van.
+    /// Reauthenticates this account in its own Terminal window. Other accounts and active sessions remain unaffected.
     func reauthenticate(_ profile: AgentProfile) {
         let command: String
         switch profile.kind {
@@ -173,7 +173,7 @@ extension AppModel {
         }
     }
 
-    /// Uitloggen: alleen voor dit account. Codex heeft er een eigen commando voor; Claude Code doet het met /logout.
+    /// Signs out: only for this account. Codex has a dedicated command; Claude Code uses /logout.
     func logout(_ profile: AgentProfile) {
         if profile.kind == .claude, profile.usesAPIKey {
             profiles.setAPIKey("", for: profile)
@@ -201,8 +201,8 @@ extension AppModel {
         }
     }
 
-    /// Kiest hoe een account inlogt. Een Claude-sleutel gaat naar de Keychain; een Codex-sleutel geeft Nook via stdin aan
-    /// `codex login --with-api-key`, dat hem in de map van dit account bewaart. De sleutel komt nooit in een argument of log.
+    /// Configures how an account authenticates. A Claude key is saved in the Keychain; a Codex key is passed via stdin to
+    /// `codex login --with-api-key`, saving it to that account's directory. The key never appears in arguments or logs.
     func setAPIKey(_ key: String, for profile: AgentProfile) async throws {
         let clean = key.trimmingCharacters(in: .whitespacesAndNewlines)
         switch profile.kind {
@@ -226,7 +226,7 @@ extension AppModel {
         history.refresh(minimumInterval: 0)
     }
 
-    /// Voegt een account toe dat met een API-sleutel inlogt. Mislukt het bewaren van de sleutel, dan verdwijnt het account weer.
+    /// Adds an account authenticating via API key. If saving the key fails, the account is removed.
     func addAccount(_ kind: AgentKind, label: String, apiKey: String) async throws {
         let profile = profiles.add(kind: kind, label: label)
         do {
@@ -238,7 +238,7 @@ extension AppModel {
         connect(profiles.profile(id: profile.id) ?? profile)
     }
 
-    /// Terug naar inloggen via de agent zelf. Een Claude-sleutel wordt uit de Keychain gehaald.
+    /// Reverts to CLI login via the agent itself. Any Claude key is removed from the Keychain.
     func useCLILogin(_ profile: AgentProfile) {
         if profile.kind == .claude { profiles.setAPIKey("", for: profile) }
         profiles.setAuth(profile.id, .cli)
@@ -261,7 +261,7 @@ extension AppModel {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            // De uitvoer kan de sleutel niet bevatten (hij ging via stdin), maar we tonen alleen de laatste regel.
+            // The output cannot contain the key (passed via stdin), but only the last line is displayed.
             let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
             throw NookError(tr("accounts.codexKeyFailed") + (last.isEmpty ? "" : " " + String(last.prefix(200))))
         }
@@ -269,7 +269,7 @@ extension AppModel {
 }
 
 extension AgentProfile {
-    /// Alleen de accountmap (geen sleutel), voor login- en logoutcommando's.
+    /// Only the account directory prefix (no key), used for login and logout commands.
     var environmentPrefixOnly: String {
         guard let home, let variable = kind.homeVariable else { return "" }
         return "\(variable)=\(AgentProfile.shellPath(home)) "
