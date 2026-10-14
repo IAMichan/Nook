@@ -33,3 +33,16 @@ extension NotchState {
         }
     }
 }
+
+extension NotchState {
+    /// Zelfde soort toestand (bijvoorbeeld een andere tab van het paneel)?
+    var kind: String {
+        switch self {
+        case .idle: return "idle"
+        case .music: return "music"
+        case .done: return "done"
+        case .card: return "card"
+        case .panel: return "panel"
+        }
+    }
+}

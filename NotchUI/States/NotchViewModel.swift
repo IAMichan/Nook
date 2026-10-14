@@ -42,9 +42,13 @@ final class NotchViewModel: ObservableObject {
                 target = .music
             }
         }
-        withAnimation(NookTheme.spring) {
+        let newSize = layoutSize(for: target)
+        let growing = newSize.width * newSize.height > size.width * size.height
+        let sameKind = state.kind == target.kind
+        let animation: Animation = sameKind ? NookTheme.swap : (growing ? NookTheme.open : NookTheme.close)
+        withAnimation(animation) {
             state = target
-            size = layoutSize(for: target)
+            size = newSize
         }
     }
 

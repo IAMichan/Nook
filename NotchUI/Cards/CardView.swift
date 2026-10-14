@@ -110,7 +110,7 @@ private struct CommandDetail: View {
 
 private struct WaveformDetail: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: 4) {
                 ForEach(0..<18, id: \.self) { i in

@@ -17,17 +17,28 @@ struct NotchRootView: View {
         )
 
         ZStack(alignment: .top) {
-            content(size: size)
-                .frame(width: size.width, height: size.height, alignment: .top)
-                .background(shape.fill(NookTheme.notch))
-                .clipShape(shape)
-                .shadow(color: Color.black.opacity(isExpanded ? 0.45 : 0), radius: 18, x: 0, y: 8)
+            // De inhoud heeft meteen zijn eindmaat; de zwarte vorm groeit eromheen en onthult hem.
+            // Zo hoeft SwiftUI tijdens de animatie niets opnieuw uit te leggen.
+            ZStack(alignment: .top) {
+                content(size: size)
+            }
+            .frame(width: size.width, height: size.height, alignment: .top)
+            .background(shape.fill(NookTheme.notch))
+            .clipShape(shape)
+            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : 0), radius: 18, x: 0, y: 8)
+            // Een lichte zwelling als de muis op de notch staat: laat zien dat hij reageert.
+            .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
+            .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
         }
         .frame(
             width: NotchController.panelSize.width,
             height: NotchController.panelSize.height,
             alignment: .top
         )
+    }
+
+    private var hoverGrow: Bool {
+        viewModel.pointerInside && viewModel.state.isResting
     }
 
     private var isExpanded: Bool {
@@ -44,7 +55,7 @@ struct NotchRootView: View {
         case .music: return "music"
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
-        case .panel(let tab): return "panel-\(tab.rawValue)"
+        case .panel: return "panel"   // wisselen van tab gebeurt binnen het paneel, zonder alles te vervangen
         }
     }
 
@@ -83,8 +94,9 @@ struct NotchRootView: View {
                 }
             }
         }
+        .frame(width: size.width, height: size.height, alignment: .top)
         .id(contentKey)
-        .transition(.opacity)
+        .transition(.notchContent)
     }
 
     // MARK: Rust en muziek: Nook links van de notch, iets kleins rechts
