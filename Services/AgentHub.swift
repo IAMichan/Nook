@@ -554,7 +554,8 @@ final class AgentHub: ObservableObject {
                     hostBundleID: record.hostBundleID,
                     approvalID: approvals.first { $0.sessionKey == key }?.id,
                     linesAdded: record.linesAdded,
-                    linesRemoved: record.linesRemoved
+                    linesRemoved: record.linesRemoved,
+                    summary: Self.oneLine(record.lastMessage)
                 )
             }
     }
@@ -624,6 +625,29 @@ final class AgentHub: ObservableObject {
     static func shortPath(_ path: String) -> String {
         let parts = path.split(separator: "/")
         return parts.suffix(2).joined(separator: "/")
+    }
+
+    /// De eerste bruikbare alinea van een antwoord in Markdown, als platte zin.
+    static func oneLine(_ markdown: String, limit: Int = 220) -> String {
+        var inCode = false
+        var paragraph: [String] = []
+        for raw in markdown.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") {
+                inCode.toggle()
+                continue
+            }
+            if inCode { continue }
+            if line.isEmpty {
+                if !paragraph.isEmpty { break }
+                continue
+            }
+            var clean = line.replacingOccurrences(of: #"^(#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s*)"#, with: "", options: .regularExpression)
+            clean = clean.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+            clean = clean.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            if !clean.isEmpty { paragraph.append(clean) }
+        }
+        return shorten(paragraph.joined(separator: " "), limit)
     }
 
     static func shorten(_ text: String, _ limit: Int) -> String {

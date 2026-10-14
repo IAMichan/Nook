@@ -109,6 +109,8 @@ struct AgentSession: Identifiable, Equatable {
     /// Regels erbij en eraf in deze sessie.
     var linesAdded: Int = 0
     var linesRemoved: Int = 0
+    /// Eén zin uit het laatste antwoord of bericht van de agent.
+    var summary: String = ""
     /// Komt van een draaiend proces, niet van hooks.
     var isDetected: Bool { status == .detected }
 }
