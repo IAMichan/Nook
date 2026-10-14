@@ -11,6 +11,11 @@ struct SettingsView: View {
     @State private var keyDraft = ""
     @State private var status = ""
     @State private var refreshTick = 0
+    @ObservedObject private var local = EmbeddedModel.shared
+    @State private var installing: String?
+    @State private var installFraction: Double = 0
+    @State private var testing = false
+    @State private var testResult: (ok: Bool, message: String)?
 
     var body: some View {
         Form {
@@ -31,22 +36,149 @@ struct SettingsView: View {
 
     private var brainSection: some View {
         Section("Brein") {
-            HStack {
-                SecureField("Anthropic API-sleutel", text: $keyDraft)
-                Button("Bewaar") {
-                    settings.saveAPIKey(keyDraft)
-                    keyDraft = ""
-                    status = settings.hasAPIKey ? "Sleutel bewaard in de Keychain." : "Sleutel verwijderd."
-                }
-                .disabled(keyDraft.isEmpty && !settings.hasAPIKey)
+            Picker("Nook denkt met", selection: $settings.useLocal) {
+                Text("Claude (API-sleutel)").tag(false)
+                Text("Gratis model op je Mac").tag(true)
             }
-            Text(settings.hasAPIKey ? "Er is een sleutel opgeslagen. Laat het veld leeg en druk op Bewaar om hem te wissen." : "Zonder sleutel kan Nook niet nadenken. De sleutel blijft in je Keychain.")
+            .pickerStyle(.segmented)
+            .onChange(of: settings.useLocal) { _, _ in testResult = nil }
+
+            Picker("Taal van antwoorden", selection: $settings.language) {
+                ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
+            }
+
+            if settings.useLocal { localFields } else { claudeFields }
+
+            HStack {
+                Button("Test verbinding") { Task { await testConnection() } }
+                    .disabled(!settings.brainReady || testing)
+                if testing { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            if let result = testResult {
+                Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(result.ok ? Color.green : Color.red)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var claudeFields: some View {
+        Group {
+            HStack {
+                SecureField("Anthropic API-sleutel (sk-ant-…)", text: $keyDraft)
+                    .onSubmit(saveKey)
+                Button("Bewaar en test", action: saveKey)
+                    .disabled(keyDraft.isEmpty && !settings.hasAPIKey)
+            }
+            if let masked = settings.maskedKey {
+                Label("Opgeslagen sleutel: \(masked)", systemImage: "key.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Zonder sleutel kan Nook niet nadenken. Maak er een op console.anthropic.com › API keys. De sleutel blijft in je Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("Model", text: $settings.model)
+                Menu("Kies") {
+                    ForEach(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], id: \.self) { id in
+                        Button(id) { settings.model = id }
+                    }
+                }
+                .fixedSize()
+            }
+            Text("Wat je aan Nook vraagt, plus een korte samenvatting van je agenda en open punten, gaat naar de Claude API. Een Claude-abonnement (claude.ai) werkt hier niet: je hebt een API-sleutel met tegoed nodig.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("Model", text: $settings.model)
-            Text("Wat je aan Nook vraagt, plus een korte samenvatting van je agenda en open punten, gaat naar de Claude API.")
+        }
+    }
+
+    private var localFields: some View {
+        Group {
+            Text("Een gratis model dat in Nook zelf draait: je hoeft niets anders te installeren. Het wordt één keer gedownload (een paar GB) en werkt daarna zonder internet. Niets van wat je vraagt verlaat je Mac.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            ForEach(EmbeddedModel.options) { option in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(option.title)
+                        Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if installing == option.id {
+                        ProgressView(value: installFraction).frame(width: 90)
+                        Text("\(Int(installFraction * 100))%").font(.caption.monospacedDigit())
+                    } else if local.installed.contains(option.id) {
+                        if settings.localModel == option.id {
+                            Label("In gebruik", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Button("Gebruik") { settings.localModel = option.id; testResult = nil }
+                        }
+                    } else if !option.fits {
+                        Text("Te zwaar voor \(EmbeddedModel.memoryGB) GB").font(.caption).foregroundStyle(.orange)
+                    } else {
+                        Button("Download") { Task { await install(option.id) } }
+                            .disabled(installing != nil)
+                    }
+                }
+            }
+            Text("Deze Mac heeft \(EmbeddedModel.memoryGB) GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen, en meekijken op de achtergrond staat uit zolang je een lokaal model gebruikt. Kleine modellen zijn minder slim dan Claude: een plan kan vaker net fout zijn, en de eerste vraag na het opstarten duurt even omdat het model dan geladen wordt. Zodra je een model gebruikt, heeft Nook geen API-sleutel nodig.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func install(_ id: String) async {
+        guard installing == nil else { return }
+        installing = id
+        installFraction = 0
+        testResult = nil
+        defer { installing = nil }
+        do {
+            try await local.install(id) { fraction in
+                Task { @MainActor in installFraction = fraction }
+            }
+            settings.localModel = id
+            status = "\(local.title(for: id)) is klaar en wordt nu gebruikt."
+            await testConnection()
+        } catch {
+            testResult = (false, error.localizedDescription)
+        }
+    }
+
+    private func saveKey() {
+        if !keyDraft.isEmpty {
+            let saved = settings.saveAPIKey(keyDraft)
+            keyDraft = ""
+            if !saved.looksValid {
+                testResult = (false, "Dit lijkt geen Anthropic-sleutel: die begint met sk-ant-. Ik test hem toch.")
+            }
+            if let keychainError = saved.keychainError {
+                status = "Keychain weigerde de sleutel (\(keychainError)). Hij werkt nu alleen tot je Nook afsluit."
+            } else {
+                status = "Sleutel bewaard in de Keychain."
+            }
+        } else {
+            settings.saveAPIKey("")
+            testResult = nil
+            status = "Sleutel verwijderd."
+            return
+        }
+        Task { await testConnection() }
+    }
+
+    private func testConnection() async {
+        testing = true
+        defer { testing = false }
+        do {
+            let reply = try await app.brain.test()
+            testResult = (true, "Verbonden met \(settings.activeModelName). Antwoord: “\(reply)”")
+        } catch {
+            testResult = (false, error.localizedDescription)
         }
     }
 
@@ -55,6 +187,7 @@ struct SettingsView: View {
     private var watchSection: some View {
         Section("Meekijken") {
             Toggle("Af en toe zelf meekijken met het scherm", isOn: $settings.autoWatch)
+                .disabled(settings.useLocal)
             Text("Standaard uit. Aan: Nook leest elke anderhalve minuut de tekst van het voorste venster (op je Mac, niet het beeld) en stuurt alleen die tekst naar het brein om te zien of er iets te doen is. Wachtwoordmanagers en Nook zelf worden overgeslagen. Handmatig meekijken kan altijd met ⌥⌘N.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

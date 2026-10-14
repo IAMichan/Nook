@@ -20,13 +20,15 @@ struct ToolSpec {
 final class NookTools {
     private let calendar: CalendarService
     private let store: NookStore
+    private let screen: ScreenReader
     private let onLoopsChanged: () -> Void
 
     private(set) var specs: [ToolSpec] = []
 
-    init(calendar: CalendarService, store: NookStore, onLoopsChanged: @escaping () -> Void) {
+    init(calendar: CalendarService, store: NookStore, screen: ScreenReader, onLoopsChanged: @escaping () -> Void) {
         self.calendar = calendar
         self.store = store
+        self.screen = screen
         self.onLoopsChanged = onLoopsChanged
         self.specs = buildSpecs()
     }
@@ -78,6 +80,19 @@ final class NookTools {
                     return events.prefix(40).map {
                         "\($0.title) | \(NookDates.iso($0.start)) – \(NookDates.iso($0.end))" + ($0.location.isEmpty ? "" : " | \($0.location)")
                     }.joined(separator: "\n")
+                }
+            ),
+            ToolSpec(
+                name: "read_screen",
+                description: "Leest de tekst van het voorste venster op de Mac van de gebruiker (OCR, lokaal). Gebruik dit METEEN, zonder eerst te vragen wat er staat, zodra de gebruiker verwijst naar iets dat hij ziet of net las: 'hier', 'dit', 'daar', 'die mail', 'maak er een afspraak voor', 'zet dat in mijn agenda'. Haal daarna titel, datum, tijd, plaats en deelnemers uit die tekst.",
+                schema: object([:], required: []),
+                kind: .read,
+                summarize: { _ in "Scherm lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { [screen = self.screen] _ in
+                    let snapshot = try await screen.capture()
+                    let title = snapshot.windowTitle.isEmpty ? "" : " — \(snapshot.windowTitle)"
+                    return "Voorste venster: \(snapshot.appName)\(title)\n\(snapshot.text)"
                 }
             ),
             ToolSpec(

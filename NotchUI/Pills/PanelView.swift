@@ -4,11 +4,14 @@ import SwiftUI
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
+    @Namespace private var underline
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             content
+                .id(tab)
+                .transition(.opacity.combined(with: .offset(y: 6)))
                 .padding(.top, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -26,9 +29,12 @@ struct PanelView: View {
                             .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
                             .padding(.vertical, 6)
                             .overlay(alignment: .bottom) {
-                                Rectangle()
-                                    .fill(t == tab ? NookTheme.paper : Color.clear)
-                                    .frame(height: 1.5)
+                                if t == tab {
+                                    Rectangle()
+                                        .fill(NookTheme.paper)
+                                        .frame(height: 1.5)
+                                        .matchedGeometryEffect(id: "underline", in: underline)
+                                }
                             }
                     }
                     .buttonStyle(.plain)

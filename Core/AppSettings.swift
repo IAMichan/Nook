@@ -19,17 +19,18 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(_ value: String, account: String) {
+    @discardableResult
+    static func write(_ value: String, account: String) -> OSStatus {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(base as CFDictionary)
-        guard !value.isEmpty else { return }
+        guard !value.isEmpty else { return errSecSuccess }
         var add = base
         add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        return SecItemAdd(add as CFDictionary, nil)
     }
 }
 
@@ -39,6 +40,23 @@ final class AppSettings: ObservableObject {
 
     private static let keyAccount = "anthropic-api-key"
 
+    /// Taal van Nooks antwoorden: een code uit `languages`, of "auto" (de taal van je vraag).
+    @Published var language: String {
+        didSet { UserDefaults.standard.set(language, forKey: "language") }
+    }
+
+    static let languages: [(code: String, name: String)] = [
+        ("nl", "Nederlands"), ("en", "Engels"), ("de", "Duits"), ("fr", "Frans"), ("es", "Spaans"),
+        ("auto", "Taal van mijn vraag")
+    ]
+
+    /// Zin voor in de prompt, bijvoorbeeld "Antwoord altijd in het Engels."
+    var languageInstruction: String {
+        if language == "auto" { return "Antwoord in de taal waarin de gebruiker schrijft." }
+        let name = Self.languages.first { $0.code == language }?.name ?? "Nederlands"
+        return "Antwoord altijd in het \(name), ook als de gegevens of tools in een andere taal zijn."
+    }
+
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: "model") }
     }
@@ -46,23 +64,57 @@ final class AppSettings: ObservableObject {
     @Published var autoWatch: Bool {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
     }
+    /// Gebruik een gratis lokaal model (ingebouwd, MLX) in plaats van de Claude API.
+    @Published var useLocal: Bool {
+        didSet { UserDefaults.standard.set(useLocal, forKey: "useLocal") }
+    }
+    @Published var localModel: String {
+        didSet { UserDefaults.standard.set(localModel, forKey: "localModel") }
+    }
     @Published private(set) var hasAPIKey: Bool
+
+    /// Kan Nook nadenken? Met een lokaal model is een API-sleutel niet nodig.
+    var brainReady: Bool { useLocal ? !localModel.isEmpty : hasAPIKey }
+    /// Naam van wat er nu denkt, voor in meldingen.
+    var activeModelName: String { useLocal ? (localModel.split(separator: "/").last.map(String.init) ?? localModel) : model }
 
     private var cachedKey: String?
     var apiKey: String? { cachedKey }
 
     private init() {
-        model = UserDefaults.standard.string(forKey: "model") ?? "claude-sonnet-5-5"
+        // Haiku is veel sneller dan Sonnet en genoeg voor Nooks taken. Eenmalig overzetten als je nog op de oude standaard zat.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "modelDefaultFast") {
+            defaults.set(true, forKey: "modelDefaultFast")
+            if defaults.string(forKey: "model") == "claude-sonnet-5-5" { defaults.removeObject(forKey: "model") }
+        }
+        model = defaults.string(forKey: "model") ?? "claude-haiku-5-5"
+        language = defaults.string(forKey: "language") ?? "nl"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
+        useLocal = UserDefaults.standard.bool(forKey: "useLocal")
+        localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key
         hasAPIKey = !(key ?? "").isEmpty
     }
 
-    func saveAPIKey(_ key: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        Keychain.write(trimmed, account: Self.keyAccount)
+    /// Bewaart de sleutel. De sleutel werkt in elk geval deze sessie; `keychainError` is gevuld als de Keychain weigerde.
+    @discardableResult
+    func saveAPIKey(_ key: String) -> (keychainError: String?, looksValid: Bool) {
+        // Plakken geeft vaak spaties, regeleinden of aanhalingstekens mee.
+        let trimmed = key
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
+        let status = Keychain.write(trimmed, account: Self.keyAccount)
         cachedKey = trimmed.isEmpty ? nil : trimmed
         hasAPIKey = !trimmed.isEmpty
+        let error: String? = status == errSecSuccess ? nil
+            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
+        return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))
+    }
+
+    /// Alleen het einde van de sleutel, om te controleren welke er is opgeslagen.
+    var maskedKey: String? {
+        guard let key = cachedKey, key.count > 12 else { return nil }
+        return "\(key.prefix(7))…\(key.suffix(4))"
     }
 }

@@ -17,7 +17,7 @@ final class AppModel: ObservableObject {
     let voice = VoiceService()
     let screen = ScreenReader()
 
-    private(set) lazy var tools = NookTools(calendar: calendar, store: store) { [weak self] in
+    private(set) lazy var tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
         self?.reloadLoops()
     }
     private(set) lazy var brain = BrainService(settings: settings)
@@ -89,7 +89,7 @@ final class AppModel: ObservableObject {
     // MARK: Gegevens voor de UI
 
     var agentSessions: [AgentSession] {
-        demoMode ? DemoContent.agents : hub.sessions
+        demoMode ? DemoContent.agents : hub.sessions + hub.detected
     }
 
     var todayItems: [TodayItem] {
@@ -143,9 +143,21 @@ final class AppModel: ObservableObject {
         upcoming = calendar.events(from: now, to: now.addingTimeInterval(36 * 3600))
     }
 
+    private var settingsWindow: NSWindow?
+
+    /// Eigen venster: de Settings-scene opent niet betrouwbaar in een app zonder Dock-icoon.
     func openSettings() {
+        if settingsWindow == nil {
+            let host = NSHostingController(rootView: SettingsView().environmentObject(self))
+            let window = NSWindow(contentViewController: host)
+            window.title = "Nook Instellingen"
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Vragen aan Nook
@@ -153,18 +165,66 @@ final class AppModel: ObservableObject {
     func handleUserText(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             presentSetupCard()
             return
         }
-        viewModel.show(.card(thinkingCard(context: "Even nadenken…", title: "“\(String(text.prefix(100)))”")))
+        let title = "“\(String(text.prefix(100)))”"
+
+        // Verwijst de gebruiker naar iets op het scherm ("maak er een afspraak voor"), lees dat dan meteen mee.
+        if Self.refersToScreen(text) {
+            viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: title)))
+            Task {
+                do {
+                    let snapshot = try await screen.capture()
+                    await runBrain(
+                        userText: text,
+                        snapshot: snapshot,
+                        silentIfNone: false,
+                        context: "Ik zag in \(snapshot.appName)"
+                    )
+                } catch {
+                    replaceThinking(with: errorCard(error.localizedDescription))
+                }
+            }
+            return
+        }
+
+        let loading = settings.useLocal && !EmbeddedModel.shared.isLoaded
+        viewModel.show(.card(thinkingCard(context: loading ? "Lokaal model laden…" : "Even nadenken…", title: title)))
         Task { await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil) }
     }
 
+    /// Woorden en zinnen waaruit blijkt dat het verzoek over iets op het scherm gaat.
+    private static let screenCue = try? NSRegularExpression(
+        pattern: #"\b(hier\w*|dit|deze|daar\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    static func refersToScreen(_ text: String) -> Bool {
+        guard let screenCue else { return false }
+        return screenCue.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    // Het gesprek van zojuist, zodat een vervolgvraag ("ja, doe maar") begrepen wordt.
+    private var recentExchanges: [(date: Date, user: String, nook: String)] = []
+
+    private var isFollowUp: Bool {
+        guard let last = recentExchanges.last else { return false }
+        return Date().timeIntervalSince(last.date) < 180
+    }
+
+    private func remember(user: String, nook: String) {
+        recentExchanges.append((Date(), user, nook))
+        recentExchanges = recentExchanges.suffix(3).filter { Date().timeIntervalSince($0.date) < 900 }
+    }
+
     private func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?) async {
+        let followUp = isFollowUp && !silentIfNone
         do {
             let plan = try await brain.run(
                 userText: userText,
+                followUp: followUp,
                 context: contextSummary(),
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
@@ -181,6 +241,9 @@ final class AppModel: ObservableObject {
                 return
             }
 
+            if !silentIfNone {
+                remember(user: userText, nook: plan.text.isEmpty ? "(acties voorgesteld, wachten op goedkeuring)" : plan.text)
+            }
             let card = planCard(plan, context: context)
             if silentIfNone {
                 viewModel.present(card)
@@ -206,15 +269,22 @@ final class AppModel: ObservableObject {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
-        let events = calendar.events(from: now, to: now.addingTimeInterval(3 * 86_400))
+        let events = calendar.events(from: now, to: now.addingTimeInterval(7 * 86_400))
         if calendar.hasEventAccess {
-            lines.append("Agenda, komende drie dagen:")
+            lines.append("Agenda (Nook heeft toegang), komende zeven dagen:")
             if events.isEmpty { lines.append("- geen afspraken") }
-            for event in events.prefix(15) {
+            for event in events.prefix(25) {
                 lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))")
             }
         } else {
             lines.append("Agenda: geen toegang.")
+        }
+
+        if !recentExchanges.isEmpty {
+            lines.append("Gesprek zojuist (voor vervolgvragen):")
+            for exchange in recentExchanges {
+                lines.append("- Gebruiker: \(exchange.user.prefix(200)) | Nook: \(exchange.nook.prefix(200))")
+            }
         }
 
         if !loops.isEmpty {
@@ -328,12 +398,21 @@ final class AppModel: ObservableObject {
 
     // MARK: Spraak
 
+    /// Maakt de volgende vraag sneller: zet de verbinding open of laadt het lokale model alvast.
+    func warmUp() {
+        if settings.useLocal {
+            EmbeddedModel.shared.preload(settings.localModel)
+        } else {
+            brain.prewarm()
+        }
+    }
+
     func toggleVoice() {
         if voice.isListening {
             voice.finishNow()
             return
         }
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             presentSetupCard()
             return
         }
@@ -342,6 +421,7 @@ final class AppModel: ObservableObject {
                 viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
                 return
             }
+            warmUp()
             viewModel.register("listening#done") { [weak self] in self?.voice.finishNow() }
             viewModel.register("listening#cancel") { [weak self] in self?.voice.cancel() }
             viewModel.show(.card(listeningCard("")))
@@ -384,7 +464,7 @@ final class AppModel: ObservableObject {
     // MARK: Meekijken
 
     func lookAtScreen(manual: Bool) {
-        guard settings.hasAPIKey else {
+        guard settings.brainReady else {
             if manual { presentSetupCard() }
             return
         }
@@ -412,7 +492,7 @@ final class AppModel: ObservableObject {
     }
 
     private func autoWatchTick() {
-        guard settings.autoWatch, settings.hasAPIKey, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
+        guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
         guard Date().timeIntervalSince(lastAutoRun) > 90 else { return }
         switch viewModel.state {
         case .idle, .music: break
@@ -501,10 +581,9 @@ final class AppModel: ObservableObject {
     }
 
     private func answerCard(_ text: String) -> NookCard {
-        let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(240))
-        let lines = max(1, Int(ceil(Double(body.count) / 46.0)))
+        let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
+        let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
-        viewModel.register("\(token)#talk") { [weak self] in self?.toggleVoice() }
         return NookCard(
             id: token,
             mood: .seen,
@@ -512,8 +591,9 @@ final class AppModel: ObservableObject {
             title: body,
             detail: .none,
             primary: CardAction(label: "Oké", outcome: .dismiss),
-            secondary: CardAction(label: "Vraag door", outcome: .callback("\(token)#talk", "")),
-            contentHeight: 90 + CGFloat(lines) * 24
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 140 + CGFloat(lines) * 24,
+            input: true
         )
     }
 
@@ -540,7 +620,7 @@ final class AppModel: ObservableObject {
             id: token,
             mood: .waiting,
             context: "Eerst even instellen",
-            title: "Ik heb een API-sleutel nodig om te kunnen denken.",
+            title: "Ik heb een API-sleutel of een gratis lokaal model nodig om te kunnen denken.",
             detail: .none,
             primary: CardAction(label: "Open instellingen", outcome: .callback("\(token)#open", "")),
             secondary: CardAction(label: "Later", outcome: .dismiss),

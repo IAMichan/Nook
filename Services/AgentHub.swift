@@ -38,6 +38,9 @@ private final class ReplyOnce {
 @MainActor
 final class AgentHub: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
+    /// Agents die als proces draaien maar (nog) niet via hooks melden.
+    @Published private(set) var detected: [AgentSession] = []
+    private var scanTimer: Timer?
 
     var onApproval: ((ApprovalRequest) -> Void)?
     var onAttention: ((AgentSession) -> Void)?
@@ -75,6 +78,36 @@ final class AgentHub: ObservableObject {
         }
         pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.prune() }
+        }
+        refreshDetected()
+        scanTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshDetected() }
+        }
+    }
+
+    /// Zoekt draaiende agents. Wat al via hooks binnenkomt, staat er niet dubbel in.
+    func refreshDetected() {
+        Task {
+            let found = await LocalAgentScanner.scan()
+            let hooked = Set(records.values.map { "\($0.agent)|\($0.cwd)" })
+            var seen = Set<String>()
+            detected = found.compactMap { agent in
+                let key = "\(agent.name)|\(agent.cwd)"
+                guard !hooked.contains(key), seen.insert(key).inserted else { return nil }
+                return AgentSession(
+                    id: "proc-\(agent.pid)",
+                    name: agent.name,
+                    project: Self.projectName(agent.cwd),
+                    status: .detected,
+                    file: agent.cwd.isEmpty ? "draait op deze Mac" : Self.shortPath(agent.cwd),
+                    placeholder: "Typ in de terminal van \(agent.name) om verder te gaan",
+                    steps: [
+                        AgentStep(mark: .running, text: "Draait op deze Mac"),
+                        AgentStep(mark: .todo, text: "Koppel hooks (Instellingen › Agents) voor voortgang en goedkeuring")
+                    ],
+                    diff: agent.cwd.isEmpty ? [] : [DiffLine(kind: .context, text: agent.cwd)]
+                )
+            }
         }
     }
 

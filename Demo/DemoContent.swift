@@ -26,9 +26,11 @@ enum DemoScene: String, CaseIterable {
 
 enum AgentStatus: Equatable {
     case waiting, running, failed, done
+    case detected   // draait op deze Mac, maar nog niet gekoppeld met hooks
 
     var label: String {
         switch self {
+        case .detected: return "draait"
         case .waiting: return "wacht op jou"
         case .running: return "bezig"
         case .failed: return "fout"
@@ -38,6 +40,7 @@ enum AgentStatus: Equatable {
 
     var color: Color {
         switch self {
+        case .detected: return NookTheme.textSecondary
         case .waiting: return NookTheme.amber
         case .running: return NookTheme.iris
         case .failed: return NookTheme.coral

@@ -27,10 +27,12 @@ xcodegen
 open Nook.xcodeproj
 ```
 
+Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./update.sh` (haalt op en draait `xcodegen`), anders klaagt Xcode over iets dat 'not in scope' is.
+
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in de menubalk.
 
 **De eerste keer**
-1. Menubalk-stip → **Instellingen…** → plak je Anthropic API-sleutel (die blijft in de Keychain).
+1. Menubalk-stip → **Instellingen…** → kies bij Brein een Anthropic API-sleutel (blijft in de Keychain) of **Gratis model op je Mac** (ingebouwd, MLX: klik Download, niets anders te installeren).
 2. Zet bij Machtigingen Agenda, Herinneringen, Microfoon en Scherm lezen aan zodra je ze wilt gebruiken.
 3. Voor je agents: **Installeer hook-script** en kopieer de configuratie voor Claude Code of Codex.
 
@@ -42,7 +44,7 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 |---|---|
 | Praten tegen Nook | ⌥ spatie (of de microfoonknop). Herkenning op je Mac; daarna denkt het brein mee. |
 | Typen tegen Nook | Veld onderaan de tab Vandaag. |
-| Meekijken | ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
+| Meekijken | Zeg je "maak er een afspraak voor" of verwijs je naar iets met "hier", "dit" of "daar", dan leest Nook zelf eerst het voorste venster en haalt datum, tijd en plaats eruit. ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
 | Muziek | Spotify en Muziek: nu speelt, bediening, Nook danst in de notch. |
@@ -75,6 +77,7 @@ Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
 
 ## Bekende beperkingen
 
+- Het ingebouwde gratis model gebruikt de Swift-pakketten mlx-swift-lm, swift-huggingface en swift-transformers. Die vragen Xcode 26 of nieuwer en een Apple Silicon-Mac. De eerste build haalt de pakketten op en duurt lang. Draai `xcodegen` opnieuw na een `git pull`.
 - De app is ad-hoc ondertekend. Daardoor ziet macOS elke nieuwe build als een andere app en kunnen machtigingen en Keychain-toegang opnieuw gevraagd worden. Met een eigen Developer ID-certificaat gebeurt dat niet.
 - De hooks voor Claude Code en Codex volgen hun documentatie, maar zijn nog niet getest met de huidige versies.
 - macOS heeft geen API om meldingen van andere apps te lezen, dus meldingen filteren zit er niet in. Meldingen van je agents lopen wel via Nook.

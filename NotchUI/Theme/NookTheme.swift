@@ -44,6 +44,31 @@ enum NookTheme {
         .system(size: size, weight: weight, design: .monospaced)
     }
 
-    // Beweging: veer van ongeveer 460 ms, uit het midden naar buiten.
-    static let spring = Animation.spring(response: 0.46, dampingFraction: 0.78)
+    // Beweging. Openen veert een heel klein beetje door; sluiten is rustig en zonder stuiter.
+    static let open = Animation.spring(duration: 0.52, bounce: 0.2)
+    static let close = Animation.spring(duration: 0.4, bounce: 0)
+    /// Wisselen binnen hetzelfde paneel (tabs): kleiner, strakker.
+    static let swap = Animation.spring(duration: 0.38, bounce: 0.08)
+    static let spring = open
+}
+
+/// Inhoud van de notch: komt iets later binnen dan de vorm (scherp, dan zacht), en verdwijnt snel.
+private struct NotchContentFade: ViewModifier {
+    var amount: CGFloat   // 1 = weg, 0 = zichtbaar
+    func body(content: Content) -> some View {
+        content
+            .opacity(1 - Double(amount))
+            .blur(radius: amount * 6)
+            .scaleEffect(1 - amount * 0.035, anchor: .top)
+    }
+}
+
+extension AnyTransition {
+    static var notchContent: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
+                .animation(.easeOut(duration: 0.34).delay(0.09)),
+            removal: .opacity.animation(.easeIn(duration: 0.12))
+        )
+    }
 }

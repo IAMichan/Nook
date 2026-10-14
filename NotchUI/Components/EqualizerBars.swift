@@ -6,7 +6,7 @@ struct EqualizerBars: View {
     var height: CGFloat = 14
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(0..<4, id: \.self) { i in

@@ -21,8 +21,9 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Opent het paneel als je 0,4 seconde met de muis op de notch blijft hangen.
+    /// Staat standaard aan; uitzetten kan via de menubalk.
     var openOnHover: Bool {
-        get { UserDefaults.standard.bool(forKey: "openOnHover") }
+        get { UserDefaults.standard.object(forKey: "openOnHover") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "openOnHover") }
     }
 
@@ -41,9 +42,14 @@ final class NotchViewModel: ObservableObject {
                 target = .music
             }
         }
-        withAnimation(NookTheme.spring) {
+        if case .panel = target, state.kind != "panel" { app?.warmUp() }
+        let newSize = layoutSize(for: target)
+        let growing = newSize.width * newSize.height > size.width * size.height
+        let sameKind = state.kind == target.kind
+        let animation: Animation = sameKind ? NookTheme.swap : (growing ? NookTheme.open : NookTheme.close)
+        withAnimation(animation) {
             state = target
-            size = layoutSize(for: target)
+            size = newSize
         }
     }
 
@@ -136,20 +142,13 @@ final class NotchViewModel: ObservableObject {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
-        guard openOnHover, inside, restingState else { return }
+        guard openOnHover, inside, state.isResting else { return }
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.pointerInside, self.restingState {
+            if self.pointerInside, self.state.isResting {
                 self.show(.panel(.today))
             }
-        }
-    }
-
-    private var restingState: Bool {
-        switch state {
-        case .idle, .music: return true
-        default: return false
         }
     }
 

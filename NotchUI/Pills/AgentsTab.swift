@@ -8,19 +8,22 @@ struct AgentsTab: View {
 
     var body: some View {
         let sessions = app.agentSessions
-        if sessions.isEmpty {
-            emptyState
-        } else {
-            content(sessions)
+        Group {
+            if sessions.isEmpty {
+                emptyState
+            } else {
+                content(sessions)
+            }
         }
+        .onAppear { app.hub.refreshDetected() }
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Er draait nu geen agent")
+            Text("Ik zie nu geen agent draaien")
                 .font(NookTheme.font(16, .semibold))
                 .foregroundStyle(NookTheme.paper)
-            Text("Koppel Claude Code of Codex via Instellingen › Agents. Daarna zie je ze hier, en kan ik je vragen of iets mag.")
+            Text("Ik zoek op je Mac naar Claude Code, Codex, Gemini CLI, Aider en OpenCode. Start er een in de terminal en hij staat hier binnen tien seconden. Koppel hem via Instellingen › Agents voor voortgang en om te vragen of iets mag.")
                 .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

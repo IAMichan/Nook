@@ -5,6 +5,10 @@ struct CardView: View {
     let card: NookCard
     let onAction: (CardAction) -> Void
     let onVoice: () -> Void
+    var onReply: (String) -> Void = { _ in }
+
+    @State private var reply = ""
+    @FocusState private var replyFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -12,16 +16,22 @@ struct CardView: View {
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
 
-            Text(card.title)
-                .font(NookTheme.font(18, .semibold))
-                .foregroundStyle(NookTheme.paper)
+            if card.input {
+                // Lange antwoorden scrollen en zijn te selecteren; ze worden nooit afgekapt.
+                ScrollView(showsIndicators: false) {
+                    titleText.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 .padding(.top, 6)
-                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                titleText.padding(.top, 6)
+            }
 
             detail
                 .padding(.top, 14)
 
             Spacer(minLength: 12)
+
+            if card.input { replyField.padding(.bottom, 10) }
 
             HStack(spacing: 4) {
                 NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
@@ -33,6 +43,46 @@ struct CardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onExitCommand { onAction(card.primary) }
+    }
+
+    private var titleText: some View {
+        Text(card.title)
+            .font(NookTheme.font(18, .semibold))
+            .foregroundStyle(NookTheme.paper)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
+    /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.
+    private var replyField: some View {
+        HStack(spacing: 10) {
+            TextField(
+                "",
+                text: $reply,
+                prompt: Text("Vraag door of reageer…").foregroundStyle(NookTheme.textTertiary)
+            )
+            .textFieldStyle(.plain)
+            .font(NookTheme.font(14))
+            .foregroundStyle(NookTheme.paper)
+            .focused($replyFocused)
+            .onSubmit {
+                let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                reply = ""
+                onReply(text)
+            }
+            Image(systemName: "return")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 38)
+        .background(Capsule().fill(NookTheme.field))
+        .onAppear {
+            // Even wachten tot het paneel de toetsenbordfocus heeft gekregen.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
+        }
     }
 
     @ViewBuilder
@@ -110,7 +160,7 @@ private struct CommandDetail: View {
 
 private struct WaveformDetail: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: 4) {
                 ForEach(0..<18, id: \.self) { i in
