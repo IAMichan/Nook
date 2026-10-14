@@ -882,24 +882,13 @@ struct AgentsTab: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Account actions: start a session, make default, or copy the command for your own terminal.
+    /// Account actions: start a session, or copy the command for your own terminal.
+    /// Choosing the default account lives in Settings, not here.
     private func accountActions(_ profile: AgentProfile) -> some View {
         let several = app.profiles.profiles(for: profile.kind).count > 1
-        let isDefault = app.profiles.isPreferred(profile)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 startMenu(profile, primary: true)
-                if several {
-                    if isDefault {
-                        Label(tr("agents.default"), systemImage: "star.fill")
-                            .font(NookTheme.font(12.5, .semibold))
-                            .foregroundStyle(profile.kind.color)
-                            .padding(.horizontal, 10)
-                            .help(tr(profile.kind == .claude ? "agents.defaultHelpClaude" : "agents.defaultHelp"))
-                    } else {
-                        NookGhostButton(title: tr("agents.makeDefault")) { app.makeDefault(profile) }
-                    }
-                }
                 Spacer()
             }
             if profile.kind.supportsProfiles && (several || !profile.isDefault) {
