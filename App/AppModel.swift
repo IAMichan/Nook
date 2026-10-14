@@ -176,12 +176,12 @@ final class AppModel: ObservableObject {
             viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: title)))
             Task {
                 do {
-                    let snapshot = try await screen.capture()
+                    let snapshot = try await screen.captureAll(maxWindows: settings.useLocal ? 3 : 6, totalLimit: settings.useLocal ? 3500 : 9000)
                     await runBrain(
                         userText: text,
                         snapshot: snapshot,
                         silentIfNone: false,
-                        context: "Ik zag in \(snapshot.appName)"
+                        context: "Ik keek in je vensters"
                     )
                 } catch {
                     replaceThinking(with: errorCard(error.localizedDescription))
