@@ -510,14 +510,14 @@ final class AppModel: ObservableObject {
 
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
-        var context: String?
+        var attachedName: String?
         let screenAllowed = scope.allows(SourceCatalog.screen)
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = "Ik lees \(file.name)…" }
             let limit = settings.useLocal ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
-            context = file.name
+            attachedName = file.name
         } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
             do {
@@ -533,7 +533,7 @@ final class AppModel: ObservableObject {
         guard !Task.isCancelled else { return }
 
         var sources: [String] = []
-        if let context { sources.append(context) } else if let snapshot {
+        if let attachedName { sources.append(attachedName) } else if let snapshot {
             sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
         }
 
@@ -695,7 +695,7 @@ final class AppModel: ObservableObject {
                 if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }
                 return copy
             }
-            let problems = actions.map { actionProblems($0, scope: scope) }
+            let problems: [[String]] = actions.map { actionProblems($0, scope: scope) }
             chat.update(id) { message in
                 message.text = body
                 message.charts.append(contentsOf: rescued)
@@ -725,7 +725,7 @@ final class AppModel: ObservableObject {
             chat.setBusy(false, conversation: conversation)
             nookFinished(conversation)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(plan), problems.allSatisfy(\.isEmpty) { runPlan(id) }
+            if canRunWithoutAsking(plan), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
