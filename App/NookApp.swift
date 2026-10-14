@@ -6,8 +6,7 @@ struct NookApp: App {
 
     var body: some Scene {
         // Nook heeft geen gewoon venster; alles gebeurt in de notch en het menubalk-icoon.
-        Settings {
-            SettingsView().environmentObject(AppModel.shared)
-        }
+        // Instellingen openen in een eigen venster (AppModel.openSettings).
+        Settings { EmptyView() }
     }
 }

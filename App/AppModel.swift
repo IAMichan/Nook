@@ -143,9 +143,21 @@ final class AppModel: ObservableObject {
         upcoming = calendar.events(from: now, to: now.addingTimeInterval(36 * 3600))
     }
 
+    private var settingsWindow: NSWindow?
+
+    /// Eigen venster: de Settings-scene opent niet betrouwbaar in een app zonder Dock-icoon.
     func openSettings() {
+        if settingsWindow == nil {
+            let host = NSHostingController(rootView: SettingsView().environmentObject(self))
+            let window = NSWindow(contentViewController: host)
+            window.title = "Nook Instellingen"
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Vragen aan Nook
