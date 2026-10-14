@@ -150,22 +150,22 @@ final class RemindersConnector: ContextSource {
 
 // MARK: Mail
 
-/// Ongelezen mail uit de app Mail. Alleen als Mail al draait: Nook start Mail nooit zelf.
+/// Mail from the Mail app, kept ready in the background so a question about mail is answered instantly from memory:
+/// the newest messages of every inbox (with read and replied state) and the start of the text of the ones still waiting
+/// for a reply. Only while Mail is already running: in the background Nook never starts Mail itself.
 @MainActor
 final class MailConnector: ContextSource {
-    struct Message: Equatable {
-        var subject: String
-        var sender: String
-        var date: String
-    }
-
     let id = "mail"
     let title = "Mail"
     let symbol = "envelope"
     let accent = Color(hex: 0x4DA3FF)
     private(set) var status = ConnectorStatus()
-    private var unread: [Message] = []
     private var unreadCount = 0
+    private var recent: [MailStats.InboxRow] = []
+    /// Bodies already read, by message key, so each refresh only reads new mail.
+    private var bodies: [String: String] = [:]
+    private var loadedAt: Date?
+    private var loading: Task<Void, Never>?
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -188,28 +188,26 @@ final class MailConnector: ContextSource {
         // Give the inbox a moment to load.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
     }
-    var refreshInterval: TimeInterval { 120 }
+    var refreshInterval: TimeInterval { 60 }
+
+    /// Fresh enough to answer from memory.
+    var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
 
     func refresh() async {
         guard ScriptText.isRunning("com.apple.mail") else {
             status = ConnectorStatus(state: .off, detail: "Open Mail, dan kijkt Nook mee")
             return
         }
-        let script = """
-        tell application "Mail"
-            set msgs to (messages of inbox whose read status is false)
-            set total to count of msgs
-            set n to total
-            if n > 15 then set n to 15
-            set out to (total as string) & linefeed
-            repeat with i from 1 to n
-                set m to item i of msgs
-                set out to out & (subject of m) & "|||" & (sender of m) & "|||" & ((date received of m) as «class isot» as string) & linefeed
-            end repeat
-            return out
-        end tell
-        """
-        let result = await ScriptText.run(script)
+        // One load at a time: a question that arrives during a background refresh waits for that one.
+        if let loading { await loading.value; return }
+        let task = Task { await self.load() }
+        loading = task
+        await task.value
+        loading = nil
+    }
+
+    private func load() async {
+        let result = await ScriptText.run(MailStats.recentScript())
         if result.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering."))
             return
@@ -218,14 +216,23 @@ final class MailConnector: ContextSource {
             status = ConnectorStatus(state: .error("Mail gaf geen antwoord."))
             return
         }
-        var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        unreadCount = Int(lines.first ?? "") ?? 0
-        if !lines.isEmpty { lines.removeFirst() }
-        unread = lines.compactMap { line in
-            let parts = line.components(separatedBy: "|||")
-            guard parts.count >= 3 else { return nil }
-            return Message(subject: parts[0], sender: parts[1], date: parts[2])
+        let parsed = MailStats.recent(text)
+        unreadCount = parsed.unread
+        var rows = parsed.rows
+        // Read the start of the text of mail that still waits for a reply, newest first, only what is not read yet.
+        let waiting = MailStats.select(rows, now: Date(), days: 14, unansweredOnly: true, limit: 10)
+        let missing = waiting.filter { bodies[$0.key] == nil }
+        if !missing.isEmpty {
+            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing))).text ?? "")
+            for (n, row) in missing.enumerated() { bodies[row.key] = texts[n] ?? "" }
         }
+        let keys = Set(rows.map(\.key))
+        bodies = bodies.filter { keys.contains($0.key) }
+        for index in rows.indices { rows[index].body = bodies[rows[index].key] ?? "" }
+        recent = rows
+        loadedAt = Date()
+
+        let unread = rows.filter { !$0.read }
         status = ConnectorStatus(
             state: .ok,
             headline: unreadCount == 0 ? tr("connect.local.mailAllRead") : tr("connect.local.mailUnread", unreadCount),
@@ -237,6 +244,18 @@ final class MailConnector: ContextSource {
         )
     }
 
+    /// Recent inbox mail from memory, refreshed first only when it is stale.
+    func inbox(days: Int, unansweredOnly: Bool) async throws -> String {
+        try await Self.ensureRunning()
+        if !isFresh { await refresh() }
+        if case .error(let message) = status.state { throw NookError(message) }
+        let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
+        guard !rows.isEmpty else {
+            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
+        }
+        return MailStats.describe(rows, date: NookDates.iso)
+    }
+
     nonisolated static func name(_ sender: String) -> String {
         // "Lisa de Vries <lisa@…>" → "Lisa de Vries"
         if let range = sender.range(of: " <") { return String(sender[..<range.lowerBound]).replacingOccurrences(of: "\"", with: "") }
@@ -245,11 +264,22 @@ final class MailConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard status.state == .ok else { return [] }
-        // "Nothing unread" is an answer too: without this line the model does not know it already saw Mail.
-        guard unreadCount > 0 else { return ["Mail: geen ongelezen mail in de inbox."] }
-        var lines = ["Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread). Nieuwste:"]
-        for message in unread.prefix(10) {
-            lines.append("- \(message.subject) | van \(message.sender) | \(message.date)")
+        var lines = [unreadCount == 0 ? "Mail: geen ongelezen mail in de inbox."
+                     : "Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread)."]
+        // What still needs a reply goes along in full, so "which mail do I need to answer" needs no lookup at all.
+        let waiting = MailStats.select(recent, now: Date(), days: 14, unansweredOnly: true, limit: 10)
+        if !waiting.isEmpty {
+            lines.append("Mail die nog een antwoord kan gebruiken (laatste 14 dagen, nog niet beantwoord, geen automatische mail):")
+            for row in waiting {
+                let snippet = row.body.replacingOccurrences(of: "\n", with: " ").prefix(160)
+                lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date)) | \(row.read ? "gelezen" : "ongelezen")"
+                             + (snippet.isEmpty ? "" : " | \"\(snippet)\""))
+            }
+        }
+        let unread = recent.filter { !$0.read && !waiting.contains($0) }.prefix(8)
+        if !unread.isEmpty {
+            lines.append("Andere nieuwste ongelezen:")
+            for row in unread { lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))") }
         }
         return lines
     }
@@ -283,43 +313,11 @@ final class MailConnector: ContextSource {
                 kind: .read,
                 summarize: { _ in "Inbox lezen" },
                 tag: { _ in ("", .neutral) },
-                run: { input in
-                    try await MailConnector.ensureRunning()
+                run: { [weak self] input in
+                    guard let self else { throw NookError("Mail is niet beschikbaar.") }
                     let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
                     let unanswered = (input["unanswered_only"] as? Bool) ?? false
-                    let filter = "date received > ((current date) - \(days) * days)" + (unanswered ? " and was replied to is false" : "")
-                    let script = """
-                    tell application "Mail"
-                        set found to (messages of inbox whose \(filter))
-                        set n to count of found
-                        if n > 25 then set n to 25
-                        set out to ""
-                        repeat with i from 1 to n
-                            set m to item i of found
-                            set body to ""
-                            try
-                                set body to content of m
-                            end try
-                            if (length of body) > 400 then set body to text 1 thru 400 of body
-                            set mid to ""
-                            try
-                                set mid to message id of m
-                            end try
-                            set state to "ongelezen"
-                            if read status of m then set state to "gelezen"
-                            if was replied to of m then set state to state & ", beantwoord"
-                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & state & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                        end repeat
-                        return out
-                    end tell
-                    """
-                    let result = await ScriptText.run(script)
-                    if result.errorNumber == -1743 {
-                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
-                    }
-                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !raw.isEmpty else { return "Geen mail in de inbox van de laatste \(days) dagen" + (unanswered ? " waarop je nog niet antwoordde." : ".") }
-                    return MailConnector.format(raw, sent: false, status: true)
+                    return try await self.inbox(days: days, unansweredOnly: unanswered)
                 }
             ),
             ToolSpec(

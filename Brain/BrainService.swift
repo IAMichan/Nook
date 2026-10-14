@@ -33,7 +33,7 @@ final class BrainService {
     /// and omitting tools makes the prompt many times shorter and therefore much faster.
     static func needsTools(_ text: String) -> Bool {
         // Words indicating intent to ACT, plus calendar: context covers today + 7 days; list_events is the fallback beyond that.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|\bhier|\bdit\b|\bdaar|kijk|lees|scherm|bericht|concept|\btaak|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -61,7 +61,7 @@ final class BrainService {
             let label = (untrustedLabel ?? "screen").replacingOccurrences(of: "\"", with: "'")
             prompt += "<screen_content label=\"\(UntrustedText.neutralize(label))\">\n\(UntrustedText.neutralize(untrusted))\n</screen_content>\n\n"
         }
-        prompt += "Request: \(userText)\n\n(\(settings.languageInstruction))"
+        prompt += "Request: \(userText)\n\n(\(settings.languageInstruction(for: userText)) Answer in plain sentences; never output JSON or code unless the request is about code.)"
 
         if settings.useLocal {
             return try await runLocal(prompt: Self.historyPrefix(history, limit: 6, length: 300) + prompt, tools: tools)
