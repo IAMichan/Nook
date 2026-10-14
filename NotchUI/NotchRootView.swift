@@ -70,7 +70,7 @@ struct NotchRootView: View {
             case .idle:
                 let active = app.activeAgents
                 if !active.isEmpty {
-                    // Er werkt een agent: Nook denkt mee, rechts één stipje per sessie (zoals de mini-Mochi's van Coucou).
+                    // Er werkt een agent: Nook denkt mee, rechts één stipje per sessie.
                     let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
                     wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
                         AgentDots(sessions: active)
