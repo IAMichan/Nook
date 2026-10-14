@@ -553,7 +553,27 @@ final class AppModel: ObservableObject {
                 }
             }
         }
-        let tools = scopedTools(scope, ledger: ledger)
+        var tools = scopedTools(scope, ledger: ledger)
+
+        // A small local model rarely calls tools itself: Nook looks up what the question is about first and hands it over.
+        var context = summary.text
+        var fetched: [String] = []
+        if settings.useLocal {
+            var calls = Prefetch.calls(for: text, relevant: relevant)
+            if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
+                calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
+            }
+            for call in calls {
+                guard let spec = tools.first(where: { $0.name == call.tool }), let output = try? await spec.run(call.input) else { continue }
+                fetched.append(String(output.prefix(5000)))
+            }
+            guard !Task.isCancelled else { return }
+            if !fetched.isEmpty {
+                context += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
+                // Already fetched: leave out the read tools, so the small model answers instead of trying to fetch again.
+                tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
+            }
+        }
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
@@ -571,7 +591,7 @@ final class AppModel: ObservableObject {
                 userText: request,
                 followUp: !history.isEmpty,
                 history: history,
-                context: summary.text,
+                context: context,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
                 tools: tools,
@@ -623,7 +643,11 @@ final class AppModel: ObservableObject {
             // Strip citations pointing to sources that were not actually retrieved.
             let references = ledger.references
             var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
-            if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
+            let bareBody = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
+            if plan.actions.isEmpty, bareBody.isEmpty || bareBody == "NONE", !fetched.isEmpty, chat.message(id)?.charts.isEmpty ?? true {
+                // The local model said nothing, but Nook did find something: show that instead of a dead end.
+                body = Self.digest(fetched)
+            } else if plan.actions.isEmpty, bareBody == "NONE" {
                 body = "Ik vond hier niets over. Zeg erbij waar ik moet kijken?"
             }
             let cited = Citations.used(in: body)
@@ -934,6 +958,25 @@ final class AppModel: ObservableObject {
         pattern: #"\b(hier\w*|dit|deze|daar\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
         options: [.caseInsensitive]
     )
+
+    /// An open app the question names ("wat staat er in Notities"), leaving out apps that have their own source.
+    static func appNamed(in text: String) -> String? {
+        let own: Set<String> = ["com.apple.mail", "com.apple.iCal", "com.apple.reminders", "com.apple.finder"]
+        for app in ScreenReader.openApps() where !own.contains(app.bundleIdentifier ?? "") {
+            guard let name = app.localizedName, name.count >= 3 else { continue }
+            let pattern = #"(?<![\p{L}\d])"# + NSRegularExpression.escapedPattern(for: name) + #"(?![\p{L}\d])"#
+            if text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil { return name }
+        }
+        return nil
+    }
+
+    /// A short list from looked-up data, for when the local model gives no answer: the headings, or the start of the text.
+    static func digest(_ fetched: [String]) -> String {
+        let text = fetched.joined(separator: "\n")
+        let headings = text.components(separatedBy: .newlines).filter { $0.hasPrefix("### ") }.prefix(10).map { "- " + $0.dropFirst(4) }
+        if !headings.isEmpty { return "Dit vond ik:\n\n" + headings.joined(separator: "\n") }
+        return "Dit vond ik:\n\n" + String(text.prefix(800))
+    }
 
     static func refersToScreen(_ text: String) -> Bool {
         guard let screenCue else { return false }
