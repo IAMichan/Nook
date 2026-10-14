@@ -186,11 +186,68 @@ final class EmbeddedModel: ObservableObject {
             tools: specs.isEmpty ? nil : specs,
             toolDispatch: specs.isEmpty ? nil : { call in await collector.handle(call) }
         )
-        let text = try await session.respond(to: prompt)
+        var text = Self.stripThinking(try await session.respond(to: prompt))
+
+        // Een klein model schrijft een tool-aanroep soms als losse JSON in zijn antwoord in plaats van hem echt aan te roepen.
+        // Die vangen we op, voeren we uit en laten het model daarna in gewone taal antwoorden.
+        for _ in 0..<2 {
+            let found = Self.extractToolCalls(from: text, knownTools: Set(tools.map(\.name)))
+            guard !found.calls.isEmpty else { break }
+            var results: [String] = []
+            for call in found.calls {
+                results.append("\(call.name): \(await collector.run(name: call.name, input: call.input))")
+            }
+            text = Self.stripThinking(try await session.respond(
+                to: "Resultaat van de tools:\n\(results.joined(separator: "\n"))\n\nBeantwoord nu mijn verzoek in gewone taal. Geef geen JSON."
+            ))
+        }
+        // Blijft er toch JSON van een tool-aanroep over, laat dat dan nooit in de kaart staan.
+        text = Self.extractToolCalls(from: text, knownTools: Set(tools.map(\.name))).text
+
         return BrainPlan(
-            text: Self.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines),
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
             actions: collector.actions
         )
+    }
+
+    /// Haalt losse tool-aanroepen als JSON uit een antwoord, zoals {"name": "list_events", "parameters": {"from": "…"}}.
+    /// Geeft de aanroepen terug en de tekst zonder die JSON. Ook een afgebroken object (laatste accolade ontbreekt) wordt herkend.
+    static func extractToolCalls(from text: String, knownTools: Set<String>) -> (text: String, calls: [(name: String, input: [String: Any])]) {
+        var remaining = text
+        var calls: [(name: String, input: [String: Any])] = []
+        var offset = 0  // positie vanaf waar we zoeken; een String.Index blijft niet geldig nadat we tekst weghalen
+
+        while let open = remaining[remaining.index(remaining.startIndex, offsetBy: offset)...].firstIndex(of: "{") {
+            // Zoek de bijpassende sluitaccolade; ontbreekt die, neem dan de rest van de tekst en sluit zelf af.
+            var depth = 0, inString = false, escaped = false
+            var close: String.Index?
+            for index in remaining[open...].indices {
+                let character = remaining[index]
+                if inString {
+                    if escaped { escaped = false } else if character == "\\" { escaped = true } else if character == "\"" { inString = false }
+                    continue
+                }
+                if character == "\"" { inString = true }
+                else if character == "{" { depth += 1 }
+                else if character == "}" { depth -= 1; if depth == 0 { close = index; break } }
+            }
+            var candidate = close.map { String(remaining[open...$0]) } ?? (String(remaining[open...]) + String(repeating: "}", count: max(depth, 0)))
+            if close == nil, inString { candidate += "\"" + String(repeating: "}", count: max(depth, 0)) }
+
+            guard let data = candidate.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let name = (object["name"] as? String) ?? (object["tool"] as? String),
+                  knownTools.contains(name) else {
+                offset = remaining.distance(from: remaining.startIndex, to: open) + 1
+                continue
+            }
+            let input = (object["parameters"] as? [String: Any]) ?? (object["arguments"] as? [String: Any]) ?? (object["input"] as? [String: Any]) ?? [:]
+            calls.append((name, input))
+            let end = close.map { remaining.index(after: $0) } ?? remaining.endIndex
+            offset = remaining.distance(from: remaining.startIndex, to: open)
+            remaining.removeSubrange(open..<end)
+        }
+        return (remaining, calls)
     }
 
     // MARK: Hulpjes
@@ -228,8 +285,15 @@ private final class ToolCollector {
         // Een klein model blijft soms tools aanroepen; dat houdt de Mac eindeloos bezig.
         calls += 1
         if calls > 5 { return "Genoeg gegevens verzameld. Geef nu je antwoord, zonder nog een tool aan te roepen." }
-        let name = call.function.name
-        let input = call.function.arguments.mapValues { $0.anyValue }
+        return await run(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }, counted: true)
+    }
+
+    /// Voert een tool uit op naam; ook voor aanroepen die als tekst uit het antwoord zijn gehaald.
+    func run(name: String, input: [String: Any], counted: Bool = false) async -> String {
+        if !counted {
+            calls += 1
+            if calls > 5 { return "Genoeg gegevens verzameld. Geef nu je antwoord, zonder nog een tool aan te roepen." }
+        }
         guard let spec = tools.first(where: { $0.name == name }) else { return "Onbekende tool." }
         switch spec.kind {
         case .read:
