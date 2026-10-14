@@ -28,6 +28,12 @@ final class NookStore {
             due REAL,
             done INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS executed_actions (
+            key TEXT PRIMARY KEY,
+            ts REAL NOT NULL,
+            tool TEXT NOT NULL,
+            result TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL,
@@ -95,6 +101,47 @@ final class NookStore {
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)
+    }
+
+    func completeLoop(matching idOrTitle: String) -> OpenLoop? {
+        let loops = openLoops()
+        let needle = idOrTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let byPrefix = needle.count >= 6 ? loops.filter { $0.id.lowercased().hasPrefix(needle.lowercased()) } : []
+        guard let loop = loops.first(where: { $0.id == needle })
+                ?? (byPrefix.count == 1 ? byPrefix.first : nil)
+                ?? loops.first(where: { $0.title.caseInsensitiveCompare(needle) == .orderedSame }) else { return nil }
+        completeLoop(id: loop.id)
+        return loop
+    }
+
+    // MARK: Uitgevoerde acties
+
+    /// Wanneer precies deze actie (zelfde tool, zelfde invoer) voor het laatst lukte, binnen `window` seconden.
+    func executedAction(_ key: String, within window: TimeInterval) -> Date? {
+        var stmt: OpaquePointer?
+        var result: Date?
+        if sqlite3_prepare_v2(db, "SELECT ts FROM executed_actions WHERE key = ? AND ts >= ?", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, key, -1, transient)
+            sqlite3_bind_double(stmt, 2, Date().addingTimeInterval(-window).timeIntervalSince1970)
+            if sqlite3_step(stmt) == SQLITE_ROW { result = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0)) }
+        }
+        sqlite3_finalize(stmt)
+        return result
+    }
+
+    func recordExecuted(_ key: String, tool: String, result: String) {
+        var stmt: OpaquePointer?
+        let sql = "INSERT OR REPLACE INTO executed_actions (key, ts, tool, result) VALUES (?, ?, ?, ?)"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, key, -1, transient)
+            sqlite3_bind_double(stmt, 2, Date().timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 3, tool, -1, transient)
+            sqlite3_bind_text(stmt, 4, String(result.prefix(500)), -1, transient)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        // Oude regels hoeven niet te blijven.
+        exec("DELETE FROM executed_actions WHERE ts < \(Date().addingTimeInterval(-7 * 86_400).timeIntervalSince1970)")
     }
 
     // MARK: Logboek

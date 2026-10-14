@@ -227,7 +227,7 @@ enum OpenAICompatibleBrain {
                     case .read:
                         do {
                             let output = try await spec.run(input)
-                            content = "<tool_data>\n\(output)\n</tool_data>"
+                            content = UntrustedText.wrap(output)
                         } catch { content = "Fout: \(error.localizedDescription)" }
                     case .action:
                         actions.append(PlannedAction(tool: name, input: input))

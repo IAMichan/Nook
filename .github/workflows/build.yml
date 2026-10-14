@@ -32,6 +32,11 @@ jobs:
           set -o pipefail
           xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug \
             -destination 'platform=macOS' -skipMacroValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' \
+            -skipMacroValidation CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test 2>&1 | tee test.log
       - name: Errors and warnings
         if: always()
         run: grep -E "error:|warning:" build.log | sort -u || true

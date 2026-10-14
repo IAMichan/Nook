@@ -49,6 +49,8 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Praten tegen Nook | ⌥ spatie (of de microfoonknop). Herkenning op je Mac; daarna denkt het brein mee. |
 | Chatten met Nook | ⌥⌘ spatie, waar je ook bent, of het veld onderaan de tab Nook. Een echt gesprek: vervolgvragen worden begrepen, het antwoord verschijnt terwijl het geschreven wordt, met kopjes, lijstjes, tabellen en code. De vragen om mee te beginnen passen bij wat je nu doet (de app die voor staat, je volgende afspraak, een agent die wacht, het moment van de dag). |
 | Nooks | Elk gesprek is een eigen Nook die aan één ding werkt. Begin er een met **Nieuwe Nook** (⌘N); de vorige werkt gewoon door. Links zie je al je Nooks met hun status: bezig, wacht op jou (een plan of mail) of klaar. Is er een klaar terwijl je iets anders doet, dan meldt hij zich in de notch. De geschiedenis blijft bewaard op je Mac (`nooks.json`), ook na een herstart; rechtsklik om een Nook weg te halen. |
+| Bronnen en bewijs | Nook kiest per vraag zelf welke koppelingen ertoe doen en zoekt daar gericht. Boven het antwoord zie je per bron of hij doorzocht is, niets vond of faalde; onder het antwoord staan genummerde bronnen ([1], [2]) die je opent in Mail, de browser of Finder. Met de bronkiezer naast het invoerveld, of in je vraag ("alleen mijn agenda en mail", "niet mijn scherm"), bepaal je welke bronnen mogen. Zie [docs/ASSISTANT.md](docs/ASSISTANT.md). |
+| Acties in stappen | Vraag iets dat meerdere dingen doet ("maak taken voor wat nog open staat en zet een mail klaar") en je krijgt één plan. Per stap zie je alle details; je kunt stappen uitzetten of tekst aanpassen. Mislukt er halverwege iets, dan zie je wat wel en niet lukte en ga je verder zonder dat iets dubbel gebeurt. |
 | Grafieken | Vraag om een grafiek ("maak een grafiek van mijn afspraken per dag") en Nook tekent hem in de chat: staaf, lijn, vlak, taart of punten. De cijfers haalt hij uit je agenda, je diensten of het web. Schrijft het brein toch code, JSON, Mermaid of een tabel, dan maakt Nook daar zelf een echte grafiek van; lukt dat niet, dan vraagt hij het brein opnieuw om te tekenen. |
 | Mail schrijven | "Schrijf een mail aan Lisa dat ik later ben": Nook zet een complete mail als concept in de chat. Pas hem aan en klik **Versturen** (via Mail), of **Open in Mail**. Er gaat nooit iets weg zonder jouw klik. |
 | Al je schermen | Nook houdt de tekst van al je vensters op al je schermen bij (lokaal, OCR) en gebruikt die bij elke vraag. Daardoor is een antwoord meteen klaar. Boven een antwoord zie je waar Nook keek. |
@@ -92,9 +94,10 @@ Een beveiligingsprobleem gevonden? Zie [SECURITY.md](SECURITY.md).
 App/       start, menubalk, AppModel (verbindt alles), instellingen
 NotchUI/   thema, karakter, kaarten, tabs, venster
 Services/  agenda, muziek, agent-hub, stem, scherm lezen, sneltoets, hook-script
-Brain/     Claude-koppeling, tools, datums, commando-risico
+Brain/     Claude-koppeling, tools, datums, commando-risico, bronkeuze, bronverwijzingen, controle van acties
 Core/      paden, instellingen + Keychain, opslag (SQLite)
 Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
+Tests/     unit-tests voor bronkeuze, bronverwijzingen en acties (xcodebuild test)
 ```
 
 `Nook.xcodeproj`, `Info.plist` en de entitlements worden door XcodeGen gemaakt vanuit [`project.yml`](project.yml) en staan niet in git.

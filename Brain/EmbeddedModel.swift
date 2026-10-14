@@ -298,7 +298,7 @@ private final class ToolCollector {
         switch spec.kind {
         case .read:
             do {
-                return "<tool_data>\n\(try await spec.run(input))\n</tool_data>"
+                return UntrustedText.wrap(try await spec.run(input))
             } catch {
                 return "Fout: \(error.localizedDescription)"
             }

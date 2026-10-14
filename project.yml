@@ -73,10 +73,28 @@ targets:
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
+  # Tests van de kern van de chat (bronkeuze, opzoeken en bronverwijzingen, controle en uitvoeren van acties).
+  # Die code gebruikt alleen Foundation, dus de bestanden gaan rechtstreeks in de testbundel: geen app nodig om te testen.
+  NookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/NookTests
+      - path: Brain/SourceScope.swift
+      - path: Brain/Retrieval.swift
+      - path: Brain/ActionGate.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
 schemes:
   Nook:
     build:
       targets:
         Nook: all
+    test:
+      targets:
+        - NookTests
     run:
       config: Debug
