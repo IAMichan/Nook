@@ -584,8 +584,7 @@ struct SettingsView: View {
             }
         )) {
             HStack(spacing: 10) {
-                Image(systemName: source.symbol)
-                    .foregroundStyle(source.accent)
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)

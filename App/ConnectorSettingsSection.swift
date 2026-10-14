@@ -80,8 +80,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             HStack(spacing: 10) {
                 // De hele rij klapt open, niet alleen het pijltje: anders lijkt klikken op een dienst niets te doen.
                 HStack(spacing: 10) {
-                    Image(systemName: connector.symbol)
-                        .foregroundStyle(connector.accent)
+                    SiteIcon(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 20)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)

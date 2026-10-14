@@ -1,8 +1,10 @@
 import SwiftUI
 
-// Eigen bronnen: bijna elke app of dienst met een web-API kan zo een bron van Nook worden (Todoist, Linear, Moneybird,
-// Home Assistant, Airtable, je eigen server…). Alleen lezen (GET), alleen https, en de sleutel blijft in de Keychain.
-// Per bron één regel: `Naam | https://api.voorbeeld.nl/v1 | Authorization: Bearer abc` (de laatste is optioneel;
+// Eigen bronnen: bijna elke app of dienst met een web-API of webhook kan zo een bron van Nook worden (Todoist, Linear,
+// Home Assistant, Slack, Discord, Teams, Telegram, n8n, Zapier, je eigen server…). Alleen https, en de sleutel blijft in de Keychain.
+// Nook herkent aan het adres welke dienst het is, laat het icoon ervan zien en weet hoe een bericht erheen moet.
+// Lezen (GET) kan direct; versturen (POST) alleen via een plan dat jij eerst goedkeurt met Uitvoeren.
+// Per bron één regel: `Naam | https://api.voorbeeld.nl/v1 | Authorization: Bearer abc | webhook` (de laatste twee zijn optioneel;
 // een kale sleutel zonder dubbele punt wordt een Bearer-token). Meerdere bronnen: scheid ze met `;;` of een nieuwe regel.
 
 @MainActor
@@ -26,6 +28,16 @@ final class CustomSourcesConnector: CloudConnectorConfig {
         let base: URL
         let headerName: String?
         let headerValue: String?
+        let service: KnownService.Info
+
+        var canRead: Bool { service.readable }
+        var canSend: Bool { service.send != nil }
+    }
+
+    /// Bij precies één bron laat Nook meteen het icoon van die dienst zien.
+    var iconDomain: String? {
+        let list = sources()
+        return list.count == 1 ? list[0].service.domain : nil
     }
 
     var isConfigured: Bool { !sources().isEmpty }
@@ -59,7 +71,9 @@ final class CustomSourcesConnector: CloudConnectorConfig {
         // Alleen een gewone headernaam: geen regeleinden of vreemde tekens.
         if let name = headerName, name.isEmpty || name.range(of: #"^[A-Za-z0-9-]+$"#, options: .regularExpression) == nil { return nil }
         if let value = headerValue, value.contains("\n") || value.contains("\r") { return nil }
-        return Source(name: parts[0], base: url, headerName: headerName, headerValue: headerValue)
+        let explicit = parts.count >= 4 ? parts[3].lowercased() : nil
+        guard let service = KnownService.detect(url, explicit: explicit) else { return nil }
+        return Source(name: parts[0], base: url, headerName: headerName, headerValue: headerValue, service: service)
     }
 
     // MARK: ContextSource
@@ -74,48 +88,108 @@ final class CustomSourcesConnector: CloudConnectorConfig {
             state: .ok,
             headline: tr("connect.custom.count", list.count),
             detail: list.map { $0.name }.joined(separator: ", "),
-            items: list.map { ConnectorItem(id: $0.name, title: $0.name, subtitle: $0.base.host ?? "", tone: .neutral) },
+            items: list.map {
+                ConnectorItem(id: $0.name, title: $0.name, subtitle: Self.subtitle($0), tone: .neutral, iconDomain: $0.service.domain)
+            },
             updated: Date()
         )
     }
 
+    private static func subtitle(_ source: Source) -> String {
+        var parts = [source.service.name]
+        if source.canRead { parts.append(tr("connect.custom.canRead")) }
+        if source.canSend { parts.append(tr("connect.custom.canSend")) }
+        return parts.joined(separator: " · ")
+    }
+
     func contextLines() -> [String] {
         guard isActive else { return [] }
-        let names = sources().map { $0.name }
-        return ["Eigen bronnen die je met read_source kunt lezen: " + names.joined(separator: ", ") + "."]
+        let list = sources()
+        var lines: [String] = []
+        let readable = list.filter { $0.canRead }.map { "\($0.name) (\($0.service.name))" }
+        if !readable.isEmpty { lines.append("Eigen bronnen die je met read_source kunt lezen: " + readable.joined(separator: ", ") + ".") }
+        let sendable = list.filter { $0.canSend }.map { "\($0.name) (\($0.service.name))" }
+        if !sendable.isEmpty { lines.append("Eigen bronnen waar je met send_to_source een bericht naartoe kunt sturen (de gebruiker keurt het eerst goed): " + sendable.joined(separator: ", ") + ".") }
+        return lines
     }
 
     var tools: [ToolSpec] {
-        [
-            ToolSpec(
-                name: "read_source",
-                description: "Leest (alleen lezen, GET) uit een eigen bron van de gebruiker, een app of dienst die hij zelf aan Nook koppelde. Geef de naam van de bron (zie de context) en eventueel een path dat achter het basisadres komt, met de query erin, bijvoorbeeld \"/tasks?filter=today\". Zonder path haal je het basisadres zelf op. Het antwoord is data van een derde.",
-                schema: CloudHelp.schema([
-                    "name": ["type": "string", "description": "Naam van de bron."],
-                    "path": ["type": "string", "description": "Begint met /, optioneel, met query erin."]
-                ]),
-                kind: .read,
-                summarize: { input in "Bron lezen: \((input["name"] as? String) ?? "")" },
-                tag: { _ in ("", .neutral) },
-                run: { [weak self] input in
-                    guard let self, self.isActive else { throw CloudHelp.notSetUp(self?.title ?? "Eigen bronnen") }
-                    guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
-                        throw NookError("De naam van de bron ontbreekt.")
-                    }
-                    return try await self.read(name: name, path: (input["path"] as? String) ?? "")
+        let list = sources()
+        var specs: [ToolSpec] = []
+        if list.contains(where: { $0.canRead }) {
+            specs.append(readSpec)
+        }
+        if list.contains(where: { $0.canSend }) {
+            specs.append(sendSpec)
+        }
+        return specs
+    }
+
+    private var readSpec: ToolSpec {
+        ToolSpec(
+            name: "read_source",
+            description: "Leest (alleen lezen, GET) uit een eigen bron van de gebruiker, een app of dienst die hij zelf aan Nook koppelde. Geef de naam van de bron (zie de context) en eventueel een path dat achter het basisadres komt, met de query erin, bijvoorbeeld \"/tasks?filter=today\". Zonder path haal je het basisadres zelf op. Het antwoord is data van een derde.",
+            schema: CloudHelp.schema([
+                "name": ["type": "string", "description": "Naam van de bron."],
+                "path": ["type": "string", "description": "Begint met /, optioneel, met query erin."]
+            ]),
+            kind: .read,
+            summarize: { input in "Bron lezen: \((input["name"] as? String) ?? "")" },
+            tag: { _ in ("", .neutral) },
+            run: { [weak self] input in
+                guard let self, self.isActive else { throw CloudHelp.notSetUp(self?.title ?? "Eigen bronnen") }
+                guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                    throw NookError("De naam van de bron ontbreekt.")
                 }
-            )
-        ]
+                return try await self.read(name: name, path: (input["path"] as? String) ?? "")
+            }
+        )
+    }
+
+    private var sendSpec: ToolSpec {
+        ToolSpec(
+            name: "send_to_source",
+            description: "Stuurt een bericht via een eigen bron van de gebruiker die kan ontvangen: Slack, Discord, Microsoft Teams, Telegram of een webhook (n8n, Zapier, Make…). Gebruik dit als de gebruiker vraagt iets \"via Slack\" (of een andere gekoppelde dienst) te sturen. Schrijf het bericht zelf in de toon die past. Geef in name de naam van de bron uit de context. to is de ontvanger of het kanaal: verplicht bij een Slack-API-bron (bijvoorbeeld #algemeen of een gebruikers-id) en bij Telegram als het chat-id niet al in het adres staat; bij een webhook bepaalt de webhook zelf het kanaal en komt to vooraan in het bericht. Ontbreekt een verplichte ontvanger, vraag dan eerst. De gebruiker ziet het bericht als plan en keurt het goed voordat het weggaat.",
+            schema: CloudHelp.schema([
+                "name": ["type": "string", "description": "Naam van de bron."],
+                "message": ["type": "string", "description": "De volledige tekst van het bericht."],
+                "to": ["type": "string", "description": "Ontvanger of kanaal, optioneel."]
+            ]).merging(["required": ["name", "message"]]) { _, new in new },
+            kind: .action,
+            summarize: { input in
+                let name = (input["name"] as? String) ?? "bron"
+                let to = ((input["to"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = CloudHelp.short((input["message"] as? String) ?? "", 70)
+                return "\(name)" + (to.isEmpty ? "" : " → \(to)") + ": \(message)"
+            },
+            tag: { _ in ("verstuurt", .caution) },
+            run: { [weak self] input in
+                guard let self, self.isActive else { throw CloudHelp.notSetUp(self?.title ?? "Eigen bronnen") }
+                guard let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                    throw NookError("De naam van de bron ontbreekt.")
+                }
+                let message = ((input["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !message.isEmpty else { throw NookError("Het bericht is leeg.") }
+                let to = ((input["to"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return try await self.send(name: name, message: message, to: to)
+            }
+        )
     }
 
     // MARK: Lezen
 
-    private func read(name: String, path: String) async throws -> String {
+    private func find(_ name: String) throws -> Source {
         let list = sources()
         guard let source = list.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
                 ?? list.first(where: { $0.name.range(of: name, options: .caseInsensitive) != nil }) else {
             throw NookError("Geen bron met de naam \(name). Bekende bronnen: " + list.map { $0.name }.joined(separator: ", ") + ".")
         }
+        return source
+    }
+
+    private func read(name: String, path: String) async throws -> String {
+        let source = try find(name)
+        guard source.canRead else { throw NookError("\(source.name) is een webhook: daar kun je alleen naartoe sturen, niets uitlezen.") }
         let url = try Self.url(for: source, path: path)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -144,6 +218,46 @@ final class CustomSourcesConnector: CloudConnectorConfig {
         let limit = 8_000
         if text.count > limit { text = String(text.prefix(limit)) + "\n… (ingekort; vraag met een path of filter om minder)" }
         return text.isEmpty ? "Leeg antwoord van \(source.name)." : text
+    }
+
+    private func send(name: String, message: String, to: String) async throws -> String {
+        let source = try find(name)
+        guard let style = source.service.send else { throw NookError("\(source.name) kan geen berichten ontvangen.") }
+        let text = String(message.prefix(4_000))
+        let body = try KnownService.payload(style, message: text, to: to)
+
+        var url = source.base
+        switch style {
+        case .slackAPI:
+            if !url.path.lowercased().hasSuffix("chat.postmessage") { url = try Self.url(for: source, path: "/chat.postMessage") }
+        case .telegram:
+            if !url.path.lowercased().hasSuffix("sendmessage") { url = try Self.url(for: source, path: "/sendMessage") }
+        default:
+            break
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        if let header = source.headerName, let value = source.headerValue { request.setValue(value, forHTTPHeaderField: header) }
+
+        let (data, response) = try await ConnectorHTTP.session.data(for: request, delegate: SameHostRedirects(host: url.host))
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            switch code {
+            case 401, 403, 404: throw NookError("\(source.service.name) weigerde het bericht (\(code)). Klopt het adres of de sleutel?")
+            case 429: throw NookError("\(source.service.name): te veel verzoeken. Probeer het straks opnieuw.")
+            default: throw NookError("\(source.service.name) gaf een fout (\(code)).")
+            }
+        }
+        // Slack-API en Telegram melden een fout in de inhoud, niet in de statuscode.
+        if let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let ok = json["ok"] as? Bool, !ok {
+            let reason = (json["error"] as? String) ?? (json["description"] as? String) ?? "onbekende fout"
+            throw NookError("\(source.service.name) weigerde het bericht: \(reason)")
+        }
+        return "Bericht verstuurd via \(source.service.name)" + (to.isEmpty ? "" : " naar \(to)") + "."
     }
 
     /// Het path komt achter het basisadres en kan nooit naar een andere host wijzen.
