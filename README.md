@@ -14,7 +14,7 @@ open Nook.xcodeproj
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in de menubalk.
 
 **Eerste keer**
-1. Menubalk-stip → **Instellingen…** → plak je Anthropic API-sleutel (blijft in de Keychain).
+1. Menubalk-stip → **Instellingen…** → kies bij Brein: een Anthropic API-sleutel (blijft in de Keychain), of **Gratis model op je Mac** (ingebouwd, MLX: klik Download, niets anders te installeren).
 2. Zet bij Machtigingen Agenda, Herinneringen, Microfoon en Scherm lezen aan zodra je ze wilt gebruiken.
 3. Voor je agents: **Installeer hook-script** en kopieer de configuratie voor Claude Code of Codex.
 
@@ -51,6 +51,8 @@ Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
 ```
 
 ## Let op
+
+- Het ingebouwde gratis model gebruikt de Swift-pakketten mlx-swift-lm, swift-huggingface en swift-transformers. Die vragen Xcode 26 of nieuwer en een Apple Silicon-Mac. De eerste build haalt de pakketten op en duurt lang. Draai `xcodegen` opnieuw na een `git pull`.
 
 - Deze code is geschreven zonder compiler en nog nooit gedraaid. Verwacht een paar kleine foutmeldingen bij de eerste build; plak ze terug en ze zijn snel opgelost.
 - Met ad-hoc ondertekening ziet macOS elke nieuwe build als een andere app: machtigingen en Keychain-toegang kunnen opnieuw gevraagd worden. Met een eigen Developer ID-certificaat verdwijnt dat.

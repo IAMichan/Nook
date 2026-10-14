@@ -11,12 +11,9 @@ struct SettingsView: View {
     @State private var keyDraft = ""
     @State private var status = ""
     @State private var refreshTick = 0
-    @State private var ollamaRunning: Bool?
-    @State private var installed: [String] = []
-    @State private var pulling: String?
-    @State private var pullStatus = ""
-    @State private var pullFraction: Double?
-    @State private var customModel = ""
+    @ObservedObject private var local = EmbeddedModel.shared
+    @State private var installing: String?
+    @State private var installFraction: Double = 0
     @State private var testing = false
     @State private var testResult: (ok: Bool, message: String)?
 
@@ -32,10 +29,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 520, height: 640)
-        .onAppear {
-            refreshTick += 1
-            Task { await refreshOllama() }
-        }
+        .onAppear { refreshTick += 1 }
     }
 
     // MARK: Brein
@@ -47,10 +41,7 @@ struct SettingsView: View {
                 Text("Gratis model op je Mac").tag(true)
             }
             .pickerStyle(.segmented)
-            .onChange(of: settings.useLocal) { _, _ in
-                testResult = nil
-                Task { await refreshOllama() }
-            }
+            .onChange(of: settings.useLocal) { _, _ in testResult = nil }
 
             if settings.useLocal { localFields } else { claudeFields }
 
@@ -103,99 +94,50 @@ struct SettingsView: View {
 
     private var localFields: some View {
         Group {
-            switch ollamaRunning {
-            case .none:
-                HStack { ProgressView().controlSize(.small); Text("Ollama zoeken…") }
-            case .some(false):
-                Label("Ollama draait nog niet", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text("Gratis modellen draaien via Ollama, een kleine app die ze op je Mac uitvoert. Installeer hem, open hem één keer, en kom hier terug.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Text("Een gratis model dat in Nook zelf draait: je hoeft niets anders te installeren. Het wordt één keer gedownload (een paar GB) en werkt daarna zonder internet. Niets van wat je vraagt verlaat je Mac.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(EmbeddedModel.options) { option in
                 HStack {
-                    Button("Download Ollama") { NSWorkspace.shared.open(LocalModelService.downloadPage) }
-                    Button("Opnieuw controleren") { Task { await refreshOllama() } }
-                }
-                Text("Of via Terminal: brew install ollama && brew services start ollama")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            case .some(true):
-                Label("Ollama draait", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-
-                if !installed.isEmpty {
-                    Picker("Gebruik model", selection: $settings.localModel) {
-                        if !installed.contains(settings.localModel) { Text("Kies…").tag(settings.localModel) }
-                        ForEach(installed, id: \.self) { Text($0).tag($0) }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(option.title)
+                        Text(option.detail).font(.caption).foregroundStyle(.secondary)
                     }
-                }
-
-                ForEach(LocalModelService.suggestions) { suggestion in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(suggestion.title)
-                            Text(suggestion.detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if installed.contains(suggestion.id) {
-                            Image(systemName: "checkmark").foregroundStyle(.green)
+                    Spacer()
+                    if installing == option.id {
+                        ProgressView(value: installFraction).frame(width: 90)
+                        Text("\(Int(installFraction * 100))%").font(.caption.monospacedDigit())
+                    } else if local.installed.contains(option.id) {
+                        if settings.localModel == option.id {
+                            Label("In gebruik", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         } else {
-                            Button("Installeer") { Task { await install(suggestion.id) } }
-                                .disabled(pulling != nil)
+                            Button("Gebruik") { settings.localModel = option.id; testResult = nil }
                         }
+                    } else {
+                        Button("Download") { Task { await install(option.id) } }
+                            .disabled(installing != nil)
                     }
                 }
-
-                HStack {
-                    TextField("Ander model, bijv. mistral-small", text: $customModel)
-                        .onSubmit { Task { await install(customModel) } }
-                    Button("Installeer") { Task { await install(customModel) } }
-                        .disabled(customModel.trimmingCharacters(in: .whitespaces).isEmpty || pulling != nil)
-                }
-
-                if let pulling {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(pulling) downloaden… \(pullStatus)").font(.caption)
-                        if let pullFraction { ProgressView(value: pullFraction) } else { ProgressView() }
-                    }
-                }
-                Text("Gratis en privé: alles draait op je eigen Mac en niets gaat naar het internet. Het model moet tools kunnen aanroepen; kleine modellen zijn minder slim dan Claude. Zodra je een model kiest, gebruikt Nook dat in plaats van een API-sleutel.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            Text("Kleine modellen zijn minder slim dan Claude: een plan kan vaker net fout zijn, en de eerste vraag na het opstarten duurt even omdat het model dan geladen wordt. Zodra je een model gebruikt, heeft Nook geen API-sleutel nodig.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func refreshOllama() async {
-        guard settings.useLocal else { return }
-        do {
-            installed = try await LocalModelService.installedModels()
-            ollamaRunning = true
-            if settings.localModel.isEmpty, let first = installed.first { settings.localModel = first }
-        } catch {
-            ollamaRunning = false
-        }
-    }
-
-    private func install(_ raw: String) async {
-        let model = raw.trimmingCharacters(in: .whitespaces)
-        guard !model.isEmpty, pulling == nil else { return }
-        pulling = model
-        pullStatus = ""
-        pullFraction = nil
+    private func install(_ id: String) async {
+        guard installing == nil else { return }
+        installing = id
+        installFraction = 0
         testResult = nil
-        defer { pulling = nil }
+        defer { installing = nil }
         do {
-            try await LocalModelService.pull(model) { status, fraction in
-                Task { @MainActor in
-                    pullStatus = status
-                    pullFraction = fraction
-                }
+            try await local.install(id) { fraction in
+                Task { @MainActor in installFraction = fraction }
             }
-            await refreshOllama()
-            settings.localModel = model
-            customModel = ""
-            status = "\(model) is geïnstalleerd en wordt nu gebruikt."
+            settings.localModel = id
+            status = "\(local.title(for: id)) is klaar en wordt nu gebruikt."
             await testConnection()
         } catch {
             testResult = (false, error.localizedDescription)

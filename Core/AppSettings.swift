@@ -47,7 +47,7 @@ final class AppSettings: ObservableObject {
     @Published var autoWatch: Bool {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
     }
-    /// Gebruik een gratis lokaal model (Ollama) in plaats van de Claude API.
+    /// Gebruik een gratis lokaal model (ingebouwd, MLX) in plaats van de Claude API.
     @Published var useLocal: Bool {
         didSet { UserDefaults.standard.set(useLocal, forKey: "useLocal") }
     }
@@ -59,7 +59,7 @@ final class AppSettings: ObservableObject {
     /// Kan Nook nadenken? Met een lokaal model is een API-sleutel niet nodig.
     var brainReady: Bool { useLocal ? !localModel.isEmpty : hasAPIKey }
     /// Naam van wat er nu denkt, voor in meldingen.
-    var activeModelName: String { useLocal ? localModel : model }
+    var activeModelName: String { useLocal ? (localModel.split(separator: "/").last.map(String.init) ?? localModel) : model }
 
     private var cachedKey: String?
     var apiKey: String? { cachedKey }
