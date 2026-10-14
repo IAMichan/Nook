@@ -105,6 +105,21 @@ final class BrainService {
         return BrainPlan(text: finalText.trimmingCharacters(in: .whitespacesAndNewlines), actions: actions)
     }
 
+    /// Kleine testvraag zonder tools, om sleutel, model en verbinding te controleren.
+    func test() async throws -> String {
+        guard let key = settings.apiKey, !key.isEmpty else {
+            throw NookError("Er is nog geen API-sleutel opgeslagen.")
+        }
+        let body: [String: Any] = [
+            "model": settings.model,
+            "max_tokens": 20,
+            "messages": [["role": "user", "content": "Antwoord met alleen het woord: klaar"]]
+        ]
+        let response = try await send(body, key: key)
+        let blocks = (response["content"] as? [[String: Any]]) ?? []
+        return blocks.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: Prompt
 
     private func systemPrompt() -> String {
@@ -145,15 +160,48 @@ final class BrainService {
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let error as URLError {
+            switch error.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                throw NookError("Geen internetverbinding. Controleer je netwerk en probeer het opnieuw.")
+            case .timedOut:
+                throw NookError("Het brein reageerde niet op tijd. Probeer het zo nog eens.")
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                throw NookError("Kan api.anthropic.com niet bereiken. Staat er een firewall, VPN of proxy tussen?")
+            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateUnknownRoot:
+                throw NookError("De beveiligde verbinding met Anthropic mislukte (\(error.localizedDescription)). Een VPN of netwerkfilter kan dit veroorzaken.")
+            default:
+                throw NookError("Netwerkfout: \(error.localizedDescription)")
+            }
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
 
         guard (200..<300).contains(status) else {
             let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? "Status \(status)"
-            if status == 401 { throw NookError("De API-sleutel werd geweigerd. Controleer hem bij Instellingen.") }
-            if status == 404 { throw NookError("Dit model bestaat niet of is niet beschikbaar: \(settings.model).") }
-            throw NookError("Het brein gaf een fout: \(message)")
+            switch status {
+            case 400:
+                if message.localizedCaseInsensitiveContains("credit") {
+                    throw NookError("Je Anthropic-tegoed is op. Voeg tegoed toe op console.anthropic.com › Plans & Billing.")
+                }
+                throw NookError("Anthropic weigerde het verzoek: \(message)")
+            case 401:
+                throw NookError("De API-sleutel werd geweigerd. Maak op console.anthropic.com een nieuwe sleutel en plak die bij Instellingen.")
+            case 403:
+                throw NookError("Deze sleutel mag dit model of deze functie niet gebruiken: \(message)")
+            case 404:
+                throw NookError("Het model \(settings.model) bestaat niet of is niet beschikbaar voor jouw sleutel. Kies een ander model bij Instellingen.")
+            case 429:
+                throw NookError("Te veel verzoeken of limiet bereikt. Wacht even en probeer opnieuw.")
+            case 500...599:
+                throw NookError("Anthropic heeft op dit moment problemen (\(status)). Probeer het zo nog eens.")
+            default:
+                throw NookError("Het brein gaf een fout (\(status)): \(message)")
+            }
         }
         return object
     }

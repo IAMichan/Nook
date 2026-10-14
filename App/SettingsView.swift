@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var keyDraft = ""
     @State private var status = ""
     @State private var refreshTick = 0
+    @State private var testing = false
+    @State private var testResult: (ok: Bool, message: String)?
 
     var body: some View {
         Form {
@@ -32,21 +34,76 @@ struct SettingsView: View {
     private var brainSection: some View {
         Section("Brein") {
             HStack {
-                SecureField("Anthropic API-sleutel", text: $keyDraft)
-                Button("Bewaar") {
-                    settings.saveAPIKey(keyDraft)
-                    keyDraft = ""
-                    status = settings.hasAPIKey ? "Sleutel bewaard in de Keychain." : "Sleutel verwijderd."
-                }
-                .disabled(keyDraft.isEmpty && !settings.hasAPIKey)
+                SecureField("Anthropic API-sleutel (sk-ant-…)", text: $keyDraft)
+                    .onSubmit(saveKey)
+                Button("Bewaar en test", action: saveKey)
+                    .disabled(keyDraft.isEmpty && !settings.hasAPIKey)
             }
-            Text(settings.hasAPIKey ? "Er is een sleutel opgeslagen. Laat het veld leeg en druk op Bewaar om hem te wissen." : "Zonder sleutel kan Nook niet nadenken. De sleutel blijft in je Keychain.")
+            if let masked = settings.maskedKey {
+                Label("Opgeslagen sleutel: \(masked)", systemImage: "key.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Zonder sleutel kan Nook niet nadenken. Maak er een op console.anthropic.com › API keys. De sleutel blijft in je Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("Model", text: $settings.model)
+                Menu("Kies") {
+                    ForEach(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], id: \.self) { id in
+                        Button(id) { settings.model = id }
+                    }
+                }
+                .fixedSize()
+            }
+            HStack {
+                Button("Test verbinding") { Task { await testConnection() } }
+                    .disabled(!settings.hasAPIKey || testing)
+                if testing { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            if let result = testResult {
+                Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(result.ok ? Color.green : Color.red)
+                    .textSelection(.enabled)
+            }
+            Text("Wat je aan Nook vraagt, plus een korte samenvatting van je agenda en open punten, gaat naar de Claude API. Een Claude-abonnement (claude.ai) werkt hier niet: je hebt een API-sleutel met tegoed nodig.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("Model", text: $settings.model)
-            Text("Wat je aan Nook vraagt, plus een korte samenvatting van je agenda en open punten, gaat naar de Claude API.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func saveKey() {
+        if !keyDraft.isEmpty {
+            let saved = settings.saveAPIKey(keyDraft)
+            keyDraft = ""
+            if !saved.looksValid {
+                testResult = (false, "Dit lijkt geen Anthropic-sleutel: die begint met sk-ant-. Ik test hem toch.")
+            }
+            if let keychainError = saved.keychainError {
+                status = "Keychain weigerde de sleutel (\(keychainError)). Hij werkt nu alleen tot je Nook afsluit."
+            } else {
+                status = "Sleutel bewaard in de Keychain."
+            }
+        } else {
+            settings.saveAPIKey("")
+            testResult = nil
+            status = "Sleutel verwijderd."
+            return
+        }
+        Task { await testConnection() }
+    }
+
+    private func testConnection() async {
+        testing = true
+        defer { testing = false }
+        do {
+            let reply = try await app.brain.test()
+            testResult = (true, "Verbonden met \(settings.model). Antwoord: “\(reply)”")
+        } catch {
+            testResult = (false, error.localizedDescription)
         }
     }
 

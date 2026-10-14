@@ -19,17 +19,18 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(_ value: String, account: String) {
+    @discardableResult
+    static func write(_ value: String, account: String) -> OSStatus {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(base as CFDictionary)
-        guard !value.isEmpty else { return }
+        guard !value.isEmpty else { return errSecSuccess }
         var add = base
         add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        return SecItemAdd(add as CFDictionary, nil)
     }
 }
 
@@ -59,10 +60,23 @@ final class AppSettings: ObservableObject {
         hasAPIKey = !(key ?? "").isEmpty
     }
 
-    func saveAPIKey(_ key: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        Keychain.write(trimmed, account: Self.keyAccount)
+    /// Bewaart de sleutel. De sleutel werkt in elk geval deze sessie; `keychainError` is gevuld als de Keychain weigerde.
+    @discardableResult
+    func saveAPIKey(_ key: String) -> (keychainError: String?, looksValid: Bool) {
+        // Plakken geeft vaak spaties, regeleinden of aanhalingstekens mee.
+        let trimmed = key
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
+        let status = Keychain.write(trimmed, account: Self.keyAccount)
         cachedKey = trimmed.isEmpty ? nil : trimmed
         hasAPIKey = !trimmed.isEmpty
+        let error: String? = status == errSecSuccess ? nil
+            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
+        return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))
+    }
+
+    /// Alleen het einde van de sleutel, om te controleren welke er is opgeslagen.
+    var maskedKey: String? {
+        guard let key = cachedKey, key.count > 12 else { return nil }
+        return "\(key.prefix(7))…\(key.suffix(4))"
     }
 }
