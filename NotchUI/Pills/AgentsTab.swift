@@ -458,23 +458,19 @@ struct AgentsTab: View {
 
     @ViewBuilder
     private func trackedBody(_ session: AgentSession) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(session.steps.suffix(3)) { step in
-                let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(step.symbol)
-                        .foregroundStyle(step.color)
-                        .frame(width: 12)
-                    if current {
-                        ShimmerText(text: step.text)
-                    } else {
-                        Text(step.text)
-                            .foregroundStyle(Color(hex: 0xC9C7D2))
-                    }
+        if let step = session.steps.last, session.status == .running || session.status == .waiting || app.demoMode {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(step.symbol)
+                    .foregroundStyle(step.color)
+                    .frame(width: 12)
+                if step.mark == .running && session.status == .running {
+                    ShimmerText(text: step.text)
+                } else {
+                    Text(step.text).foregroundStyle(NookTheme.textSecondary)
                 }
-                .font(NookTheme.font(13))
-                .lineLimit(1)
             }
+            .font(NookTheme.font(12.5))
+            .lineLimit(1)
         }
 
         if session.status == .waiting && session.approvalID == nil && !app.demoMode {
@@ -569,24 +565,20 @@ struct AgentsTab: View {
             app.send(text, to: session)
             draft = ""
         }
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                TextField("", text: $draft, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
-                    .background(Capsule().fill(NookTheme.field))
-                    .onSubmit(send)
-                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: true, action: send)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                terminalButton(session)
-            }
-            if canContinue && busy {
-                Text(tr("agents.reply.forkHint"))
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(NookTheme.textTertiary)
+        return HStack(spacing: 8) {
+            TextField("", text: $draft, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
+                .textFieldStyle(.plain)
+                .font(NookTheme.font(13))
+                .foregroundStyle(NookTheme.paper)
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .background(Capsule().fill(NookTheme.field))
+                .onSubmit(send)
+                .help(canContinue && busy ? tr("agents.reply.forkHint") : "")
+            NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 30, action: send)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            NookIconButton(systemName: "terminal", label: tr("agents.openTerminal", TerminalLauncher.name(for: session.hostBundleID)), size: 30) {
+                app.openTerminal(for: session)
             }
         }
     }
@@ -1383,8 +1375,8 @@ private struct AgentConversation: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
+            ScrollView(showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
                     if shown.isEmpty {
                         Text(tr("agents.noMessagesInTranscript"))
                             .font(NookTheme.font(12.5))
@@ -1408,7 +1400,6 @@ private struct AgentConversation: View {
                 .padding(.vertical, 10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
             .onChange(of: shown) { _ in scrollToEnd(proxy) }
             .onAppear { scrollToEnd(proxy) }
         }
@@ -1437,7 +1428,7 @@ private struct AgentConversation: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.iris.opacity(0.22)))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -1445,6 +1436,7 @@ private struct AgentConversation: View {
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(agentColor)
                 MarkdownView(text: message.text, size: 13)
+                    .foregroundStyle(Color(hex: 0xD6D4DE))
             }
         }
     }
