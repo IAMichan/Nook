@@ -168,6 +168,26 @@ final class MailConnector: ContextSource {
     private var unreadCount = 0
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
+    /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
+    var canLookUp: Bool { ConnectorToggle.isOn(id) }
+
+    /// Starts Mail in the background if it is closed, and waits until it responds.
+    static func ensureRunning() async throws {
+        guard !ScriptText.isRunning("com.apple.mail") else { return }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else {
+            throw NookError("Mail staat niet op deze Mac.")
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.hides = true
+        _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        for _ in 0..<40 where !ScriptText.isRunning("com.apple.mail") {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail wilde niet starten.") }
+        // Give the inbox a moment to load.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+    }
     var refreshInterval: TimeInterval { 120 }
 
     func refresh() async {
@@ -224,8 +244,10 @@ final class MailConnector: ContextSource {
     }
 
     func contextLines() -> [String] {
-        guard unreadCount > 0 else { return [] }
-        var lines = ["Mail: \(unreadCount) ongelezen in de inbox. Nieuwste:"]
+        guard status.state == .ok else { return [] }
+        // "Nothing unread" is an answer too: without this line the model does not know it already saw Mail.
+        guard unreadCount > 0 else { return ["Mail: geen ongelezen mail in de inbox."] }
+        var lines = ["Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread). Nieuwste:"]
         for message in unread.prefix(10) {
             lines.append("- \(message.subject) | van \(message.sender) | \(message.date)")
         }
@@ -234,6 +256,72 @@ final class MailConnector: ContextSource {
 
     var tools: [ToolSpec] {
         [
+            ToolSpec(
+                name: "mail_unread",
+                description: "Telt de ongelezen mail in de inbox van de app Mail, vers opgehaald: het totaal, per account, per dag van ontvangst (de laatste 14 dagen) en de afzenders met de meeste ongelezen mail. Gebruik dit voor vragen als 'hoeveel mail heb ik nog niet gelezen' en voor een grafiek van ongelezen mail.",
+                schema: ["type": "object", "properties": [String: Any]()],
+                kind: .read,
+                summarize: { _ in "Ongelezen mail tellen" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    try await MailConnector.ensureRunning()
+                    let result = await ScriptText.run(MailStats.unreadScript)
+                    if result.errorNumber == -1743 {
+                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                    }
+                    guard let raw = result.text else { throw NookError("Mail gaf geen antwoord.") }
+                    return MailStats.unread(raw, now: Date())
+                }
+            ),
+            ToolSpec(
+                name: "inbox_mail",
+                description: "Geeft de recente mail in de inbox van de app Mail (nieuwste eerst): onderwerp, afzender, datum, of hij gelezen is, of de gebruiker al antwoordde, en het begin van de tekst, met een link per bericht. Gebruik dit voor vragen als 'welke mail moet ik nog beantwoorden', 'wat is er vandaag binnengekomen' of 'heb ik iets belangrijks gemist'. Beoordeel zelf welke mails een antwoord nodig hebben: echte mensen met een vraag of verzoek, nog niet beantwoord; nieuwsbrieven, meldingen en reclame niet.",
+                schema: ["type": "object", "properties": [
+                    "days": ["type": "integer", "description": "Hoeveel dagen terug (standaard 7, hooguit 30)."],
+                    "unanswered_only": ["type": "boolean", "description": "Alleen mail waarop de gebruiker nog niet antwoordde (standaard false)."] as [String: Any]
+                ]],
+                kind: .read,
+                summarize: { _ in "Inbox lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    try await MailConnector.ensureRunning()
+                    let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
+                    let unanswered = (input["unanswered_only"] as? Bool) ?? false
+                    let filter = "date received > ((current date) - \(days) * days)" + (unanswered ? " and was replied to is false" : "")
+                    let script = """
+                    tell application "Mail"
+                        set found to (messages of inbox whose \(filter))
+                        set n to count of found
+                        if n > 25 then set n to 25
+                        set out to ""
+                        repeat with i from 1 to n
+                            set m to item i of found
+                            set body to ""
+                            try
+                                set body to content of m
+                            end try
+                            if (length of body) > 400 then set body to text 1 thru 400 of body
+                            set mid to ""
+                            try
+                                set mid to message id of m
+                            end try
+                            set state to "ongelezen"
+                            if read status of m then set state to "gelezen"
+                            if was replied to of m then set state to state & ", beantwoord"
+                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & state & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
+                        end repeat
+                        return out
+                    end tell
+                    """
+                    let result = await ScriptText.run(script)
+                    if result.errorNumber == -1743 {
+                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                    }
+                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !raw.isEmpty else { return "Geen mail in de inbox van de laatste \(days) dagen" + (unanswered ? " waarop je nog niet antwoordde." : ".") }
+                    return MailConnector.format(raw, sent: false, status: true)
+                }
+            ),
             ToolSpec(
                 name: "search_mail",
                 description: "Zoekt in de app Mail op onderwerp of afzender (inbox) of op onderwerp of ontvanger (verzonden) en geeft de nieuwste treffers met het begin van de tekst en een link naar het bericht. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'. Zoek met mailbox sent naar wat de gebruiker zelf schreef of beloofde.",
@@ -245,7 +333,7 @@ final class MailConnector: ContextSource {
                 summarize: { _ in "Mail doorzoeken" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open. Open Mail, dan kan Nook erin zoeken.") }
+                    try await MailConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
@@ -291,7 +379,8 @@ final class MailConnector: ContextSource {
     }
 
     /// Maakt de treffers leesbaar voor het brein, met een verwijzing per bericht (een message:-link opent hem in Mail).
-    nonisolated static func format(_ raw: String, sent: Bool) -> String {
+    /// `status`: the recipient slot holds the status (read, replied) instead, for inbox_mail.
+    nonisolated static func format(_ raw: String, sent: Bool, status: Bool = false) -> String {
         var blocks: [String] = []
         var refs: [String] = []
         for chunk in raw.components(separatedBy: "<<<MSG>>>") where !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -300,7 +389,8 @@ final class MailConnector: ContextSource {
             guard header.count >= 5 else { continue }
             let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let who = sent ? "aan \(header[2])" : "van \(header[1])"
-            blocks.append("### \(header[0]) | \(who) | \(header[3])\n\(body)")
+            let state = status && !header[2].isEmpty ? " | \(header[2])" : ""
+            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\n\(body)")
             refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(geen onderwerp)" : header[0], url: messageLink(header[4]),
                                              detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
         }

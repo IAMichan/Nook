@@ -82,6 +82,7 @@ targets:
     sources:
       - path: Tests/NookTests
       - path: Brain/SourceScope.swift
+      - path: Brain/MailStats.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
       - path: Services/Workspace/WorkspaceModels.swift

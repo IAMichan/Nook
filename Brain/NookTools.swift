@@ -104,6 +104,18 @@ final class NookTools {
                 }
             ),
             ToolSpec(
+                name: "read_app",
+                description: "Reads what is in an app (locally, through the macOS accessibility layer), even if that app is behind other windows, hidden or closed. Everything happens invisibly in the background: a closed app is launched hidden, read and quit again. Use this for questions about an app without its own connector (Notes, Messages, WhatsApp, Slack, Teams, Things, Spotify, Excel, Figma…) or to look inside a specific app. Open apps are listed in the context under \"Open apps\"; other installed apps may be named too.",
+                schema: object(["app": string("Name of the app, for example \"Notes\" or \"Slack\".")], required: ["app"]),
+                kind: .read,
+                summarize: { input in "Read \((input["app"] as? String) ?? "app")" },
+                tag: { _ in ("", .neutral) },
+                run: { [screen = self.screen] input in
+                    guard let app = input["app"] as? String else { throw NookError("De appnaam ontbreekt.") }
+                    return try await screen.captureApp(app).text
+                }
+            ),
+            ToolSpec(
                 name: "list_open_loops",
                 description: "Lists open todos/commitments tracked by Nook for the user (pending items requiring follow-up).",
                 schema: object([:], required: []),

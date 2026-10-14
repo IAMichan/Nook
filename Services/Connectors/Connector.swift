@@ -78,9 +78,12 @@ protocol ContextSource: AnyObject {
     func contextLines() -> [String]
     /// Lees-tools die het brein mag gebruiken om dieper te kijken (bijvoorbeeld "zoek in mail").
     var tools: [ToolSpec] { get }
+    /// The model may use the read tools even when the source is not active right now (Mail still closed: the tool opens it).
+    var canLookUp: Bool { get }
 }
 
 extension ContextSource {
+    var canLookUp: Bool { isActive }
     var iconDomain: String? { nil }
     var refreshInterval: TimeInterval { 300 }
     var tools: [ToolSpec] { [] }

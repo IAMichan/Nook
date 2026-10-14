@@ -70,9 +70,9 @@ enum SourceCatalog {
         "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
         "check_availability": "calendar",
         "create_reminder": "reminders", "complete_reminder": "reminders",
-        "search_mail": "mail",
+        "search_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
-        "read_screen": screen,
+        "read_screen": screen, "read_app": screen,
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
         "search_web": web, "read_webpage": web, "web_search": web,
         "read_source": "customsources", "send_to_source": "customsources",
@@ -280,7 +280,7 @@ enum SourceRouter {
     static let core: Set<String> = ["calendar", "reminders", SourceCatalog.loops]
 
     private static let intents: [(pattern: String, ids: [String])] = [
-        (#"\w*mail\w*|inbox|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
+        (#"\w*mail\w*|inbox|postvak\w*|ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read|afzender\w*|senders?|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
         (#"tabs?|tabblad\w*|pagina|page|website|site|artikel|article|browser|gelezen|las ik"#, ["browser"]),
         (#"bestand\w*|files?|document\w*|pdf|rapport|report|notities|notes|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
         (#"code|repo\w*|pull|pr\b|prs\b|issues?|ci\b|build|merge|review|commit\w*|bug\w*|release|requirements?"#, ["github"]),
@@ -317,8 +317,8 @@ enum SourceCapabilities {
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
         "create_event": "afspraak maken", "update_event": "afspraak aanpassen",
         "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
-        "search_mail": "mail zoeken (inbox en verzonden)", "compose_mail": "mailconcept (jij verstuurt)",
-        "search_files": "bestanden zoeken", "read_file": "document lezen", "read_screen": "scherm lezen",
+        "search_mail": "mail zoeken (inbox en verzonden)", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
+        "search_files": "bestanden zoeken", "read_file": "document lezen", "read_screen": "scherm lezen", "read_app": "een open app lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
         "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",

@@ -527,16 +527,18 @@ final class AppModel: ObservableObject {
         }
 
         // Only sources relevant to this query are included in full; others as one-line summaries.
-        var activeIDs = Set(connectors.active.map { $0.id })
+        var activeIDs = Set(connectors.searchable.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
         let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
         let summary = contextSummary(scope: scope, relevant: relevant)
         let scopeLabel = scope.isRestricted ? scope.label() : ""
+        // If asking for a chart, Nook renders it natively; raw code/JSON should not appear in chat.
+        let wantsChart = ChartRescue.wantsChart(text)
         chat.update(id) {
             $0.sources = sources
             $0.contextSources = summary.titles
             $0.scopeLabel = scopeLabel
-            $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…"
+            $0.status = retry ? (wantsChart ? "Ik teken de grafiek…" : "Ik zoek verder…") : "Even nadenken…"
         }
 
         // Live retrieval steps appear above the streaming response.
@@ -557,11 +559,11 @@ final class AppModel: ObservableObject {
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
 
-        // If asking for a chart, Nook renders it natively; raw code/JSON should not appear in chat.
-        let wantsChart = ChartRescue.wantsChart(text)
         var request = text
         if retry {
-            request += "\n\n(Render the chart now using the show_chart tool with real numbers from context, tools, or web. Do not write code, JSON, or a table as a substitute.)"
+            request += wantsChart
+                ? "\n\n(Render the chart now using the show_chart tool with real numbers from context, tools, or web. Do not write code, JSON, or a table as a substitute.)"
+                : "\n\n(You have not answered yet. Work out which source has the answer: a connected source, an open or closed app (read_app), the screen, a file or the web. Fetch it with the matching tool and then answer the question. If it really is not possible, briefly say where you looked and what was missing.)"
         }
 
         do {
@@ -608,11 +610,21 @@ final class AppModel: ObservableObject {
                 }
             }
 
+            // No answer, chart, draft or plan: try once more, asking the model to find the right source itself.
+            let bare = rawBody.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            let nothing = (bare.isEmpty || bare.uppercased() == "NONE") && rescued.isEmpty
+                && (chat.message(id)?.charts.isEmpty ?? true) && (chat.message(id)?.mails.isEmpty ?? true) && plan.actions.isEmpty
+            if nothing, !retry, !settings.useLocal {
+                chat.update(id) { $0.text = ""; $0.status = "Ik zoek verder…" }
+                await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                return
+            }
+
             // Strip citations pointing to sources that were not actually retrieved.
             let references = ledger.references
             var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
-                body = "Ik zie niets waar je iets aan hebt."
+                body = "Ik vond hier niets over. Zeg erbij waar ik moet kijken?"
             }
             let cited = Citations.used(in: body)
             // Prioritize cited references first, followed by other retrieved sources.
@@ -642,7 +654,9 @@ final class AppModel: ObservableObject {
                 message.streaming = false
                 message.status = ""
                 if body.isEmpty && message.charts.isEmpty && message.mails.isEmpty && plan.actions.isEmpty {
-                    message.text = "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
+                    message.text = wantsChart
+                        ? "Ik vond geen cijfers om een grafiek van te maken. Zeg erbij waar ik moet kijken?"
+                        : "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
                 }
             }
             if let message = chat.message(id) {
@@ -1058,8 +1072,13 @@ final class AppModel: ObservableObject {
             if !scope.focus.isEmpty {
                 lines.append("- Specifically requested by user, prioritize: " + scope.focus.map(SourceCatalog.title).sorted().joined(separator: ", "))
             }
-            let unavailable = connectors.sources.filter { !$0.isActive && scope.allows($0.id) }.map { $0.title }
+            let unavailable = connectors.sources.filter { !$0.isActive && !$0.canLookUp && scope.allows($0.id) }.map { $0.title }
             if !unavailable.isEmpty { lines.append("- Not connected or disabled: " + unavailable.joined(separator: ", ")) }
+            // Every app is a source too: without a connector, read_app reads what is in it.
+            if scope.allows(SourceCatalog.screen) {
+                let apps = ScreenReader.openApps().compactMap(\.localizedName).sorted()
+                if !apps.isEmpty { lines.append("- Open apps (read one with read_app; closed apps work too): " + apps.joined(separator: ", ")) }
+            }
         }
 
         // Calendar (from start of today), reminders, mail, browser, services: cached connector state.
