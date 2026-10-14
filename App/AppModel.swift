@@ -275,6 +275,8 @@ final class AppModel: ObservableObject {
     /// Eigen venster: de Settings-scene opent niet betrouwbaar in een app zonder Dock-icoon.
     func openSettings(section: SettingsSection? = nil) {
         if let section { settingsSection = section }
+        // Het paneel hangt boven alle vensters: blijft het open, dan ligt het over Instellingen en vangt het de klikken.
+        if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView().environmentObject(self))
             host.sizingOptions = [.minSize]
