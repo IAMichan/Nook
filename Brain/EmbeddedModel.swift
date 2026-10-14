@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXHuggingFace
@@ -13,6 +14,10 @@ struct LocalModelOption: Identifiable {
     let id: String        // repository op Hugging Face
     let title: String
     let detail: String
+    let minMemoryGB: Int  // minder geheugen dan dit: te zwaar, de Mac loopt vast
+
+    /// Past dit model comfortabel op deze Mac?
+    var fits: Bool { EmbeddedModel.memoryGB >= minMemoryGB }
 }
 
 @MainActor
@@ -21,20 +26,68 @@ final class EmbeddedModel: ObservableObject {
 
     /// Modellen die tools kunnen aanroepen, zoals Nook nodig heeft.
     static let options: [LocalModelOption] = [
-        LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)",
-                         detail: "Aanbevolen · ± 4,3 GB · goed in Nederlands · vanaf 16 GB geheugen"),
-        LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)",
-                         detail: "± 4,5 GB · degelijk allrounder · vanaf 16 GB geheugen"),
         LocalModelOption(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", title: "Llama 3.2 (3B)",
-                         detail: "Licht · ± 1,8 GB · sneller maar minder slim · past op 8 GB geheugen")
+                         detail: "Licht · ± 1,8 GB · snel, belast je Mac weinig · vanaf 8 GB geheugen", minMemoryGB: 8),
+        LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)",
+                         detail: "Slimmer en beter in Nederlands · ± 4,3 GB, belast je Mac flink · vanaf 24 GB geheugen", minMemoryGB: 24),
+        LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)",
+                         detail: "± 4,5 GB, belast je Mac flink · vanaf 24 GB geheugen", minMemoryGB: 24)
     ]
+
+    /// Werkgeheugen van deze Mac, in GB.
+    static let memoryGB = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
 
     @Published private(set) var installed: Set<String>
     private var container: ModelContainer?
     private var loadedID: String?
+    private var busy = false
+    private var idleTask: Task<Void, Never>?
+    private var pressureSource: DispatchSourceMemoryPressure?
+
+    /// Na zoveel seconden zonder vraag gaat het model uit het geheugen.
+    private static let idleSeconds: UInt64 = 90
 
     private init() {
         installed = Set(UserDefaults.standard.stringArray(forKey: "installedLocalModels") ?? [])
+        // MLX bewaart standaard enorm veel tussengeheugen; dat is wat een Mac traag maakt.
+        Memory.cacheLimit = 128 * 1024 * 1024
+
+        // Wordt het geheugen krap, dan gaat het model direct weg.
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in Task { @MainActor in self?.unload() } }
+        source.resume()
+        pressureSource = source
+    }
+
+    /// Haalt het model uit het geheugen.
+    func unload() {
+        idleTask?.cancel()
+        guard container != nil else { return }
+        container = nil
+        loadedID = nil
+        Memory.clearCache()
+    }
+
+    private func scheduleUnload() {
+        idleTask?.cancel()
+        idleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.unload()
+        }
+    }
+
+    /// Eén vraag tegelijk: twee modellen-runs door elkaar vragen dubbel zoveel geheugen.
+    private func exclusive<T>(_ work: () async throws -> T) async throws -> T {
+        guard !busy else { throw NookError("Ik ben nog bezig met je vorige vraag. Probeer het zo nog eens.") }
+        busy = true
+        idleTask?.cancel()
+        defer {
+            busy = false
+            Memory.clearCache()
+            scheduleUnload()
+        }
+        return try await work()
     }
 
     func title(for id: String) -> String {
@@ -48,6 +101,7 @@ final class EmbeddedModel: ObservableObject {
         _ = try await load(id, progress: progress)
         installed.insert(id)
         UserDefaults.standard.set(Array(installed), forKey: "installedLocalModels")
+        scheduleUnload()
     }
 
     private func load(_ id: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ModelContainer {
@@ -76,14 +130,20 @@ final class EmbeddedModel: ObservableObject {
 
     /// Kleine testvraag zonder tools.
     func test(model id: String) async throws -> String {
-        let container = try await load(id)
-        let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, temperature: 0.1))
-        let text = try await session.respond(to: "Antwoord met alleen het woord: klaar")
-        return Self.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        try await exclusive {
+            let container = try await load(id)
+            let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, maxKVSize: 512, temperature: 0.1))
+            let text = try await session.respond(to: "Antwoord met alleen het woord: klaar")
+            return Self.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     /// Eén vraag met Nooks tools. Lees-tools draaien meteen; actie-tools worden alleen verzameld als plan.
     func run(model id: String, system: String, prompt: String, tools: [ToolSpec]) async throws -> BrainPlan {
+        try await exclusive { try await runExclusive(model: id, system: system, prompt: prompt, tools: tools) }
+    }
+
+    private func runExclusive(model id: String, system: String, prompt: String, tools: [ToolSpec]) async throws -> BrainPlan {
         let container = try await load(id)
         let collector = ToolCollector(tools: tools)
         let specs: [MLXLMCommon.ToolSpec] = tools.map { tool in
@@ -100,7 +160,7 @@ final class EmbeddedModel: ObservableObject {
         let session = ChatSession(
             container,
             instructions: system,
-            generateParameters: GenerateParameters(maxTokens: 900, temperature: 0.2),
+            generateParameters: GenerateParameters(maxTokens: 450, maxKVSize: 4096, temperature: 0.2),
             tools: specs,
             toolDispatch: { call in await collector.handle(call) }
         )
@@ -138,10 +198,14 @@ final class EmbeddedModel: ObservableObject {
 private final class ToolCollector {
     let tools: [ToolSpec]
     private(set) var actions: [PlannedAction] = []
+    private var calls = 0
 
     init(tools: [ToolSpec]) { self.tools = tools }
 
     func handle(_ call: ToolCall) async -> String {
+        // Een klein model blijft soms tools aanroepen; dat houdt de Mac eindeloos bezig.
+        calls += 1
+        if calls > 5 { return "Genoeg gegevens verzameld. Geef nu je antwoord, zonder nog een tool aan te roepen." }
         let name = call.function.name
         let input = call.function.arguments.mapValues { $0.anyValue }
         guard let spec = tools.first(where: { $0.name == name }) else { return "Onbekende tool." }

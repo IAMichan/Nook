@@ -114,13 +114,15 @@ struct SettingsView: View {
                         } else {
                             Button("Gebruik") { settings.localModel = option.id; testResult = nil }
                         }
+                    } else if !option.fits {
+                        Text("Te zwaar voor \(EmbeddedModel.memoryGB) GB").font(.caption).foregroundStyle(.orange)
                     } else {
                         Button("Download") { Task { await install(option.id) } }
                             .disabled(installing != nil)
                     }
                 }
             }
-            Text("Kleine modellen zijn minder slim dan Claude: een plan kan vaker net fout zijn, en de eerste vraag na het opstarten duurt even omdat het model dan geladen wordt. Zodra je een model gebruikt, heeft Nook geen API-sleutel nodig.")
+            Text("Deze Mac heeft \(EmbeddedModel.memoryGB) GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen, en meekijken op de achtergrond staat uit zolang je een lokaal model gebruikt. Kleine modellen zijn minder slim dan Claude: een plan kan vaker net fout zijn, en de eerste vraag na het opstarten duurt even omdat het model dan geladen wordt. Zodra je een model gebruikt, heeft Nook geen API-sleutel nodig.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -181,6 +183,7 @@ struct SettingsView: View {
     private var watchSection: some View {
         Section("Meekijken") {
             Toggle("Af en toe zelf meekijken met het scherm", isOn: $settings.autoWatch)
+                .disabled(settings.useLocal)
             Text("Standaard uit. Aan: Nook leest elke anderhalve minuut de tekst van het voorste venster (op je Mac, niet het beeld) en stuurt alleen die tekst naar het brein om te zien of er iets te doen is. Wachtwoordmanagers en Nook zelf worden overgeslagen. Handmatig meekijken kan altijd met ⌥⌘N.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

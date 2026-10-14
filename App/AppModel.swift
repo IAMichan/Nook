@@ -456,7 +456,7 @@ final class AppModel: ObservableObject {
     }
 
     private func autoWatchTick() {
-        guard settings.autoWatch, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
+        guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
         guard Date().timeIntervalSince(lastAutoRun) > 90 else { return }
         switch viewModel.state {
         case .idle, .music: break
