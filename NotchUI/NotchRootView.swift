@@ -75,7 +75,7 @@ struct NotchRootView: View {
                     }
                 }
             case .music:
-                wings(nh: nh, nw: nw, mood: .dance) {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest) {
                     EqualizerBars(color: NookTheme.music, height: 14)
                 }
             case .done(let message):

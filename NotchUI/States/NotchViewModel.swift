@@ -202,8 +202,7 @@ final class NotchViewModel: ObservableObject {
             case .running: return .think
             default: return .rest
             }
-        case .music: return .dance
-        case .today, .shelf: return .rest
+        case .music, .today, .shelf: return .rest
         }
     }
 }
