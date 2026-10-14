@@ -624,7 +624,7 @@ final class AppModel: ObservableObject {
             let references = ledger.references
             var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
-                body = "Ik zie niets waar je iets aan hebt."
+                body = "Ik vond hier niets over. Zeg erbij waar ik moet kijken?"
             }
             let cited = Citations.used(in: body)
             // Eerst de bronnen waar het antwoord naar verwijst, dan wat verder bekeken werd.

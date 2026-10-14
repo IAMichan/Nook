@@ -120,6 +120,7 @@ final class SourceScopeTests: XCTestCase {
             XCTAssertFalse(relevant.contains("github"), question)
         }
         XCTAssertEqual(SourceCatalog.source(forTool: "mail_unread"), "mail")
+        XCTAssertEqual(SourceCatalog.source(forTool: "inbox_mail"), "mail")
         XCTAssertEqual(SourceCatalog.source(forTool: "read_app"), SourceCatalog.screen, "zonder scherm = ook geen apps lezen")
     }
 
