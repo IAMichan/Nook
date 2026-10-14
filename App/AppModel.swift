@@ -4,6 +4,7 @@ import AppKit
 import Carbon.HIToolbox
 import PDFKit
 import UniformTypeIdentifiers
+import NaturalLanguage
 
 /// Orchestrates services, brain, and notch UI. The UI interacts solely with this object.
 @MainActor
@@ -555,25 +556,41 @@ final class AppModel: ObservableObject {
         }
         var tools = scopedTools(scope, ledger: ledger)
 
-        // A small local model rarely calls tools itself: Nook looks up what the question is about first and hands it over.
+        // Nook looks up what the question is about itself, for every relevant source and any app the question names,
+        // all at once, and hands the results to the brain. The answer never waits on the model deciding to call a tool,
+        // and a cloud model saves its tool round trips.
         var brainContext = summary.text
         var fetched: [String] = []
+        let available = tools.compactMap { spec -> Prefetch.Available? in
+            guard spec.kind == .read, let source = SourceCatalog.source(forTool: spec.name) else { return nil }
+            return Prefetch.Available(name: spec.name, source: source, required: (spec.schema["required"] as? [String]) ?? [])
+        }
+        var calls = Prefetch.calls(for: text, relevant: relevant, available: available)
+        if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
+            calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
+        }
+        let runnable = calls.compactMap { call in tools.first(where: { $0.name == call.tool }).map { (call, $0) } }
+        if !runnable.isEmpty {
+            fetched = await withTaskGroup(of: (Int, String?).self) { group in
+                for (index, item) in runnable.enumerated() {
+                    group.addTask { @MainActor in
+                        let output = try? await RetrievalLedger.withTimeout(8) { try await item.1.run(item.0.input) }
+                        return (index, output)
+                    }
+                }
+                var results: [(Int, String)] = []
+                for await (index, output) in group { if let output { results.append((index, String(output.prefix(5000)))) } }
+                return results.sorted { $0.0 < $1.0 }.map(\.1)
+            }
+        }
+        guard !Task.isCancelled else { return }
+        if !fetched.isEmpty {
+            brainContext += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
+        }
+        // A small local model gets no read tools at all: Nook already looked things up, and a half-made tool call is
+        // what turns into JSON in the answer.
         if settings.useLocal {
-            var calls = Prefetch.calls(for: text, relevant: relevant)
-            if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
-                calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
-            }
-            // Mail lookups come from the Mail connector's memory, so this is instant when Mail was refreshed recently.
-            for call in calls {
-                guard let spec = tools.first(where: { $0.name == call.tool }), let output = try? await spec.run(call.input) else { continue }
-                fetched.append(String(output.prefix(5000)))
-            }
-            guard !Task.isCancelled else { return }
-            if !fetched.isEmpty {
-                brainContext += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
-                // Already fetched: leave out the read tools, so the small model answers instead of trying to fetch again.
-                tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
-            }
+            tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
         }
 
         web.note(text)
@@ -584,7 +601,7 @@ final class AppModel: ObservableObject {
         if retry {
             request += wantsChart
                 ? "\n\n(Render the chart now using the show_chart tool with real numbers from context, tools, or web. Do not write code, JSON, or a table as a substitute.)"
-                : "\n\n(You have not answered yet. Work out which source has the answer: a connected source, an open or closed app (read_app), the screen, a file or the web. Fetch it with the matching tool and then answer the question. If it really is not possible, briefly say where you looked and what was missing.)"
+                : "\n\n(Your previous answer was empty, or contained code/JSON or was in the wrong language. Answer the question itself, in plain sentences, \(settings.languageInstruction(for: text)) Use the context and what was looked up; if something is missing, fetch it with the matching tool (a connected source, an app with read_app, the screen, a file or the web). If it really is not possible, briefly say where you looked and what was missing.)"
         }
 
         do {
@@ -635,7 +652,9 @@ final class AppModel: ObservableObject {
             let bare = rawBody.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
             let nothing = (bare.isEmpty || bare.uppercased() == "NONE") && rescued.isEmpty
                 && (chat.message(id)?.charts.isEmpty ?? true) && (chat.message(id)?.mails.isEmpty ?? true) && plan.actions.isEmpty
-            if nothing, !retry, !settings.useLocal {
+            // Code or JSON for a question that is not about code, or an answer in another language: also try once more.
+            let broken = !nothing && rescued.isEmpty && plan.actions.isEmpty && Self.looksBroken(rawBody, question: text, expected: settings.answerLanguage(for: text))
+            if nothing || broken, !retry {
                 chat.update(id) { $0.text = ""; $0.status = "Ik zoek verder…" }
                 await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                 return
@@ -645,9 +664,11 @@ final class AppModel: ObservableObject {
             let references = ledger.references
             var body = Citations.sanitize(Self.cleanReply(rawBody), valid: Set(references.map(\.number)))
             let bareBody = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
-            if plan.actions.isEmpty, bareBody.isEmpty || bareBody == "NONE", !fetched.isEmpty, chat.message(id)?.charts.isEmpty ?? true {
-                // The local model said nothing, but Nook did find something: show that instead of a dead end.
-                body = Self.digest(fetched)
+            // Still empty, or still code/JSON or the wrong language after the second try: show what Nook found instead.
+            let unusable = bareBody.isEmpty || bareBody == "NONE" || (retry && Self.looksBroken(body, question: text, expected: settings.answerLanguage(for: text)))
+            let found = fetched.isEmpty ? connectors.contextLines(scope: scope, full: relevant).lines.filter { !$0.isEmpty } : fetched
+            if plan.actions.isEmpty, unusable, !found.isEmpty, chat.message(id)?.charts.isEmpty ?? true {
+                body = Self.digest(found)
             } else if plan.actions.isEmpty, bareBody == "NONE" {
                 body = "Ik vond hier niets over. Zeg erbij waar ik moet kijken?"
             }
@@ -971,12 +992,27 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    /// A short list from looked-up data, for when the local model gives no answer: the headings, or the start of the text.
+    /// A short list from looked-up data, for when the model gives no usable answer: headings, list lines, or the start.
     static func digest(_ fetched: [String]) -> String {
-        let text = fetched.joined(separator: "\n")
-        let headings = text.components(separatedBy: .newlines).filter { $0.hasPrefix("### ") }.prefix(10).map { "- " + $0.dropFirst(4) }
+        let lines = fetched.joined(separator: "\n").components(separatedBy: .newlines)
+        let headings = lines.filter { $0.hasPrefix("### ") }.prefix(10).map { "- " + $0.dropFirst(4) }
         if !headings.isEmpty { return "Dit vond ik:\n\n" + headings.joined(separator: "\n") }
-        return "Dit vond ik:\n\n" + String(text.prefix(800))
+        let items = lines.filter { $0.hasPrefix("- ") || $0.hasSuffix(":") }.prefix(20)
+        if !items.isEmpty { return "Dit vond ik:\n\n" + items.joined(separator: "\n") }
+        return "Dit vond ik:\n\n" + String(lines.joined(separator: "\n").prefix(800))
+    }
+
+    /// An answer that is no answer: code or JSON for a question that is not about code, or in another language than asked.
+    static func looksBroken(_ answer: String, question: String, expected: NLLanguage?) -> Bool {
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let aboutCode = question.range(of: #"code|json|script|programm\w*|regex|sql|swift|python|javascript|html|css|\bapi\b|terminal|commando"#,
+                                       options: [.regularExpression, .caseInsensitive]) != nil
+        if !aboutCode, trimmed.contains("```") || trimmed.hasPrefix("{") || trimmed.hasPrefix("[") { return true }
+        // Language only on real prose: names, titles and numbers say little.
+        let prose = trimmed.replacingOccurrences(of: #"```[\s\S]*?```|\[[0-9]+\]|\*\*"#, with: "", options: .regularExpression)
+        if let expected, prose.count >= 40, let answered = AppSettings.detectLanguage(prose), answered != expected { return true }
+        return false
     }
 
     static func refersToScreen(_ text: String) -> Bool {
