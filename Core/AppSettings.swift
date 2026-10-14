@@ -105,6 +105,10 @@ final class AppSettings: ObservableObject {
         get { UserDefaults.standard.object(forKey: "floatOffsetY") as? Double ?? 8 }
         set { UserDefaults.standard.set(newValue, forKey: "floatOffsetY") }
     }
+    /// In de notch-stand: toon de notch op elk aangesloten scherm, niet alleen op het gekozen scherm.
+    @Published var notchOnAllScreens: Bool {
+        didSet { UserDefaults.standard.set(notchOnAllScreens, forKey: "notchOnAllScreens") }
+    }
     /// In rust alleen de notch zelf: Nook verschijnt pas als er iets is of als je erop wijst.
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
@@ -226,6 +230,7 @@ final class AppSettings: ObservableObject {
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")

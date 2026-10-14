@@ -226,6 +226,8 @@ struct SettingsView: View {
                 }
                 if settings.placement == "floating" {
                     Text(tr("settings.notch.placementHint")).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    SettingToggle(tr("settings.notch.allScreens"), detail: tr("settings.notch.allScreensDetail"), isOn: $settings.notchOnAllScreens)
                 }
                 Picker(tr("settings.notch.screen"), selection: $settings.screenChoice) {
                     Text(tr("settings.notch.auto")).tag("auto")
@@ -234,7 +236,13 @@ struct SettingsView: View {
                     ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
                         Text(name).tag(name)
                     }
+                    // Een eerder gekozen scherm dat nu niet is aangesloten, blijft kiesbaar.
+                    if !["auto", "main", "mouse"].contains(settings.screenChoice),
+                       !NSScreen.screens.map(\.localizedName).contains(settings.screenChoice) {
+                        Text(settings.screenChoice).tag(settings.screenChoice)
+                    }
                 }
+                .disabled(settings.placement == "notch" && settings.notchOnAllScreens)
                 Toggle(tr("settings.notch.hideWhenIdle"), isOn: $settings.hideWhenIdle)
                 Toggle(tr("settings.notch.openOnHover"), isOn: Binding(
                     get: { app.viewModel.openOnHover },
