@@ -56,13 +56,13 @@ final class ScreenReader {
         let image: CGImage
         if let window = target {
             let filter = SCContentFilter(desktopIndependentWindow: window)
-            configuration.width = min(Int(window.frame.width * 2), 3200)
-            configuration.height = min(Int(window.frame.height * 2), 3200)
+            configuration.width = min(Int(window.frame.width * 1.5), 2400)
+            configuration.height = min(Int(window.frame.height * 1.5), 2400)
             image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         } else if let display = content.displays.first {
             let filter = SCContentFilter(display: display, excludingWindows: [])
-            configuration.width = min(display.width * 2, 3200)
-            configuration.height = min(display.height * 2, 3200)
+            configuration.width = min(Int(Double(display.width) * 1.5), 2400)
+            configuration.height = min(Int(Double(display.height) * 1.5), 2400)
             image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         } else {
             throw ScreenError.nothing

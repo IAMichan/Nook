@@ -42,6 +42,7 @@ final class NotchViewModel: ObservableObject {
                 target = .music
             }
         }
+        if case .panel = target, state.kind != "panel" { app?.warmUp() }
         let newSize = layoutSize(for: target)
         let growing = newSize.width * newSize.height > size.width * size.height
         let sameKind = state.kind == target.kind

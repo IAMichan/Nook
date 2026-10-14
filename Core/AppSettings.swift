@@ -65,7 +65,13 @@ final class AppSettings: ObservableObject {
     var apiKey: String? { cachedKey }
 
     private init() {
-        model = UserDefaults.standard.string(forKey: "model") ?? "claude-sonnet-5-5"
+        // Haiku is veel sneller dan Sonnet en genoeg voor Nooks taken. Eenmalig overzetten als je nog op de oude standaard zat.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "modelDefaultFast") {
+            defaults.set(true, forKey: "modelDefaultFast")
+            if defaults.string(forKey: "model") == "claude-sonnet-5-5" { defaults.removeObject(forKey: "model") }
+        }
+        model = defaults.string(forKey: "model") ?? "claude-haiku-5-5"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         useLocal = UserDefaults.standard.bool(forKey: "useLocal")
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""

@@ -44,8 +44,8 @@ final class EmbeddedModel: ObservableObject {
     private var idleTask: Task<Void, Never>?
     private var pressureSource: DispatchSourceMemoryPressure?
 
-    /// Na zoveel seconden zonder vraag gaat het model uit het geheugen.
-    private static let idleSeconds: UInt64 = 90
+    /// Na zoveel seconden zonder vraag gaat het model uit het geheugen. Ruim geheugen: langer, dan is de volgende vraag meteen snel.
+    private static let idleSeconds: UInt64 = memoryGB >= 24 ? 300 : 90
 
     private init() {
         installed = Set(UserDefaults.standard.stringArray(forKey: "installedLocalModels") ?? [])
@@ -57,6 +57,15 @@ final class EmbeddedModel: ObservableObject {
         source.setEventHandler { [weak self] in Task { @MainActor in self?.unload() } }
         source.resume()
         pressureSource = source
+    }
+
+    /// Laadt het model alvast op de achtergrond (bijvoorbeeld zodra je het paneel opent of begint te praten).
+    func preload(_ id: String) {
+        guard !id.isEmpty, loadedID != id, !busy, installed.contains(id) else { return }
+        Task {
+            _ = try? await load(id)
+            scheduleUnload()
+        }
     }
 
     /// Haalt het model uit het geheugen.

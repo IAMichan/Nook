@@ -372,6 +372,15 @@ final class AppModel: ObservableObject {
 
     // MARK: Spraak
 
+    /// Maakt de volgende vraag sneller: zet de verbinding open of laadt het lokale model alvast.
+    func warmUp() {
+        if settings.useLocal {
+            EmbeddedModel.shared.preload(settings.localModel)
+        } else {
+            brain.prewarm()
+        }
+    }
+
     func toggleVoice() {
         if voice.isListening {
             voice.finishNow()
@@ -386,6 +395,7 @@ final class AppModel: ObservableObject {
                 viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
                 return
             }
+            warmUp()
             viewModel.register("listening#done") { [weak self] in self?.voice.finishNow() }
             viewModel.register("listening#cancel") { [weak self] in self?.voice.cancel() }
             viewModel.show(.card(listeningCard("")))
