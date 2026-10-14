@@ -61,6 +61,9 @@ struct AgentsTab: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            if !selection.isAccounts && !app.demoMode {
+                usageStrip
+            }
         }
         .onAppear {
             app.hub.refreshDetected()
@@ -187,8 +190,9 @@ struct AgentsTab: View {
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
-        if let first = live.first { return .live(first) }
+        if let first = live.first(where: { !$0.isDetected }) { return .live(first) }
         if let first = past.first { return .past(first) }
+        if let first = live.first { return .live(first) }
         return .nothing
     }
 
@@ -211,27 +215,33 @@ struct AgentsTab: View {
 
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 4) {
-                SectionHeader(title: tr("agents.nowActive"), trailing: live.isEmpty ? nil : "\(live.count)")
-                if live.isEmpty {
+                if !tracked.isEmpty {
+                    SectionHeader(title: tr("agents.nowActive"), trailing: "\(tracked.count)")
+                    ForEach(tracked) { session in
+                        LiveCard(session: session, account: accountTag(session), selected: current == session.id) {
+                            viewModel.selectedAgentID = session.id
+                        }
+                    }
+                }
+                if !untracked.isEmpty {
+                    SectionHeader(title: tr("agents.untrackedHeader"), trailing: "\(untracked.count)")
+                        .padding(.top, tracked.isEmpty ? 0 : 12)
+                    ForEach(untracked) { session in
+                        UntrackedRow(session: session, account: accountTag(session), selected: current == session.id) {
+                            viewModel.selectedAgentID = session.id
+                        }
+                    }
+                }
+                if live.isEmpty && past.isEmpty {
                     Text(tr("agents.noneWorkingNow"))
                         .font(NookTheme.font(12.5))
                         .foregroundStyle(NookTheme.textTertiary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                 }
-                ForEach(tracked) { session in
-                    LiveCard(session: session, account: accountTag(session), selected: current == session.id) {
-                        viewModel.selectedAgentID = session.id
-                    }
-                }
-                ForEach(untracked) { session in
-                    UntrackedRow(session: session, account: accountTag(session), selected: current == session.id) {
-                        viewModel.selectedAgentID = session.id
-                    }
-                }
                 if !past.isEmpty {
                     SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
-                        .padding(.top, 12)
+                        .padding(.top, live.isEmpty ? 0 : 12)
                     ForEach(past) { session in
                         PastRow(session: session, account: accountTag(session), selected: current == "past:" + session.id) {
                             viewModel.selectedAgentID = "past:" + session.id
@@ -252,6 +262,68 @@ struct AgentsTab: View {
     private func accountTag(_ session: PastSession) -> String? {
         guard let profile = app.profile(for: session), app.profiles.profiles(for: profile.kind).count > 1 else { return nil }
         return displayName(profile)
+    }
+
+    /// Altijd zichtbaar onderaan Sessies: hoe vol de limieten van al je accounts zitten, ook als er niets draait.
+    @ViewBuilder
+    private var usageStrip: some View {
+        let profiles = app.profiles.all.filter {
+            app.history.executables[$0.kind] != nil || app.history.profileAccounts[$0.id] != nil
+        }
+        if !profiles.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Rectangle().fill(NookTheme.line).frame(height: 1)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(profiles) { profile in
+                            usageChip(profile)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func usageChip(_ profile: AgentProfile) -> some View {
+        let windows = limits(for: profile)
+        let several = app.profiles.profiles(for: profile.kind).count > 1
+        let name = several ? "\(profile.kind.shortName) · \(displayName(profile))" : profile.kind.shortName
+        return Button { viewModel.selectedAgentID = "account:" + profile.id } label: {
+            HStack(spacing: 8) {
+                Circle().fill(profile.kind.color).frame(width: 6, height: 6)
+                Text(name)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                if app.history.profileAccounts[profile.id] == nil {
+                    Text(tr("agents.notLoggedInShort"))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.amber)
+                } else if windows.isEmpty {
+                    Text(tr("agents.noLimitsYet"))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                } else {
+                    ForEach(windows) { window in
+                        HStack(spacing: 4) {
+                            Text(window.label.lowercased())
+                                .foregroundStyle(NookTheme.textTertiary)
+                            Text("\(Int(window.percent.rounded()))%")
+                                .font(NookTheme.mono(11, .semibold))
+                                .foregroundStyle(AgentFormat.color(percent: window.percent))
+                        }
+                        .font(NookTheme.font(11.5))
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Capsule().fill(NookTheme.field))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr("agents.viewAccount"))
     }
 
     /// Niets aan de hand en nog geen geschiedenis: zeg hoe je begint.
@@ -407,6 +479,28 @@ struct AgentsTab: View {
                 .font(NookTheme.font(13))
                 .lineLimit(1)
             }
+        }
+
+        if session.status == .waiting && session.approvalID == nil && !app.demoMode {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "questionmark.bubble")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(NookTheme.amber)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
+                        .font(NookTheme.font(13, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(tr("agents.waitingInTerminalDetail"))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
         }
 
         if !session.diff.isEmpty || !session.file.isEmpty {

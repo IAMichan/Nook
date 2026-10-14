@@ -373,7 +373,12 @@ final class AgentHub: ObservableObject {
             // Staat de vraag al als kaart in de notch, dan niet nog een melding.
             let asking = pendingApprovals.values.contains { $0.request.sessionKey == key }
                 || pendingQuestions.values.contains { $0.request.sessionKey == key }
-            if !asking {
+            // "Claude is waiting for your input" is Claude Code's rustmelding na een afgeronde beurt: geen vraag aan jou.
+            let idle = message.lowercased().contains("waiting for your input")
+            if idle && !asking {
+                if record.status != .done { record.status = .done }
+                Self.push(&record, .done, "klaar, wacht op je volgende opdracht")
+            } else if !asking {
                 record.status = .waiting
                 Self.push(&record, .blocked, Self.shorten(message, 70))
                 attention = true
@@ -599,7 +604,7 @@ final class AgentHub: ObservableObject {
                 } else {
                     diff = record.diff
                 }
-                var file = record.file.isEmpty ? "nog geen bestand geraakt" : record.file
+                var file = record.file
                 if record.linesAdded + record.linesRemoved > 0 {
                     file += "  +\(record.linesAdded) −\(record.linesRemoved)"
                 }
