@@ -1838,11 +1838,6 @@ final class AppModel: ObservableObject {
         return result
     }
 
-    func copyLaunchCommand(_ profile: AgentProfile) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(profile.launchCommand, forType: .string)
-    }
-
     /// Resumes a past session in a new Terminal window within its original directory.
     func resume(_ session: PastSession) {
         guard FileManager.default.fileExists(atPath: session.cwd) else {
