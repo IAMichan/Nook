@@ -24,6 +24,9 @@ final class ConnectorHub: ObservableObject {
 
     var active: [ContextSource] { sources.filter { $0.isActive } }
 
+    /// Waar het brein in kan kijken: alles wat actief is, plus bronnen die hun tools ook zonder cache kunnen draaien.
+    var searchable: [ContextSource] { sources.filter { $0.isActive || $0.canLookUp } }
+
     /// Koppelingen waar iets op jou wacht (falende CI, herinnering te laat…).
     var needingAttention: [ContextSource] { active.filter { $0.status.needsAttention } }
 
@@ -81,16 +84,16 @@ final class ConnectorHub: ObservableObject {
         var lines: [String] = []
         var fullTitles: [String] = []
         var brief: [String] = []
-        for source in active where scope.allows(source.id) {
+        for source in searchable where scope.allows(source.id) {
             let part = source.contextLines()
-            if full?.contains(source.id) ?? true {
-                guard !part.isEmpty else { continue }
+            // Niets in de cache (Mail nog dicht): dan in elk geval de regel met de tools, zodat het brein weet dat hij kan kijken.
+            if (full?.contains(source.id) ?? true), !part.isEmpty {
                 lines.append(contentsOf: part)
                 fullTitles.append(source.title)
             } else {
                 let readTools = source.tools.filter { $0.kind == .read }.map(\.name)
                 var line = "- \(source.title)"
-                if !source.status.headline.isEmpty { line += ": \(source.status.headline)" }
+                if source.isActive, !source.status.headline.isEmpty { line += ": \(source.status.headline)" }
                 if !readTools.isEmpty { line += " (lees gericht met \(readTools.joined(separator: ", ")))" }
                 brief.append(line)
             }
@@ -108,5 +111,5 @@ final class ConnectorHub: ObservableObject {
         active.filter { !$0.contextLines().isEmpty }.map { $0.title }
     }
 
-    var tools: [ToolSpec] { hubTools + active.flatMap { $0.tools } }
+    var tools: [ToolSpec] { hubTools + searchable.flatMap { $0.tools } }
 }

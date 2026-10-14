@@ -81,22 +81,6 @@ enum SourceCatalog {
         "portfolio_overview": "portfolio"
     ]
 
-    /// Apps die bij een bron horen: werk je daar net in, dan gaat een vraag waarschijnlijk over die bron.
-    private static let bundles: [String: String] = [
-        "com.apple.mail": "mail", "com.microsoft.Outlook": "mail", "com.readdle.smartemail-Mac": "mail",
-        "com.apple.iCal": "calendar", "com.flexibits.fantastical2.mac": "calendar",
-        "com.apple.reminders": "reminders",
-        "com.apple.Safari": "browser", "com.google.Chrome": "browser", "company.thebrowser.Browser": "browser",
-        "com.brave.Browser": "browser", "com.microsoft.edgemac": "browser",
-        "com.apple.finder": "files", "com.apple.Preview": "files",
-        "notion.id": "notion", "com.github.GitHubClient": "github",
-        "com.tinyspeck.slackmacgap": "customsources", "com.microsoft.teams2": "customsources"
-    ]
-
-    static func source(forBundle bundleID: String) -> String? {
-        bundles[bundleID]
-    }
-
     static func source(forTool name: String) -> String? {
         if let exact = exactTools[name] { return exact }
         if name.hasPrefix("github_") { return "github" }
@@ -296,7 +280,7 @@ enum SourceRouter {
     static let core: Set<String> = ["calendar", "reminders", SourceCatalog.loops]
 
     private static let intents: [(pattern: String, ids: [String])] = [
-        (#"\w*mail\w*|inbox|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
+        (#"\w*mail\w*|inbox|postvak\w*|ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read|afzender\w*|senders?|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
         (#"tabs?|tabblad\w*|pagina|page|website|site|artikel|article|browser|gelezen|las ik"#, ["browser"]),
         (#"bestand\w*|files?|document\w*|pdf|rapport|report|notities|notes|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
         (#"code|repo\w*|pull|pr\b|prs\b|issues?|ci\b|build|merge|review|commit\w*|bug\w*|release|requirements?"#, ["github"]),
@@ -314,12 +298,10 @@ enum SourceRouter {
     /// Brede vragen ("vat mijn week samen", "wat is er gebeurd") mogen overal kijken.
     private static let broad = #"samenvat\w*|vat\b.*samen|overzicht|summar\w*|zusammenfass\w*|alles|everything|all (my|of)|wat is er gebeurd|what happened|deze week|this week|diese woche|bereid\w* .*voor|prepare|voorbereid\w*"#
 
-    /// `frontApp`: de bron van de app waarin de gebruiker net werkte (Mail, Safari…); die gaat altijd volledig mee.
-    static func relevant(to text: String, scope: SourceScope, active: Set<String>, frontApp: String? = nil) -> Set<String> {
+    static func relevant(to text: String, scope: SourceScope, active: Set<String>) -> Set<String> {
         let allowed = active.filter { scope.allows($0) }
         if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil { return allowed }
         var wanted = core.union(scope.focus)
-        if let frontApp { wanted.insert(frontApp) }
         if scope.mode == .only { wanted.formUnion(scope.included) }
         for intent in intents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
             wanted.formUnion(intent.ids)

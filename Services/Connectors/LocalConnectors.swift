@@ -168,6 +168,26 @@ final class MailConnector: ContextSource {
     private var unreadCount = 0
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
+    /// Op de achtergrond kijkt Nook alleen als Mail al open is; vraag je iets over je mail, dan opent de tool Mail zelf (verborgen).
+    var canLookUp: Bool { ConnectorToggle.isOn(id) }
+
+    /// Start Mail op de achtergrond als hij nog dicht is, en wacht tot hij antwoordt.
+    static func ensureRunning() async throws {
+        guard !ScriptText.isRunning("com.apple.mail") else { return }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else {
+            throw NookError("Mail staat niet op deze Mac.")
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.hides = true
+        _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        for _ in 0..<40 where !ScriptText.isRunning("com.apple.mail") {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail wilde niet starten.") }
+        // Even de tijd om de inbox te laden.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+    }
     var refreshInterval: TimeInterval { 120 }
 
     func refresh() async {
@@ -244,7 +264,7 @@ final class MailConnector: ContextSource {
                 summarize: { _ in "Ongelezen mail tellen" },
                 tag: { _ in ("", .neutral) },
                 run: { _ in
-                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open. Open Mail, dan kan Nook je ongelezen mail tellen.") }
+                    try await MailConnector.ensureRunning()
                     let result = await ScriptText.run(MailStats.unreadScript)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
@@ -264,7 +284,7 @@ final class MailConnector: ContextSource {
                 summarize: { _ in "Mail doorzoeken" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open. Open Mail, dan kan Nook erin zoeken.") }
+                    try await MailConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"

@@ -112,12 +112,13 @@ final class SourceScopeTests: XCTestCase {
         XCTAssertEqual(relevant, ["calendar", "mail", "github"])
     }
 
-    func testRouterIncludesAppUserWorkedIn() {
+    func testRouterUnderstandsUnreadMailWithoutTheWordMail() {
         let active: Set<String> = ["calendar", "mail", "github"]
-        let relevant = SourceRouter.relevant(to: "maak een grafiek van wat er nog openstaat", scope: .automatic, active: active, frontApp: "mail")
-        XCTAssertTrue(relevant.contains("mail"))
-        XCTAssertFalse(relevant.contains("github"))
-        XCTAssertEqual(SourceCatalog.source(forBundle: "com.apple.mail"), "mail")
+        for question in ["hoeveel heb ik nog niet gelezen?", "maak een grafiek van mijn ongelezen berichten", "how many unread do I have"] {
+            let relevant = SourceRouter.relevant(to: question, scope: .automatic, active: active)
+            XCTAssertTrue(relevant.contains("mail"), question)
+            XCTAssertFalse(relevant.contains("github"), question)
+        }
         XCTAssertEqual(SourceCatalog.source(forTool: "mail_unread"), "mail")
     }
 
