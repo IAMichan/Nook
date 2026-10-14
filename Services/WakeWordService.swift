@@ -28,6 +28,8 @@ final class WakeWordService {
         SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))?.supportsOnDeviceRecognition ?? false
     }
 
+    private var hasTap = false
+
     func start() throws {
         guard !isRunning else { return }
         guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
@@ -45,10 +47,11 @@ final class WakeWordService {
     }
 
     func stop() {
+        guard isRunning else { return }
+        isRunning = false
         restartTimer?.invalidate()
         restartTimer = nil
         teardown()
-        isRunning = false
     }
 
     private func restart() {
@@ -72,8 +75,12 @@ final class WakeWordService {
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.removeTap(onBus: 0)
+        if hasTap {
+            input.removeTap(onBus: 0)
+            hasTap = false
+        }
         Self.installTap(on: input, format: format, request: request)
+        hasTap = true
         engine.prepare()
         try engine.start()
 
@@ -94,8 +101,13 @@ final class WakeWordService {
     }
 
     private func teardown() {
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        if engine.isRunning {
+            engine.stop()
+        }
+        if hasTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasTap = false
+        }
         request?.endAudio()
         task?.cancel()
         request = nil

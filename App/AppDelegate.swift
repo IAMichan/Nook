@@ -1,11 +1,19 @@
 import AppKit
 
+@main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel.shared
     private var statusItem: NSStatusItem?
+    private var talkItem: NSMenuItem?
+    private var screenItem: NSMenuItem?
+    private var weekRecapItem: NSMenuItem?
+    private var demoScenesItem: NSMenuItem?
+    private var demoSubmenu: NSMenu?
     private var hoverItem: NSMenuItem?
     private var demoItem: NSMenuItem?
+    private var settingsItem: NSMenuItem?
+    private var quitItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -24,12 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        add(to: menu, title: "Praat met Nook   ⌥ spatie", action: #selector(talk))
-        add(to: menu, title: "Kijk mee met mijn scherm   ⌥⌘N", action: #selector(lookAtScreen))
-        add(to: menu, title: "Weekoverzicht", action: #selector(weekRecap))
+        talkItem = add(to: menu, title: tr("menu.talk"), action: #selector(talk))
+        screenItem = add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen))
+        weekRecapItem = add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap))
         menu.addItem(.separator())
 
-        let demo = NSMenuItem(title: "Voorbeeldscènes", action: nil, keyEquivalent: "")
+        let demo = NSMenuItem(title: tr("menu.demoScenes"), action: nil, keyEquivalent: "")
         let demoMenu = NSMenu()
         for scene in DemoScene.allCases {
             let entry = NSMenuItem(title: scene.title, action: #selector(showScene(_:)), keyEquivalent: "")
@@ -39,18 +47,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         demo.submenu = demoMenu
         menu.addItem(demo)
+        demoScenesItem = demo
+        demoSubmenu = demoMenu
 
-        let demoData = add(to: menu, title: "Voorbeelddata tonen", action: #selector(toggleDemo(_:)))
+        let demoData = add(to: menu, title: tr("menu.demoData"), action: #selector(toggleDemo(_:)))
         demoItem = demoData
 
         menu.addItem(.separator())
 
-        let hover = add(to: menu, title: "Openen bij hover", action: #selector(toggleHover(_:)))
+        let hover = add(to: menu, title: tr("menu.hover"), action: #selector(toggleHover(_:)))
         hoverItem = hover
 
-        add(to: menu, title: "Instellingen…", action: #selector(openSettings), key: ",")
+        settingsItem = add(to: menu, title: tr("menu.settings"), action: #selector(openSettings), key: ",")
         menu.addItem(.separator())
-        add(to: menu, title: "Nook afsluiten", action: #selector(quit), key: "q")
+        quitItem = add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
 
         item.menu = menu
         statusItem = item
@@ -75,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Nook"
+        image.accessibilityDescription = tr("menu.accessibility")
         return image
     }
 
@@ -88,6 +98,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        talkItem?.title = tr("menu.talk")
+        screenItem?.title = tr("menu.screen")
+        weekRecapItem?.title = tr("menu.weekRecap")
+        demoScenesItem?.title = tr("menu.demoScenes")
+        if let demoSubmenu = demoSubmenu {
+            for item in demoSubmenu.items {
+                if let raw = item.representedObject as? String, let scene = DemoScene(rawValue: raw) {
+                    item.title = scene.title
+                }
+            }
+        }
+        demoItem?.title = tr("menu.demoData")
+        hoverItem?.title = tr("menu.hover")
+        settingsItem?.title = tr("menu.settings")
+        quitItem?.title = tr("menu.quit")
         hoverItem?.state = model.viewModel.openOnHover ? .on : .off
         demoItem?.state = model.demoMode ? .on : .off
     }

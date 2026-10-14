@@ -76,26 +76,36 @@ struct NotchRootView: View {
                     wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
                         AgentDots(sessions: active)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
                 } else if app.chat.anyBusy {
                     // Een Nook werkt op de achtergrond aan iets: hij denkt zichtbaar mee.
                     wings(nh: nh, nw: nw, mood: .think, animated: true) {
                         idleBadge
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
                 } else if app.settings.hideWhenIdle {
                     Color.clear
                 } else {
                     wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                         idleBadge
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
                 }
             case .music:
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                     EqualizerBars(color: NookTheme.music, height: 14)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
             case .track(let title, let artist):
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                     trackLabel(title: title, artist: artist)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
             case .done(let message):
                 doneStrip(message: message, nh: nh)
             case .nudge(let line, _):
@@ -242,7 +252,7 @@ struct NotchRootView: View {
         .contentShape(Rectangle())
         .onTapGesture { viewModel.openNudge() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Nook stelt voor: \(line)")
+        .accessibilityLabel(tr("notch.nudgeProposal", line))
         .accessibilityAddTraits(.isButton)
     }
 
@@ -254,7 +264,13 @@ struct NotchRootView: View {
         @ViewBuilder inner: () -> Inner
     ) -> some View {
         HStack(alignment: .top, spacing: 20) {
-            NookOrb(mood: mood, size: 46)
+            Button {
+                viewModel.show(.panel(.nook))
+            } label: {
+                NookOrb(mood: mood, size: 46)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("notch.goToHome"))
             inner()
         }
         .padding(.top, nh + 14)
@@ -287,6 +303,6 @@ private struct AgentDots: View {
                 }
             }
         }
-        .accessibilityLabel("\(sessions.count) agents actief")
+        .accessibilityLabel(tr("notch.agentsActive", sessions.count))
     }
 }

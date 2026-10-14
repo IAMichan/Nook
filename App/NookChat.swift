@@ -236,7 +236,7 @@ final class NookChat: ObservableObject {
     func startNew() -> UUID {
         if let current = active, current.isEmpty, !current.busy { return current.id }
         conversations.removeAll { $0.isEmpty && !$0.busy }
-        let conversation = Conversation(id: UUID(), title: "Nieuwe Nook", created: Date(), updated: Date())
+        let conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
         conversations.append(conversation)
         activeID = conversation.id
         trim()

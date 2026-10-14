@@ -12,11 +12,11 @@ struct CardView: View {
     @FocusState private var replyFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(card.context)
                     .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.textTertiary)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
                 if !card.sources.isEmpty {
                     ForEach(card.sources.prefix(5), id: \.self) { source in
@@ -59,7 +59,7 @@ struct CardView: View {
                     NookGhostButton(title: action.label) { onAction(action) }
                 }
                 Spacer()
-                NookIconButton(systemName: "mic", label: "Aanpassen met je stem", action: onVoice)
+                NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +97,7 @@ struct CardView: View {
             TextField(
                 "",
                 text: $reply,
-                prompt: Text("Vraag door of reageer…").foregroundStyle(NookTheme.textTertiary)
+                prompt: Text(tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary)
             )
             .textFieldStyle(.plain)
             .font(NookTheme.font(14))
@@ -168,8 +168,10 @@ private struct OfferChip: View {
             .padding(.horizontal, 12)
             .frame(height: 30)
             .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .overlay(Capsule().stroke(hovering ? NookTheme.iris.opacity(0.3) : NookTheme.line2, lineWidth: 1))
             .contentShape(Capsule())
+            .scaleEffect(hovering ? 1.02 : 1)
+            .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -303,7 +305,7 @@ private struct ChoicesDetail: View {
             if set.multiSelect {
                 HStack {
                     Spacer()
-                    NookPrimaryButton(title: selected.isEmpty ? "Kies iets" : "Verstuur (\(selected.count))") {
+                    NookPrimaryButton(title: selected.isEmpty ? tr("chat.choices.choose") : tr("chat.choices.sendCount", selected.count)) {
                         guard !selected.isEmpty else { return }
                         // In de volgorde van de opties, niet van het klikken.
                         onChoose(set.options.map(\.label).filter { selected.contains($0) })
@@ -349,6 +351,8 @@ private struct ChoiceRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 10).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
+            .scaleEffect(hovering ? 1.01 : 1)
+            .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

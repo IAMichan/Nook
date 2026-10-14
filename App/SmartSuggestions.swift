@@ -18,51 +18,51 @@ extension AppModel {
 
         // 2. Een agent die op je wacht of vastliep.
         if let waiting = hub.sessions.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            ideas.append((95, "Wat heeft \(waiting.name) van me nodig?"))
+            ideas.append((95, tr("suggest.agent.waiting", waiting.name)))
         } else if let failed = hub.sessions.first(where: { $0.status == .failed }) {
-            ideas.append((90, "Waarom liep \(failed.name) vast?"))
+            ideas.append((90, tr("suggest.agent.failed", failed.name)))
         }
 
         // 3. Je volgende afspraak.
         if let next = upcoming.first(where: { $0.end > now }), next.start.timeIntervalSince(now) < 4 * 3600 {
-            ideas.append((85, "Bereid me voor op \(Self.short(next.title, 26))"))
+            ideas.append((85, tr("suggest.prepare", Self.short(next.title, 26))))
         }
 
         // 4. Moment van de dag en de week.
         let todayCount = upcoming.filter { Calendar.current.isDateInToday($0.start) }.count
         if hour < 11 {
-            ideas.append((70, todayCount > 0 ? "Vat mijn dag samen" : "Wat is vandaag het belangrijkst?"))
+            ideas.append((70, todayCount > 0 ? tr("home.suggestions.summarizeDay") : tr("suggest.day.priority")))
         } else if hour >= 16 {
             let tomorrow = upcoming.filter { Calendar.current.isDateInTomorrow($0.start) }.count
-            ideas.append((65, tomorrow > 0 ? "Wat staat er morgen op de planning?" : "Wat moet ik nog afronden vandaag?"))
+            ideas.append((65, tomorrow > 0 ? tr("suggest.tomorrow") : tr("suggest.finishToday")))
         }
         if weekday == 6, hour >= 14 {
-            ideas.append((60, "Hoe ging mijn week?"))
+            ideas.append((60, tr("suggest.week.review")))
         }
         if weekday == 2, hour < 12 {
-            ideas.append((60, "Hoe druk wordt mijn week? Maak er een grafiek van"))
+            ideas.append((60, tr("suggest.cal.chart")))
         }
 
         // 5. Wat er nog openstaat en wat er binnenkomt.
         if let loop = loops.first {
-            ideas.append((55, loops.count > 1 ? "Help me mijn \(loops.count) open punten afronden" : "Help me met \(Self.short(loop.title, 28))"))
+            ideas.append((55, loops.count > 1 ? tr("suggest.loops.many", loops.count) : tr("suggest.loops.one", Self.short(loop.title, 28))))
         }
         let active = Set(connectors.active.map(\.id))
         if active.contains("mail") {
-            ideas.append((50, "Welke mail moet ik beantwoorden?"))
+            ideas.append((50, tr("home.suggestions.mailToReply")))
         }
         for source in connectors.needingAttention.prefix(1) {
-            ideas.append((52, "Wat moet ik doen met \(source.title)?"))
+            ideas.append((52, tr("suggest.source", source.title)))
         }
         if active.contains("github") {
-            ideas.append((45, "Wat wacht er op mij op GitHub?"))
+            ideas.append((45, tr("home.suggestions.github")))
         }
         if active.contains("stripe") {
-            ideas.append((40, "Hoe gaat de omzet deze maand? Met grafiek"))
+            ideas.append((40, tr("suggest.stripe")))
         }
 
         // Altijd iets: een ruime vraag die nooit verkeerd is.
-        ideas.append((10, hour < 12 ? "Vat mijn dag samen" : "Waar kun je me nu mee helpen?"))
+        ideas.append((10, hour < 12 ? tr("home.suggestions.summarizeDay") : tr("suggest.anything")))
 
         var seen = Set<String>()
         return ideas.sorted { $0.priority > $1.priority }
@@ -79,39 +79,39 @@ extension AppModel {
         func any(_ needles: [String]) -> Bool { needles.contains { id.contains($0) || name.contains($0) } }
 
         if any(["com.apple.mail", "outlook", "spark", "superhuman", "mimestream"]) {
-            return ["Vat deze mail samen", "Schrijf een antwoord op deze mail"]
+            return [tr("suggest.mail.summarize"), tr("suggest.mail.reply")]
         }
         if any(["safari", "chrome", "firefox", "arc", "brave", "edge", "opera", "vivaldi", "orion"]) {
-            return ["Vat deze pagina samen", "Wat moet ik hiervan onthouden?"]
+            return [tr("suggest.web.summarize"), tr("suggest.web.remember")]
         }
         if any(["xcode", "vscode", "com.microsoft.vscode", "cursor", "zed", "jetbrains", "sublime", "nova", "windsurf"]) {
-            return ["Leg uit wat deze code doet", "Zie je hier een fout?"]
+            return [tr("suggest.code.explain"), tr("suggest.code.bug")]
         }
         if any(["terminal", "iterm", "warp", "ghostty", "kitty", "alacritty"]) {
-            return ["Wat betekent deze foutmelding?"]
+            return [tr("suggest.terminal.error")]
         }
         if any(["slack", "whatsapp", "telegram", "discord", "teams", "mobilesms", "messages", "signal"]) {
-            return ["Help me antwoorden op dit gesprek", "Staat hier iets in om te plannen?"]
+            return [tr("suggest.chat.reply"), tr("suggest.chat.plan")]
         }
         if any(["numbers", "excel", "sheets", "airtable"]) {
-            return ["Maak een grafiek van deze cijfers", "Wat valt op in deze cijfers?"]
+            return [tr("suggest.sheet.chart"), tr("suggest.sheet.insight")]
         }
         if any(["pages", "word", "notes", "notion", "obsidian", "bear", "craft", "docs", "textedit"]) {
-            return ["Maak deze tekst beter", "Vat dit samen in drie punten"]
+            return [tr("suggest.doc.improve"), tr("suggest.doc.summary")]
         }
         if any(["ical", "calendar", "fantastical", "busycal", "notion-calendar"]) {
-            return ["Waar heb ik deze week nog tijd?", "Hoe druk is mijn week? Maak er een grafiek van"]
+            return [tr("suggest.cal.free"), tr("suggest.cal.chart")]
         }
         if any(["preview", "pdf", "acrobat", "skim"]) {
-            return ["Vat dit document samen"]
+            return [tr("suggest.pdf.summary")]
         }
         if any(["figma", "sketch", "framer"]) {
-            return ["Wat kan beter aan dit ontwerp?"]
+            return [tr("suggest.design.feedback")]
         }
         if any(["zoom", "facetime", "meet", "webex"]) {
-            return ["Maak notities van dit gesprek"]
+            return [tr("suggest.call.notes")]
         }
-        return title.isEmpty ? [] : ["Help me met \(short(title, 30))"]
+        return title.isEmpty ? [] : [tr("suggest.window.help", short(title, 30))]
     }
 
     private static func short(_ text: String, _ limit: Int) -> String {

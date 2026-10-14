@@ -348,7 +348,7 @@ final class AppModel: ObservableObject {
         // Korte vaste opdrachten doet Nook zelf, zonder brein: meteen klaar.
         if let intent = LocalIntent.parse(text) {
             // In de chat blijft het gesprek staan: muziek en tijd beantwoordt Nook daar gewoon.
-            if viewModel.state == .panel(.nook), let reply = quickReplyInChat(intent) {
+            if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
                 chat.append(ChatMessage(role: .nook, text: reply))
                 return
@@ -373,7 +373,7 @@ final class AppModel: ObservableObject {
     /// Opent de chat. `focus`: meteen kunnen typen.
     func showChat(focus: Bool = true) {
         viewModel.focusChat = focus
-        viewModel.show(.panel(.nook))
+        viewModel.show(.panel(.chat))
     }
 
     /// Een nieuwe Nook. Een Nook die nog bezig is, werkt gewoon door.
@@ -436,7 +436,7 @@ final class AppModel: ObservableObject {
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
         // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
-        if viewModel.state != .panel(.nook) {
+        if viewModel.state != .panel(.chat) {
             warmUp()
             showChat()
         }
@@ -586,21 +586,21 @@ final class AppModel: ObservableObject {
 
     /// Een Nook is klaar terwijl je naar iets anders keek: hij laat het even weten.
     private func nookFinished(_ id: UUID) {
-        let watching = viewModel.state == .panel(.nook) && chat.activeID == id
+        let watching = viewModel.state == .panel(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let token = "nookdone-" + UUID().uuidString
         viewModel.register("\(token)#open") { [weak self] in self?.openConversation(id) }
-        let preview = conversation.preview.isEmpty ? "Klaar." : conversation.preview
+        let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
         let lines = max(1, min(3, Int(ceil(Double(preview.count) / 46.0))))
         let card = NookCard(
             id: token,
             mood: .done,
-            context: "Nook · \(conversation.title) · klaar",
+            context: tr("nooks.finished", conversation.title),
             title: preview,
             detail: .none,
-            primary: CardAction(label: "Bekijk", outcome: .callback("\(token)#open", "")),
-            secondary: CardAction(label: "Later", outcome: .dismiss),
+            primary: CardAction(label: tr("nooks.view"), outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
             contentHeight: 100 + CGFloat(lines) * 24
         )
         viewModel.present(card)
@@ -956,7 +956,8 @@ final class AppModel: ObservableObject {
             presentSetupCard()
             return
         }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             guard await voice.requestPermissions() else {
                 viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
                 return

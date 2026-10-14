@@ -3,9 +3,9 @@ import AppKit
 /// Een randloos paneel dat over de notch hangt, nooit de focus steelt
 /// en op elk Space en boven volledig-scherm-apps blijft staan.
 final class NotchPanel: NSPanel {
-    init() {
+    init(contentRect: NSRect = .zero) {
         super.init(
-            contentRect: .zero,
+            contentRect: contentRect,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

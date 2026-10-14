@@ -8,17 +8,7 @@ enum DemoScene: String, CaseIterable {
     case idle, music, suggestion, reminder, listening, plan, approval, today, agents
 
     var title: String {
-        switch self {
-        case .idle: return "Rust"
-        case .music: return "Muziek"
-        case .suggestion: return "Ziet je scherm"
-        case .reminder: return "Herinnering"
-        case .listening: return "Spraak"
-        case .plan: return "Plan"
-        case .approval: return "Goedkeuring"
-        case .today: return "Nook"
-        case .agents: return "Agents"
-        }
+        tr("scene." + rawValue)
     }
 }
 
@@ -30,11 +20,11 @@ enum AgentStatus: Equatable {
 
     var label: String {
         switch self {
-        case .detected: return "draait"
-        case .waiting: return "wacht op jou"
-        case .running: return "bezig"
-        case .failed: return "fout"
-        case .done: return "klaar"
+        case .detected: return tr("agents.status.detected")
+        case .waiting: return tr("agents.status.waiting")
+        case .running: return tr("agents.status.running")
+        case .failed: return tr("agents.status.failed")
+        case .done: return tr("agents.status.done")
         }
     }
 
@@ -272,25 +262,32 @@ enum Greeting {
         let hour = Calendar.current.component(.hour, from: Date())
         let salutation: String
         switch hour {
-        case 0..<6: salutation = "Goedenacht"
-        case 6..<12: salutation = "Goedemorgen"
-        case 12..<18: salutation = "Goedemiddag"
-        default: salutation = "Goedenavond"
+        case 0..<6: salutation = tr("greeting.night")
+        case 6..<12: salutation = tr("greeting.morning")
+        case 12..<18: salutation = tr("greeting.afternoon")
+        default: salutation = tr("greeting.evening")
         }
-        return "\(salutation). Niets dat op je wacht."
+        return tr("greeting.quiet", salutation)
     }
 
     static func line(count: Int) -> String {
         let hour = Calendar.current.component(.hour, from: Date())
         let salutation: String
         switch hour {
-        case 0..<6: salutation = "Goedenacht"
-        case 6..<12: salutation = "Goedemorgen"
-        case 12..<18: salutation = "Goedemiddag"
-        default: salutation = "Goedenavond"
+        case 0..<6: salutation = tr("greeting.night")
+        case 6..<12: salutation = tr("greeting.morning")
+        case 12..<18: salutation = tr("greeting.afternoon")
+        default: salutation = tr("greeting.evening")
         }
-        let words = ["Geen", "Eén ding", "Twee dingen", "Drie dingen", "Vier dingen", "Vijf dingen"]
-        let what = count < words.count ? words[count] : "\(count) dingen"
-        return "\(salutation). \(what) voor je."
+        let words = [
+            tr("greeting.words.zero"),
+            tr("greeting.words.one"),
+            tr("greeting.words.two"),
+            tr("greeting.words.three"),
+            tr("greeting.words.four"),
+            tr("greeting.words.five")
+        ]
+        let what = count < words.count ? words[count] : tr("greeting.words.many", count)
+        return tr("greeting.line", salutation, what)
     }
 }
