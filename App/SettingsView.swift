@@ -122,11 +122,14 @@ struct SettingsView: View {
         .onAppear {
             refreshTick += 1
             refreshAgentStates()
+            app.history.refresh()
         }
         .onChange(of: app.settingsSection) { _, _ in
             status = ""
             refreshTick += 1
+            if app.settingsSection == .agents { app.history.refresh() }
         }
+        .onChange(of: app.agentConnect) { _, _ in refreshAgentStates() }
         .sheet(item: $pendingChange) { change in
             ConfigPreview(change: change) {
                 pendingChange = nil
@@ -628,6 +631,14 @@ struct SettingsView: View {
 
     private var agentsSection: some View {
         Group {
+            Section("Accounts") {
+                ForEach(AgentKind.allCases) { kind in
+                    accountRow(kind)
+                }
+                Text("Eén klik koppelt alles voor dat account. Staat de agent nog niet op je Mac of ben je niet ingelogd, dan opent Nook Terminal om te installeren en in te loggen. Van elk bestand dat Nook aanpast, komt eerst een backup.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Koppel je agents") {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
@@ -650,6 +661,37 @@ struct SettingsView: View {
                     Button("Bekijk") { app.showWeekRecap() }
                     Button("Wis") { app.recap.clear(); status = "Weekoverzicht gewist." }
                 }
+            }
+        }
+    }
+
+    private func accountRow(_ kind: AgentKind) -> some View {
+        let _ = refreshTick
+        let program = app.history.executables[kind] != nil
+        let account = app.history.accounts[kind]
+        let linkedAll = kind.targets.allSatisfy { (agentStates[$0] ?? .notInstalled) == .installed }
+        let progress = app.agentConnect[kind]
+        let complete = program && account != nil && linkedAll
+        let detail: String = {
+            if let progress, progress.isBusy || !complete { return progress.text }
+            if !program { return "Nog niet op deze Mac" }
+            guard let account else { return "Nog niet ingelogd" }
+            let who = [account.name, account.plan].filter { !$0.isEmpty }.joined(separator: " · ")
+            return linkedAll ? who : who + " · nog niet gekoppeld met Nook"
+        }()
+        return HStack {
+            Image(systemName: complete ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(complete ? Color.green : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(kind.name)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if progress?.isBusy == true {
+                ProgressView().controlSize(.small)
+            } else if !complete {
+                Button(!program ? "Installeer en koppel" : (account == nil ? "Log in en koppel" : "Koppel")) { app.connect(kind) }
+                    .buttonStyle(.borderedProminent)
             }
         }
     }

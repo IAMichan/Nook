@@ -20,7 +20,8 @@ struct AgentsTab: View {
     var body: some View {
         let live = app.agentSessions
         let past = app.demoMode ? [] : Array(app.history.sessions.prefix(40))
-        let accounts = app.demoMode ? [] : AgentKind.allCases.filter { app.history.installed.contains($0) }
+        // Alle accounts, ook als de agent er nog niet is: dan installeert en koppelt één klik hem.
+        let accounts = app.demoMode ? [] : AgentKind.allCases
         Group {
             if live.isEmpty && past.isEmpty && accounts.isEmpty {
                 emptyState
@@ -34,6 +35,7 @@ struct AgentsTab: View {
             refreshLinks()
         }
         .onChange(of: viewModel.selectedAgentID) { _, _ in refreshLinks() }
+        .onChange(of: app.agentConnect) { _, _ in refreshLinks() }
         // Zolang de tab open is, blijven sessies en gebruik bij.
         .task {
             while !Task.isCancelled {
@@ -86,6 +88,7 @@ struct AgentsTab: View {
                             AccountChip(
                                 kind: kind,
                                 account: app.history.accounts[kind],
+                                status: chipStatus(kind),
                                 limits: limits(for: kind),
                                 selected: isSelected(kind, selection)
                             ) {
@@ -138,7 +141,8 @@ struct AgentsTab: View {
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
         if let first = live.first { return .live(first) }
-        if let kind = accounts.first(where: { app.history.accounts[$0] != nil }) ?? accounts.first { return .account(kind) }
+        if let kind = accounts.first(where: { app.history.accounts[$0] != nil })
+            ?? accounts.first(where: { app.history.installed.contains($0) }) ?? accounts.first { return .account(kind) }
         return .past(past[0])
     }
 
@@ -223,6 +227,8 @@ struct AgentsTab: View {
                         .textSelection(.enabled)
                 }
 
+                connectBar(kind)
+
                 if windows.isEmpty {
                     limitHint(kind)
                 } else {
@@ -247,8 +253,6 @@ struct AgentsTab: View {
                     }
                 }
 
-                linkChips(kind)
-
                 if !recent.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         SectionHeader(title: "Recente sessies", trailing: nil)
@@ -267,7 +271,7 @@ struct AgentsTab: View {
 
     private func accountLine(_ kind: AgentKind, _ account: AgentAccount?) -> String {
         guard let account else {
-            return "Niet ingelogd. Start \(kind.command) in de terminal en log in."
+            return app.history.executables[kind] == nil ? "Nog niet op deze Mac" : "Nog niet ingelogd"
         }
         var parts = [account.name]
         if !account.organization.isEmpty { parts.append(account.organization) }
@@ -286,7 +290,7 @@ struct AgentsTab: View {
                 if kind == .claude && !linked.contains(.claudeStatusLine) {
                     Text("Zie je 5-uurs- en weeklimiet")
                         .font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
-                    Text("Koppel 'Claude-abonnement in de notch' in Instellingen › Agents.")
+                    Text("Eén klik op Koppel zet de statusregel van Claude Code aan.")
                         .font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
                 } else if kind == .gemini {
                     Text("Geen limieten bekend")
@@ -304,36 +308,93 @@ struct AgentsTab: View {
             }
             Spacer(minLength: 0)
             if kind == .claude && !linked.contains(.claudeStatusLine) {
-                NookGhostButton(title: "Koppel") { app.openSettings(section: .agents) }
+                NookGhostButton(title: "Koppel") { app.connect(.claude) }
             }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
     }
 
-    /// Wat Nook van deze agent te zien krijgt, met een snelle weg naar de instellingen voor wat nog uit staat.
-    private struct LinkItem {
-        var title: String
-        var on: Bool
+    /// Wat er voor deze agent nog ontbreekt.
+    private struct Missing {
+        var program: Bool
+        var login: Bool
+        var targets: [AgentConfigInstaller.Target]
+        var isEmpty: Bool { !program && !login && targets.isEmpty }
     }
 
-    private func linkChips(_ kind: AgentKind) -> some View {
-        var items = [LinkItem(title: "Voortgang en goedkeuren in de notch", on: linked.contains(kind.hookTarget))]
-        if kind == .claude { items.append(LinkItem(title: "Limiet in de notch", on: linked.contains(.claudeStatusLine))) }
-        return HStack(spacing: 6) {
-            ForEach(items, id: \.title) { item in
-                Button { if !item.on { app.openSettings(section: .agents) } } label: {
-                    Label(item.on ? item.title : item.title + ": koppel", systemImage: item.on ? "checkmark.circle.fill" : "plus.circle")
-                        .font(NookTheme.font(11.5, .medium))
-                        .foregroundStyle(item.on ? NookTheme.textSecondary : NookTheme.paper)
-                        .padding(.horizontal, 10)
-                        .frame(height: 26)
-                        .background(Capsule().strokeBorder(item.on ? NookTheme.line2 : NookTheme.textTertiary, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .disabled(item.on)
+    private func missing(_ kind: AgentKind) -> Missing {
+        Missing(
+            program: app.history.executables[kind] == nil,
+            login: app.history.accounts[kind] == nil,
+            targets: kind.targets.filter { !linked.contains($0) }
+        )
+    }
+
+    private func chipStatus(_ kind: AgentKind) -> String? {
+        let gap = missing(kind)
+        if gap.program { return "niet geïnstalleerd" }
+        if gap.login { return "niet ingelogd" }
+        if !gap.targets.isEmpty { return "nog koppelen" }
+        return nil
+    }
+
+    /// Eén knop die alles voor dit account regelt: installeren, inloggen en de koppelingen in de notch.
+    private func connectBar(_ kind: AgentKind) -> some View {
+        let gap = missing(kind)
+        let progress = app.agentConnect[kind]
+        let busy = progress?.isBusy == true
+        let failed: Bool = { if case .failed? = progress { return true }; return false }()
+
+        let title: String
+        let detail: String
+        if busy {
+            title = progress?.text ?? "Bezig…"
+            detail = "Volg de stappen in Terminal. Dit werkt vanzelf bij zodra je klaar bent."
+        } else if failed {
+            title = "Koppelen lukte niet"
+            detail = progress?.text ?? ""
+        } else if gap.isEmpty {
+            title = "Alles gekoppeld"
+            if case .done(let text)? = progress {
+                detail = text
+            } else {
+                detail = kind == .claude ? "Ingelogd, voortgang, goedkeuren en limieten in de notch" : "Ingelogd, voortgang en goedkeuren in de notch"
+            }
+        } else {
+            title = "Koppel \(kind.name) met één klik"
+            var parts: [String] = []
+            if gap.program { parts.append("installeert \(kind.command)") }
+            if gap.login { parts.append("laat je inloggen") }
+            if !gap.targets.isEmpty {
+                parts.append(kind == .claude ? "zet voortgang, goedkeuren en limieten aan" : "zet voortgang en goedkeuren aan")
+            }
+            detail = "Nook " + parts.joined(separator: ", ") + "."
+        }
+        let buttonTitle = gap.program ? "Installeer en koppel" : (gap.login ? "Log in en koppel" : "Koppel")
+
+        return HStack(spacing: 12) {
+            Image(systemName: gap.isEmpty && !busy ? "checkmark.circle.fill" : (failed ? "exclamationmark.triangle.fill" : "link"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(gap.isEmpty && !busy ? NookTheme.mint : (failed ? NookTheme.coral : kind.color))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(detail)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if busy {
+                ProgressView().controlSize(.small)
+            } else if !gap.isEmpty || failed {
+                NookPrimaryButton(title: failed ? "Probeer opnieuw" : buttonTitle) { app.connect(kind) }
             }
         }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
     }
 
     // MARK: Eerdere sessie
@@ -667,6 +728,8 @@ private struct Bar: View {
 private struct AccountChip: View {
     let kind: AgentKind
     let account: AgentAccount?
+    /// Wat er nog ontbreekt ("niet ingelogd"), of nil als alles klaar is.
+    let status: String?
     let limits: [UsageLimit]
     let selected: Bool
     let action: () -> Void
@@ -681,13 +744,20 @@ private struct AccountChip: View {
                     Text(kind.shortName)
                         .font(NookTheme.font(12.5, .semibold))
                         .foregroundStyle(NookTheme.paper)
-                    Text(account?.name ?? "niet ingelogd")
+                    Text(status ?? account?.name ?? "")
                         .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.textTertiary)
+                        .foregroundStyle(status == nil ? NookTheme.textTertiary : NookTheme.amber)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
-                    if let highest {
+                    if status != nil {
+                        Text("Koppel")
+                            .font(NookTheme.font(11, .semibold))
+                            .foregroundStyle(NookTheme.ink)
+                            .padding(.horizontal, 8)
+                            .frame(height: 20)
+                            .background(Capsule().fill(NookTheme.paper))
+                    } else if let highest {
                         Text(limits.map { "\($0.label == "Week" ? "wk" : "5u") \(Int($0.percent.rounded()))%" }.joined(separator: " · "))
                             .font(NookTheme.mono(10.5, .medium))
                             .foregroundStyle(AgentFormat.color(percent: highest))

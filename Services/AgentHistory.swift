@@ -51,6 +51,49 @@ enum AgentKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Alles wat Nook voor deze agent koppelt met één klik.
+    var targets: [AgentConfigInstaller.Target] {
+        switch self {
+        case .claude: return [.claudeHooks, .claudeStatusLine]
+        case .codex: return [.codex]
+        case .gemini: return [.gemini]
+        }
+    }
+
+    /// Hoe je de agent installeert als hij er nog niet is.
+    var installCommand: String {
+        switch self {
+        case .claude:
+            return #"curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH""#
+        case .codex:
+            return "if command -v npm >/dev/null 2>&1; then npm install -g @openai/codex; else brew install --cask codex; fi"
+        case .gemini:
+            return "if command -v npm >/dev/null 2>&1; then npm install -g @google/gemini-cli; else brew install gemini-cli; fi"
+        }
+    }
+
+    /// Inloggen. Claude Code en Gemini CLI vragen het zelf bij de eerste start; Codex heeft er een eigen commando voor.
+    var loginCommand: String {
+        switch self {
+        case .claude: return "claude"
+        case .codex: return "codex login"
+        case .gemini: return "gemini"
+        }
+    }
+
+    /// Kandidaat-paden voor de agent, naast wat je shell vindt.
+    var executableCandidates: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var paths = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin",
+                     "\(home)/.volta/bin", "\(home)/.bun/bin", "\(home)/Library/pnpm"]
+        if self == .claude { paths.insert("\(home)/.claude/local", at: 0) }
+        let nvm = "\(home)/.nvm/versions/node"
+        if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvm) {
+            paths += versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { "\(nvm)/\($0)/bin" }
+        }
+        return paths.map { "\($0)/\(command)" }
+    }
+
     init?(agentName: String) {
         switch agentName {
         case "Claude Code", "Claude (app)": self = .claude
@@ -131,6 +174,27 @@ struct AgentAccount: Equatable {
     var plan: String
 }
 
+/// Hoe ver het koppelen met één klik is.
+enum AgentConnectProgress: Equatable {
+    case working(String)
+    case waitingForLogin(String)
+    case done(String)
+    case failed(String)
+
+    var text: String {
+        switch self {
+        case .working(let text), .waitingForLogin(let text), .done(let text), .failed(let text): return text
+        }
+    }
+
+    var isBusy: Bool {
+        switch self {
+        case .working, .waitingForLogin: return true
+        case .done, .failed: return false
+        }
+    }
+}
+
 /// Gebruik over een periode, voor één agent.
 struct AgentUsageSummary: Equatable {
     var today = TokenTally()
@@ -155,6 +219,8 @@ final class AgentHistory: ObservableObject {
     @Published private(set) var usage: [AgentKind: AgentUsageSummary] = [:]
     /// Welke agents op deze Mac staan (er is een ~/.claude of ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
+    /// Agents waarvan het programma op deze Mac staat.
+    @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
 
     private let scanner = HistoryScanner()
@@ -176,6 +242,7 @@ final class AgentHistory: ObservableObject {
                 if self.accounts != result.accounts { self.accounts = result.accounts }
                 if self.usage != result.usage { self.usage = result.usage }
                 if self.installed != result.installed { self.installed = result.installed }
+                if self.executables != result.executables { self.executables = result.executables }
             }
         }
     }
@@ -194,6 +261,7 @@ private final class HistoryScanner: @unchecked Sendable {
         var accounts: [AgentKind: AgentAccount]
         var usage: [AgentKind: AgentUsageSummary]
         var installed: Set<AgentKind>
+        var executables: [AgentKind: String]
     }
 
     /// Eén tokenregel, met een sleutel om dubbele regels over transcripten heen maar één keer te tellen.
@@ -287,7 +355,62 @@ private final class HistoryScanner: @unchecked Sendable {
             if let account = geminiAccount(geminiHome) { accounts[.gemini] = account }
         }
 
-        return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed)
+        let executables = locateExecutables()
+        installed.formUnion(executables.keys)
+        return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
+    }
+
+    // MARK: Programma's
+
+    private var foundExecutables: [AgentKind: String] = [:]
+    private var lastShellLookup = Date.distantPast
+
+    /// Waar claude, codex en gemini staan. Eerst de bekende plekken; wat daar niet staat, vraagt Nook hooguit
+    /// eens per minuut aan je eigen shell (voor nvm, asdf en dergelijke).
+    private func locateExecutables() -> [AgentKind: String] {
+        let fm = FileManager.default
+        var missing: [AgentKind] = []
+        for kind in AgentKind.allCases {
+            if let known = foundExecutables[kind], fm.isExecutableFile(atPath: known) { continue }
+            foundExecutables[kind] = nil
+            if let hit = kind.executableCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) {
+                foundExecutables[kind] = hit
+            } else {
+                missing.append(kind)
+            }
+        }
+        if !missing.isEmpty, Date().timeIntervalSince(lastShellLookup) > 60 {
+            lastShellLookup = Date()
+            let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
+            // Elk antwoord krijgt een eigen voorvoegsel: een interactieve shell kan zelf ook iets printen.
+            let script = missing.map { "printf 'NOOK-\($0.rawValue):%s\\n' \"$(command -v \($0.command) 2>/dev/null)\"" }
+                .joined(separator: "; ")
+            let lines = Self.run(shell, ["-ilc", script], timeout: 6)?.components(separatedBy: .newlines) ?? []
+            for kind in missing {
+                let prefix = "NOOK-\(kind.rawValue):"
+                guard let line = lines.last(where: { $0.hasPrefix(prefix) }) else { continue }
+                let path = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                if path.hasPrefix("/"), fm.isExecutableFile(atPath: path) { foundExecutables[kind] = path }
+            }
+        }
+        return foundExecutables
+    }
+
+    private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        stop.cancel()
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: Gebruik
