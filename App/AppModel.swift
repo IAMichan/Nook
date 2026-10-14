@@ -556,7 +556,7 @@ final class AppModel: ObservableObject {
         var tools = scopedTools(scope, ledger: ledger)
 
         // A small local model rarely calls tools itself: Nook looks up what the question is about first and hands it over.
-        var context = summary.text
+        var brainContext = summary.text
         var fetched: [String] = []
         if settings.useLocal {
             var calls = Prefetch.calls(for: text, relevant: relevant)
@@ -569,7 +569,7 @@ final class AppModel: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             if !fetched.isEmpty {
-                context += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
+                brainContext += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
                 // Already fetched: leave out the read tools, so the small model answers instead of trying to fetch again.
                 tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
             }
@@ -591,7 +591,7 @@ final class AppModel: ObservableObject {
                 userText: request,
                 followUp: !history.isEmpty,
                 history: history,
-                context: context,
+                context: brainContext,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
                 tools: tools,
