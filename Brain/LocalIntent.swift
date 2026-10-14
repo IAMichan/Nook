@@ -1,11 +1,11 @@
 import Foundation
 
-/// Korte, vaste opdrachten ("volgende nummer", "volume 30", "open Safari") herkent Nook zelf,
-/// zonder het brein: dat is meteen klaar en kost niets. Alles wat niet precies past, gaat gewoon naar het brein.
+/// Short, fixed commands ("next song", "volume 30", "open Safari") are handled locally by Nook,
+/// without invoking the brain: instantaneous and zero cost. Anything that doesn't match falls through to the brain.
 enum LocalIntent: Equatable {
     case media(String)          // play_pause, next, previous
     case volume(Int)
-    case volumeStep(Int)        // +10 of -10
+    case volumeStep(Int)        // +10 or -10
     case openApp(String)
     case showTab(PanelTab)
     case weekRecap
@@ -66,7 +66,7 @@ enum LocalIntent: Equatable {
         return nil
     }
 
-    /// Alleen apps die echt bestaan; "open de mail van Lisa" valt zo vanzelf door naar het brein.
+    /// Only apps that actually exist locally; queries like "open Lisa's email" naturally fall through to the brain.
     private static func installedApp(named name: String) -> String? {
         guard !name.isEmpty, name.split(separator: " ").count <= 3, !name.contains("/") else { return nil }
         let folders = ["/Applications", "/System/Applications", "/System/Applications/Utilities",

@@ -1,8 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Shelf: sleep bestanden hierheen om ze even te bewaren. Klik op een bestand om Nook er iets over te vragen.
-/// Nu nog alleen in het geheugen.
+/// Shelf: drag files here to hold them temporarily. Click a file to ask Nook about it.
+/// Currently in-memory only.
 struct ShelfTab: View {
     @EnvironmentObject private var app: AppModel
     @State private var files: [URL] = []

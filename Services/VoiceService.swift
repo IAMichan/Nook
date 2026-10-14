@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 import Speech
 
-/// Luistert alleen als jij het vraagt (sneltoets of microfoonknop). Waar mogelijk gebeurt de herkenning op je eigen Mac.
+/// Listens only when requested (hotkey or microphone button). Recognition runs on-device whenever possible.
 @MainActor
 final class VoiceService: ObservableObject {
     @Published private(set) var isListening = false
@@ -36,7 +36,7 @@ final class VoiceService: ObservableObject {
     func start(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
         guard !isListening else { return }
         guard let recognizer, recognizer.isAvailable else {
-            throw NookError("Spraakherkenning is nu niet beschikbaar.")
+            throw NookError("Speech recognition is currently unavailable.")
         }
         self.onPartial = onPartial
         self.onFinish = onFinish
@@ -60,7 +60,7 @@ final class VoiceService: ObservableObject {
         engine.prepare()
         try engine.start()
         isListening = true
-        armSilenceTimer(seconds: 6)   // ruim de tijd om te beginnen met praten
+        armSilenceTimer(seconds: 6)   // generous time to start speaking
 
         task = Self.startTask(recognizer: recognizer, request: request) { [weak self] text, isFinal, failed in
             Task { @MainActor in
@@ -81,7 +81,7 @@ final class VoiceService: ObservableObject {
         }
     }
 
-    // Deze twee staan buiten de main actor, omdat de audio- en herkenningsthreads ze aanroepen.
+    // These two are nonisolated because audio and recognition threads invoke them.
     private nonisolated static func installTap(
         on input: AVAudioInputNode,
         format: AVAudioFormat,
@@ -102,7 +102,7 @@ final class VoiceService: ObservableObject {
         }
     }
 
-    /// Stopt het luisteren en geeft de tekst door.
+    /// Stops listening and delivers the recognized transcript.
     func finishNow() {
         guard isListening else { return }
         let text = transcript
@@ -111,7 +111,7 @@ final class VoiceService: ObservableObject {
         callback?(text)
     }
 
-    /// Stopt zonder iets door te geven.
+    /// Stops listening without delivering anything.
     func cancel() {
         guard isListening else { return }
         teardown()

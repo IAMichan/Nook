@@ -12,7 +12,7 @@ final class AgentCommandTests: XCTestCase {
         let spec = AgentCommand.spec(input(.claude, model: "opus", resume: "sess-1", instructions: "Gebruik tabs"))
         let args = spec.arguments
         XCTAssertEqual(Array(args.prefix(1)), ["-p"])
-        XCTAssertTrue(args.contains("--verbose"), "stream-json in print-modus vraagt --verbose")
+        XCTAssertTrue(args.contains("--verbose"), "stream-json in print mode requires --verbose")
         XCTAssertEqual(value(after: "--input-format", in: args), "stream-json")
         XCTAssertEqual(value(after: "--output-format", in: args), "stream-json")
         XCTAssertEqual(value(after: "--permission-prompt-tool", in: args), "stdio")
@@ -20,7 +20,7 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(value(after: "--model", in: args), "opus")
         XCTAssertEqual(value(after: "--resume", in: args), "sess-1")
         XCTAssertEqual(value(after: "--append-system-prompt", in: args), "Gebruik tabs")
-        XCTAssertFalse(args.contains("-doe iets"), "de opdracht gaat via stdin, nooit als argument")
+        XCTAssertFalse(args.contains("-doe iets"), "the prompt is sent via stdin, never as an argument")
         XCTAssertTrue(spec.keepsInputOpen)
         XCTAssertEqual(spec.initialInput.count, 1)
         XCTAssertNotNil(spec.extraEnvironment["NOOK_RUN_ID"])
@@ -31,7 +31,7 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(AgentCommand.claudePermissionMode(mode: .plan, permission: .bypass), "plan")
         XCTAssertEqual(AgentCommand.claudePermissionMode(mode: .agent, permission: .ask), "default")
         XCTAssertEqual(AgentCommand.claudePermissionMode(mode: .agent, permission: .bypass), "bypassPermissions")
-        XCTAssertNil(value(after: "--model", in: AgentCommand.spec(input(.claude)).arguments), "geen model: de standaard van de agent")
+        XCTAssertNil(value(after: "--model", in: AgentCommand.spec(input(.claude)).arguments), "no model: agent default")
         XCTAssertNil(value(after: "--resume", in: AgentCommand.spec(input(.claude)).arguments))
     }
 
@@ -43,7 +43,7 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(value(after: "--sandbox", in: args), "workspace-write")
         XCTAssertEqual(value(after: "--model", in: args), "gpt-5-codex")
         XCTAssertEqual(value(after: "resume", in: args), "th-1")
-        XCTAssertEqual(Array(args.suffix(2)), ["--", "-doe iets"], "een opdracht met een streepje wordt nooit een optie")
+        XCTAssertEqual(Array(args.suffix(2)), ["--", "-doe iets"], "a prompt starting with a dash is never parsed as a flag")
         XCTAssertFalse(spec.keepsInputOpen)
         XCTAssertEqual(AgentCommand.codexSandbox(mode: .plan, permission: .bypass), "read-only")
         XCTAssertEqual(AgentCommand.codexSandbox(mode: .agent, permission: .bypass), "danger-full-access")
@@ -54,7 +54,7 @@ final class AgentCommandTests: XCTestCase {
                                            executable: "/opt/tools/bin/claude", extra: ["NOOK_RUN_ID": "r"])
         XCTAssertTrue(env["PATH"]!.hasPrefix("/opt/tools/bin:"))
         XCTAssertTrue(env["PATH"]!.hasSuffix(":/usr/bin"))
-        XCTAssertNil(env["NOOK_INTERNAL"], "een werkruimte-sessie is een echte agent-sessie")
+        XCTAssertNil(env["NOOK_INTERNAL"], "a workspace session is a real agent session")
         XCTAssertEqual(env["NOOK_RUN_ID"], "r")
     }
 
@@ -63,7 +63,7 @@ final class AgentCommandTests: XCTestCase {
         withKey.accountEnvironment["ANTHROPIC_API_KEY"] = "sk-ant-geheim"
         let spec = AgentCommand.spec(withKey)
         XCTAssertFalse(spec.displayCommand.contains("sk-ant"))
-        XCTAssertFalse(spec.arguments.joined().contains("sk-ant"), "een sleutel staat nooit in de argumenten")
+        XCTAssertFalse(spec.arguments.joined().contains("sk-ant"), "a key is never passed in arguments")
         XCTAssertTrue(spec.displayCommand.hasPrefix("claude -p"))
     }
 
@@ -73,7 +73,7 @@ final class AgentCommandTests: XCTestCase {
     }
 }
 
-/// Een nep-agent als shellscript: zo testen we het proces, stdin en de regels zonder echte Claude Code.
+/// A mock agent shell script: tests process handling, stdin, and output streaming without real Claude Code.
 final class AgentProcessTests: XCTestCase {
     private var folder: String!
 
@@ -93,7 +93,7 @@ final class AgentProcessTests: XCTestCase {
     }
 
     func testStreamsLinesAndAnswersOverStdin() throws {
-        // Leest het eerste bericht, meldt een sessie, vraagt toestemming en wacht op het antwoord.
+        // Reads the first message, initializes session, requests permission, and awaits response.
         let path = try script("""
         read first
         echo '{"type":"system","subtype":"init","session_id":"fake-1","model":"fake"}'
@@ -108,8 +108,8 @@ final class AgentProcessTests: XCTestCase {
                               workingDirectory: folder, initialInput: [ClaudeStreamParser.userMessage("hoi")], keepsInputOpen: true)
         let process = AgentProcess(spec: spec)
         let lines = LineCollector()
-        let exited = expectation(description: "klaar")
-        let asked = expectation(description: "toestemming")
+        let exited = expectation(description: "done")
+        let asked = expectation(description: "permission")
         let finished = expectation(description: "result")
         process.onLine = { line in
             lines.add(line)
@@ -142,7 +142,7 @@ final class AgentProcessTests: XCTestCase {
                               initialInput: [], keepsInputOpen: false)
         let process = AgentProcess(spec: spec)
         let lines = LineCollector()
-        let exited = expectation(description: "klaar")
+        let exited = expectation(description: "done")
         process.onLine = { lines.add($0) }
         process.onExit = { _, _ in exited.fulfill() }
         try process.start()
@@ -155,8 +155,8 @@ final class AgentProcessTests: XCTestCase {
         let spec = LaunchSpec(executable: path, arguments: [], extraEnvironment: [:], workingDirectory: folder,
                               initialInput: [], keepsInputOpen: true)
         let process = AgentProcess(spec: spec)
-        let started = expectation(description: "gestart")
-        let exited = expectation(description: "gestopt")
+        let started = expectation(description: "started")
+        let exited = expectation(description: "stopped")
         process.onLine = { if $0 == "started" { started.fulfill() } }
         process.onExit = { status, _ in
             XCTAssertNotEqual(status, 0)
@@ -174,7 +174,7 @@ final class AgentProcessTests: XCTestCase {
         let spec = LaunchSpec(executable: path, arguments: [], extraEnvironment: [:], workingDirectory: folder,
                               initialInput: [], keepsInputOpen: false)
         let process = AgentProcess(spec: spec)
-        let exited = expectation(description: "klaar")
+        let exited = expectation(description: "done")
         let collected = LineCollector()
         process.onExit = { status, stderr in
             XCTAssertEqual(status, 3)
@@ -187,7 +187,7 @@ final class AgentProcessTests: XCTestCase {
     }
 }
 
-/// Verzamelt regels vanaf een andere thread.
+/// Thread-safe line collector.
 final class LineCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var lines: [String] = []

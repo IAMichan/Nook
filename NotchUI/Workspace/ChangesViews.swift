@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wijzigingen bekijken: links de bestanden, rechts de diff van het gekozen bestand.
+/// Review changes: file list on the left, diff of selected file on the right.
 struct ChangesSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
@@ -75,7 +75,7 @@ struct ChangesSheet: View {
     }
 }
 
-/// Committen: eerst zie je precies wat er meegaat, dan schrijf je zelf het bericht.
+/// Commit: review staged changes before writing the commit message.
 struct CommitSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
@@ -155,7 +155,7 @@ struct CommitSheet: View {
     }
 }
 
-/// Een pull request: via je GitHub-koppeling, of anders op github.com zelf. Altijd na een push, altijd door jou.
+/// Pull request: created via GitHub integration or on github.com directly. Always following a push, always user-initiated.
 struct PullRequestSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss

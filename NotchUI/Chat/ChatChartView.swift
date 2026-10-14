@@ -1,8 +1,8 @@
 import SwiftUI
 import Charts
 
-/// Een grafiek in de chat. Eén reeks krijgt Nooks eigen kleur; meer reeksen krijgen vaste kleuren in vaste volgorde
-/// (een gevalideerd palet voor donkere achtergronden, ook goed te onderscheiden bij kleurenblindheid).
+/// A chart in chat. A single series uses Nook's own color; multiple series use fixed colors in a set sequence
+/// (a validated dark-background palette, easily distinguishable with color blindness).
 struct ChatChartView: View {
     let chart: ChatChart
 
@@ -60,7 +60,7 @@ struct ChatChartView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
     }
 
-    // MARK: Staaf, lijn, vlak, punten
+    // MARK: Bar, line, area, points
 
     private var xy: some View {
         Chart(rows) { row in
@@ -91,7 +91,7 @@ struct ChatChartView: View {
                     .foregroundStyle(by: .value("Reeks", row.series))
                     .cornerRadius(4)
                     .annotation(position: .top, spacing: 3) {
-                        // Bij weinig staven de waarde erboven; bij veel zou dat een rommeltje worden.
+                        // Show values above bars when few; omit when numerous to avoid clutter.
                         Text(Self.format(row.value))
                             .font(NookTheme.font(10, .medium))
                             .foregroundStyle(NookTheme.textSecondary)
@@ -124,12 +124,12 @@ struct ChatChartView: View {
         }
     }
 
-    // MARK: Taart
+    // MARK: Pie
 
     private var slices: [Row] {
         let all = (chart.series.first?.points ?? []).enumerated().map { Row(id: $0.offset, series: $0.element.label, label: $0.element.label, value: max(0, $0.element.value)) }
         guard all.count > 7 else { return all }
-        // Meer dan zeven delen: de kleinste samen als "Overig".
+        // More than seven slices: aggregate the smallest into "Other".
         let sorted = all.sorted { $0.value > $1.value }
         let rest = sorted.dropFirst(6).reduce(0) { $0 + $1.value }
         return Array(sorted.prefix(6)) + [Row(id: 999, series: "Overig", label: "Overig", value: rest)]

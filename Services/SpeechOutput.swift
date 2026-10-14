@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import NaturalLanguage
 
-/// Nook praat terug: leest een antwoord voor met een stem van macOS (op je Mac, niets gaat het internet op).
+/// Speech feedback: reads a response aloud using a macOS voice (on-device, nothing leaves your Mac).
 @MainActor
 final class SpeechOutput {
     private let synthesizer = AVSpeechSynthesizer()
@@ -36,12 +36,12 @@ final class SpeechOutput {
     }
 }
 
-/// Korte systeemgeluiden, zodat je hoort dat een agent op je wacht of klaar is.
-/// Eigen geluiden gaan voor: leg `attention`, `done` of `error` (.wav, .mp3, .aiff of .m4a) in de map Sounds van Nook.
+/// Short system sounds indicating when an agent is waiting for you or has finished.
+/// Custom sounds take priority: place `attention`, `done`, or `error` (.wav, .mp3, .aiff, or .m4a) in Nook's Sounds directory.
 enum NookSound {
     case attention, done, error
 
-    /// Bestandsnaam zonder extensie voor een eigen geluid, bijvoorbeeld `done.mp3`.
+    /// Filename without extension for a custom sound, for example `done.mp3`.
     var fileName: String {
         switch self {
         case .attention: return "attention"
@@ -50,7 +50,7 @@ enum NookSound {
         }
     }
 
-    /// Ingebouwd geluid van macOS als er geen eigen bestand is.
+    /// Built-in macOS sound if no custom file exists.
     private var systemName: String {
         switch self {
         case .attention: return "Ping"
@@ -59,14 +59,14 @@ enum NookSound {
         }
     }
 
-    /// Map met eigen geluiden: ~/Library/Application Support/Nook/Sounds.
+    /// Custom sounds directory: ~/Library/Application Support/Nook/Sounds.
     static var folder: URL {
         NookPaths.supportDirectory.appendingPathComponent("Sounds", isDirectory: true)
     }
 
     private static let extensions = ["wav", "mp3", "aiff", "aif", "m4a"]
 
-    /// Het eigen geluidsbestand voor dit geluid, als je er een hebt neergelegd.
+    /// The custom sound file for this sound, if one has been provided.
     var customFile: URL? {
         let fm = FileManager.default
         for ext in Self.extensions {
@@ -76,7 +76,7 @@ enum NookSound {
         return nil
     }
 
-    /// Houdt het spelende geluid vast; anders kan NSSound halverwege worden opgeruimd.
+    /// Retains the currently playing sound; otherwise NSSound could be deallocated midway.
     @MainActor private static var playing: NSSound?
 
     @MainActor
@@ -86,7 +86,7 @@ enum NookSound {
         var volume: Float = 0.35
         if let url = sound.customFile, let custom = NSSound(contentsOf: url, byReference: true) {
             effect = custom
-            // Eigen bestanden staan meestal al op het goede volume.
+            // Custom sound files are usually already at an appropriate volume.
             volume = 0.8
         }
         if effect == nil { effect = NSSound(named: NSSound.Name(sound.systemName)) }
@@ -97,12 +97,12 @@ enum NookSound {
         playing = effect
     }
 
-    /// Maakt de map met eigen geluiden aan (als die er nog niet is) en laat hem zien in de Finder.
+    /// Creates the custom sounds directory (if it does not exist yet) and reveals it in Finder.
     @MainActor
     static func openFolder() {
         let fm = FileManager.default
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        // Openen in plaats van selecteren: dan kun je er meteen bestanden in slepen.
+        // Open instead of select, so files can be dragged directly into it.
         NSWorkspace.shared.open(folder)
     }
 }

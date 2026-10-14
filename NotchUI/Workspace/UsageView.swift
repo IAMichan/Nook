@@ -1,8 +1,8 @@
 import SwiftUI
 import Charts
 
-/// Gebruik van de werkruimte: tokens en gemelde kosten per agent en model, door de tijd heen.
-/// Alleen wat de agents zelf doorgaven. Wat ze niet melden, staat er als "niet beschikbaar".
+/// Workspace usage: token counts and reported costs per agent and model over time.
+/// Reflects only metrics reported directly by agents. Unreported metrics display as "not available".
 struct UsageView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -202,7 +202,7 @@ struct UsageView: View {
         }
     }
 
-    /// Quota van het account (niet van de sessies hier): alleen wat Claude Code via de statusregel of Codex zelf meldt.
+    /// Account quotas (not session-specific): only what Claude Code reports via status line or Codex reports directly.
     private var accountQuotas: some View {
         VStack(alignment: .leading, spacing: 8) {
             WSSectionTitle(title: tr("ws.usage.accountQuotas"))

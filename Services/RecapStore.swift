@@ -1,6 +1,6 @@
 import Foundation
 
-/// Telt bij wat je agents per dag doen, voor het weekoverzicht. Alles blijft in een bestand op je Mac.
+/// Tracks daily agent activity for weekly recap. Stored in a local file on your Mac.
 @MainActor
 final class RecapStore {
     struct Day: Codable {
@@ -58,7 +58,7 @@ final class RecapStore {
         }
     }
 
-    // MARK: Bijhouden
+    // MARK: Tracking
 
     func prompt(session: String, project: String, agent: String) {
         update { day in
@@ -92,7 +92,7 @@ final class RecapStore {
         update { $0.questions += 1 }
     }
 
-    /// Een beurt van de agent is klaar: de tijd sinds je opdracht telt als actieve tijd (hooguit twee uur).
+    /// An agent turn finished: duration since prompt counts toward active time (at most two hours).
     func turnEnded(session: String) {
         guard let entry = turnStarts.removeValue(forKey: session) else { return }
         let (start, project) = entry
@@ -128,16 +128,16 @@ final class RecapStore {
     }
 
     private func save() {
-        // Alleen de laatste tien weken bewaren.
+        // Keep only the last ten weeks.
         let cutoff = Self.keyFormatter.string(from: Date().addingTimeInterval(-70 * 86_400))
         days = days.filter { $0.key >= cutoff }
         guard let data = try? JSONEncoder().encode(days) else { return }
         try? data.write(to: url, options: .atomic)
     }
 
-    // MARK: Overzicht
+    // MARK: Summary
 
-    /// De week (maandag tot en met zondag) waarin `date` valt.
+    /// The week (Monday through Sunday) containing `date`.
     func summary(weekOf date: Date) -> WeekSummary {
         var calendar = Calendar(identifier: .iso8601)
         calendar.timeZone = .current
@@ -178,6 +178,6 @@ final class RecapStore {
     static func duration(_ seconds: Double) -> String {
         let minutes = Int(seconds / 60)
         if minutes < 60 { return "\(minutes) min" }
-        return "\(minutes / 60) u \(minutes % 60) min"
+        return "\(minutes / 60) h \(minutes % 60) min"
     }
 }

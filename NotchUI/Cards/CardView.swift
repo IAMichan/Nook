@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// De vaste opbouw van elke kaart: context, één zin, hooguit één detailregel en hooguit twee knoppen.
+/// The fixed structure of each card: context, one sentence, at most one detail line, and at most two buttons.
 struct CardView: View {
     let card: NookCard
     let onAction: (CardAction) -> Void
@@ -32,7 +32,7 @@ struct CardView: View {
             }
 
             if card.input {
-                // Lange antwoorden scrollen en zijn te selecteren; ze worden nooit afgekapt.
+                // Long answers scroll and can be selected; they are never truncated.
                 ScrollView(showsIndicators: false) {
                     titleText.frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -66,7 +66,7 @@ struct CardView: View {
         .onExitCommand { onAction(card.escape ?? card.primary) }
     }
 
-    /// Korte zinnen groot; een langer antwoord in leesbare tekst, met **vet**, *schuin* en links.
+    /// Short sentences large; longer answers in readable text, with **bold**, *italic*, and links.
     private var titleText: some View {
         let long = card.title.count > 140
         return Text(Self.rich(card.title))
@@ -81,7 +81,7 @@ struct CardView: View {
         MarkdownBlock.inline(MarkdownBlock.clean(text))
     }
 
-    /// Wat Nook hierna kan doen: één klik en hij gaat ermee aan de slag.
+    /// What Nook can do next: one click and it gets to work.
     private var offerChips: some View {
         HStack(spacing: 6) {
             ForEach(card.offers, id: \.self) { offer in
@@ -91,7 +91,7 @@ struct CardView: View {
         }
     }
 
-    /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.
+    /// Follow-up questions via text: always ready to type, Enter sends.
     private var replyField: some View {
         HStack(spacing: 10) {
             TextField(
@@ -117,7 +117,7 @@ struct CardView: View {
         .frame(height: 38)
         .background(Capsule().fill(NookTheme.field))
         .onAppear {
-            // Even wachten tot het paneel de toetsenbordfocus heeft gekregen.
+            // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
     }
@@ -137,7 +137,7 @@ struct CardView: View {
             StepsDetail(steps: steps)
         case .choices(let set):
             ChoicesDetail(set: set) { labels in onChoose(set.id, labels) }
-                .id(set.id)   // nieuwe vraag, nieuwe keuzes
+                .id(set.id)   // new question, new choices
         case .diff(let title, let lines, let note):
             DiffDetail(title: title, lines: lines, note: note)
         case .facts(let facts):
@@ -146,9 +146,9 @@ struct CardView: View {
     }
 }
 
-// MARK: Detailregels
+// MARK: Detail lines
 
-/// Een aanbod van Nook als knop, met een sterretje ervoor.
+/// An offer from Nook as a button, preceded by a sparkle.
 private struct OfferChip: View {
     let title: String
     let action: () -> Void
@@ -285,7 +285,7 @@ private struct StepsDetail: View {
     }
 }
 
-/// De opties bij een vraag van een agent. Eén keuze: klikken is antwoorden. Meer keuzes: aanvinken en versturen.
+/// Options for an agent prompt. Single choice: click to answer. Multiple choices: select checkboxes and submit.
 private struct ChoicesDetail: View {
     let set: ChoiceSet
     let onChoose: ([String]) -> Void
@@ -307,7 +307,7 @@ private struct ChoicesDetail: View {
                     Spacer()
                     NookPrimaryButton(title: selected.isEmpty ? tr("chat.choices.choose") : tr("chat.choices.sendCount", selected.count)) {
                         guard !selected.isEmpty else { return }
-                        // In de volgorde van de opties, niet van het klikken.
+                        // Preserves the option ordering rather than the selection order.
                         onChoose(set.options.map(\.label).filter { selected.contains($0) })
                     }
                     .opacity(selected.isEmpty ? 0.5 : 1)
@@ -359,7 +359,7 @@ private struct ChoiceRow: View {
     }
 }
 
-/// Een bewerking van een agent: bestandsnaam, de gewijzigde regels en een korte toelichting.
+/// An edit from an agent: file name, modified lines, and a brief description.
 private struct DiffDetail: View {
     let title: String
     let lines: [DiffLine]
@@ -389,7 +389,7 @@ private struct DiffDetail: View {
     }
 }
 
-/// Cijfers in twee kolommen, zoals het weekoverzicht.
+/// Metrics in two columns, such as the weekly summary.
 private struct FactsDetail: View {
     let facts: [Fact]
 

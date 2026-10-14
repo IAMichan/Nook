@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Filters bovenin de lijst.
+/// Filter options at the top of the sidebar list.
 enum SessionFilter: String, CaseIterable, Identifiable {
     case all, running, attention, completed, archived
     var id: String { rawValue }
@@ -23,7 +23,7 @@ enum SessionGrouping: String, CaseIterable, Identifiable {
     var title: String { tr("ws.group." + rawValue) }
 }
 
-/// Links in de werkruimte: zoeken, filteren en alle sessies, gegroepeerd per project of op datum.
+/// Left sidebar: search, filtering, and session list grouped by project or date.
 struct WorkspaceSidebar: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -171,7 +171,7 @@ struct WorkspaceSidebar: View {
         var runs: [WorkspaceRun]
     }
 
-    /// Sessies die bij het filter horen, zonder de actieve (die staan bovenaan), gegroepeerd.
+    /// Filtered sessions grouped by section, excluding active sessions (pinned to top).
     private var groups: [SessionGroup] {
         let showActiveSeparately = filter != .running && filter != .archived
         let list = workspace.runs
@@ -239,7 +239,7 @@ struct WorkspaceSidebar: View {
     }
 }
 
-/// Eén sessie in de lijst: titel, project en branch, agent, toestand en laatste activiteit.
+/// Single session list item: title, project, branch, agent, status, and last activity.
 struct SessionRow: View {
     let run: WorkspaceRun
     let account: String?
