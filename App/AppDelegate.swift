@@ -1,5 +1,6 @@
 import AppKit
 
+@main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel.shared

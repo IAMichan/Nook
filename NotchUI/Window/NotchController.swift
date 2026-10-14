@@ -15,17 +15,24 @@ final class NotchController {
     private var cancellables = Set<AnyCancellable>()
     private var previousApp: NSRunningApplication?
 
+    static func panelFrame(for geometry: NotchGeometry) -> NSRect {
+        let s = geometry.screenFrame
+        let size = panelSize
+        return NSRect(x: s.midX - size.width / 2, y: s.maxY - size.height, width: size.width, height: size.height)
+    }
+
     func start(app: AppModel) {
         geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen(choice: AppSettings.shared.screenChoice))
         viewModel.geometry = geometry
 
-        let panel = NotchPanel()
+        let initialFrame = Self.panelFrame(for: geometry)
+        let panel = NotchPanel(contentRect: initialFrame)
         let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel).environmentObject(app))
+        host.sizingOptions = []
         host.frame = NSRect(origin: .zero, size: Self.panelSize)
         panel.contentView = host
         self.panel = panel
 
-        positionPanel()
         panel.orderFrontRegardless()
         installMonitors()
 
@@ -95,10 +102,10 @@ final class NotchController {
 
     private func positionPanel() {
         guard let panel else { return }
-        let s = geometry.screenFrame
-        let size = Self.panelSize
-        let frame = NSRect(x: s.midX - size.width / 2, y: s.maxY - size.height, width: size.width, height: size.height)
-        panel.setFrame(frame, display: true)
+        let frame = Self.panelFrame(for: geometry)
+        if panel.frame != frame {
+            panel.setFrame(frame, display: false)
+        }
     }
 
     private func screenChanged() {
