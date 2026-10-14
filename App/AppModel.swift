@@ -206,10 +206,25 @@ final class AppModel: ObservableObject {
         return screenCue.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
+    // Het gesprek van zojuist, zodat een vervolgvraag ("ja, doe maar") begrepen wordt.
+    private var recentExchanges: [(date: Date, user: String, nook: String)] = []
+
+    private var isFollowUp: Bool {
+        guard let last = recentExchanges.last else { return false }
+        return Date().timeIntervalSince(last.date) < 180
+    }
+
+    private func remember(user: String, nook: String) {
+        recentExchanges.append((Date(), user, nook))
+        recentExchanges = recentExchanges.suffix(3).filter { Date().timeIntervalSince($0.date) < 900 }
+    }
+
     private func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?) async {
+        let followUp = isFollowUp && !silentIfNone
         do {
             let plan = try await brain.run(
                 userText: userText,
+                followUp: followUp,
                 context: contextSummary(),
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
@@ -226,6 +241,9 @@ final class AppModel: ObservableObject {
                 return
             }
 
+            if !silentIfNone {
+                remember(user: userText, nook: plan.text.isEmpty ? "(acties voorgesteld, wachten op goedkeuring)" : plan.text)
+            }
             let card = planCard(plan, context: context)
             if silentIfNone {
                 viewModel.present(card)
@@ -260,6 +278,13 @@ final class AppModel: ObservableObject {
             }
         } else {
             lines.append("Agenda: geen toegang.")
+        }
+
+        if !recentExchanges.isEmpty {
+            lines.append("Gesprek zojuist (voor vervolgvragen):")
+            for exchange in recentExchanges {
+                lines.append("- Gebruiker: \(exchange.user.prefix(200)) | Nook: \(exchange.nook.prefix(200))")
+            }
         }
 
         if !loops.isEmpty {
@@ -559,7 +584,6 @@ final class AppModel: ObservableObject {
         let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(240))
         let lines = max(1, Int(ceil(Double(body.count) / 46.0)))
         let token = "answer-" + UUID().uuidString
-        viewModel.register("\(token)#talk") { [weak self] in self?.toggleVoice() }
         return NookCard(
             id: token,
             mood: .seen,
@@ -567,8 +591,9 @@ final class AppModel: ObservableObject {
             title: body,
             detail: .none,
             primary: CardAction(label: "Oké", outcome: .dismiss),
-            secondary: CardAction(label: "Vraag door", outcome: .callback("\(token)#talk", "")),
-            contentHeight: 90 + CGFloat(lines) * 24
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 140 + CGFloat(lines) * 24,
+            input: true
         )
     }
 

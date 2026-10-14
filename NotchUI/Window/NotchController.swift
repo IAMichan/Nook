@@ -13,6 +13,7 @@ final class NotchController {
     private var geometry = NotchGeometry.placeholder
     private var monitors: [Any] = []
     private var cancellables = Set<AnyCancellable>()
+    private var previousApp: NSRunningApplication?
 
     func start(app: AppModel) {
         geometry = NotchGeometry.make(for: NotchGeometry.preferredScreen())
@@ -34,12 +35,38 @@ final class NotchController {
             .sink { [weak self] _ in self?.pointerMoved() }
             .store(in: &cancellables)
 
+        // Een kaart met tekstveld krijgt meteen de toetsenbordfocus, zodat je kunt typen zonder te klikken.
+        viewModel.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in self?.stateChanged(state) }
+            .store(in: &cancellables)
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.screenChanged() }
+        }
+    }
+
+    // MARK: Toetsenbordfocus
+
+    private func stateChanged(_ state: NotchState) {
+        guard let panel else { return }
+        if case .card(let card) = state, card.input {
+            guard !panel.isKeyWindow else { return }
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+            panel.ignoresMouseEvents = false
+            panel.makeKey()
+        } else if panel.isKeyWindow {
+            // Tijdens het nadenken blijft de focus staan: het volgende antwoord heeft weer een tekstveld.
+            if case .card(let card) = state, card.id == "thinking" { return }
+            // Klaar met typen: geef de focus terug aan de app waar je mee bezig was.
+            panel.resignKey()
+            previousApp?.activate(options: [])
+            previousApp = nil
         }
     }
 

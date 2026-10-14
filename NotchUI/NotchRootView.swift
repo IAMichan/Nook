@@ -85,7 +85,8 @@ struct NotchRootView: View {
                     CardView(
                         card: card,
                         onAction: { viewModel.perform($0) },
-                        onVoice: { viewModel.startListening() }
+                        onVoice: { viewModel.startListening() },
+                        onReply: { app.handleUserText($0) }
                     )
                 }
             case .panel(let tab):

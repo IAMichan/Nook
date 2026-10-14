@@ -47,4 +47,6 @@ struct NookCard: Equatable, Identifiable {
     var secondary: CardAction
     /// Hoogte van de inhoud onder de notch, zonder marges.
     var contentHeight: CGFloat
+    /// Toont een tekstveld om meteen door te vragen. Het veld heeft de focus zodra de kaart verschijnt.
+    var input: Bool = false
 }
