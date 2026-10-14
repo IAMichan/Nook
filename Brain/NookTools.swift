@@ -105,7 +105,7 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "read_app",
-                description: "Leest wat er in de vensters van een app staat (OCR, lokaal), ook als die app achter andere vensters ligt, verborgen is of dicht is: een gesloten app opent Nook even op de achtergrond, leest hem en sluit hem weer. Gebruik dit voor vragen over een app zonder eigen koppeling (Notities, Berichten, WhatsApp, Slack, Teams, Things, Spotify, Excel, Figma…) of als je in een specifieke app wilt kijken. Welke apps open zijn, staat in de context onder \"Open apps\"; andere geïnstalleerde apps mag je ook noemen.",
+                description: "Leest wat er in een app staat (lokaal, via de toegankelijkheidslaag van macOS), ook als die app achter andere vensters ligt, verborgen is of dicht is. Alles gebeurt onzichtbaar op de achtergrond: een gesloten app start Nook verborgen, leest hem en sluit hem weer. Gebruik dit voor vragen over een app zonder eigen koppeling (Notities, Berichten, WhatsApp, Slack, Teams, Things, Spotify, Excel, Figma…) of als je in een specifieke app wilt kijken. Welke apps open zijn, staat in de context onder \"Open apps\"; andere geïnstalleerde apps mag je ook noemen.",
                 schema: object(["app": string("Naam van de app, bijvoorbeeld \"Notities\" of \"Slack\".")], required: ["app"]),
                 kind: .read,
                 summarize: { input in "\((input["app"] as? String) ?? "App") lezen" },
