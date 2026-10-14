@@ -69,4 +69,14 @@ final class MailUnreadTests: XCTestCase {
                                                                   date: Date(), read: false, replied: false)])
             .contains("content of message 3 of mailbox \"INBOX\" of account \"Werk \\\"A\\\"\""))
     }
+
+    func testRecentReadsUnreadTotalAndDescribes() {
+        let raw = "TOTAL|||12\nROW|||Werk|||INBOX|||1|||Vraag|||Lisa <lisa@example.com>|||2026-10-14T09:00:00|||false|||false\n"
+        let parsed = MailStats.recent(raw, calendar: calendar)
+        XCTAssertEqual(parsed.unread, 12)
+        var row = parsed.rows[0]
+        row.body = "Kun je morgen?"
+        let text = MailStats.describe([row], date: { _ in "14 okt" })
+        XCTAssertEqual(text, "### Vraag | van Lisa <lisa@example.com> | 14 okt | ongelezen | Werk\nKun je morgen?")
+    }
 }

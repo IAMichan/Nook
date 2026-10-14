@@ -103,7 +103,7 @@ enum MailStats {
     static func recentScript(perMailbox: Int = 40) -> String {
         """
         tell application "Mail"
-            set out to ""
+            set out to "TOTAL|||" & (unread count of inbox) & linefeed
             repeat with acc in accounts
                 try
                     if enabled of acc then
@@ -149,32 +149,55 @@ enum MailStats {
         var date: Date
         var read: Bool
         var replied: Bool
+        /// The start of the text, when it was read.
+        var body: String = ""
+
+        /// Stable enough to remember a body between refreshes (the index shifts when new mail arrives).
+        var key: String { "\(account)|\(subject)|\(date.timeIntervalSince1970)" }
+        var isAutomated: Bool { sender.range(of: MailStats.automated, options: [.regularExpression, .caseInsensitive]) != nil }
     }
 
     /// Senders that never need a reply (newsletters, notifications, no-reply addresses).
-    private static let automated = #"no-?reply|do-?not-?reply|newsletter|notifications?@|notify@|mailer-daemon|bounce|marketing@|news@|info@.*\.(mailchimp|sendgrid)|updates?@"#
+    static let automated = #"no-?reply|do-?not-?reply|newsletter|notifications?@|notify@|mailer-daemon|bounce|marketing@|news@|info@.*\.(mailchimp|sendgrid)|updates?@"#
 
-    /// Parses `recentScript` output: within `days`, newest first, optionally only unanswered mail from real people.
-    static func inbox(_ raw: String, now: Date, days: Int, unansweredOnly: Bool, limit: Int = 15, calendar: Calendar = .current) -> [InboxRow] {
+    /// Parses `recentScript` output: the unified unread count and every row, newest first.
+    static func recent(_ raw: String, calendar: Calendar = .current) -> (unread: Int, rows: [InboxRow]) {
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.timeZone = calendar.timeZone
         parser.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
+        var unread = 0
         var rows: [InboxRow] = []
         for line in raw.components(separatedBy: .newlines) {
             let parts = line.components(separatedBy: "|||")
+            if parts.count >= 2, parts[0] == "TOTAL" { unread = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0; continue }
             guard parts.count >= 9, parts[0] == "ROW", let index = Int(parts[3].trimmingCharacters(in: .whitespaces)),
-                  let date = parser.date(from: String(parts[6].prefix(19))), date >= cutoff else { continue }
-            let row = InboxRow(account: parts[1], mailbox: parts[2], index: index, subject: parts[4], sender: parts[5], date: date,
-                               read: parts[7].trimmingCharacters(in: .whitespaces) == "true",
-                               replied: parts[8].trimmingCharacters(in: .whitespaces) == "true")
-            if unansweredOnly {
-                if row.replied || row.sender.range(of: automated, options: [.regularExpression, .caseInsensitive]) != nil { continue }
-            }
-            rows.append(row)
+                  let date = parser.date(from: String(parts[6].prefix(19))) else { continue }
+            rows.append(InboxRow(account: parts[1], mailbox: parts[2], index: index, subject: parts[4], sender: parts[5], date: date,
+                                 read: parts[7].trimmingCharacters(in: .whitespaces) == "true",
+                                 replied: parts[8].trimmingCharacters(in: .whitespaces) == "true"))
         }
-        return Array(rows.sorted { $0.date > $1.date }.prefix(limit))
+        return (unread, rows.sorted { $0.date > $1.date })
+    }
+
+    /// Within `days`, newest first; with `unansweredOnly` only mail from people that has no reply yet.
+    static func select(_ rows: [InboxRow], now: Date, days: Int, unansweredOnly: Bool, limit: Int = 15) -> [InboxRow] {
+        let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
+        let kept = rows.filter { $0.date >= cutoff && (!unansweredOnly || (!$0.replied && !$0.isAutomated)) }
+        return Array(kept.sorted { $0.date > $1.date }.prefix(limit))
+    }
+
+    static func inbox(_ raw: String, now: Date, days: Int, unansweredOnly: Bool, limit: Int = 15, calendar: Calendar = .current) -> [InboxRow] {
+        select(recent(raw, calendar: calendar).rows, now: now, days: days, unansweredOnly: unansweredOnly, limit: limit)
+    }
+
+    /// One block per message for the model: subject, sender, date, state, account and the start of the text.
+    static func describe(_ rows: [InboxRow], date: (Date) -> String) -> String {
+        rows.map { row in
+            let state = (row.read ? "gelezen" : "ongelezen") + (row.replied ? ", beantwoord" : "")
+            let body = row.body.isEmpty ? "" : "\n" + row.body
+            return "### \(row.subject) | van \(row.sender) | \(date(row.date)) | \(state) | \(row.account)\(body)"
+        }.joined(separator: "\n\n")
     }
 
     /// Fetches the start of the text of a few messages, by position, in one script. Output: "<<<BODY>>>n" + text per message.

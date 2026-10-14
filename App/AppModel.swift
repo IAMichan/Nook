@@ -563,6 +563,7 @@ final class AppModel: ObservableObject {
             if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
                 calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
             }
+            // Mail lookups come from the Mail connector's memory, so this is instant when Mail was refreshed recently.
             for call in calls {
                 guard let spec = tools.first(where: { $0.name == call.tool }), let output = try? await spec.run(call.input) else { continue }
                 fetched.append(String(output.prefix(5000)))
