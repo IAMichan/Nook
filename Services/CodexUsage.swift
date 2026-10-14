@@ -1,16 +1,16 @@
 import Foundation
 
-/// Hoeveel je van je Codex-abonnement hebt gebruikt: het 5-uursvenster en de week.
+/// Codex subscription plan usage: 5-hour window and weekly limits.
 struct CodexUsageSnapshot: Equatable {
     struct Window: Equatable {
-        /// Percentage gebruikt, 0–100, zoals Codex het meldde.
+        /// Percentage used, 0–100, as reported by Codex.
         var usedPercent: Double
-        /// Wanneer dit venster weer vol is. `nil` als Codex het niet doorgaf.
+        /// Timestamp when this window resets. `nil` if not reported by Codex.
         var resetsAt: Date?
-        /// Lengte van het venster in minuten (300 voor 5 uur, 10080 voor een week).
+        /// Window duration in minutes (300 for 5 hours, 10080 for one week).
         var windowMinutes: Int?
 
-        /// Percentage op dit moment: is het venster intussen gereset, dan is het 0.
+        /// Current percentage: 0 if window has already reset.
         func percent(at date: Date = Date()) -> Int {
             if let resetsAt, resetsAt <= date { return 0 }
             return Int(min(100, max(0, usedPercent)).rounded())
@@ -18,9 +18,9 @@ struct CodexUsageSnapshot: Equatable {
     }
 
     enum Source: Equatable {
-        /// `codex app-server`, dezelfde bron als `/status` in Codex.
+        /// `codex app-server`, same source as `/status` in Codex.
         case appServer
-        /// De laatste regel met limieten in een sessielog onder ~/.codex/sessions.
+        /// The last rate limit entry in a session log under ~/.codex/sessions.
         case sessionLog
     }
 
@@ -30,48 +30,48 @@ struct CodexUsageSnapshot: Equatable {
     var updatedAt: Date
     var source: Source
 
-    /// Bijvoorbeeld "5 uur: 42% gebruikt · weer vol om 14:30".
+    /// E.g. "5 hours: 42% used · resets at 14:30".
     var fiveHourLabel: String? {
         guard let fiveHour else { return nil }
-        var text = "5 uur: \(fiveHour.percent())% gebruikt"
+        var text = "5 hours: \(fiveHour.percent())% used"
         if let reset = fiveHour.resetsAt, reset > Date() {
-            text += " · weer vol om \(Self.timeFormatter.string(from: reset))"
+            text += " · resets at \(Self.timeFormatter.string(from: reset))"
         }
         return text
     }
 
-    /// Bijvoorbeeld "Week: 18% gebruikt · reset do 16 okt".
+    /// E.g. "Weekly: 18% used · resets Thu Oct 16".
     var weeklyLabel: String? {
         guard let weekly else { return nil }
-        var text = "Week: \(weekly.percent())% gebruikt"
+        var text = "Weekly: \(weekly.percent())% used"
         if let reset = weekly.resetsAt, reset > Date() {
-            text += " · reset \(Self.dayFormatter.string(from: reset))"
+            text += " · resets \(Self.dayFormatter.string(from: reset))"
         }
         return text
     }
 
-    /// Hoogste van de twee: daar loop je het eerst tegenaan.
+    /// Highest of the two windows: the one you will reach first.
     var dominantPercent: Int? {
         [fiveHour?.percent(), weekly?.percent()].compactMap { $0 }.max()
     }
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "nl_NL")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
 
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "nl_NL")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "EEE d MMM"
         return formatter
     }()
 }
 
-/// Leest het Codex-plangebruik, zoals Codex' eigen `/status`: via `codex app-server` (`account/rateLimits/read`),
-/// en anders uit de laatste sessielog onder ~/.codex/sessions. Kost niets als ~/.codex niet bestaat.
+/// Reads Codex plan usage matching Codex's native `/status`: via `codex app-server` (`account/rateLimits/read`),
+/// falling back to the latest session log under ~/.codex/sessions. No-op if ~/.codex does not exist.
 @MainActor
 final class CodexUsage: ObservableObject {
     @Published private(set) var snapshot: CodexUsageSnapshot?
@@ -79,11 +79,11 @@ final class CodexUsage: ObservableObject {
     private var timer: Timer?
     private let queue = DispatchQueue(label: "nl.imdigital.nook.codexusage", qos: .utility)
     private var busy = false
-    /// Laatst geziene wijzigingstijd van de nieuwste sessielog. Verandert die, dan is Codex gebruikt.
+    /// Last modified timestamp of newest session log; changes indicate Codex activity.
     private var lastSessionDate: Date?
     private var lastAppServerFetch: Date?
 
-    /// Vraag `codex app-server` hooguit zo vaak, tenzij er intussen een sessie is bijgewerkt.
+    /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
     private nonisolated static let appServerInterval: TimeInterval = 10 * 60
 
     func start() {
@@ -99,20 +99,20 @@ final class CodexUsage: ObservableObject {
         timer = nil
     }
 
-    /// Eén regel voor de context van Nook, bijvoorbeeld "Codex-limiet: 5 uur 42% · week 18%".
+    /// Single summary line for Nook context, e.g. "Codex limit: 5h 42% · week 18%".
     var contextLine: String? {
         guard let snapshot, Date().timeIntervalSince(snapshot.updatedAt) < 12 * 3600 else { return nil }
         var parts: [String] = []
-        if let fiveHour = snapshot.fiveHour { parts.append("5 uur \(fiveHour.percent())%") }
+        if let fiveHour = snapshot.fiveHour { parts.append("5h \(fiveHour.percent())%") }
         if let weekly = snapshot.weekly { parts.append("week \(weekly.percent())%") }
         guard !parts.isEmpty else { return nil }
-        return "Codex-limiet: " + parts.joined(separator: " · ")
+        return "Codex limit: " + parts.joined(separator: " · ")
     }
 
     private func refresh() {
         guard !busy else { return }
         let home = Self.codexHome
-        // Geen Codex op deze Mac: één stat per minuut, verder niets.
+        // No Codex on this Mac: check presence once per minute, nothing else.
         guard FileManager.default.fileExists(atPath: home.path) else {
             if snapshot != nil { snapshot = nil }
             return
@@ -138,7 +138,7 @@ final class CodexUsage: ObservableObject {
         }
     }
 
-    // MARK: Achtergrondwerk
+    // MARK: Background Work
 
     private struct WorkResult {
         var snapshot: CodexUsageSnapshot?
@@ -174,7 +174,7 @@ final class CodexUsage: ObservableObject {
                 }
             }
         }
-        // Geen (werkende) codex app-server: dan de laatste limieten uit de sessielogs, alleen als er iets veranderd is.
+        // No (working) codex app-server: fallback to latest limits from session logs, only if something changed.
         if !hasSnapshot || sessionChanged || result.askedAppServer {
             for session in sessions.prefix(3) {
                 if let usage = readSessionLog(session.url, fileDate: session.date) {
@@ -200,7 +200,7 @@ final class CodexUsage: ObservableObject {
             "\(home)/.bun/bin/codex",
             "\(home)/Library/pnpm/codex",
         ]
-        // nvm: één bin-map per Node-versie, nieuwste eerst.
+        // nvm: one bin directory per Node version, newest first.
         let nvmNode = "\(home)/.nvm/versions/node"
         if let versions = try? fm.contentsOfDirectory(atPath: nvmNode) {
             let sorted = versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }
@@ -209,7 +209,7 @@ final class CodexUsage: ObservableObject {
         return candidates.first { fm.isExecutableFile(atPath: $0) }
     }
 
-    /// Start `codex app-server`, vraagt `account/rateLimits/read` en stopt het proces weer. `nil` als Codex niet is ingelogd.
+    /// Starts `codex app-server`, requests `account/rateLimits/read`, and stops the process. `nil` if Codex is not signed in.
     private nonisolated static func readRateLimits(codex: String) -> CodexUsageSnapshot? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: codex)
@@ -228,7 +228,7 @@ final class CodexUsage: ObservableObject {
         do { try process.run() } catch { return nil }
         defer { if process.isRunning { process.terminate() } }
 
-        // Na 15 seconden opgeven: stoppen sluit stdout, en dan eindigt de leeslus vanzelf.
+        // Give up after 15 seconds: terminating closes stdout, ending the read loop.
         let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeout)
         defer { timeout.cancel() }
@@ -256,7 +256,7 @@ final class CodexUsage: ObservableObject {
         }
     }
 
-    /// Leest een `account/rateLimits/read`-antwoord. primary en secondary liggen niet vast: de duur bepaalt welk venster het is.
+    /// Reads an `account/rateLimits/read` response. primary and secondary are not fixed: duration determines which window it is.
     private nonisolated static func parseAppServer(_ result: [String: Any]) -> CodexUsageSnapshot? {
         guard let limits = result["rateLimits"] as? [String: Any] else { return nil }
         var snapshot = CodexUsageSnapshot(
@@ -278,9 +278,9 @@ final class CodexUsage: ObservableObject {
         return snapshot
     }
 
-    // MARK: Sessielogs
+    // MARK: Session Logs
 
-    /// Rollout-bestanden van de afgelopen dagen, nieuwste eerst. Alleen de mappen van die dagen, nooit de hele boom.
+    /// Rollout files from recent days, newest first. Only directories for those days, never the whole tree.
     private nonisolated static func recentSessionFiles(home: URL) -> [(url: URL, date: Date)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("sessions", isDirectory: true)
@@ -290,7 +290,7 @@ final class CodexUsage: ObservableObject {
         var files: [(url: URL, date: Date)] = []
         var seen = Set<String>()
         let now = Date()
-        // Een dag extra vooruit en terug: Codex kan de map in UTC of lokale tijd benoemen.
+        // An extra day ahead and back: Codex can name the folder in UTC or local time.
         for offset in -1...8 {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { continue }
             let parts = calendar.dateComponents([.year, .month, .day], from: day)
@@ -310,7 +310,7 @@ final class CodexUsage: ObservableObject {
         return files.sorted { $0.date > $1.date }
     }
 
-    /// Zoekt van achter naar voren de laatste `token_count`-regel met `rate_limits`.
+    /// Searches backwards for the latest `token_count` line containing `rate_limits`.
     private nonisolated static func readSessionLog(_ url: URL, fileDate: Date) -> CodexUsageSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
@@ -348,7 +348,7 @@ final class CodexUsage: ObservableObject {
         return nil
     }
 
-    // MARK: Hulpjes
+    // MARK: Helpers
 
     private nonisolated static func assign(
         _ window: CodexUsageSnapshot.Window,

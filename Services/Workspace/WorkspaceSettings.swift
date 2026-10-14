@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Voorkeuren voor de werkruimte, bewaard in UserDefaults zoals de rest van Nooks instellingen.
+/// Preferences for the workspace, stored in UserDefaults like the rest of Nook's settings.
 @MainActor
 final class WorkspaceSettings: ObservableObject {
     static let shared = WorkspaceSettings()
@@ -11,7 +11,7 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultProvider: RunProvider {
         didSet { defaults.set(defaultProvider.rawValue, forKey: "ws.defaultProvider") }
     }
-    /// Per agent het model dat Nook voorstelt (leeg = de standaard van de agent).
+    /// Suggested model per agent (empty = agent default).
     @Published var defaultModels: [String: String] {
         didSet { defaults.set(defaultModels, forKey: "ws.defaultModels") }
     }
@@ -24,29 +24,29 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultPermission: PermissionPolicy {
         didSet { defaults.set(defaultPermission.rawValue, forKey: "ws.defaultPermission") }
     }
-    /// Waar nieuwe worktrees komen: <map>/<repository>/<branch>.
+    /// Location where new worktrees are created: <folder>/<repository>/<branch>.
     @Published var worktreeRoot: String {
         didSet { defaults.set(worktreeRoot, forKey: "ws.worktreeRoot") }
     }
-    /// Bundle-ID van je editor; leeg = de app die macOS voor mappen kiest (Finder).
+    /// Bundle ID of your editor; empty = app macOS chooses for folders (Finder).
     @Published var editorBundleID: String {
         didSet { defaults.set(editorBundleID, forKey: "ws.editor") }
     }
     @Published var terminalBundleID: String {
         didSet { defaults.set(terminalBundleID, forKey: "ws.terminal") }
     }
-    /// Sessies die zo lang niet gebruikt zijn, gaan vanzelf naar het archief. 0 = nooit.
+    /// Sessions unused for this duration are automatically archived. 0 = never.
     @Published var autoArchiveDays: Int {
         didSet { defaults.set(autoArchiveDays, forKey: "ws.autoArchiveDays") }
     }
-    /// Kosten tonen die de agent zelf meldt.
+    /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
     }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
-    /// Projecten die je eerder koos, nieuwste eerst.
+    /// Previously selected projects, newest first.
     @Published private(set) var recentProjects: [String]
 
     static var standardWorktreeRoot: String {
@@ -86,7 +86,7 @@ final class WorkspaceSettings: ObservableObject {
 
     func setModel(_ model: String, for provider: RunProvider) { defaultModels[provider.rawValue] = model }
 
-    /// Een veilige standaard die de agent ook echt ondersteunt.
+    /// A safe default that the agent actually supports.
     func permission(for provider: RunProvider) -> PermissionPolicy {
         provider.capabilities.policies.contains(defaultPermission) ? defaultPermission : .acceptEdits
     }
@@ -119,7 +119,7 @@ final class WorkspaceSettings: ObservableObject {
         AppChoice(bundleID: "com.github.wez.wezterm", name: "WezTerm")
     ]
 
-    /// Alleen apps die op deze Mac staan.
+    /// Only apps installed on this Mac.
     static func installed(_ candidates: [AppChoice]) -> [AppChoice] {
         candidates.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
     }
