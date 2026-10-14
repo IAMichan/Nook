@@ -27,6 +27,8 @@ xcodegen
 open Nook.xcodeproj
 ```
 
+Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./update.sh` (haalt op en draait `xcodegen`), anders klaagt Xcode over iets dat 'not in scope' is.
+
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in de menubalk.
 
 **De eerste keer**
