@@ -105,6 +105,10 @@ final class AppSettings: ObservableObject {
         get { UserDefaults.standard.object(forKey: "floatOffsetY") as? Double ?? 8 }
         set { UserDefaults.standard.set(newValue, forKey: "floatOffsetY") }
     }
+    /// Notch placement: show the notch on every connected screen, not just the chosen one.
+    @Published var notchOnAllScreens: Bool {
+        didSet { UserDefaults.standard.set(notchOnAllScreens, forKey: "notchOnAllScreens") }
+    }
     /// When idle, only the notch itself: Nook appears when hovered or when activity occurs.
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
@@ -226,6 +230,7 @@ final class AppSettings: ObservableObject {
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")

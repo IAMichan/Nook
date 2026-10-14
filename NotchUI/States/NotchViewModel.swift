@@ -282,6 +282,10 @@ final class NotchViewModel: ObservableObject {
         let nw = geometry.notchWidth
         let nh = geometry.notchHeight
         let chrome = nh + 14 + 22   // spacing below notch and bottom margin
+        // Floating and idle: just Nook itself, no bar around it.
+        if geometry.isFloating, state.isResting {
+            return CGSize(width: Self.floatingOrbSide, height: Self.floatingOrbSide)
+        }
         switch state {
         case .idle:
             if app?.settings.hideWhenIdle == true, !geometry.isFloating, !agentsActive, !(app?.chat.anyBusy ?? false) {
@@ -311,12 +315,16 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    private var nookFloatingPill: CGFloat { geometry.notchHeight / 2 }
+    /// Floating and idle: the area around Nook (the orb plus room for its glow and a badge).
+    static let floatingOrbSide: CGFloat = 44
+
+    /// Floating and idle: no black shape, just Nook.
+    var isBareOrb: Bool { geometry.isFloating && state.isResting }
 
     var cornerRadius: CGFloat {
         switch state {
-        case .idle: return geometry.isFloating ? nookFloatingPill : 14
-        case .music, .track: return geometry.isFloating ? nookFloatingPill : 16
+        case .idle: return geometry.isFloating ? Self.floatingOrbSide / 2 : 14
+        case .music, .track: return geometry.isFloating ? Self.floatingOrbSide / 2 : 16
         case .done, .nudge: return 16
         case .card: return 30
         case .panel: return 32

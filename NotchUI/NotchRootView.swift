@@ -9,6 +9,8 @@ struct NotchRootView: View {
         let size = viewModel.size
         let radius = viewModel.cornerRadius
         let floating = viewModel.geometry.isFloating
+        // Floating and idle: only Nook itself is on screen, without the black shape around it.
+        let bare = viewModel.isBareOrb
         let topRadius = floating ? radius : 0
         let shape = UnevenRoundedRectangle(
             topLeadingRadius: topRadius,
@@ -25,10 +27,10 @@ struct NotchRootView: View {
                 content(size: size)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
-            .background(shape.fill(NookTheme.notch))
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(Color.white.opacity(floating ? 0.1 : 0), lineWidth: 1))
-            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
+            .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
+            .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
+            .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
+            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating && !bare ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
             .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
@@ -53,6 +55,7 @@ struct NotchRootView: View {
 
     /// When something substantial changes, fade the content instead of abruptly jumping.
     private var contentKey: String {
+        if viewModel.isBareOrb { return "bare" }
         switch viewModel.state {
         case .idle: return "idle"
         case .music: return "music"
@@ -70,73 +73,120 @@ struct NotchRootView: View {
         let nh = viewModel.geometry.notchHeight
 
         Group {
-            switch viewModel.state {
-            case .idle:
-                let active = app.activeAgents
-                if !active.isEmpty {
-                    // An agent is working: Nook is thinking along, one dot per session on the right.
-                    let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                    wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
-                        AgentDots(sessions: active)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                } else if app.chat.anyBusy {
-                    // A Nook is working on something in the background: visibly thinking along.
-                    wings(nh: nh, nw: nw, mood: .think, animated: true) {
-                        idleBadge
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
-                    Color.clear
-                } else {
-                    wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                        idleBadge
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                }
-            case .music:
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                    EqualizerBars(color: NookTheme.music, height: 14)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            case .track(let title, let artist):
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                    trackLabel(title: title, artist: artist)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            case .done(let message):
-                doneStrip(message: message, nh: nh)
-            case .nudge(let line, _):
-                nudgeStrip(line: line, nh: nh)
-            case .card(let card):
-                expanded(nh: nh, mood: card.mood) {
-                    CardView(
-                        card: card,
-                        onAction: { viewModel.perform($0) },
-                        onVoice: { viewModel.startListening() },
-                        onReply: { app.handleUserText($0) },
-                        onChoose: { viewModel.choose($0, $1) }
-                    )
-                }
-            case .panel(let tab):
-                expanded(nh: nh, mood: viewModel.mood(for: tab)) {
-                    PanelView(viewModel: viewModel, tab: tab)
-                }
+            if viewModel.isBareOrb {
+                bareOrb
+            } else {
+                regularContent(nh: nh, nw: nw)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .id(contentKey)
         .transition(.notchContent)
+    }
+
+    // MARK: Floating and idle: just Nook
+
+    /// Nook without a bar. A dot top-right when something is waiting; visibly thinking while work is running.
+    private var bareOrb: some View {
+        let active = app.activeAgents
+        let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+        let mood: NookMood
+        if !active.isEmpty {
+            mood = waiting ? .waiting : .think
+        } else if app.chat.anyBusy {
+            mood = .think
+        } else {
+            mood = viewModel.pointerInside ? .seen : .rest
+        }
+        let side = NotchViewModel.floatingOrbSide
+        return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy)
+            .frame(width: side, height: side)
+            .overlay(alignment: .topTrailing) { bareBadge }
+            .contentShape(Circle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+            .accessibilityElement()
+            .accessibilityLabel("Nook")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// Small dot next to the orb: amber when something is waiting for you, otherwise nothing.
+    @ViewBuilder
+    private var bareBadge: some View {
+        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
+        if waiting > 0 {
+            Circle()
+                .fill(NookTheme.amber)
+                .frame(width: 9, height: 9)
+                .padding(4)
+        }
+    }
+
+    @ViewBuilder
+    private func regularContent(nh: CGFloat, nw: CGFloat) -> some View {
+        switch viewModel.state {
+        case .idle:
+            let active = app.activeAgents
+            if !active.isEmpty {
+                // An agent is working: Nook is thinking along, one dot per session on the right.
+                let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
+                    AgentDots(sessions: active)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            } else if app.chat.anyBusy {
+                // A Nook is working on something in the background: visibly thinking along.
+                wings(nh: nh, nw: nw, mood: .think, animated: true) {
+                    idleBadge
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
+                Color.clear
+            } else {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                    idleBadge
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            }
+        case .music:
+            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                EqualizerBars(color: NookTheme.music, height: 14)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+        case .track(let title, let artist):
+            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                trackLabel(title: title, artist: artist)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+        case .done(let message):
+            doneStrip(message: message, nh: nh)
+        case .nudge(let line, _):
+            nudgeStrip(line: line, nh: nh)
+        case .card(let card):
+            expanded(nh: nh, mood: card.mood) {
+                CardView(
+                    card: card,
+                    onAction: { viewModel.perform($0) },
+                    onVoice: { viewModel.startListening() },
+                    onReply: { app.handleUserText($0) },
+                    onChoose: { viewModel.choose($0, $1) }
+                )
+            }
+        case .panel(let tab):
+            expanded(nh: nh, mood: viewModel.mood(for: tab)) {
+                PanelView(viewModel: viewModel, tab: tab)
+            }
+        }
     }
 
     // MARK: Idle and Music: Nook left of the notch, something compact on the right

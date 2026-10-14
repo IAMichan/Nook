@@ -15,14 +15,22 @@ final class NotchController {
     private var cancellables = Set<AnyCancellable>()
     private var previousApp: NSRunningApplication?
 
-    private var dragStart: (mouse: NSPoint, offsetX: Double, offsetY: Double)?
+    private var dragStart: (mouse: NSPoint, centerX: CGFloat, top: CGFloat)?
+
+    /// Notch on every screen: the other screens show an idle copy. When idle, the real Nook moves
+    /// to the screen with the mouse, so you can open it there.
+    private var mirrors: [String: (panel: NotchPanel, viewModel: NotchViewModel)] = [:]
+    private weak var app: AppModel?
 
     private var settings: AppSettings { AppSettings.shared }
 
+    private var isFloating: Bool { settings.placement == "floating" }
+    private var showsOnAllScreens: Bool { !isFloating && settings.notchOnAllScreens }
+
     private func makeGeometry() -> NotchGeometry {
         NotchGeometry.make(
-            for: NotchGeometry.preferredScreen(choice: settings.screenChoice),
-            floating: settings.placement == "floating"
+            for: NotchGeometry.preferredScreen(choice: showsOnAllScreens ? "mouse" : settings.screenChoice),
+            floating: isFloating
         )
     }
 
@@ -50,6 +58,7 @@ final class NotchController {
     }
 
     func start(app: AppModel) {
+        self.app = app
         geometry = makeGeometry()
         viewModel.geometry = geometry
         viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
@@ -64,6 +73,7 @@ final class NotchController {
         self.panel = panel
 
         panel.orderFrontRegardless()
+        refreshMirrors()
         installMonitors()
 
         // Size changed? Re-evaluate whether pointer is still hovering over shape.
@@ -78,7 +88,10 @@ final class NotchController {
         // A card with text input immediately requests keyboard focus so typing works without clicking.
         viewModel.$state
             .receive(on: RunLoop.main)
-            .sink { [weak self] state in self?.stateChanged(state) }
+            .sink { [weak self] state in
+                self?.stateChanged(state)
+                if state.isResting { self?.refreshMirrorContent() }
+            }
             .store(in: &cancellables)
 
         // Screen changed in settings, or idle hide toggled.
@@ -92,11 +105,18 @@ final class NotchController {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
             .store(in: &cancellables)
+        AppSettings.shared.$notchOnAllScreens
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.screenChanged() }
+            .store(in: &cancellables)
         AppSettings.shared.$hideWhenIdle
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                guard let self, self.viewModel.state.isResting else { return }
+                guard let self else { return }
+                self.refreshMirrorContent()
+                guard self.viewModel.state.isResting else { return }
                 self.viewModel.show(self.viewModel.state)
             }
             .store(in: &cancellables)
@@ -150,25 +170,91 @@ final class NotchController {
         geometry = makeGeometry()
         viewModel.geometry = geometry
         positionPanel()
+        refreshMirrors()
     }
 
-    /// Floating: shape tracks mouse while dragging; position is saved immediately.
+    /// Floating: shape tracks mouse while dragging, also onto another connected screen.
+    /// Position and screen are saved immediately.
     private func dragMoved() {
         guard geometry.isFloating else { return }
         let mouse = NSEvent.mouseLocation
-        let start = dragStart ?? (mouse: mouse, offsetX: settings.floatOffsetX, offsetY: settings.floatOffsetY)
-        dragStart = start
-        settings.floatOffsetX = start.offsetX + Double(mouse.x - start.mouse.x)
+        if dragStart == nil {
+            let a = anchor(size: viewModel.size)
+            dragStart = (mouse: mouse, centerX: a.centerX, top: a.top)
+        }
+        guard let start = dragStart else { return }
+        let centerX = start.centerX + mouse.x - start.mouse.x
+        let top = start.top + mouse.y - start.mouse.y
+
+        // Dragged across the edge onto another screen: Nook moves along and remembers that screen.
+        if let target = NotchGeometry.screenWithMouse(), target.frame != geometry.screenFrame {
+            geometry = NotchGeometry.make(for: target, floating: true)
+            viewModel.geometry = geometry
+            if settings.screenChoice != target.localizedName { settings.screenChoice = target.localizedName }
+        }
+
+        settings.floatOffsetX = Double(centerX - geometry.screenFrame.midX)
         // Y axis runs downward: dragging downward increases distance below menu bar.
-        settings.floatOffsetY = max(0, start.offsetY - Double(mouse.y - start.mouse.y))
+        settings.floatOffsetY = max(0, Double(visibleFrame.maxY - top))
         positionPanel()
     }
 
-    /// "Follows mouse": when idle, Nook moves to whichever screen contains the cursor.
+    /// "Follows mouse" or notch on every screen: when idle, Nook moves to whichever screen contains the cursor.
     private func followMouseIfNeeded() {
-        guard AppSettings.shared.screenChoice == "mouse", viewModel.state.isResting,
+        guard settings.screenChoice == "mouse" || showsOnAllScreens, viewModel.state.isResting, dragStart == nil,
               let screen = NotchGeometry.screenWithMouse(), screen.frame != geometry.screenFrame else { return }
         screenChanged()
+    }
+
+    // MARK: Notch on every screen
+
+    /// Puts an idle notch on every screen except the one the real Nook is on.
+    private func refreshMirrors() {
+        let wanted = showsOnAllScreens
+            ? NSScreen.screens.filter { $0.frame != geometry.screenFrame }
+            : []
+        let wantedKeys = Set(wanted.map { NSStringFromRect($0.frame) })
+        for (key, mirror) in mirrors where !wantedKeys.contains(key) {
+            mirror.panel.orderOut(nil)
+            mirrors[key] = nil
+        }
+        guard let app else { return }
+        for screen in wanted {
+            let mirrorGeometry = NotchGeometry.make(for: screen)
+            let key = NSStringFromRect(screen.frame)
+            if let existing = mirrors[key] {
+                existing.viewModel.geometry = mirrorGeometry
+                placeMirror(existing.panel, on: screen.frame)
+                continue
+            }
+            let mirrorModel = NotchViewModel()
+            mirrorModel.app = app
+            mirrorModel.geometry = mirrorGeometry
+            mirrorModel.show(.idle)
+            let panel = NotchPanel()
+            let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel).environmentObject(app))
+            host.sizingOptions = []
+            host.frame = NSRect(origin: .zero, size: Self.panelSize)
+            panel.contentView = host
+            placeMirror(panel, on: screen.frame)
+            // Display only: clicks pass through; the real Nook moves to this screen as soon as the mouse is on it.
+            panel.ignoresMouseEvents = true
+            panel.orderFrontRegardless()
+            mirrors[key] = (panel, mirrorModel)
+        }
+    }
+
+    private func placeMirror(_ panel: NotchPanel, on screenFrame: CGRect) {
+        let size = Self.panelSize
+        panel.setFrame(
+            NSRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - size.height, width: size.width, height: size.height),
+            display: false
+        )
+    }
+
+    /// Keeps the copies in sync with the idle state (music, hide when idle, agents).
+    private func refreshMirrorContent() {
+        for mirror in mirrors.values { mirror.viewModel.show(.idle) }
     }
 
     /// Notch shape in screen coordinates (origin bottom-left).
