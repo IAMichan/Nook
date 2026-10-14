@@ -136,13 +136,20 @@ final class NotchViewModel: ObservableObject {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
-        guard openOnHover, inside, case .idle = state else { return }
+        guard openOnHover, inside, restingState else { return }
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.pointerInside, case .idle = self.state {
+            if self.pointerInside, self.restingState {
                 self.show(.panel(.today))
             }
+        }
+    }
+
+    private var restingState: Bool {
+        switch state {
+        case .idle, .music: return true
+        default: return false
         }
     }
 
@@ -196,8 +203,7 @@ final class NotchViewModel: ObservableObject {
             case .running: return .think
             default: return .rest
             }
-        case .music: return .dance
-        case .today, .shelf: return .rest
+        case .music, .today, .shelf: return .rest
         }
     }
 }
