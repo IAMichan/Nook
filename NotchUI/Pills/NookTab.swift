@@ -99,15 +99,9 @@ struct NookHomeTab: View {
         }
     }
 
-    /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
+    /// Vragen die je met één klik stelt; ze passen bij wat je nu doet (venster, afspraak, agents, moment van de dag).
     private var suggestions: some View {
-        var questions = [tr("home.suggestions.summarizeDay")]
-        let ids = Set(app.connectors.active.map { $0.id })
-        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
-        questions.append(tr("home.suggestions.calendarChart"))
-        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
-        questions.append(tr("home.suggestions.writeMail"))
-        return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
+        SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
     }
 
     private func open(_ item: TodayItem) {
@@ -178,14 +172,20 @@ private struct NookChatView: View {
     @FocusState private var inputFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if chat.isEmpty {
-                emptyState
-            } else {
-                thread
+        HStack(alignment: .top, spacing: 14) {
+            if !chat.history.isEmpty {
+                NookList(chat: chat)
+                    .frame(width: 168)
             }
-            inputBar
-                .padding(.top, 10)
+            VStack(alignment: .leading, spacing: 0) {
+                if chat.isEmpty {
+                    emptyState
+                } else {
+                    thread
+                }
+                inputBar
+                    .padding(.top, 10)
+            }
         }
         .onAppear {
             // Even wachten tot het paneel de toetsenbordfocus heeft.
@@ -211,15 +211,9 @@ private struct NookChatView: View {
         }
     }
 
-    /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
+    /// Vragen die je met één klik stelt; ze passen bij wat je nu doet (venster, afspraak, agents, moment van de dag).
     private var suggestions: some View {
-        var questions = [tr("home.suggestions.summarizeDay")]
-        let ids = Set(app.connectors.active.map { $0.id })
-        if ids.contains("mail") { questions.append(tr("home.suggestions.mailToReply")) }
-        questions.append(tr("home.suggestions.calendarChart"))
-        if ids.contains("github") { questions.append(tr("home.suggestions.github")) }
-        questions.append(tr("home.suggestions.writeMail"))
-        return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
+        SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
     }
 
     // MARK: Het gesprek
@@ -248,11 +242,21 @@ private struct NookChatView: View {
                 }
             }
 
-            NookIconButton(systemName: "square.and.pencil", label: tr("chat.newChat"), size: 28) {
-                app.newChat()
+            if let title = chat.active?.title {
+                // De Nook waar je in zit, en hoe je een nieuwe begint.
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(NookTheme.font(11.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                    NookIconButton(systemName: "square.and.pencil", label: tr("nooks.new"), size: 26) {
+                        app.newChat()
+                    }
+                }
+                .padding(.leading, 10)
+                .background(Capsule().fill(NookTheme.notch))
+                .offset(y: -6)
             }
-            .background(Circle().fill(NookTheme.notch))
-            .offset(y: -6)
         }
     }
 
@@ -512,6 +516,128 @@ private struct TypingIndicator: View {
         }
         .padding(.vertical, 4)
         .accessibilityLabel(status.isEmpty ? "Nook denkt na" : status)
+    }
+}
+
+// MARK: Je Nooks
+
+/// Al je Nooks onder elkaar: elk gesprek is een eigen Nook die aan één ding werkt. Bezig, wacht op jou of klaar
+/// zie je aan het stipje. Een nieuwe begin je bovenaan; rechtsklik om er een weg te halen.
+private struct NookList: View {
+    @ObservedObject var chat: NookChat
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            NewNookButton { app.newChat() }
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(chat.history) { conversation in
+                        NookRow(conversation: conversation, selected: conversation.id == chat.activeID) {
+                            app.openConversation(conversation.id)
+                        }
+                        .contextMenu {
+                            Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.trailing, 12)
+        .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line).frame(width: 1) }
+    }
+}
+
+private struct NewNookButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text(tr("nooks.new"))
+                    .font(NookTheme.font(12.5, .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(NookTheme.paper)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 9).fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .keyboardShortcut("n", modifiers: .command)
+        .help(tr("nooks.newHelp"))
+    }
+}
+
+private struct NookRow: View {
+    let conversation: Conversation
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 8) {
+                StatusDot(status: conversation.status)
+                    .padding(.top, 5)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(conversation.title)
+                        .font(NookTheme.font(12.5, selected ? .semibold : .medium))
+                        .foregroundStyle(selected ? NookTheme.paper : Color(hex: 0xC9C7D2))
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(NookTheme.font(11))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(selected ? NookTheme.smoke : (hovering ? NookTheme.graphite : Color.clear)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("\(conversation.title), \(subtitle)")
+    }
+
+    private var subtitle: String {
+        switch conversation.status {
+        case .working: return tr("nooks.working")
+        case .waiting: return tr("nooks.waiting")
+        case .unread: return tr("nooks.doneAt", NookDates.relative(conversation.updated))
+        case .idle: return conversation.preview.isEmpty ? NookDates.relative(conversation.updated) : conversation.preview
+        }
+    }
+}
+
+/// Bezig (paars, ademt), wacht op jou (amber), nieuw antwoord (mint) of rustig (grijs).
+private struct StatusDot: View {
+    let status: Conversation.Status
+
+    var body: some View {
+        switch status {
+        case .working:
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                Circle().fill(NookTheme.iris).frame(width: 7, height: 7)
+                    .opacity(0.45 + 0.55 * abs(sin(t * 2.6)))
+            }
+            .frame(width: 7, height: 7)
+        case .waiting:
+            Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
+        case .unread:
+            Circle().fill(NookTheme.mint).frame(width: 7, height: 7)
+        case .idle:
+            Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
+        }
     }
 }
 

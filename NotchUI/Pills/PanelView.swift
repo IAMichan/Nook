@@ -28,7 +28,7 @@ struct PanelView: View {
                             Text(t.title)
                                 .font(NookTheme.font(13.5, .medium))
                                 .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
-                            if t == .chat, viewModel.app?.chat.busy == true {
+                            if t == .chat, viewModel.app?.chat.anyBusy == true {
                                 Circle()
                                     .fill(NookTheme.iris)
                                     .frame(width: 5, height: 5)

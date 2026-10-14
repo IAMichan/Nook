@@ -16,6 +16,10 @@ final class NotchViewModel: ObservableObject {
     /// Wordt gezet door AppModel; geeft toegang tot echte data en acties.
     weak var app: AppModel?
 
+    /// Alleen in zwevende stand: de controller verplaatst het paneel terwijl je sleept.
+    var onDragMoved: (() -> Void)?
+    var onDragEnded: (() -> Void)?
+
     private var callbacks: [String: () -> Void] = [:]
     private var choiceHandlers: [String: ([String]) -> Void] = [:]
     private var pending: [NookCard] = []
@@ -280,7 +284,7 @@ final class NotchViewModel: ObservableObject {
         let chrome = nh + 14 + 22   // ruimte onder de notch en onderrand
         switch state {
         case .idle:
-            if app?.settings.hideWhenIdle == true, !agentsActive {
+            if app?.settings.hideWhenIdle == true, !geometry.isFloating, !agentsActive, !(app?.chat.anyBusy ?? false) {
                 // Alleen de notch zelf; zonder notch een dun randje bovenaan om naar te wijzen.
                 return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
             }
@@ -297,7 +301,8 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
             switch tab {
-            case .nook, .chat: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
+            case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
+            case .chat: return CGSize(width: 860, height: min(chrome + 440, NotchController.panelSize.height))
             case .agents: return CGSize(width: 860, height: chrome + 386)
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
@@ -306,10 +311,13 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    private var nookFloatingPill: CGFloat { geometry.notchHeight / 2 }
+
     var cornerRadius: CGFloat {
         switch state {
-        case .idle: return 14
-        case .music, .track, .done, .nudge: return 16
+        case .idle: return geometry.isFloating ? nookFloatingPill : 14
+        case .music, .track: return geometry.isFloating ? nookFloatingPill : 16
+        case .done, .nudge: return 16
         case .card: return 30
         case .panel: return 32
         }
@@ -329,7 +337,7 @@ final class NotchViewModel: ObservableObject {
             }
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
-        case .nook, .chat: return (app?.chat.busy ?? false) ? .think : .rest
+        case .nook, .chat: return (app?.chat.anyBusy ?? false) ? .think : .rest
         case .music, .shelf: return .rest
         }
     }

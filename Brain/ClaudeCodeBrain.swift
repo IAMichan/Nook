@@ -168,6 +168,10 @@ enum ClaudeCodeBrain {
                 ]
                 environment["PATH"] = (extra + [environment["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
                 environment["NOOK_INTERNAL"] = "1"
+                // Denkt met het Claude-account dat je in de Agents-tab als standaard koos.
+                if let home = UserDefaults.standard.string(forKey: AgentProfileStore.brainHomeKey), !home.isEmpty {
+                    environment["CLAUDE_CONFIG_DIR"] = home
+                }
                 process.environment = environment
                 let out = Pipe()
                 process.standardOutput = out
