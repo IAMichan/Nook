@@ -60,6 +60,9 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                             .font(.callout)
                     }
                     Spacer()
+                    if !connector.configFields.isEmpty {
+                        Button("Plak uit klembord") { pasteFromClipboard() }
+                    }
                     if configured {
                         Button("Wis") { clear() }
                     }
@@ -143,14 +146,33 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     private func fieldRow(_ field: ConnectorField) -> some View {
         let binding = Binding<String>(
             get: { drafts[field.account] ?? "" },
-            set: { drafts[field.account] = $0 }
+            set: { new in
+                let old = drafts[field.account] ?? ""
+                drafts[field.account] = new
+                // Plakken zet in één keer veel tekst neer: dan bewaren we meteen, zonder extra knop.
+                if new.count - old.count >= 8 { save() }
+            }
         )
         if field.secret {
             SecureField(field.label, text: binding,
                         prompt: Text(stored.contains(field.account) ? "Bewaard in je Keychain" : field.placeholder))
+                .onSubmit { save() }
         } else {
             TextField(field.label, text: binding, prompt: Text(field.placeholder))
+                .onSubmit { save() }
         }
+    }
+
+    /// Neemt wat er op het klembord staat, en bewaart het meteen in het eerste geheime veld.
+    private func pasteFromClipboard() {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !ConnectorField.clean(text).isEmpty,
+              let field = connector.configFields.first(where: { $0.secret }) ?? connector.configFields.first else {
+            note = "Er staat niets bruikbaars op je klembord."
+            return
+        }
+        drafts[field.account] = text
+        save()
     }
 
     private var hasDraft: Bool {
