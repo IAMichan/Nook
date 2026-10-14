@@ -42,6 +42,8 @@ final class ScreenContext: ObservableObject {
     private let interval: TimeInterval = 7
     /// Andere vensters dan het voorste worden hooguit zo vaak opnieuw bekeken.
     private let backgroundMaxAge: TimeInterval = 30
+    private var lastFailure: Date?
+    private let failureCooldown: TimeInterval = 60
 
     var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
@@ -81,9 +83,11 @@ final class ScreenContext: ObservableObject {
         cache = [:]
         windows = []
         lastUpdate = nil
+        lastFailure = nil
     }
 
     private func scheduleFrontRefresh() {
+        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         pendingFrontRefresh?.cancel()
         pendingFrontRefresh = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -94,6 +98,7 @@ final class ScreenContext: ObservableObject {
 
     private func tick() async {
         guard enabled(), hasPermission else { return }
+        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         // Even weg van de Mac: niets bijhouden.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
@@ -165,7 +170,14 @@ final class ScreenContext: ObservableObject {
         busy = true
         defer { busy = false }
 
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            lastFailure = nil
+        } catch {
+            lastFailure = Date()
+            return
+        }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let names = Self.displayNames()
 

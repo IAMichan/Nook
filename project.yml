@@ -70,8 +70,8 @@ targets:
         PRODUCT_NAME: Nook
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
         ENABLE_HARDENED_RUNTIME: NO
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: 35SMNHP9K7
+        CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
 schemes:
   Nook:
