@@ -136,18 +136,6 @@ final class AppModel: ObservableObject {
             ))
         }
 
-        if let next = upcoming.first(where: { $0.end > Date() }) {
-            let place = next.location.isEmpty ? "" : " · \(next.location)"
-            items.append(TodayItem(
-                id: "event-\(next.id)",
-                title: next.title,
-                subtitle: NookDates.short(next.start) + place,
-                action: "",
-                color: NookTheme.iris,
-                target: .none
-            ))
-        }
-
         if let recapItem = weeklyRecapItem() { items.append(recapItem) }
 
         for loop in loops.prefix(3) {
@@ -223,12 +211,12 @@ final class AppModel: ObservableObject {
             viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: title)))
             Task {
                 do {
-                    let snapshot = try await screen.capture()
+                    let snapshot = try await screen.captureAll(maxWindows: settings.useLocal ? 3 : 6, totalLimit: settings.useLocal ? 3500 : 9000)
                     await runBrain(
                         userText: text,
                         snapshot: snapshot,
                         silentIfNone: false,
-                        context: "Ik zag in \(snapshot.appName)"
+                        context: "Ik keek in je vensters"
                     )
                 } catch {
                     replaceThinking(with: errorCard(error.localizedDescription))
@@ -324,12 +312,14 @@ final class AppModel: ObservableObject {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
-        let events = calendar.events(from: now, to: now.addingTimeInterval(7 * 86_400))
+        // Vanaf het begin van vandaag, zodat ook "wat had ik vanochtend" of een lopende afspraak erin staat.
+        let events = calendar.events(from: Calendar.current.startOfDay(for: now), to: now.addingTimeInterval(7 * 86_400))
         if calendar.hasEventAccess {
-            lines.append("Agenda (Nook heeft toegang), komende zeven dagen:")
+            lines.append("Agenda (Nook heeft toegang), vandaag en de komende zeven dagen:")
             if events.isEmpty { lines.append("- geen afspraken") }
-            for event in events.prefix(25) {
-                lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))")
+            for event in events.prefix(40) {
+                let place = event.location.isEmpty ? "" : " | \(event.location)"
+                lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))\(place)")
             }
         } else {
             lines.append("Agenda: geen toegang.")

@@ -12,7 +12,32 @@ struct MusicTab: View {
         }
     }
 
+    @ViewBuilder
     private var idle: some View {
+        if app.nowPlaying.permissionDenied { denied } else { nothingPlaying }
+    }
+
+    private var denied: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Nook mag Spotify niet bedienen")
+                .font(NookTheme.font(17, .semibold))
+                .foregroundStyle(NookTheme.paper)
+            Text("Zet Nook aan onder Systeeminstellingen › Privacy en beveiliging › Automatisering.")
+                .font(NookTheme.font(13))
+                .foregroundStyle(NookTheme.textSecondary)
+            Button("Open Automatisering") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .buttonStyle(.plain)
+            .font(NookTheme.font(12, .semibold))
+            .foregroundStyle(NookTheme.paper)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var nothingPlaying: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Er speelt nu niets")
                 .font(NookTheme.font(17, .semibold))

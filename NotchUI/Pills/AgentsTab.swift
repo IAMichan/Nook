@@ -133,6 +133,12 @@ struct AgentsTab: View {
                     .frame(height: 34)
                     .background(Capsule().fill(NookTheme.field))
                     NookIconButton(systemName: "arrow.up", label: "Versturen", filled: true) { draft = "" }
+                } else if session.status == .detected {
+                    NookPrimaryButton(title: "Koppel in Instellingen") { app.openSettings() }
+                    Text("Of typ gewoon verder in de terminal van \(session.name)")
+                        .font(NookTheme.font(12.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .padding(.leading, 8)
                 } else {
                     Text(session.placeholder)
                         .font(NookTheme.font(12.5))
