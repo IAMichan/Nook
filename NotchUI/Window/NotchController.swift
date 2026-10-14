@@ -135,6 +135,15 @@ final class NotchController {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             Task { @MainActor in self?.viewModel.clickedOutside() }
         }) { monitors.append(m) }
+        // Een klik in een ander venster van Nook zelf (Instellingen) is voor macOS geen globale klik.
+        if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
+            let window = event.windowNumber
+            Task { @MainActor in
+                guard let self, window != self.panel?.windowNumber else { return }
+                self.viewModel.clickedOutside()
+            }
+            return event
+        }) { monitors.append(m) }
     }
 
     private func pointerMoved() {

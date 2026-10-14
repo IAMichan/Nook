@@ -67,17 +67,22 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             .padding(.vertical, 4)
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: connector.symbol)
-                    .foregroundStyle(connector.accent)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(connector.title)
-                    Text(stateText)
-                        .font(.caption)
-                        .foregroundStyle(stateColor)
-                        .lineLimit(2)
+                // De hele rij klapt open, niet alleen het pijltje: anders lijkt klikken op een dienst niets te doen.
+                HStack(spacing: 10) {
+                    Image(systemName: connector.symbol)
+                        .foregroundStyle(connector.accent)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(connector.title)
+                        Text(stateText)
+                            .font(.caption)
+                            .foregroundStyle(stateColor)
+                            .lineLimit(2)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation { expanded.toggle() } }
                 Toggle("Aan", isOn: Binding(get: { isOn }, set: { setOn($0) }))
                     .labelsHidden()
                     .toggleStyle(.switch)

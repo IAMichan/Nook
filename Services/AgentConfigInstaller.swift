@@ -68,6 +68,23 @@ enum AgentConfigInstaller {
             }
         }
 
+        /// De koppeling voor een agent zoals Nook hem op je Mac ziet draaien ("Claude Code", "Codex"…).
+        static func forAgent(named name: String) -> Target? {
+            switch name {
+            case "Claude Code": return .claudeHooks
+            case "Codex": return .codex
+            case "Gemini CLI": return .gemini
+            case "Antigravity": return .antigravity
+            case "Cursor": return .cursor
+            case "Copilot CLI": return .copilot
+            case "Muse Code": return .muse
+            case "OpenCode": return .openCode
+            case "Amp": return .amp
+            case "Hermes": return .hermes
+            default: return nil
+            }
+        }
+
         /// Agents die een eigen pluginbestand van Nook laden, in plaats van hook-commando's in hun JSON.
         var isPlugin: Bool {
             switch self {

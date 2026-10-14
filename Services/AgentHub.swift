@@ -11,7 +11,22 @@ final class AgentHub: ObservableObject {
     /// Toestemmingsvragen die nu wachten, oudste eerst.
     @Published private(set) var approvals: [ApprovalRequest] = []
     /// Gebruik van je Claude-abonnement, als de statusregel gekoppeld is.
-    @Published private(set) var planUsage: PlanUsage?
+    /// Blijft bewaard, zodat je het ook ziet als Claude Code even niet draait.
+    @Published private(set) var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
+        didSet { Self.savePlanUsage(planUsage) }
+    }
+
+    private static let planUsageKey = "planUsage"
+
+    private nonisolated static func loadPlanUsage() -> PlanUsage? {
+        guard let data = UserDefaults.standard.data(forKey: planUsageKey) else { return nil }
+        return try? JSONDecoder().decode(PlanUsage.self, from: data)
+    }
+
+    private nonisolated static func savePlanUsage(_ usage: PlanUsage?) {
+        guard let usage, let data = try? JSONEncoder().encode(usage) else { return }
+        UserDefaults.standard.set(data, forKey: planUsageKey)
+    }
 
     var onApproval: ((ApprovalRequest) -> Void)?
     /// Een vraag is beantwoord (hier of elders) of verlopen: haal de kaart weg. De tekst is een bevestiging
@@ -99,6 +114,18 @@ final class AgentHub: ObservableObject {
             detected = found.compactMap { agent in
                 let key = "\(agent.name)|\(agent.cwd)"
                 guard !hooked.contains(key), seen.insert(key).inserted else { return nil }
+                // Al gekoppeld? Dan startte deze sessie vóór de koppeling en hoeft hij alleen opnieuw te starten.
+                let linked = AgentConfigInstaller.Target.forAgent(named: agent.name)
+                    .map { AgentConfigInstaller.state(of: $0) == .installed } ?? false
+                let steps: [AgentStep] = linked ? [
+                    AgentStep(mark: .done, text: "\(agent.name) is gekoppeld met Nook"),
+                    AgentStep(mark: .blocked, text: "Deze sessie startte vóór de koppeling, dus Nook ziet nog niet wat hij doet"),
+                    AgentStep(mark: .todo, text: "Start \(agent.name) opnieuw in de terminal, dan zie je hier voortgang en vragen")
+                ] : [
+                    AgentStep(mark: .running, text: "\(agent.name) draait, maar is nog niet gekoppeld met Nook"),
+                    AgentStep(mark: .todo, text: "Koppel hem in Instellingen › Agents voor voortgang en goedkeuren vanuit de notch"),
+                    AgentStep(mark: .todo, text: "Daarna start je \(agent.name) opnieuw in de terminal")
+                ]
                 return AgentSession(
                     id: "proc-\(agent.pid)",
                     name: agent.name,
@@ -106,11 +133,7 @@ final class AgentHub: ObservableObject {
                     status: .detected,
                     file: agent.cwd.isEmpty ? "draait op deze Mac" : Self.shortPath(agent.cwd),
                     placeholder: "Typ in de terminal van \(agent.name) om verder te gaan",
-                    steps: [
-                        AgentStep(mark: .running, text: "\(agent.name) draait, maar Nook ziet nog niet wat hij doet"),
-                        AgentStep(mark: .todo, text: "Wil je voortgang zien en iets kunnen goedkeuren? Klik op 'Koppel in Instellingen' hieronder"),
-                        AgentStep(mark: .todo, text: "Daarna start je \(agent.name) opnieuw in de terminal")
-                    ],
+                    steps: steps,
                     diff: [],
                     cwd: agent.cwd
                 )
@@ -626,7 +649,7 @@ final class AgentHub: ObservableObject {
 
     static func projectName(_ cwd: String) -> String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return name.isEmpty || cwd.isEmpty ? "onbekend" : name
+        return name.isEmpty || cwd.isEmpty || name == "/" ? "geen map" : name
     }
 
     static func shortPath(_ path: String) -> String {
