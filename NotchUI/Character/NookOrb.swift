@@ -18,8 +18,6 @@ struct NookOrb: View {
 
     private func orb(at t: Double) -> some View {
         let breath = 1 + 0.05 * sin(t * 2 * Double.pi / 3.4)
-        let beat = sin(t * 2 * Double.pi / 0.62)
-        let dancing = mood == .dance
         return ZStack {
             Circle()
                 .fill(mood.color)
@@ -31,8 +29,6 @@ struct NookOrb: View {
         }
         .frame(width: size, height: size)
         .scaleEffect(CGFloat(breath))
-        .rotationEffect(.degrees(dancing ? beat * 8 : 0))
-        .offset(y: dancing ? CGFloat(-abs(beat)) * size * 0.12 : 0)
         .animation(.easeInOut(duration: 0.3), value: mood)
     }
 
@@ -40,7 +36,7 @@ struct NookOrb: View {
 
     private var eyeSize: CGSize {
         switch mood {
-        case .rest, .seen, .dance, .remind:
+        case .rest, .seen, .remind:
             return CGSize(width: size * 0.11, height: size * 0.30)
         case .listen:
             return CGSize(width: size * 0.11, height: size * 0.40)

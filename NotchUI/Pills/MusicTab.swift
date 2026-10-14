@@ -68,17 +68,21 @@ struct MusicTab: View {
                         .lineLimit(1)
                 }
 
-                HStack(spacing: 10) {
-                    Text(clock(info.position))
-                    GeometryReader { geo in
-                        let fraction = info.duration > 0 ? min(1, Double(info.position) / Double(info.duration)) : 0
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(NookTheme.line2)
-                            Capsule().fill(NookTheme.paper).frame(width: geo.size.width * CGFloat(fraction))
+                // Spotify en Muziek worden elke 2 seconden uitgelezen; daartussen loopt de tijd hier zelf door.
+                TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                    let position = info.estimatedPosition(at: context.date)
+                    HStack(spacing: 10) {
+                        Text(clock(Int(position)))
+                        GeometryReader { geo in
+                            let fraction = info.duration > 0 ? min(1, position / Double(info.duration)) : 0
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(NookTheme.line2)
+                                Capsule().fill(NookTheme.paper).frame(width: geo.size.width * CGFloat(fraction))
+                            }
                         }
+                        .frame(height: 3)
+                        Text(info.duration > 0 ? clock(info.duration) : "–:––")
                     }
-                    .frame(height: 3)
-                    Text(clock(info.duration))
                 }
                 .font(NookTheme.mono(11))
                 .foregroundStyle(NookTheme.textTertiary)
@@ -106,7 +110,7 @@ struct MusicTab: View {
                     Color.clear
                 }
             }
-            EqualizerBars(color: NookTheme.ink).padding(12)
+            EqualizerBars(color: NookTheme.ink, isPlaying: info.isPlaying).padding(12)
         }
         .frame(width: 104, height: 104)
         .clipShape(RoundedRectangle(cornerRadius: 14))

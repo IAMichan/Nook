@@ -104,10 +104,19 @@ final class AppModel: ObservableObject {
                 let vm = self.viewModel
                 if playing, case .idle = vm.state {
                     vm.show(.music)
-                } else if !playing, case .music = vm.state {
+                } else if !playing, vm.state.kind == "music" || vm.state.kind == "track" {
                     vm.show(.idle)
                 }
             }
+            .store(in: &bag)
+
+        // Een nieuw nummer: de notch zegt even wat er nu speelt.
+        nowPlaying.$current
+            .compactMap { $0 }
+            .removeDuplicates { $0.title == $1.title && $0.artist == $1.artist && $0.app == $1.app }
+            .filter(\.isPlaying)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] info in self?.viewModel.announce(info) }
             .store(in: &bag)
 
         hotKeys = [
@@ -579,7 +588,7 @@ final class AppModel: ObservableObject {
         guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
         guard Date().timeIntervalSince(lastAutoRun) > 90 else { return }
         switch viewModel.state {
-        case .idle, .music: break
+        case .idle, .music, .track: break
         default: return
         }
         autoBusy = true
@@ -707,7 +716,7 @@ final class AppModel: ObservableObject {
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
         switch viewModel.state {
-        case .idle, .music, .done: break
+        case .idle, .music, .track, .done: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
         default: return
         }
