@@ -62,6 +62,16 @@ enum NookDates {
         formatter("d").string(from: date)
     }
 
+    /// "net", "14:20", "gisteren", "ma" of "12 okt": hoe lang geleden, zo kort mogelijk.
+    static func relative(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if Date().timeIntervalSince(date) < 90 { return "net" }
+        if calendar.isDateInToday(date) { return time(date) }
+        if calendar.isDateInYesterday(date) { return "gisteren" }
+        if Date().timeIntervalSince(date) < 6 * 86_400 { return weekday(date) }
+        return dayMonth(date)
+    }
+
     /// "woensdag 14 oktober 2026 08:31"
     static func long(_ date: Date) -> String {
         formatter("EEEE d MMMM yyyy HH:mm").string(from: date)
