@@ -13,6 +13,9 @@ struct TodayTab: View {
                 .font(NookTheme.font(20, .semibold))
                 .foregroundStyle(NookTheme.paper)
 
+            awareness
+                .padding(.top, 4)
+
             VStack(spacing: 0) {
                 ForEach(items) { item in
                     TodayRow(item: item) { open(item) }
@@ -22,7 +25,55 @@ struct TodayTab: View {
 
             Spacer(minLength: 10)
 
+            suggestions
+                .padding(.bottom, 8)
+
             askField
+        }
+    }
+
+    /// In één regel waar Nook nu bij kan: zo weet je meteen dat je er alles aan kunt vragen.
+    private var awareness: some View {
+        let _ = app.connectors.revision
+        var parts: [String] = []
+        let screen = app.screenContext
+        if !screen.windows.isEmpty {
+            parts.append("\(screen.windows.count) vensters" + (screen.displayCount > 1 ? " op \(screen.displayCount) schermen" : ""))
+        }
+        for source in app.connectors.active.prefix(4) where source.status.state == .ok && !source.status.headline.isEmpty {
+            parts.append("\(source.title.lowercased()): \(source.status.headline.lowercased())")
+        }
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(parts.isEmpty ? NookTheme.textTertiary : NookTheme.mint)
+                .frame(width: 6, height: 6)
+            Text(parts.isEmpty ? "Ik zie nog niets. Geef me toegang bij Instellingen, dan help ik je met alles." : "Ik zie " + parts.joined(separator: " · "))
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
+    private var suggestions: some View {
+        var questions = ["Wat staat er op mijn schermen?", "Vat mijn dag samen"]
+        let ids = Set(app.connectors.active.map { $0.id })
+        if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
+        if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
+        if !ids.contains("mail") && !ids.contains("github") { questions.append("Wanneer ben ik vrij deze week?") }
+        return HStack(spacing: 6) {
+            ForEach(questions.prefix(4), id: \.self) { question in
+                Button { app.handleUserText(question) } label: {
+                    Text(question)
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.paper)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(NookTheme.smoke))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -55,7 +106,7 @@ struct TodayTab: View {
                 question = ""
                 app.handleUserText(text)
             }
-            Text("⌥ spatie")
+            Text("⌥⌘ spatie")
                 .font(NookTheme.mono(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
         }

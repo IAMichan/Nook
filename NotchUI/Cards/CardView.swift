@@ -13,9 +13,23 @@ struct CardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(card.context)
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
+            HStack(spacing: 6) {
+                Text(card.context)
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                if !card.sources.isEmpty {
+                    ForEach(card.sources.prefix(5), id: \.self) { source in
+                        Text(source)
+                            .font(NookTheme.font(10.5, .medium))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(NookTheme.smoke))
+                            .lineLimit(1)
+                    }
+                }
+            }
 
             if card.input {
                 // Lange antwoorden scrollen en zijn te selecteren; ze worden nooit afgekapt.
@@ -50,12 +64,20 @@ struct CardView: View {
         .onExitCommand { onAction(card.primary) }
     }
 
+    /// Korte zinnen groot; een langer antwoord in leesbare tekst, met **vet**, *schuin* en links.
     private var titleText: some View {
-        Text(card.title)
-            .font(NookTheme.font(18, .semibold))
+        let long = card.title.count > 140
+        return Text(Self.rich(card.title))
+            .font(long ? NookTheme.font(15, .regular) : NookTheme.font(18, .semibold))
+            .lineSpacing(long ? 3 : 0)
             .foregroundStyle(NookTheme.paper)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
+    }
+
+    private static func rich(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 
     /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.

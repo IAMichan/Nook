@@ -12,6 +12,13 @@ struct ShelfTab: View {
         HStack(spacing: 10) {
             ForEach(files, id: \.self) { url in
                 ShelfItem(url: url) { app.askAbout(url) }
+                    .contextMenu {
+                        Button("Vraag Nook erover") { app.askAbout(url) }
+                        Button("Verstuur per mail…") { app.mailFile(url) }
+                        Button("Toon in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        Divider()
+                        Button("Haal van de Shelf") { files.removeAll { $0 == url } }
+                    }
             }
 
             dropZone
@@ -34,7 +41,7 @@ struct ShelfTab: View {
             Text("Sleep bestanden hierheen")
                 .font(NookTheme.font(12.5, .medium))
                 .foregroundStyle(NookTheme.paper)
-            Text("klik er daarna op om Nook erover te vragen")
+            Text("klik om te vragen, rechtsklik om te mailen")
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.textSecondary)
         }

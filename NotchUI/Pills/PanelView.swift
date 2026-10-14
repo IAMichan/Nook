@@ -43,6 +43,7 @@ struct PanelView: View {
             Spacer()
             HStack(spacing: 2) {
                 NookIconButton(systemName: "mic", label: "Praat met Nook") { viewModel.startListening() }
+                NookIconButton(systemName: "gearshape", label: "Instellingen") { viewModel.app?.openSettings() }
                 NookIconButton(systemName: "xmark", label: "Sluiten") { viewModel.show(.idle) }
             }
         }
@@ -53,6 +54,7 @@ struct PanelView: View {
         switch tab {
         case .today: TodayTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
+        case .connect: ConnectTab(viewModel: viewModel)
         case .music: MusicTab()
         case .shelf: ShelfTab()
         }

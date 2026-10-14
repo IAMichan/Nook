@@ -30,7 +30,7 @@ enum ScreenError: LocalizedError {
 /// De afbeelding zelf verlaat je Mac nooit; alleen de herkende tekst kan naar het brein gaan.
 @MainActor
 final class ScreenReader {
-    private static let excludedBundles: Set<String> = [
+    static let excludedBundles: Set<String> = [
         "com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess",
         "com.apple.Passwords", "com.bitwarden.desktop", "nl.imdigital.nook"
     ]
@@ -123,13 +123,14 @@ final class ScreenReader {
         return ScreenSnapshot(appName: frontName, windowTitle: "alle zichtbare vensters", text: sections.joined(separator: "\n\n"))
     }
 
-    private nonisolated static func recognize(_ image: CGImage) async throws -> String {
+    /// `fast`: de snelle herkenning van Vision (ruim vijf keer sneller, iets minder nauwkeurig), voor het bijhouden op de achtergrond.
+    nonisolated static func recognize(_ image: CGImage, fast: Bool = false) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
+                request.recognitionLevel = fast ? .fast : .accurate
                 request.recognitionLanguages = ["nl-NL", "en-US"]
-                request.usesLanguageCorrection = true
+                request.usesLanguageCorrection = !fast
                 let handler = VNImageRequestHandler(cgImage: image, options: [:])
                 do {
                     try handler.perform([request])

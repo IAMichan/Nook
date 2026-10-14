@@ -95,10 +95,85 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(wakeWord, forKey: "wakeWord") }
     }
 
-    /// Kan Nook nadenken? Met een lokaal model is een API-sleutel niet nodig.
-    var brainReady: Bool { useLocal ? !localModel.isEmpty : hasAPIKey }
+    /// Met welke aanbieder Nook denkt als hij niet het ingebouwde model gebruikt.
+    @Published var provider: AIProvider {
+        didSet {
+            UserDefaults.standard.set(provider.rawValue, forKey: "provider")
+            refreshProviderKey()
+        }
+    }
+    /// Model per aanbieder (voor Claude is dat `model`).
+    @Published var providerModels: [String: String] {
+        didSet { UserDefaults.standard.set(providerModels, forKey: "providerModels") }
+    }
+    @Published private(set) var hasProviderKey = false
+
+    /// Mag Claude op het web zoeken (Anthropic's eigen zoektool)? Alleen bij Claude.
+    @Published var webSearch: Bool {
+        didSet { UserDefaults.standard.set(webSearch, forKey: "webSearch") }
+    }
+    /// Houd de tekst van al je vensters op al je schermen live bij (lokaal), zodat elke vraag die context heeft.
+    @Published var liveScreen: Bool {
+        didSet { UserDefaults.standard.set(liveScreen, forKey: "liveScreen") }
+    }
+    /// Stuur bij elke vraag mee wat er op je schermen staat (niet alleen als je "dit" of "hier" zegt).
+    @Published var screenWithEveryQuestion: Bool {
+        didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
+    }
+    /// De welkomststappen zijn doorlopen.
+    @Published var onboardingDone: Bool {
+        didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
+    }
+
+    /// Kan Nook nadenken? Met een lokaal model of een server op je Mac is een API-sleutel niet nodig.
+    var brainReady: Bool {
+        if useLocal { return !localModel.isEmpty }
+        switch provider {
+        case .claude: return hasAPIKey
+        case .claudeCode: return ClaudeCodeBrain.executable != nil
+        case .ollama, .lmstudio: return !activeProviderModel.isEmpty || provider == .lmstudio
+        default: return hasProviderKey && !activeProviderModel.isEmpty
+        }
+    }
+
+    /// Het model dat bij de gekozen aanbieder hoort.
+    var activeProviderModel: String {
+        provider == .claude ? model : (providerModels[provider.rawValue] ?? provider.defaultModel)
+    }
+
+    func setProviderModel(_ id: String) {
+        if provider == .claude { model = id } else { providerModels[provider.rawValue] = id }
+    }
+
     /// Naam van wat er nu denkt, voor in meldingen.
-    var activeModelName: String { useLocal ? (localModel.split(separator: "/").last.map(String.init) ?? localModel) : model }
+    var activeModelName: String {
+        if useLocal { return localModel.split(separator: "/").last.map(String.init) ?? localModel }
+        let name = activeProviderModel
+        return provider == .claude ? name : "\(provider.title) · \(name.isEmpty ? "eerste model" : name)"
+    }
+
+    /// Sleutel van de gekozen (niet-Claude) aanbieder.
+    var providerKey: String? {
+        provider == .claude ? apiKey : Keychain.read(provider.keyAccount)
+    }
+
+    private func refreshProviderKey() {
+        hasProviderKey = provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+    }
+
+    /// Bewaart de sleutel voor een andere aanbieder dan Claude.
+    @discardableResult
+    func saveProviderKey(_ key: String, for provider: AIProvider) -> String? {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
+        let status = Keychain.write(trimmed, account: provider.keyAccount)
+        refreshProviderKey()
+        objectWillChange.send()
+        return status == errSecSuccess ? nil : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
+    }
+
+    func hasKey(for provider: AIProvider) -> Bool {
+        provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+    }
 
     private var cachedKey: String?
     var apiKey: String? { cachedKey }
@@ -120,9 +195,19 @@ final class AppSettings: ObservableObject {
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
+        provider = AIProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .claude
+        providerModels = (defaults.dictionary(forKey: "providerModels") as? [String: String]) ?? [:]
+        webSearch = defaults.object(forKey: "webSearch") as? Bool ?? true
+        liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
+        screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
+        // Wie Nook al gebruikte (sleutel of model aanwezig), hoeft de welkomststappen niet meer te zien.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key
         hasAPIKey = !(key ?? "").isEmpty
+        // Lokale waarden: `self` mag hier nog niet gelezen worden, want nog niet alles is ingesteld.
+        onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
+            || !(defaults.string(forKey: "localModel") ?? "").isEmpty
+        refreshProviderKey()
     }
 
     /// Bewaart de sleutel. De sleutel werkt in elk geval deze sessie; `keychainError` is gevuld als de Keychain weigerde.
@@ -134,6 +219,7 @@ final class AppSettings: ObservableObject {
         let status = Keychain.write(trimmed, account: Self.keyAccount)
         cachedKey = trimmed.isEmpty ? nil : trimmed
         hasAPIKey = !trimmed.isEmpty
+        refreshProviderKey()
         let error: String? = status == errSecSuccess ? nil
             : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain-fout \(status)")
         return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))

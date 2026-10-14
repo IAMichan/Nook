@@ -24,6 +24,8 @@ final class NookTools {
     private let onLoopsChanged: () -> Void
 
     private(set) var specs: [ToolSpec] = []
+    /// Levert de schermtekst uit de live cache (snel). Zonder deze haalt read_screen alles opnieuw op.
+    var screenSnapshot: (() async throws -> ScreenSnapshot)?
 
     init(calendar: CalendarService, store: NookStore, screen: ScreenReader, onLoopsChanged: @escaping () -> Void) {
         self.calendar = calendar
@@ -89,7 +91,8 @@ final class NookTools {
                 kind: .read,
                 summarize: { _ in "Scherm lezen" },
                 tag: { _ in ("", .neutral) },
-                run: { [screen = self.screen] _ in
+                run: { [weak self, screen = self.screen] _ in
+                    if let live = self?.screenSnapshot { return try await live().text }
                     let snapshot = try await screen.captureAll()
                     return snapshot.text
                 }
