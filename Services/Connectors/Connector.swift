@@ -20,6 +20,8 @@ struct ConnectorItem: Identifiable, Equatable {
     var tone: ConnectorTone = .neutral
     /// Optioneel: een https-link die opent als je op de regel klikt.
     var url: URL?
+    /// Domein waar het icoon van de dienst vandaan komt (optioneel).
+    var iconDomain: String?
 }
 
 enum ConnectorTone: Equatable {
@@ -62,6 +64,8 @@ protocol ContextSource: AnyObject {
     var title: String { get }
     /// SF Symbol.
     var symbol: String { get }
+    /// Optioneel: het domein van de dienst, voor het echte icoon in plaats van een systeemsymbool.
+    var iconDomain: String? { get }
     var accent: Color { get }
     /// Ingesteld (sleutel aanwezig / toestemming gegeven) én aangezet.
     var isActive: Bool { get }
@@ -77,6 +81,7 @@ protocol ContextSource: AnyObject {
 }
 
 extension ContextSource {
+    var iconDomain: String? { nil }
     var refreshInterval: TimeInterval { 300 }
     var tools: [ToolSpec] { [] }
 }

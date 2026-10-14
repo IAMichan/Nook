@@ -121,9 +121,7 @@ private struct ConnectorTile: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Image(systemName: source.symbol)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(source.accent)
+                    SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 14)
                     Text(source.title)
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.textSecondary)
@@ -193,9 +191,7 @@ private struct ConnectorDetail: View {
         let status = source.status
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: source.symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(source.accent)
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 18)
                 Text(source.title)
                     .font(NookTheme.font(17, .semibold))
                     .foregroundStyle(NookTheme.paper)
@@ -283,7 +279,11 @@ private struct ItemRow: View {
             if let url = item.url, ["https", "http"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
         } label: {
             HStack(spacing: 10) {
-                Circle().fill(item.tone.color).frame(width: 6, height: 6)
+                if let domain = item.iconDomain {
+                    SiteIcon(domain: domain, fallback: "link", tint: item.tone.color, size: 16)
+                } else {
+                    Circle().fill(item.tone.color).frame(width: 6, height: 6)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.title)
                         .font(NookTheme.font(13, .medium))

@@ -62,6 +62,11 @@ enum NookDates {
         formatter("d").string(from: date)
     }
 
+    /// "woensdag 14 oktober 2026"
+    static func day(_ date: Date) -> String {
+        formatter("EEEE d MMMM yyyy").string(from: date)
+    }
+
     /// "net", "14:20", "gisteren", "ma" of "12 okt": hoe lang geleden, zo kort mogelijk.
     static func relative(_ date: Date) -> String {
         let calendar = Calendar.current

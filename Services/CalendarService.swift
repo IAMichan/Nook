@@ -52,6 +52,36 @@ final class CalendarService {
             }
     }
 
+    /// Afspraken voor de beschikbaarheidscheck: zonder geannuleerde en afgewezen afspraken.
+    func agendaEntries(from start: Date, to end: Date) -> [AgendaEntry] {
+        guard hasEventAccess else { return [] }
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        return store.events(matching: predicate)
+            .filter { $0.status != .canceled && !(($0.attendees ?? []).contains { $0.isCurrentUser && $0.participantStatus == .declined }) }
+            .sorted { $0.startDate < $1.startDate }
+            .map {
+                AgendaEntry(
+                    title: $0.title ?? "Zonder titel",
+                    start: $0.startDate,
+                    end: $0.endDate,
+                    allDay: $0.isAllDay,
+                    busy: $0.availability != .free,
+                    location: $0.location ?? "",
+                    calendar: $0.calendar?.title ?? "Agenda"
+                )
+            }
+    }
+
+    /// Alle agenda's die Nook kan lezen, met het account erachter (iCloud, Google, Exchange…).
+    func calendarNames() -> [String] {
+        guard hasEventAccess else { return [] }
+        return store.calendars(for: .event).map { calendar -> String in
+            let source: EKSource? = calendar.source
+            let account = source?.title ?? ""
+            return account.isEmpty || account == calendar.title ? calendar.title : "\(calendar.title) (\(account))"
+        }.sorted()
+    }
+
     /// Herinneringen die nog open staan, met de vroegste deadline eerst.
     func incompleteReminders() async -> [ReminderItem] {
         guard hasReminderAccess else { return [] }

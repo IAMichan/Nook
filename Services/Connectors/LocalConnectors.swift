@@ -84,6 +84,17 @@ final class CalendarConnector: ContextSource {
     }
 }
 
+extension CalendarConnector: AgendaSource {
+    func agendaNames() -> [String] {
+        let names = calendar.calendarNames()
+        return names.isEmpty ? ["Apple Agenda"] : ["Apple Agenda: " + names.joined(separator: ", ")]
+    }
+
+    func agendaEntries(from: Date, to: Date) async throws -> AgendaResult {
+        AgendaResult(entries: calendar.agendaEntries(from: from, to: to))
+    }
+}
+
 // MARK: Herinneringen
 
 @MainActor
