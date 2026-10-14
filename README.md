@@ -45,17 +45,19 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Wat | Hoe |
 |---|---|
 | Praten tegen Nook | ⌥ spatie (of de microfoonknop). Herkenning op je Mac; daarna denkt het brein mee. |
-| Typen tegen Nook | ⌥⌘ spatie, waar je ook bent, of het veld onderaan Vandaag. Het antwoord verschijnt terwijl het geschreven wordt. |
+| Chatten met Nook | ⌥⌘ spatie, waar je ook bent, of het veld onderaan de tab Nook. Een echt gesprek: vervolgvragen worden begrepen, het antwoord verschijnt terwijl het geschreven wordt, met kopjes, lijstjes, tabellen en code. **Nieuw gesprek** begint opnieuw. |
+| Grafieken | Vraag om een grafiek ("maak een grafiek van mijn afspraken per dag") en Nook tekent hem in de chat: staaf, lijn, vlak, taart of punten. De cijfers haalt hij uit je agenda, je diensten of het web. |
+| Mail schrijven | "Schrijf een mail aan Lisa dat ik later ben": Nook zet een complete mail als concept in de chat. Pas hem aan en klik **Versturen** (via Mail), of **Open in Mail**. Er gaat nooit iets weg zonder jouw klik. |
 | Al je schermen | Nook houdt de tekst van al je vensters op al je schermen bij (lokaal, OCR) en gebruikt die bij elke vraag. Daardoor is een antwoord meteen klaar. Boven een antwoord zie je waar Nook keek. |
 | Koppelingen | Agenda, herinneringen, Mail (ongelezen en zoeken), browsertabs, recente bestanden en zoeken met Spotlight, klembord (standaard uit). Diensten met een eigen sleutel: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, Resend en een crypto-portfolio. Alles in de tab Koppelingen. |
 | Elk brein | Claude (met zoeken op het web), OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama en LM Studio, of het ingebouwde gratis model. |
 | Meekijken | Zeg je "maak er een afspraak voor" of verwijs je naar iets met "hier", "dit" of "daar", dan leest Nook zelf eerst het voorste venster en haalt datum, tijd en plaats eruit. ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
-| Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
+| Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in de tab Nook. |
 | Muziek | Spotify en Muziek: hoes, doorspoelen, shuffle, herhalen en volume. |
 | Agents | Claude Code, Codex, Gemini CLI e.d.: wie draait, wat doet hij (met live diff en +/− regels), wie wacht op je. Vraagt je agent toestemming, dan kan dat in de notch: **Toestaan**, **Altijd**, **Weigeren** of **In terminal**. Antwoord je in de terminal, dan verdwijnt de vraag meteen uit de notch. Meerkeuzevragen van Claude Code (AskUserQuestion) beantwoord je ook in de notch. **Open terminal** haalt het venster van de agent naar voren. Werkt er een agent, dan zie je dat in rust in de notch (een stipje per sessie); wijs ernaar en de Agents-tab gaat open. Is hij klaar, dan krijg je een kaartje met wat hij zei. |
 | Abonnement | Hoeveel van je Claude- en Codex-limiet (5 uur en week) je gebruikt. |
-| Weekoverzicht | Op maandag in Vandaag (of via de menubalk): tijd met agents, sessies, regels code, toestemmingen, drukste dag. Alleen lokaal. |
+| Weekoverzicht | Op maandag in de tab Nook (of via de menubalk): tijd met agents, sessies, regels code, toestemmingen, drukste dag. Alleen lokaal. |
 | Shelf | Sleep een bestand (tekst, pdf, Word, rtf) in de Shelf en klik erop om Nook er iets over te vragen, of rechtsklik om het als bijlage in een nieuwe mail te zetten. |
 | Snelle opdrachten | "Volgende nummer", "volume 30", "open Safari", "weekoverzicht": Nook herkent die zelf, zonder brein, dus meteen. |
 | Eigen geluiden | Zet `attention`, `done` of `error` (.wav, .mp3, .aiff, .m4a) in de geluidenmap (Instellingen › Stem en geluid). |

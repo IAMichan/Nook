@@ -131,6 +131,7 @@ enum OpenAICompatibleBrain {
         model: String,
         key: String?,
         system: String,
+        history: [ChatTurn] = [],
         prompt: String,
         tools: [ToolSpec],
         onText: ((String) -> Void)?
@@ -138,10 +139,8 @@ enum OpenAICompatibleBrain {
         guard let url = URL(string: provider.baseURL + "/chat/completions") else {
             throw NookError("Ongeldig adres voor \(provider.title).")
         }
-        var messages: [[String: Any]] = [
-            ["role": "system", "content": system],
-            ["role": "user", "content": prompt]
-        ]
+        var messages: [[String: Any]] = [["role": "system", "content": system]]
+        messages += BrainService.alternating(history, then: prompt).map { ["role": $0.role, "content": $0.text] }
         let definitions: [[String: Any]] = tools.map {
             ["type": "function", "function": ["name": $0.name, "description": $0.description, "parameters": $0.schema]]
         }

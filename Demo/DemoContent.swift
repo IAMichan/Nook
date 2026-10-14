@@ -16,7 +16,7 @@ enum DemoScene: String, CaseIterable {
         case .listening: return "Spraak"
         case .plan: return "Plan"
         case .approval: return "Goedkeuring"
-        case .today: return "Vandaag"
+        case .today: return "Nook"
         case .agents: return "Agents"
         }
     }

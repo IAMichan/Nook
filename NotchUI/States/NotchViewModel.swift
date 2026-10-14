@@ -10,6 +10,9 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var doneButtonTitle = "Sluiten"
     private var doneButtonAction: (() -> Void)?
 
+    /// De chat moet meteen de toetsenbordfocus krijgen (na een vraag of ⌥⌘ spatie), niet bij gewoon hoveren.
+    var focusChat = false
+
     /// Wordt gezet door AppModel; geeft toegang tot echte data en acties.
     weak var app: AppModel?
 
@@ -65,7 +68,12 @@ final class NotchViewModel: ObservableObject {
         guard case .panel = state, !pointerInside else { return }
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
-            guard !Task.isCancelled, let self, !self.pointerInside, case .panel = self.state else { return }
+            guard !Task.isCancelled, let self, !self.pointerInside, case .panel(let tab) = self.state else { return }
+            // Midden in een gesprek klapt de chat niet vanzelf dicht; probeer het later nog eens.
+            if tab == .nook, self.app?.chat.isRecentlyActive == true {
+                self.scheduleAutoClose()
+                return
+            }
             self.show(.idle)
         }
     }
@@ -140,7 +148,7 @@ final class NotchViewModel: ObservableObject {
         switch scene {
         case .idle: show(.idle)
         case .music: show(.music)
-        case .today: show(.panel(.today))
+        case .today: show(.panel(.nook))
         case .agents: show(.panel(.agents))
         case .suggestion: show(.card(DemoContent.card(for: .suggestion)))
         case .reminder: show(.card(DemoContent.card(for: .reminder)))
@@ -217,7 +225,7 @@ final class NotchViewModel: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             if self.pointerInside, self.state.isResting {
                 if working, let first = self.app?.activeAgents.first { self.selectedAgentID = first.id }
-                self.show(.panel(working ? .agents : .today))
+                self.show(.panel(working ? .agents : .nook))
             }
         }
     }
@@ -250,7 +258,7 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
             switch tab {
-            case .today: return CGSize(width: 700, height: chrome + 356)
+            case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
             case .agents: return CGSize(width: 860, height: chrome + 386)
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
@@ -282,7 +290,8 @@ final class NotchViewModel: ObservableObject {
             }
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
-        case .music, .today, .shelf: return .rest
+        case .nook: return (app?.chat.busy ?? false) ? .think : .rest
+        case .music, .shelf: return .rest
         }
     }
 }
