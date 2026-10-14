@@ -287,39 +287,21 @@ final class MailConnector: ContextSource {
                     try await MailConnector.ensureRunning()
                     let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
                     let unanswered = (input["unanswered_only"] as? Bool) ?? false
-                    let filter = "date received > ((current date) - \(days) * days)" + (unanswered ? " and was replied to is false" : "")
-                    let script = """
-                    tell application "Mail"
-                        set found to (messages of inbox whose \(filter))
-                        set n to count of found
-                        if n > 25 then set n to 25
-                        set out to ""
-                        repeat with i from 1 to n
-                            set m to item i of found
-                            set body to ""
-                            try
-                                set body to content of m
-                            end try
-                            if (length of body) > 400 then set body to text 1 thru 400 of body
-                            set mid to ""
-                            try
-                                set mid to message id of m
-                            end try
-                            set state to "ongelezen"
-                            if read status of m then set state to "gelezen"
-                            if was replied to of m then set state to state & ", beantwoord"
-                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & state & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                        end repeat
-                        return out
-                    end tell
-                    """
-                    let result = await ScriptText.run(script)
-                    if result.errorNumber == -1743 {
+                    let listed = await ScriptText.run(MailStats.recentScript())
+                    if listed.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
                     }
-                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !raw.isEmpty else { return "Geen mail in de inbox van de laatste \(days) dagen" + (unanswered ? " waarop je nog niet antwoordde." : ".") }
-                    return MailConnector.format(raw, sent: false, status: true)
+                    let rows = MailStats.inbox(listed.text ?? "", now: Date(), days: days, unansweredOnly: unanswered)
+                    guard !rows.isEmpty else {
+                        return "Geen mail in de inbox van de laatste \(days) dagen" + (unanswered ? " waarop je nog niet antwoordde." : ".")
+                    }
+                    // Only the start of the text of the newest few: reading a body is the slow part.
+                    let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(Array(rows.prefix(8))))).text ?? "")
+                    return rows.enumerated().map { n, row in
+                        let state = (row.read ? "gelezen" : "ongelezen") + (row.replied ? ", beantwoord" : "")
+                        let body = texts[n].map { "\n\($0)" } ?? ""
+                        return "### \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date)) | \(state) | \(row.account)\(body)"
+                    }.joined(separator: "\n\n")
                 }
             ),
             ToolSpec(
