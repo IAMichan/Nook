@@ -113,16 +113,29 @@ final class EmbeddedModel: ObservableObject {
         scheduleUnload()
     }
 
+    var isLoaded: Bool { container != nil }
+    private var loading: (id: String, task: Task<ModelContainer, Error>)?
+
+    /// Laadt het model, en nooit twee keer tegelijk: een tweede aanroep wacht op de eerste.
     private func load(_ id: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ModelContainer {
         if loadedID == id, let container { return container }
+        if let loading, loading.id == id { return try await loading.task.value }
+
+        let task = Task { try await Self.fetch(id, progress: progress) }
+        loading = (id, task)
+        defer { loading = nil }
+        let loaded = try await task.value
+        container = loaded
+        loadedID = id
+        return loaded
+    }
+
+    private nonisolated static func fetch(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ModelContainer {
         do {
-            let loaded = try await #huggingFaceLoadModelContainer(
+            return try await #huggingFaceLoadModelContainer(
                 configuration: ModelConfiguration(id: id),
                 progressHandler: { p in progress(p.fractionCompleted) }
             )
-            container = loaded
-            loadedID = id
-            return loaded
         } catch let error as URLError {
             switch error.code {
             case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost, .timedOut:
@@ -170,8 +183,8 @@ final class EmbeddedModel: ObservableObject {
             container,
             instructions: system,
             generateParameters: GenerateParameters(maxTokens: 450, maxKVSize: 4096, temperature: 0.2),
-            tools: specs,
-            toolDispatch: { call in await collector.handle(call) }
+            tools: specs.isEmpty ? nil : specs,
+            toolDispatch: specs.isEmpty ? nil : { call in await collector.handle(call) }
         )
         let text = try await session.respond(to: prompt)
         return BrainPlan(

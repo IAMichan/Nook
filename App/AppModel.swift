@@ -190,7 +190,8 @@ final class AppModel: ObservableObject {
             return
         }
 
-        viewModel.show(.card(thinkingCard(context: "Even nadenken…", title: title)))
+        let loading = settings.useLocal && !EmbeddedModel.shared.isLoaded
+        viewModel.show(.card(thinkingCard(context: loading ? "Lokaal model laden…" : "Even nadenken…", title: title)))
         Task { await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil) }
     }
 
