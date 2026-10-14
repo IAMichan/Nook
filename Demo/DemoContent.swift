@@ -1,9 +1,9 @@
 import SwiftUI
 
-// Alle inhoud in dit bestand is voorbeelddata om de UI mee te laten zien.
-// In de volgende fases komt dit uit echte bronnen (agenda, mail, AgentHub).
+// All content in this file is sample data for previewing the UI.
+// In subsequent phases, this will come from real sources (calendar, mail, AgentHub).
 
-/// Scènes die je via het menubalk-icoon van Nook kunt oproepen.
+/// Scenes that can be invoked via Nook's menu bar icon.
 enum DemoScene: String, CaseIterable {
     case idle, music, suggestion, reminder, listening, plan, approval, today, agents
 
@@ -16,7 +16,7 @@ enum DemoScene: String, CaseIterable {
 
 enum AgentStatus: Equatable {
     case waiting, running, failed, done
-    case detected   // draait op deze Mac, maar nog niet gekoppeld met hooks
+    case detected   // running on this Mac, but not yet linked with hooks
 
     var label: String {
         switch self {
@@ -90,22 +90,30 @@ struct AgentSession: Identifiable, Equatable {
     var placeholder: String
     var steps: [AgentStep]
     var diff: [DiffLine]
-    /// Werkmap van de sessie.
+    /// Working directory of the session.
     var cwd: String = ""
-    /// De app waarin de agent draait (Terminal, iTerm, VS Code…), voor "Open terminal".
+    /// The host app where the agent is running (Terminal, iTerm, VS Code...), for "Open terminal".
     var hostBundleID: String = ""
-    /// De map van het account (CLAUDE_CONFIG_DIR, CODEX_HOME); leeg voor het eerste account.
+    /// The account directory (CLAUDE_CONFIG_DIR, CODEX_HOME); empty for the default account.
     var home: String = ""
-    /// Een verzoek dat nu op jouw antwoord wacht.
+    /// A request currently awaiting your response.
     var approvalID: String? = nil
-    /// Regels erbij en eraf in deze sessie.
+    /// Added and removed lines in this session.
     var linesAdded: Int = 0
     var linesRemoved: Int = 0
-    /// Eén zin uit het laatste antwoord of bericht van de agent.
+    /// A single-sentence summary of the agent's last response or message.
     var summary: String = ""
-    /// Alleen bij een gevonden proces: de agent is gekoppeld, maar deze sessie startte daarvoor.
+    /// Detected processes only: the agent is linked, but this session started prior to linking.
     var isLinked: Bool = false
-    /// Komt van een draaiend proces, niet van hooks.
+    /// The agent's own session id (hooks only); needed to continue the conversation.
+    var sessionID: String = ""
+    /// Path of the session's transcript, so Nook can show the conversation.
+    var transcriptPath: String = ""
+    /// The last thing you asked, in full.
+    var lastPrompt: String = ""
+    /// The agent's last reply, in full.
+    var lastReply: String = ""
+    /// Derived from a running process rather than hooks.
     var isDetected: Bool { status == .detected }
 }
 
@@ -119,7 +127,7 @@ struct TodayItem: Identifiable {
     var target: Target
 }
 
-// MARK: Inhoud
+// MARK: Content
 
 enum DemoContent {
     static func card(for scene: CardScene) -> NookCard {

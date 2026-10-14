@@ -81,6 +81,9 @@ final class AgentHub: ObservableObject {
         var diff: [DiffLine]
         var linesAdded: Int
         var linesRemoved: Int
+        var sessionID: String = ""
+        var transcriptPath: String = ""
+        var lastPrompt: String = ""
     }
 
     private enum PendingKind {
@@ -297,6 +300,8 @@ final class AgentHub: ObservableObject {
         }
         record.home = Self.accountHome(env, agentID: agentID)
         record.updated = Date()
+        if let id = event["session_id"] as? String, !id.isEmpty { record.sessionID = id }
+        if let path = event["transcript_path"] as? String, !path.isEmpty { record.transcriptPath = path }
 
         let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
         let input = (event["tool_input"] as? [String: Any]) ?? (event["toolArgs"] as? [String: Any]) ?? [:]
@@ -355,6 +360,8 @@ final class AgentHub: ObservableObject {
             record.status = .running
             record.diff = []
             if let prompt = event["prompt"] as? String {
+                record.lastPrompt = prompt
+                record.lastMessage = ""
                 Self.push(&record, .done, "opdracht: " + Self.shorten(prompt, 60))
             }
             recap?.prompt(session: key, project: record.project, agent: name)
@@ -629,7 +636,11 @@ final class AgentHub: ObservableObject {
                     approvalID: approvals.first { $0.sessionKey == key }?.id,
                     linesAdded: record.linesAdded,
                     linesRemoved: record.linesRemoved,
-                    summary: Self.oneLine(record.lastMessage)
+                    summary: Self.oneLine(record.lastMessage),
+                    sessionID: record.sessionID,
+                    transcriptPath: record.transcriptPath,
+                    lastPrompt: record.lastPrompt,
+                    lastReply: record.lastMessage
                 )
             }
     }
