@@ -5,28 +5,31 @@ import AppKit
 /// Rijen voor de online koppelingen (GitHub, Stripe…) in de instellingen. Zet hem in een `Section("Diensten")` binnen een Form.
 struct CloudConnectorSettings: View {
     let connectors: [ContextSource]
+    /// Eén regel over hoe de koppeling werkt en wat hij kan, per id.
+    var capabilities: (String) -> String = { _ in "" }
     let onChange: () -> Void
 
     var body: some View {
         ForEach(connectors.indices, id: \.self) { index in
-            CloudConnectorSettings.row(for: connectors[index], onChange: onChange)
+            CloudConnectorSettings.row(for: connectors[index], capabilities: capabilities(connectors[index].id), onChange: onChange)
         }
     }
 
     /// Opent het existential zodat de rij de koppeling kan observeren.
-    private static func row(for connector: ContextSource, onChange: @escaping () -> Void) -> AnyView {
+    private static func row(for connector: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
         guard let config = connector as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
-        return makeRow(config, onChange: onChange)
+        return makeRow(config, capabilities: capabilities, onChange: onChange)
     }
 
-    private static func makeRow<C: CloudConnectorConfig>(_ connector: C, onChange: @escaping () -> Void) -> AnyView {
-        AnyView(CloudConnectorRow(connector: connector, onChange: onChange))
+    private static func makeRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        AnyView(CloudConnectorRow(connector: connector, capabilities: capabilities, onChange: onChange))
     }
 }
 
 /// Eén koppeling: icoon, naam, status, aan/uit en (uitgeklapt) de velden voor de sleutel.
 private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     @ObservedObject var connector: C
+    var capabilities: String = ""
     let onChange: () -> Void
 
     @State private var expanded = false
@@ -54,6 +57,12 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if !capabilities.isEmpty {
+                    Text(capabilities)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack {
                     if let url = connector.signupURL {
                         Link(tr("connector.createKey"), destination: url)
@@ -80,8 +89,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             HStack(spacing: 10) {
                 // De hele rij klapt open, niet alleen het pijltje: anders lijkt klikken op een dienst niets te doen.
                 HStack(spacing: 10) {
-                    Image(systemName: connector.symbol)
-                        .foregroundStyle(connector.accent)
+                    SiteIcon(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 20)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
@@ -193,8 +201,11 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         case .loading: return tr("chat.plan.running")
         case .ok:
             let headline = connector.status.headline
-            return headline.isEmpty ? tr("connect.status.connected") : headline
-        case .error(let message): return message
+            let base = headline.isEmpty ? tr("connect.status.connected") : headline
+            // Wanneer het voor het laatst lukte, zodat je ziet of de koppeling gezond is.
+            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? "")
+        case .error(let message):
+            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.relative($0)) } ?? "")
         }
     }
 
@@ -262,5 +273,23 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             await target.refresh()
             done()
         }
+    }
+}
+
+/// Diensten die Nook (nog) niet zelf koppelt, met eerlijk wat er nu wel kan.
+struct NotYetBuiltIn {
+    let name: String
+    let how: String
+
+    static var all: [NotYetBuiltIn] {
+        [
+            NotYetBuiltIn(name: "Slack", how: tr("notbuilt.slack")),
+            NotYetBuiltIn(name: "Microsoft Teams", how: tr("notbuilt.teams")),
+            NotYetBuiltIn(name: "Gmail · Outlook · Exchange", how: tr("notbuilt.mail")),
+            NotYetBuiltIn(name: "Google Agenda · Outlook-agenda", how: tr("notbuilt.calendar")),
+            NotYetBuiltIn(name: "Google Drive · OneDrive · SharePoint · Dropbox", how: tr("notbuilt.drive")),
+            NotYetBuiltIn(name: "Linear · Jira · Todoist · GitLab", how: tr("notbuilt.tasks")),
+            NotYetBuiltIn(name: "Discord · Telegram", how: tr("notbuilt.chat"))
+        ]
     }
 }

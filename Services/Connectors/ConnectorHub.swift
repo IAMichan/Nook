@@ -70,7 +70,37 @@ final class ConnectorHub: ObservableObject {
             guard !part.isEmpty else { continue }
             lines.append(contentsOf: part)
         }
+        if let coverage = agendaCoverageLine { lines.append(coverage) }
         return lines
+    }
+
+    /// Context voor één vraag: bronnen die de gebruiker uitsloot gaan niet mee, relevante bronnen volledig, de rest als één regel
+    /// met de tool waarmee het brein er gericht in kan kijken. Zo gaat niet bij elke vraag alles van elke bron naar het brein.
+    /// `full` nil = alles volledig (zoals de kaarten in de notch het gebruiken).
+    func contextLines(scope: SourceScope, full: Set<String>?) -> (lines: [String], fullTitles: [String]) {
+        var lines: [String] = []
+        var fullTitles: [String] = []
+        var brief: [String] = []
+        for source in active where scope.allows(source.id) {
+            let part = source.contextLines()
+            if full?.contains(source.id) ?? true {
+                guard !part.isEmpty else { continue }
+                lines.append(contentsOf: part)
+                fullTitles.append(source.title)
+            } else {
+                let readTools = source.tools.filter { $0.kind == .read }.map(\.name)
+                var line = "- \(source.title)"
+                if !source.status.headline.isEmpty { line += ": \(source.status.headline)" }
+                if !readTools.isEmpty { line += " (lees gericht met \(readTools.joined(separator: ", ")))" }
+                brief.append(line)
+            }
+        }
+        if !brief.isEmpty {
+            lines.append("Ook gekoppeld, niet volledig meegestuurd (kijk erin met de tool als de vraag erom vraagt):")
+            lines.append(contentsOf: brief)
+        }
+        if scope.allows("calendar"), let coverage = agendaCoverageLine { lines.append(coverage) }
+        return (lines, fullTitles)
     }
 
     /// Welke bronnen er nu iets aan de context bijdragen, voor het "Ik keek in…"-regeltje boven een antwoord.
@@ -78,5 +108,5 @@ final class ConnectorHub: ObservableObject {
         active.filter { !$0.contextLines().isEmpty }.map { $0.title }
     }
 
-    var tools: [ToolSpec] { active.flatMap { $0.tools } }
+    var tools: [ToolSpec] { hubTools + active.flatMap { $0.tools } }
 }

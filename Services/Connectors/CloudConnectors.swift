@@ -49,7 +49,9 @@ enum CloudConnectors {
             NotionConnector(),
             CalcomConnector(),
             N8nConnector(),
-            ResendConnector()
+            ResendConnector(),
+            CalendarFeedsConnector(),
+            CustomSourcesConnector()
         ]
     }
 }
@@ -260,7 +262,7 @@ final class GitHubConnector: CloudConnectorConfig {
                     return try await self.overview()
                 }
             )
-        ] + pullRequestTools
+        ] + pullRequestTools + issueTools
     }
 
     // MARK: Ophalen
@@ -446,7 +448,7 @@ enum GitHubPR {
 
     static func target(_ input: [String: Any]) throws -> (repo: String, number: Int) {
         let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard repo.range(of: repoPattern, options: .regularExpression) != nil else {
+        guard ActionGate.isRepository(repo) else {
             throw NookError("De repository moet eigenaar/naam zijn, bijvoorbeeld IAMichan/nook.")
         }
         guard let number = CloudHelp.int(input["number"]), number > 0 else {
@@ -707,6 +709,211 @@ extension GitHubConnector {
         if (CloudHelp.int(pull["changed_files"]) ?? 0) > files.count {
             out.append("… en nog meer bestanden (alleen de eerste \(files.count) zijn opgehaald)")
         }
+        return out.joined(separator: "\n")
+    }
+}
+
+// MARK: GitHub: issues zoeken, lezen en bijwerken
+
+extension GitHubConnector {
+    private static func issueSchema(_ properties: [String: [String: Any]], required: [String]) -> [String: Any] {
+        ["type": "object", "properties": properties, "required": required]
+    }
+
+    var issueTools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "github_search",
+                description: "Zoekt issues en pull requests op GitHub met een GitHub-zoekopdracht, de laatst bijgewerkte eerst, met status, labels en links. Voorbeelden van query: \"launch repo:IAMichan/nook\", \"is:issue is:open label:bug\", \"involves:@me deadline\". Gebruik dit om eisen, besluiten of openstaand werk in issues te vinden.",
+                schema: Self.issueSchema([
+                    "query": ["type": "string", "description": "GitHub-zoekopdracht (zelfde syntaxis als op github.com)."],
+                    "type": ["type": "string", "enum": ["issue", "pr", "all"], "description": "Alleen issues, alleen PR's of allebei (standaard)."] as [String: Any]
+                ], required: ["query"]),
+                kind: .read,
+                summarize: { input in "GitHub zoeken: \((input["query"] as? String) ?? "")" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self else { throw CloudHelp.notSetUp("GitHub") }
+                    let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !query.isEmpty else { throw NookError("De zoekopdracht ontbreekt.") }
+                    return try await self.searchIssues(query, type: (input["type"] as? String) ?? "all")
+                }
+            ),
+            ToolSpec(
+                name: "github_issue_details",
+                description: "Leest één issue (of de discussie onder een pull request): titel, status, labels, beschrijving en de laatste reacties.",
+                schema: GitHubPR.schema(),
+                kind: .read,
+                summarize: { input in "GitHub lezen: \(GitHubPR.ref(input))" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    return try await self.issueDetails(repo: target.repo, number: target.number)
+                }
+            ),
+            ToolSpec(
+                name: "github_create_issue",
+                description: "Maakt een nieuw issue in een repository. Schrijf een duidelijke titel en een beschrijving (Markdown). Labels zijn optioneel, gescheiden door komma's, en moeten al bestaan in de repository.",
+                schema: Self.issueSchema([
+                    "repo": ["type": "string", "description": "Repository als eigenaar/naam."],
+                    "title": ["type": "string", "description": "Titel van het issue."],
+                    "body": ["type": "string", "description": "Beschrijving (Markdown)."],
+                    "labels": ["type": "string", "description": "Labels, gescheiden door komma's. Optioneel."]
+                ], required: ["repo", "title"]),
+                kind: .action,
+                summarize: { input in
+                    "GitHub: issue in \((input["repo"] as? String) ?? "?") · \(CloudHelp.short((input["title"] as? String) ?? "", 60))"
+                },
+                tag: { _ in ("maakt aan", .caution) },
+                run: { [weak self] input in
+                    guard let self else { throw CloudHelp.notSetUp("GitHub") }
+                    let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard ActionGate.isRepository(repo) else { throw NookError("De repository moet eigenaar/naam zijn.") }
+                    guard let title = GitHubPR.text(input, "title") else { throw NookError("De titel ontbreekt.") }
+                    var payload: [String: Any] = ["title": title]
+                    if let body = GitHubPR.text(input, "body") { payload["body"] = body }
+                    let labels = Self.labels(input)
+                    if !labels.isEmpty { payload["labels"] = labels }
+                    let result = try await self.send("POST", "/repos/\(repo)/issues", body: payload)
+                    let number = CloudHelp.int(result["number"]).map { "#\($0)" } ?? ""
+                    let url = (result["html_url"] as? String).map { " · \($0)" } ?? ""
+                    return "Issue aangemaakt: \(repo)\(number)\(url)"
+                }
+            ),
+            ToolSpec(
+                name: "github_comment_issue",
+                description: "Plaatst een reactie onder een issue (of de discussie van een pull request).",
+                schema: GitHubPR.schema(["body": ["type": "string", "description": "De tekst van de reactie."]], required: ["body"]),
+                kind: .action,
+                summarize: { input in "GitHub: reageer op \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50) },
+                tag: { _ in ("", .good) },
+                run: { [weak self] input in
+                    guard let self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    guard let body = GitHubPR.text(input, "body") else { throw NookError("De tekst van de reactie ontbreekt.") }
+                    let result = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
+                    return "Reactie geplaatst op \(target.repo)#\(target.number)" + ((result["html_url"] as? String).map { " · \($0)" } ?? "")
+                }
+            ),
+            ToolSpec(
+                name: "github_update_issue",
+                description: "Werkt een issue bij: sluiten of heropenen, de titel veranderen of labels toevoegen. Alleen wat je meegeeft verandert.",
+                schema: GitHubPR.schema([
+                    "state": ["type": "string", "enum": ["open", "closed"], "description": "open of closed. Optioneel."] as [String: Any],
+                    "title": ["type": "string", "description": "Nieuwe titel. Optioneel."],
+                    "labels": ["type": "string", "description": "Labels om toe te voegen, gescheiden door komma's. Optioneel."]
+                ]),
+                kind: .action,
+                summarize: { input in
+                    var parts: [String] = []
+                    if let state = GitHubPR.text(input, "state") { parts.append(state == "closed" ? "sluiten" : "heropenen") }
+                    if let title = GitHubPR.text(input, "title") { parts.append("titel \"\(CloudHelp.short(title, 40))\"") }
+                    if let labels = GitHubPR.text(input, "labels") { parts.append("labels \(labels)") }
+                    return "GitHub: \(GitHubPR.ref(input)) " + (parts.isEmpty ? "bijwerken" : parts.joined(separator: ", "))
+                },
+                tag: { input in GitHubPR.text(input, "state") == "closed" ? ("Sluiten", .caution) : ("wijzigt", .caution) },
+                run: { [weak self] input in
+                    guard let self else { throw CloudHelp.notSetUp("GitHub") }
+                    let target = try GitHubPR.target(input)
+                    var payload: [String: Any] = [:]
+                    if let state = GitHubPR.text(input, "state") {
+                        guard ["open", "closed"].contains(state) else { throw NookError("De status moet open of closed zijn.") }
+                        payload["state"] = state
+                    }
+                    if let title = GitHubPR.text(input, "title") { payload["title"] = title }
+                    if !payload.isEmpty {
+                        _ = try await self.send("PATCH", "/repos/\(target.repo)/issues/\(target.number)", body: payload)
+                    }
+                    let labels = Self.labels(input)
+                    if !labels.isEmpty {
+                        _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/labels", body: ["labels": labels])
+                    }
+                    guard !payload.isEmpty || !labels.isEmpty else { throw NookError("Er is niets om bij te werken.") }
+                    return "Bijgewerkt: \(target.repo)#\(target.number)"
+                }
+            )
+        ]
+    }
+
+    fileprivate static func labels(_ input: [String: Any]) -> [String] {
+        (GitHubPR.text(input, "labels") ?? "").split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func readHeaders() throws -> [String: String] {
+        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
+            throw CloudHelp.notSetUp("GitHub")
+        }
+        return [
+            "Authorization": "Bearer \(token)",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+        ]
+    }
+
+    fileprivate func searchIssues(_ query: String, type: String) async throws -> String {
+        var q = query
+        if type == "issue", !q.contains("is:issue") { q += " is:issue" }
+        if type == "pr", !q.contains("is:pr") { q += " is:pr" }
+        let url = try CloudHelp.url("https://api.github.com", "/search/issues", query: [
+            ("q", q), ("sort", "updated"), ("order", "desc"), ("per_page", "15")
+        ])
+        let root = CloudHelp.object(try await ConnectorHTTP.json(url, headers: try readHeaders()))
+        let items = CloudHelp.list(root["items"])
+        if items.isEmpty { return "Geen issues of pull requests gevonden voor \"\(query)\"." }
+        var lines = ["\(CloudHelp.int(root["total_count"]) ?? items.count) treffers, de \(items.count) laatst bijgewerkte:"]
+        var refs: [String] = []
+        for item in items {
+            let repoURL = (item["repository_url"] as? String) ?? ""
+            let repo = repoURL.replacingOccurrences(of: "https://api.github.com/repos/", with: "")
+            let number = CloudHelp.int(item["number"]) ?? 0
+            let kind = item["pull_request"] != nil ? "PR" : "issue"
+            let labels = CloudHelp.list(item["labels"]).compactMap { $0["name"] as? String }
+            let title = (item["title"] as? String) ?? "Zonder titel"
+            var line = "- \(repo)#\(number) [\(kind), \((item["state"] as? String) ?? "?")] '\(title)'"
+            if !labels.isEmpty { line += " · labels: \(labels.joined(separator: ", "))" }
+            if let updated = CloudHelp.date(item["updated_at"]) { line += " · bijgewerkt \(NookDates.short(updated))" }
+            if let author = CloudHelp.object(item["user"])["login"] as? String { line += " · door @\(author)" }
+            lines.append(line)
+            refs.append(ReferenceParser.line(title: "\(repo)#\(number) \(title)", url: CloudHelp.link(item["html_url"] as? String)?.absoluteString,
+                                             detail: "\(kind) · \((item["state"] as? String) ?? "")"))
+        }
+        return (lines + refs).joined(separator: "\n")
+    }
+
+    fileprivate func issueDetails(repo: String, number: Int) async throws -> String {
+        let auth = try readHeaders()
+        let base = "https://api.github.com/repos/\(repo)/issues/\(number)"
+        let issue = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url(base), headers: auth))
+        let comments = CloudHelp.list(try? await ConnectorHTTP.json(try CloudHelp.url(base, "/comments", query: [("per_page", "30")]), headers: auth))
+        let title = (issue["title"] as? String) ?? "Zonder titel"
+        let labels = CloudHelp.list(issue["labels"]).compactMap { $0["name"] as? String }
+        var out = ["\(repo)#\(number) '\(title)' door @\((CloudHelp.object(issue["user"])["login"] as? String) ?? "?")"]
+        var facts = ["status: \((issue["state"] as? String) ?? "?")"]
+        if !labels.isEmpty { facts.append("labels: \(labels.joined(separator: ", "))") }
+        if let created = CloudHelp.date(issue["created_at"]) { facts.append("geopend \(NookDates.short(created))") }
+        if let updated = CloudHelp.date(issue["updated_at"]) { facts.append("bijgewerkt \(NookDates.short(updated))") }
+        let assignees = CloudHelp.list(issue["assignees"]).compactMap { $0["login"] as? String }
+        if !assignees.isEmpty { facts.append("toegewezen aan: \(assignees.map { "@\($0)" }.joined(separator: ", "))") }
+        out.append(facts.joined(separator: " · "))
+        if let body = (issue["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
+            out.append("")
+            out.append("Beschrijving:")
+            out.append(String(body.prefix(4000)))
+        }
+        if !comments.isEmpty {
+            out.append("")
+            out.append("Reacties (laatste \(min(comments.count, 15))):")
+            for comment in comments.suffix(15) {
+                let who = (CloudHelp.object(comment["user"])["login"] as? String) ?? "?"
+                let when = CloudHelp.date(comment["created_at"]).map { NookDates.short($0) } ?? ""
+                out.append("- @\(who) \(when): " + CloudHelp.short((comment["body"] as? String) ?? "", 600))
+            }
+        }
+        out.append(ReferenceParser.line(title: "\(repo)#\(number) \(title)", url: CloudHelp.link(issue["html_url"] as? String)?.absoluteString,
+                                        detail: (issue["state"] as? String) ?? ""))
         return out.joined(separator: "\n")
     }
 }
@@ -1190,8 +1397,79 @@ final class NotionConnector: CloudConnectorConfig {
                     let query = (input["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     return try await self.overview(query: query)
                 }
+            ),
+            ToolSpec(
+                name: "notion_read_page",
+                description: "Leest de tekst van één Notion-pagina (kopjes, alinea's, lijstjes, to-do's, citaten, code). Geef het id of de link uit notion_search. Gebruik dit om een document echt te lezen voordat je het samenvat of vergelijkt.",
+                schema: ["type": "object", "properties": ["page": ["type": "string", "description": "Id of link van de pagina."]], "required": ["page"]],
+                kind: .read,
+                summarize: { _ in "Notion-pagina lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("Notion") }
+                    return try await self.readPage((input["page"] as? String) ?? "")
+                }
             )
         ]
+    }
+
+    /// Het id uit een id of link: de laatste 32 hextekens (met of zonder streepjes).
+    nonisolated static func pageID(_ raw: String) -> String? {
+        let hex = raw.lowercased().replacingOccurrences(of: "-", with: "")
+        guard let range = hex.range(of: #"[0-9a-f]{32}(?![0-9a-f])"#, options: [.regularExpression, .backwards]) else { return nil }
+        let id = String(hex[range])
+        let parts = [id.prefix(8), id.dropFirst(8).prefix(4), id.dropFirst(12).prefix(4), id.dropFirst(16).prefix(4), id.dropFirst(20)]
+        return parts.map(String.init).joined(separator: "-")
+    }
+
+    private func readPage(_ raw: String) async throws -> String {
+        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(NotionConnector.tokenAccount) else {
+            throw CloudHelp.notSetUp("Notion")
+        }
+        guard let pageID = Self.pageID(raw) else { throw NookError("Geen geldig Notion-id of -link: \(raw)") }
+        let headers = ["Authorization": "Bearer \(token)", "Notion-Version": "2022-06-28"]
+        let page = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url("https://api.notion.com/v1/pages/\(pageID)"), headers: headers))
+        let info = parse(page)
+        var lines: [String] = []
+        var cursor: String?
+        var pages = 0
+        repeat {
+            var query = [("page_size", "100")]
+            if let cursor { query.append(("start_cursor", cursor)) }
+            let root = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url("https://api.notion.com/v1/blocks/\(pageID)", "/children", query: query), headers: headers))
+            for block in CloudHelp.list(root["results"]) {
+                if let line = blockText(block) { lines.append(line) }
+            }
+            cursor = (root["has_more"] as? Bool) == true ? root["next_cursor"] as? String : nil
+            pages += 1
+        } while cursor != nil && pages < 5
+        var text = lines.joined(separator: "\n")
+        if text.count > 15_000 { text = String(text.prefix(15_000)) + "\n… (ingekort)" }
+        var out = ["\(info?.title ?? "Notion-pagina")" + (info?.edited.map { " · bewerkt \(NookDates.short($0))" } ?? ""), ""]
+        out.append(text.isEmpty ? "(Geen tekst op deze pagina, of alleen onderdelen die Nook niet leest, zoals databases en afbeeldingen.)" : text)
+        out.append(ReferenceParser.line(title: info?.title ?? "Notion-pagina", url: info?.url?.absoluteString,
+                                        detail: info?.edited.map { "bewerkt \(NookDates.short($0))" } ?? ""))
+        return out.joined(separator: "\n")
+    }
+
+    private func blockText(_ block: [String: Any]) -> String? {
+        guard let type = block["type"] as? String else { return nil }
+        let content = CloudHelp.object(block[type])
+        guard let text = plainText(content["rich_text"]) else {
+            if type == "child_page", let title = content["title"] as? String { return "[subpagina] \(title)" }
+            return nil
+        }
+        switch type {
+        case "heading_1": return "# " + text
+        case "heading_2": return "## " + text
+        case "heading_3": return "### " + text
+        case "bulleted_list_item": return "- " + text
+        case "numbered_list_item": return "1. " + text
+        case "to_do": return ((content["checked"] as? Bool) == true ? "- [x] " : "- [ ] ") + text
+        case "quote", "callout": return "> " + text
+        case "code": return "```\n" + text + "\n```"
+        default: return text
+        }
     }
 
     private func search(token: String, query: String?, count: Int) async throws -> [Page] {
@@ -1265,12 +1543,15 @@ final class NotionConnector: CloudConnectorConfig {
         if list.isEmpty {
             return hasQuery ? "Geen Notion-pagina's gevonden voor '\(query ?? "")'." : "Geen Notion-pagina's gedeeld met Nook."
         }
-        return list.map { p -> String in
-            var line = "- \(p.title)"
+        let lines = list.map { p -> String in
+            var line = "- \(p.title) (id \(p.id))"
             if let edited = p.edited { line += " · bewerkt \(NookDates.short(edited))" }
-            if let url = p.url { line += " · \(url.absoluteString)" }
             return line
-        }.joined(separator: "\n")
+        }
+        let refs = list.prefix(10).map { p in
+            ReferenceParser.line(title: p.title, url: p.url?.absoluteString, detail: p.edited.map { "bewerkt \(NookDates.short($0))" } ?? "")
+        }
+        return (lines + refs).joined(separator: "\n")
     }
 }
 
@@ -1296,6 +1577,7 @@ final class CalcomConnector: CloudConnectorConfig {
         let id: String
         let title: String
         let start: Date
+        let end: Date?
         let status: String
         let attendee: String?
         let url: URL?
@@ -1379,6 +1661,7 @@ final class CalcomConnector: CloudConnectorConfig {
             id: uid ?? CloudHelp.string(b["id"]) ?? UUID().uuidString,
             title: (b["title"] as? String) ?? "Afspraak",
             start: start,
+            end: CloudHelp.date(b["end"]) ?? CloudHelp.date(b["endTime"]),
             status: ((b["status"] as? String) ?? "accepted").lowercased(),
             attendee: attendee,
             url: uid.flatMap { URL(string: "https://app.cal.com/booking/\($0)") }
@@ -1432,6 +1715,21 @@ final class CalcomConnector: CloudConnectorConfig {
             if let url = b.url { text += " · \(url.absoluteString)" }
             return text
         }.joined(separator: "\n")
+    }
+}
+
+extension CalcomConnector: AgendaSource {
+    func agendaNames() -> [String] { ["Cal.com-boekingen"] }
+
+    func agendaEntries(from: Date, to: Date) async throws -> AgendaResult {
+        guard let key = CloudHelp.secret(CalcomConnector.keyAccount) else { throw CloudHelp.notSetUp("Cal.com") }
+        let list = try await fetch(key: key, count: 100)
+        let entries = list.compactMap { booking -> AgendaEntry? in
+            let end = booking.end ?? booking.start.addingTimeInterval(1800)
+            guard booking.start < to, end > from else { return nil }
+            return AgendaEntry(title: booking.title, start: booking.start, end: end, busy: true, calendar: "Cal.com")
+        }
+        return AgendaResult(entries: entries)
     }
 }
 

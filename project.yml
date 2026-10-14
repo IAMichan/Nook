@@ -73,12 +73,17 @@ targets:
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
-  # Tests voor de werkruimte: compileert alleen de losse Foundation-bestanden, zonder de app te starten.
+  # Tests van de kern van de chat (bronkeuze, opzoeken en bronverwijzingen, controle en uitvoeren van acties).
+  # Die code gebruikt alleen Foundation, dus de bestanden gaan rechtstreeks in de testbundel: geen app nodig om te testen.
+  # Ook de kern van de werkruimte (modellen, stream-parsers, Git, opslag, procesafhandeling).
   NookTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: Tests
+      - path: Tests/NookTests
+      - path: Brain/SourceScope.swift
+      - path: Brain/Retrieval.swift
+      - path: Brain/ActionGate.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
@@ -90,17 +95,12 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
 schemes:
-  NookTests:
-    build:
-      targets:
-        NookTests: [test]
-    test:
-      config: Debug
-      targets:
-        - NookTests
   Nook:
     build:
       targets:
         Nook: all
+    test:
+      targets:
+        - NookTests
     run:
       config: Debug
