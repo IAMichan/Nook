@@ -50,6 +50,9 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Koppelingen | Agenda, herinneringen, Mail (ongelezen en zoeken), browsertabs, recente bestanden en zoeken met Spotlight, klembord (standaard uit). Diensten met een eigen sleutel: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, Resend en een crypto-portfolio. Alles in de tab Koppelingen. |
 | Elk brein | Claude (met zoeken op het web), OpenAI, Gemini, DeepSeek, Qwen, Moonshot, Ollama en LM Studio, of het ingebouwde gratis model. |
 | Meekijken | Zeg je "maak er een afspraak voor" of verwijs je naar iets met "hier", "dit" of "daar", dan leest Nook zelf eerst het voorste venster en haalt datum, tijd en plaats eruit. ⌥⌘N: leest de tekst van het voorste venster (OCR, lokaal) en stelt iets voor als er een afspraak, belofte of taak in staat. Optioneel automatisch (Instellingen). |
+| Meedenken | Optioneel (Instellingen › Assistent). Ben je een tijdje met iets bezig, dan kijkt Nook mee en biedt hij zelf hulp aan, als korte zin naast de notch: "Zal ik dit in je agenda zetten?" of "Tip: dit kan ook in één keer". Wijs ernaar voor het hele voorstel met **Doe maar**, **Nee** of **Niet in deze app**. Zeg je vaker nee, dan houdt hij zich meer in. Een gemist aanbod staat nog even in Vandaag. |
+| Vervolgvoorstellen | Onder een antwoord zet Nook wat hij daarna voor je kan doen, als knoppen ("Zet het in mijn agenda", "Schrijf een antwoord voor me"). Eén klik en hij gaat aan de slag. |
+| Kleine dingen zelf doen | Optioneel. Vraag je om muziek, volume, een app, een herinnering of een open punt, dan doet Nook het meteen. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst. |
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
 | Muziek | Spotify en Muziek: hoes, doorspoelen, shuffle, herhalen en volume. |
@@ -64,8 +67,8 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 
 ## Privacy en veiligheid
 
-- Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Nook verstuurt zelf nooit mail of berichten.
-- Wat naar de AI-aanbieder gaat die je kiest: wat je zegt of typt (als tekst), de herkende tekst van je vensters (uit te zetten bij Instellingen › Assistent) en een korte samenvatting uit je koppelingen. Dat gebeurt alleen als je iets vraagt. Het schermbeeld zelf verlaat je Mac nooit. Met Ollama, LM Studio of het ingebouwde model blijft alles op je Mac. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
+- Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Alleen als je **Kleine dingen meteen doen** aanzet, doet Nook muziek, volume, apps openen, herinneringen en open punten waar jij om vroeg meteen; voorstellen die Nook zelf bedenkt (Meedenken) vragen altijd eerst. Nook verstuurt zelf nooit mail of berichten.
+- Wat naar de AI-aanbieder gaat die je kiest: wat je zegt of typt (als tekst), de herkende tekst van je vensters (uit te zetten bij Instellingen › Assistent) en een korte samenvatting uit je koppelingen. Dat gebeurt alleen als je iets vraagt, of af en toe als je **Meedenken** aanzet (standaard uit). Het schermbeeld zelf verlaat je Mac nooit. Met Ollama, LM Studio of het ingebouwde model blijft alles op je Mac. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
 - Tekst van je scherm, agenda-titels en tool-uitkomsten gaan als "onbetrouwbare data" naar het brein, met de opdracht daar geen instructies uit te volgen.
 - Wachtwoordmanagers worden nooit gelezen.
 - De hook-socket is alleen voor jouw gebruiker (rechten 0600 + controle op gebruikers-ID).

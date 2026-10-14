@@ -97,7 +97,7 @@ final class NotchViewModel: ObservableObject {
     /// Toont een kaart meteen als Nook in rust is, anders komt hij in de wachtrij.
     func present(_ card: NookCard) {
         switch state {
-        case .idle, .music, .track, .done:
+        case .idle, .music, .track, .done, .nudge:
             show(.card(card))
         default:
             pending.append(card)
@@ -192,6 +192,26 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Een aanbod van Nook naast de notch. Alleen in rust: nooit over een kaart, paneel of vraag van een agent heen.
+    /// Na een tijdje zonder reactie verdwijnt het vanzelf (de app bewaart het dan in Vandaag).
+    @discardableResult
+    func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
+        guard state.isResting, pending.isEmpty else { return false }
+        show(.nudge(line, card))
+        doneTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled, let self, case .nudge(_, let shown) = self.state, shown.id == card.id else { return }
+            self.show(.idle)
+        }
+        return true
+    }
+
+    /// Van de korte zin naar de hele kaart.
+    func openNudge() {
+        guard case .nudge(_, let card) = state else { return }
+        show(.card(card))
+    }
+
     /// De knop rechts in de bevestigingsstrook.
     func doneButtonPressed() {
         let action = doneButtonAction
@@ -209,6 +229,15 @@ final class NotchViewModel: ObservableObject {
         pointerInside = inside
         hoverTask?.cancel()
         scheduleAutoClose()
+        // Nook bood iets aan: wijzen is genoeg om het hele voorstel te zien, ook als openen bij hover uit staat.
+        if inside, case .nudge = state {
+            hoverTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                guard !Task.isCancelled, let self, self.pointerInside else { return }
+                self.openNudge()
+            }
+            return
+        }
         guard openOnHover, inside, state.isResting else { return }
         // Werkt er een agent, dan opent hover sneller en meteen op Agents.
         let working = agentsActive
@@ -246,6 +275,8 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: nw + 340, height: nh)
         case .done:
             return CGSize(width: max(440, nw + 240), height: nh + 40)
+        case .nudge:
+            return CGSize(width: max(460, nw + 280), height: nh + 34)
         case .card(let card):
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
@@ -262,7 +293,7 @@ final class NotchViewModel: ObservableObject {
     var cornerRadius: CGFloat {
         switch state {
         case .idle: return 14
-        case .music, .track, .done: return 16
+        case .music, .track, .done, .nudge: return 16
         case .card: return 30
         case .panel: return 32
         }

@@ -60,9 +60,14 @@ final class AppSettings: ObservableObject {
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: "model") }
     }
-    /// Nook kijkt zelf af en toe mee met het scherm. Standaard uit.
+    /// Meedenken: Nook kijkt mee terwijl je werkt en biedt zelf hulp aan ("Zal ik dit voor je doen?"). Standaard uit.
     @Published var autoWatch: Bool {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
+    }
+    /// Kleine dingen waar jij om vraagt (muziek, volume, een app openen, een herinnering of open punt) meteen doen,
+    /// zonder eerst op Uitvoeren te drukken. Voorstellen uit Meedenken vragen altijd eerst. Standaard uit.
+    @Published var autoRunSafe: Bool {
+        didSet { UserDefaults.standard.set(autoRunSafe, forKey: "autoRunSafe") }
     }
     /// Gebruik een gratis lokaal model (ingebouwd, MLX) in plaats van de Claude API.
     @Published var useLocal: Bool {
@@ -188,6 +193,7 @@ final class AppSettings: ObservableObject {
         model = defaults.string(forKey: "model") ?? "claude-haiku-5-5"
         language = defaults.string(forKey: "language") ?? "nl"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
+        autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         useLocal = UserDefaults.standard.bool(forKey: "useLocal")
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"

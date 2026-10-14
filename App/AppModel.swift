@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     /// Zoeken op het web en webpagina's lezen, voor elk brein.
     let web = WebTools()
     let portfolio = PortfolioConnector()
+    /// Meedenken: wanneer Nook ongevraagd meekijkt en iets aanbiedt.
+    let thinkAlong = ThinkAlong()
     /// Welk onderdeel van Instellingen open staat.
     @Published var settingsSection: SettingsSection = .general
 
@@ -77,6 +79,7 @@ final class AppModel: ObservableObject {
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
     }
 
     // MARK: Opstarten
@@ -180,6 +183,8 @@ final class AppModel: ObservableObject {
 
         if !settings.onboardingDone {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.presentWelcome() }
+        } else if !settings.autoWatch, !UserDefaults.standard.bool(forKey: "thinkAlongIntro") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.presentThinkAlongIntro() }
         }
 
         Task { await refreshUpcoming() }
@@ -187,8 +192,10 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self?.refreshUpcoming() }
         }
 
-        watchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.autoWatchTick() }
+        // Meedenken: elke paar seconden kijken of je lang genoeg met iets bezig bent. Dat kost niets; het brein komt
+        // pas in actie als ThinkAlong het moment goed vindt.
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.thinkAlongTick() }
         }
     }
 
@@ -206,6 +213,21 @@ final class AppModel: ObservableObject {
     var todayItems: [TodayItem] {
         if demoMode { return DemoContent.today }
         var items: [TodayItem] = []
+
+        // Een aanbod van Nook waar je nog niet op reageerde.
+        if let missed = missedNudge, Date().timeIntervalSince(missed.date) < 45 * 60 {
+            items.append(TodayItem(
+                id: "nudge-\(missed.card.id)",
+                title: missed.line,
+                subtitle: "Ik dacht mee in \(missed.app) · \(NookDates.time(missed.date))",
+                action: "Bekijk",
+                color: NookTheme.iris,
+                target: .action { [weak self] in
+                    self?.missedNudge = nil
+                    self?.viewModel.show(.card(missed.card))
+                }
+            ))
+        }
 
         for session in hub.sessions where session.status == .waiting || session.status == .failed {
             let title = session.status == .waiting ? "\(session.name) wacht op je" : "\(session.name) heeft een fout"
@@ -396,7 +418,7 @@ final class AppModel: ObservableObject {
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines().joined(separator: "\n"))
         do {
-            let plan = try await brain.run(
+            var plan = try await brain.run(
                 userText: userText,
                 followUp: followUp,
                 context: contextSummary(),
@@ -405,6 +427,9 @@ final class AppModel: ObservableObject {
                 tools: allTools,
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
+            // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
+            let split = FollowUps.split(plan.text)
+            plan.text = split.body
 
             let bare = plan.text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
             if plan.actions.isEmpty && bare == "NONE" {
@@ -416,11 +441,20 @@ final class AppModel: ObservableObject {
                 return
             }
 
+            // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
+            if !silentIfNone, canRunWithoutAsking(plan) {
+                remember(user: userText, nook: plan.text.isEmpty ? "(meteen uitgevoerd)" : plan.text)
+                speakIfAsked(plan.text.isEmpty ? "Gedaan." : plan.text)
+                viewModel.removePending(id: "thinking")
+                execute(plan)
+                return
+            }
+
             if !silentIfNone {
                 remember(user: userText, nook: plan.text.isEmpty ? "(acties voorgesteld, wachten op goedkeuring)" : plan.text)
                 speakIfAsked(plan.text.isEmpty ? "Ik heb een plan klaargezet." : plan.text)
             }
-            var card = planCard(plan, context: context)
+            var card = planCard(plan, context: context, offers: split.offers)
             card.sources = sources
             if silentIfNone {
                 viewModel.present(card)
@@ -440,7 +474,7 @@ final class AppModel: ObservableObject {
 
     /// Het antwoord verschijnt terwijl het geschreven wordt. Groeit de tekst een regel, dan groeit de kaart mee.
     private func showStreaming(_ text: String, sources: [String]) {
-        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = FollowUps.streamingBody(text)
         guard !body.isEmpty else { return }
         guard case .card(let shown) = viewModel.state, shown.id == "thinking" else { return }
         let lines = min(9, max(1, Int(ceil(Double(body.count) / (body.count > 140 ? 62.0 : 46.0)))))
@@ -513,23 +547,14 @@ final class AppModel: ObservableObject {
 
     // MARK: Plan en uitvoeren
 
-    private func planCard(_ plan: BrainPlan, context: String?) -> NookCard {
-        guard !plan.actions.isEmpty else { return answerCard(plan.text) }
+    private func planCard(_ plan: BrainPlan, context: String?, offers: [String] = []) -> NookCard {
+        guard !plan.actions.isEmpty else { return answerCard(plan.text, offers: offers) }
 
         let token = "plan-" + UUID().uuidString
         let title = plan.text.isEmpty ? "Zo regel ik het:" : String(plan.text.prefix(160))
         let titleLines = max(1, Int(ceil(Double(title.count) / 46.0)))
 
-        let steps: [PlanStep] = plan.actions.enumerated().map { index, action in
-            let spec = tools.spec(named: action.tool)
-            let tag = spec?.tag(action.input) ?? ("", .neutral)
-            return PlanStep(
-                number: index + 1,
-                text: spec?.summarize(action.input) ?? action.tool,
-                tag: tag.0,
-                tone: tag.1
-            )
-        }
+        let steps = planSteps(plan)
 
         var detail: CardDetail = .steps(steps)
         var detailHeight = CGFloat(steps.count * 30)
@@ -554,6 +579,7 @@ final class AppModel: ObservableObject {
 
         viewModel.register("\(token)#run") { [weak self] in self?.execute(plan) }
 
+        let cancel = CardAction(label: "Annuleren", outcome: .dismiss)
         return NookCard(
             id: token,
             mood: .think,
@@ -561,9 +587,33 @@ final class AppModel: ObservableObject {
             title: title,
             detail: detail,
             primary: CardAction(label: primaryLabel, outcome: .callback("\(token)#run", "")),
-            secondary: CardAction(label: "Annuleren", outcome: .dismiss),
-            contentHeight: min(400, 100 + CGFloat(titleLines) * 24 + detailHeight)
+            secondary: cancel,
+            contentHeight: min(440, 100 + CGFloat(titleLines) * 24 + detailHeight + (offers.isEmpty ? 0 : 40)),
+            offers: offers,
+            escape: cancel
         )
+    }
+
+    /// Eén regel per actie, zoals "Agenda: Koffie met Lisa · vr 16 okt 14:00".
+    private func planSteps(_ plan: BrainPlan) -> [PlanStep] {
+        plan.actions.enumerated().map { index, action in
+            let spec = allTools.first { $0.name == action.tool }
+            let tag = spec?.tag(action.input) ?? ("", .neutral)
+            return PlanStep(
+                number: index + 1,
+                text: spec?.summarize(action.input) ?? action.tool,
+                tag: tag.0,
+                tone: tag.1
+            )
+        }
+    }
+
+    /// Acties die Nook zonder vragen mag doen als je "Kleine dingen meteen doen" aanzette: makkelijk terug te draaien
+    /// en zonder gevolgen voor anderen. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.
+    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder"]
+
+    private func canRunWithoutAsking(_ plan: BrainPlan) -> Bool {
+        settings.autoRunSafe && !plan.actions.isEmpty && plan.actions.allSatisfy { Self.safeTools.contains($0.tool) }
     }
 
     private func execute(_ plan: BrainPlan) {
@@ -572,7 +622,7 @@ final class AppModel: ObservableObject {
             var failure: String?
 
             for action in plan.actions {
-                guard let spec = tools.spec(named: action.tool) else { continue }
+                guard let spec = allTools.first(where: { $0.name == action.tool }) else { continue }
                 let args = Self.json(action.input)
                 do {
                     let result = try await spec.run(action.input)
@@ -715,17 +765,160 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func autoWatchTick() {
-        guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, CGPreflightScreenCaptureAccess() else { return }
-        guard Date().timeIntervalSince(lastAutoRun) > 90 else { return }
-        switch viewModel.state {
-        case .idle, .music, .track: break
-        default: return
-        }
+    // MARK: Meedenken
+
+    /// Een aanbod waar je nog niet op reageerde; staat een tijdje in Vandaag.
+    @Published private var missedNudge: (line: String, card: NookCard, app: String, date: Date)?
+
+    /// Ben je een tijdje met iets bezig, dan kijkt Nook even mee en biedt hij hulp aan als hij echt iets kan doen.
+    private func thinkAlongTick() {
+        guard settings.autoWatch, !settings.useLocal, settings.brainReady, !autoBusy, !demoMode,
+              CGPreflightScreenCaptureAccess(), viewModel.state.isResting else { return }
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let bundle = frontApp?.bundleIdentifier ?? ""
+        // Venstertitel en inhoud uit de live cache; zonder cache telt alleen de app en kijkt Nook hooguit eens per vijf minuten.
+        let front = screenContext.windows.first { $0.isFront && $0.bundleID == bundle }
+        let window = front?.title ?? ""
+        let print = front?.fingerprint ?? UInt64(Date().timeIntervalSince1970 / 300)
+        guard thinkAlong.shouldLook(bundleID: bundle, window: window, print: print) else { return }
+        thinkAlong.didLook(bundleID: bundle, window: window, print: print)
+
         autoBusy = true
         lastAutoRun = Date()
-        lookAtScreen(manual: false)
-        autoBusy = false
+        let appName = frontApp?.localizedName ?? "deze app"
+        Task {
+            await thinkAlongRun(bundleID: bundle, appName: appName, window: window)
+            autoBusy = false
+        }
+    }
+
+    private func thinkAlongRun(bundleID: String, appName: String, window: String) async {
+        guard let snapshot = try? await screenSnapshot() else { return }
+        var request = """
+        [Meedenken] De gebruiker is nu bezig in \(appName)\(window.isEmpty ? "" : " (venster: \(window.prefix(80)))"). \
+        Je kijkt ongevraagd mee. Is er één concreet ding dat jij nu voor hem kunt overnemen met een actie-tool (iets inplannen, \
+        een herinnering of open punt, een concept schrijven, een app of link openen), of weet je een duidelijk slimmere of snellere \
+        aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan. Begin je tekst met één korte vraag of tip van hooguit \
+        acht woorden, zoals "Zal ik dit in je agenda zetten?" of "Tip: dit kan ook in één keer", daarna hooguit twee zinnen uitleg. \
+        Alleen als het hem echt tijd scheelt of voorkomt dat hij iets vergeet; samenvattingen, complimenten of wat hij al doet tellen niet. \
+        Twijfel je, antwoord dan alleen NONE.
+        """
+        let earlier = thinkAlong.recentOffers
+        if !earlier.isEmpty {
+            request += " Dit bood je onlangs al aan, herhaal het niet: " + earlier.joined(separator: "; ") + "."
+        }
+        web.note(snapshot.text)
+
+        guard let plan = try? await brain.run(
+            userText: request,
+            context: contextSummary(),
+            untrustedLabel: "\(snapshot.appName) — \(snapshot.windowTitle)",
+            untrusted: snapshot.text,
+            tools: allTools
+        ) else { return }
+
+        let split = FollowUps.split(plan.text)
+        var body = split.body
+        let bare = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
+        if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }
+        guard !body.isEmpty || !plan.actions.isEmpty else { return }
+
+        let line = Self.nudgeLine(body: body, fallback: planSteps(plan).first.map { "Zal ik dit doen? \($0.text)" })
+        guard !line.isEmpty, !thinkAlong.alreadyOffered(line) else { return }
+
+        let offer = BrainPlan(text: body, actions: plan.actions)
+        let card = nudgeCard(offer, offers: split.offers, bundleID: bundleID, appName: appName)
+        guard viewModel.offerNudge(line, card: card) else { return }
+        thinkAlong.didOffer(line)
+        missedNudge = (line, card, appName, Date())
+        remember(user: "(Nook keek ongevraagd mee in \(appName))", nook: body.isEmpty ? line : body)
+    }
+
+    /// De korte zin naast de notch: de eerste zin van het aanbod, hooguit zo'n zestig tekens.
+    private static func nudgeLine(body: String, fallback: String?) -> String {
+        let first = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        var line = first
+        if let end = first.firstIndex(where: { $0 == "?" || $0 == "." || $0 == "!" }) {
+            line = String(first[...end])
+        }
+        line = line.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
+        if line.isEmpty { line = fallback ?? "" }
+        return line.count > 64 ? String(line.prefix(62)) + "…" : line
+    }
+
+    /// Het hele aanbod: wat Nook zag, wat hij wil doen, en "Doe maar", "Nee" of "Niet in deze app".
+    private func nudgeCard(_ plan: BrainPlan, offers: [String], bundleID: String, appName: String) -> NookCard {
+        let token = "nudge-" + UUID().uuidString
+        viewModel.register("\(token)#yes") { [weak self] in
+            guard let self else { return }
+            self.thinkAlong.accepted()
+            self.missedNudge = nil
+            if !plan.actions.isEmpty { self.execute(plan) }
+        }
+        viewModel.register("\(token)#no") { [weak self] in
+            self?.thinkAlong.declined()
+            self?.missedNudge = nil
+        }
+        viewModel.register("\(token)#mute") { [weak self] in
+            self?.thinkAlong.mute(bundleID: bundleID, name: appName)
+            self?.missedNudge = nil
+        }
+
+        let steps = planSteps(plan)
+        let title = plan.text.isEmpty ? "Zal ik dit voor je doen?" : String(plan.text.prefix(600))
+        let long = title.count > 140
+        let lines = min(8, max(1, Int(ceil(Double(title.count) / (long ? 62.0 : 46.0)))))
+        var height = 150 + CGFloat(lines) * (long ? 21 : 24)
+        if !steps.isEmpty { height += CGFloat(steps.count * 30) + 14 }
+        if !offers.isEmpty { height += 40 }
+
+        let no = CardAction(label: "Nee", outcome: .callback("\(token)#no", ""))
+        return NookCard(
+            id: token,
+            mood: .seen,
+            context: "Ik dacht mee",
+            title: title,
+            detail: steps.isEmpty ? .none : .steps(steps),
+            primary: CardAction(label: plan.actions.isEmpty ? "Handig" : "Doe maar", outcome: .callback("\(token)#yes", "")),
+            secondary: no,
+            contentHeight: min(470, height),
+            input: true,
+            extra: [CardAction(label: "Niet in deze app", outcome: .callback("\(token)#mute", "Ik denk niet meer mee in \(appName)"))],
+            sources: [appName],
+            offers: offers,
+            escape: no
+        )
+    }
+
+    /// Eén keer na de update: vertellen dat Nook kan meedenken en kleine dingen zelf kan doen.
+    func presentThinkAlongIntro() {
+        guard settings.brainReady, !settings.useLocal, !settings.autoWatch else { return }
+        UserDefaults.standard.set(true, forKey: "thinkAlongIntro")
+        let token = "thinkintro"
+        viewModel.register("\(token)#all") { [weak self] in
+            self?.settings.autoWatch = true
+            self?.settings.autoRunSafe = true
+        }
+        viewModel.register("\(token)#watch") { [weak self] in self?.settings.autoWatch = true }
+        let facts = [
+            Fact(label: "meedenken", value: "ik bied zelf hulp aan"),
+            Fact(label: "kleine dingen zelf doen", value: "muziek, volume, apps"),
+            Fact(label: "altijd eerst vragen", value: "agenda, mail, links"),
+            Fact(label: "uitzetten", value: "Instellingen › Assistent")
+        ]
+        let card = NookCard(
+            id: token,
+            mood: .seen,
+            context: "Nieuw in Nook",
+            title: "Zal ik meedenken terwijl je werkt? Zie ik iets wat ik voor je kan doen, dan bied ik het aan.",
+            detail: .facts(facts),
+            primary: CardAction(label: "Zet aan", outcome: .callback("\(token)#all", "Ik denk vanaf nu mee")),
+            secondary: CardAction(label: "Later", outcome: .dismiss),
+            contentHeight: 150 + 2 * 44 + 24,
+            extra: [CardAction(label: "Alleen meedenken", outcome: .callback("\(token)#watch", "Ik denk vanaf nu mee"))],
+            escape: CardAction(label: "Later", outcome: .dismiss)
+        )
+        viewModel.present(card)
     }
 
     // MARK: Agents
@@ -847,7 +1040,7 @@ final class AppModel: ObservableObject {
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
         switch viewModel.state {
-        case .idle, .music, .track, .done: break
+        case .idle, .music, .track, .done, .nudge: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
         default: return
         }
@@ -945,6 +1138,10 @@ final class AppModel: ObservableObject {
     /// Een actie die Nook zelf herkende: meteen als plan klaarzetten, zonder het brein.
     private func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
+        if canRunWithoutAsking(plan) {
+            execute(plan)
+            return
+        }
         viewModel.show(.card(planCard(plan, context: "Snelle opdracht")))
     }
 
@@ -1142,7 +1339,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func answerCard(_ text: String) -> NookCard {
+    private func answerCard(_ text: String, offers: [String] = []) -> NookCard {
         let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
         let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
@@ -1154,8 +1351,9 @@ final class AppModel: ObservableObject {
             detail: .none,
             primary: CardAction(label: "Oké", outcome: .dismiss),
             secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: 140 + CGFloat(lines) * 24,
-            input: true
+            contentHeight: 140 + CGFloat(lines) * 24 + (offers.isEmpty ? 0 : 40),
+            input: true,
+            offers: offers
         )
     }
 

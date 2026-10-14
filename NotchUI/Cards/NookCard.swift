@@ -79,4 +79,8 @@ struct NookCard: Equatable, Identifiable {
     var urgent: Bool = false
     /// Waar Nook naar keek voor dit antwoord ("3 vensters", "Agenda", "GitHub"), als kleine labels onder de context.
     var sources: [String] = []
+    /// Wat Nook hierna voor je kan doen ("Zet het in mijn agenda"). Een klik stuurt de zin als nieuw verzoek.
+    var offers: [String] = []
+    /// Wat Esc doet. Zonder waarde: de hoofdknop.
+    var escape: CardAction? = nil
 }

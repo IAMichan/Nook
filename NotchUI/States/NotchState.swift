@@ -23,6 +23,7 @@ enum NotchState: Equatable {
     case track(title: String, artist: String)   // net een nieuw nummer: even breder, met titel
     case done(String)         // net iets gedaan, met Ongedaan maken
     case card(NookCard)       // een vraag of suggestie
+    case nudge(String, NookCard)   // Nook denkt mee: een korte zin naast de notch, wijs ernaar voor de hele kaart
     case panel(PanelTab)      // uitgeklapt met tabs
 }
 
@@ -45,6 +46,7 @@ extension NotchState {
         case .track: return "track"
         case .done: return "done"
         case .card: return "card"
+        case .nudge: return "nudge"
         case .panel: return "panel"
         }
     }
