@@ -9,14 +9,14 @@ struct OpenLoop: Identifiable, Equatable {
     var due: Date?
 }
 
-/// Het geheugen van Nook: open punten en een logboek van alles wat Nook doet. Alles blijft lokaal.
+/// Nook's memory: open loops and an audit log of everything Nook does. Everything remains local.
 final class NookStore {
     private var db: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init() {
         guard sqlite3_open(NookPaths.databaseURL.path, &db) == SQLITE_OK else {
-            NSLog("Nook: database openen mislukt")
+            NSLog("Nook: failed to open database")
             return
         }
         exec("""
@@ -54,7 +54,7 @@ final class NookStore {
         }
     }
 
-    // MARK: Open punten
+    // MARK: Open Loops
 
     @discardableResult
     func addLoop(title: String, source: String, due: Date?) -> OpenLoop {
@@ -114,9 +114,9 @@ final class NookStore {
         return loop
     }
 
-    // MARK: Uitgevoerde acties
+    // MARK: Executed Actions
 
-    /// Wanneer precies deze actie (zelfde tool, zelfde invoer) voor het laatst lukte, binnen `window` seconden.
+    /// When exactly this action (same tool, same input) last succeeded, within `window` seconds.
     func executedAction(_ key: String, within window: TimeInterval) -> Date? {
         var stmt: OpaquePointer?
         var result: Date?
@@ -140,11 +140,11 @@ final class NookStore {
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)
-        // Oude regels hoeven niet te blijven.
+        // Old entries do not need to be retained.
         exec("DELETE FROM executed_actions WHERE ts < \(Date().addingTimeInterval(-7 * 86_400).timeIntervalSince1970)")
     }
 
-    // MARK: Logboek
+    // MARK: Audit Log
 
     func audit(tool: String, args: String, result: String) {
         var stmt: OpaquePointer?

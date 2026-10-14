@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Eén ding dat Nook kan. Lees-tools draaien meteen tijdens het nadenken; actie-tools worden eerst als plan aan jou getoond.
+/// A single capability of Nook. Read tools execute immediately during reasoning; action tools are presented to you as a plan first.
 struct ToolSpec {
     enum Kind { case read, action }
 
@@ -9,9 +9,9 @@ struct ToolSpec {
     let description: String
     let schema: [String: Any]
     let kind: Kind
-    /// Eén regel voor in het plan, bijvoorbeeld "Agenda: Koffie met Lisa · vr 16 okt 14:00".
+    /// A single summary line for the plan, e.g. "Calendar: Coffee with Lisa · Fri Oct 16 14:00".
     let summarize: ([String: Any]) -> String
-    /// Korte aanduiding achter de regel (leeg = niets bijzonders).
+    /// Short tag badge following the line (empty = standard).
     let tag: ([String: Any]) -> (String, StepTone)
     let run: @MainActor ([String: Any]) async throws -> String
 }
@@ -24,7 +24,7 @@ final class NookTools {
     private let onLoopsChanged: () -> Void
 
     private(set) var specs: [ToolSpec] = []
-    /// Levert de schermtekst uit de live cache (snel). Zonder deze haalt read_screen alles opnieuw op.
+    /// Supplies screen text from the live cache (fast). Without this, read_screen captures fresh OCR.
     var screenSnapshot: (() async throws -> ScreenSnapshot)?
 
     init(calendar: CalendarService, store: NookStore, screen: ScreenReader, onLoopsChanged: @escaping () -> Void) {
@@ -39,7 +39,7 @@ final class NookTools {
         specs.first { $0.name == name }
     }
 
-    // MARK: Schema-hulpjes
+    // MARK: Schema helpers
 
     private func string(_ description: String) -> [String: Any] {
         ["type": "string", "description": description]
@@ -58,31 +58,31 @@ final class NookTools {
         text(input, key).flatMap { NookDates.parse($0) }
     }
 
-    // MARK: De tools
+    // MARK: Tool definitions
 
     private func buildSpecs() -> [ToolSpec] {
         [
             ToolSpec(
                 name: "list_events",
-                description: "Leest afspraken uit de agenda van de gebruiker tussen twee momenten. Gebruik dit om vrije momenten te vinden of conflicten te checken.",
+                description: "Reads calendar events between two timestamps. Use this to discover free time slots or check for schedule conflicts.",
                 schema: object([
-                    "from": string("Begin, ISO 8601 met tijdzone."),
-                    "to": string("Einde, ISO 8601 met tijdzone.")
+                    "from": string("Start, ISO 8601 with timezone."),
+                    "to": string("End, ISO 8601 with timezone.")
                 ], required: ["from", "to"]),
                 kind: .read,
-                summarize: { _ in "Agenda lezen" },
+                summarize: { _ in "Read calendar" },
                 tag: { _ in ("", .neutral) },
                 run: { [calendar = self.calendar] input in
                     guard let from = NookTools.parseDate(input, "from"), let to = NookTools.parseDate(input, "to") else {
-                        throw NookError("from en to moeten ISO 8601 zijn.")
+                        throw NookError("from and to must be ISO 8601 dates.")
                     }
                     await calendar.requestEvents()
                     let events = calendar.events(from: from, to: to)
-                    if events.isEmpty { return "Geen afspraken in deze periode (of geen toegang tot de agenda)." }
-                    // Met id (voor update_event) en als bron om naar te verwijzen.
+                    if events.isEmpty { return "No events in this time range (or no calendar access granted)." }
+                    // Includes ID (for update_event) and formatted as reference citations.
                     let lines = events.prefix(40).map {
                         "\($0.title) | \(NookDates.iso($0.start)) – \(NookDates.iso($0.end))" + ($0.location.isEmpty ? "" : " | \($0.location)")
-                            + ($0.calendar.isEmpty ? "" : " | agenda \($0.calendar)") + " | id \($0.id)"
+                            + ($0.calendar.isEmpty ? "" : " | calendar \($0.calendar)") + " | id \($0.id)"
                     }
                     let refs = events.prefix(10).map {
                         ReferenceParser.line(title: $0.title, url: nil, detail: NookDates.short($0.start) + ($0.calendar.isEmpty ? "" : " · \($0.calendar)"))
@@ -92,10 +92,10 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "read_screen",
-                description: "Leest de tekst van alle zichtbare vensters op alle schermen van de Mac van de gebruiker, het voorste venster eerst (OCR, lokaal). Zoek zelf in welk venster de relevante context staat. Gebruik dit METEEN, zonder eerst te vragen wat er staat, zodra de gebruiker verwijst naar iets dat hij ziet of net las: 'hier', 'dit', 'daar', 'die mail', 'maak er een afspraak voor', 'zet dat in mijn agenda'. Haal daarna titel, datum, tijd, plaats en deelnemers uit die tekst.",
+                description: "Reads visible text across all windows on all displays of the user's Mac, frontmost window first (local OCR). Determine yourself which window holds the relevant context. Use this IMMEDIATELY, without asking first what is on screen, whenever the user refers to something visible or recently read: 'here', 'this', 'that', 'that email', 'schedule this', 'put that on my calendar'. Extract title, date, time, location, and attendees from the text.",
                 schema: object([:], required: []),
                 kind: .read,
-                summarize: { _ in "Scherm lezen" },
+                summarize: { _ in "Read screen" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self, screen = self.screen] _ in
                     if let live = self?.screenSnapshot { return try await live().text }
@@ -105,185 +105,185 @@ final class NookTools {
             ),
             ToolSpec(
                 name: "list_open_loops",
-                description: "Geeft de open punten die Nook voor de gebruiker bijhoudt (dingen die nog gedaan moeten worden).",
+                description: "Lists open todos/commitments tracked by Nook for the user (pending items requiring follow-up).",
                 schema: object([:], required: []),
                 kind: .read,
-                summarize: { _ in "Open punten lezen" },
+                summarize: { _ in "Read open todos" },
                 tag: { _ in ("", .neutral) },
                 run: { [store = self.store] _ in
                     let loops = store.openLoops()
-                    if loops.isEmpty { return "Geen open punten." }
+                    if loops.isEmpty { return "No open todos." }
                     return loops.map {
-                        "- \($0.title) (sinds \(NookDates.short($0.created))" + ($0.due.map { ", uiterlijk \(NookDates.short($0))" } ?? "") + ") [id \($0.id.prefix(8))]"
+                        "- \($0.title) (since \(NookDates.short($0.created))" + ($0.due.map { ", due \(NookDates.short($0))" } ?? "") + ") [id \($0.id.prefix(8))]"
                     }.joined(separator: "\n")
                 }
             ),
             ToolSpec(
                 name: "create_event",
-                description: "Maakt een afspraak in de agenda. Alleen aanroepen als titel en begintijd duidelijk zijn.",
+                description: "Creates a new calendar event. Only invoke when title and start time are clearly established.",
                 schema: object([
-                    "title": string("Titel van de afspraak."),
-                    "start": string("Begin, ISO 8601 met tijdzone."),
-                    "end": string("Einde, ISO 8601 met tijdzone. Standaard een uur na het begin."),
-                    "location": string("Plaats, optioneel."),
-                    "notes": string("Notities, optioneel."),
-                    "calendar": string("Naam van de agenda waarin hij moet, optioneel. Zonder naam de standaardagenda.")
+                    "title": string("Title of the event."),
+                    "start": string("Start time, ISO 8601 with timezone."),
+                    "end": string("End time, ISO 8601 with timezone. Defaults to one hour after start."),
+                    "location": string("Location, optional."),
+                    "notes": string("Notes, optional."),
+                    "calendar": string("Name of target calendar, optional. Defaults to default calendar.")
                 ], required: ["title", "start"]),
                 kind: .action,
                 summarize: { input in
-                    let title = (input["title"] as? String) ?? "Afspraak"
+                    let title = (input["title"] as? String) ?? "Event"
                     let start = NookTools.parseDate(input, "start").map(NookDates.short) ?? "?"
                     let target = ((input["calendar"] as? String).map { " · \($0)" }) ?? ""
-                    return "Agenda: \(title) · \(start)\(target)"
+                    return "Calendar: \(title) · \(start)\(target)"
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self, let title = self.text(input, "title"), let start = self.date(input, "start") else {
-                        throw NookError("Titel of begintijd ontbreekt.")
+                        throw NookError("Title or start time missing.")
                     }
                     let end = self.date(input, "end") ?? start.addingTimeInterval(3600)
-                    guard end > start else { throw NookError("Het einde ligt niet na het begin.") }
+                    guard end > start else { throw NookError("End time must be after start time.") }
                     let id = try await self.calendar.createEvent(
                         title: title, start: start, end: end,
                         location: self.text(input, "location"), notes: self.text(input, "notes"),
                         calendarName: self.text(input, "calendar")
                     )
-                    return "Afspraak gemaakt: \(title) op \(NookDates.short(start))" + (id.isEmpty ? "" : " (id \(id))")
+                    return "Event created: \(title) at \(NookDates.short(start))" + (id.isEmpty ? "" : " (id \(id))")
                 }
             ),
             ToolSpec(
                 name: "update_event",
-                description: "Past een bestaande afspraak aan: titel, tijd, plaats of notities. Gebruik het id uit list_events of uit de uitkomst van create_event. Alleen wat je meegeeft verandert; zonder end schuift de afspraak met dezelfde duur mee. Deelnemers uitnodigen kan Nook niet (macOS staat dat niet toe): stel daarvoor een mail voor.",
+                description: "Updates an existing event: title, time, location, or notes. Use the ID from list_events or create_event output. Only supplied fields are updated; omitting end shifts the event preserving duration. Nook cannot invite attendees directly (macOS restriction): propose an email draft instead.",
                 schema: object([
-                    "id": string("Id van de afspraak."),
-                    "title": string("Nieuwe titel, optioneel."),
-                    "start": string("Nieuw begin, ISO 8601 met tijdzone. Optioneel."),
-                    "end": string("Nieuw einde, ISO 8601 met tijdzone. Optioneel."),
-                    "location": string("Nieuwe plaats, optioneel."),
-                    "notes": string("Nieuwe notities, optioneel.")
+                    "id": string("ID of the event."),
+                    "title": string("New title, optional."),
+                    "start": string("New start time, ISO 8601 with timezone. Optional."),
+                    "end": string("New end time, ISO 8601 with timezone. Optional."),
+                    "location": string("New location, optional."),
+                    "notes": string("New notes, optional.")
                 ], required: ["id"]),
                 kind: .action,
                 summarize: { input in
                     var parts: [String] = []
-                    if let title = input["title"] as? String { parts.append("titel \"\(title)\"") }
-                    if let start = NookTools.parseDate(input, "start") { parts.append("naar \(NookDates.short(start))") }
-                    if let location = input["location"] as? String { parts.append("plaats \(location)") }
-                    return "Agenda aanpassen: " + (parts.isEmpty ? "afspraak" : parts.joined(separator: ", "))
+                    if let title = input["title"] as? String { parts.append("title \"\(title)\"") }
+                    if let start = NookTools.parseDate(input, "start") { parts.append("to \(NookDates.short(start))") }
+                    if let location = input["location"] as? String { parts.append("location \(location)") }
+                    return "Update calendar: " + (parts.isEmpty ? "event" : parts.joined(separator: ", "))
                 },
-                tag: { _ in ("wijzigt", .caution) },
+                tag: { _ in ("modifies", .caution) },
                 run: { [weak self] input in
-                    guard let self, let id = self.text(input, "id") else { throw NookError("Het id van de afspraak ontbreekt.") }
+                    guard let self, let id = self.text(input, "id") else { throw NookError("Event ID is missing.") }
                     let changed = try await self.calendar.updateEvent(
                         id: id, title: self.text(input, "title"), start: self.date(input, "start"), end: self.date(input, "end"),
                         location: self.text(input, "location"), notes: self.text(input, "notes")
                     )
-                    return "Afspraak aangepast (\(changed))"
+                    return "Event updated (\(changed))"
                 }
             ),
             ToolSpec(
                 name: "create_reminder",
-                description: "Maakt een herinnering in de app Herinneringen, optioneel met een tijdstip.",
+                description: "Creates a reminder in the Reminders app, optionally with a due date.",
                 schema: object([
-                    "title": string("Wat moet de gebruiker onthouden?"),
-                    "due": string("Wanneer, ISO 8601 met tijdzone. Optioneel.")
+                    "title": string("What should the user be reminded of?"),
+                    "due": string("Due date/time, ISO 8601 with timezone. Optional.")
                 ], required: ["title"]),
                 kind: .action,
                 summarize: { input in
-                    let title = (input["title"] as? String) ?? "Herinnering"
-                    if let due = NookTools.parseDate(input, "due") { return "Herinnering: \(title) · \(NookDates.short(due))" }
-                    return "Herinnering: \(title)"
+                    let title = (input["title"] as? String) ?? "Reminder"
+                    if let due = NookTools.parseDate(input, "due") { return "Reminder: \(title) · \(NookDates.short(due))" }
+                    return "Reminder: \(title)"
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
-                    guard let self, let title = self.text(input, "title") else { throw NookError("De titel ontbreekt.") }
+                    guard let self, let title = self.text(input, "title") else { throw NookError("Title is missing.") }
                     let id = try await self.calendar.createReminder(title: title, due: self.date(input, "due"))
-                    return "Herinnering gemaakt: \(title) (id \(id))"
+                    return "Reminder created: \(title) (id \(id))"
                 }
             ),
             ToolSpec(
                 name: "complete_reminder",
-                description: "Vinkt een open herinnering af in Herinneringen. Geef het id (uit de uitkomst van create_reminder) of de exacte titel uit de context.",
-                schema: object(["reminder": string("Id of exacte titel van de herinnering.")], required: ["reminder"]),
+                description: "Marks an active reminder as completed in Reminders. Supply the ID (from create_reminder output) or exact title from context.",
+                schema: object(["reminder": string("ID or exact title of the reminder.")], required: ["reminder"]),
                 kind: .action,
-                summarize: { input in "Herinnering afvinken: \((input["reminder"] as? String) ?? "?")" },
+                summarize: { input in "Complete reminder: \((input["reminder"] as? String) ?? "?")" },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
-                    guard let self, let target = self.text(input, "reminder") else { throw NookError("Welke herinnering?") }
+                    guard let self, let target = self.text(input, "reminder") else { throw NookError("Which reminder?") }
                     let title = try await self.calendar.completeReminder(target)
-                    return "Afgevinkt: \(title)"
+                    return "Completed: \(title)"
                 }
             ),
             ToolSpec(
                 name: "add_open_loop",
-                description: "Zet iets op de lijst met open punten van de gebruiker, bijvoorbeeld een belofte of iets wat nog moet gebeuren zonder vast tijdstip.",
+                description: "Adds an item to the user's open todos list, e.g. a commitment or pending task without a scheduled time.",
                 schema: object([
-                    "title": string("Het open punt, kort en concreet."),
-                    "due": string("Uiterlijk wanneer, ISO 8601. Optioneel.")
+                    "title": string("The todo item, concise and actionable."),
+                    "due": string("Due date, ISO 8601. Optional.")
                 ], required: ["title"]),
                 kind: .action,
-                summarize: { input in "Onthouden: \((input["title"] as? String) ?? "open punt")" },
+                summarize: { input in "Remember: \((input["title"] as? String) ?? "todo")" },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
-                    guard let self, let title = self.text(input, "title") else { throw NookError("De titel ontbreekt.") }
+                    guard let self, let title = self.text(input, "title") else { throw NookError("Title is missing.") }
                     let loop = self.store.addLoop(title: title, source: "Nook", due: self.date(input, "due"))
                     self.onLoopsChanged()
-                    return "Open punt toegevoegd: \(title) [id \(loop.id.prefix(8))]"
+                    return "Todo added: \(title) [id \(loop.id.prefix(8))]"
                 }
             ),
             ToolSpec(
                 name: "complete_open_loop",
-                description: "Zet een open punt van Nook op afgerond. Geef het id tussen haken uit de context of list_open_loops, of de exacte titel.",
-                schema: object(["loop": string("Id (de eerste acht tekens volstaan) of exacte titel.")], required: ["loop"]),
+                description: "Marks an open todo in Nook as completed. Supply the bracketed ID from context or list_open_loops, or exact title.",
+                schema: object(["loop": string("ID (first eight characters sufficient) or exact title.")], required: ["loop"]),
                 kind: .action,
-                summarize: { input in "Open punt afronden: \((input["loop"] as? String) ?? "?")" },
+                summarize: { input in "Complete todo: \((input["loop"] as? String) ?? "?")" },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
-                    guard let self, let target = self.text(input, "loop") else { throw NookError("Welk open punt?") }
+                    guard let self, let target = self.text(input, "loop") else { throw NookError("Which todo?") }
                     guard let loop = self.store.completeLoop(matching: target) else {
-                        throw NookError("Geen open punt gevonden voor \(target).")
+                        throw NookError("No todo found matching \(target).")
                     }
                     self.onLoopsChanged()
-                    return "Afgerond: \(loop.title)"
+                    return "Completed: \(loop.title)"
                 }
             ),
             ToolSpec(
                 name: "open_app",
-                description: "Opent een app op de Mac, bijvoorbeeld \"Safari\" of \"Notities\".",
-                schema: object(["name": string("Naam van de app.")], required: ["name"]),
+                description: "Opens an application on the Mac, e.g. \"Safari\" or \"Notes\".",
+                schema: object(["name": string("Name of the app.")], required: ["name"]),
                 kind: .action,
                 summarize: { input in "Open \((input["name"] as? String) ?? "app")" },
                 tag: { _ in ("", .good) },
                 run: { input in
-                    guard let name = input["name"] as? String else { throw NookError("De appnaam ontbreekt.") }
+                    guard let name = input["name"] as? String else { throw NookError("App name is missing.") }
                     try SystemControl.openApp(name)
-                    return "\(name) geopend"
+                    return "Opened \(name)"
                 }
             ),
             ToolSpec(
                 name: "open_url",
-                description: "Opent een webadres (https) in de standaardbrowser.",
-                schema: object(["url": string("Het webadres, beginnend met https://")], required: ["url"]),
+                description: "Opens a web URL (https) in the default browser.",
+                schema: object(["url": string("The web URL, starting with https://")], required: ["url"]),
                 kind: .action,
                 summarize: { input in "Open \((input["url"] as? String) ?? "link")" },
-                tag: { _ in ("opent in browser", .neutral) },
+                tag: { _ in ("opens in browser", .neutral) },
                 run: { input in
-                    guard let url = input["url"] as? String else { throw NookError("Het webadres ontbreekt.") }
+                    guard let url = input["url"] as? String else { throw NookError("Web URL is missing.") }
                     try SystemControl.openURL(url)
-                    return "Link geopend"
+                    return "Link opened"
                 }
             ),
             ToolSpec(
                 name: "media_control",
-                description: "Bedient de muziek in Spotify of Muziek: play_pause, next of previous.",
+                description: "Controls playback in Spotify or Apple Music: play_pause, next, or previous.",
                 schema: object([
-                    "action": ["type": "string", "enum": ["play_pause", "next", "previous"], "description": "Wat er moet gebeuren."]
+                    "action": ["type": "string", "enum": ["play_pause", "next", "previous"], "description": "Action to perform."]
                 ], required: ["action"]),
                 kind: .action,
                 summarize: { input in
                     switch input["action"] as? String {
-                    case "next": return "Volgend nummer"
-                    case "previous": return "Vorig nummer"
-                    default: return "Muziek pauzeren of hervatten"
+                    case "next": return "Next track"
+                    case "previous": return "Previous track"
+                    default: return "Pause or resume music"
                     }
                 },
                 tag: { _ in ("", .good) },
@@ -296,33 +296,33 @@ final class NookTools {
                     }
                     let target = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty ? "Spotify" : "Music"
                     _ = SystemControl.appleScript("tell application \"\(target)\" to \(command)")
-                    return "Gedaan"
+                    return "Done"
                 }
             ),
             ToolSpec(
                 name: "set_volume",
-                description: "Zet het geluidsvolume van de Mac op een niveau van 0 tot 100.",
+                description: "Sets system output volume on the Mac to a level between 0 and 100.",
                 schema: object(["level": ["type": "integer", "description": "Volume 0–100."]], required: ["level"]),
                 kind: .action,
-                summarize: { input in "Volume op \((input["level"] as? Int) ?? 0)%" },
+                summarize: { input in "Volume at \((input["level"] as? Int) ?? 0)%" },
                 tag: { _ in ("", .good) },
                 run: { input in
-                    guard let level = input["level"] as? Int else { throw NookError("Het niveau ontbreekt.") }
+                    guard let level = input["level"] as? Int else { throw NookError("Volume level is missing.") }
                     SystemControl.setVolume(level)
-                    return "Volume staat op \(max(0, min(100, level)))%"
+                    return "Volume set to \(max(0, min(100, level)))%"
                 }
             ),
             ToolSpec(
                 name: "run_shortcut",
-                description: "Draait een bestaande opdracht uit de app Opdrachten (Shortcuts) van de gebruiker, op naam.",
-                schema: object(["name": string("Exacte naam van de opdracht.")], required: ["name"]),
+                description: "Runs an existing shortcut from the Shortcuts app by name.",
+                schema: object(["name": string("Exact name of the shortcut.")], required: ["name"]),
                 kind: .action,
-                summarize: { input in "Opdracht: \((input["name"] as? String) ?? "?")" },
-                tag: { _ in ("opdracht", .caution) },
+                summarize: { input in "Shortcut: \((input["name"] as? String) ?? "?")" },
+                tag: { _ in ("shortcut", .caution) },
                 run: { input in
-                    guard let name = input["name"] as? String else { throw NookError("De naam ontbreekt.") }
+                    guard let name = input["name"] as? String else { throw NookError("Shortcut name is missing.") }
                     _ = try await Task.detached { try SystemControl.runShortcut(name) }.value
-                    return "Opdracht \(name) gedraaid"
+                    return "Shortcut \(name) executed"
                 }
             )
         ]

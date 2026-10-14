@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Het uitgeklapte paneel met vier tabs. De tabbalk staat altijd bovenaan.
+/// The expanded panel with four tabs. The tab bar is always at the top.
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab

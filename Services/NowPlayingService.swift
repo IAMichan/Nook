@@ -9,23 +9,23 @@ struct NowPlayingInfo: Equatable {
     var duration: Int
     var isPlaying: Bool
     var artworkURL: URL?
-    /// Willekeurige volgorde staat aan.
+    /// Shuffle is enabled.
     var shuffle: Bool = false
-    /// Herhalen staat aan (in Muziek: één nummer of alles).
+    /// Repeat is enabled (in Music: single track or all).
     var repeating: Bool = false
-    /// Volume van de speler zelf, 0–100. `nil` als de speler het niet doorgeeft.
+    /// Player volume, 0–100. `nil` if player does not report it.
     var volume: Int? = nil
-    /// Wanneer `position` is uitgelezen. Daarmee loopt de voortgang tussen twee polls vloeiend door.
+    /// Timestamp when `position` was sampled, allowing smooth interpolation between polls.
     var capturedAt = Date()
 
-    /// Positie in seconden op dit moment, bijgeschat sinds de laatste poll.
+    /// Position in seconds right now, interpolated since last poll.
     func estimatedPosition(at date: Date) -> Double {
         guard isPlaying else { return Double(position) }
         let estimate = Double(position) + max(0, date.timeIntervalSince(capturedAt))
         return duration > 0 ? min(Double(duration), estimate) : estimate
     }
 
-    /// `capturedAt` telt niet mee: anders publiceert een gepauzeerd nummer elke poll een "wijziging".
+    /// `capturedAt` excluded from equality to avoid publishing spurious changes when paused.
     static func == (lhs: NowPlayingInfo, rhs: NowPlayingInfo) -> Bool {
         lhs.title == rhs.title && lhs.artist == rhs.artist && lhs.app == rhs.app
             && lhs.position == rhs.position && lhs.duration == rhs.duration
@@ -34,7 +34,7 @@ struct NowPlayingInfo: Equatable {
     }
 }
 
-/// Leest Spotify en Muziek via AppleScript. De systeembrede Now Playing-API is sinds macOS 15.4 niet meer toegankelijk voor gewone apps.
+/// Reads Spotify and Music via AppleScript. System-wide Now Playing API is no longer accessible to standard apps since macOS 15.4.
 @MainActor
 final class NowPlayingService: ObservableObject {
     enum Command: String {
@@ -44,14 +44,14 @@ final class NowPlayingService: ObservableObject {
     }
 
     @Published private(set) var current: NowPlayingInfo?
-    /// macOS heeft Nook geen toestemming gegeven om Spotify of Muziek te bedienen.
+    /// macOS has not granted Nook permission to control Spotify or Music.
     @Published private(set) var permissionDenied = false
 
     private var timer: Timer?
     private let queue = DispatchQueue(label: "nl.imdigital.nook.nowplaying")
-    /// Telt lokale wijzigingen (spoelen, shuffle, volume). Een poll die vóór zo'n wijziging vertrok, mag die niet terugdraaien.
+    /// Increments on local changes (seek, shuffle, volume) so stale inflight polls don't overwrite them.
     private var localGeneration = 0
-    /// Volume dat nog naar de speler moet. Een sleepbeweging stuurt zo hooguit één Apple Event tegelijk.
+    /// Pending volume update. Keeps scrubbing to at most one Apple Event in flight.
     private var pendingVolume: Int?
     private var volumeInFlight = false
 
@@ -65,7 +65,7 @@ final class NowPlayingService: ObservableObject {
 
     func control(_ command: Command) {
         let appName = current?.app
-        // Direct laten zien wat er gaat gebeuren; de poll hieronder bevestigt of corrigeert het.
+        // Optimistic update; subsequent poll confirms or corrects.
         if command == .playPause, var info = current {
             info.position = Int(info.estimatedPosition(at: Date()))
             info.isPlaying.toggle()
@@ -83,7 +83,7 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
-    /// Spoelt naar een plek in het nummer, in seconden.
+    /// Seeks to a position in the track, in seconds.
     func seek(to seconds: Double) {
         guard var info = current, info.duration > 0 else { return }
         let target = min(max(0, seconds), Double(max(0, info.duration - 1)))
@@ -94,7 +94,7 @@ final class NowPlayingService: ObservableObject {
         send("set player position to \(Int(target.rounded()))", to: info.app, refresh: true)
     }
 
-    /// Willekeurige volgorde aan of uit.
+    /// Toggles shuffle on or off.
     func setShuffle(_ on: Bool) {
         guard var info = current else { return }
         info.shuffle = on
@@ -104,7 +104,7 @@ final class NowPlayingService: ObservableObject {
         send(verb, to: info.app, refresh: true)
     }
 
-    /// Herhalen aan of uit. Muziek herhaalt dan de hele lijst.
+    /// Toggles repeat on or off. Music repeats all tracks.
     func setRepeat(_ on: Bool) {
         guard var info = current else { return }
         info.repeating = on
@@ -114,7 +114,7 @@ final class NowPlayingService: ObservableObject {
         send(verb, to: info.app, refresh: true)
     }
 
-    /// Volume van de speler, 0–100. Mag tijdens slepen vaak worden aangeroepen.
+    /// Player volume, 0–100. Safe to call frequently during scrubbing.
     func setVolume(_ value: Int) {
         guard var info = current else { return }
         let clamped = min(100, max(0, value))
@@ -141,7 +141,7 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
-    /// Stuurt één opdracht naar de speler, op de achtergrond. Met `refresh` volgt kort daarna een poll.
+    /// Dispatches command to player asynchronously. With `refresh`, polls shortly after.
     private func send(_ verb: String, to app: String, refresh: Bool) {
         queue.async { [weak self] in
             _ = SystemControl.appleScript("tell application \"\(app)\" to \(verb)")
@@ -158,14 +158,14 @@ final class NowPlayingService: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if self.permissionDenied != denied { self.permissionDenied = denied }
-                // Intussen iets aangepast? Dan is deze uitlezing te oud; de volgende poll klopt wel.
+                // Changed in the meantime? Discard stale poll; next poll will be accurate.
                 guard generation == self.localGeneration else { return }
                 if self.current != info { self.current = info }
             }
         }
     }
 
-    // MARK: Achtergrondwerk
+    // MARK: Background Processing
 
     private nonisolated static func runningPlayerName() -> String? {
         if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty { return "Spotify" }
@@ -183,7 +183,7 @@ final class NowPlayingService: ObservableObject {
                 candidates.append(info)
             }
         }
-        // Speelt er iets, dan dat. Anders het gepauzeerde nummer, zodat je het kunt hervatten.
+        // If playback is active, use that. Otherwise use paused track so it can be resumed.
         if let playing = candidates.first(where: \.isPlaying) { return (playing, false) }
         if let paused = candidates.first { return (paused, false) }
         return (nil, denied)
@@ -196,9 +196,9 @@ final class NowPlayingService: ObservableObject {
         let script: String
     }
 
-    /// Beide scripts geven: titel|||artiest|||positie|||duur|||artwork|||speelt|||shuffle|||herhalen|||volume.
-    /// Volume is -1 als de speler het niet doorgeeft.
-    /// Velden die kunnen ontbreken (radio, lokale bestanden, reclame) staan in een `try`, zodat één leeg veld niet het hele nummer laat verdwijnen.
+    /// Both scripts yield: title|||artist|||position|||duration|||artwork|||playing|||shuffle|||repeat|||volume.
+    /// Volume is -1 if player does not report it.
+    /// Optional fields (radio streams, local files, ads) are wrapped in `try` so missing values don't fail parsing.
     private nonisolated static let players: [Player] = [
         Player(name: "Spotify", bundleID: "com.spotify.client", durationInMilliseconds: true, script: """
         tell application "Spotify"
@@ -281,7 +281,7 @@ final class NowPlayingService: ObservableObject {
 
     private nonisolated static func parse(_ raw: String, app: String, durationInMilliseconds: Bool) -> NowPlayingInfo? {
         let parts = raw.components(separatedBy: "|||")
-        // Een titel kan zelf "|||" bevatten; de laatste acht velden staan vast.
+        // Title itself could contain "|||"; the trailing eight fields have fixed positions.
         let fixed = 8
         guard parts.count >= fixed + 1 else { return nil }
         let tail = Array(parts.suffix(fixed))

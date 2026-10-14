@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Rechts in de werkruimte: map, branch en worktree, wijzigingen en Git, gebruik en rechten van de sessie.
+/// Workspace inspector: folder, branch and worktree, changes and Git, session usage and permissions.
 struct RunInspector: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -47,7 +47,7 @@ struct RunInspector: View {
         }
     }
 
-    // MARK: Werkmap
+    // MARK: Working directory
 
     private func workspaceSection(_ run: WorkspaceRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -83,7 +83,7 @@ struct RunInspector: View {
         }
     }
 
-    // MARK: Wijzigingen
+    // MARK: Changes
 
     @ViewBuilder
     private func changesSection(_ run: WorkspaceRun) -> some View {
@@ -157,7 +157,7 @@ struct RunInspector: View {
         }
     }
 
-    // MARK: Gebruik
+    // MARK: Usage
 
     private func usageSection(_ run: WorkspaceRun) -> some View {
         let caps = run.provider.capabilities
@@ -183,7 +183,7 @@ struct RunInspector: View {
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             if run.provider == .claude, let profile = app.profile(for: run), let plan = app.hub.subscriptionUsage(for: profile) {
-                // Het abonnement van het account (hele account, niet alleen deze sessie), uit de statusregel.
+                // Subscription limit for account (entire account, not just this session), parsed from status line.
                 InfoRow(label: tr("ws.usage.accountQuota"), value: plan.label, help: tr("ws.usage.accountQuotaHelp"))
             }
         }
@@ -197,7 +197,7 @@ struct RunInspector: View {
         return TokenTally.format(tokens) + " · " + tr("ws.usage.windowUnknown")
     }
 
-    // MARK: Sessie
+    // MARK: Session
 
     private func sessionSection(_ run: WorkspaceRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -228,7 +228,7 @@ struct RunInspector: View {
         }
     }
 
-    // MARK: Acties
+    // MARK: Actions
 
     private func push() {
         busy = true

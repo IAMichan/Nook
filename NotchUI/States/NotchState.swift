@@ -17,19 +17,19 @@ enum PanelTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Wat de notch nu toont. Altijd maar één ding tegelijk.
+/// What the notch currently displays. Only one state active at a time.
 enum NotchState: Equatable {
-    case idle                 // rust: Nook links, teller rechts
-    case music                // muziek speelt: balkjes rechts
-    case track(title: String, artist: String)   // net een nieuw nummer: even breder, met titel
-    case done(String)         // net iets gedaan, met Ongedaan maken
-    case card(NookCard)       // een vraag of suggestie
-    case nudge(String, NookCard)   // Nook denkt mee: een korte zin naast de notch, wijs ernaar voor de hele kaart
-    case panel(PanelTab)      // uitgeklapt met tabs
+    case idle                 // idle: Nook on left, counter on right
+    case music                // music playing: equalizer bars on right
+    case track(title: String, artist: String)   // track started: expands briefly with title
+    case done(String)         // recent action, with Undo option
+    case card(NookCard)       // a prompt or suggestion
+    case nudge(String, NookCard)   // proactive suggestion: short sentence by the notch, hover for full card
+    case panel(PanelTab)      // expanded with tabs
 }
 
 extension NotchState {
-    /// Rust of muziek: de toestanden waarin hover het paneel mag openen.
+    /// Idle or music: states in which hovering is permitted to open the panel.
     var isResting: Bool {
         switch self {
         case .idle, .music, .track: return true
@@ -39,7 +39,7 @@ extension NotchState {
 }
 
 extension NotchState {
-    /// Zelfde soort toestand (bijvoorbeeld een andere tab van het paneel)?
+    /// Same kind of state (e.g. a different tab within the panel)?
     var kind: String {
         switch self {
         case .idle: return "idle"

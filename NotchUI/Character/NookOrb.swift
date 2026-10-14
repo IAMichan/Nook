@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Nook: een licht met twee ogen. Ademt, knippert en past zijn ogen aan op de stemming.
+/// Nook: a light with two eyes. Breathes, blinks, and adapts its eyes to its mood.
 struct NookOrb: View {
     var mood: NookMood
     var size: CGFloat = 46
-    /// Uit in rust: dan staat Nook stil en kost hij geen rekenkracht.
+    /// Disabled when idle: keeps Nook static and conserves processing power.
     var animated: Bool = true
 
     var body: some View {
@@ -32,7 +32,7 @@ struct NookOrb: View {
         .animation(.easeInOut(duration: 0.3), value: mood)
     }
 
-    // MARK: Ogen
+    // MARK: Eyes
 
     private var eyeSize: CGSize {
         switch mood {
@@ -79,7 +79,7 @@ struct NookOrb: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
     }
 
-    /// Knippert elke 5 seconden, behalve als hij tevreden is.
+    /// Blinks every 5 seconds, except when content.
     private func blinkScale(_ t: Double) -> CGFloat {
         if mood == .done { return 1 }
         let phase = t.truncatingRemainder(dividingBy: 5.0)

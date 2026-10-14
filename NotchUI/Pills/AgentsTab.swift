@@ -1,32 +1,29 @@
 import SwiftUI
 import AppKit
 
-/// Je agents in één blik, in twee weergaven.
-/// Sessies: bovenaan wat nu draait (duidelijk gemarkeerd), daaronder je recente sessies; rechts het gekozen item.
-/// Accounts: per agent je accounts (persoonlijk, werk…) met login, limieten en gebruik. Bovenin wissel je met
-/// één klik van standaardaccount; nieuwe sessies en Nooks brein gebruiken dat account.
+/// Your agents at a glance, in two views.
+/// Sessions: currently running at the top (prominently marked), recent sessions below; selected item on the right.
+/// Accounts: accounts per agent (personal, work…) with login, limits, and usage. Switch the default account
+/// at the top with a single click; new sessions and Nook's brain will use that account.
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
     @State private var draft = ""
-    /// Welke koppelingen aan staan, per account ("<profiel>|<koppeling>"). Ingelezen bij openen, niet bij elke hertekening.
+    /// Enabled connections per account ("<profile>|<connection>"). Loaded on open, not on every redraw.
     @State private var linked: Set<String> = []
     @State private var copiedID: String?
-    @State private var confirmRemove: String?
     @State private var renaming: String?
     @State private var nameDraft = ""
-    @State private var newName = ""
 
     private enum Selection {
         case live(AgentSession)
         case past(PastSession)
         case account(AgentProfile)
-        case addAccount(AgentKind)
         case nothing
 
         var isAccounts: Bool {
             switch self {
-            case .account, .addAccount: return true
+            case .account: return true
             default: return false
             }
         }
@@ -55,7 +52,6 @@ struct AgentsTab: View {
                     case .live(let session): liveDetail(session)
                     case .past(let session): pastDetail(session)
                     case .account(let profile): accountDetail(profile)
-                    case .addAccount(let kind): addAccountDetail(kind)
                     case .nothing: nothingRunning
                     }
                 }
@@ -73,12 +69,11 @@ struct AgentsTab: View {
         }
         .onChange(of: viewModel.selectedAgentID) { _, _ in
             refreshLinks()
-            confirmRemove = nil
             renaming = nil
         }
         .onChange(of: app.agentConnect) { _, _ in refreshLinks() }
         .onChange(of: app.profiles.all) { _, _ in refreshLinks() }
-        // Zolang de tab open is, blijven sessies en gebruik bij.
+        // Keep sessions and usage up to date while the tab remains open.
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
@@ -88,7 +83,7 @@ struct AgentsTab: View {
         }
     }
 
-    // MARK: Bovenbalk
+    // MARK: Top bar
 
     private func header(live: [AgentSession], past: [PastSession], selection: Selection) -> some View {
         let tracked = live.filter { !$0.isDetected }
@@ -114,14 +109,14 @@ struct AgentsTab: View {
         }
     }
 
-    /// Agents waarvan je bovenin het standaardaccount wisselt: alleen wat op deze Mac staat en meerdere accounts kan hebben.
+    /// Agents whose default account can be switched at the top: only those installed on this Mac that support multiple accounts.
     private var switcherKinds: [AgentKind] {
         AgentKind.allCases.filter { kind in
             kind.supportsProfiles && (app.history.installed.contains(kind) || app.profiles.profiles(for: kind).count > 1)
         }
     }
 
-    /// "● Claude  Persoonlijk ⌄": met één klik een ander account als standaard, of er een toevoegen.
+    /// "● Claude  Personal ⌄": one-click default account switching, or add an account.
     private func accountSwitcher(_ kind: AgentKind) -> some View {
         let current = app.profiles.preferredProfile(kind)
         let all = app.profiles.profiles(for: kind)
@@ -137,7 +132,7 @@ struct AgentsTab: View {
                 }
             }
             Divider()
-            Button(tr("agents.switcher.add")) { viewModel.selectedAgentID = "add:" + kind.rawValue }
+            Button(tr("agents.switcher.add")) { app.openSettings(section: .agents) }
             Button(tr("agents.switcher.manage")) { viewModel.selectedAgentID = "account:" + current.id }
         } label: {
             HStack(spacing: 6) {
@@ -174,14 +169,11 @@ struct AgentsTab: View {
         return "\(name) · \(email)"
     }
 
-    // MARK: Selectie
+    // MARK: Selection
 
-    /// Wat er rechts staat. Valt terug op iets zinnigs als het gekozen item er niet meer is: eerst wat nu draait.
+    /// Content displayed on the right. Falls back sensibly if the selected item is gone: running items take priority.
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
-        if id.hasPrefix("add:"), let kind = AgentKind(rawValue: String(id.dropFirst(4))), kind.supportsProfiles {
-            return .addAccount(kind)
-        }
         if id.hasPrefix("account:") {
             let key = String(id.dropFirst(8))
             if let profile = app.profiles.profile(id: key) { return .account(profile) }
@@ -204,12 +196,11 @@ struct AgentsTab: View {
         case .live(let session): return session.id
         case .past(let session): return "past:" + session.id
         case .account(let profile): return "account:" + profile.id
-        case .addAccount(let kind): return "add:" + kind.rawValue
         case .nothing: return ""
         }
     }
 
-    // MARK: Sessies: lijst
+    // MARK: Sessions: list
 
     private func sessionList(live: [AgentSession], past: [PastSession], selection: Selection) -> some View {
         let tracked = live.filter { !$0.isDetected }
@@ -258,7 +249,7 @@ struct AgentsTab: View {
         }
     }
 
-    /// "Werk": alleen als je van deze agent meer dan één account hebt, anders zegt het niets.
+    /// "Work": only shown when you have multiple accounts for this agent, otherwise redundant.
     private func accountTag(_ session: AgentSession) -> String? {
         guard !app.demoMode, let profile = app.profile(for: session),
               app.profiles.profiles(for: profile.kind).count > 1 else { return nil }
@@ -270,7 +261,7 @@ struct AgentsTab: View {
         return displayName(profile)
     }
 
-    /// Altijd zichtbaar onderaan Sessies: hoe vol de limieten van al je accounts zitten, ook als er niets draait.
+    /// Always visible at the bottom of Sessions: quota usage across all your accounts, even when idle.
     @ViewBuilder
     private var usageStrip: some View {
         let profiles = app.profiles.all.filter {
@@ -332,7 +323,7 @@ struct AgentsTab: View {
         .help(tr("agents.viewAccount"))
     }
 
-    /// Niets aan de hand en nog geen geschiedenis: zeg hoe je begint.
+    /// Nothing active and no history: explain how to get started.
     private var nothingRunning: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(tr("agents.noneWorkingNow"))
@@ -356,7 +347,7 @@ struct AgentsTab: View {
         }
     }
 
-    // MARK: Sessies: draaiend
+    // MARK: Sessions: running
 
     private func liveDetail(_ session: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -386,7 +377,7 @@ struct AgentsTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// "Claude Code · Werk · michiel@… · 5u 34%  ›": met welk account deze sessie draait.
+    /// "Claude Code · Work · michiel@… · 5h 34%  ›": indicates which account this session is running under.
     @ViewBuilder
     private func accountLink(for session: AgentSession) -> some View {
         if !app.demoMode, let profile = app.profile(for: session) {
@@ -417,7 +408,7 @@ struct AgentsTab: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Nook ziet het proces, maar niet wat het doet. Eén heldere uitleg en één knop, geen stappenlijst.
+    /// Nook detects the process, but cannot inspect its internals. A single clear explanation and button, no step list.
     private func untrackedExplanation(_ session: AgentSession) -> some View {
         let kind = AgentKind(agentName: session.name)
         let profile = app.profile(for: session)
@@ -467,80 +458,87 @@ struct AgentsTab: View {
         }
     }
 
-    /// Stappen, vraag en wijziging scrollen; de knoppen eronder blijven staan. Zo is een lang antwoord altijd helemaal te lezen.
     @ViewBuilder
     private func trackedBody(_ session: AgentSession) -> some View {
-        ScrollView(showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(session.steps.suffix(5)) { step in
-                        let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(step.symbol)
-                                .foregroundStyle(step.color)
-                                .frame(width: 12)
-                            if current {
-                                ShimmerText(text: step.text)
-                                    .lineLimit(1)
-                            } else {
-                                Text(step.text)
-                                    .foregroundStyle(Color(hex: 0xC9C7D2))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .font(NookTheme.font(13))
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(session.steps.suffix(3)) { step in
+                let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(step.symbol)
+                        .foregroundStyle(step.color)
+                        .frame(width: 12)
+                    if current {
+                        ShimmerText(text: step.text)
+                    } else {
+                        Text(step.text)
+                            .foregroundStyle(Color(hex: 0xC9C7D2))
                     }
                 }
+                .font(NookTheme.font(13))
+                .lineLimit(1)
+            }
+        }
 
-                if session.status == .waiting && session.approvalID == nil && !app.demoMode {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "questionmark.bubble")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(NookTheme.amber)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
-                                .font(NookTheme.font(13, .semibold))
-                                .foregroundStyle(NookTheme.paper)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                            Text(tr("agents.waitingInTerminalDetail"))
-                                .font(NookTheme.font(12))
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+        if session.status == .waiting && session.approvalID == nil && !app.demoMode {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "questionmark.bubble")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(NookTheme.amber)
+                VStack(alignment: .leading, spacing: 3) {
+                    // A long question scrolls instead of pushing the conversation and buttons out of view.
+                    ScrollView(showsIndicators: true) {
+                        Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
+                            .font(NookTheme.font(13, .semibold))
+                            .foregroundStyle(NookTheme.paper)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
-                }
-
-                if !session.diff.isEmpty || !session.file.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(session.file)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.bottom, 4)
-                        ForEach(session.diff) { line in
-                            Text(line.text)
-                                .foregroundStyle(line.color)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .font(NookTheme.mono(11.5))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+                    .frame(maxHeight: 96)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(tr("agents.waitingInTerminalDetail"))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
         }
-        .frame(maxHeight: .infinity, alignment: .top)
 
-        HStack(spacing: 4) {
-            if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
+        if session.approvalID != nil, !session.diff.isEmpty {
+            // Scrolls within its height, so the whole change can be read before approving.
+            ScrollView(showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(session.file)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .padding(.bottom, 4)
+                    ForEach(session.diff) { line in
+                        Text(line.text)
+                            .foregroundStyle(line.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .font(NookTheme.mono(11.5))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+        }
+
+        if app.demoMode {
+            Spacer(minLength: 0)
+        } else {
+            AgentConversation(session: session)
+        }
+
+        if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
+            HStack(spacing: 4) {
                 NookPrimaryButton(title: tr("button.allow")) { app.hub.decide(id, .allow) }
                 if request.canAlways {
                     NookGhostButton(title: tr("button.always")) { app.hub.decide(id, .always) }
@@ -548,7 +546,9 @@ struct AgentsTab: View {
                 NookGhostButton(title: tr("button.deny")) { app.hub.decide(id, .deny) }
                 Spacer()
                 terminalButton(session)
-            } else if app.demoMode {
+            }
+        } else if app.demoMode {
+            HStack(spacing: 4) {
                 if session.status == .waiting {
                     NookPrimaryButton(title: tr("button.allow")) { viewModel.finish("Toegestaan · npm install draait") }
                     NookGhostButton(title: tr("button.deny")) { viewModel.show(.idle) }
@@ -565,13 +565,43 @@ struct AgentsTab: View {
                 .frame(height: 34)
                 .background(Capsule().fill(NookTheme.field))
                 NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: true) { draft = "" }
-            } else {
-                Text(session.placeholder)
-                    .font(NookTheme.font(12.5))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                Spacer()
+            }
+        } else {
+            replyBar(session)
+        }
+    }
+
+    /// Reply field under the conversation: continues the session, or copies the text to the agent's terminal.
+    private func replyBar(_ session: AgentSession) -> some View {
+        let canContinue = app.canContinue(session)
+        let busy = session.status == .running || session.status == .waiting
+        let prompt = canContinue
+            ? (busy ? tr("agents.reply.fork") : tr("agents.reply.continue"))
+            : tr("agents.reply.copy")
+        let send = {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            app.send(text, to: session)
+            draft = ""
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                TextField("", text: $draft, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(13))
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(Capsule().fill(NookTheme.field))
+                    .onSubmit(send)
+                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: true, action: send)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 terminalButton(session)
+            }
+            if canContinue && busy {
+                Text(tr("agents.reply.forkHint"))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
             }
         }
     }
@@ -586,7 +616,7 @@ struct AgentsTab: View {
         }
     }
 
-    // MARK: Sessies: eerder
+    // MARK: Sessions: past
 
     private func pastDetail(_ session: PastSession) -> some View {
         let profile = app.profile(for: session)
@@ -658,7 +688,7 @@ struct AgentsTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Accounts: lijst
+    // MARK: Accounts: list
 
     private func accountList(_ selection: Selection) -> some View {
         let current = selectedID(selection)
@@ -670,7 +700,7 @@ struct AgentsTab: View {
                         Text(kind.name)
                         Spacer()
                         if kind.supportsProfiles {
-                            Button { viewModel.selectedAgentID = "add:" + kind.rawValue } label: {
+                            Button { app.openSettings(section: .agents) } label: {
                                 Image(systemName: "plus")
                                     .font(.system(size: 10, weight: .bold))
                                     .frame(width: 20, height: 20)
@@ -697,10 +727,6 @@ struct AgentsTab: View {
                         ) {
                             viewModel.selectedAgentID = "account:" + profile.id
                         }
-                    }
-                    if current == "add:" + kind.rawValue {
-                        ProfileRow(name: tr("agents.newAccount"), detail: tr("agents.newAccountDetail"), warning: false, isDefault: false,
-                                   highest: nil, color: kind.color, selected: true) {}
                     }
                 }
             }
@@ -763,7 +789,12 @@ struct AgentsTab: View {
                 }
 
                 if !gap.program {
-                    AccountSignIn(profile: profile)
+                    Button { app.openSettings(section: .agents) } label: {
+                        Label(tr("accounts.manageInSettings"), systemImage: "gearshape")
+                            .font(NookTheme.font(12, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 if windows.isEmpty {
@@ -800,16 +831,12 @@ struct AgentsTab: View {
                         }
                     }
                 }
-
-                if !profile.isDefault {
-                    removeRow(profile)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    /// De naam van het account, met een potloodje om hem te wijzigen ("Werk", "Bettr").
+    /// The account name, with an edit icon to rename it ("Work", "Bettr").
     @ViewBuilder
     private func nameField(_ profile: AgentProfile) -> some View {
         if renaming == profile.id {
@@ -855,7 +882,7 @@ struct AgentsTab: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Wat je met een account doet: een sessie starten, het standaard maken, het commando voor je eigen terminal.
+    /// Account actions: start a session, make default, or copy the command for your own terminal.
     private func accountActions(_ profile: AgentProfile) -> some View {
         let several = app.profiles.profiles(for: profile.kind).count > 1
         let isDefault = app.profiles.isPreferred(profile)
@@ -904,7 +931,7 @@ struct AgentsTab: View {
         }
     }
 
-    /// "Start sessie": in een map waar je onlangs werkte, of een andere.
+    /// "Start session": in a recent working directory, or choose another.
     private func startMenu(_ profile: AgentProfile, primary: Bool) -> some View {
         let folders = app.recentFolders(profile)
         return Menu {
@@ -936,118 +963,7 @@ struct AgentsTab: View {
         .disabled(app.history.executables[profile.kind] == nil)
     }
 
-    private func removeRow(_ profile: AgentProfile) -> some View {
-        HStack(spacing: 8) {
-            if confirmRemove == profile.id {
-                Text(tr("agents.removeConfirm", profile.displayHome))
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                NookGhostButton(title: tr("button.cancel")) { confirmRemove = nil }
-                Button { app.removeAccount(profile) } label: {
-                    Text(tr("agents.remove"))
-                        .font(NookTheme.font(13, .semibold))
-                        .foregroundStyle(NookTheme.coral)
-                        .padding(.horizontal, 12)
-                        .frame(height: 30)
-                        .background(Capsule().fill(NookTheme.coral.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-            } else {
-                Button { confirmRemove = profile.id } label: {
-                    Label(tr("agents.removeAccount"), systemImage: "minus.circle")
-                        .font(NookTheme.font(12, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    // MARK: Accounts: toevoegen
-
-    private func addAccountDetail(_ kind: AgentKind) -> some View {
-        let found = app.profiles.discover().filter { $0.kind == kind }
-        let existing = app.profiles.profiles(for: kind)
-        return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(tr("agents.addTitle", kind.shortName))
-                        .font(NookTheme.font(16, .semibold))
-                        .foregroundStyle(NookTheme.paper)
-                    Text(tr("agents.addDetail"))
-                        .font(NookTheme.font(12.5))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 6) {
-                    ForEach(AgentKind.allCases.filter(\.supportsProfiles)) { option in
-                        ModeButton(title: option.name, badge: nil, selected: option == kind) {
-                            viewModel.selectedAgentID = "add:" + option.rawValue
-                        }
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    TextField("", text: $newName, prompt: Text(tr("agents.addNamePrompt")).foregroundStyle(NookTheme.textTertiary))
-                        .textFieldStyle(.plain)
-                        .font(NookTheme.font(13.5))
-                        .foregroundStyle(NookTheme.paper)
-                        .padding(.horizontal, 14)
-                        .frame(height: 38)
-                        .background(Capsule().fill(NookTheme.field))
-                        .onSubmit { add(kind) }
-                    NookPrimaryButton(title: app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin")) { add(kind) }
-                }
-
-                Text(tr(kind == .claude ? "agents.addHintClaude" : "agents.addHint"))
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if !found.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        SectionHeader(title: tr("agents.foundOnMac"), trailing: nil)
-                        ForEach(found, id: \.url) { item in
-                            HStack(spacing: 10) {
-                                Image(systemName: "folder")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(kind.color)
-                                Text(AgentProfile.tildePath(item.url.path))
-                                    .font(NookTheme.mono(12, .medium))
-                                    .foregroundStyle(NookTheme.paper)
-                                Spacer()
-                                NookGhostButton(title: tr("agents.add")) {
-                                    app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
-                        }
-                    }
-                }
-
-                if existing.count > 0 {
-                    Text(tr("agents.youHave") + " " + existing.map { displayName($0) }.joined(separator: ", "))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func add(_ kind: AgentKind) {
-        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        app.addAccount(kind, label: name.isEmpty ? tr("agents.work") : name)
-        newName = ""
-    }
-
-    // MARK: Koppelen
+    // MARK: Connect
 
     private func refreshLinks() {
         var result: Set<String> = []
@@ -1060,7 +976,7 @@ struct AgentsTab: View {
         if result != linked { linked = result }
     }
 
-    /// Wat er voor dit account nog ontbreekt.
+    /// Missing prerequisites for this account.
     private struct Missing {
         var program: Bool
         var login: Bool
@@ -1076,7 +992,7 @@ struct AgentsTab: View {
         )
     }
 
-    /// Eén knop die alles voor dit account regelt: installeren, inloggen en de koppelingen in de notch.
+    /// A single button that configures everything for this account: install, login, and notch connections.
     private func connectBar(_ profile: AgentProfile) -> some View {
         let kind = profile.kind
         let gap = missing(profile)
@@ -1129,7 +1045,7 @@ struct AgentsTab: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(kind.color.opacity(0.25), lineWidth: 1))
     }
 
-    /// Geen limieten bekend: zeg waarom en hoe je ze wel ziet.
+    /// No rate limits known: explains why and how to make them visible.
     @ViewBuilder
     private func limitHint(_ profile: AgentProfile) -> some View {
         let kind = profile.kind
@@ -1172,9 +1088,9 @@ struct AgentsTab: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
     }
 
-    // MARK: Gegevens
+    // MARK: Data
 
-    /// "Werk", of voor het eerste account zonder naam: de organisatie, anders "Persoonlijk".
+    /// "Work", or for the first unnamed account: organization name, otherwise "Personal".
     private func displayName(_ profile: AgentProfile) -> String {
         if !profile.label.isEmpty { return profile.label }
         let account = app.history.profileAccounts[profile.id]
@@ -1183,7 +1099,7 @@ struct AgentsTab: View {
         return tr("agents.personal")
     }
 
-    /// De 5-uurs- en weeklimiet van het abonnement, als de agent die doorgaf.
+    /// The 5-hour and weekly subscription limits, if reported by the agent.
     private func limits(for profile: AgentProfile) -> [UsageLimit] {
         switch profile.kind {
         case .claude:
@@ -1212,7 +1128,7 @@ struct AgentsTab: View {
     }
 }
 
-// MARK: Opmaak
+// MARK: Formatting
 
 private enum AgentFormat {
     private static var time: DateFormatter {
@@ -1236,7 +1152,7 @@ private enum AgentFormat {
         return formatter
     }
 
-    /// "zojuist", "12 min geleden", "vandaag 14:20", "gisteren 09:12", "di 14 okt".
+    /// "just now", "12 min ago", "today 14:20", "yesterday 09:12", "Tue Oct 14".
     static func relative(_ date: Date) -> String {
         let seconds = Date().timeIntervalSince(date)
         if seconds < 60 { return tr("agents.justNow") }
@@ -1247,7 +1163,7 @@ private enum AgentFormat {
         return day.string(from: date)
     }
 
-    /// "< 1 min", "12 min", "1u 20m", "3 dagen".
+    /// "< 1 min", "12 min", "1h 20m", "3 days".
     static func duration(_ interval: TimeInterval) -> String {
         let minutes = Int(interval / 60)
         if minutes < 1 { return "< 1 min" }
@@ -1257,7 +1173,7 @@ private enum AgentFormat {
         return "\(hours / 24) d"
     }
 
-    /// "reset om 15:40" of "reset do 16 okt".
+    /// "resets at 15:40" or "resets Thu Oct 16".
     static func reset(_ date: Date?) -> String? {
         guard let date, date > Date() else { return nil }
         if date.timeIntervalSinceNow < 20 * 3600 { return tr("agents.resetAt", time.string(from: date)) }
@@ -1266,7 +1182,7 @@ private enum AgentFormat {
 
     static func weekdayLetter(_ date: Date) -> String { weekday.string(from: date) }
 
-    /// Een sessietitel zonder de tags die Claude Code soms vooraan zet ("<pasted_content …>").
+    /// A session title stripped of tags Claude Code sometimes prefixes ("<pasted_content …>").
     static func title(_ raw: String) -> String {
         var text = raw
         if text.contains("<") {
@@ -1291,7 +1207,7 @@ private enum AgentFormat {
     }
 }
 
-/// Eén limiet van een abonnement: hoeveel procent op is en wanneer hij weer vol is.
+/// A single subscription limit: percentage consumed and reset time.
 private struct UsageLimit: Identifiable {
     var label: String
     var percent: Double
@@ -1299,7 +1215,7 @@ private struct UsageLimit: Identifiable {
     var id: String { label }
 }
 
-// MARK: Onderdelen
+// MARK: Components
 
 private struct SectionHeader: View {
     let title: String
@@ -1396,7 +1312,7 @@ private struct StatCard: View {
     }
 }
 
-/// Tokens per dag over de laatste week, als zeven staafjes.
+/// Daily token usage over the past week as seven bars.
 private struct DayBars: View {
     let days: [(day: Date, tokens: Int)]
     let color: Color
@@ -1464,10 +1380,101 @@ private struct Message: View {
     }
 }
 
-/// Een eerdere sessie in de lijst.
+/// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
+private struct AgentConversation: View {
+    let session: AgentSession
+    @State private var messages: [AgentChatMessage] = []
+
+    private var agentColor: Color { AgentKind(agentName: session.name)?.color ?? NookTheme.iris }
+
+    /// Messages from the transcript, or, without one, the last prompt and reply the hooks reported.
+    private var shown: [AgentChatMessage] {
+        if !messages.isEmpty { return messages }
+        var fallback: [AgentChatMessage] = []
+        if !session.lastPrompt.isEmpty { fallback.append(AgentChatMessage(id: "p", fromUser: true, text: session.lastPrompt)) }
+        if !session.lastReply.isEmpty { fallback.append(AgentChatMessage(id: "r", fromUser: false, text: session.lastReply)) }
+        return fallback
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if shown.isEmpty {
+                        Text(tr("agents.noMessagesInTranscript"))
+                            .font(NookTheme.font(12.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    ForEach(shown) { message in
+                        bubble(message).id(message.id)
+                    }
+                    if session.status == .running {
+                        HStack(spacing: 6) {
+                            PulseDot(color: agentColor, animated: true)
+                            Text(tr("agents.reply.working", session.name))
+                                .font(NookTheme.font(11.5))
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                        .id("working")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+            .onChange(of: shown) { _ in scrollToEnd(proxy) }
+            .onAppear { scrollToEnd(proxy) }
+        }
+        .task(id: session.id + session.transcriptPath) {
+            // While the agent works the transcript keeps growing: read it again every couple of seconds.
+            while !Task.isCancelled {
+                let path = session.transcriptPath
+                if !path.isEmpty {
+                    let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+                    if fresh != messages { messages = fresh }
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bubble(_ message: AgentChatMessage) -> some View {
+        if message.fromUser {
+            HStack(spacing: 0) {
+                Spacer(minLength: 36)
+                Text(message.text)
+                    .font(NookTheme.font(13))
+                    .foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.iris.opacity(0.22)))
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.name)
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(agentColor)
+                MarkdownView(text: message.text, size: 13)
+            }
+        }
+    }
+
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        let last = session.status == .running ? "working" : shown.last?.id
+        guard let last else { return }
+        proxy.scrollTo(last, anchor: .bottom)
+    }
+}
+
+/// A past session in the list.
 private struct PastRow: View {
     let session: PastSession
-    /// Het account, alleen als je er van deze agent meer hebt.
+    /// The account, shown only if you have multiple accounts for this agent.
     let account: String?
     let selected: Bool
     var showAgent = true
@@ -1507,7 +1514,7 @@ private struct PastRow: View {
     }
 }
 
-/// Kleur en woord voor de toestand van een sessie die Nook volgt.
+/// Color and label for the status of a tracked session.
 private extension AgentSession {
     var liveColor: Color {
         if approvalID != nil { return NookTheme.amber }
@@ -1532,7 +1539,7 @@ private extension AgentSession {
     }
 }
 
-/// Een stip die zachtjes uitdijt zolang de agent werkt.
+/// A dot that gently pulses while the agent is running.
 private struct PulseDot: View {
     let color: Color
     let animated: Bool
@@ -1556,7 +1563,7 @@ private struct PulseDot: View {
     }
 }
 
-/// Bovenin het detail: "● Bezig", "● Wacht op jou", "Nook kijkt niet mee".
+/// Top of detail view: "● Working", "● Waiting for you", "Nook is not monitoring".
 private struct StatusPill: View {
     let session: AgentSession
 
@@ -1579,7 +1586,7 @@ private struct StatusPill: View {
     }
 }
 
-/// Een sessie die Nook volgt: valt op met de kleur van zijn toestand.
+/// A tracked session: accented with its state color.
 private struct LiveCard: View {
     let session: AgentSession
     let account: String?
@@ -1620,7 +1627,7 @@ private struct LiveCard: View {
     }
 }
 
-/// Een agent die draait maar die Nook niet volgt: rustig, zodat hij niet als "actief" oogt.
+/// A running agent not tracked by Nook: muted appearance to avoid looking active.
 private struct UntrackedRow: View {
     let session: AgentSession
     let account: String?
@@ -1666,7 +1673,7 @@ private struct UntrackedRow: View {
     }
 }
 
-/// Een account in de lijst: naam, e-mail (of wat er ontbreekt) en hoe vol de limiet zit.
+/// An account in the list: name, email (or missing requirements), and quota utilization.
 private struct ProfileRow: View {
     let name: String
     let detail: String
@@ -1727,7 +1734,7 @@ private struct ProfileRow: View {
     }
 }
 
-/// "Sessies" of "Accounts" bovenin, met een tellertje voor wat er draait.
+/// "Sessions" or "Accounts" tab at the top, with a badge counting active sessions.
 private struct ModeButton: View {
     let title: String
     let badge: (String, Color)?
@@ -1760,7 +1767,7 @@ private struct ModeButton: View {
     }
 }
 
-/// De stap waar de agent nu mee bezig is: een lichtglans die over de tekst schuift.
+/// The step currently being executed: a shimmer effect traversing the text.
 private struct ShimmerText: View {
     let text: String
 
@@ -1786,9 +1793,9 @@ private struct ShimmerText: View {
 }
 
 
-// MARK: Werkruimte in de notch
+// MARK: Workspace in the notch
 
-/// "Werkruimte" bovenin de Agents-tab, met een tellertje als er sessies werken of op je wachten.
+/// "Workspace" at the top of the Agents tab, with a badge when sessions are running or waiting.
 private struct WorkspaceButton: View {
     @ObservedObject var workspace: WorkspaceManager
     let action: () -> Void
@@ -1822,7 +1829,7 @@ private struct WorkspaceButton: View {
     }
 }
 
-/// Sessies uit de werkruimte die nu werken of net klaar zijn, met een klik erheen.
+/// Workspace sessions that are currently working or just finished, clickable for navigation.
 private struct WorkspaceRunsSection: View {
     @ObservedObject var workspace: WorkspaceManager
     let open: (UUID) -> Void
@@ -1860,127 +1867,6 @@ private struct WorkspaceRunsSection: View {
                 }
                 .buttonStyle(.plain)
             }
-        }
-    }
-}
-
-
-// MARK: Inloggen per account
-
-/// Hoe dit account inlogt (abonnement of API-sleutel), en opnieuw inloggen of uitloggen.
-/// Een sleutel wordt nooit getoond: alleen of er een is.
-private struct AccountSignIn: View {
-    @EnvironmentObject private var app: AppModel
-    let profile: AgentProfile
-    @State private var key = ""
-    @State private var saving = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if profile.kind == .gemini {
-                Text(tr("accounts.geminiSingle"))
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack(spacing: 8) {
-                    Text(tr("accounts.method"))
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Picker("", selection: Binding(
-                        get: { profile.auth ?? .cli },
-                        set: { method in
-                            if method == .cli { app.useCLILogin(profile) } else { app.profiles.setAuth(profile.id, .apiKey) }
-                        }
-                    )) {
-                        Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                        Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 260)
-                    Spacer()
-                }
-                if profile.usesAPIKey {
-                    keyRow
-                } else {
-                    HStack(spacing: 6) {
-                        NookGhostButton(title: tr("accounts.reauth")) { app.reauthenticate(profile) }
-                            .help(tr("accounts.reauthHelp"))
-                        if app.history.profileAccounts[profile.id] != nil {
-                            NookGhostButton(title: tr("accounts.logout")) { app.logout(profile) }
-                                .help(tr("accounts.logoutHelp"))
-                        }
-                        Spacer()
-                    }
-                }
-                Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let error {
-                    Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft)
-                }
-                Text(tr("accounts.isolationNote"))
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-    }
-
-    @ViewBuilder
-    private var keyRow: some View {
-        let stored = profile.kind == .claude ? app.profiles.hasAPIKey(profile) : app.history.profileAccounts[profile.id] != nil
-        HStack(spacing: 8) {
-            if stored && key.isEmpty {
-                Label(tr("accounts.keyStored"), systemImage: "key.fill")
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(NookTheme.mint)
-                Spacer()
-                if profile.kind == .claude {
-                    NookGhostButton(title: tr("accounts.removeKey")) {
-                        app.profiles.setAPIKey("", for: profile)
-                        app.history.refresh(minimumInterval: 0)
-                    }
-                } else {
-                    NookGhostButton(title: tr("accounts.logout")) { app.logout(profile) }
-                }
-            } else {
-                SecureField("", text: $key, prompt: Text(tr("accounts.keyPlaceholder")).foregroundStyle(NookTheme.textTertiary))
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.mono(12.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .background(Capsule().fill(NookTheme.smoke))
-                    .onSubmit(save)
-                if saving {
-                    ProgressView().controlSize(.small)
-                } else {
-                    NookGhostButton(title: tr("accounts.saveKey"), action: save)
-                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
-    }
-
-    private func save() {
-        let value = key
-        guard !value.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        saving = true
-        error = nil
-        Task {
-            do {
-                try await app.setAPIKey(value, for: profile)
-                key = ""
-            } catch let failure {
-                error = failure.localizedDescription
-            }
-            saving = false
         }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Een eenvoudige regel-diff (langste gemeenschappelijke deelreeks). Genoeg voor bewerkingen van agents
-/// en voor het voorbeeld van een instellingenbestand; heel grote stukken vallen terug op "alles weg, alles nieuw".
+/// A simple line diff (longest common subsequence). Sufficient for agent edits
+/// and previewing configuration files; very large chunks fall back to "remove all, add all".
 enum LineDiff {
     enum Op: Equatable {
         case same(String)
@@ -17,7 +17,7 @@ enum LineDiff {
     }
 
     static func diff(_ old: [String], _ new: [String]) -> [Op] {
-        // Gemeenschappelijk begin en einde eerst, dan blijft er meestal weinig over.
+        // Match common prefix and suffix first, leaving minimal work for LCS.
         var prefix = 0
         while prefix < old.count, prefix < new.count, old[prefix] == new[prefix] { prefix += 1 }
         var suffix = 0
@@ -75,7 +75,7 @@ enum LineDiff {
         return (added, removed)
     }
 
-    /// Alleen de gewijzigde regels met wat context eromheen, klaar om te tonen.
+    /// Only the changed lines with surrounding context, formatted for display.
     static func display(_ ops: [Op], context: Int = 1, limit: Int = 40, width: Int = 110) -> [DiffLine] {
         var keep = Set<Int>()
         for (index, op) in ops.enumerated() {

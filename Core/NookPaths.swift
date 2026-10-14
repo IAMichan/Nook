@@ -1,6 +1,6 @@
 import Foundation
 
-/// Vaste plekken op schijf. Alles staat in je eigen gebruikersmap.
+/// Standard paths on disk. Everything is stored in the user's home directory.
 enum NookPaths {
     static var supportDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

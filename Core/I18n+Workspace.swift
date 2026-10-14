@@ -1,11 +1,13 @@
 import Foundation
 
-// Teksten van de werkruimte en het accountbeheer. Apart van I18n.swift om dat bestand overzichtelijk te houden;
-// `I18n.lookup` zoekt in beide.
-// Getallen met %ld, tekst met %@.
+// Texts for workspace and account management. Kept separate from I18n.swift to keep that file organized;
+// `I18n.lookup` searches both.
+// Numbers use %ld, text uses %@.
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "accounts.add": "Account toevoegen…",
+        "accounts.manageInSettings": "Inloggen en accounts beheren",
         "menu.workspace": "Werkruimte",
         "settings.ws.title": "Werkruimte",
         "settings.ws.provider": "Standaard-agent",
@@ -409,6 +411,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "accounts.add": "Add account…",
+        "accounts.manageInSettings": "Sign-in and accounts",
         "menu.workspace": "Workspace",
         "settings.ws.title": "Workspace",
         "settings.ws.provider": "Default agent",
@@ -812,6 +816,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "accounts.add": "Konto hinzufügen…",
+        "accounts.manageInSettings": "Anmeldung und Konten verwalten",
         "menu.workspace": "Arbeitsbereich",
         "ws.windowTitle": "Arbeitsbereich",
         "ws.openHelp": "Arbeitsbereich öffnen: Agents starten, verfolgen und ihre Änderungen prüfen",

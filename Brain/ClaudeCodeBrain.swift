@@ -1,13 +1,13 @@
 import Foundation
 
-/// Denken via Claude Code op je eigen Mac (`claude -p`). Zo werkt je Claude-abonnement (Pro/Max) als brein,
-/// zonder API-sleutel. Claude Code mag daarbij zelf op het web zoeken en pagina's lezen, maar niets op je Mac aanpassen.
+/// Reasoning via Claude Code on your local Mac (`claude -p`). This uses your Claude subscription (Pro/Max) as a brain,
+/// without requiring an API key. Claude Code can search the web and fetch pages, but cannot modify your Mac.
 ///
-/// Nooks eigen tools (agenda, mail, bestanden, acties) gaan via een eenvoudig tekstprotocol: het model antwoordt met
-/// JSON als {"name": "…", "parameters": {…}}. Lees-tools draaien meteen, acties worden zoals altijd eerst voorgesteld.
+/// Nook's native tools (calendar, email, files, actions) use a simple text protocol: the model responds with
+/// JSON like {"name": "…", "parameters": {…}}. Read tools run immediately; actions are proposed as always.
 @MainActor
 enum ClaudeCodeBrain {
-    /// Waar `claude` staat, eenmalig gezocht.
+    /// Cached path to `claude`, searched once.
     private static var cachedPath: String??
 
     static var executable: String? {
@@ -17,7 +17,7 @@ enum ClaudeCodeBrain {
         return found
     }
 
-    /// Opnieuw zoeken (bijvoorbeeld nadat je Claude Code net hebt geïnstalleerd).
+    /// Reset cached path (e.g. after newly installing Claude Code).
     static func resetLocation() { cachedPath = nil }
 
     private static func locate() -> String? {
@@ -32,7 +32,7 @@ enum ClaudeCodeBrain {
             "\(home)/.volta/bin/claude"
         ]
         if let hit = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return hit }
-        // Via je eigen shell, voor installaties met nvm, asdf en dergelijke.
+        // Via the user's shell, for environments managed by nvm, asdf, etc.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         if let output = try? SystemControl.runProcess(shell, ["-lc", "command -v claude"]) {
             let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
@@ -43,7 +43,7 @@ enum ClaudeCodeBrain {
 
     static func run(model: String, system: String, prompt: String, tools: [ToolSpec], onText: ((String) -> Void)?) async throws -> BrainPlan {
         guard let path = executable else {
-            throw NookError("Ik vind Claude Code niet op je Mac. Installeer het (claude.com/product/claude-code), log in met `claude` in de terminal en probeer opnieuw.")
+            throw NookError("Could not find Claude Code on your Mac. Install it (claude.com/product/claude-code), run `claude` in the terminal to log in, and try again.")
         }
         let known = Set(tools.map(\.name))
         var actions: [PlannedAction] = []
@@ -69,18 +69,18 @@ enum ClaudeCodeBrain {
                 case .read:
                     do {
                         let output = try await spec.run(call.input)
-                        results.append("Resultaat van \(call.name):\n" + UntrustedText.wrap(output))
+                        results.append("Result of \(call.name):\n" + UntrustedText.wrap(output))
                     } catch {
-                        results.append("Fout bij \(call.name): \(error.localizedDescription)")
+                        results.append("Error in \(call.name): \(error.localizedDescription)")
                     }
                 case .action:
                     actions.append(PlannedAction(tool: call.name, input: call.input))
-                    results.append("\(call.name) is voorgesteld aan de gebruiker en wordt pas uitgevoerd na bevestiging.")
+                    results.append("\(call.name) has been proposed to the user and will only execute after confirmation.")
                 }
             }
-            // Alleen acties: klaar, het plan staat. Anders met de uitkomsten verder.
-            if results.allSatisfy({ $0.contains("voorgesteld aan de gebruiker") }) { break }
-            message = results.joined(separator: "\n\n") + "\n\nBeantwoord nu het verzoek in gewone taal, of roep nog een tool aan als dat echt nodig is."
+            // Actions only: finished, the plan is set. Otherwise continue with results.
+            if results.allSatisfy({ $0.contains("has been proposed to the user") }) { break }
+            message = results.joined(separator: "\n\n") + "\n\nNow respond to the request in natural language, or invoke another tool only if strictly necessary."
         }
         return BrainPlan(text: finalText.trimmingCharacters(in: .whitespacesAndNewlines), actions: actions)
     }
@@ -88,8 +88,8 @@ enum ClaudeCodeBrain {
     private static func protocolText(_ tools: [ToolSpec]) -> String {
         guard !tools.isEmpty else { return "" }
         var lines = [
-            "Je hebt deze tools van Nook. Wil je er een gebruiken, antwoord dan met alleen JSON per aanroep, op een eigen regel, zoals {\"name\": \"list_events\", \"parameters\": {\"from\": \"…\", \"to\": \"…\"}}. Je krijgt de uitkomst terug. Acties (agenda, herinneringen, mail, apps) worden eerst aan de gebruiker getoond.",
-            "Je eigen tools WebSearch en WebFetch mag je gebruiken voor dingen op het web.",
+            "You have these tools from Nook. To use one, reply ONLY with JSON for each tool call on its own line, like {\"name\": \"list_events\", \"parameters\": {\"from\": \"…\", \"to\": \"…\"}}. You will receive the result back. Actions (calendar, reminders, email, apps) are shown to the user first.",
+            "You may use your built-in tools WebSearch and WebFetch for web queries.",
             "Tools:"
         ]
         for tool in tools {
@@ -111,17 +111,17 @@ enum ClaudeCodeBrain {
             "--output-format", "json",
             "--model", model.isEmpty ? "haiku" : model,
             "--append-system-prompt", system,
-            // Alleen kijken op het web; nooit iets op de Mac aanpassen of uitvoeren.
+            // Only browse the web; never modify files or run arbitrary commands on the Mac.
             "--allowedTools", "WebSearch", "WebFetch",
             "--disallowedTools", "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task",
             "--max-turns", "6",
-            // Je eigen hooks (ook die van Nook) niet laden: dit gesprek is geen agent-sessie die in de notch hoort.
+            // Do not load custom hooks (including Nook's): this conversation is not an agent session meant for the notch.
             "--setting-sources", "local"
         ]
         if let resume { arguments += ["--resume", resume] }
 
         var output = try await execute(path, arguments)
-        // Oudere versies kennen --setting-sources niet: dan zonder.
+        // Older versions do not support --setting-sources: retry without it.
         if output.status != 0, output.text.contains("setting-sources") {
             if let index = arguments.firstIndex(of: "--setting-sources") { arguments.removeSubrange(index...(index + 1)) }
             output = try await execute(path, arguments)
@@ -133,16 +133,16 @@ enum ClaudeCodeBrain {
         guard let object else {
             let detail = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if detail.localizedCaseInsensitiveContains("login") || detail.localizedCaseInsensitiveContains("authenticat") {
-                throw NookError("Claude Code is niet ingelogd. Typ `claude` in de terminal, log in met je abonnement en probeer opnieuw.")
+                throw NookError("Claude Code is not logged in. Run `claude` in terminal, sign in with your subscription, and try again.")
             }
-            throw NookError("Claude Code gaf geen antwoord" + (detail.isEmpty ? "." : ": \(String(detail.prefix(200)))"))
+            throw NookError("Claude Code did not respond" + (detail.isEmpty ? "." : ": \(String(detail.prefix(200)))"))
         }
         let text = (object["result"] as? String) ?? ""
         if (object["is_error"] as? Bool) == true {
             if text.localizedCaseInsensitiveContains("limit") {
-                throw NookError("Je Claude-limiet is bereikt. \(text)")
+                throw NookError("Your Claude limit has been reached. \(text)")
             }
-            throw NookError("Claude Code: \(text.isEmpty ? "er ging iets mis" : String(text.prefix(240)))")
+            throw NookError("Claude Code: \(text.isEmpty ? "something went wrong" : String(text.prefix(240)))")
         }
         return CallResult(text: text, session: object["session_id"] as? String)
     }
@@ -152,7 +152,7 @@ enum ClaudeCodeBrain {
         var text: String
     }
 
-    /// Draait `claude` buiten de hoofdthread, met een PATH waarin ook node te vinden is, en hooguit twee minuten.
+    /// Runs `claude` off the main thread with a PATH containing node, capped at 2 minutes.
     private nonisolated static func execute(_ path: String, _ arguments: [String]) async throws -> ProcessOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -168,7 +168,7 @@ enum ClaudeCodeBrain {
                 ]
                 environment["PATH"] = (extra + [environment["PATH"] ?? "/usr/bin:/bin"]).joined(separator: ":")
                 environment["NOOK_INTERNAL"] = "1"
-                // Denkt met het Claude-account dat je in de Agents-tab als standaard koos.
+                // Uses the Claude account configured as default in the Agents tab.
                 if let home = UserDefaults.standard.string(forKey: AgentProfileStore.brainHomeKey), !home.isEmpty {
                     environment["CLAUDE_CONFIG_DIR"] = home
                 }
@@ -180,7 +180,7 @@ enum ClaudeCodeBrain {
                 do {
                     try process.run()
                 } catch {
-                    continuation.resume(throwing: NookError("Claude Code starten lukte niet: \(error.localizedDescription)"))
+                    continuation.resume(throwing: NookError("Failed to start Claude Code: \(error.localizedDescription)"))
                     return
                 }
                 let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }

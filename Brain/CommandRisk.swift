@@ -7,8 +7,8 @@ struct CommandAssessment {
     var note: String
 }
 
-/// Grove inschatting van een shell-commando dat een agent wil draaien. Dit is een vangnet, geen garantie:
-/// alles wat niet duidelijk onschuldig is, gaat langs jou.
+/// Rough assessment of a shell command an agent wants to run. This is a safety net, not a guarantee:
+/// anything that is not clearly benign requires your review.
 enum CommandRisk {
     private static let safeCommands: Set<String> = [
         "ls", "pwd", "cat", "head", "tail", "wc", "echo", "grep", "rg", "which", "date",
@@ -30,8 +30,8 @@ enum CommandRisk {
         if dangerPatterns.contains(where: { lower.contains($0) }) {
             return CommandAssessment(
                 level: .danger,
-                title: "Dit commando is riskant. Weet je het zeker?",
-                note: "Kan bestanden of instellingen onomkeerbaar veranderen"
+                title: "This command is risky. Are you sure?",
+                note: "May irreversibly alter files or system settings"
             )
         }
 
@@ -41,15 +41,15 @@ enum CommandRisk {
 
         let note: String
         if lower.contains("install") || lower.contains(" add ") {
-            note = "Installeert pakketten · meestal omkeerbaar"
+            note = "Installs packages · usually reversible"
         } else if lower.hasPrefix("rm ") || lower.contains(" rm ") {
-            note = "Verwijdert bestanden"
+            note = "Deletes files"
         } else if lower.contains("git push") {
-            note = "Zet wijzigingen online"
+            note = "Pushes changes online"
         } else if lower.contains("curl") || lower.contains("wget") {
-            note = "Haalt iets van het internet"
+            note = "Downloads something from the internet"
         } else {
-            note = "Draait een commando op je Mac · lees het even na"
+            note = "Runs a command on your Mac · please review"
         }
         return CommandAssessment(level: .review, title: "", note: note)
     }

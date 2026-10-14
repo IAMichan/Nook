@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Muziek-tab: wat er nu speelt in Spotify of Muziek, met bediening.
+/// Music tab: currently playing track in Spotify or Music, with playback controls.
 struct MusicTab: View {
     @EnvironmentObject private var app: AppModel
 
@@ -117,22 +117,22 @@ struct MusicTab: View {
     }
 }
 
-/// Mm:ss, voor verstreken en resterende tijd.
+/// Mm:ss format for elapsed and remaining time.
 private func musicClock(_ seconds: Double) -> String {
     let total = max(0, Int(seconds))
     return String(format: "%d:%02d", total / 60, total % 60)
 }
 
-/// Voortgangsbalk waarmee je door het nummer spoelt: klik of sleep. Links de verstreken tijd, rechts wat er nog over is.
+/// Progress bar for scrubbing: click or drag. Elapsed time on the left, remaining on the right.
 private struct MusicScrubBar: View {
     let info: NowPlayingInfo
     let onSeek: (Double) -> Void
-    /// Waar je de balk naartoe sleept (0…1). `nil` als je niet sleept.
+    /// Scrub drag destination (0…1). `nil` when not scrubbing.
     @State private var dragFraction: Double?
     @State private var hovering = false
 
     var body: some View {
-        // Spotify en Muziek worden elke 2 seconden uitgelezen; daartussen loopt de tijd hier zelf door.
+        // Spotify and Music are polled every 2 seconds; time advances locally in between.
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
             let duration = Double(info.duration)
             let position = dragFraction.map { $0 * duration } ?? info.estimatedPosition(at: context.date)
@@ -194,7 +194,7 @@ private struct MusicScrubBar: View {
     }
 }
 
-/// Kleine aan/uit-knop (willekeurig, herhalen). Aan = muziekkleur met een stipje eronder.
+/// Small toggle button (shuffle, repeat). On = music color with an indicator dot below.
 private struct MusicToggleButton: View {
     let systemName: String
     let label: String
@@ -227,7 +227,7 @@ private struct MusicToggleButton: View {
     }
 }
 
-/// Volume van de speler: luidsprekertje (klik = dempen of terug) en een sleepbare balk.
+/// Player volume: speaker icon (click to mute/unmute) and a draggable slider.
 private struct MusicVolumeControl: View {
     let volume: Int
     let onChange: (Int) -> Void

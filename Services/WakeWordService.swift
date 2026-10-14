@@ -2,8 +2,8 @@ import Foundation
 import AVFoundation
 import Speech
 
-/// Luistert op de achtergrond naar "Hé Nook" en start dan het gewone luisteren.
-/// Staat standaard uit en werkt alleen als je Mac spraak zelf kan herkennen: er gaat nooit geluid naar buiten.
+/// Listens in the background for "Hey Nook" and triggers active listening.
+/// Disabled by default and requires on-device speech recognition: audio never leaves your Mac.
 @MainActor
 final class WakeWordService {
     var onWake: (() -> Void)?
@@ -14,16 +14,16 @@ final class WakeWordService {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var restartTimer: Timer?
-    /// Elke nieuwe herkenningstaak krijgt een nummer; berichten van een oude taak tellen niet meer.
+    /// Each new recognition task receives an incremented generation ID; stale messages are ignored.
     private var generation = 0
 
-    /// "hé nook", "hey nook", "oké nook"… plus wat de herkenning er vaak van maakt.
+    /// "hé nook", "hey nook", "oké nook"… plus common speech recognition approximations.
     private static let pattern = try? NSRegularExpression(
         pattern: #"\b(h[eé]+|hey|hee|hoi|hi|ok[eé]?|okay|oke)[ ,]+(nook|nuk|nok|noek|nouk|look)\b"#,
         options: [.caseInsensitive]
     )
 
-    /// Kan deze Mac het wekwoord herkennen zonder internet?
+    /// Can this Mac recognize the wake word offline?
     static var supported: Bool {
         SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))?.supportsOnDeviceRecognition ?? false
     }
@@ -33,14 +33,14 @@ final class WakeWordService {
     func start() throws {
         guard !isRunning else { return }
         guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
-            throw NookError("Deze Mac kan spraak niet zelf herkennen, dus het wekwoord blijft uit (er gaat nooit geluid naar buiten).")
+            throw NookError("This Mac cannot recognize speech on-device, so wake word remains disabled (audio never leaves your Mac).")
         }
         guard VoiceService.permissionsGranted else {
-            throw NookError("Geef Nook eerst toegang tot de microfoon en spraakherkenning.")
+            throw NookError("Please grant Nook access to microphone and speech recognition first.")
         }
         isRunning = true
         try begin(recognizer)
-        // Een herkenningstaak duurt hooguit een minuut; daarom elke 50 seconden opnieuw.
+        // A recognition task lasts at most one minute; restart every 50 seconds.
         restartTimer = Timer.scheduledTimer(withTimeInterval: 50, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.restart() }
         }
@@ -91,7 +91,7 @@ final class WakeWordService {
                     self.stop()
                     self.onWake?()
                 } else if finished {
-                    // Even wachten, zodat een fout niet in een snelle lus blijft herstarten.
+                    // Brief delay to prevent tight restart loops on error.
                     self.generation += 1
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     self.restart()
@@ -116,7 +116,7 @@ final class WakeWordService {
 
     static func matches(_ text: String) -> Bool {
         guard let pattern else { return false }
-        // Alleen het laatste stukje telt, anders blijft een oude "hé nook" in de tekst hangen.
+        // Only check the trailing suffix to avoid matching earlier wake words retained in the text.
         let tail = String(text.suffix(40))
         return pattern.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
     }

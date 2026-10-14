@@ -1,6 +1,6 @@
 import Foundation
 
-/// Een grafiek die Nook in de chat tekent.
+/// A chart rendered by Nook in chat.
 struct ChatChart: Identifiable, Equatable {
     enum Kind: String, CaseIterable { case bar, line, area, pie, point }
 
@@ -20,7 +20,7 @@ struct ChatChart: Identifiable, Equatable {
     var unit: String
     var series: [Series]
 
-    /// Maakt een grafiek uit de invoer van het model. Accepteert `series` met `points` (of `data`), of één losse `data`-lijst.
+    /// Parses a chart from model tool input. Accepts series with points (or data), or a flat data array.
     static func parse(_ input: [String: Any]) -> ChatChart? {
         let title = (input["title"] as? String) ?? ""
         let kind = Kind(rawValue: ((input["type"] as? String) ?? "bar").lowercased()) ?? .bar
@@ -61,7 +61,7 @@ struct ChatChart: Identifiable, Equatable {
     }
 }
 
-/// Een mail die Nook schreef. Je past hem aan in de chat en verstuurt hem zelf met één klik.
+/// An email drafted by Nook. Can be edited in chat and sent with one click.
 struct MailDraft: Identifiable, Equatable {
     enum State: Equatable { case draft, sending, sent, opened, failed(String) }
 
@@ -73,7 +73,7 @@ struct MailDraft: Identifiable, Equatable {
     var state: State = .draft
 }
 
-/// Eén bericht in het gesprek met Nook.
+/// A single message in the conversation with Nook.
 struct ChatMessage: Identifiable {
     enum Role { case user, nook }
     enum PlanState: Equatable { case pending, running, done(String), cancelled, failed(String) }
@@ -82,91 +82,91 @@ struct ChatMessage: Identifiable {
     var role: Role
     var text: String
     var date = Date()
-    /// Wat Nook nu doet ("Ik kijk even mee…"), zolang er nog geen tekst is.
+    /// What Nook is currently doing (e.g. "Looking at your screen..."), while streaming text.
     var status = ""
     var streaming = false
     var isError = false
-    /// Context die meeging zonder tool: het scherm, een bestand uit de Shelf.
+    /// Context attached without tools: screen content, a Shelf file.
     var sources: [String] = []
-    /// Waar Nook voor dit antwoord echt in keek, met de uitkomst per bron.
+    /// What Nook consulted for this answer, with outcome per source.
     var retrieval: [RetrievalStep] = []
-    /// Genummerde bronnen uit wat Nook ophaalde; het antwoord verwijst ernaar met [1], [2].
+    /// Numbered references retrieved by Nook; answer cites them as [1], [2].
     var references: [SourceReference] = []
-    /// Bronnen waarvan de samenvatting volledig meeging (de rest alleen als één regel).
+    /// Sources whose summary was included in full (others as a single line).
     var contextSources: [String] = []
-    /// Welke bronnen mochten, als de gebruiker dat beperkte ("Alleen Agenda en Mail").
+    /// Allowed sources if restricted by user ("Only Calendar and Mail").
     var scopeLabel = ""
-    /// Wat de gebruiker moet weten over dit antwoord, zoals een bron die niet gelezen kon worden.
+    /// Notices for the user regarding this answer, e.g. unreadable sources.
     var notices: [String] = []
     var charts: [ChatChart] = []
     var mails: [MailDraft] = []
-    /// Acties die Nook voorstelt; pas na "Uitvoeren" gebeuren ze echt.
+    /// Actions proposed by Nook; only executed after user approval.
     var actions: [PlannedAction] = []
     var planState: PlanState = .pending
-    /// Per stap van het plan: hoe het ging, of hij aan staat en wat er mis is met de invoer.
+    /// Status per step in the plan: outcome, whether included, and validation issues.
     var actionStates: [ActionStepState] = []
     var actionIncluded: [Bool] = []
     var actionProblems: [[String]] = []
-    /// Wat Nook hierna kan doen ("Zet het in mijn agenda"), als knoppen onder het antwoord.
+    /// Follow-up suggestions ("Add to my calendar"), shown as buttons below answer.
     var offers: [String] = []
 
-    /// Hoe dit bericht in de geschiedenis voor het brein staat: tekst plus wat er verder gebeurde.
+    /// Representation of this turn for LLM history: text plus actions/outcomes.
     var historyText: String {
         var parts: [String] = []
         if !text.isEmpty { parts.append(text) }
-        for chart in charts { parts.append("[grafiek getoond: \(chart.title)]") }
+        for chart in charts { parts.append("[chart displayed: \(chart.title)]") }
         for mail in mails {
             let state: String
             switch mail.state {
-            case .sent: state = "verstuurd"
-            case .opened: state = "geopend in Mail"
-            default: state = "nog niet verstuurd"
+            case .sent: state = "sent"
+            case .opened: state = "opened in Mail"
+            default: state = "not yet sent"
             }
-            parts.append("[mailconcept aan \(mail.to.isEmpty ? "?" : mail.to), onderwerp \"\(mail.subject)\", \(state)]")
+            parts.append("[draft email to \(mail.to.isEmpty ? "?" : mail.to), subject \"\(mail.subject)\", \(state)]")
         }
         if !retrieval.isEmpty {
             let searched = retrieval.map { step -> String in
                 switch step.outcome {
-                case .failed(let error): return "\(step.sourceTitle) (fout: \(error))"
-                case .empty: return "\(step.sourceTitle) (niets gevonden)"
+                case .failed(let error): return "\(step.sourceTitle) (error: \(error))"
+                case .empty: return "\(step.sourceTitle) (nothing found)"
                 default: return step.sourceTitle + (step.query.isEmpty ? "" : " \"\(step.query)\"")
                 }
             }
-            parts.append("[doorzocht: \(searched.joined(separator: ", "))]")
+            parts.append("[searched: \(searched.joined(separator: ", "))]")
         }
         if !references.isEmpty {
-            // Zodat een vervolgvraag ("stuur dat naar dezelfde persoon") weet waar het over ging.
+            // So follow-up questions ("send that to the same person") retain context.
             let list = references.prefix(8).map { "[\($0.number)] \($0.title)" + ($0.detail.isEmpty ? "" : " — \($0.detail)") }
-            parts.append("[bronnen bij dit antwoord: \(list.joined(separator: "; "))]")
+            parts.append("[sources for this reply: \(list.joined(separator: "; "))]")
         }
         if !actions.isEmpty {
             let state: String
             switch planState {
-            case .pending, .running: state = "wacht op goedkeuring"
-            case .done: state = "uitgevoerd"
-            case .cancelled: state = "geannuleerd door de gebruiker"
-            case .failed(let error): state = "niet helemaal gelukt: \(error)"
+            case .pending, .running: state = "waiting for approval"
+            case .done: state = "completed"
+            case .cancelled: state = "cancelled by user"
+            case .failed(let error): state = "partially failed: \(error)"
             }
             var steps: [String] = []
             for (index, action) in actions.enumerated() {
                 let outcome: String
                 switch index < actionStates.count ? actionStates[index] : .pending {
-                case .done(let result): outcome = "gelukt: \(result)"
-                case .failed(let error): outcome = "mislukt: \(error)"
-                case .notRun: outcome = "niet uitgevoerd"
-                case .skipped: outcome = "overgeslagen door de gebruiker"
-                case .duplicate(let when): outcome = "niet opnieuw gedaan, al uitgevoerd op \(when)"
-                case .running: outcome = "bezig"
-                case .pending: outcome = planState == .cancelled ? "geannuleerd" : "wacht"
+                case .done(let result): outcome = "completed: \(result)"
+                case .failed(let error): outcome = "failed: \(error)"
+                case .notRun: outcome = "not executed"
+                case .skipped: outcome = "skipped by user"
+                case .duplicate(let when): outcome = "not repeated, already executed on \(when)"
+                case .running: outcome = "running"
+                case .pending: outcome = planState == .cancelled ? "cancelled" : "pending"
                 }
                 steps.append("\(index + 1). \(action.tool) \(Self.compactInput(action.input)) → \(outcome)")
             }
-            parts.append("[voorgestelde acties — \(state)]\n" + steps.joined(separator: "\n"))
+            parts.append("[proposed actions — \(state)]\n" + steps.joined(separator: "\n"))
         }
         return parts.joined(separator: "\n")
     }
 
-    /// De invoer van een actie, kort, voor de geschiedenis van het brein.
+    /// Compact action input representation for model history.
     static func compactInput(_ input: [String: Any]) -> String {
         let pairs = input.keys.sorted().compactMap { key -> String? in
             guard let value = input[key] else { return nil }
@@ -177,7 +177,7 @@ struct ChatMessage: Identifiable {
     }
 }
 
-/// Eén Nook: een gesprek over één onderwerp, met zijn eigen geschiedenis. Meerdere Nooks kunnen tegelijk werken.
+/// A single Nook conversation with its own history. Multiple conversations can run concurrently.
 struct Conversation: Identifiable {
     enum Status { case working, waiting, unread, idle }
 
@@ -187,14 +187,14 @@ struct Conversation: Identifiable {
     var updated: Date
     var messages: [ChatMessage] = []
     var busy = false
-    /// Klaar terwijl je naar iets anders keek.
+    /// Finished in background while looking elsewhere.
     var unread = false
-    /// Welke bronnen deze Nook mag gebruiken (de bronkiezer naast het invoerveld).
+    /// Scope of sources this conversation can use (picker next to input field).
     var scope = SourceScope.automatic
 
     var isEmpty: Bool { messages.isEmpty }
 
-    /// Wat de Nook nu doet, voor het stipje in de lijst.
+    /// Conversation status indicator.
     var status: Status {
         if busy { return .working }
         let waiting = messages.contains { message in
@@ -205,7 +205,7 @@ struct Conversation: Identifiable {
         return unread ? .unread : .idle
     }
 
-    /// Eén regel onder de titel: wat Nook het laatst zei.
+    /// Single-line preview: last message from Nook.
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
         let flat = last.text.replacingOccurrences(of: "\n", with: " ")
@@ -214,7 +214,7 @@ struct Conversation: Identifiable {
         return String(flat.prefix(80))
     }
 
-    /// Een titel uit de eerste vraag: kort, zonder vraagteken.
+    /// Extracts a concise title from the initial user prompt.
     static func title(from question: String) -> String {
         var text = question.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         text = text.trimmingCharacters(in: CharacterSet(charactersIn: "?!. "))
@@ -226,7 +226,7 @@ struct Conversation: Identifiable {
     }
 }
 
-/// Alle Nooks. De geschiedenis blijft bewaard (lokaal, in je eigen map), ook als je Nook opnieuw start.
+/// Manages all conversations, persisted locally to disk.
 @MainActor
 final class NookChat: ObservableObject {
     @Published private(set) var conversations: [Conversation] = []
@@ -241,22 +241,22 @@ final class NookChat: ObservableObject {
         load()
     }
 
-    // MARK: Lezen
+    // MARK: Read
 
     var active: Conversation? { activeID.flatMap { conversation($0) } }
     var messages: [ChatMessage] { active?.messages ?? [] }
     var isEmpty: Bool { messages.isEmpty }
-    /// Werkt de Nook die je nu ziet?
+    /// Whether active conversation is busy.
     var busy: Bool { active?.busy ?? false }
-    /// Werkt er ergens een Nook?
+    /// Whether any conversation is busy.
     var anyBusy: Bool { conversations.contains { $0.busy } }
 
-    /// Nooks met inhoud, laatst gebruikte eerst.
+    /// Non-empty conversations, sorted newest first.
     var history: [Conversation] {
         conversations.filter { !$0.isEmpty || $0.busy }.sorted { $0.updated > $1.updated }
     }
 
-    /// Kort geleden nog gepraat? Dan klapt het paneel niet vanzelf dicht.
+    /// Active recently? Prevents panel from closing automatically.
     var isRecentlyActive: Bool { anyBusy || Date().timeIntervalSince(lastActivity) < 180 }
 
     func conversation(_ id: UUID) -> Conversation? {
@@ -272,21 +272,21 @@ final class NookChat: ObservableObject {
         return nil
     }
 
-    /// In welke Nook staat dit bericht?
+    /// Finds the conversation ID containing the given message.
     func conversationID(of messageID: UUID) -> UUID? {
         conversations.first { $0.messages.contains { $0.id == messageID } }?.id
     }
 
-    // MARK: Nooks
+    // MARK: Conversations
 
-    /// De Nook waar je nu in praat; is er geen, dan een nieuwe.
+    /// Returns active conversation, creating one if needed.
     @discardableResult
     func ensureActive() -> UUID {
         if let activeID, conversation(activeID) != nil { return activeID }
         return startNew()
     }
 
-    /// Een nieuwe Nook. Is de huidige nog leeg, dan wordt die gewoon hergebruikt.
+    /// Starts a new conversation, reusing current if empty.
     @discardableResult
     func startNew() -> UUID {
         if let current = active, current.isEmpty, !current.busy { return current.id }
@@ -303,7 +303,7 @@ final class NookChat: ObservableObject {
         guard let index = index(of: id) else { return }
         conversations[index].unread = false
         activeID = id
-        // Een lege Nook die je achterlaat, hoeft niet bewaard te worden.
+        // Empty abandoned conversations do not need to be retained.
         conversations.removeAll { $0.isEmpty && !$0.busy && $0.id != id }
         scheduleSave()
     }
@@ -320,17 +320,17 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
-    // MARK: Berichten
+    // MARK: Messages
 
     func append(_ message: ChatMessage, to id: UUID? = nil) {
         let target = id ?? ensureActive()
         guard let index = index(of: target) else { return }
-        // De eerste vraag geeft de Nook zijn naam.
+        // First user prompt sets conversation title.
         if message.role == .user, !conversations[index].messages.contains(where: { $0.role == .user }) {
             conversations[index].title = Conversation.title(from: message.text)
         }
         conversations[index].messages.append(message)
-        // Niet eindeloos groeien: de oudste berichten vallen eraf.
+        // Trim oldest messages beyond limit.
         if conversations[index].messages.count > maxMessages {
             conversations[index].messages.removeFirst(conversations[index].messages.count - maxMessages)
         }
@@ -365,7 +365,7 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
-    /// De laatste vraag van de gebruiker in een Nook, voor Opnieuw proberen.
+    /// Last user prompt in conversation, for retry.
     func lastQuestion(in id: UUID) -> String? {
         conversation(id)?.messages.last(where: { $0.role == .user })?.text
     }
@@ -376,7 +376,7 @@ final class NookChat: ObservableObject {
         touch(index)
     }
 
-    /// De laatste beurten voor het brein, zonder het bericht dat nu beantwoord wordt.
+    /// Chat history turns formatted for model context, excluding current turn.
     func history(before id: UUID, limit: Int = 16) -> [ChatTurn] {
         guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == id } }) else { return [] }
         let earlier = conversation.messages.prefix { $0.id != id }
@@ -387,7 +387,7 @@ final class NookChat: ObservableObject {
         }
     }
 
-    // MARK: Intern
+    // MARK: Internal
 
     private func index(of id: UUID) -> Int? {
         conversations.firstIndex { $0.id == id }
@@ -404,11 +404,11 @@ final class NookChat: ObservableObject {
         conversations.removeAll { !keep.contains($0.id) }
     }
 
-    // MARK: Bewaren
+    // MARK: Persistence
 
     private static var fileURL: URL { NookPaths.supportDirectory.appendingPathComponent("nooks.json") }
 
-    /// Even wachten, zodat een stroom aan wijzigingen één keer schrijven is.
+    /// Debounces saves so bursts of edits coalesce into a single disk write.
     private func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
@@ -437,10 +437,9 @@ final class NookChat: ObservableObject {
     }
 }
 
-// MARK: Opslag op schijf
+// MARK: Disk Storage
 
-/// Wat er van een gesprek bewaard wordt. Acties die nog wachtten worden niet bewaard (die voer je niet uit na een herstart);
-/// ze blijven als regel in de tekst staan, zodat het gesprek begrijpelijk blijft.
+/// Persisted conversation representation. Pending actions are serialized as text lines rather than executable actions.
 private struct StoredChats: Codable {
     var active: UUID?
     var conversations: [StoredConversation]
@@ -453,7 +452,7 @@ private struct StoredConversation: Codable {
     var updated: Date
     var unread: Bool
     var messages: [StoredMessage]
-    /// Later toegevoegd: optioneel, zodat oudere nooks.json gewoon blijft laden.
+    /// Added later: optional to remain backwards compatible with older nooks.json.
     var scope: SourceScope?
 
     @MainActor
@@ -485,7 +484,7 @@ private struct StoredMessage: Codable {
     var charts: [StoredChart]
     var mails: [StoredMail]
     var offers: [String]
-    // Later toegevoegd: optioneel, zodat oudere nooks.json gewoon blijft laden.
+    // Added later: optional to remain backwards compatible with older nooks.json.
     var retrieval: [RetrievalStep]?
     var references: [SourceReference]?
     var contextSources: [String]?
@@ -496,19 +495,19 @@ private struct StoredMessage: Codable {
     init?(_ message: ChatMessage) {
         var text = message.text
         if !message.actions.isEmpty {
-            // Een plan staat als regels in de tekst: wat er was voorgesteld en hoe elke stap afliep.
-            // De acties zelf worden niet bewaard: na een herstart voert Nook niets meer uit.
+            // The plan is formatted into the text: what was proposed and each step's outcome.
+            // Executable actions are not restored after restart.
             let steps = AppModel.shared.planSteps(message.actions)
             var lines: [String] = []
             for (index, step) in steps.enumerated() {
                 let state: String
                 switch index < message.actionStates.count ? message.actionStates[index] : .pending {
                 case .done(let result): state = "✓ " + result
-                case .failed(let error): state = "✗ mislukt: \(error)"
-                case .duplicate(let when): state = "al gedaan op \(when)"
-                case .skipped: state = "overgeslagen"
-                case .notRun, .running: state = "niet uitgevoerd"
-                case .pending: state = message.planState == .cancelled ? "geannuleerd" : "niet uitgevoerd"
+                case .failed(let error): state = "✗ failed: \(error)"
+                case .duplicate(let when): state = "already completed on \(when)"
+                case .skipped: state = "skipped"
+                case .notRun, .running: state = "not executed"
+                case .pending: state = message.planState == .cancelled ? "cancelled" : "not executed"
                 }
                 lines.append("\(index + 1). \(step.text) · \(state)")
             }
@@ -604,8 +603,7 @@ private struct StoredMail: Codable {
     }
 }
 
-/// Bij welk antwoord de tools van deze taak horen (grafieken, mailconcepten). Zo komen ze bij de juiste Nook,
-/// ook als er meerdere tegelijk werken.
+/// Associates tool outputs (charts, mail drafts) with the correct reply and conversation.
 enum ReplyContext {
     @TaskLocal static var messageID: UUID?
 }

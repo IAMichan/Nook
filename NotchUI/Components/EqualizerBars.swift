@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Bewegende muziekbalkjes. Elk balkje heeft een eigen ritme, zodat het op een echte equalizer lijkt
-/// in plaats van één golf die van links naar rechts loopt. Als de muziek gepauzeerd is, liggen ze stil.
+/// Animated music bars. Each bar moves to its own rhythm, mimicking an equalizer
+/// rather than a uniform traveling wave. Stays motionless when music is paused.
 struct EqualizerBars: View {
     var color: Color
     var height: CGFloat = 14
     var isPlaying: Bool = true
 
-    /// Per balkje twee frequenties en fases. Geen gemeenschappelijke deler, dus het patroon herhaalt zich niet zichtbaar.
+    /// Two frequencies and phases per bar with no common divisor, preventing visible pattern repetition.
     private static let voices: [(f1: Double, p1: Double, f2: Double, p2: Double)] = [
         (5.3, 0.0, 8.9, 1.3),
         (7.1, 2.1, 4.3, 0.4),
@@ -31,7 +31,7 @@ struct EqualizerBars: View {
         .accessibilityHidden(true)
     }
 
-    /// Hoogte tussen 0 en 1. In pauze een lage, vaste stand.
+    /// Height between 0 and 1. Fixed low level when paused.
     private func level(_ i: Int, _ t: Double) -> Double {
         guard isPlaying else { return 0.15 }
         let v = Self.voices[i]
