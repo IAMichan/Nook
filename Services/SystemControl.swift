@@ -13,6 +13,17 @@ enum SystemControl {
         return result.stringValue
     }
 
+    /// Zoals `appleScript`, maar geeft ook het foutnummer terug. -1743 betekent: macOS heeft Nook geen toestemming gegeven.
+    nonisolated static func appleScriptResult(_ source: String) -> (text: String?, errorNumber: Int?) {
+        guard let script = NSAppleScript(source: source) else { return (nil, nil) }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        if let error {
+            return (nil, error[NSAppleScript.errorNumber] as? Int)
+        }
+        return (result.stringValue, nil)
+    }
+
     /// Draait een programma met argumenten, zonder shell, en geeft de uitvoer terug.
     nonisolated static func runProcess(_ path: String, _ arguments: [String]) throws -> String {
         let process = Process()
