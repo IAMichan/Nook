@@ -12,25 +12,25 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "Overzicht"
-        case .brain: return "Brein"
-        case .assistant: return "Assistent"
-        case .connections: return "Koppelingen"
-        case .agents: return "Agents"
-        case .voice: return "Stem en geluid"
-        case .privacy: return "Privacy en toegang"
+        case .general: return tr("settings.section.general")
+        case .brain: return tr("settings.section.brain")
+        case .assistant: return tr("settings.section.assistant")
+        case .connections: return tr("settings.section.connections")
+        case .agents: return tr("settings.section.agents")
+        case .voice: return tr("settings.section.voice")
+        case .privacy: return tr("settings.section.privacy")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .general: return "Wat werkt er al, en wat nog niet"
-        case .brain: return "Met welke AI Nook denkt"
-        case .assistant: return "Wat Nook ziet en hoe hij zich gedraagt"
-        case .connections: return "Agenda, mail, browser en je diensten"
-        case .agents: return "Claude Code, Codex, Cursor en meer"
-        case .voice: return "Praten, voorlezen en geluiden"
-        case .privacy: return "Machtigingen en wat er je Mac verlaat"
+        case .general: return tr("settings.section.general.sub")
+        case .brain: return tr("settings.section.brain.sub")
+        case .assistant: return tr("settings.section.assistant.sub")
+        case .connections: return tr("settings.section.connections.sub")
+        case .agents: return tr("settings.section.agents.sub")
+        case .voice: return tr("settings.section.voice.sub")
+        case .privacy: return tr("settings.section.privacy.sub")
         }
     }
 
@@ -95,7 +95,7 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
-            .id(app.settingsSection)
+            .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)")
         }
         .tint(NookTheme.iris)
         .frame(minWidth: 720, minHeight: 480)
@@ -159,26 +159,34 @@ struct SettingsView: View {
 
     private var checklist: [Step] {
         let _ = refreshTick
+        let _ = settings.appLanguage
         return [
-            Step(title: "Kies een brein", detail: settings.brainReady ? "Nook denkt met \(settings.activeModelName)." : "Claude, een andere AI of gratis op je Mac.",
-                 done: settings.brainReady, button: "Kies", section: .brain),
-            Step(title: "Laat Nook je schermen lezen", detail: CGPreflightScreenCaptureAccess() ? "Nook ziet al je vensters, op al je schermen." : "Dan kan hij vragen beantwoorden over wat je ziet.",
-                 done: CGPreflightScreenCaptureAccess(), button: "Toestaan", section: .privacy),
-            Step(title: "Koppel je agenda", detail: app.calendar.hasEventAccess ? "Nook kent je afspraken." : "Voor vragen als \"wanneer ben ik vrij?\"",
-                 done: app.calendar.hasEventAccess, button: "Toestaan", section: .privacy),
-            Step(title: "Koppel je diensten", detail: "\(app.connectors.active.count) bronnen actief. Mail, browser, GitHub, Stripe…",
-                 done: app.connectors.active.count >= 3, button: "Bekijk", section: .connections)
+            Step(title: tr("settings.checklist.brain"), detail: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain.notReady"),
+                 done: settings.brainReady, button: tr("button.choose"), section: .brain),
+            Step(title: tr("settings.checklist.screen"), detail: CGPreflightScreenCaptureAccess() ? tr("settings.checklist.screen.granted") : tr("settings.checklist.screen.notGranted"),
+                 done: CGPreflightScreenCaptureAccess(), button: tr("button.allow"), section: .privacy),
+            Step(title: tr("settings.checklist.calendar"), detail: app.calendar.hasEventAccess ? tr("settings.checklist.calendar.granted") : tr("settings.checklist.calendar.notGranted"),
+                 done: app.calendar.hasEventAccess, button: tr("button.allow"), section: .privacy),
+            Step(title: tr("settings.checklist.connectors"), detail: tr("settings.checklist.connectors.detail", app.connectors.active.count),
+                 done: app.connectors.active.count >= 3, button: tr("button.view"), section: .connections)
         ]
     }
 
     private var overviewSection: some View {
         Group {
+            Section(tr("settings.overview.languageSection")) {
+                Picker(tr("settings.overview.appLanguage"), selection: $settings.appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+            }
             Section {
                 ForEach(checklist) { step in
                     StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
                         if !step.done {
                             Button(step.button) {
-                                if step.section == .privacy, step.title.contains("schermen") {
+                                if step.section == .privacy, step.title.contains("schermen") || step.title.contains("screens") || step.title.contains("Bildschirm") {
                                     CGRequestScreenCaptureAccess()
                                 } else if step.section == .privacy {
                                     Task { await app.calendar.requestEvents(); refreshTick += 1 }
@@ -192,39 +200,39 @@ struct SettingsView: View {
                 }
             } header: {
                 HStack {
-                    Text("Klaar om te gebruiken")
+                    Text(tr("settings.overview.readyToUse"))
                     Spacer()
-                    Text("\(checklist.filter(\.done).count) van \(checklist.count)")
+                    Text(tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count))
                         .monospacedDigit()
                 }
             }
             Section {
-                shortcutRow("Vraag iets (typen)", keys: ["⌥", "⌘", "spatie"])
-                shortcutRow("Praat met Nook", keys: ["⌥", "spatie"])
-                shortcutRow("Laat Nook meekijken", keys: ["⌥", "⌘", "N"])
-                LabeledContent("Open het paneel") {
-                    Text("wijs naar de notch").foregroundStyle(.secondary)
+                shortcutRow(tr("settings.overview.askTyping"), keys: ["⌥", "⌘", tr("settings.overview.spaceKey")])
+                shortcutRow(tr("settings.overview.talkNook"), keys: ["⌥", tr("settings.overview.spaceKey")])
+                shortcutRow(tr("settings.overview.lookScreen"), keys: ["⌥", "⌘", "N"])
+                LabeledContent(tr("settings.overview.openPanel")) {
+                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Zo gebruik je Nook")
+                Text(tr("settings.overview.howToUse"))
             } footer: {
-                Text("Vraag gewoon wat je wilt: “wat staat er in die mail?”, “zet dit in mijn agenda”. Nook kijkt zelf op je schermen, in je agenda en in je koppelingen. Niets gebeurt zonder jouw klik.")
+                Text(tr("settings.overview.howToUseFooter"))
             }
-            Section("Notch") {
-                Picker("Scherm", selection: $settings.screenChoice) {
-                    Text("Automatisch (met notch)").tag("auto")
-                    Text("Hoofdscherm").tag("main")
-                    Text("Volgt je muis").tag("mouse")
+            Section(tr("settings.notch.title")) {
+                Picker(tr("settings.notch.screen"), selection: $settings.screenChoice) {
+                    Text(tr("settings.notch.auto")).tag("auto")
+                    Text(tr("settings.notch.main")).tag("main")
+                    Text(tr("settings.notch.mouse")).tag("mouse")
                     ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
                         Text(name).tag(name)
                     }
                 }
-                Toggle("Verberg Nook als er niets is", isOn: $settings.hideWhenIdle)
-                Toggle("Open het paneel als ik naar de notch wijs", isOn: Binding(
+                Toggle(tr("settings.notch.hideWhenIdle"), isOn: $settings.hideWhenIdle)
+                Toggle(tr("settings.notch.openOnHover"), isOn: Binding(
                     get: { app.viewModel.openOnHover },
                     set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
                 ))
-                Toggle("Voorbeelddata tonen (om rond te kijken)", isOn: $app.demoMode)
+                Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
             }
         }
     }
@@ -263,10 +271,10 @@ struct SettingsView: View {
     private var brainSection: some View {
         Group {
             Section {
-                Picker("Nook denkt met", selection: brainKind) {
-                    Text("Claude").tag(BrainKind.claude)
-                    Text("Andere AI").tag(BrainKind.other)
-                    Text("Gratis op je Mac").tag(BrainKind.local)
+                Picker(tr("settings.brain.thinksWith"), selection: brainKind) {
+                    Text(tr("settings.brain.claude")).tag(BrainKind.claude)
+                    Text(tr("settings.brain.otherAI")).tag(BrainKind.other)
+                    Text(tr("settings.brain.freeLocal")).tag(BrainKind.local)
                 }
                 .pickerStyle(.segmented)
             } footer: {
@@ -274,17 +282,17 @@ struct SettingsView: View {
             }
 
             if settings.useLocal {
-                Section("Ingebouwd model") { localFields }
+                Section(tr("settings.brain.localModelTitle")) { localFields }
             } else {
-                Section([.claude, .claudeCode].contains(settings.provider) ? "Claude" : "Aanbieder") { providerFields }
+                Section([.claude, .claudeCode].contains(settings.provider) ? tr("settings.brain.claude") : tr("settings.brain.provider")) { providerFields }
             }
 
             Section {
-                Picker("Taal van antwoorden", selection: $settings.language) {
+                Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
                 }
                 HStack {
-                    Button("Test verbinding") { Task { await testConnection() } }
+                    Button(tr("button.testConnection")) { Task { await testConnection() } }
                         .disabled(!settings.brainReady || testing)
                     if testing { ProgressView().controlSize(.small) }
                     Spacer()
@@ -300,24 +308,24 @@ struct SettingsView: View {
     }
 
     private var brainExplanation: String {
-        if settings.useLocal { return "Draait helemaal op je Mac, zonder internet en zonder sleutel. Minder slim dan Claude." }
+        if settings.useLocal { return tr("settings.brain.localExplanation") }
         if [.claude, .claudeCode].contains(settings.provider) {
-            return "Aanbevolen. Met een API-sleutel is Nook het snelst; met je Claude-abonnement (Pro of Max) werkt het via Claude Code op je Mac, zonder sleutel."
+            return tr("settings.brain.claudeExplanation")
         }
-        return "OpenAI, Gemini, DeepSeek, Qwen, Moonshot, of Ollama en LM Studio op je eigen Mac. Zoeken op het web werkt met elk brein."
+        return tr("settings.brain.otherExplanation")
     }
 
     private var providerFields: some View {
         Group {
             if [.claude, .claudeCode].contains(settings.provider) {
-                Picker("Verbinden via", selection: $settings.provider) {
-                    Text("API-sleutel").tag(AIProvider.claude)
-                    Text("Mijn abonnement (Claude Code)").tag(AIProvider.claudeCode)
+                Picker(tr("settings.brain.connectVia"), selection: $settings.provider) {
+                    Text(tr("settings.brain.apiKey")).tag(AIProvider.claude)
+                    Text(tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: settings.provider) { _, _ in testResult = nil }
             } else {
-                Picker("Aanbieder", selection: $settings.provider) {
+                Picker(tr("settings.brain.provider"), selection: $settings.provider) {
                     ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode }) { Text($0.title).tag($0) }
                 }
                 .onChange(of: settings.provider) { _, _ in
@@ -332,48 +340,48 @@ struct SettingsView: View {
                 HStack {
                     SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
                         .onSubmit(saveKey)
-                    Button("Bewaar", action: saveKey)
+                    Button(tr("button.save"), action: saveKey)
                         .disabled(keyDraft.isEmpty && !settings.hasKey(for: settings.provider))
                 }
                 HStack {
                     if settings.hasKey(for: settings.provider) {
-                        Label(settings.provider == .claude ? "Sleutel opgeslagen: \(settings.maskedKey ?? "")" : "Sleutel opgeslagen in je Keychain", systemImage: "key.fill")
+                        Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Je sleutel blijft in je Keychain.").font(.caption).foregroundStyle(.secondary)
+                        Text(tr("settings.brain.keyStaysInKeychain")).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if let url = settings.provider.keyURL {
-                        Link("Maak een sleutel", destination: url).font(.caption)
+                        Link(tr("settings.brain.createKey"), destination: url).font(.caption)
                     }
                 }
             } else if let url = settings.provider.keyURL {
                 HStack {
-                    Text("\(settings.provider.title) moet draaien met een geladen model.").font(.caption).foregroundStyle(.secondary)
+                    Text(tr("settings.brain.providerMustRun", settings.provider.title)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Link("Download", destination: url).font(.caption)
+                    Link(tr("button.download"), destination: url).font(.caption)
                 }
             }
 
             HStack {
-                TextField("Model", text: Binding(
+                TextField(tr("settings.brain.model"), text: Binding(
                     get: { settings.activeProviderModel },
                     set: { settings.setProviderModel($0) }
                 ))
-                Menu("Kies") {
+                Menu(tr("button.choose")) {
                     let models = fetchedModels.isEmpty ? settings.provider.suggestedModels : fetchedModels
                     ForEach(models, id: \.self) { id in
                         Button(id) { settings.setProviderModel(id) }
                     }
                     Divider()
-                    Button("Haal modellen op") { Task { await fetchModels() } }
+                    Button(tr("button.fetchModels")) { Task { await fetchModels() } }
                 }
                 .fixedSize()
                 if fetchingModels { ProgressView().controlSize(.small) }
             }
             if settings.provider == .claude {
-                Text("Haiku is het snelst en ruim slim genoeg voor de meeste vragen. Een Claude-abonnement (claude.ai) werkt hier niet: je hebt een API-sleutel met tegoed nodig.")
+                Text(tr("settings.brain.haikuHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -386,19 +394,19 @@ struct SettingsView: View {
         let path = ClaudeCodeBrain.executable
         return VStack(alignment: .leading, spacing: 6) {
             if let path {
-                Label("Claude Code gevonden: \(path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))", systemImage: "checkmark.circle.fill")
+                Label(tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text("Nook gebruikt je eigen login. Ben je nog niet ingelogd, typ dan eenmalig `claude` in de terminal. Antwoorden duren een paar tellen langer dan met een API-sleutel.")
+                Text(tr("settings.brain.claudeLoginHint"))
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Label("Claude Code staat niet op deze Mac", systemImage: "exclamationmark.triangle.fill")
+                Label(tr("settings.brain.claudeNotFound"), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text("Installeer het met `curl -fsSL https://claude.ai/install.sh | bash` in de terminal, log in met `claude` en klik dan op Zoek opnieuw.")
+                Text(tr("settings.brain.claudeInstallHint"))
                     .font(.caption).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                 HStack {
-                    Button("Zoek opnieuw") { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
-                    if let url = settings.provider.keyURL { Link("Meer over Claude Code", destination: url) }
+                    Button(tr("button.searchAgain")) { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
+                    if let url = settings.provider.keyURL { Link(tr("settings.brain.moreAboutClaudeCode"), destination: url) }
                 }
             }
         }
@@ -410,7 +418,7 @@ struct SettingsView: View {
         do {
             let key = settings.provider == .claude ? settings.apiKey : settings.providerKey
             fetchedModels = try await settings.provider.listModels(key: key)
-            status = fetchedModels.isEmpty ? "Geen modellen gevonden." : "\(fetchedModels.count) modellen gevonden. Kies er een via Kies."
+            status = fetchedModels.isEmpty ? tr("settings.brain.noModelsFound") : tr("settings.brain.modelsFound", fetchedModels.count)
         } catch {
             status = error.localizedDescription
         }
@@ -430,19 +438,19 @@ struct SettingsView: View {
                         Text("\(Int(installFraction * 100))%").font(.caption.monospacedDigit())
                     } else if local.installed.contains(option.id) {
                         if settings.localModel == option.id {
-                            Label("In gebruik", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         } else {
-                            Button("Gebruik") { settings.localModel = option.id; testResult = nil }
+                            Button(tr("settings.brain.use")) { settings.localModel = option.id; testResult = nil }
                         }
                     } else if !option.fits {
-                        Text("Te zwaar voor \(EmbeddedModel.memoryGB) GB").font(.caption).foregroundStyle(.orange)
+                        Text(tr("settings.brain.tooHeavyForMemory", EmbeddedModel.memoryGB)).font(.caption).foregroundStyle(.orange)
                     } else {
-                        Button("Download") { Task { await install(option.id) } }
+                        Button(tr("button.download")) { Task { await install(option.id) } }
                             .disabled(installing != nil)
                     }
                 }
             }
-            Text("Eén keer downloaden (een paar GB), daarna werkt het zonder internet. Deze Mac heeft \(EmbeddedModel.memoryGB) GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen.")
+            Text(tr("settings.brain.localModelDownloadHint", EmbeddedModel.memoryGB))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -507,32 +515,32 @@ struct SettingsView: View {
 
     private var assistantSection: some View {
         Group {
-            Section("Wat Nook ziet") {
-                SettingToggle("Houd al mijn schermen bij", detail: "Nook leest de tekst van al je vensters op al je schermen, op je Mac. Daardoor is een antwoord direct klaar.", isOn: $settings.liveScreen)
-                SettingToggle("Gebruik mijn schermen bij elke vraag", detail: "Uit: alleen als je naar iets verwijst (\"dit\", \"hier\", \"die mail\").", isOn: $settings.screenWithEveryQuestion)
-                LabeledContent("Nu in beeld") {
-                    Text(app.screenContext.windows.isEmpty ? "niets gelezen" : "\(app.screenContext.windows.count) vensters op \(max(1, app.screenContext.displayCount)) \(app.screenContext.displayCount == 1 ? "scherm" : "schermen")")
+            Section(tr("settings.assistant.whatNookSees")) {
+                SettingToggle(tr("settings.assistant.trackAllScreens"), detail: tr("settings.assistant.trackAllScreensDetail"), isOn: $settings.liveScreen)
+                SettingToggle(tr("settings.assistant.useScreensEveryQuestion"), detail: tr("settings.assistant.useScreensEveryQuestionDetail"), isOn: $settings.screenWithEveryQuestion)
+                LabeledContent(tr("settings.assistant.currentlyOnScreen")) {
+                    Text(app.screenContext.windows.isEmpty ? tr("settings.assistant.nothingRead") : "\(app.screenContext.windows.count) vensters op \(max(1, app.screenContext.displayCount)) \(app.screenContext.displayCount == 1 ? "scherm" : "schermen")")
                         .foregroundStyle(.secondary)
                 }
                 if !CGPreflightScreenCaptureAccess() {
-                    Button("Geef toestemming om je scherm te lezen") { CGRequestScreenCaptureAccess(); refreshTick += 1 }
+                    Button(tr("settings.assistant.grantScreenPermission")) { CGRequestScreenCaptureAccess(); refreshTick += 1 }
                 }
             }
-            Section("Meedenken") {
-                SettingToggle("Zoek op het web als dat nodig is", detail: "Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.", isOn: $settings.webSearch)
-                SettingToggle("Denk mee terwijl ik werk", detail: "Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de notch. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.", isOn: $settings.autoWatch)
+            Section(tr("settings.assistant.thinkAlong")) {
+                SettingToggle(tr("settings.assistant.webSearch"), detail: tr("settings.assistant.webSearchDetail"), isOn: $settings.webSearch)
+                SettingToggle(tr("settings.assistant.thinkAlongToggle"), detail: tr("settings.assistant.thinkAlongDetail"), isOn: $settings.autoWatch)
                 .disabled(settings.useLocal)
                 if !app.thinkAlong.mutedApps.isEmpty {
-                    LabeledContent("Niet meedenken in") {
+                    LabeledContent(tr("settings.assistant.mutedIn")) {
                         HStack {
                             Text(app.thinkAlong.mutedApps.values.sorted().joined(separator: ", "))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
-                            Button("Wis") { app.thinkAlong.unmuteAll() }
+                            Button(tr("button.clear")) { app.thinkAlong.unmuteAll() }
                         }
                     }
                 }
-                SettingToggle("Kleine dingen meteen doen", detail: "Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.", isOn: $settings.autoRunSafe)
+                SettingToggle(tr("settings.assistant.autoRunSafe"), detail: tr("settings.assistant.autoRunSafeDetail"), isOn: $settings.autoRunSafe)
             }
         }
     }
@@ -547,14 +555,14 @@ struct SettingsView: View {
                     localRow(sources[index])
                 }
             } header: {
-                Text("Op je Mac")
+                Text(tr("settings.connections.onYourMac"))
             } footer: {
-                Text("Mail en je browser leest Nook alleen als die apps open zijn. macOS vraagt de eerste keer om toestemming.")
+                Text(tr("settings.connections.footer"))
             }
-            Section("Diensten") {
+            Section(tr("settings.connections.services")) {
                 CloudConnectorSettings(connectors: app.connectors.sources) { app.connectors.refreshAll() }
             }
-            Section("Crypto-portfolio") {
+            Section(tr("settings.connections.crypto")) {
                 PortfolioSettings(portfolio: app.portfolio)
             }
         }
@@ -590,12 +598,12 @@ struct SettingsView: View {
     private func localDetail(_ source: ContextSource) -> String {
         if case .error(let message) = source.status.state { return message }
         switch source.id {
-        case "calendar": return app.calendar.hasEventAccess ? (source.status.headline.isEmpty ? "Je afspraken" : source.status.headline) : "Geef toegang bij Privacy en toegang"
-        case "reminders": return app.calendar.hasReminderAccess ? (source.status.headline.isEmpty ? "Je open herinneringen" : source.status.headline) : "Geef toegang bij Privacy en toegang"
-        case "mail": return "Ongelezen mail en zoeken in je inbox (Mail)"
-        case "browser": return "Open tabbladen in Safari, Chrome, Arc, Brave en Edge"
-        case "files": return "Recente bestanden en zoeken met Spotlight"
-        case "clipboard": return "Wat je net kopieerde. Wachtwoorden worden altijd overgeslagen."
+        case "calendar": return app.calendar.hasEventAccess ? (source.status.headline.isEmpty ? tr("settings.connections.calendarDetail") : source.status.headline) : tr("settings.connections.givePermission")
+        case "reminders": return app.calendar.hasReminderAccess ? (source.status.headline.isEmpty ? tr("settings.connections.remindersDetail") : source.status.headline) : tr("settings.connections.givePermission")
+        case "mail": return tr("settings.connections.mailDetail")
+        case "browser": return tr("settings.connections.browserDetail")
+        case "files": return tr("settings.connections.filesDetail")
+        case "clipboard": return tr("settings.connections.clipboardDetail")
         default: return source.status.detail
         }
     }
@@ -609,20 +617,20 @@ struct SettingsView: View {
                     accountRow(kind)
                 }
             } header: {
-                Text("Accounts")
+                Text(tr("settings.agents.accounts"))
             } footer: {
-                Text("Eén klik koppelt alles voor dat account. Staat de agent nog niet op je Mac of ben je niet ingelogd, dan opent Nook Terminal om te installeren en in te loggen. Van elk bestand dat Nook aanpast, komt eerst een backup.")
+                Text(tr("settings.agents.accountsFooter"))
             }
             Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
                 }
             } header: {
-                Text("Koppel je agents")
+                Text(tr("settings.agents.linkAgents"))
             } footer: {
-                Text("Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet, dan doen de koppelingen niets.")
+                Text(tr("settings.agents.linkAgentsFooter"))
             }
-            Section("Abonnementen") {
+            Section(tr("settings.agents.subscriptions")) {
                 LabeledContent("Claude") {
                     Text(app.hub.planUsage.map { $0.label } ?? "koppel \"Claude-abonnement in de notch\"").foregroundStyle(.secondary)
                 }
@@ -631,10 +639,10 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Section("Weekoverzicht") {
+            Section(tr("settings.agents.weekRecap")) {
                 HStack {
-                    Button("Bekijk") { app.showWeekRecap() }
-                    Button("Wis") { app.recap.clear(); status = "Weekoverzicht gewist." }
+                    Button(tr("button.view")) { app.showWeekRecap() }
+                    Button(tr("button.clear")) { app.recap.clear(); status = tr("settings.agents.weekRecapCleared") }
                 }
             }
         }
@@ -649,16 +657,16 @@ struct SettingsView: View {
         let complete = program && account != nil && linkedAll
         let detail: String = {
             if let progress, progress.isBusy || !complete { return progress.text }
-            if !program { return "Nog niet op deze Mac" }
-            guard let account else { return "Nog niet ingelogd" }
+            if !program { return tr("agents.notInstalled") }
+            guard let account else { return tr("agents.notLoggedIn") }
             let who = [account.name, account.plan].filter { !$0.isEmpty }.joined(separator: " · ")
-            return linkedAll ? who : who + " · nog niet gekoppeld met Nook"
+            return linkedAll ? who : who + " · " + tr("agents.notYetLinked")
         }()
         return StatusRow(title: kind.name, detail: detail, state: complete ? .done : .todo) {
             if progress?.isBusy == true {
                 ProgressView().controlSize(.small)
             } else if !complete {
-                Button(!program ? "Installeer en koppel" : (account == nil ? "Log in en koppel" : "Koppel")) { app.connect(kind) }
+                Button(!program ? tr("button.installAndLink") : (account == nil ? tr("button.loginAndLink") : tr("button.link"))) { app.connect(kind) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -678,16 +686,16 @@ struct SettingsView: View {
         return StatusRow(title: target.title, detail: stateText(state, target: target), state: rowState) {
             switch state {
             case .notInstalled:
-                Button("Koppel…") { prepare(target, install: true) }
+                Button(tr("button.linkEllipsis")) { prepare(target, install: true) }
                     .controlSize(.small)
             case .outdated:
-                Button("Werk bij…") { prepare(target, install: true) }
+                Button(tr("button.updateEllipsis")) { prepare(target, install: true) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                Button("Ontkoppel…") { prepare(target, install: false) }
+                Button(tr("button.unlinkEllipsis")) { prepare(target, install: false) }
                     .controlSize(.small)
             case .installed:
-                Button("Ontkoppel…") { prepare(target, install: false) }
+                Button(tr("button.unlinkEllipsis")) { prepare(target, install: false) }
                     .controlSize(.small)
             case .unreadable:
                 EmptyView()
@@ -698,7 +706,7 @@ struct SettingsView: View {
     private func stateText(_ state: AgentConfigInstaller.State, target: AgentConfigInstaller.Target) -> String {
         switch state {
         case .notInstalled: return target.detail
-        case .installed: return "Gekoppeld · \(target.displayPath)"
+        case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
         case .outdated: return "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de notch"
         case .unreadable(let message): return message
         }
@@ -724,8 +732,8 @@ struct SettingsView: View {
         pendingChange = nil
         do {
             let backup = try AgentConfigInstaller.apply(change)
-            let verb = change.install ? "gekoppeld" : "ontkoppeld"
-            status = "\(change.target.title) is \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
+            let verb = change.install ? tr("button.link") : tr("button.unlink")
+            status = "\(change.target.title): \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
                 + (change.install && change.target != .claudeStatusLine ? " Start de agent opnieuw om het te laten werken." : "")
         } catch {
             status = error.localizedDescription
@@ -738,25 +746,25 @@ struct SettingsView: View {
     private var voiceSection: some View {
         Group {
             Section {
-                Toggle("Lees antwoorden voor als ik iets zeg", isOn: $settings.speakAnswers)
-                Toggle("Luister naar “Hé Nook”", isOn: $settings.wakeWord)
+                Toggle(tr("settings.voice.speakAnswers"), isOn: $settings.speakAnswers)
+                Toggle(tr("settings.voice.wakeWord"), isOn: $settings.wakeWord)
                     .disabled(!WakeWordService.supported)
             } header: {
-                Text("Praten")
+                Text(tr("settings.voice.speaking"))
             } footer: {
                 Text(WakeWordService.supported
                      ? "Met het wekwoord luistert Nook steeds mee, maar de herkenning gebeurt alleen op je Mac en er wordt niets bewaard. Je ziet dan het oranje microfoonlampje."
                      : "Deze Mac kan Nederlandse spraak niet zelf herkennen, dus het wekwoord kan niet aan (er gaat nooit geluid naar buiten). Met ⌥ spatie praat je altijd.")
             }
             Section {
-                Toggle("Geluid als een agent op je wacht of klaar is", isOn: $settings.sounds)
-                LabeledContent("Eigen geluiden") {
-                    Button("Open map") { NookSound.openFolder() }
+                Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
+                LabeledContent(tr("settings.voice.customSounds")) {
+                    Button(tr("button.openFolder")) { NookSound.openFolder() }
                 }
             } header: {
-                Text("Geluiden")
+                Text(tr("settings.voice.sounds"))
             } footer: {
-                Text("Zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.")
+                Text(tr("settings.voice.customSoundsHint"))
             }
         }
     }
@@ -766,34 +774,34 @@ struct SettingsView: View {
     private var privacySection: some View {
         Group {
             Section {
-                permissionRow("Scherm lezen", detail: "Alle vensters op al je schermen", granted: CGPreflightScreenCaptureAccess()) {
+                permissionRow(tr("settings.privacy.screenReading"), detail: tr("settings.privacy.screenReadingDetail"), granted: CGPreflightScreenCaptureAccess()) {
                     CGRequestScreenCaptureAccess()
                     refreshTick += 1
                 }
-                permissionRow("Agenda", detail: "Afspraken lezen en maken", granted: app.calendar.hasEventAccess) {
+                permissionRow(tr("settings.privacy.calendar"), detail: tr("settings.privacy.calendarDetail"), granted: app.calendar.hasEventAccess) {
                     Task { await app.calendar.requestEvents(); refreshTick += 1; app.connectors.refreshAll() }
                 }
-                permissionRow("Herinneringen", detail: "Open taken lezen en maken", granted: app.calendar.hasReminderAccess) {
+                permissionRow(tr("settings.privacy.reminders"), detail: tr("settings.privacy.remindersDetail"), granted: app.calendar.hasReminderAccess) {
                     Task { await app.calendar.requestReminders(); refreshTick += 1; app.connectors.refreshAll() }
                 }
-                permissionRow("Microfoon en spraak", detail: "Praten met Nook", granted: VoiceService.permissionsGranted) {
+                permissionRow(tr("settings.privacy.micSpeech"), detail: tr("settings.privacy.micSpeechDetail"), granted: VoiceService.permissionsGranted) {
                     Task { _ = await app.voice.requestPermissions(); refreshTick += 1 }
                 }
             } header: {
-                Text("Machtigingen")
+                Text(tr("settings.privacy.permissions"))
             } footer: {
-                Text("Mail, je browser, Spotify en Muziek vraagt macOS zelf om toestemming zodra Nook ze voor het eerst gebruikt. Na een nieuwe build met een ad-hoc handtekening kan macOS het opnieuw vragen.")
+                Text(tr("settings.privacy.permissionsFooter"))
             }
             .id(refreshTick)
-            Section("Wat je Mac verlaat") {
-                promise("eye.slash", "Schermbeelden nooit", "Alleen herkende tekst, en alleen als je iets vraagt.")
-                promise("key", "Wachtwoorden blijven buiten beeld", "Wachtwoordmanagers en verborgen klembord-inhoud worden nooit gelezen.")
-                promise("hand.raised", "Niets zonder jouw klik", "Nook verstuurt nooit zelf mail.")
-                promise("lock", "Sleutels in je Keychain", "Alles wat Nook doet staat in een logboek op je Mac.")
-                LabeledContent("Schermtekst") {
-                    Button("Vergeet wat Nook nu zag") {
+            Section(tr("settings.privacy.whatLeavesMac")) {
+                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
+                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
+                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
+                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
+                LabeledContent(tr("settings.privacy.screenText")) {
+                    Button(tr("settings.privacy.forgetScreenText")) {
                         app.screenContext.clear()
-                        status = "Schermtekst vergeten."
+                        status = tr("settings.privacy.screenTextForgotten")
                     }
                 }
             }
@@ -816,9 +824,9 @@ struct SettingsView: View {
     private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping () -> Void) -> some View {
         StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
             if granted {
-                Text("Aan").foregroundStyle(.secondary)
+                Text(tr("music.on")).foregroundStyle(.secondary)
             } else {
-                Button("Toestaan", action: request)
+                Button(tr("button.allow"), action: request)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -834,15 +842,15 @@ private struct ConfigPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(change.install ? "\(change.target.title) koppelen" : "\(change.target.title) ontkoppelen")
+            Text(change.install ? "\(change.target.title) \(tr("button.link"))" : "\(change.target.title) \(tr("button.unlink"))")
                 .font(.headline)
-            Text("Dit verandert in \(change.target.displayPath). Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.")
+            Text(tr("settings.agents.changeNotice", change.target.displayPath))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if change.preview.isEmpty {
-                        Text("Er verandert niets.").foregroundStyle(.secondary)
+                        Text(tr("settings.agents.noChange")).foregroundStyle(.secondary)
                     }
                     ForEach(change.preview) { line in
                         Text(line.text)
@@ -857,9 +865,9 @@ private struct ConfigPreview: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
             HStack {
                 Spacer()
-                Button("Annuleer", action: onCancel)
+                Button(tr("button.cancel"), action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                Button(change.install ? "Koppel" : "Ontkoppel", action: onConfirm)
+                Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
                     .keyboardShortcut(.defaultAction)
             }
         }

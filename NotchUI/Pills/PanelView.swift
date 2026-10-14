@@ -49,9 +49,9 @@ struct PanelView: View {
             }
             Spacer()
             HStack(spacing: 2) {
-                NookIconButton(systemName: "mic", label: "Praat met Nook") { viewModel.startListening() }
-                NookIconButton(systemName: "gearshape", label: "Instellingen") { viewModel.app?.openSettings() }
-                NookIconButton(systemName: "xmark", label: "Sluiten") { viewModel.show(.idle) }
+                NookIconButton(systemName: "mic", label: tr("button.talk")) { viewModel.startListening() }
+                NookIconButton(systemName: "gearshape", label: tr("button.settings")) { viewModel.app?.openSettings() }
+                NookIconButton(systemName: "xmark", label: tr("button.close")) { viewModel.show(.idle) }
             }
         }
     }
