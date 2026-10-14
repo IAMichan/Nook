@@ -45,18 +45,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .privacy: return "lock.shield"
         }
     }
-
-    var tint: Color {
-        switch self {
-        case .general: return .gray
-        case .brain: return .purple
-        case .assistant: return .indigo
-        case .connections: return .blue
-        case .agents: return .orange
-        case .voice: return .pink
-        case .privacy: return .green
-        }
-    }
 }
 
 /// Instellingen: een zijbalk met onderdelen, elk onderdeel een rustige lijst. Bovenaan staat steeds in één zin waar het over gaat.
@@ -83,28 +71,19 @@ struct SettingsView: View {
                 get: { Optional(app.settingsSection) },
                 set: { if let value = $0 { app.settingsSection = value } }
             )) { section in
-                Label {
-                    Text(section.title)
-                } icon: {
-                    Image(systemName: section.symbol)
-                        .foregroundStyle(.white)
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 22, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(section.tint.gradient))
-                }
-                .badge(badge(for: section))
-                .tag(section)
+                Label(section.title, systemImage: section.symbol)
+                    .badge(badge(for: section))
+                    .tag(section)
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 240)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 240)
         } detail: {
             Form {
                 Section {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app.settingsSection.title).font(.title2.weight(.semibold))
-                        Text(app.settingsSection.subtitle).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
+                    SettingsHeader(section: app.settingsSection, mood: headerMood)
                 }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
                 detail(for: app.settingsSection)
                 if !status.isEmpty {
                     Section {
@@ -118,6 +97,7 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .id(app.settingsSection)
         }
+        .tint(NookTheme.iris)
         .frame(minWidth: 720, minHeight: 480)
         .onAppear {
             refreshTick += 1
@@ -146,6 +126,11 @@ struct SettingsView: View {
         case .connections: return app.connectors.sources.filter { if case .error = $0.status.state { return true }; return false }.count
         default: return 0
         }
+    }
+
+    /// Nook kijkt tevreden als alles klaarstaat, en wacht anders rustig.
+    private var headerMood: NookMood {
+        checklist.allSatisfy(\.done) ? .done : .rest
     }
 
     @ViewBuilder
@@ -188,17 +173,9 @@ struct SettingsView: View {
 
     private var overviewSection: some View {
         Group {
-            Section("Klaar om te gebruiken") {
+            Section {
                 ForEach(checklist) { step in
-                    HStack(spacing: 12) {
-                        Image(systemName: step.done ? "checkmark.circle.fill" : "circle.dashed")
-                            .font(.title3)
-                            .foregroundStyle(step.done ? Color.green : Color.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(step.title)
-                            Text(step.detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
+                    StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
                         if !step.done {
                             Button(step.button) {
                                 if step.section == .privacy, step.title.contains("schermen") {
@@ -209,19 +186,29 @@ struct SettingsView: View {
                                 app.settingsSection = step.section
                             }
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
                     }
-                    .padding(.vertical, 2)
+                }
+            } header: {
+                HStack {
+                    Text("Klaar om te gebruiken")
+                    Spacer()
+                    Text("\(checklist.filter(\.done).count) van \(checklist.count)")
+                        .monospacedDigit()
                 }
             }
-            Section("Zo gebruik je Nook") {
-                shortcutRow("Vraag iets (typen)", keys: "⌥⌘ spatie")
-                shortcutRow("Praat met Nook", keys: "⌥ spatie")
-                shortcutRow("Laat Nook meekijken", keys: "⌥⌘N")
-                shortcutRow("Open het paneel", keys: "wijs naar de notch")
-                Text("Vraag gewoon wat je wilt: \"wat staat er in die mail?\", \"zet dit in mijn agenda\", \"wat wacht er op mij op GitHub?\". Nook kijkt zelf op je schermen, in je agenda en in je koppelingen. Niets wordt uitgevoerd zonder jouw klik.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section {
+                shortcutRow("Vraag iets (typen)", keys: ["⌥", "⌘", "spatie"])
+                shortcutRow("Praat met Nook", keys: ["⌥", "spatie"])
+                shortcutRow("Laat Nook meekijken", keys: ["⌥", "⌘", "N"])
+                LabeledContent("Open het paneel") {
+                    Text("wijs naar de notch").foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Zo gebruik je Nook")
+            } footer: {
+                Text("Vraag gewoon wat je wilt: “wat staat er in die mail?”, “zet dit in mijn agenda”. Nook kijkt zelf op je schermen, in je agenda en in je koppelingen. Niets gebeurt zonder jouw klik.")
             }
             Section("Notch") {
                 Picker("Scherm", selection: $settings.screenChoice) {
@@ -242,15 +229,11 @@ struct SettingsView: View {
         }
     }
 
-    private func shortcutRow(_ title: String, keys: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(keys)
-                .font(.system(.callout, design: .rounded).weight(.medium))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
+    private func shortcutRow(_ title: String, keys: [String]) -> some View {
+        LabeledContent(title) {
+            HStack(spacing: 4) {
+                ForEach(keys, id: \.self) { Keycap(label: $0) }
+            }
         }
     }
 
@@ -286,7 +269,8 @@ struct SettingsView: View {
                     Text("Gratis op je Mac").tag(BrainKind.local)
                 }
                 .pickerStyle(.segmented)
-                Text(brainExplanation).font(.caption).foregroundStyle(.secondary)
+            } footer: {
+                Text(brainExplanation)
             }
 
             if settings.useLocal {
@@ -524,20 +508,8 @@ struct SettingsView: View {
     private var assistantSection: some View {
         Group {
             Section("Wat Nook ziet") {
-                Toggle(isOn: $settings.liveScreen) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Houd al mijn schermen bij")
-                        Text("Nook leest de tekst van al je vensters op al je schermen, op je Mac. Daardoor is een antwoord direct klaar.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: $settings.screenWithEveryQuestion) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Gebruik mijn schermen bij elke vraag")
-                        Text("Uit: alleen als je naar iets verwijst (\"dit\", \"hier\", \"die mail\").")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                SettingToggle("Houd al mijn schermen bij", detail: "Nook leest de tekst van al je vensters op al je schermen, op je Mac. Daardoor is een antwoord direct klaar.", isOn: $settings.liveScreen)
+                SettingToggle("Gebruik mijn schermen bij elke vraag", detail: "Uit: alleen als je naar iets verwijst (\"dit\", \"hier\", \"die mail\").", isOn: $settings.screenWithEveryQuestion)
                 LabeledContent("Nu in beeld") {
                     Text(app.screenContext.windows.isEmpty ? "niets gelezen" : "\(app.screenContext.windows.count) vensters op \(max(1, app.screenContext.displayCount)) \(app.screenContext.displayCount == 1 ? "scherm" : "schermen")")
                         .foregroundStyle(.secondary)
@@ -547,20 +519,8 @@ struct SettingsView: View {
                 }
             }
             Section("Meedenken") {
-                Toggle(isOn: $settings.webSearch) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Zoek op het web als dat nodig is")
-                        Text("Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: $settings.autoWatch) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Denk mee terwijl ik werk")
-                        Text("Ben je een tijdje met iets bezig, dan kijkt Nook mee. Kan hij iets voor je overnemen of weet hij een slimmere aanpak, dan biedt hij het aan naast de notch (\"Zal ik dit in je agenda zetten?\"). Zeg je vaker nee, dan houdt hij zich meer in. Stuurt dan af en toe de tekst van je voorste vensters naar je brein.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                SettingToggle("Zoek op het web als dat nodig is", detail: "Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.", isOn: $settings.webSearch)
+                SettingToggle("Denk mee terwijl ik werk", detail: "Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de notch. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.", isOn: $settings.autoWatch)
                 .disabled(settings.useLocal)
                 if !app.thinkAlong.mutedApps.isEmpty {
                     LabeledContent("Niet meedenken in") {
@@ -572,13 +532,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Toggle(isOn: $settings.autoRunSafe) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Kleine dingen meteen doen")
-                        Text("Vraag je om muziek, volume, een app, een herinnering of een open punt, dan doet Nook het zonder eerst op Uitvoeren te wachten. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst, en voorstellen uit Meedenken ook.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                SettingToggle("Kleine dingen meteen doen", detail: "Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.", isOn: $settings.autoRunSafe)
             }
         }
     }
@@ -587,13 +541,15 @@ struct SettingsView: View {
 
     private var connectionsSection: some View {
         Group {
-            Section("Op je Mac") {
+            Section {
                 let sources = localSources
                 ForEach(sources.indices, id: \.self) { index in
                     localRow(sources[index])
                 }
-                Text("Mail en je browser lees ik alleen als die apps open zijn. macOS vraagt de eerste keer om toestemming.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Op je Mac")
+            } footer: {
+                Text("Mail en je browser leest Nook alleen als die apps open zijn. macOS vraagt de eerste keer om toestemming.")
             }
             Section("Diensten") {
                 CloudConnectorSettings(connectors: app.connectors.sources) { app.connectors.refreshAll() }
@@ -622,7 +578,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: source.symbol)
                     .foregroundStyle(source.accent)
-                    .frame(width: 20)
+                    .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
                     Text(localDetail(source)).font(.caption).foregroundStyle(.secondary)
@@ -648,21 +604,23 @@ struct SettingsView: View {
 
     private var agentsSection: some View {
         Group {
-            Section("Accounts") {
+            Section {
                 ForEach(AgentKind.allCases) { kind in
                     accountRow(kind)
                 }
+            } header: {
+                Text("Accounts")
+            } footer: {
                 Text("Eén klik koppelt alles voor dat account. Staat de agent nog niet op je Mac of ben je niet ingelogd, dan opent Nook Terminal om te installeren en in te loggen. Van elk bestand dat Nook aanpast, komt eerst een backup.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Section("Koppel je agents") {
+            Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
                 }
+            } header: {
+                Text("Koppel je agents")
+            } footer: {
                 Text("Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet, dan doen de koppelingen niets.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Section("Abonnementen") {
                 LabeledContent("Claude") {
@@ -696,43 +654,41 @@ struct SettingsView: View {
             let who = [account.name, account.plan].filter { !$0.isEmpty }.joined(separator: " · ")
             return linkedAll ? who : who + " · nog niet gekoppeld met Nook"
         }()
-        return HStack {
-            Image(systemName: complete ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(complete ? Color.green : Color.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.name)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
+        return StatusRow(title: kind.name, detail: detail, state: complete ? .done : .todo) {
             if progress?.isBusy == true {
                 ProgressView().controlSize(.small)
             } else if !complete {
                 Button(!program ? "Installeer en koppel" : (account == nil ? "Log in en koppel" : "Koppel")) { app.connect(kind) }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
         }
     }
 
     private func agentRow(_ target: AgentConfigInstaller.Target) -> some View {
         let state = agentStates[target] ?? .notInstalled
-        return HStack(alignment: .center) {
-            Image(systemName: state == .installed ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(stateColor(state))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(target.title)
-                Text(stateText(state, target: target))
-                    .font(.caption)
-                    .foregroundStyle(state == .notInstalled ? Color.secondary : stateColor(state))
+        let rowState: StatusState = {
+            switch state {
+            case .installed: return .done
+            case .outdated: return .warning
+            case .unreadable: return .error
+            case .notInstalled: return .todo
             }
-            Spacer()
+        }()
+        return StatusRow(title: target.title, detail: stateText(state, target: target), state: rowState) {
             switch state {
             case .notInstalled:
                 Button("Koppel…") { prepare(target, install: true) }
+                    .controlSize(.small)
             case .outdated:
-                Button("Werk bij…") { prepare(target, install: true) }.buttonStyle(.borderedProminent)
+                Button("Werk bij…") { prepare(target, install: true) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 Button("Ontkoppel…") { prepare(target, install: false) }
+                    .controlSize(.small)
             case .installed:
                 Button("Ontkoppel…") { prepare(target, install: false) }
+                    .controlSize(.small)
             case .unreadable:
                 EmptyView()
             }
@@ -745,15 +701,6 @@ struct SettingsView: View {
         case .installed: return "Gekoppeld · \(target.displayPath)"
         case .outdated: return "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de notch"
         case .unreadable(let message): return message
-        }
-    }
-
-    private func stateColor(_ state: AgentConfigInstaller.State) -> Color {
-        switch state {
-        case .installed: return .green
-        case .outdated: return .orange
-        case .unreadable: return .red
-        case .notInstalled: return .secondary
         }
     }
 
@@ -790,25 +737,26 @@ struct SettingsView: View {
 
     private var voiceSection: some View {
         Group {
-            Section("Praten") {
+            Section {
                 Toggle("Lees antwoorden voor als ik iets zeg", isOn: $settings.speakAnswers)
                 Toggle("Luister naar “Hé Nook”", isOn: $settings.wakeWord)
                     .disabled(!WakeWordService.supported)
+            } header: {
+                Text("Praten")
+            } footer: {
                 Text(WakeWordService.supported
                      ? "Met het wekwoord luistert Nook steeds mee, maar de herkenning gebeurt alleen op je Mac en er wordt niets bewaard. Je ziet dan het oranje microfoonlampje."
                      : "Deze Mac kan Nederlandse spraak niet zelf herkennen, dus het wekwoord kan niet aan (er gaat nooit geluid naar buiten). Met ⌥ spatie praat je altijd.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Section("Geluiden") {
+            Section {
                 Toggle("Geluid als een agent op je wacht of klaar is", isOn: $settings.sounds)
-                HStack {
-                    Text("Eigen geluiden: zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                LabeledContent("Eigen geluiden") {
                     Button("Open map") { NookSound.openFolder() }
                 }
+            } header: {
+                Text("Geluiden")
+            } footer: {
+                Text("Zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.")
             }
         }
     }
@@ -817,7 +765,7 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         Group {
-            Section("Machtigingen") {
+            Section {
                 permissionRow("Scherm lezen", detail: "Alle vensters op al je schermen", granted: CGPreflightScreenCaptureAccess()) {
                     CGRequestScreenCaptureAccess()
                     refreshTick += 1
@@ -831,38 +779,48 @@ struct SettingsView: View {
                 permissionRow("Microfoon en spraak", detail: "Praten met Nook", granted: VoiceService.permissionsGranted) {
                     Task { _ = await app.voice.requestPermissions(); refreshTick += 1 }
                 }
+            } header: {
+                Text("Machtigingen")
+            } footer: {
                 Text("Mail, je browser, Spotify en Muziek vraagt macOS zelf om toestemming zodra Nook ze voor het eerst gebruikt. Na een nieuwe build met een ad-hoc handtekening kan macOS het opnieuw vragen.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             .id(refreshTick)
             Section("Wat je Mac verlaat") {
-                Label("Schermbeelden nooit: alleen herkende tekst, en alleen als je iets vraagt.", systemImage: "eye.slash")
-                Label("Wachtwoordmanagers en verborgen klembord-inhoud worden nooit gelezen.", systemImage: "key")
-                Label("Niets wordt uitgevoerd zonder jouw klik. Nook verstuurt nooit zelf mail.", systemImage: "hand.raised")
-                Label("Sleutels staan in je Keychain. Alles wat Nook doet staat in een logboek op je Mac.", systemImage: "lock")
-                Button("Vergeet wat Nook nu op je schermen zag") {
-                    app.screenContext.clear()
-                    status = "Schermtekst vergeten."
+                promise("eye.slash", "Schermbeelden nooit", "Alleen herkende tekst, en alleen als je iets vraagt.")
+                promise("key", "Wachtwoorden blijven buiten beeld", "Wachtwoordmanagers en verborgen klembord-inhoud worden nooit gelezen.")
+                promise("hand.raised", "Niets zonder jouw klik", "Nook verstuurt nooit zelf mail.")
+                promise("lock", "Sleutels in je Keychain", "Alles wat Nook doet staat in een logboek op je Mac.")
+                LabeledContent("Schermtekst") {
+                    Button("Vergeet wat Nook nu zag") {
+                        app.screenContext.clear()
+                        status = "Schermtekst vergeten."
+                    }
                 }
             }
-            .font(.callout)
         }
     }
 
-    private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(granted ? Color.green : Color.secondary)
+    private func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(NookTheme.iris)
+                .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
-            Spacer()
+        }
+    }
+
+    private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping () -> Void) -> some View {
+        StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
             if granted {
                 Text("Aan").foregroundStyle(.secondary)
             } else {
-                Button("Toestaan", action: request).buttonStyle(.borderedProminent)
+                Button("Toestaan", action: request)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
         }
     }
@@ -917,3 +875,126 @@ private struct ConfigPreview: View {
         }
     }
 }
+
+// MARK: Bouwstenen
+
+/// Kop van een onderdeel: Nook zelf bij het overzicht, anders het symbool van het onderdeel in één kleur.
+private struct SettingsHeader: View {
+    let section: SettingsSection
+    let mood: NookMood
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                if section == .general {
+                    NookOrb(mood: mood, size: 30, animated: false)
+                } else {
+                    Image(systemName: section.symbol)
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(NookTheme.iris)
+                }
+            }
+            .frame(width: 48, height: 48)
+            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(NookTheme.iris.opacity(0.14)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.title).font(.title.weight(.semibold))
+                Text(section.subtitle).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+enum StatusState {
+    case done, todo, warning, error
+
+    var symbol: String {
+        switch self {
+        case .done: return "checkmark.circle.fill"
+        case .todo: return "circle"
+        case .warning: return "exclamationmark.circle.fill"
+        case .error: return "xmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .done: return .green
+        case .todo: return Color.secondary.opacity(0.55)
+        case .warning: return .orange
+        case .error: return .red
+        }
+    }
+}
+
+/// Eén rij met een status links, naam en uitleg, en rechts de actie. Overal hetzelfde, zodat je in één blik ziet wat klaar is.
+private struct StatusRow<Trailing: View>: View {
+    let title: String
+    let detail: String
+    let state: StatusState
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: state.symbol)
+                .font(.system(size: 17))
+                .foregroundStyle(state.color)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(state == .warning || state == .error ? state.color : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// Aan/uit met een korte uitleg eronder.
+private struct SettingToggle: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    init(_ title: String, detail: String, isOn: Binding<Bool>) {
+        self.title = title
+        self.detail = detail
+        self._isOn = isOn
+    }
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Een toets, zoals op het toetsenbord.
+private struct Keycap: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.primary.opacity(0.85))
+            .padding(.horizontal, label.count > 1 ? 9 : 0)
+            .frame(minWidth: 24, minHeight: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.14)))
+                    .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
+            )
+    }
+}
+
