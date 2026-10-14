@@ -76,8 +76,7 @@ struct CardView: View {
     }
 
     private static func rich(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        MarkdownBlock.inline(MarkdownBlock.clean(text))
     }
 
     /// Doorvragen met tekst: altijd klaar om te typen, Enter verstuurt.

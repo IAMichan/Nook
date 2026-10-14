@@ -177,36 +177,6 @@ final class NookTools {
                 }
             ),
             ToolSpec(
-                name: "draft_mail",
-                description: "Opent een conceptmail in Mail. De gebruiker leest het na en verstuurt zelf; Nook verstuurt nooit mail.",
-                schema: object([
-                    "to": string("E-mailadres van de ontvanger, optioneel."),
-                    "subject": string("Onderwerp."),
-                    "body": string("Inhoud van de mail.")
-                ], required: ["subject", "body"]),
-                kind: .action,
-                summarize: { input in
-                    let to = (input["to"] as? String) ?? ""
-                    return "Concept in Mail" + (to.isEmpty ? "" : " aan \(to)")
-                },
-                tag: { _ in ("jij verstuurt", .caution) },
-                run: { [weak self] input in
-                    guard let self, let subject = self.text(input, "subject"), let body = self.text(input, "body") else {
-                        throw NookError("Onderwerp of inhoud ontbreekt.")
-                    }
-                    var components = URLComponents()
-                    components.scheme = "mailto"
-                    components.path = self.text(input, "to") ?? ""
-                    components.queryItems = [
-                        URLQueryItem(name: "subject", value: subject),
-                        URLQueryItem(name: "body", value: body)
-                    ]
-                    guard let url = components.url else { throw NookError("Kon de mail niet voorbereiden.") }
-                    NSWorkspace.shared.open(url)
-                    return "Conceptmail geopend"
-                }
-            ),
-            ToolSpec(
                 name: "open_app",
                 description: "Opent een app op de Mac, bijvoorbeeld \"Safari\" of \"Notities\".",
                 schema: object(["name": string("Naam van de app.")], required: ["name"]),

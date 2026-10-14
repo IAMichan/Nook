@@ -52,7 +52,7 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .today: TodayTab(viewModel: viewModel)
+        case .nook: NookTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
         case .connect: ConnectTab(viewModel: viewModel)
         case .music: MusicTab()
