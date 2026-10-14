@@ -1,17 +1,16 @@
 import Foundation
 
-// Wat Nook bij één antwoord echt heeft opgezocht. Elke lees-tool loopt hierlangs, voor elk brein (Claude, de andere
-// providers, Claude Code en het lokale model). Zo weet de chat het verschil tussen een bron die gekoppeld is, een bron die
-// doorzocht werd, een bron die iets opleverde en een bron die faalde. Uit de uitkomsten komen ook de bronverwijzingen:
-// genummerd, met een echte link als die er is, zodat het brein met [1], [2] kan verwijzen en de gebruiker kan doorklikken.
+// What Nook actually retrieved for a given response. Every read tool routes through here, across all brains (Claude, other
+// providers, Claude Code, and local models). This lets the chat distinguish between connected sources, searched
+// sources, productive sources, and failed sources. It also produces numbered citations with clickable links where available.
 
-/// Eén ding waar een antwoord op steunt: een mail, afspraak, document, issue, pagina…
+/// A single reference supporting an answer: an email, calendar event, document, issue, webpage…
 struct SourceReference: Codable, Equatable, Identifiable {
     var number: Int
     var sourceID: String
     var title: String
     var detail: String = ""
-    /// Alleen https, file en message (Mail) worden klikbaar.
+    /// Only https, file, and message (Mail) schemes are actionable links.
     var url: String?
 
     var id: Int { number }
@@ -26,11 +25,11 @@ struct SourceReference: Codable, Equatable, Identifiable {
     }
 }
 
-/// Eén keer dat Nook in een bron keek.
+/// A single retrieval invocation against a source.
 struct RetrievalStep: Codable, Equatable, Identifiable {
     enum Outcome: Codable, Equatable {
         case running
-        /// Iets gevonden; het getal is het aantal regels of treffers (ruwe maat).
+        /// Results found; integer indicates line count or hit count (approximate magnitude).
         case found(Int)
         case empty
         case failed(String)
@@ -39,10 +38,10 @@ struct RetrievalStep: Codable, Equatable, Identifiable {
     var id = UUID()
     var tool: String
     var sourceID: String?
-    /// Waar naar gezocht werd, kort ("offerte", "IAMichan/nook#12").
+    /// Search query or target, concise (e.g. "proposal", "IAMichan/nook#12").
     var query: String = ""
     var outcome: Outcome = .running
-    /// Kwam uit het geheugen van een eerdere vraag (minder dan anderhalve minuut oud).
+    /// Served from cache of an earlier query (less than 90 seconds old).
     var cached = false
     var references: [Int] = []
 
@@ -51,30 +50,30 @@ struct RetrievalStep: Codable, Equatable, Identifiable {
 
 struct RetrievalTimeout: LocalizedError {
     let seconds: Double
-    var errorDescription: String? { "Geen antwoord binnen \(Int(seconds)) seconden." }
+    var errorDescription: String? { "No response within \(Int(seconds)) seconds." }
 }
 
-/// Houdt bij wat er bij één antwoord gelezen werd. Draait op de main actor, net als de tools.
+/// Tracks what was retrieved for a given answer. Runs on the main actor, matching tools.
 @MainActor
 final class RetrievalLedger {
     private(set) var steps: [RetrievalStep] = []
     private(set) var references: [SourceReference] = []
-    /// Na elke wijziging, zodat de chat live kan laten zien waar Nook nu kijkt.
+    /// Fired on changes so chat can display live retrieval status.
     var onChange: (() -> Void)?
 
-    /// Dezelfde vraag aan dezelfde bron binnen één antwoord wordt niet opnieuw gesteld.
+    /// Duplicate queries to the same source within a single response are deduplicated.
     private var local: [String: String] = [:]
 
-    /// Uitkomsten van kort geleden, gedeeld tussen antwoorden: een vervolgvraag hoeft niet alles opnieuw op te halen.
+    /// Recent results shared across responses: follow-up questions avoid redundant fetching.
     private struct Cached { let date: Date; let output: String }
     private static var recent: [String: Cached] = [:]
     static var cacheLifetime: TimeInterval = 90
-    /// Tools die altijd vers moeten zijn (wat er nu op het scherm staat, beschikbaarheid vlak voor een afspraak maken).
+    /// Tools requiring fresh real-time data (live screen contents, pre-booking availability checks).
     static let neverCached: Set<String> = ["read_screen", "check_availability", "list_open_loops"]
 
     static func clearCache() { recent = [:] }
 
-    /// Draait één lees-tool, met time-out, en geeft de tekst voor het brein terug (met genummerde bronnen).
+    /// Executes a read tool with timeout and returns formatted text for the brain (including numbered citations).
     func run(
         tool: String,
         input: [String: Any],
@@ -82,7 +81,7 @@ final class RetrievalLedger {
         operation: @escaping @MainActor ([String: Any]) async throws -> String
     ) async throws -> String {
         let key = Self.key(tool, input)
-        if let output = local[key] { return output + "\n(Dit had je in dit antwoord al opgehaald.)" }
+        if let output = local[key] { return output + "\n(Already retrieved in this response turn.)" }
 
         var step = RetrievalStep(tool: tool, sourceID: SourceCatalog.source(forTool: tool), query: Self.query(input))
         steps.append(step)
@@ -128,26 +127,26 @@ final class RetrievalLedger {
 
         var output = parsed.text
         if !numbered.isEmpty {
-            output += "\n\nBronnen in dit resultaat (verwijs ernaar met het nummer tussen haken, bijvoorbeeld [\(numbered[0].number)]):\n"
+            output += "\n\nSources in this result (cite using the bracketed number, e.g. [\(numbered[0].number)]):\n"
             output += numbered.map { "[\($0.number)] \($0.title)" + ($0.detail.isEmpty ? "" : " — \($0.detail)") }.joined(separator: "\n")
         }
         local[key] = output
         return output
     }
 
-    /// Bronnen die faalden, voor de waarschuwing onder een antwoord.
+    /// Failed retrievals, displayed as a disclaimer under the response.
     var failures: [RetrievalStep] {
         steps.filter { if case .failed = $0.outcome { return true }; return false }
     }
 
-    // MARK: Hulp
+    // MARK: Helpers
 
     static func key(_ tool: String, _ input: [String: Any]) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data()
         return tool + "|" + (String(data: data, encoding: .utf8) ?? "")
     }
 
-    /// De zoekterm of het doel, kort, zonder hele berichten of sleutels.
+    /// Concise query or target, excluding verbose bodies or credentials.
     static func query(_ input: [String: Any]) -> String {
         for key in ["query", "q", "path", "repo", "name", "from"] {
             if let value = input[key] as? String, !value.isEmpty {
@@ -173,11 +172,11 @@ final class RetrievalLedger {
     }
 }
 
-/// Haalt bronverwijzingen uit wat een tool teruggeeft.
+/// Extracts source references from tool output.
 ///
-/// Een tool kan een verwijzing expliciet meegeven met een regel `@ref <titel> | <link> | <detail>` (link en detail mogen leeg).
-/// Zulke regels gaan niet naar het brein; die krijgt de genummerde lijst. Tools zonder zulke regels: elke regel met een
-/// https-link wordt een verwijzing, met de rest van de regel als titel.
+/// A tool can explicitly include a reference with a line `@ref <title> | <link> | <detail>` (link and detail may be empty).
+/// Such lines are not passed to the brain; the brain receives the numbered list. For tools without such lines: every line containing an
+/// https link becomes a reference, with the remainder of the line as the title.
 enum ReferenceParser {
     static let marker = "@ref "
 
@@ -233,8 +232,8 @@ enum ReferenceParser {
     }
 }
 
-/// Verwijzingen in de tekst van het brein: [1], [2, 3]. Alleen nummers die echt bij een opgehaalde bron horen blijven staan,
-/// zodat een antwoord nooit naar een verzonnen bron verwijst.
+/// Citations in the brain's text: [1], [2, 3]. Only numbers that correspond to an actual retrieved source are kept,
+/// ensuring an answer never refers to a fabricated source.
 enum Citations {
     private static let pattern = try? NSRegularExpression(pattern: #"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\](?!\()"#)
 
@@ -250,7 +249,7 @@ enum Citations {
         return result
     }
 
-    /// Haalt verwijzingen weg die nergens bij horen; houdt de rest, ook in een lijstje als [1, 4].
+    /// Strips citations that don't match any source; preserves the rest, including lists like [1, 4].
     static func sanitize(_ text: String, valid: Set<Int>) -> String {
         guard let pattern else { return text }
         let ns = text as NSString
@@ -272,8 +271,8 @@ enum Citations {
     }
 }
 
-/// Tekst van derden (mail, webpagina's, berichten, schermtekst) gaat omlijnd naar het brein. Zulke tekst mag die omlijning
-/// niet zelf kunnen sluiten of een nieuwe openen; anders kan een mail zich voordoen als een opdracht van de gebruiker.
+/// Third-party text (email, webpages, messages, screen text) is enclosed in tags before being passed to the brain.
+/// Such text must not be able to close or open tags itself; otherwise an email could pose as a user instruction.
 enum UntrustedText {
     private static let tags = try? NSRegularExpression(
         pattern: #"<\s*/?\s*(tool_data|screen_content|system|instructions?|user|assistant|human)\b"#,

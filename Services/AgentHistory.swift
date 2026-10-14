@@ -616,8 +616,8 @@ private final class HistoryScanner: @unchecked Sendable {
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: entries) }
         if !summaryTitle.isEmpty { session.title = summaryTitle }
         session.title = Self.oneLine(session.title, 90)
-        session.lastPrompt = Self.clip(session.lastPrompt, 600)
-        session.lastReply = Self.clip(session.lastReply, 1_200)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
     }
 
@@ -735,8 +735,8 @@ private final class HistoryScanner: @unchecked Sendable {
 
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: entries) }
         session.title = Self.oneLine(session.title, 90)
-        session.lastPrompt = Self.clip(session.lastPrompt, 600)
-        session.lastReply = Self.clip(session.lastReply, 1_200)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
     }
 

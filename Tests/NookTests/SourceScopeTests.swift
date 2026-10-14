@@ -3,14 +3,14 @@ import XCTest
 @testable import NookCore
 #endif
 
-/// Bronkeuze: wat de gebruiker in de vraag zegt, hoe dat samengaat met de bronkiezer en welke bronnen volledig meegaan.
+/// Source scoping: user query intent, interaction with source picker, and full source inclusion.
 final class SourceScopeTests: XCTestCase {
     func testOnlyCalendarAndMailInDutch() throws {
         let scope = try XCTUnwrap(SourceScope.parse("Gebruik alleen mijn agenda en mail en bereid me voor op morgen"))
         XCTAssertEqual(scope.mode, .only)
         XCTAssertTrue(scope.allows("calendar"))
         XCTAssertTrue(scope.allows("mail"))
-        XCTAssertTrue(scope.allows("icalfeeds"), "‘agenda’ dekt alle agenda's")
+        XCTAssertTrue(scope.allows("icalfeeds"), "'calendar' covers all calendars")
         XCTAssertFalse(scope.allows("github"))
         XCTAssertFalse(scope.allows(SourceCatalog.screen))
     }
@@ -52,7 +52,7 @@ final class SourceScopeTests: XCTestCase {
     }
 
     func testIncidentalNegationDoesNotExclude() throws {
-        // "niet" hoort bij dubbel geboekt, niet bij de agenda.
+        // "niet" belongs to "dubbel geboekt" (double-booked), not the calendar.
         let scope = SourceScope.parse("Check of ik vrijdag niet dubbel geboekt sta in mijn agenda")
         XCTAssertFalse(scope?.excluded.contains("calendar") ?? false)
     }
@@ -71,7 +71,7 @@ final class SourceScopeTests: XCTestCase {
         let merged = picker.merged(with: request)
         XCTAssertEqual(merged.mode, .only)
         XCTAssertTrue(merged.allows("mail"))
-        XCTAssertFalse(merged.allows(SourceCatalog.screen), "Wat in de bronkiezer uit staat, blijft uit")
+        XCTAssertFalse(merged.allows(SourceCatalog.screen), "Sources disabled in the picker remain disabled")
     }
 
     func testMergeIntersectsWithPickerOnly() {
@@ -92,16 +92,16 @@ final class SourceScopeTests: XCTestCase {
         XCTAssertEqual(SourceCatalog.source(forTool: "check_availability"), "calendar")
         XCTAssertEqual(SourceCatalog.source(forTool: "notion_read_page"), "notion")
         XCTAssertNil(SourceCatalog.source(forTool: "show_chart"))
-        XCTAssertNil(SourceCatalog.source(forTool: "compose_mail"), "Een concept schrijven is geen bron lezen")
+        XCTAssertNil(SourceCatalog.source(forTool: "compose_mail"), "Composing a draft is not reading a source")
     }
 
-    // MARK: Routering
+    // MARK: Routing
 
     func testRouterTargetsRelevantSources() {
         let active: Set<String> = ["calendar", "mail", "github", "stripe", "browser", "files"]
         let relevant = SourceRouter.relevant(to: "Wat heeft Lisa gemaild over de offerte?", scope: .automatic, active: active)
         XCTAssertTrue(relevant.contains("mail"))
-        XCTAssertTrue(relevant.contains("calendar"), "agenda gaat altijd mee")
+        XCTAssertTrue(relevant.contains("calendar"), "calendar is always included")
         XCTAssertFalse(relevant.contains("stripe"))
         XCTAssertFalse(relevant.contains("github"))
     }

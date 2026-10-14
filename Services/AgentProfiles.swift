@@ -1,24 +1,24 @@
 import Foundation
 
-/// Eén account van een agent, zoals je het in Nook ziet: "Claude · Persoonlijk", "Claude · Bettr".
-/// Elk account heeft zijn eigen map met instellingen en login. Het eerste account is de gewone map van de agent
-/// (~/.claude, ~/.codex); een extra account krijgt een eigen map (~/.claude-werk) die de agent vindt via
-/// CLAUDE_CONFIG_DIR of CODEX_HOME. Zo staan een persoonlijk en een zakelijk account gewoon naast elkaar.
+/// A single agent account as presented in Nook: "Claude · Personal", "Claude · Work".
+/// Each account has its own configuration directory and login state. The primary account uses the agent's default
+/// directory (~/.claude, ~/.codex); additional accounts use custom directories (~/.claude-work) pointed to by
+/// CLAUDE_CONFIG_DIR or CODEX_HOME, allowing personal and work accounts side-by-side.
 struct AgentProfile: Codable, Identifiable, Hashable {
-    /// "claude" voor het eerste account, "claude-werk" voor een extra account.
+    /// "claude" for primary account, "claude-work" for additional accounts.
     var id: String
     var kind: AgentKind
-    /// Wat je zelf koos ("Werk"). Leeg bij het eerste account: dan noemt Nook het naar de organisatie.
+    /// User-chosen label ("Work"). Empty for default account: Nook names it after the organization.
     var label: String
-    /// Nil: de gewone map van de agent. Anders het volledige pad van de eigen map.
+    /// Nil: default agent directory. Otherwise full path to custom directory.
     var home: String?
-    /// Hoe dit account inlogt. Nil: via de agent zelf (abonnement/OAuth in de terminal).
+    /// How this account authenticates. Nil: via the agent itself (subscription/OAuth in terminal).
     var auth: AgentAuthMethod? = nil
 
-    /// Inloggen met een API-sleutel in plaats van een abonnement.
+    /// Authenticate with an API key instead of subscription.
     var usesAPIKey: Bool { auth == .apiKey }
 
-    /// Onder deze naam staat de API-sleutel van dit account in de Keychain (alleen Claude Code; Codex bewaart hem zelf).
+    /// Keychain account name for this account's API key (Claude Code only; Codex stores its own).
     var keychainAccount: String { "agent.apikey." + id }
 
     var isDefault: Bool { home == nil }
@@ -27,40 +27,40 @@ struct AgentProfile: Codable, Identifiable, Hashable {
         home.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? kind.defaultHome
     }
 
-    /// De omgevingsvariabele die de agent naar deze map laat kijken; leeg voor het eerste account.
+    /// Environment variable directing the agent to this directory; empty for primary account.
     var environment: [String: String] {
         guard let home, let variable = kind.homeVariable else { return [:] }
         return [variable: home]
     }
 
-    /// "CLAUDE_CONFIG_DIR=~/.claude-werk " voor voor een commando in de terminal; leeg voor het eerste account.
+    /// "CLAUDE_CONFIG_DIR=~/.claude-work " prefix for terminal commands; empty for primary account.
     var commandPrefix: String {
         var prefix = ""
         if let home, let variable = kind.homeVariable { prefix = "\(variable)=\(AgentProfile.shellPath(home)) " }
-        // De sleutel zelf staat nooit in het commando: de shell haalt hem op het moment zelf uit de Keychain.
+        // The raw key is never written into the command: shell retrieves it at invocation time from Keychain.
         if kind == .claude, usesAPIKey {
             prefix = "ANTHROPIC_API_KEY=\"$(security find-generic-password -s \(Keychain.service) -a \(keychainAccount) -w)\" " + prefix
         }
         return prefix
     }
 
-    /// Het commando waarmee je de agent met dit account start.
+    /// Launch command for the agent under this account.
     var launchCommand: String { commandPrefix + kind.command }
 
-    /// "~/.claude-werk" in plaats van het volledige pad, voor op het scherm.
+    /// "~/.claude-work" formatted display path.
     var displayHome: String { AgentProfile.tildePath(homeURL.path) }
 
     static func defaultProfile(_ kind: AgentKind) -> AgentProfile {
         AgentProfile(id: kind.rawValue, kind: kind, label: "", home: nil)
     }
 
-    /// Vergelijkbaar pad: zonder ~, zonder slash aan het eind.
+    /// Normalized comparable path: expands tilde, standardizes trailing slashes.
     static func normalize(_ path: String) -> String {
         guard !path.isEmpty else { return "" }
         return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true).standardizedFileURL.path
     }
 
-    /// Een pad voor de shell: "$HOME"/.claude-werk als dat kan (leesbaar en het werkt), anders volledig gequote.
+    /// Shell-escaped path: "$HOME"/.claude-work when possible, otherwise safely quoted.
     static func shellPath(_ path: String) -> String {
         let tilde = tildePath(path)
         if tilde.hasPrefix("~/") {
@@ -77,18 +77,18 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     }
 }
 
-/// Hoe een account inlogt.
+/// Authentication method for an agent account.
 enum AgentAuthMethod: String, Codable, CaseIterable, Identifiable {
-    /// Via de agent zelf: je abonnement (Claude Pro/Max, ChatGPT) of een login die de CLI bewaart.
+    /// Via the agent CLI: subscription (Claude Pro/Max, ChatGPT) or stored CLI credentials.
     case cli
-    /// Met een API-sleutel. Claude Code: in de Keychain van Nook; Codex: bewaard door `codex login --with-api-key`.
+    /// With an API key. Claude Code: stored in Nook Keychain; Codex: managed by `codex login --with-api-key`.
     case apiKey
 
     var id: String { rawValue }
 }
 
 extension AgentKind {
-    /// Kan deze agent met meerdere accounts naast elkaar werken? Gemini CLI kent geen eigen map per account.
+    /// Can this agent run multiple profiles concurrently? Gemini CLI lacks per-directory profiles.
     var supportsProfiles: Bool { homeVariable != nil }
 
     var homeVariable: String? {
@@ -99,24 +99,26 @@ extension AgentKind {
         }
     }
 
-    /// Waar Nook een nieuwe map voor een extra account voorstelt: ~/.claude-werk.
+    /// Suggested location for a profile directory: ~/.claude-work.
     func suggestedHome(slug: String) -> URL {
         let base = self == .claude ? ".claude" : (self == .codex ? ".codex" : ".gemini")
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(base)-\(slug)", isDirectory: true)
     }
 }
 
-/// Bewaart welke accounts je in Nook hebt en welke per agent de standaard is.
+/// Persists configured agent profiles and the default account per agent.
 @MainActor
 final class AgentProfileStore: ObservableObject {
-    /// Alle accounts, het eerste account van elke agent vooraan.
+    /// All accounts, with primary account for each agent listed first.
     @Published private(set) var all: [AgentProfile] = []
-    /// Per agent het account waarmee Nook nieuwe sessies start (en denkt, bij Claude Code).
+    /// Default account per agent for launching sessions and background thinking.
     @Published private(set) var preferred: [AgentKind: String] = [:]
 
     private static let profilesKey = "agentProfiles"
     private static let preferredKey = "agentPreferredProfiles"
-    /// Gelezen door ClaudeCodeBrain, buiten de hoofdthread: de map van het standaard-Claude-account.
+    /// Folders of accounts you removed from Nook: never adopted again automatically.
+    private static let dismissedKey = "agentDismissedHomes"
+    /// Read by ClaudeCodeBrain across threads: config dir of preferred Claude account.
     nonisolated static let brainHomeKey = "claudeBrainConfigDir"
 
     init() {
@@ -140,6 +142,11 @@ final class AgentProfileStore: ObservableObject {
         syncBrainHome()
     }
 
+    private var dismissed: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: Self.dismissedKey) }
+    }
+
     func profiles(for kind: AgentKind) -> [AgentProfile] {
         all.filter { $0.kind == kind }
     }
@@ -156,22 +163,22 @@ final class AgentProfileStore: ObservableObject {
         preferredProfile(profile.kind).id == profile.id
     }
 
-    /// Bij welk account hoort een sessie met deze map (CLAUDE_CONFIG_DIR of CODEX_HOME)? Leeg = het eerste account.
+    /// Matches an account to a given config directory (CLAUDE_CONFIG_DIR or CODEX_HOME). Empty = primary account.
     func profile(kind: AgentKind, home: String) -> AgentProfile? {
         let wanted = AgentProfile.normalize(home)
         if wanted.isEmpty || wanted == AgentProfile.normalize(kind.defaultHome.path) { return profile(id: kind.rawValue) }
         return profiles(for: kind).first { AgentProfile.normalize($0.homeURL.path) == wanted }
     }
 
-    // MARK: Aanpassen
+    // MARK: Mutation
 
-    /// Maakt een extra account met een eigen map. Bestaat die map al (je gebruikte hem al), dan neemt Nook hem over.
+    /// Creates an additional profile with custom folder. If the folder already exists, Nook adopts it.
     func add(kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
         let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        let slug = Self.slug(name.isEmpty ? "werk" : name)
+        let slug = Self.slug(name.isEmpty ? "work" : name)
         var folder = home ?? kind.suggestedHome(slug: slug)
         if home == nil {
-            // Een map die al bij een ander account in Nook hoort, nooit delen.
+            // Never share a folder already assigned to another profile in Nook.
             var counter = 2
             while all.contains(where: { AgentProfile.normalize($0.homeURL.path) == AgentProfile.normalize(folder.path) }) {
                 folder = kind.suggestedHome(slug: "\(slug)-\(counter)")
@@ -179,6 +186,7 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         if let existing = profile(kind: kind, home: folder.path) { return existing }
+        dismissed.remove(AgentProfile.normalize(folder.path))
         var id = "\(kind.rawValue)-\(slug)"
         var counter = 2
         while all.contains(where: { $0.id == id }) {
@@ -186,7 +194,7 @@ final class AgentProfileStore: ObservableObject {
             counter += 1
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let profile = AgentProfile(id: id, kind: kind, label: name.isEmpty ? "Werk" : name, home: folder.path)
+        let profile = AgentProfile(id: id, kind: kind, label: name.isEmpty ? "Work" : name, home: folder.path)
         var updated = all
         let insertAt = (updated.lastIndex { $0.kind == kind } ?? (updated.count - 1)) + 1
         updated.insert(profile, at: insertAt)
@@ -198,16 +206,17 @@ final class AgentProfileStore: ObservableObject {
     func rename(_ id: String, to label: String) {
         guard let index = all.firstIndex(where: { $0.id == id }) else { return }
         let clean = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Een extra account heeft altijd een naam; het eerste account mag terug naar automatisch.
+        // Additional accounts must have a label; primary account may revert to automatic naming.
         if clean.isEmpty && !all[index].isDefault { return }
         all[index].label = String(clean.prefix(30))
         save()
     }
 
-    /// Haalt het account uit Nook. De map en de login blijven op je Mac staan.
+    /// Removes account from Nook. Local folder and credentials remain on disk.
     func remove(_ id: String) {
         guard let profile = profile(id: id), !profile.isDefault else { return }
         all.removeAll { $0.id == id }
+        dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
         save()
@@ -219,7 +228,7 @@ final class AgentProfileStore: ObservableObject {
         save()
     }
 
-    /// Bewaart (of wist, bij een lege tekst) de API-sleutel van een Claude-account in de Keychain.
+    /// Persists (or deletes when empty) the Claude account API key in Keychain.
     func setAPIKey(_ key: String, for profile: AgentProfile) {
         Keychain.write(key.trimmingCharacters(in: .whitespacesAndNewlines), account: profile.keychainAccount)
         objectWillChange.send()
@@ -230,8 +239,8 @@ final class AgentProfileStore: ObservableObject {
         return !(Keychain.read(profile.keychainAccount) ?? "").isEmpty
     }
 
-    /// Voor een sessie die Nook zelf start: de omgeving van dit account, met de sleutel als het met een sleutel inlogt.
-    /// Gaat rechtstreeks naar het proces; komt nooit op het scherm of in een bestand.
+    /// Environment variables for launched sessions, including API key if using key-based auth.
+    /// Passed directly to process; never logged or written to disk.
     func launchEnvironment(_ profile: AgentProfile) -> [String: String] {
         var env = profile.environment
         if profile.kind == .claude, profile.usesAPIKey, let key = Keychain.read(profile.keychainAccount), !key.isEmpty {
@@ -245,7 +254,34 @@ final class AgentProfileStore: ObservableObject {
         save()
     }
 
-    /// Mappen als ~/.claude-werk of ~/.codex-klant waarin al een login staat, maar die nog niet in Nook zitten.
+    /// Adopts accounts that exist on this Mac but not yet in Nook: folders like ~/.claude-work with a login,
+    /// and the folder (CLAUDE_CONFIG_DIR or CODEX_HOME) of a running session. That way sessions of all your
+    /// accounts show up in one list. Accounts you removed from Nook stay out.
+    func adoptExisting(running: [(kind: AgentKind, home: String)] = []) {
+        let skip = dismissed
+        var folders = discover()
+        for item in running where !item.home.isEmpty && item.kind.supportsProfiles {
+            let url = URL(fileURLWithPath: AgentProfile.normalize(item.home), isDirectory: true)
+            guard profile(kind: item.kind, home: url.path) == nil,
+                  !folders.contains(where: { $0.url.standardizedFileURL.path == url.path }),
+                  FileManager.default.fileExists(atPath: url.path) else { continue }
+            folders.append((item.kind, url))
+        }
+        for folder in folders where !skip.contains(AgentProfile.normalize(folder.url.path)) {
+            _ = add(kind: folder.kind, label: Self.label(forFolder: folder.url), home: folder.url)
+        }
+    }
+
+    /// "~/.claude-work" → "Work"; a folder without a suffix is named after itself.
+    static func label(forFolder url: URL) -> String {
+        let folder = url.lastPathComponent
+        var name = String(folder.drop { $0 != "-" && $0 != "_" }.dropFirst())
+        if name.isEmpty { name = folder.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        if name.isEmpty { name = tr("agents.work") }
+        return String((name.prefix(1).uppercased() + name.dropFirst()).prefix(30))
+    }
+
+    /// Discovers profile folders (e.g. ~/.claude-work, ~/.codex-client) with existing logins not yet added to Nook.
     func discover() -> [(kind: AgentKind, url: URL)] {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
@@ -269,7 +305,7 @@ final class AgentProfileStore: ObservableObject {
         return found
     }
 
-    // MARK: Bewaren
+    // MARK: Persistence
 
     private func save() {
         let defaults = UserDefaults.standard
@@ -299,6 +335,6 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         while result.hasSuffix("-") { result.removeLast() }
-        return result.isEmpty ? "werk" : String(result.prefix(24))
+        return result.isEmpty ? "work" : String(result.prefix(24))
     }
 }

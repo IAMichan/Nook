@@ -1,13 +1,13 @@
 import Foundation
 
-/// Bewaart werkruimte-sessies op je Mac: een lijst met sessies en per sessie zijn tijdlijn.
-/// Alleen leesbaar voor jou (map 0700, bestanden 0600). Schrijft atomair, zodat een crash niets half achterlaat.
+/// Stores workspace sessions on your Mac: a list of sessions and a timeline per session.
+/// Only readable by current user (directory 0700, files 0600). Writes atomically so crashes never leave partial files.
 final class RunStore: @unchecked Sendable {
     let directory: URL
     private let lock = NSLock()
     private let fileManager = FileManager.default
 
-    /// Zoveel regels per tijdlijn bewaren; oudere vallen eraf (het volledige transcript houdt de agent zelf bij).
+    /// Keep this many events per timeline; older ones are dropped (the agent maintains the full transcript itself).
     static let eventLimit = 4_000
 
     init(directory: URL) {
@@ -36,7 +36,7 @@ final class RunStore: @unchecked Sendable {
         return decoder
     }
 
-    /// Leest alle sessies. Wat bij het afsluiten nog "actief" was, heeft geen proces meer: dat wordt "gestopt".
+    /// Loads all sessions. Anything still "active" at shutdown has no running process: it becomes "stopped".
     func loadRuns(now: Date = Date()) -> [WorkspaceRun] {
         lock.lock()
         defer { lock.unlock() }
@@ -64,7 +64,7 @@ final class RunStore: @unchecked Sendable {
         defer { lock.unlock() }
         guard let data = try? Data(contentsOf: eventsURL(id)),
               var events = try? Self.decoder.decode([RunEvent].self, from: data) else { return [] }
-        // Een tool of goedkeuring die nog liep toen Nook stopte, loopt niet meer.
+        // A tool or approval still running when Nook stopped is no longer running.
         for index in events.indices where events[index].state == .running || events[index].state == .pending {
             events[index].state = events[index].kind == .approval ? .expired : .failed
         }
@@ -90,9 +90,9 @@ final class RunStore: @unchecked Sendable {
     }
 }
 
-// MARK: Gebruik over sessies heen
+// MARK: Cross-session Usage
 
-/// Een periode voor het gebruiksoverzicht.
+/// A time range for the usage overview.
 enum UsageRange: String, CaseIterable, Identifiable, Sendable {
     case today, week, month, all
     var id: String { rawValue }
@@ -108,7 +108,7 @@ enum UsageRange: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Telt het gebruik van werkruimte-sessies op. Alleen wat de agents zelf meldden; ontbrekende cijfers blijven ontbreken.
+/// Aggregates usage across workspace sessions. Only what agents reported themselves; missing figures remain missing.
 struct UsageReport: Equatable, Sendable {
     struct Filter: Equatable, Sendable {
         var range: UsageRange = .week
@@ -125,7 +125,7 @@ struct UsageReport: Equatable, Sendable {
         var outputTokens: Int
         var cacheReadTokens: Int
         var reportedCostUSD: Double?
-        /// Sessies in deze rij zonder tokencijfers (bijvoorbeeld gestopt voor de eerste melding).
+        /// Sessions in this row without token numbers (for example, stopped before the first report).
         var sessionsWithoutTokens: Int
         var id: String { provider.rawValue + "|" + model }
     }
@@ -145,7 +145,7 @@ struct UsageReport: Equatable, Sendable {
     var outputTokens = 0
     var cacheReadTokens = 0
     var cacheWriteTokens = 0
-    /// Som van de kosten die agents zelf meldden; nil als geen enkele sessie kosten meldde.
+    /// Sum of costs reported by agents themselves; nil if no session reported cost.
     var reportedCostUSD: Double?
     var sessionsWithCost = 0
     var sessionsWithTokens = 0
@@ -218,7 +218,7 @@ struct UsageReport: Equatable, Sendable {
         return report
     }
 
-    /// Het model zoals in de rapportage: de gekozen naam, of "standaard".
+    /// The model as shown in reporting: the chosen name, or "default".
     static func displayModel(_ run: WorkspaceRun) -> String {
         if let resolved = run.resolvedModel, !resolved.isEmpty { return resolved }
         return run.model.isEmpty ? "default" : run.model

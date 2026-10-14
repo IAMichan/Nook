@@ -1,9 +1,9 @@
 import Foundation
 
-// De werkruimte voor coding-agents: sessies die Nook zelf start en volgt (niet in een terminal).
-// Alles in dit bestand is alleen Foundation, zodat de tests het los kunnen gebruiken.
+// The workspace for coding agents: sessions that Nook launches and tracks directly (not in a terminal).
+// Everything in this file depends only on Foundation so tests can use it independently.
 
-/// Welke agent een werkruimte-sessie draait. Alleen agents met een echte headless-modus die Nook kan volgen.
+/// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude, codex
 
@@ -16,7 +16,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Wat deze agent in de headless-modus echt kan. De UI toont wat er niet is als "niet beschikbaar".
+    /// Capabilities supported by this agent in headless mode. The UI presents missing features as unavailable.
     var capabilities: ProviderCapabilities {
         switch self {
         case .claude:
@@ -30,7 +30,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Modellen die je snel kiest. Leeg betekent: de standaard van de agent zelf. Je kunt ook een eigen naam typen.
+    /// Quick-select models. Empty means: agent default. Custom names can also be typed.
     var suggestedModels: [String] {
         switch self {
         case .claude: return ["", "sonnet", "opus", "haiku"]
@@ -50,45 +50,45 @@ struct ProviderCapabilities: Equatable, Sendable {
     var policies: [PermissionPolicy]
 }
 
-/// Agent: mag werken. Plan: alleen lezen en een plan maken, niets aanpassen.
+/// Agent: permitted to execute. Plan: read-only analysis and plan creation, no modifications.
 enum ExecutionMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case agent, plan
     var id: String { rawValue }
 }
 
-/// Wat de agent zonder te vragen mag.
+/// What the agent is allowed to do without confirmation.
 enum PermissionPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
-    /// Elke bewerking en elk commando vraagt eerst (alleen Claude Code).
+    /// Prompt before every edit and command (Claude Code only).
     case ask
-    /// Bestanden in de werkmap aanpassen mag; commando's vragen eerst (Claude) of draaien in de sandbox (Codex).
+    /// Editing files in the workspace directory is allowed; commands prompt first (Claude) or run sandboxed (Codex).
     case acceptEdits
-    /// Alles zonder vragen. Alleen als je dat bewust kiest.
+    /// Allow everything without prompts. Use only when explicitly desired.
     case bypass
     var id: String { rawValue }
 }
 
-/// In de map zelf werken, of in een eigen Git-worktree met een eigen branch.
+/// Work directly in the project folder, or in a separate Git worktree with its own branch.
 enum IsolationMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case folder, worktree
     var id: String { rawValue }
 }
 
-/// De toestand van een sessie. Elke wijziging gaat via `RunStatus.canMove(to:)`.
+/// State of a session. All transitions must go through `RunStatus.canMove(to:)`.
 enum RunStatus: String, Codable, CaseIterable, Sendable {
-    /// Map of worktree klaarzetten, agent starten.
+    /// Setting up folder or worktree, launching agent.
     case preparing
-    /// De agent werkt.
+    /// The agent is running.
     case running
-    /// De agent wacht op jouw goedkeuring voor een tool.
+    /// The agent is waiting for your tool approval.
     case waitingApproval
-    /// De beurt is klaar; je kunt verder met een nieuw bericht.
+    /// The turn has finished; you can proceed with a new message.
     case completed
-    /// Er ging iets mis.
+    /// Something went wrong.
     case failed
-    /// Jij stopte hem, of het proces verdween (bijvoorbeeld na een herstart van Nook).
+    /// Stopped by user, or process terminated (for example, after relaunching Nook).
     case stopped
 
-    /// Er hoort een proces bij dat nu draait.
+    /// Corresponds to an actively running process.
     var isActive: Bool {
         switch self {
         case .preparing, .running, .waitingApproval: return true
@@ -106,24 +106,24 @@ enum RunStatus: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Na een herstart draait er geen proces meer: een sessie die "actief" was, is gestopt.
+    /// After a restart no process is running: an "active" session is marked stopped.
     var afterRelaunch: RunStatus { isActive ? .stopped : self }
 }
 
-/// Tokens en kosten. Nil betekent: de agent gaf dit niet door. Nooit raden.
+/// Tokens and costs. Nil means: the agent did not report this. Never guess.
 struct RunUsage: Codable, Equatable, Sendable {
     var inputTokens: Int?
     var outputTokens: Int?
     var cacheReadTokens: Int?
     var cacheWriteTokens: Int?
-    /// Kosten zoals de agent ze zelf berekent (Claude Code: tegen API-prijzen, ook als je een abonnement hebt).
+    /// Cost as calculated by the agent itself (Claude Code: at API rates, even with a subscription).
     var reportedCostUSD: Double?
-    /// Tokens in de context bij de laatste modelaanroep.
+    /// Tokens in context during the latest model call.
     var contextTokens: Int?
-    /// Maximale contextgrootte van het model, als de agent die doorgeeft.
+    /// Maximum context window of the model, if reported by the agent.
     var contextWindow: Int?
     var turns = 0
-    /// Hoe lang de agent in totaal werkte, in seconden (som van de beurten).
+    /// Total time the agent worked, in seconds (sum of turns).
     var activeSeconds: Double = 0
 
     var totalTokens: Int? {
@@ -136,7 +136,7 @@ struct RunUsage: Codable, Equatable, Sendable {
         return min(1, Double(contextTokens) / Double(contextWindow))
     }
 
-    /// Telt een afgeronde beurt op. Velden die de beurt niet kent, blijven zoals ze waren.
+    /// Adds a completed turn. Fields not present in the turn remain unchanged.
     mutating func add(_ turn: TurnUsage) {
         inputTokens = Self.sum(inputTokens, turn.inputTokens)
         outputTokens = Self.sum(outputTokens, turn.outputTokens)
@@ -157,7 +157,7 @@ struct RunUsage: Codable, Equatable, Sendable {
     }
 }
 
-/// Wat één beurt (één proces) aan gebruik meldde.
+/// Usage reported by a single turn (one process).
 struct TurnUsage: Equatable, Sendable {
     var inputTokens: Int?
     var outputTokens: Int?
@@ -169,49 +169,49 @@ struct TurnUsage: Equatable, Sendable {
     var durationSeconds: Double?
 }
 
-/// Eén sessie in de werkruimte. Bewaard in `RunStore`, ook na een herstart.
+/// A single session in the workspace. Stored in `RunStore`, persisted across restarts.
 struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
-    /// De eerste opdracht.
+    /// The initial task prompt.
     var task: String
     var provider: RunProvider
-    /// Met welk account (`AgentProfile.id`).
+    /// Profile account (`AgentProfile.id`).
     var profileID: String
-    /// Leeg: de standaard van de agent.
+    /// Empty: agent default.
     var model: String
-    /// Het model dat de agent echt gebruikte, zoals hij het zelf meldde.
+    /// Model actually used by the agent, as reported by itself.
     var resolvedModel: String?
     var mode: ExecutionMode
     var permission: PermissionPolicy
     var isolation: IsolationMode
-    /// De map of repository die je koos.
+    /// The folder or repository selected.
     var projectPath: String
-    /// Waar de agent echt werkt: de map zelf, of de worktree.
+    /// Where the agent actually works: directory itself, or the worktree.
     var workingDirectory: String
-    /// De root van de Git-repository, nil als het geen repository is.
+    /// The root of the Git repository; nil if not a repository.
     var repoRoot: String?
     var branch: String?
     var baseBranch: String?
     var worktreePath: String?
-    /// Extra instructies voor deze sessie (naast CLAUDE.md / AGENTS.md van het project).
+    /// Extra instructions for this session (alongside project CLAUDE.md / AGENTS.md).
     var instructions: String
     var status: RunStatus
-    /// Uitleg bij de toestand: een foutmelding, of waarom hij stopte.
+    /// Status detail: an error message, or reason for stopping.
     var statusDetail: String?
-    /// De sessie-ID van de agent zelf, om verder te gaan (`claude --resume`, `codex exec resume`).
+    /// Agent provider session ID for resuming (`claude --resume`, `codex exec resume`).
     var providerSessionID: String?
     var createdAt: Date
     var updatedAt: Date
     var archived: Bool
     var usage: RunUsage
-    /// Begin van de beurt die nu loopt.
+    /// Start of the currently running turn.
     var turnStartedAt: Date?
-    /// Laatste keer dat je de wijzigingen bekeek; daarna gewijzigd = "niet bekeken".
+    /// Last time changes were reviewed; modified afterwards = unreviewed.
     var reviewedAt: Date?
-    /// Laatste keer dat de agent iets veranderde.
+    /// Last time the agent made changes.
     var lastChangeAt: Date?
-    /// Aantal gewijzigde bestanden bij de laatste Git-controle, voor in de lijst.
+    /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
 
     var projectName: String {
@@ -224,10 +224,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         return reviewedAt.map { $0 < changed } ?? true
     }
 
-    /// Kan je deze sessie een nieuw bericht sturen? Pas als de vorige beurt klaar is.
+    /// Can a new message be sent to this session? Only when previous turn has finished.
     var canContinue: Bool { !status.isActive }
 
-    /// Een sessie wordt gestart met een gekozen toestand; andere wijzigingen gaan via `move(to:)`.
+    /// A session starts with an initial state; other transitions go through `move(to:)`.
     @discardableResult
     mutating func move(to next: RunStatus, detail: String? = nil, now: Date = Date()) -> Bool {
         guard status.canMove(to: next) else { return false }
@@ -240,7 +240,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// Eén regel in de tijdlijn van een sessie.
+/// A single entry in a session's timeline.
 struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         case user, assistant, thinking, tool, fileChange, approval, error, system, result
@@ -253,15 +253,15 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var date: Date
     var kind: Kind
-    /// De hoofdtekst: bericht, samenvatting van de tool, foutmelding.
+    /// Primary text: message, tool summary, error message.
     var text: String
-    /// Naam van de tool, of soort wijziging (added/modified/deleted).
+    /// Tool name, or type of change (added/modified/deleted).
     var tool: String?
-    /// ID van de tool-aanroep (of van de goedkeuringsvraag), om de uitkomst te koppelen.
+    /// Tool call ID (or approval request ID), to match output.
     var callID: String?
-    /// Invoer van de tool als JSON, of het pad van een bestand.
+    /// Tool input as JSON, or file path.
     var detail: String?
-    /// Uitkomst van de tool, ingekort.
+    /// Tool output, clipped.
     var output: String?
     var state: State?
 
@@ -278,7 +278,7 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
         self.state = state
     }
 
-    /// Lange tool-uitkomsten ingekort; de volledige versie staat in het transcript van de agent zelf.
+    /// Long tool output clipped; the full version is stored in the agent's own transcript.
     static let outputLimit = 16_000
 
     static func clip(_ text: String, _ limit: Int = outputLimit) -> String {
@@ -286,7 +286,7 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// Wat je invult bij "Nieuwe sessie". Wordt gecontroleerd voor er iets start.
+/// Form fields for "New Session". Validated before anything starts.
 struct NewRunConfig: Equatable, Sendable {
     var title = ""
     var task = ""
@@ -302,7 +302,7 @@ struct NewRunConfig: Equatable, Sendable {
     var worktreeRoot = ""
     var instructions = ""
 
-    /// Wat er mis is, of nil als alles klopt. Controleert alleen de invoer; Git en paden controleert de manager.
+    /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {
         if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .missingTask }
         if projectPath.isEmpty { return .missingWorkspace }
@@ -319,7 +319,7 @@ enum ConfigProblem: String, Equatable, Sendable {
     case missingTask, missingWorkspace, unsupportedPolicy, missingBaseBranch, invalidBranchName
 }
 
-/// Namen voor sessies, branches en worktree-mappen, afgeleid van de opdracht.
+/// Names for sessions, branches, and worktree directories derived from the task prompt.
 enum WorktreeNaming {
     /// "Fix de login-bug in Safari!" → "fix-de-login-bug-in-safari".
     static func slug(_ text: String, limit: Int = 40) -> String {
@@ -337,7 +337,7 @@ enum WorktreeNaming {
         return result.isEmpty ? "sessie" : result
     }
 
-    /// Een korte titel uit de eerste regel van de opdracht.
+    /// A short title from the first line of the task prompt.
     static func title(from task: String, limit: Int = 60) -> String {
         let firstLine = task.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let clean = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -350,12 +350,12 @@ enum WorktreeNaming {
         return String(cut) + "…"
     }
 
-    /// "nook/fix-login-bug-3fa2": herkenbaar, en uniek dankzij een stukje van de ID.
+    /// "nook/fix-login-bug-3fa2": recognizable and unique thanks to a slice of the UUID.
     static func branchName(task: String, id: UUID) -> String {
         "nook/" + slug(task, limit: 32) + "-" + String(id.uuidString.prefix(4)).lowercased()
     }
 
-    /// Snelle controle zonder Git; `GitService.isValidBranchName` vraagt het Git zelf.
+    /// Fast check without Git; `GitService.isValidBranchName` verifies via Git directly.
     static func isPlausibleBranchName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 200, !name.hasPrefix("-"), !name.hasPrefix("/"), !name.hasSuffix("/"),
               !name.hasSuffix("."), !name.hasSuffix(".lock"), !name.contains(".."), !name.contains("//"),
@@ -364,7 +364,7 @@ enum WorktreeNaming {
         return name.unicodeScalars.allSatisfy { !forbidden.contains($0) }
     }
 
-    /// Waar de worktree komt: <root>/<repo>/<slug>. Bestaat die map al, dan met een volgnummer.
+    /// Location of the worktree: <root>/<repo>/<slug>. Appends a sequence number if directory exists.
     static func worktreePath(root: String, repoName: String, slug: String, exists: (String) -> Bool) -> String {
         let base = URL(fileURLWithPath: root, isDirectory: true)
             .appendingPathComponent(Self.slug(repoName, limit: 40), isDirectory: true)
@@ -378,7 +378,7 @@ enum WorktreeNaming {
     }
 }
 
-/// Welke mappen een agent mag krijgen. Nooit de systeemmappen of de hele schijf.
+/// Directories an agent is permitted to access. Never system directories or full root filesystem.
 enum WorkspacePathPolicy {
     enum Verdict: Equatable {
         case ok
@@ -395,7 +395,7 @@ enum WorkspacePathPolicy {
         let path = normalize(raw)
         guard !path.isEmpty else { return .missing }
         if path == normalize(home) || forbiddenRoots.contains(path) { return .forbidden }
-        // Systeemmappen zelf, en ook alles daarin behalve /opt/… en /Volumes/… (externe schijven, Homebrew-projecten).
+        // System directories themselves, and everything within them except /opt/… and /Volumes/… (external drives, Homebrew projects).
         for root in ["/System", "/bin", "/sbin", "/usr", "/etc", "/dev", "/private/etc", "/private/var/db"]
         where path.hasPrefix(root + "/") { return .forbidden }
         var isDirectory: ObjCBool = false
@@ -413,7 +413,7 @@ enum WorkspacePathPolicy {
     }
 }
 
-/// Korte, taal-neutrale omschrijving van een tool-aanroep: "Bash · npm test", "Edit · Login.swift".
+/// Concise, language-neutral summary of a tool call: "Bash · npm test", "Edit · Login.swift".
 enum ToolSummary {
     static func describe(tool: String, input: [String: Any]) -> String {
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
@@ -444,7 +444,7 @@ enum ToolSummary {
         return nil
     }
 
-    /// Bestanden die deze tool aanpast, met de soort wijziging.
+    /// Files modified by this tool, along with the type of change.
     static func fileChanges(tool: String, input: [String: Any]) -> [(path: String, kind: String)] {
         switch tool {
         case "Edit", "MultiEdit", "NotebookEdit":
@@ -461,7 +461,7 @@ enum ToolSummary {
         return single.count > limit ? String(single.prefix(limit)) + "…" : single
     }
 
-    /// JSON voor in de tijdlijn, netjes en gesorteerd.
+    /// Formatted, sorted JSON for timeline display.
     static func json(_ object: Any) -> String {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),

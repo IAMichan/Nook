@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Eén sessie: kop met toestand en gebruik, de tijdlijn, wachtende goedkeuringen en het invoerveld.
+/// Single session view: header with state and usage, timeline, pending approvals, and input field.
 struct RunDetailView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -36,7 +36,7 @@ struct RunDetailView: View {
         }
     }
 
-    // MARK: Kop
+    // MARK: Header
 
     private func header(_ run: WorkspaceRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -137,7 +137,7 @@ struct RunDetailView: View {
         .labelStyle(.titleAndIcon)
     }
 
-    // MARK: Tijdlijn
+    // MARK: Timeline
 
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID)
@@ -225,7 +225,7 @@ struct RunDetailView: View {
             ?? GitFileChange(path: relative, oldPath: nil, kind: .modified, staged: false, unstaged: true)
     }
 
-    // MARK: Invoer
+    // MARK: Input
 
     private func composer(_ run: WorkspaceRun) -> some View {
         let active = run.status.isActive
@@ -297,7 +297,7 @@ struct RunDetailView: View {
         workspace.send(runID, text: text)
     }
 
-    /// Een bestand in het veld slepen zet het pad erin; de agent leest het zelf.
+    /// Dragging a file into the input field inserts its path; the agent reads it directly.
     private func insertPaths(_ providers: [NSItemProvider]) {
         for provider in providers {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
@@ -311,7 +311,7 @@ struct RunDetailView: View {
     }
 }
 
-// MARK: Regels in de tijdlijn
+// MARK: Timeline rows
 
 struct EventRow: View {
     let event: RunEvent
@@ -415,7 +415,7 @@ struct EventRow: View {
     }
 }
 
-/// Een tool-aanroep: één regel, uit te klappen voor invoer en uitkomst.
+/// A tool call: single-line summary, expandable to inspect input and output.
 struct ToolRow: View {
     let event: RunEvent
     let expanded: Bool
@@ -521,7 +521,7 @@ struct CodeBlock: View {
     }
 }
 
-/// Een goedkeuringsvraag in de tijdlijn. Staat hij nog open, dan kun je hier meteen antwoorden.
+/// An approval request in the timeline. If still pending, you can respond directly here.
 struct ApprovalRow: View {
     let event: RunEvent
     let expanded: Bool
@@ -568,7 +568,7 @@ struct ApprovalRow: View {
     }
 }
 
-/// Boven het invoerveld: de oudste vraag die op je wacht, met de knoppen.
+/// Above the input field: the oldest pending question awaiting your decision, with action buttons.
 struct ApprovalBar: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     let run: WorkspaceRun

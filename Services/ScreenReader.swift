@@ -17,17 +17,17 @@ enum ScreenError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noPermission:
-            return "Nook mag het scherm nog niet lezen. Zet dat aan bij Systeminstellingen › Privacy en beveiliging › Scherm- en systeemopname, en start Nook daarna opnieuw."
+            return "Nook does not have screen recording permission yet. Enable it in System Settings › Privacy & Security › Screen & System Audio Recording, and restart Nook."
         case .excluded(let app):
-            return "Ik kijk niet mee in \(app)."
+            return "I don't look inside \(app)."
         case .nothing:
-            return "Ik zie niets om te lezen."
+            return "I don't see anything to read."
         }
     }
 }
 
-/// Maakt een momentopname van het voorste venster en leest de tekst erin (OCR, op je eigen Mac).
-/// De afbeelding zelf verlaat je Mac nooit; alleen de herkende tekst kan naar het brein gaan.
+/// Captures a snapshot of the frontmost window and reads text within it (on-device OCR).
+/// The image never leaves your Mac; only recognized text may be sent to the model.
 @MainActor
 final class ScreenReader {
     static let excludedBundles: Set<String> = [
@@ -41,7 +41,7 @@ final class ScreenReader {
             throw ScreenError.noPermission
         }
         guard let app = NSWorkspace.shared.frontmostApplication else { throw ScreenError.nothing }
-        let appName = app.localizedName ?? "deze app"
+        let appName = app.localizedName ?? "this app"
         if let bundle = app.bundleIdentifier, Self.excludedBundles.contains(bundle) {
             throw ScreenError.excluded(appName)
         }
@@ -73,7 +73,7 @@ final class ScreenReader {
         return ScreenSnapshot(appName: appName, windowTitle: target?.title ?? "", text: String(text.prefix(6000)))
     }
 
-    /// Apps die nu open zijn (met een venster in het Dock), zonder Nook en apps waar Nook nooit in kijkt.
+    /// Apps that are open now (regular Dock apps), excluding Nook and apps Nook never looks into.
     static func openApps() -> [NSRunningApplication] {
         NSWorkspace.shared.runningApplications.filter { app in
             app.activationPolicy == .regular && app.processIdentifier != ProcessInfo.processInfo.processIdentifier
@@ -81,7 +81,7 @@ final class ScreenReader {
         }
     }
 
-    /// Mappen waarin Nook naar apps zoekt die nog dicht zijn.
+    /// Folders where Nook looks for apps that are closed.
     private static var appFolders: [URL] {
         let fm = FileManager.default
         var folders = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/System/Applications"),
@@ -90,7 +90,7 @@ final class ScreenReader {
         return folders
     }
 
-    /// Zoekt een geïnstalleerde app op naam, ook in de taal van de Mac ("Notities" vindt Notes.app).
+    /// Finds an installed app by name, also in the Mac's language ("Notities" finds Notes.app).
     static func installedApp(named query: String) -> URL? {
         let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !wanted.isEmpty else { return nil }
@@ -108,15 +108,15 @@ final class ScreenReader {
         return loose
     }
 
-    /// Leest één app, helemaal op de achtergrond: de gebruiker ziet er niets van. `query` is de naam ("Notities", "Slack")
-    /// of een deel van de bundel-id.
-    /// - Nook leest via de toegankelijkheidslaag van macOS, dus ook verborgen apps en vensters onder andere vensters.
-    /// - Is de app dicht, dan start Nook hem verborgen (geen venster, niet naar voren), leest hem en sluit hem weer.
-    /// - Er wordt nooit iets getoond, naar voren gehaald of van verbergen gehaald. Alleen zonder toestemming voor
-    ///   Toegankelijkheid valt Nook terug op schermtekst, en dan alleen van vensters die al zichtbaar zijn.
+    /// Reads one app entirely in the background: the user sees nothing. `query` is the name ("Notes", "Slack")
+    /// or part of the bundle id.
+    /// - Nook reads through the macOS accessibility layer, so hidden apps and covered windows work too.
+    /// - If the app is closed, Nook launches it hidden (no window, not frontmost), reads it and quits it again.
+    /// - Nothing is ever shown, activated or unhidden. Only without Accessibility permission does Nook fall back to
+    ///   screen text, and then only from windows that are already visible.
     func captureApp(_ query: String, totalLimit: Int = 8000) async throws -> ScreenSnapshot {
         let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !wanted.isEmpty else { throw NookError("Welke app?") }
+        guard !wanted.isEmpty else { throw NookError("Which app?") }
         let apps = Self.openApps()
         let exact = apps.filter { ($0.localizedName ?? "").lowercased() == wanted }
         let loose = apps.filter {
@@ -127,34 +127,34 @@ final class ScreenReader {
 
         if app == nil {
             guard let url = Self.installedApp(named: query) else {
-                throw NookError("Ik vind geen app die \(query) heet op deze Mac.")
+                throw NookError("I can't find an app called \(query) on this Mac.")
             }
             if let bundle = Bundle(url: url)?.bundleIdentifier, Self.excludedBundles.contains(bundle) {
                 throw ScreenError.excluded(FileManager.default.displayName(atPath: url.path))
             }
             guard canRead else {
                 AppTextReader.requestPermission()
-                throw NookError("Om apps die dicht zijn op de achtergrond te lezen, heeft Nook toestemming nodig voor Toegankelijkheid: Systeeminstellingen › Privacy en beveiliging › Toegankelijkheid. Zet Nook daar aan en vraag het opnieuw.")
+                throw NookError("To read closed apps in the background, Nook needs Accessibility permission: System Settings › Privacy & Security › Accessibility. Turn Nook on there and ask again.")
             }
             app = try await Self.launchHidden(url)
-            guard let app else { throw NookError("\(query) wilde niet op de achtergrond starten.") }
+            guard let app else { throw NookError("\(query) would not start in the background.") }
             defer { app.terminate() }
             let name = app.localizedName ?? query
             let sections = await Self.readHidden(app, launched: true, limit: totalLimit)
             guard !sections.isEmpty else {
-                throw NookError("\(name) toont na het starten nog niets om te lezen (hij opent zonder venster).")
+                throw NookError("\(name) shows nothing to read after launching (it opens without a window).")
             }
-            return Self.snapshot(name, sections, note: "(\(name) was dicht; Nook las hem op de achtergrond en sloot hem weer.)")
+            return Self.snapshot(name, sections, note: "(\(name) was closed; Nook read it in the background and quit it again.)")
         }
 
-        guard let app else { throw NookError("Ik vind \(query) niet.") }
+        guard let app else { throw NookError("I can't find \(query).") }
         let name = app.localizedName ?? query
         if canRead {
             let sections = await Self.readHidden(app, launched: false, limit: totalLimit)
             if !sections.isEmpty { return Self.snapshot(name, sections, note: nil) }
         }
 
-        // Geen toegankelijkheid of niets gevonden: alleen wat al zichtbaar op het scherm staat, zonder iets te verschuiven.
+        // No accessibility or nothing found: only what is already visible on screen, without moving anything.
         guard CGPreflightScreenCaptureAccess() else {
             if !canRead { AppTextReader.requestPermission() }
             throw ScreenError.noPermission
@@ -163,8 +163,8 @@ final class ScreenReader {
         guard !windows.isEmpty else {
             if !canRead { AppTextReader.requestPermission() }
             throw NookError(canRead
-                ? "\(name) heeft nu geen venster met inhoud."
-                : "\(name) staat niet in beeld. Geef Nook toestemming voor Toegankelijkheid (Systeeminstellingen › Privacy en beveiliging › Toegankelijkheid), dan leest hij apps op de achtergrond.")
+                ? "\(name) has no window with content right now."
+                : "\(name) is not on screen. Give Nook Accessibility permission (System Settings › Privacy & Security › Accessibility) and it reads apps in the background.")
         }
         var sections: [(title: String, text: String)] = []
         var remaining = totalLimit
@@ -185,7 +185,7 @@ final class ScreenReader {
         return Self.snapshot(name, sections, note: nil)
     }
 
-    /// Start een app verborgen en zonder hem naar voren te halen, en wacht tot hij draait.
+    /// Launches an app hidden and without activating it, and waits until it runs.
     private static func launchHidden(_ url: URL) async throws -> NSRunningApplication? {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
@@ -198,16 +198,16 @@ final class ScreenReader {
         return app
     }
 
-    /// Leest via de toegankelijkheidslaag. Heeft de app (nog) geen venster, dan vraagt Nook er een, met de app verborgen,
-    /// zodat het venster nooit in beeld komt.
+    /// Reads through the accessibility layer. If the app has no window (yet), Nook asks for one while the app stays hidden,
+    /// so the window never appears on screen.
     private static func readHidden(_ app: NSRunningApplication, launched: Bool, limit: Int) async -> [(title: String, text: String)] {
         AppTextReader.wake(pid: app.processIdentifier)
         var reopened = false
         for attempt in 0..<(launched ? 30 : 12) {
             let sections = await AppTextReader.text(pid: app.processIdentifier, limit: limit)
-            // Net gestart: nog even laten laden als er weinig staat.
+            // Just launched: let it load a little longer if there is little text.
             if !sections.isEmpty, !launched || attempt >= 8 || sections.reduce(0, { $0 + $1.text.count }) > 400 { return sections }
-            // Geen venster: alleen als de app verborgen is mag Nook er een vragen, want dan blijft het onzichtbaar.
+            // No window: only ask for one when the app is hidden, because then it stays invisible.
             if !reopened, attempt >= 4, app.isHidden, let url = app.bundleURL {
                 reopened = true
                 let configuration = NSWorkspace.OpenConfiguration()
@@ -226,7 +226,7 @@ final class ScreenReader {
         return ScreenSnapshot(appName: name, windowTitle: name, text: (note.map { $0 + "\n\n" } ?? "") + body)
     }
 
-    /// De vensters van een app op het scherm (ook onder andere vensters), grootste eerst.
+    /// An app's on-screen windows (including covered ones), largest first.
     private static func windows(of app: NSRunningApplication) async -> [SCWindow] {
         guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return [] }
         return content.windows.filter {
@@ -234,15 +234,15 @@ final class ScreenReader {
         }.sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
     }
 
-    /// Leest alle zichtbare vensters op alle schermen (voorste eerst), zodat Nook uit het geheel context kan halen.
-    /// Elk venster krijgt een eigen kopje; samen blijft de tekst binnen een vast budget.
+    /// Reads all visible windows across all screens (frontmost first), providing holistic context to Nook.
+    /// Each window receives its own heading; together the text respects a fixed budget.
     func captureAll(maxWindows: Int = 6, totalLimit: Int = 9000) async throws -> ScreenSnapshot {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
             throw ScreenError.noPermission
         }
         let front = NSWorkspace.shared.frontmostApplication
-        let frontName = front?.localizedName ?? "deze app"
+        let frontName = front?.localizedName ?? "this app"
         if let bundle = front?.bundleIdentifier, Self.excludedBundles.contains(bundle) {
             throw ScreenError.excluded(frontName)
         }
@@ -253,7 +253,7 @@ final class ScreenReader {
                   let owner = window.owningApplication else { return false }
             return !Self.excludedBundles.contains(owner.bundleIdentifier)
         }
-        // Voorste app eerst, binnen een app de grootste vensters eerst.
+        // Frontmost app first; within an app, largest windows first.
         let ordered = candidates.sorted { a, b in
             let aFront = a.owningApplication?.processID == front?.processIdentifier
             let bFront = b.owningApplication?.processID == front?.processIdentifier
@@ -278,13 +278,13 @@ final class ScreenReader {
             let title = (window.title ?? "").isEmpty ? "" : " — \(window.title ?? "")"
             let chunk = String(trimmed.prefix(share))
             remaining -= chunk.count
-            sections.append("### \(index == 0 ? "Voorste venster" : "Venster"): \(name)\(title)\n\(chunk)")
+            sections.append("### \(index == 0 ? "Frontmost window" : "Window"): \(name)\(title)\n\(chunk)")
         }
         guard !sections.isEmpty else { throw ScreenError.nothing }
-        return ScreenSnapshot(appName: frontName, windowTitle: "alle zichtbare vensters", text: sections.joined(separator: "\n\n"))
+        return ScreenSnapshot(appName: frontName, windowTitle: "all visible windows", text: sections.joined(separator: "\n\n"))
     }
 
-    /// `fast`: de snelle herkenning van Vision (ruim vijf keer sneller, iets minder nauwkeurig), voor het bijhouden op de achtergrond.
+    /// `fast`: Vision fast recognition level (significantly faster, slightly less accurate), for background tracking.
     nonisolated static func recognize(_ image: CGImage, fast: Bool = false) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {

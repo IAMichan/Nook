@@ -4,7 +4,7 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// De onderdelen van Instellingen, in de volgorde van de zijbalk.
+/// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, brain, assistant, connections, agents, voice, privacy
 
@@ -47,7 +47,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
 }
 
-/// Instellingen: een zijbalk met onderdelen, elk onderdeel een rustige lijst. Bovenaan staat steeds in één zin waar het over gaat.
+/// Settings: sidebar navigation with sections. A one-sentence summary is displayed at the top of each view.
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
@@ -108,7 +108,10 @@ struct SettingsView: View {
         .onChange(of: app.settingsSection) { _, _ in
             status = ""
             refreshTick += 1
-            if app.settingsSection == .agents { app.history.refresh() }
+            if app.settingsSection == .agents {
+                app.adoptAccounts()
+                app.history.refresh()
+            }
         }
         .onChange(of: app.agentConnect) { _, _ in refreshAgentStates() }
         .sheet(item: $pendingChange) { change in
@@ -120,7 +123,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Een getal in de zijbalk als er iets te doen is.
+    /// Sidebar badge count indicating pending actions.
     private func badge(for section: SettingsSection) -> Int {
         switch section {
         case .general: return checklist.filter { !$0.done }.count
@@ -129,7 +132,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Nook kijkt tevreden als alles klaarstaat, en wacht anders rustig.
+    /// Nook looks satisfied when all checklist items are configured, otherwise calm.
     private var headerMood: NookMood {
         checklist.allSatisfy(\.done) ? .done : .rest
     }
@@ -147,7 +150,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Overzicht
+    // MARK: Overview
 
     private struct Step: Identifiable {
         var id: String { title }
@@ -226,6 +229,8 @@ struct SettingsView: View {
                 }
                 if settings.placement == "floating" {
                     Text(tr("settings.notch.placementHint")).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    SettingToggle(tr("settings.notch.allScreens"), detail: tr("settings.notch.allScreensDetail"), isOn: $settings.notchOnAllScreens)
                 }
                 Picker(tr("settings.notch.screen"), selection: $settings.screenChoice) {
                     Text(tr("settings.notch.auto")).tag("auto")
@@ -234,7 +239,13 @@ struct SettingsView: View {
                     ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
                         Text(name).tag(name)
                     }
+                    // A previously chosen screen that is not connected right now stays selectable.
+                    if !["auto", "main", "mouse"].contains(settings.screenChoice),
+                       !NSScreen.screens.map(\.localizedName).contains(settings.screenChoice) {
+                        Text(settings.screenChoice).tag(settings.screenChoice)
+                    }
                 }
+                .disabled(settings.placement == "notch" && settings.notchOnAllScreens)
                 Toggle(tr("settings.notch.hideWhenIdle"), isOn: $settings.hideWhenIdle)
                 Toggle(tr("settings.notch.openOnHover"), isOn: Binding(
                     get: { app.viewModel.openOnHover },
@@ -253,7 +264,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Brein
+    // MARK: Brain
 
     private enum BrainKind: Hashable { case claude, other, local }
 
@@ -396,7 +407,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Claude Code gevonden? Dan is er niets meer te doen dan testen.
+    /// Claude Code detected? Nothing left to do except test.
     private var claudeCodeStatus: some View {
         let _ = refreshTick
         let path = ClaudeCodeBrain.executable
@@ -475,7 +486,7 @@ struct SettingsView: View {
                 Task { @MainActor in installFraction = fraction }
             }
             settings.localModel = id
-            status = "\(local.title(for: id)) is klaar en wordt nu gebruikt."
+            status = "\(local.title(for: id)) is ready and currently active."
             await testConnection()
         } catch {
             testResult = (false, error.localizedDescription)
@@ -489,20 +500,20 @@ struct SettingsView: View {
                 let saved = settings.saveAPIKey(keyDraft)
                 keyDraft = ""
                 if !saved.looksValid {
-                    testResult = (false, "Dit lijkt geen Anthropic-sleutel: die begint met sk-ant-. Ik test hem toch.")
+                    testResult = (false, "This does not look like an Anthropic key: it should start with sk-ant-. Testing anyway.")
                 }
-                status = saved.keychainError.map { "Keychain weigerde de sleutel (\($0)). Hij werkt nu alleen tot je Nook afsluit." } ?? "Sleutel bewaard in de Keychain."
+                status = saved.keychainError.map { "Keychain rejected the key (\($0)). It will only work until Nook quits." } ?? "Key saved in Keychain."
             } else {
                 settings.saveAPIKey("")
                 testResult = nil
-                status = "Sleutel verwijderd."
+                status = "Key removed."
                 return
             }
         } else {
             let error = settings.saveProviderKey(keyDraft, for: provider)
             let removed = keyDraft.isEmpty
             keyDraft = ""
-            status = error ?? (removed ? "Sleutel verwijderd." : "Sleutel bewaard in de Keychain.")
+            status = error ?? (removed ? "Key removed." : "Key saved in Keychain.")
             if removed { return }
         }
         Task { await testConnection() }
@@ -519,7 +530,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Assistent
+    // MARK: Assistant
 
     private var assistantSection: some View {
         Group {
@@ -553,7 +564,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Koppelingen
+    // MARK: Connectors
 
     private var connectionsSection: some View {
         Group {
@@ -613,7 +624,7 @@ struct SettingsView: View {
         return query.isEmpty || title.localizedCaseInsensitiveContains(query)
     }
 
-    /// Hoe een koppeling gekoppeld is en wat hij kan lezen en (na jouw OK) doen.
+    /// How a connector is configured, its read capabilities, and actions requiring approval.
     private func capabilityLine(_ id: String) -> String {
         SourceCapabilities.line(id, tools: app.knownTools.map { ($0.name, $0.kind == .action) })
     }
@@ -660,14 +671,9 @@ struct SettingsView: View {
 
     private var agentsSection: some View {
         Group {
-            Section {
-                ForEach(AgentKind.allCases) { kind in
-                    accountRow(kind)
-                }
-            } header: {
-                Text(tr("settings.agents.accounts"))
-            } footer: {
-                Text(tr("settings.agents.accountsFooter"))
+            AccountsSettingsSection()
+            Section {} footer: {
+                Text(tr("accounts.isolationNote"))
             }
             Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
@@ -693,31 +699,6 @@ struct SettingsView: View {
                     Button(tr("button.view")) { app.showWeekRecap() }
                     Button(tr("button.clear")) { app.recap.clear(); status = tr("settings.agents.weekRecapCleared") }
                 }
-            }
-        }
-    }
-
-    private func accountRow(_ kind: AgentKind) -> some View {
-        let _ = refreshTick
-        let program = app.history.executables[kind] != nil
-        let account = app.history.accounts[kind]
-        let linkedAll = kind.targets.allSatisfy { (agentStates[$0] ?? .notInstalled) == .installed }
-        let progress = app.agentConnect[kind.rawValue]
-        let complete = program && account != nil && linkedAll
-        let detail: String = {
-            if let progress, progress.isBusy || !complete { return progress.text }
-            if !program { return tr("agents.notInstalled") }
-            guard let account else { return tr("agents.notLoggedIn") }
-            let who = [account.name, account.plan].filter { !$0.isEmpty }.joined(separator: " · ")
-            return linkedAll ? who : who + " · " + tr("agents.notYetLinked")
-        }()
-        return StatusRow(title: kind.name, detail: detail, state: complete ? .done : .todo) {
-            if progress?.isBusy == true {
-                ProgressView().controlSize(.small)
-            } else if !complete {
-                Button(!program ? tr("button.installAndLink") : (account == nil ? tr("button.loginAndLink") : tr("button.link"))) { app.connect(kind) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
             }
         }
     }
@@ -756,7 +737,7 @@ struct SettingsView: View {
         switch state {
         case .notInstalled: return target.detail
         case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
-        case .outdated: return "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de notch"
+        case .outdated: return "Connected with an older version: update for permissions and prompts in the notch"
         case .unreadable(let message): return message
         }
     }
@@ -783,14 +764,14 @@ struct SettingsView: View {
             let backup = try AgentConfigInstaller.apply(change)
             let verb = change.install ? tr("button.link") : tr("button.unlink")
             status = "\(change.target.title): \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
-                + (change.install && change.target != .claudeStatusLine ? " Start de agent opnieuw om het te laten werken." : "")
+                + (change.install && change.target != .claudeStatusLine ? " Restart the agent for changes to take effect." : "")
         } catch {
             status = error.localizedDescription
         }
         refreshAgentStates()
     }
 
-    // MARK: Stem en geluid
+    // MARK: Voice and Sound
 
     private var voiceSection: some View {
         Group {
@@ -802,8 +783,8 @@ struct SettingsView: View {
                 Text(tr("settings.voice.speaking"))
             } footer: {
                 Text(WakeWordService.supported
-                     ? "Met het wekwoord luistert Nook steeds mee, maar de herkenning gebeurt alleen op je Mac en er wordt niets bewaard. Je ziet dan het oranje microfoonlampje."
-                     : "Deze Mac kan Nederlandse spraak niet zelf herkennen, dus het wekwoord kan niet aan (er gaat nooit geluid naar buiten). Met ⌥ spatie praat je altijd.")
+                     ? "With wake word enabled, Nook continuously listens on-device. Audio is never stored or transmitted. The orange microphone indicator will be visible."
+                     : "This Mac cannot recognize speech on-device, so wake word cannot be enabled. Use ⌥ Space to talk anytime.")
             }
             Section {
                 Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
@@ -818,7 +799,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Privacy en toegang
+    // MARK: Privacy and Access
 
     private var privacySection: some View {
         Group {
@@ -883,7 +864,7 @@ struct SettingsView: View {
     }
 }
 
-/// Wat er in het instellingenbestand van een agent verandert, voordat het geschreven wordt.
+/// Diff preview showing changes to an agent's configuration file before writing.
 private struct ConfigPreview: View {
     let change: AgentConfigInstaller.Change
     let onCancel: () -> Void
@@ -933,9 +914,9 @@ private struct ConfigPreview: View {
     }
 }
 
-// MARK: Bouwstenen
+// MARK: Building Blocks
 
-/// Kop van een onderdeel: Nook zelf bij het overzicht, anders het symbool van het onderdeel in één kleur.
+/// Section header: Nook orb for overview, section symbol elsewhere.
 private struct SettingsHeader: View {
     let section: SettingsSection
     let mood: NookMood
@@ -984,7 +965,7 @@ enum StatusState {
     }
 }
 
-/// Eén rij met een status links, naam en uitleg, en rechts de actie. Overal hetzelfde, zodat je in één blik ziet wat klaar is.
+/// Standardized row with status icon on the left, label and description, and action button on the right.
 private struct StatusRow<Trailing: View>: View {
     let title: String
     let detail: String
@@ -1011,7 +992,7 @@ private struct StatusRow<Trailing: View>: View {
     }
 }
 
-/// Aan/uit met een korte uitleg eronder.
+/// Toggle switch with concise description below.
 private struct SettingToggle: View {
     let title: String
     let detail: String
@@ -1036,7 +1017,7 @@ private struct SettingToggle: View {
     }
 }
 
-/// Een toets, zoals op het toetsenbord.
+/// Keycap representation matching keyboard styling.
 private struct Keycap: View {
     let label: String
 
@@ -1057,7 +1038,7 @@ private struct Keycap: View {
 
 
 
-/// Voorkeuren voor de werkruimte: wat "Nieuwe sessie" voorstelt, waar worktrees komen, editor en terminal.
+/// Workspace preferences: default settings for new sessions, worktree location, editor, and terminal.
 private struct WorkspaceSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared

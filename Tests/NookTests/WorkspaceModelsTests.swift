@@ -1,16 +1,16 @@
 import XCTest
 
 final class WorkspaceModelsTests: XCTestCase {
-    // MARK: Toestanden
+    // MARK: States
 
     func testStatusTransitions() {
         XCTAssertTrue(RunStatus.preparing.canMove(to: .running))
         XCTAssertTrue(RunStatus.running.canMove(to: .waitingApproval))
         XCTAssertTrue(RunStatus.waitingApproval.canMove(to: .running))
         XCTAssertTrue(RunStatus.running.canMove(to: .completed))
-        XCTAssertTrue(RunStatus.completed.canMove(to: .preparing), "verder gaan na een afgeronde beurt")
-        XCTAssertTrue(RunStatus.failed.canMove(to: .preparing), "opnieuw proberen na een fout")
-        XCTAssertFalse(RunStatus.completed.canMove(to: .waitingApproval), "zonder proces kan er niets wachten")
+        XCTAssertTrue(RunStatus.completed.canMove(to: .preparing), "continuing after a completed turn")
+        XCTAssertTrue(RunStatus.failed.canMove(to: .preparing), "retrying after an error")
+        XCTAssertFalse(RunStatus.completed.canMove(to: .waitingApproval), "without an active process nothing can wait")
         XCTAssertFalse(RunStatus.preparing.canMove(to: .completed))
         XCTAssertFalse(RunStatus.stopped.canMove(to: .failed))
     }
@@ -35,7 +35,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertTrue(run.canContinue)
     }
 
-    // MARK: Invoer controleren
+    // MARK: Input Validation
 
     func testConfigValidation() {
         var config = NewRunConfig()
@@ -47,7 +47,7 @@ final class WorkspaceModelsTests: XCTestCase {
 
         config.provider = .codex
         config.permission = .ask
-        XCTAssertEqual(config.problem, .unsupportedPolicy, "Codex kan in exec-modus niets vragen")
+        XCTAssertEqual(config.problem, .unsupportedPolicy, "Codex cannot ask for confirmation in exec mode")
         config.permission = .acceptEdits
 
         config.isolation = .worktree
@@ -59,7 +59,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertNil(config.problem)
     }
 
-    // MARK: Namen
+    // MARK: Naming
 
     func testSlugAndTitle() {
         XCTAssertEqual(WorktreeNaming.slug("Fix de login-bug in Safari!"), "fix-de-login-bug-in-safari")
@@ -96,7 +96,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(second, "/r/my-repo/task-2")
     }
 
-    // MARK: Paden
+    // MARK: Paths
 
     func testPathPolicy() throws {
         let folder = try TestData.tempFolder()
@@ -104,7 +104,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: "/"), .forbidden)
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: "/System/Library"), .forbidden)
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: "/usr/bin"), .forbidden)
-        XCTAssertEqual(WorkspacePathPolicy.verdict(for: NSHomeDirectory()), .forbidden, "nooit de hele thuismap")
+        XCTAssertEqual(WorkspacePathPolicy.verdict(for: NSHomeDirectory()), .forbidden, "never the entire home directory")
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: folder + "/bestaat-niet"), .missing)
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: ""), .missing)
         let file = folder + "/bestand.txt"
@@ -112,15 +112,15 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(WorkspacePathPolicy.verdict(for: file), .notDirectory)
     }
 
-    // MARK: Gebruik
+    // MARK: Usage
 
     func testUsageKeepsUnknownFieldsNil() {
         var usage = RunUsage()
         XCTAssertNil(usage.totalTokens)
         usage.add(TurnUsage(inputTokens: 100, outputTokens: 20, durationSeconds: 3))
         XCTAssertEqual(usage.inputTokens, 100)
-        XCTAssertNil(usage.cacheReadTokens, "niet gemeld blijft niet gemeld")
-        XCTAssertNil(usage.reportedCostUSD, "nooit kosten verzinnen")
+        XCTAssertNil(usage.cacheReadTokens, "unreported stays nil")
+        XCTAssertNil(usage.reportedCostUSD, "never fabricate costs")
         usage.add(TurnUsage(inputTokens: 50, outputTokens: 5, cacheReadTokens: 1000, reportedCostUSD: 0.12,
                             contextTokens: 1200, contextWindow: 200_000, durationSeconds: 2))
         XCTAssertEqual(usage.inputTokens, 150)
@@ -142,7 +142,7 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertFalse(run.hasUnreviewedChanges)
         run.lastChangeAt = Date().addingTimeInterval(5)
         run.changedFiles = 0
-        XCTAssertFalse(run.hasUnreviewedChanges, "geen gewijzigde bestanden meer: niets te bekijken")
+        XCTAssertFalse(run.hasUnreviewedChanges, "no changed files remaining: nothing to review")
     }
 
     func testToolSummary() {

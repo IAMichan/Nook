@@ -1,9 +1,9 @@
 import Foundation
 
-/// Ongelezen mail tellen voor de tool mail_unread: per account, per dag en per afzender, zodat het brein er meteen een
-/// grafiek van kan maken. Alleen Foundation, zodat het los te testen is; het AppleScript draait in MailConnector.
+/// Counts unread mail for the mail_unread tool: per account, per day and per sender, so the model can chart it right away.
+/// Foundation only, so it can be tested on its own; the AppleScript runs in MailConnector.
 enum MailStats {
-    /// Ongelezen inbox-mail: eerst per account "ACC|||naam|||aantal", dan per bericht "MSG|||afzender|||datum" (hooguit 400).
+    /// Unread inbox mail: first per account "ACC|||name|||count", then per message "MSG|||sender|||date" (at most 400).
     static let unreadScript = """
     tell application "Mail"
         set out to "TOTAL|||" & (unread count of inbox) & linefeed
@@ -29,7 +29,7 @@ enum MailStats {
     end tell
     """
 
-    /// Maakt van de uitvoer van `unreadScript` tellingen die het brein meteen in een grafiek kan zetten.
+    /// Turns the output of `unreadScript` into counts the model can put straight into a chart.
     static func unread(_ raw: String, now: Date, calendar: Calendar = .current) -> String {
         var total = 0
         var accounts: [(String, Int)] = []

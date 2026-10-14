@@ -1,12 +1,12 @@
 import Foundation
 
-/// Vervolgvoorstellen: het brein zet onder een antwoord hooguit twee regels die met "»" beginnen,
-/// geschreven als wat jij tegen Nook zou zeggen ("» Zet het in mijn agenda"). Nook haalt ze uit de tekst
-/// en toont ze als knoppen; een klik stuurt de zin als nieuw verzoek.
+/// Follow-up suggestions: the brain puts at most two lines starting with "»" below an answer,
+/// phrased as what you would say to Nook ("» Add this to my calendar"). Nook extracts them from the text
+/// and renders them as buttons; clicking one sends the prompt as a new request.
 enum FollowUps {
     static let marker = "»"
 
-    /// De tekst zonder voorstellen, en de voorstellen zelf (hooguit twee, zonder dubbele).
+    /// The text body without suggestions, and the suggestions themselves (at most two, deduplicated).
     static func split(_ text: String) -> (body: String, offers: [String]) {
         var body: [Substring] = []
         var offers: [String] = []
@@ -25,7 +25,7 @@ enum FollowUps {
         return (cleaned, Array(offers.prefix(2)))
     }
 
-    /// Tijdens het streamen: alleen de tekst, ook als een voorstel nog half binnen is ("»" zonder rest, of ">" van ">>").
+    /// While streaming: text body only, even when a suggestion is only partially streamed ("»" with no text, or ">" from ">>").
     static func streamingBody(_ text: String) -> String {
         var body = split(text).body
         if let last = body.split(separator: "\n").last?.trimmingCharacters(in: .whitespaces), last == ">" || last == "-" {
@@ -34,7 +34,7 @@ enum FollowUps {
         return body
     }
 
-    /// Algemene aanbiedingen die niets toevoegen ("Vertel meer", "Nog iets?"), laat Nook weg.
+    /// Generic suggestions that add no value ("Tell me more", "Anything else?") are filtered out.
     private static func isGeneric(_ offer: String) -> Bool {
         let pattern = #"^(vertel (me )?meer|meer (info|informatie|details)|nog iets( anders)?|iets anders|leg (het|dat) uit|ga door|ga verder|help me( verder)?|kun je meer|wat nog meer|tell me more|anything else)\W*$"#
         return offer.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil

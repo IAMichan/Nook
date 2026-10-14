@@ -54,8 +54,8 @@ final class RunStoreTests: XCTestCase {
         try store.saveEvents(id, events)
         let loaded = store.loadEvents(id)
         XCTAssertEqual(loaded.map(\.text), events.map(\.text))
-        XCTAssertEqual(loaded[1].state, .failed, "een tool die liep toen Nook stopte, loopt niet meer")
-        XCTAssertEqual(loaded[2].state, .expired, "een open vraag kan na een herstart niet meer beantwoord worden")
+        XCTAssertEqual(loaded[1].state, .failed, "a tool running when Nook stopped is no longer running")
+        XCTAssertEqual(loaded[2].state, .expired, "a pending prompt can no longer be answered after restart")
         XCTAssertEqual(loaded[3].state, .done)
         store.deleteEvents(id)
         XCTAssertTrue(store.loadEvents(id).isEmpty)
@@ -68,7 +68,7 @@ final class RunStoreTests: XCTestCase {
         try store.saveEvents(id, events)
         let loaded = store.loadEvents(id)
         XCTAssertEqual(loaded.count, RunStore.eventLimit)
-        XCTAssertEqual(loaded.last?.text, "\(RunStore.eventLimit + 9)", "de nieuwste blijven")
+        XCTAssertEqual(loaded.last?.text, "\(RunStore.eventLimit + 9)", "the newest are retained")
     }
 
     func testFilesArePrivate() throws {
@@ -105,7 +105,7 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(report.cacheReadTokens, 1300)
         XCTAssertEqual(report.cacheWriteTokens, 10)
         XCTAssertEqual(report.reportedCostUSD ?? 0, 0.5, accuracy: 0.0001)
-        XCTAssertEqual(report.sessionsWithCost, 1, "alleen Claude meldde kosten; niets erbij verzonnen")
+        XCTAssertEqual(report.sessionsWithCost, 1, "only Claude reported cost; nothing fabricated")
         XCTAssertEqual(report.sessionsWithTokens, 2)
         XCTAssertEqual(report.averageTokensPerSession, (1160 + 520) / 2)
 

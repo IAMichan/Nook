@@ -13,7 +13,7 @@ settings:
 packages:
   MLXSwiftLM:
     url: https://github.com/ml-explore/mlx-swift-lm
-    # 3.31.x: nieuwere versies vragen een Swift-toolchain (6.3) die nog niet in Xcode 26.3 zit.
+    # 3.31.x: newer versions require a Swift toolchain (6.3) not yet available in Xcode 26.3.
     exactVersion: 3.31.4
   SwiftHuggingFace:
     url: https://github.com/huggingface/swift-huggingface
@@ -53,11 +53,11 @@ targets:
         CFBundleIconFile: AppIcon
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
-        NSCalendarsFullAccessUsageDescription: Nook leest je agenda om afspraken voor te stellen en te maken.
-        NSRemindersFullAccessUsageDescription: Nook maakt herinneringen voor je aan.
-        NSMicrophoneUsageDescription: Nook luistert alleen mee als jij erom vraagt, om je stem om te zetten in acties.
-        NSSpeechRecognitionUsageDescription: Nook zet wat je zegt om in tekst, bij voorkeur op je eigen Mac.
-        NSAppleEventsUsageDescription: Nook bedient Spotify en Muziek en een paar systeeminstellingen voor je.
+        NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
+        NSRemindersFullAccessUsageDescription: Nook creates reminders for you.
+        NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions.
+        NSSpeechRecognitionUsageDescription: Nook transcribes speech to text, preferably on-device.
+        NSAppleEventsUsageDescription: Nook controls Spotify, Apple Music, and select system settings for you.
     entitlements:
       path: App/Nook.entitlements
       properties:
@@ -73,9 +73,9 @@ targets:
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
-  # Tests van de kern van de chat (bronkeuze, opzoeken en bronverwijzingen, controle en uitvoeren van acties).
-  # Die code gebruikt alleen Foundation, dus de bestanden gaan rechtstreeks in de testbundel: geen app nodig om te testen.
-  # Ook de kern van de werkruimte (modellen, stream-parsers, Git, opslag, procesafhandeling).
+  # Core chat tests (source scoping, retrieval and citations, action validation and execution).
+  # This code relies solely on Foundation, so files are included directly in the test bundle: no app host required for testing.
+  # Also tests core workspace logic (models, stream parsers, Git, storage, process handling).
   NookTests:
     type: bundle.unit-test
     platform: macOS

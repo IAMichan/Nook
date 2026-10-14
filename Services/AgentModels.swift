@@ -1,24 +1,24 @@
 import Foundation
 
-// MARK: Toestemming
+// MARK: Permissions
 
 enum ApprovalDecision {
-    case allow      // deze keer
-    case always     // en onthoud het (Claude Code bewaart de regel zelf)
+    case allow      // this time
+    case always     // and remember it (Claude Code persists the rule itself)
     case deny
-    case terminal   // niet hier: de agent vraagt het in zijn eigen venster
+    case terminal   // not here: the agent prompts in its own window
 }
 
-/// Een agent vraagt of hij iets mag. Wat Nook toont; het antwoord gaat via `AgentHub.decide`.
+/// An agent requests permission. Displayed by Nook; the decision is passed via `AgentHub.decide`.
 struct ApprovalRequest: Identifiable {
     let id: String
     let sessionKey: String
     let agentName: String
     let project: String
     let tool: String
-    /// Het commando of een korte omschrijving van wat de agent wil.
+    /// The command or a short description of what the agent wants.
     let summary: String
-    /// Voor bewerkingen: de wijziging als diff.
+    /// For edits: the change as a diff.
     let diff: [DiffLine]
     let assessment: CommandAssessment
     let canAlways: Bool
@@ -28,21 +28,21 @@ struct ApprovalRequest: Identifiable {
         if assessment.level == .danger { return assessment.title }
         switch tool {
         case "Bash", "shell", "run_shell_command", "exec_command":
-            return "Mag \(agentName) dit uitvoeren?"
+            return "May \(agentName) execute this?"
         case "Edit", "MultiEdit", "Write", "NotebookEdit", "write_file", "replace", "apply_patch":
-            return "Mag \(agentName) dit bestand aanpassen?"
+            return "May \(agentName) edit this file?"
         case "WebFetch", "web_fetch":
-            return "Mag \(agentName) deze pagina ophalen?"
+            return "May \(agentName) fetch this page?"
         case "WebSearch", "google_web_search":
-            return "Mag \(agentName) op internet zoeken?"
+            return "May \(agentName) search the web?"
         default:
-            if tool.hasPrefix("mcp__") { return "Mag \(agentName) deze koppeling gebruiken?" }
-            return "Mag \(agentName) \(tool) gebruiken?"
+            if tool.hasPrefix("mcp__") { return "May \(agentName) use this integration?" }
+            return "May \(agentName) use \(tool)?"
         }
     }
 }
 
-// MARK: Vragen (AskUserQuestion)
+// MARK: Questions (AskUserQuestion)
 
 struct AgentQuestionOption: Equatable {
     var label: String
@@ -56,7 +56,7 @@ struct AgentQuestionItem: Equatable {
     var multiSelect: Bool
 }
 
-/// Een agent stelt je een meerkeuzevraag. Nook toont de vragen één voor één in de notch.
+/// An agent asks a multiple-choice question. Nook displays questions sequentially in the notch.
 struct AgentQuestionRequest: Identifiable {
     let id: String
     let sessionKey: String
@@ -64,7 +64,7 @@ struct AgentQuestionRequest: Identifiable {
     let project: String
     let items: [AgentQuestionItem]
 
-    /// Leest `tool_input` van AskUserQuestion. Nil als het er anders uitziet dan verwacht: dan vraagt de agent het zelf.
+    /// Parses `tool_input` of AskUserQuestion. Returns nil if the format does not match expectations.
     static func parse(_ input: [String: Any]) -> [AgentQuestionItem]? {
         guard let raw = input["questions"] as? [[String: Any]], !raw.isEmpty, raw.count <= 4 else { return nil }
         var items: [AgentQuestionItem] = []
@@ -86,7 +86,7 @@ struct AgentQuestionRequest: Identifiable {
         return items
     }
 
-    /// Antwoorden zoals Claude Code ze verwacht: vraagtekst → gekozen label (of lijst bij meerkeuze).
+    /// Answers formatted for Claude Code: question string → chosen label (or list for multi-select).
     static func answers(items: [AgentQuestionItem], selections: [[String]]) -> [String: Any] {
         var result: [String: Any] = [:]
         for (index, item) in items.enumerated() where index < selections.count {
@@ -101,17 +101,17 @@ struct AgentQuestionRequest: Identifiable {
     }
 }
 
-// MARK: Abonnementsgebruik
+// MARK: Plan Usage
 
 struct PlanWindow: Equatable, Codable {
     var usedPercent: Double
     var resetsAt: Date
 
-    /// Na het resetmoment telt het weer vanaf nul.
+    /// After reset time, usage resets back to zero.
     var effectivePercent: Double { resetsAt <= Date() ? 0 : usedPercent }
 }
 
-/// Hoeveel van je Claude-abonnement (Pro/Max) je gebruikt, uit de statusregel van Claude Code.
+/// Claude plan usage (Pro/Max) parsed from the Claude Code statusline.
 struct PlanUsage: Equatable, Codable {
     var fiveHour: PlanWindow?
     var sevenDay: PlanWindow?
@@ -134,10 +134,10 @@ struct PlanUsage: Equatable, Codable {
         return PlanWindow(usedPercent: min(100, percent), resetsAt: Date(timeIntervalSince1970: epoch))
     }
 
-    /// "5u 34% · week 12%"
+    /// "5h 34% · week 12%"
     var label: String {
         var parts: [String] = []
-        if let fiveHour { parts.append("5u \(Int(fiveHour.effectivePercent.rounded()))%") }
+        if let fiveHour { parts.append("5h \(Int(fiveHour.effectivePercent.rounded()))%") }
         if let sevenDay { parts.append("week \(Int(sevenDay.effectivePercent.rounded()))%") }
         return parts.joined(separator: " · ")
     }
@@ -146,7 +146,7 @@ struct PlanUsage: Equatable, Codable {
         max(fiveHour?.effectivePercent ?? 0, sevenDay?.effectivePercent ?? 0)
     }
 
-    /// "reset om 15:40" voor het venster dat het hoogst staat.
+    /// "reset 15:40" for the highest window.
     var resetLabel: String? {
         let window = (fiveHour?.effectivePercent ?? 0) >= (sevenDay?.effectivePercent ?? 0) ? fiveHour : sevenDay
         guard let window, window.resetsAt > Date() else { return nil }

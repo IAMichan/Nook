@@ -17,7 +17,7 @@ struct ReminderItem: Identifiable, Equatable {
     var list: String
 }
 
-/// Agenda en herinneringen via EventKit.
+/// Calendar and reminders via EventKit.
 @MainActor
 final class CalendarService {
     private let store = EKEventStore()
@@ -45,7 +45,7 @@ final class CalendarService {
             .map {
                 CalEvent(
                     id: $0.eventIdentifier ?? UUID().uuidString,
-                    title: $0.title ?? "Zonder titel",
+                    title: $0.title ?? "Untitled",
                     start: $0.startDate,
                     end: $0.endDate,
                     location: $0.location ?? "",
@@ -54,7 +54,7 @@ final class CalendarService {
             }
     }
 
-    /// Afspraken voor de beschikbaarheidscheck: zonder geannuleerde en afgewezen afspraken.
+    /// Events for availability checking: excludes canceled and declined events.
     func agendaEntries(from start: Date, to end: Date) -> [AgendaEntry] {
         guard hasEventAccess else { return [] }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
@@ -63,18 +63,18 @@ final class CalendarService {
             .sorted { $0.startDate < $1.startDate }
             .map {
                 AgendaEntry(
-                    title: $0.title ?? "Zonder titel",
+                    title: $0.title ?? "Untitled",
                     start: $0.startDate,
                     end: $0.endDate,
                     allDay: $0.isAllDay,
                     busy: $0.availability != .free,
                     location: $0.location ?? "",
-                    calendar: $0.calendar?.title ?? "Agenda"
+                    calendar: $0.calendar?.title ?? "Calendar"
                 )
             }
     }
 
-    /// Alle agenda's die Nook kan lezen, met het account erachter (iCloud, Google, Exchange…).
+    /// All calendars Nook can read, followed by their account (iCloud, Google, Exchange…).
     func calendarNames() -> [String] {
         guard hasEventAccess else { return [] }
         return store.calendars(for: .event).map { calendar -> String in
@@ -84,21 +84,21 @@ final class CalendarService {
         }.sorted()
     }
 
-    /// Herinneringen die nog open staan, met de vroegste deadline eerst.
+    /// Pending reminders, earliest due date first.
     func incompleteReminders() async -> [ReminderItem] {
         guard hasReminderAccess else { return [] }
         let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
         return await Self.fetch(store, predicate)
     }
 
-    /// Buiten de main actor: EventKit roept de callback aan op een eigen thread.
+    /// Nonisolated helper: EventKit invokes the callback on its own thread.
     private nonisolated static func fetch(_ store: EKEventStore, _ predicate: NSPredicate) async -> [ReminderItem] {
         await withCheckedContinuation { continuation in
             store.fetchReminders(matching: predicate) { reminders in
                 let items = (reminders ?? []).map { reminder in
                     ReminderItem(
                         id: reminder.calendarItemIdentifier,
-                        title: reminder.title ?? "Zonder titel",
+                        title: reminder.title ?? "Untitled",
                         due: reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) },
                         list: reminder.calendar?.title ?? ""
                     )
@@ -108,23 +108,23 @@ final class CalendarService {
         }
     }
 
-    /// Maakt een afspraak en geeft het id terug, zodat een vervolgvraag ("verplaats hem naar 15:00") dezelfde afspraak vindt.
-    /// `calendarName`: in welke agenda (naam zoals in Agenda); zonder naam de standaardagenda.
+    /// Creates an event and returns its ID, allowing follow-ups ("move it to 3pm") to refer to the same event.
+    /// `calendarName`: target calendar name (as shown in Calendar); defaults to default calendar if omitted.
     @discardableResult
     func createEvent(title: String, start: Date, end: Date, location: String?, notes: String?, calendarName: String? = nil) async throws -> String {
         guard await requestEvents() else {
-            throw NookError("Nook heeft geen toegang tot je agenda. Zet dat aan bij Instellingen › Machtigingen.")
+            throw NookError("Nook does not have access to your calendar. Enable it in Settings › Permissions.")
         }
         let calendar: EKCalendar
         if let calendarName, !calendarName.isEmpty {
             let writable = store.calendars(for: .event).filter(\.allowsContentModifications)
             guard let match = writable.first(where: { $0.title.caseInsensitiveCompare(calendarName) == .orderedSame }) else {
-                throw NookError("Geen agenda met de naam \(calendarName) waarin Nook mag schrijven. Wel: " + writable.map(\.title).joined(separator: ", ") + ".")
+                throw NookError("No writable calendar found named \(calendarName). Available: " + writable.map(\.title).joined(separator: ", ") + ".")
             }
             calendar = match
         } else {
             guard let fallback = store.defaultCalendarForNewEvents else {
-                throw NookError("Er is geen standaardagenda om in op te slaan.")
+                throw NookError("No default calendar found to save into.")
             }
             calendar = fallback
         }
@@ -139,32 +139,32 @@ final class CalendarService {
         return event.eventIdentifier ?? ""
     }
 
-    /// Past een bestaande afspraak aan. Alleen wat meegegeven wordt verandert; geeft terug wat er veranderde.
+    /// Updates an existing event. Only specified fields are changed; returns description of what changed.
     func updateEvent(id: String, title: String?, start: Date?, end: Date?, location: String?, notes: String?) async throws -> String {
         guard await requestEvents() else {
-            throw NookError("Nook heeft geen toegang tot je agenda. Zet dat aan bij Instellingen › Machtigingen.")
+            throw NookError("Nook does not have access to your calendar. Enable it in Settings › Permissions.")
         }
         guard let event = store.event(withIdentifier: id) else {
-            throw NookError("Die afspraak bestaat niet (meer). Zoek hem opnieuw op met list_events.")
+            throw NookError("That event does not exist (anymore). Look it up again using list_events.")
         }
         guard event.calendar?.allowsContentModifications ?? false else {
-            throw NookError("De agenda \(event.calendar?.title ?? "") is alleen-lezen.")
+            throw NookError("The calendar \(event.calendar?.title ?? "") is read-only.")
         }
         var changes: [String] = []
-        if let title, title != event.title { event.title = title; changes.append("titel") }
+        if let title, title != event.title { event.title = title; changes.append("title") }
         if let start {
             let length = event.endDate.timeIntervalSince(event.startDate)
             event.startDate = start
             event.endDate = end ?? start.addingTimeInterval(length)
-            changes.append("tijd")
+            changes.append("time")
         } else if let end {
-            guard end > event.startDate else { throw NookError("Het einde ligt niet na het begin.") }
+            guard end > event.startDate else { throw NookError("End time is not after start time.") }
             event.endDate = end
-            changes.append("eindtijd")
+            changes.append("end time")
         }
-        if let location { event.location = location; changes.append("plaats") }
-        if let notes { event.notes = notes; changes.append("notities") }
-        guard !changes.isEmpty else { throw NookError("Er is niets om aan te passen.") }
+        if let location { event.location = location; changes.append("location") }
+        if let notes { event.notes = notes; changes.append("notes") }
+        guard !changes.isEmpty else { throw NookError("There is nothing to update.") }
         try store.save(event, span: .thisEvent)
         return changes.joined(separator: ", ")
     }
@@ -172,10 +172,10 @@ final class CalendarService {
     @discardableResult
     func createReminder(title: String, due: Date?) async throws -> String {
         guard await requestReminders() else {
-            throw NookError("Nook heeft geen toegang tot je herinneringen. Zet dat aan bij Instellingen › Machtigingen.")
+            throw NookError("Nook does not have access to your reminders. Enable it in Settings › Permissions.")
         }
         guard let calendar = store.defaultCalendarForNewReminders() else {
-            throw NookError("Er is geen standaardlijst voor herinneringen.")
+            throw NookError("No default reminder list available.")
         }
         let reminder = EKReminder(eventStore: store)
         reminder.title = title
@@ -190,10 +190,10 @@ final class CalendarService {
         return reminder.calendarItemIdentifier
     }
 
-    /// Vinkt een herinnering af, op id of (als die uniek is) op titel. Geeft de titel terug.
+    /// Marks a reminder as completed, by ID or (if unique) by title. Returns the title.
     func completeReminder(_ idOrTitle: String) async throws -> String {
         guard await requestReminders() else {
-            throw NookError("Nook heeft geen toegang tot je herinneringen. Zet dat aan bij Instellingen › Machtigingen.")
+            throw NookError("Nook does not have access to your reminders. Enable it in Settings › Permissions.")
         }
         if let item = store.calendarItem(withIdentifier: idOrTitle) as? EKReminder {
             item.isCompleted = true
@@ -202,7 +202,7 @@ final class CalendarService {
         }
         let open = await incompleteReminders().filter { $0.title.caseInsensitiveCompare(idOrTitle) == .orderedSame }
         guard open.count == 1, let match = store.calendarItem(withIdentifier: open[0].id) as? EKReminder else {
-            throw NookError(open.isEmpty ? "Geen open herinnering gevonden voor \(idOrTitle)." : "Er zijn meerdere herinneringen met die titel; geef het id.")
+            throw NookError(open.isEmpty ? "No open reminder found for \(idOrTitle)." : "Multiple reminders found with that title; please specify the ID.")
         }
         match.isCompleted = true
         try store.save(match, commit: true)

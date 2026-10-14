@@ -1,8 +1,8 @@
 #!/usr/bin/env swift
 import AppKit
 
-// Genereert App/AppIcon.icns voor Nook (macOS app-icoon).
-// Tekent de Nook-orb (irispaarse gloeiende cirkel met ogen) op een subtiele lavendelkleurige squircle.
+// Generates App/AppIcon.icns for Nook (macOS app icon).
+// Draws the Nook orb (iris purple glowing circle with eyes) on a subtle lavender squircle.
 
 func generateIcon(size: Int) -> NSImage {
     let baseSize: CGFloat = 1024
@@ -13,12 +13,12 @@ func generateIcon(size: Int) -> NSImage {
 
     ctx.scaleBy(x: scale, y: scale)
 
-    // macOS icon grid: squircle 824x824 gecentreerd in 1024x1024 (100pt marge)
+    // macOS icon grid: squircle 824x824 centered in 1024x1024 (100pt margin)
     let squircleRect = CGRect(x: 100, y: 100, width: 824, height: 824)
     let cornerRadius: CGFloat = 185
     let squirclePath = CGPath(roundedRect: squircleRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
 
-    // Slagschaduw onder de squircle
+    // Drop shadow below the squircle
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 24, color: CGColor(gray: 0, alpha: 0.22))
     ctx.addPath(squirclePath)
@@ -26,7 +26,7 @@ func generateIcon(size: Int) -> NSImage {
     ctx.fillPath()
     ctx.restoreGState()
 
-    // Achtergrondverloop binnen de squircle (zacht lavendel)
+    // Background gradient within the squircle (soft lavender)
     ctx.saveGState()
     ctx.addPath(squirclePath)
     ctx.clip()
@@ -40,26 +40,26 @@ func generateIcon(size: Int) -> NSImage {
         ctx.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
     }
 
-    // Subtiele binnenrand
+    // Subtle inner stroke
     ctx.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.6))
     ctx.setLineWidth(3.0)
     ctx.addPath(squirclePath)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // Nook Orb (iris paars, NookTheme.iris)
+    // Nook Orb (iris purple, NookTheme.iris)
     let orbCenter = CGPoint(x: 512, y: 512)
     let orbRadius: CGFloat = 290
     let orbRect = CGRect(x: orbCenter.x - orbRadius, y: orbCenter.y - orbRadius, width: orbRadius * 2, height: orbRadius * 2)
 
-    // Gloed achter de orb
+    // Glow behind the orb
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 45, color: CGColor(red: 0.545, green: 0.482, blue: 1.0, alpha: 0.60))
     ctx.setFillColor(CGColor(red: 0.545, green: 0.482, blue: 1.0, alpha: 1.0))
     ctx.fillEllipse(in: orbRect)
     ctx.restoreGState()
 
-    // Orb bolvormig verloop
+    // Orb spherical gradient
     ctx.saveGState()
     ctx.addEllipse(in: orbRect)
     ctx.clip()
@@ -72,7 +72,7 @@ func generateIcon(size: Int) -> NSImage {
     }
     ctx.restoreGState()
 
-    // Ogen (diep nachtblauw/zwart)
+    // Eyes (deep midnight blue/black)
     let eyeWidth: CGFloat = 64
     let eyeHeight: CGFloat = 172
     let eyeY: CGFloat = 1024 - 402 - eyeHeight
@@ -136,8 +136,8 @@ process.waitUntilExit()
 try? fileManager.removeItem(at: iconsetDir)
 
 if process.terminationStatus == 0 {
-    print("Succesvol aangemaakt: \(targetIcns.path)")
+    print("Successfully generated: \(targetIcns.path)")
 } else {
-    print("iconutil mislukt met code \(process.terminationStatus)")
+    print("iconutil failed with code \(process.terminationStatus)")
     exit(1)
 }

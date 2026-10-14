@@ -1,11 +1,10 @@
 import Foundation
 
-/// Zoeken op het web en webpagina's lezen, voor elk brein (ook Ollama, LM Studio en het ingebouwde model).
-/// Claude via de API heeft daarnaast Anthropic's eigen zoektool.
+/// Web searching and webpage reading for any brain (including Ollama, LM Studio, and the embedded model).
+/// Claude via the API additionally has Anthropic's native search tool.
 ///
-/// Veiligheid: read_webpage opent alleen adressen die letterlijk al voorkwamen (in je vraag, op je scherm, in je tabbladen
-/// of in zoekresultaten). Zo kan tekst van een webpagina het brein nooit laten "bellen" naar een zelfverzonnen adres met
-/// jouw gegevens erin.
+/// Safety: read_webpage only opens addresses that have already explicitly appeared (in your prompt, on your screen, in your tabs,
+/// or in search results). This prevents text from a webpage from inducing the brain to exfiltrate data to an arbitrary destination.
 @MainActor
 final class WebTools {
     private var knownURLs: [String] = []
@@ -13,7 +12,7 @@ final class WebTools {
 
     private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
-    /// Onthoudt de adressen die in deze tekst staan, zodat het brein ze mag openen.
+    /// Records URLs found in this text so that the brain is permitted to open them.
     func note(_ text: String) {
         guard let detector = Self.detector, !text.isEmpty else { return }
         let range = NSRange(text.startIndex..., in: text)
@@ -48,22 +47,22 @@ final class WebTools {
 
     // MARK: Tools
 
-    /// `includeSearch`: uit voor Claude via de API, die zoekt met Anthropic's eigen zoektool.
+    /// `includeSearch`: false for Claude via the API, which searches using Anthropic's native search tool.
     func specs(includeSearch: Bool) -> [ToolSpec] {
         var list: [ToolSpec] = []
         if includeSearch {
             list.append(ToolSpec(
                 name: "search_web",
-                description: "Zoekt op het web (DuckDuckGo) en geeft de beste resultaten met titel, adres en korte tekst. Gebruik dit voor actuele dingen buiten de Mac: nieuws, weer, openingstijden, prijzen, uitslagen, documentatie. Lees daarna zo nodig een resultaat met read_webpage.",
-                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Zoekopdracht."]], "required": ["query"]],
+                description: "Searches the web (DuckDuckGo) and returns top results with title, URL, and snippet. Use for current info outside the Mac: news, weather, opening hours, prices, results, documentation. Follow up with read_webpage if more detail is needed.",
+                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Search query."]], "required": ["query"]],
                 kind: .read,
-                summarize: { _ in "Zoeken op het web" },
+                summarize: { _ in "Search web" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !query.isEmpty else { throw NookError("Zoekopdracht ontbreekt.") }
+                    guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     let results = try await WebTools.search(query)
-                    guard !results.isEmpty else { return "Geen resultaten voor \"\(query)\"." }
+                    guard !results.isEmpty else { return "No results for \"\(query)\"." }
                     for result in results { self?.remember(result.url) }
                     return results.prefix(8).map { "### \($0.title)\n\($0.url)\n\($0.snippet)" }.joined(separator: "\n\n")
                 }
@@ -71,19 +70,19 @@ final class WebTools {
         }
         list.append(ToolSpec(
             name: "read_webpage",
-            description: "Leest de tekst van een webpagina. Alleen voor adressen die al voorkwamen: in het verzoek, op het scherm, in de browsertabbladen of in zoekresultaten.",
-            schema: ["type": "object", "properties": ["url": ["type": "string", "description": "Het volledige adres (https://…)."]], "required": ["url"]],
+            description: "Reads the text of a webpage. Only for URLs that have already appeared: in the request, on screen, in browser tabs, or in search results.",
+            schema: ["type": "object", "properties": ["url": ["type": "string", "description": "The full address (https://…)."]], "required": ["url"]],
             kind: .read,
-            summarize: { _ in "Webpagina lezen" },
+            summarize: { _ in "Read webpage" },
             tag: { _ in ("", .neutral) },
             run: { [weak self] input in
                 let raw = ((input["url"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
                       let host = url.host, !WebTools.isPrivate(host) else {
-                    throw NookError("Dat is geen gewoon webadres.")
+                    throw NookError("Invalid web address.")
                 }
                 guard self?.isKnown(raw) == true else {
-                    throw NookError("Dit adres kwam nergens voor; zoek het eerst op met search_web.")
+                    throw NookError("This address was not seen in context; look it up first using search_web.")
                 }
                 return try await WebTools.read(url)
             }
@@ -91,7 +90,7 @@ final class WebTools {
         return list
     }
 
-    // MARK: Netwerk
+    // MARK: Network
 
     struct SearchResult {
         var title: String
@@ -116,12 +115,12 @@ final class WebTools {
         guard let url = components?.url else { return [] }
         let (data, response) = try await session.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200, let html = String(data: data, encoding: .utf8) else {
-            throw NookError("Zoeken op het web lukte niet. Probeer het zo nog eens.")
+            throw NookError("Web search failed. Please try again shortly.")
         }
         return parseResults(html)
     }
 
-    /// DuckDuckGo's HTML-pagina: elk resultaat heeft een link met class "result__a" en een stukje tekst met class "result__snippet".
+    /// DuckDuckGo's HTML page: each result contains a link with class "result__a" and snippet text with class "result__snippet".
     nonisolated static func parseResults(_ html: String) -> [SearchResult] {
         let linkPattern = #"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#
         let snippetPattern = #"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#
@@ -135,7 +134,7 @@ final class WebTools {
             guard let hrefRange = Range(match.range(at: 1), in: html), let titleRange = Range(match.range(at: 2), in: html) else { continue }
             var href = decodeEntities(String(html[hrefRange]))
             if href.hasPrefix("//") { href = "https:" + href }
-            // Doorverwijzing van DuckDuckGo: het echte adres staat in uddg.
+            // DuckDuckGo redirect: the actual target URL is in uddg.
             if let redirect = URLComponents(string: href), redirect.host?.contains("duckduckgo.com") == true,
                let target = redirect.queryItems?.first(where: { $0.name == "uddg" })?.value {
                 href = target
@@ -153,17 +152,17 @@ final class WebTools {
     nonisolated static func read(_ url: URL) async throws -> String {
         let (data, response) = try await session.data(from: url)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else { throw NookError("De pagina gaf status \(status).") }
+        guard (200..<300).contains(status) else { throw NookError("Page returned status \(status).") }
         let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
-        guard data.count < 4_000_000 else { throw NookError("Die pagina is te groot om te lezen.") }
+        guard data.count < 4_000_000 else { throw NookError("Page is too large to read.") }
         let raw = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
         let text = type.contains("html") || raw.contains("<html") ? readable(raw) : raw
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw NookError("Op die pagina staat geen leesbare tekst.") }
+        guard !trimmed.isEmpty else { throw NookError("No readable text found on that page.") }
         return String(trimmed.prefix(14_000))
     }
 
-    /// HTML naar leesbare tekst: scripts, stijl en navigatie eruit, blokken op een eigen regel.
+    /// Converts HTML to readable text: strips scripts, styles, and navigation; places blocks on separate lines.
     nonisolated static func readable(_ html: String) -> String {
         var text = html
         for tag in ["script", "style", "noscript", "svg", "nav", "footer", "header", "form"] {
@@ -187,7 +186,7 @@ final class WebTools {
         var result = text
         let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'", "&#x27;": "'", "&nbsp;": " ", "&apos;": "'"]
         for (entity, value) in entities { result = result.replacingOccurrences(of: entity, with: value) }
-        // Numerieke entiteiten, bijvoorbeeld &#233;
+        // Numeric entities, e.g. &#233;
         if let regex = try? NSRegularExpression(pattern: "&#(\\d{2,6});") {
             let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed()
             for match in matches {
@@ -199,7 +198,7 @@ final class WebTools {
         return result
     }
 
-    /// Geen adressen op je eigen netwerk of je eigen Mac.
+    /// Disallows addresses on the local network or local machine.
     nonisolated static func isPrivate(_ host: String) -> Bool {
         let lower = host.lowercased()
         if lower == "localhost" || lower.hasSuffix(".local") || lower.hasSuffix(".internal") || lower.hasSuffix(".lan") { return true }
@@ -210,6 +209,6 @@ final class WebTools {
             if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
             if parts[0] == 192 && parts[1] == 168 { return true }
         }
-        return lower.contains(":")   // IPv6-letterlijk
+        return lower.contains(":")   // IPv6 literal
     }
 }

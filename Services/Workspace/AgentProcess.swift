@@ -1,18 +1,18 @@
 import Foundation
 
-/// Hoe Nook een agent start: programma, argumenten (als lijst, nooit via een shell), omgeving en map.
+/// How Nook launches an agent: executable, arguments (as list, never via a shell), environment, and directory.
 struct LaunchSpec: Equatable, Sendable {
     var executable: String
     var arguments: [String]
-    /// Alleen wat Nook toevoegt aan je eigen omgeving (PATH, accountmap, NOOK_RUN_ID).
+    /// Only what Nook adds to your environment (PATH, account directory, NOOK_RUN_ID).
     var extraEnvironment: [String: String]
     var workingDirectory: String
-    /// Regels die meteen naar stdin gaan.
+    /// Lines sent to stdin immediately.
     var initialInput: [String]
-    /// Blijft stdin open (voor goedkeuringen en afbreken)? Anders krijgt de agent /dev/null.
+    /// Does stdin stay open (for approvals and interruption)? Otherwise the agent gets /dev/null.
     var keepsInputOpen: Bool
 
-    /// Voor op het scherm: zonder de omgeving en met lange teksten ingekort, zodat er nooit iets gevoeligs in staat.
+    /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
         let program = URL(fileURLWithPath: executable).lastPathComponent
         let shown = arguments.map { argument -> String in
@@ -23,7 +23,7 @@ struct LaunchSpec: Equatable, Sendable {
     }
 }
 
-/// Bouwt het commando per agent. Los te testen: er draait hier niets.
+/// Builds the command per agent. Testable in isolation: nothing runs here.
 enum AgentCommand {
     struct Input: Sendable {
         var provider: RunProvider
@@ -34,9 +34,9 @@ enum AgentCommand {
         var permission: PermissionPolicy
         var instructions: String
         var workingDirectory: String
-        /// Om verder te gaan in een eerdere sessie van de agent.
+        /// To resume an earlier agent session.
         var resumeSessionID: String?
-        /// CLAUDE_CONFIG_DIR of CODEX_HOME van het gekozen account; leeg voor het eerste account.
+        /// CLAUDE_CONFIG_DIR or CODEX_HOME for the chosen account; empty for the primary account.
         var accountEnvironment: [String: String]
         var runID: UUID
     }
@@ -52,7 +52,7 @@ enum AgentCommand {
                 "--output-format", "stream-json",
                 "--verbose",
                 "--include-partial-messages",
-                // Toestemmingsvragen komen als control_request op stdout; Nook antwoordt via stdin.
+                // Permission prompts arrive as control_request on stdout; Nook replies via stdin.
                 "--permission-prompt-tool", "stdio",
                 "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission)
             ]
@@ -71,13 +71,13 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             var prompt = input.prompt
             let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Codex exec kent geen aparte systeemprompt: de instructies gaan voor de eerste opdracht.
+            // Codex exec has no separate system prompt: instructions prepend the first prompt.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
             if input.mode == .plan, input.resumeSessionID == nil {
-                prompt = "Maak alleen een plan; pas niets aan.\n\n" + prompt
+                prompt = "Create a plan only; do not make any changes.\n\n" + prompt
             }
             if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["resume", resume] }
-            // "--" zodat een opdracht die met een streepje begint nooit als optie wordt gelezen.
+            // "--" so that a prompt starting with a dash is never parsed as a flag.
             arguments += ["--", prompt]
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
@@ -102,22 +102,22 @@ enum AgentCommand {
         }
     }
 
-    /// PATH met de plekken waar node en de agents meestal staan, ook als Nook vanuit de Finder start.
+    /// PATH with locations where Node and agents typically reside, even when Nook starts from Finder.
     static func environment(base: [String: String], executable: String, extra: [String: String]) -> [String: String] {
         var env = base
         let home = env["HOME"] ?? NSHomeDirectory()
         let paths = [URL(fileURLWithPath: executable).deletingLastPathComponent().path,
                      "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.bun/bin", "\(home)/.volta/bin"]
         env["PATH"] = (paths + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
-        // Nooks eigen denkwerk via Claude Code zet dit; een werkruimte-sessie is een echte agent-sessie.
+        // Nook's internal thinking via Claude Code sets this; a workspace session is a real agent session.
         env["NOOK_INTERNAL"] = nil
         for (key, value) in extra { env[key] = value }
         return env
     }
 }
 
-/// Eén draaiend agent-proces. Levert regels van stdout één voor één af, op een eigen wachtrij.
-/// Stoppen is altijd veilig: eerst netjes (SIGINT), na een paar seconden hard.
+/// A single running agent process. Delivers stdout lines one by one on a dedicated queue.
+/// Termination is always safe: graceful first (SIGINT), then forced after a few seconds.
 final class AgentProcess: @unchecked Sendable {
     let spec: LaunchSpec
     private let process = Process()
@@ -128,9 +128,9 @@ final class AgentProcess: @unchecked Sendable {
     private let lock = NSLock()
     private var finished = false
 
-    /// Elke volledige regel van stdout.
+    /// Every complete line from stdout.
     var onLine: (@Sendable (String) -> Void)?
-    /// Het proces is klaar: exitcode en de laatste regels van stderr.
+    /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
     init(spec: LaunchSpec) {
@@ -182,7 +182,7 @@ final class AgentProcess: @unchecked Sendable {
         }
         process.terminationHandler = { [weak self] process in
             guard let self else { return }
-            // Even wachten zodat de laatste regels van stdout eerst verwerkt zijn.
+            // Wait briefly so remaining stdout lines are processed first.
             self.queue.asyncAfter(deadline: .now() + 0.3) {
                 self.flushRemainder()
                 let tail = String(decoding: self.stderrTail, as: UTF8.self)
@@ -190,13 +190,13 @@ final class AgentProcess: @unchecked Sendable {
                 self.onExit?(process.terminationStatus, tail)
             }
         }
-        // SIGPIPE zou Nook laten stoppen als de agent wegvalt terwijl we schrijven.
+        // SIGPIPE would terminate Nook if the agent exits while writing.
         signal(SIGPIPE, SIG_IGN)
         try process.run()
         for line in spec.initialInput { send(line) }
     }
 
-    /// Schrijft een regel naar stdin (een bericht, een antwoord op een toestemmingsvraag).
+    /// Writes a line to stdin (a message, an answer to a permission prompt).
     func send(_ line: String) {
         lock.lock()
         let handle = finished ? nil : input
@@ -205,11 +205,11 @@ final class AgentProcess: @unchecked Sendable {
         do {
             try handle.write(contentsOf: data)
         } catch {
-            // Het proces is al weg; de afsluiting meldt zich via onExit.
+            // The process has already exited; termination is reported via onExit.
         }
     }
 
-    /// Sluit stdin: de agent rondt af en stopt.
+    /// Closes stdin: the agent wraps up and exits.
     func closeInput() {
         lock.lock()
         let handle = input
@@ -218,7 +218,7 @@ final class AgentProcess: @unchecked Sendable {
         try? handle?.close()
     }
 
-    /// Netjes stoppen: SIGINT, en na `grace` seconden hard als hij er nog is.
+    /// Graceful stop: SIGINT, then forced after `grace` seconds if still running.
     func stop(grace: TimeInterval = 4) {
         guard process.isRunning else { return }
         process.interrupt()

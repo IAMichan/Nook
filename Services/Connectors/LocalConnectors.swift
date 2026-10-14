@@ -168,10 +168,10 @@ final class MailConnector: ContextSource {
     private var unreadCount = 0
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
-    /// Op de achtergrond kijkt Nook alleen als Mail al open is; vraag je iets over je mail, dan opent de tool Mail zelf (verborgen).
+    /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
     var canLookUp: Bool { ConnectorToggle.isOn(id) }
 
-    /// Start Mail op de achtergrond als hij nog dicht is, en wacht tot hij antwoordt.
+    /// Starts Mail in the background if it is closed, and waits until it responds.
     static func ensureRunning() async throws {
         guard !ScriptText.isRunning("com.apple.mail") else { return }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else {
@@ -185,7 +185,7 @@ final class MailConnector: ContextSource {
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
         guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail wilde niet starten.") }
-        // Even de tijd om de inbox te laden.
+        // Give the inbox a moment to load.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
     }
     var refreshInterval: TimeInterval { 120 }
@@ -245,7 +245,7 @@ final class MailConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard status.state == .ok else { return [] }
-        // Ook "niets ongelezen" is een antwoord: zonder deze regel weet het brein niet dat het Mail al zag.
+        // "Nothing unread" is an answer too: without this line the model does not know it already saw Mail.
         guard unreadCount > 0 else { return ["Mail: geen ongelezen mail in de inbox."] }
         var lines = ["Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread). Nieuwste:"]
         for message in unread.prefix(10) {
@@ -379,7 +379,7 @@ final class MailConnector: ContextSource {
     }
 
     /// Maakt de treffers leesbaar voor het brein, met een verwijzing per bericht (een message:-link opent hem in Mail).
-    /// `status`: op de plek van de ontvanger staat de status (gelezen, beantwoord), voor inbox_mail.
+    /// `status`: the recipient slot holds the status (read, replied) instead, for inbox_mail.
     nonisolated static func format(_ raw: String, sent: Bool, status: Bool = false) -> String {
         var blocks: [String] = []
         var refs: [String] = []

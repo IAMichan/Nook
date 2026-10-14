@@ -1,15 +1,15 @@
 import Foundation
 
-/// De kaarten die Nook kan tonen. Elke kaart: één zin, één detailregel, hooguit twee knoppen.
+/// The cards Nook can display. Each card: one sentence, one detail line, at most two buttons.
 enum CardScene: String, Equatable {
     case suggestion, reminder, listening, plan, approval
 }
 
 enum CardOutcome: Equatable {
-    case done(String)       // uitgevoerd: toon een korte bevestiging met Ongedaan maken
-    case show(CardScene)    // ga door naar een volgende kaart
-    case dismiss            // terug naar rust
-    case callback(String, String)  // voer een geregistreerde actie uit; tweede waarde is de bevestiging (leeg = niets tonen)
+    case done(String)       // executed: show a brief confirmation with Undo
+    case show(CardScene)    // proceed to the next card
+    case dismiss            // return to idle
+    case callback(String, String)  // execute a registered action; second value is the confirmation (empty = show nothing)
 }
 
 struct CardAction: Equatable {
@@ -29,21 +29,21 @@ struct PlanStep: Equatable, Identifiable {
     var tone: StepTone
 }
 
-/// Een keuzemogelijkheid bij een vraag van een agent.
+/// A choice option for an agent prompt.
 struct ChoiceOption: Equatable, Identifiable {
     var id: String { label }
     var label: String
     var description: String
 }
 
-/// Een vraag met opties. `id` verwijst naar een handler die `NotchViewModel.choose` aanroept.
+/// A prompt with options. `id` references a handler that calls `NotchViewModel.choose`.
 struct ChoiceSet: Equatable {
     var id: String
     var options: [ChoiceOption]
     var multiSelect: Bool
 }
 
-/// Eén regel in een overzicht, bijvoorbeeld "Tijd met agents · 6 u 12 min".
+/// A single row in a summary, such as "Time with agents · 6 hrs 12 mins".
 struct Fact: Equatable, Identifiable {
     var id: String { label }
     var label: String
@@ -69,18 +69,18 @@ struct NookCard: Equatable, Identifiable {
     var detail: CardDetail
     var primary: CardAction
     var secondary: CardAction
-    /// Hoogte van de inhoud onder de notch, zonder marges.
+    /// Content height below the notch, excluding margins.
     var contentHeight: CGFloat
-    /// Toont een tekstveld om meteen door te vragen. Het veld heeft de focus zodra de kaart verschijnt.
+    /// Displays a text field for immediate follow-up. The field gains focus as soon as the card appears.
     var input: Bool = false
-    /// Extra rustige knoppen naast de twee vaste (bijvoorbeeld "Altijd" en "In terminal").
+    /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
-    /// Een agent wacht hierop (toestemming of vraag): de kaart gaat voor alles en blijft tot je antwoordt.
+    /// An agent is waiting on this (permission or prompt): the card takes precedence and persists until answered.
     var urgent: Bool = false
-    /// Waar Nook naar keek voor dit antwoord ("3 vensters", "Agenda", "GitHub"), als kleine labels onder de context.
+    /// What Nook inspected for this answer ("3 windows", "Calendar", "GitHub"), as small chips below the context.
     var sources: [String] = []
-    /// Wat Nook hierna voor je kan doen ("Zet het in mijn agenda"). Een klik stuurt de zin als nieuw verzoek.
+    /// What Nook can do next ("Add to calendar"). Clicking sends the sentence as a new request.
     var offers: [String] = []
-    /// Wat Esc doet. Zonder waarde: de hoofdknop.
+    /// Behavior for Esc. Defaults to primary action if nil.
     var escape: CardAction? = nil
 }

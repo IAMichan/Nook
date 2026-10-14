@@ -1,24 +1,24 @@
 import Foundation
 import AppKit
 
-/// Het kleine script dat agents (Claude Code, Codex, Gemini CLI, Cursor, Copilot, …) en de plugins van OpenCode, Amp en Hermes aanroepen om Nook iets te laten weten.
-/// Het is een Perl-script (Perl staat standaard op macOS) en heet nog steeds nook-hook.sh, zodat bestaande
-/// koppelingen blijven werken. Draait Nook niet, of duurt het te lang, dan doet het niets en gaat de agent gewoon door.
+/// The lightweight script invoked by agents (Claude Code, Codex, Gemini CLI, Cursor, Copilot, …) and plugins for OpenCode, Amp, and Hermes to notify Nook.
+/// It is a Perl script (Perl is installed by default on macOS) named nook-hook.sh for backwards compatibility with existing hooks.
+/// If Nook is not running or takes too long, it exits cleanly and the agent continues uninterrupted.
 enum HookScript {
-    /// Gaat omhoog als het script verandert; Nook schrijft het dan bij het opstarten opnieuw.
+    /// Incremented when the script changes; Nook rewrites it on launch when needed.
     static let version = 3
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook hook (versie 3): stuurt een gebeurtenis van een agent naar Nook, lokaal via een Unix-socket.
-    # Draait Nook niet, of duurt het te lang, dan doet dit script niets: de agent gaat gewoon door.
-    #   --agent <naam>   wie de gebeurtenis stuurt (claude-code, codex, gemini, cursor, copilot, …)
-    #                    Zonder --agent telt het veld "nook_agent" in de JSON (a-z, 0-9, - en _, max. 32 tekens).
-    #   <Gebeurtenis>    naam van de gebeurtenis, als de agent die zelf niet in de JSON zet
-    #   --wait           wacht op jouw antwoord in de notch (toestemming)
-    #   --ask            beantwoord een vraag van de agent (AskUserQuestion) in de notch
-    #   --statusline     geef het abonnementsgebruik door en toon een statusregel
-    # Zie docs/AGENTS.md voor hoe elke agent zich zo bij Nook kan melden.
+    # Nook hook (version 3): delivers an agent event to Nook locally via Unix domain socket.
+    # If Nook is not running or times out, this script exits cleanly: the agent proceeds normally.
+    #   --agent <name>   identifies sender (claude-code, codex, gemini, cursor, copilot, …)
+    #                    Without --agent, "nook_agent" JSON field is used (a-z, 0-9, - and _, max 32 chars).
+    #   <Event>          event name if not provided in JSON
+    #   --wait           wait for user decision in notch (permission)
+    #   --ask            answer an agent question in notch (AskUserQuestion)
+    #   --statusline     report plan usage and render statusline
+    # See docs/AGENTS.md for details on configuring agent hooks.
     use strict;
     use warnings;
     use IO::Socket::UNIX;
@@ -71,7 +71,7 @@ enum HookScript {
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
         qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME NOOK_RUN_ID);
 
-    # nook_show_step: een agent die alleen "klaar" meldt, krijgt de stap toch te zien (eerst begonnen, dan klaar).
+    # nook_show_step: synthetic tool step (pre then post) for agents that only report completion.
     my @events = ($event);
     if ($mode eq 'event' && $event->{nook_show_step}) {
         my %before = %$event;
@@ -114,13 +114,13 @@ enum HookScript {
         } elsif ($out ne '') {
             print "$out\n";
         } elsif ($agent eq 'gemini' || $agent eq 'antigravity' || $agent eq 'copilot') {
-            # Deze agents willen altijd JSON terug; een leeg object betekent: Nook beslist niets.
+            # These agents always require JSON output; an empty object means no intervention from Nook.
             print "{}\n";
         }
         exit 0;
     }
 
-    # Copilot CLI wil bij toestemming altijd geldige JSON. Zonder antwoord uit de notch vraagt hij het zelf ("ask").
+    # Copilot CLI requires valid JSON for decisions. If unanswered from notch, defaults to interactive prompt ("ask").
     sub copilot_decision {
         my ($out) = @_;
         my $answer = eval { decode_json($out) };
@@ -135,8 +135,8 @@ enum HookScript {
         return '{"permissionDecision":"ask"}';
     }
 
-    # Velden van andere agents (Copilot, Cursor, Antigravity, Gemini) onder de namen die Nook kent,
-    # zoals Claude Code ze gebruikt. Wat er al staat, blijft staan.
+    # Normalize fields from other agents (Copilot, Cursor, Antigravity, Gemini) into Nook's canonical schema
+    # matching Claude Code conventions. Existing canonical fields are preserved.
     sub fill_fields {
         my ($e) = @_;
         my $call = ref($e->{toolCall}) eq 'HASH' ? $e->{toolCall} : {};
@@ -175,7 +175,7 @@ enum HookScript {
             }
             $e->{cwd} = $cwd if defined $cwd;
         }
-        # Cursor meldt een stop met een fout als status "error".
+        # Cursor reports failure stops with status "error".
         my $stop = first_text($e->{hook_event_name});
         my $status = first_text($e->{status});
         if (defined $stop && ($stop eq 'stop' || $stop eq 'Stop') && defined $status && $status eq 'error') {
@@ -183,7 +183,7 @@ enum HookScript {
         }
     }
 
-    # De eerste waarde die gewone, niet-lege tekst is.
+    # Returns the first non-empty scalar string value.
     sub first_text {
         for my $value (@_) {
             return $value if defined $value && !ref($value) && $value ne '';
@@ -191,7 +191,7 @@ enum HookScript {
         return undef;
     }
 
-    # Toont de statusregel die je al had (als die er was), anders een korte eigen regel.
+    # Renders the user's previous statusline if configured, otherwise displays a compact fallback.
     sub statusline {
         if (-f $prev_file) {
             my $cmd = eval {
@@ -221,7 +221,7 @@ enum HookScript {
             push @parts, $event->{model}{display_name};
         }
         my $limits = ref($event->{rate_limits}) eq 'HASH' ? $event->{rate_limits} : {};
-        for my $pair (['five_hour', '5u'], ['seven_day', 'week']) {
+        for my $pair (['five_hour', '5h'], ['seven_day', 'week']) {
             my $window = $limits->{$pair->[0]};
             if (ref($window) eq 'HASH' && defined $window->{used_percentage}) {
                 push @parts, sprintf('%s %d%%', $pair->[1], $window->{used_percentage});
@@ -231,7 +231,7 @@ enum HookScript {
     }
     """#
 
-    /// Schrijft het script als het ontbreekt of verouderd is. Veilig om bij elke start aan te roepen.
+    /// Writes the script if missing or outdated. Safe to call on every launch.
     @discardableResult
     static func install() throws -> URL {
         let url = NookPaths.hookScriptURL
@@ -243,7 +243,7 @@ enum HookScript {
         return url
     }
 
-    /// Het commando zoals het in een configuratiebestand komt (pad met spaties, dus tussen aanhalingstekens).
+    /// Command string for configuration files (quoted to accommodate spaces in path).
     static func command(_ arguments: String) -> String {
         "\"\(NookPaths.hookScriptURL.path)\" \(arguments)"
     }

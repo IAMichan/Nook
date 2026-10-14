@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// De hele notch: één zwarte vorm die van maat verandert, met Nook er altijd links in.
+/// The entire notch: a single black shape that changes size, with Nook always on the left.
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -9,6 +9,8 @@ struct NotchRootView: View {
         let size = viewModel.size
         let radius = viewModel.cornerRadius
         let floating = viewModel.geometry.isFloating
+        // Floating and idle: only Nook itself is on screen, without the black shape around it.
+        let bare = viewModel.isBareOrb
         let topRadius = floating ? radius : 0
         let shape = UnevenRoundedRectangle(
             topLeadingRadius: topRadius,
@@ -19,17 +21,17 @@ struct NotchRootView: View {
         )
 
         ZStack(alignment: .top) {
-            // De inhoud heeft meteen zijn eindmaat; de zwarte vorm groeit eromheen en onthult hem.
-            // Zo hoeft SwiftUI tijdens de animatie niets opnieuw uit te leggen.
+            // The content immediately has its final size; the black shape expands around it and reveals it.
+            // This avoids SwiftUI having to recalculate layout during the animation.
             ZStack(alignment: .top) {
                 content(size: size)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
-            .background(shape.fill(NookTheme.notch))
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(Color.white.opacity(floating ? 0.1 : 0), lineWidth: 1))
-            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
-            // Een lichte zwelling als de muis op de notch staat: laat zien dat hij reageert.
+            .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
+            .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
+            .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
+            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating && !bare ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
+            // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
             .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
         }
@@ -51,8 +53,9 @@ struct NotchRootView: View {
         }
     }
 
-    /// Verandert er iets wezenlijks, dan faden we de inhoud in plaats van te laten verspringen.
+    /// When something substantial changes, fade the content instead of abruptly jumping.
     private var contentKey: String {
+        if viewModel.isBareOrb { return "bare" }
         switch viewModel.state {
         case .idle: return "idle"
         case .music: return "music"
@@ -60,7 +63,7 @@ struct NotchRootView: View {
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
         case .nudge(_, let card): return "nudge-\(card.id)"
-        case .panel: return "panel"   // wisselen van tab gebeurt binnen het paneel, zonder alles te vervangen
+        case .panel: return "panel"   // tab switching happens within the panel, without replacing everything
         }
     }
 
@@ -70,68 +73,10 @@ struct NotchRootView: View {
         let nh = viewModel.geometry.notchHeight
 
         Group {
-            switch viewModel.state {
-            case .idle:
-                let active = app.activeAgents
-                if !active.isEmpty {
-                    // Er werkt een agent: Nook denkt mee, rechts één stipje per sessie.
-                    let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                    wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
-                        AgentDots(sessions: active)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                } else if app.chat.anyBusy {
-                    // Een Nook werkt op de achtergrond aan iets: hij denkt zichtbaar mee.
-                    wings(nh: nh, nw: nw, mood: .think, animated: true) {
-                        idleBadge
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
-                    Color.clear
-                } else {
-                    wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                        idleBadge
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { viewModel.openPanel() }
-                    .floatingDrag(viewModel)
-                }
-            case .music:
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                    EqualizerBars(color: NookTheme.music, height: 14)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            case .track(let title, let artist):
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                    trackLabel(title: title, artist: artist)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            case .done(let message):
-                doneStrip(message: message, nh: nh)
-            case .nudge(let line, _):
-                nudgeStrip(line: line, nh: nh)
-            case .card(let card):
-                expanded(nh: nh, mood: card.mood) {
-                    CardView(
-                        card: card,
-                        onAction: { viewModel.perform($0) },
-                        onVoice: { viewModel.startListening() },
-                        onReply: { app.handleUserText($0) },
-                        onChoose: { viewModel.choose($0, $1) }
-                    )
-                }
-            case .panel(let tab):
-                expanded(nh: nh, mood: viewModel.mood(for: tab)) {
-                    PanelView(viewModel: viewModel, tab: tab)
-                }
+            if viewModel.isBareOrb {
+                bareOrb
+            } else {
+                regularContent(nh: nh, nw: nw)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
@@ -139,9 +84,114 @@ struct NotchRootView: View {
         .transition(.notchContent)
     }
 
-    // MARK: Rust en muziek: Nook links van de notch, iets kleins rechts
+    // MARK: Floating and idle: just Nook
 
-    /// Rechts in rust: wacht er een agent, dan amber; anders het aantal punten voor vandaag.
+    /// Nook without a bar. A dot top-right when something is waiting; visibly thinking while work is running.
+    private var bareOrb: some View {
+        let active = app.activeAgents
+        let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+        let mood: NookMood
+        if !active.isEmpty {
+            mood = waiting ? .waiting : .think
+        } else if app.chat.anyBusy {
+            mood = .think
+        } else {
+            mood = viewModel.pointerInside ? .seen : .rest
+        }
+        let side = NotchViewModel.floatingOrbSide
+        return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy)
+            .frame(width: side, height: side)
+            .overlay(alignment: .topTrailing) { bareBadge }
+            .contentShape(Circle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+            .accessibilityElement()
+            .accessibilityLabel("Nook")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// Small dot next to the orb: amber when something is waiting for you, otherwise nothing.
+    @ViewBuilder
+    private var bareBadge: some View {
+        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
+        if waiting > 0 {
+            Circle()
+                .fill(NookTheme.amber)
+                .frame(width: 9, height: 9)
+                .padding(4)
+        }
+    }
+
+    @ViewBuilder
+    private func regularContent(nh: CGFloat, nw: CGFloat) -> some View {
+        switch viewModel.state {
+        case .idle:
+            let active = app.activeAgents
+            if !active.isEmpty {
+                // An agent is working: Nook is thinking along, one dot per session on the right.
+                let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
+                    AgentDots(sessions: active)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            } else if app.chat.anyBusy {
+                // A Nook is working on something in the background: visibly thinking along.
+                wings(nh: nh, nw: nw, mood: .think, animated: true) {
+                    idleBadge
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
+                Color.clear
+            } else {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                    idleBadge
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
+                .floatingDrag(viewModel)
+            }
+        case .music:
+            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                EqualizerBars(color: NookTheme.music, height: 14)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+        case .track(let title, let artist):
+            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+                trackLabel(title: title, artist: artist)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { viewModel.openPanel() }
+            .floatingDrag(viewModel)
+        case .done(let message):
+            doneStrip(message: message, nh: nh)
+        case .nudge(let line, _):
+            nudgeStrip(line: line, nh: nh)
+        case .card(let card):
+            expanded(nh: nh, mood: card.mood) {
+                CardView(
+                    card: card,
+                    onAction: { viewModel.perform($0) },
+                    onVoice: { viewModel.startListening() },
+                    onReply: { app.handleUserText($0) },
+                    onChoose: { viewModel.choose($0, $1) }
+                )
+            }
+        case .panel(let tab):
+            expanded(nh: nh, mood: viewModel.mood(for: tab)) {
+                PanelView(viewModel: viewModel, tab: tab)
+            }
+        }
+    }
+
+    // MARK: Idle and Music: Nook left of the notch, something compact on the right
+
+    /// On the right when idle: amber if an agent is waiting; otherwise today's score.
     @ViewBuilder
     private var idleBadge: some View {
         let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
@@ -177,7 +227,7 @@ struct NotchRootView: View {
         .frame(height: nh)
     }
 
-    /// Rechts van de notch: welk nummer er nu begint.
+    /// Right of the notch: which track is now playing.
     private func trackLabel(title: String, artist: String) -> some View {
         HStack(spacing: 8) {
             EqualizerBars(color: NookTheme.music, height: 12)
@@ -201,7 +251,7 @@ struct NotchRootView: View {
         .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
     }
 
-    // MARK: Net iets gedaan
+    // MARK: Recent action
 
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -230,9 +280,9 @@ struct NotchRootView: View {
         }
     }
 
-    // MARK: Nook denkt mee
+    // MARK: Nook thinking along
 
-    /// Een korte zin onder de notch, zoals "Zal ik dit in je agenda zetten?". Wijs of klik voor het hele voorstel.
+    /// A short sentence below the notch, like "Shall I add this to your calendar?". Hover or click for the full proposal.
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -267,7 +317,7 @@ struct NotchRootView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    // MARK: Uitgeklapt: Nook links, inhoud rechts
+    // MARK: Expanded: Nook on the left, content on the right
 
     private func expanded<Inner: View>(
         nh: CGFloat,
@@ -288,7 +338,7 @@ struct NotchRootView: View {
         .padding(.horizontal, 28)
         .padding(.bottom, 22)
         .overlay(alignment: .top) {
-            // Zwevend: sleep aan de bovenrand om het paneel te verplaatsen.
+            // Floating: drag the top edge to move the panel.
             if viewModel.geometry.isFloating {
                 Color.clear
                     .frame(height: nh)
@@ -299,7 +349,7 @@ struct NotchRootView: View {
     }
 }
 
-/// Eén stipje per actieve agent, in de kleur van zijn toestand. Wacht er een op je, dan knippert die zacht.
+/// One dot per active agent, in the color of its state. If one is waiting for you, it pulses gently.
 private struct AgentDots: View {
     let sessions: [AgentSession]
 
@@ -328,7 +378,7 @@ private struct AgentDots: View {
 }
 
 private extension View {
-    /// In zwevende stand kun je Nook aan dit onderdeel verslepen. Tikken blijft gewoon werken.
+    /// In floating mode, you can drag Nook by this component. Tapping continues to work as expected.
     func floatingDrag(_ viewModel: NotchViewModel) -> some View {
         simultaneousGesture(
             DragGesture(minimumDistance: 4)

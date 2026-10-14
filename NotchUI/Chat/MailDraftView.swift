@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Een mail die Nook schreef: aan te passen in de chat, en weg met één klik op Versturen.
+/// An email drafted by Nook: editable in chat, and sent with a single click.
 struct MailDraftView: View {
     let draft: MailDraft
     let onSend: (MailDraft) -> Void
@@ -124,7 +124,7 @@ struct MailDraftView: View {
     }
 }
 
-/// Kleine witte knop voor in de chat.
+/// Compact white button for use in chat.
 struct SmallPrimaryButton: View {
     let title: String
     var systemName: String? = nil
@@ -147,7 +147,7 @@ struct SmallPrimaryButton: View {
     }
 }
 
-/// Kleine rustige knop voor in de chat.
+/// Compact subtle button for use in chat.
 struct SmallGhostButton: View {
     let title: String
     let action: () -> Void

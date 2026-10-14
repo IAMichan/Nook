@@ -6,17 +6,17 @@ import MLXHuggingFace
 import HuggingFace
 import Tokenizers
 
-/// Een gratis taalmodel dat in Nook zelf draait (MLX, de motor van Apple voor Apple Silicon).
-/// Modellen worden eenmalig van Hugging Face gedownload; daarna werkt alles zonder internet.
+/// A free language model running locally in Nook via MLX (Apple's framework for Apple Silicon).
+/// Models are downloaded once from Hugging Face; afterwards everything runs completely offline.
 ///
-/// Let op: in dit bestand is `ToolSpec` Nooks eigen type; dat van MLX heet `MLXLMCommon.ToolSpec`.
+/// Note: in this file, `ToolSpec` is Nook's native type; MLX's type is `MLXLMCommon.ToolSpec`.
 struct LocalModelOption: Identifiable {
-    let id: String        // repository op Hugging Face
+    let id: String        // repository on Hugging Face
     let title: String
     let detail: String
-    let minMemoryGB: Int  // minder geheugen dan dit: te zwaar, de Mac loopt vast
+    let minMemoryGB: Int  // lower memory than this: too heavy, will stall the Mac
 
-    /// Past dit model comfortabel op deze Mac?
+    /// Does this model fit comfortably on this Mac?
     var fits: Bool { EmbeddedModel.memoryGB >= minMemoryGB }
 }
 
@@ -24,17 +24,17 @@ struct LocalModelOption: Identifiable {
 final class EmbeddedModel: ObservableObject {
     static let shared = EmbeddedModel()
 
-    /// Modellen die tools kunnen aanroepen, zoals Nook nodig heeft.
+    /// Models capable of tool calling as required by Nook.
     static let options: [LocalModelOption] = [
         LocalModelOption(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", title: "Llama 3.2 (3B)",
-                         detail: "Licht · ± 1,8 GB · snel, belast je Mac weinig · vanaf 8 GB geheugen", minMemoryGB: 8),
+                         detail: "Lightweight · ± 1.8 GB · fast, low system impact · 8 GB+ memory", minMemoryGB: 8),
         LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)",
-                         detail: "Slimmer en beter in Nederlands · ± 4,3 GB, belast je Mac flink · vanaf 24 GB geheugen", minMemoryGB: 24),
+                         detail: "Smarter and more capable · ± 4.3 GB, heavier load · 24 GB+ memory", minMemoryGB: 24),
         LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)",
-                         detail: "± 4,5 GB, belast je Mac flink · vanaf 24 GB geheugen", minMemoryGB: 24)
+                         detail: "± 4.5 GB, heavier load · 24 GB+ memory", minMemoryGB: 24)
     ]
 
-    /// Werkgeheugen van deze Mac, in GB.
+    /// System memory of this Mac, in GB.
     static let memoryGB = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
 
     @Published private(set) var installed: Set<String>
@@ -44,22 +44,22 @@ final class EmbeddedModel: ObservableObject {
     private var idleTask: Task<Void, Never>?
     private var pressureSource: DispatchSourceMemoryPressure?
 
-    /// Na zoveel seconden zonder vraag gaat het model uit het geheugen. Ruim geheugen: langer, dan is de volgende vraag meteen snel.
+    /// Unload model from memory after this many seconds of inactivity. High RAM: longer, keeping the next query instant.
     private static let idleSeconds: UInt64 = memoryGB >= 24 ? 300 : 90
 
     private init() {
         installed = Set(UserDefaults.standard.stringArray(forKey: "installedLocalModels") ?? [])
-        // MLX bewaart standaard enorm veel tussengeheugen; dat is wat een Mac traag maakt.
+        // By default MLX retains extensive cache; limiting it prevents system lag.
         Memory.cacheLimit = 128 * 1024 * 1024
 
-        // Wordt het geheugen krap, dan gaat het model direct weg.
+        // Under memory pressure, unload the model immediately.
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in Task { @MainActor in self?.unload() } }
         source.resume()
         pressureSource = source
     }
 
-    /// Laadt het model alvast op de achtergrond (bijvoorbeeld zodra je het paneel opent of begint te praten).
+    /// Pre-loads the model in the background (e.g. when opening panel or starting interaction).
     func preload(_ id: String) {
         guard !id.isEmpty, loadedID != id, !busy, installed.contains(id) else { return }
         Task {
@@ -68,7 +68,7 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
-    /// Haalt het model uit het geheugen.
+    /// Unloads the model from memory.
     func unload() {
         idleTask?.cancel()
         guard container != nil else { return }
@@ -86,9 +86,9 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
-    /// Eén vraag tegelijk: twee modellen-runs door elkaar vragen dubbel zoveel geheugen.
+    /// One query at a time: concurrent model runs require double the memory.
     private func exclusive<T>(_ work: () async throws -> T) async throws -> T {
-        guard !busy else { throw NookError("Ik ben nog bezig met je vorige vraag. Probeer het zo nog eens.") }
+        guard !busy else { throw NookError("I am still processing your previous query. Please try again shortly.") }
         busy = true
         idleTask?.cancel()
         defer {
@@ -103,9 +103,9 @@ final class EmbeddedModel: ObservableObject {
         Self.options.first { $0.id == id }?.title ?? id
     }
 
-    // MARK: Installeren
+    // MARK: Installation
 
-    /// Downloadt het model en laadt het meteen, zodat de eerste vraag niet hoeft te wachten.
+    /// Downloads the model and loads it immediately so the first query does not wait.
     func install(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws {
         _ = try await load(id, progress: progress)
         installed.insert(id)
@@ -116,7 +116,7 @@ final class EmbeddedModel: ObservableObject {
     var isLoaded: Bool { container != nil }
     private var loading: (id: String, task: Task<ModelContainer, Error>)?
 
-    /// Laadt het model, en nooit twee keer tegelijk: een tweede aanroep wacht op de eerste.
+    /// Loads the model, avoiding duplicate concurrent loads: subsequent callers await the first.
     private func load(_ id: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> ModelContainer {
         if loadedID == id, let container { return container }
         if let loading, loading.id == id { return try await loading.task.value }
@@ -139,28 +139,28 @@ final class EmbeddedModel: ObservableObject {
         } catch let error as URLError {
             switch error.code {
             case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost, .timedOut:
-                throw NookError("Downloaden mislukte: geen verbinding met huggingface.co. Het model wordt maar één keer gedownload.")
+                throw NookError("Download failed: no connection to huggingface.co. The model is only downloaded once.")
             default:
-                throw NookError("Downloaden mislukte: \(error.localizedDescription)")
+                throw NookError("Download failed: \(error.localizedDescription)")
             }
         } catch {
-            throw NookError("Het model laden mislukte: \(error.localizedDescription)")
+            throw NookError("Failed to load model: \(error.localizedDescription)")
         }
     }
 
-    // MARK: Gebruiken
+    // MARK: Inference
 
-    /// Kleine testvraag zonder tools.
+    /// Small test query without tools.
     func test(model id: String) async throws -> String {
         try await exclusive {
             let container = try await load(id)
             let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, maxKVSize: 512, temperature: 0.1))
-            let text = try await session.respond(to: "Antwoord met alleen het woord: klaar")
+            let text = try await session.respond(to: "Reply with only the word: ready")
             return Self.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
-    /// Eén vraag met Nooks tools. Lees-tools draaien meteen; actie-tools worden alleen verzameld als plan.
+    /// A single query with Nook's tools. Read tools run immediately; action tools are collected for the plan.
     func run(model id: String, system: String, prompt: String, tools: [ToolSpec]) async throws -> BrainPlan {
         try await exclusive { try await runExclusive(model: id, system: system, prompt: prompt, tools: tools) }
     }
@@ -188,8 +188,8 @@ final class EmbeddedModel: ObservableObject {
         )
         var text = Self.stripThinking(try await session.respond(to: prompt))
 
-        // Een klein model schrijft een tool-aanroep soms als losse JSON in zijn antwoord in plaats van hem echt aan te roepen.
-        // Die vangen we op, voeren we uit en laten het model daarna in gewone taal antwoorden.
+        // Small models sometimes output tool calls as raw JSON in their response text instead of dispatching natively.
+        // We intercept, execute, and prompt the model to provide a natural language response.
         for _ in 0..<2 {
             let found = Self.extractToolCalls(from: text, knownTools: Set(tools.map(\.name)))
             guard !found.calls.isEmpty else { break }
@@ -198,10 +198,10 @@ final class EmbeddedModel: ObservableObject {
                 results.append("\(call.name): \(await collector.run(name: call.name, input: call.input))")
             }
             text = Self.stripThinking(try await session.respond(
-                to: "Resultaat van de tools:\n\(results.joined(separator: "\n"))\n\nBeantwoord nu mijn verzoek in gewone taal. Geef geen JSON."
+                to: "Tool results:\n\(results.joined(separator: "\n"))\n\nNow answer my request in natural language. Do not output JSON."
             ))
         }
-        // Blijft er toch JSON van een tool-aanroep over, laat dat dan nooit in de kaart staan.
+        // If any tool call JSON remains in the text, strip it so it never appears in the output.
         text = Self.extractToolCalls(from: text, knownTools: Set(tools.map(\.name))).text
 
         return BrainPlan(
@@ -210,15 +210,15 @@ final class EmbeddedModel: ObservableObject {
         )
     }
 
-    /// Haalt losse tool-aanroepen als JSON uit een antwoord, zoals {"name": "list_events", "parameters": {"from": "…"}}.
-    /// Geeft de aanroepen terug en de tekst zonder die JSON. Ook een afgebroken object (laatste accolade ontbreekt) wordt herkend.
+    /// Extracts tool calls formatted as JSON from response text, such as {"name": "list_events", "parameters": {"from": "…"}}.
+    /// Returns extracted calls and the cleaned text. Also handles truncated JSON objects (missing closing brace).
     static func extractToolCalls(from text: String, knownTools: Set<String>) -> (text: String, calls: [(name: String, input: [String: Any])]) {
         var remaining = text
         var calls: [(name: String, input: [String: Any])] = []
-        var offset = 0  // positie vanaf waar we zoeken; een String.Index blijft niet geldig nadat we tekst weghalen
+        var offset = 0  // search offset; String.Index is invalidated after removing substrings
 
         while let open = remaining[remaining.index(remaining.startIndex, offsetBy: offset)...].firstIndex(of: "{") {
-            // Zoek de bijpassende sluitaccolade; ontbreekt die, neem dan de rest van de tekst en sluit zelf af.
+            // Match closing brace; if missing, take remaining text and append closing braces.
             var depth = 0, inString = false, escaped = false
             var close: String.Index?
             for index in remaining[open...].indices {
@@ -250,15 +250,15 @@ final class EmbeddedModel: ObservableObject {
         return (remaining, calls)
     }
 
-    // MARK: Hulpjes
+    // MARK: Helpers
 
-    /// Sommige modellen zetten hun denkwerk tussen <think>-tags; dat hoort niet in de kaart.
+    /// Some models output reasoning inside <think> tags; strip from final text.
     private static func stripThinking(_ text: String) -> String {
         guard let range = text.range(of: "<think>[\\s\\S]*?</think>", options: .regularExpression) else { return text }
         return text.replacingCharacters(in: range, with: "")
     }
 
-    /// MLX wil `Sendable`-waarden; Nooks schema's bestaan alleen uit tekst, getallen, lijsten en woordenboeken.
+    /// MLX expects Sendable values; Nook's schemas contain strings, numbers, arrays, and dictionaries.
     private static func sendable(_ value: Any) -> any Sendable {
         switch value {
         case let dict as [String: Any]: return dict.mapValues { sendable($0) } as [String: any Sendable]
@@ -272,7 +272,7 @@ final class EmbeddedModel: ObservableObject {
     }
 }
 
-/// Voert de tools uit die het model aanroept: lezen meteen, acties alleen als voorstel.
+/// Executes tools invoked by the model: read tools immediately, action tools as proposals.
 @MainActor
 private final class ToolCollector {
     let tools: [ToolSpec]
@@ -282,29 +282,29 @@ private final class ToolCollector {
     init(tools: [ToolSpec]) { self.tools = tools }
 
     func handle(_ call: ToolCall) async -> String {
-        // Een klein model blijft soms tools aanroepen; dat houdt de Mac eindeloos bezig.
+        // Small models can loop invoking tools; cap iterations to avoid stalling.
         calls += 1
-        if calls > 5 { return "Genoeg gegevens verzameld. Geef nu je antwoord, zonder nog een tool aan te roepen." }
+        if calls > 5 { return "Sufficient information collected. Provide your answer now without calling further tools." }
         return await run(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }, counted: true)
     }
 
-    /// Voert een tool uit op naam; ook voor aanroepen die als tekst uit het antwoord zijn gehaald.
+    /// Executes a tool by name; also handles calls extracted as text from model output.
     func run(name: String, input: [String: Any], counted: Bool = false) async -> String {
         if !counted {
             calls += 1
-            if calls > 5 { return "Genoeg gegevens verzameld. Geef nu je antwoord, zonder nog een tool aan te roepen." }
+            if calls > 5 { return "Sufficient information collected. Provide your answer now without calling further tools." }
         }
-        guard let spec = tools.first(where: { $0.name == name }) else { return "Onbekende tool." }
+        guard let spec = tools.first(where: { $0.name == name }) else { return "Unknown tool." }
         switch spec.kind {
         case .read:
             do {
                 return UntrustedText.wrap(try await spec.run(input))
             } catch {
-                return "Fout: \(error.localizedDescription)"
+                return "Error: \(error.localizedDescription)"
             }
         case .action:
             actions.append(PlannedAction(tool: name, input: input))
-            return "Voorgesteld aan de gebruiker. Wordt pas uitgevoerd na bevestiging."
+            return "Proposed to the user. Will only be executed after confirmation."
         }
     }
 }

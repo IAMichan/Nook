@@ -24,7 +24,7 @@ final class ConnectorHub: ObservableObject {
 
     var active: [ContextSource] { sources.filter { $0.isActive } }
 
-    /// Waar het brein in kan kijken: alles wat actief is, plus bronnen die hun tools ook zonder cache kunnen draaien.
+    /// Where the model can look: everything active, plus sources whose tools can run without a cache.
     var searchable: [ContextSource] { sources.filter { $0.isActive || $0.canLookUp } }
 
     /// Koppelingen waar iets op jou wacht (falende CI, herinnering te laat…).
@@ -86,7 +86,7 @@ final class ConnectorHub: ObservableObject {
         var brief: [String] = []
         for source in searchable where scope.allows(source.id) {
             let part = source.contextLines()
-            // Niets in de cache (Mail nog dicht): dan in elk geval de regel met de tools, zodat het brein weet dat hij kan kijken.
+            // Nothing cached (Mail still closed): at least add the line with the tools, so the model knows it can look.
             if (full?.contains(source.id) ?? true), !part.isEmpty {
                 lines.append(contentsOf: part)
                 fullTitles.append(source.title)

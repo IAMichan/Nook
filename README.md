@@ -29,7 +29,9 @@ open Nook.xcodeproj
 
 Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./update.sh` (haalt op en draait `xcodegen`), anders klaagt Xcode over iets dat 'not in scope' is.
 
-Wil je Nook niet in de notch? Kies in **Instellingen › Overzicht › Notch › Plek** voor **Zwevend op het scherm** en sleep hem aan de balk (of de bovenrand van het paneel) naar waar je hem wilt. Je positie wordt onthouden.
+Wil je Nook niet in de notch? Kies in **Instellingen › Overzicht › Notch › Plek** voor **Zwevend op het scherm**. In rust zie je dan alleen Nook zelf, zonder balk. Sleep hem naar elke plek op elk aangesloten scherm (of aan de bovenrand van het open paneel); positie en scherm worden onthouden.
+
+Heb je meer schermen? Zet in de notch-stand **Toon de notch op elk scherm** aan: elk aangesloten scherm krijgt een notch, en Nook opent op het scherm waar je muis is.
 
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als klein Nook-figuurtje in de menubalk.
 

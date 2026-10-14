@@ -1,7 +1,7 @@
 import AppKit
 
-/// Een randloos paneel dat over de notch hangt, nooit de focus steelt
-/// en op elk Space en boven volledig-scherm-apps blijft staan.
+/// A borderless panel overlaying the notch that never steals focus
+/// and stays visible across all Spaces and above full-screen apps.
 final class NotchPanel: NSPanel {
     init(contentRect: NSRect = .zero) {
         super.init(
@@ -20,16 +20,16 @@ final class NotchPanel: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         acceptsMouseMovedEvents = true
-        // Standaard laat het paneel alles erdoorheen; de controller zet dit uit
-        // zodra de muis boven de notch-vorm hangt.
+        // Panel ignores mouse events by default; controller disables click-through
+        // whenever cursor hovers over the notch shape.
         ignoresMouseEvents = true
     }
 
-    // Nodig om in tekstvelden te kunnen typen.
+    // Required to allow typing in text fields.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    // Laat het paneel ook over de menubalk en notch heen staan.
+    // Ensures the panel renders above the menu bar and notch.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }

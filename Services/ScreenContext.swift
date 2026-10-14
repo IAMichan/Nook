@@ -3,13 +3,13 @@ import AppKit
 import ScreenCaptureKit
 import CoreGraphics
 
-/// Houdt op de achtergrond de tekst bij van alle zichtbare vensters op al je schermen, zodat Nook een vraag
-/// meteen kan beantwoorden met wat je ziet. Lezen gebeurt op je Mac (OCR); er gaat pas iets naar het brein als je iets vraagt.
+/// Background tracking of text across all visible windows on all screens, allowing Nook to answer queries
+/// with immediate screen context. Text recognition runs locally (OCR); data is only sent to the model upon request.
 ///
-/// Snel en zuinig:
-/// - Elk venster krijgt een vingerafdruk van een piepklein grijs plaatje. Is die gelijk, dan wordt er niet opnieuw gelezen.
-/// - Het voorste venster wordt nauwkeurig gelezen, de rest met de snelle herkenning en minder vaak.
-/// - Ben je een paar minuten weg van je Mac, of staat het uit, dan doet hij niets.
+/// Fast and resource-efficient:
+/// - Each window gets a tiny greyscale thumbnail fingerprint; if unchanged, OCR is skipped.
+/// - The frontmost window is read accurately; others use fast recognition and refresh less frequently.
+/// - Idles when the Mac is inactive for several minutes or when disabled.
 @MainActor
 final class ScreenContext: ObservableObject {
     struct WindowText: Identifiable, Equatable {
@@ -25,7 +25,7 @@ final class ScreenContext: ObservableObject {
         var frame: CGRect
     }
 
-    /// Wat Nook nu ziet, voorste venster eerst.
+    /// Current windows seen by Nook, frontmost window first.
     @Published private(set) var windows: [WindowText] = []
     @Published private(set) var lastUpdate: Date?
     @Published private(set) var isRunning = false
@@ -40,17 +40,17 @@ final class ScreenContext: ObservableObject {
 
     private let maxWindows = 10
     private let interval: TimeInterval = 7
-    /// Andere vensters dan het voorste worden hooguit zo vaak opnieuw bekeken.
+    /// Non-frontmost windows are refreshed at most this frequently.
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
     private let failureCooldown: TimeInterval = 60
 
     var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// Aantal schermen waarop Nook nu vensters ziet.
+    /// Number of displays containing visible windows.
     var displayCount: Int { Set(windows.map(\.display)).count }
 
-    // MARK: Aan en uit
+    // MARK: Lifecycle
 
     func start() {
         guard timer == nil else { return }
@@ -59,7 +59,7 @@ final class ScreenContext: ObservableObject {
             Task { @MainActor in await self?.tick() }
         }
         let center = NSWorkspace.shared.notificationCenter
-        // Wissel je van app, dan kijkt Nook meteen even naar het nieuwe voorste venster.
+        // When switching apps, immediately observe the new frontmost window.
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.scheduleFrontRefresh() }
         })
@@ -78,7 +78,7 @@ final class ScreenContext: ObservableObject {
         clear()
     }
 
-    /// Vergeet alles wat gelezen is.
+    /// Clears all captured screen text.
     func clear() {
         cache = [:]
         windows = []
@@ -99,16 +99,16 @@ final class ScreenContext: ObservableObject {
     private func tick() async {
         guard enabled(), hasPermission else { return }
         if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
-        // Even weg van de Mac: niets bijhouden.
+        // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
         await refresh(frontOnly: false, accurateFront: false)
     }
 
-    // MARK: Voor een vraag
+    // MARK: Query Snapshot
 
-    /// Wat er nu op je schermen staat. Is het voorste venster ouder dan `maxAge` seconden, dan leest Nook dat eerst opnieuw
-    /// (alleen dat venster, dus snel); de rest komt uit de cache.
+    /// Snapshot of currently visible screens. If the front window is older than `maxAge` seconds, it is refreshed first
+    /// (isolated to that window for speed); remaining windows are served from cache.
     func snapshot(maxAge: TimeInterval = 2.5, totalLimit: Int = 12_000) async throws -> ScreenSnapshot {
         guard hasPermission else {
             CGRequestScreenCaptureAccess()
@@ -126,14 +126,14 @@ final class ScreenContext: ObservableObject {
         }
         guard !windows.isEmpty else {
             if let bundle = frontApp?.bundleIdentifier, ScreenReader.excludedBundles.contains(bundle) {
-                throw ScreenError.excluded(frontApp?.localizedName ?? "deze app")
+                throw ScreenError.excluded(frontApp?.localizedName ?? "this app")
             }
             throw ScreenError.nothing
         }
         return format(totalLimit: totalLimit)
     }
 
-    /// Alleen uit de cache, zonder te wachten. Leeg als Nook nog niets zag.
+    /// Returns cached snapshot synchronously without waiting. Nil if nothing has been captured yet.
     func cachedSnapshot(totalLimit: Int = 12_000) -> ScreenSnapshot? {
         windows.isEmpty ? nil : format(totalLimit: totalLimit)
     }
@@ -146,24 +146,24 @@ final class ScreenContext: ObservableObject {
         for (index, window) in windows.enumerated() where remaining > 200 {
             let trimmed = window.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            // Het voorste venster krijgt de meeste ruimte, de andere elk een eerlijk deel.
+            // Frontmost window receives the largest allocation; remaining windows receive fair shares.
             let share = index == 0 ? min(remaining, max(4000, totalLimit / 2)) : min(remaining, max(900, totalLimit / 6))
             let chunk = String(trimmed.prefix(share))
             remaining -= chunk.count
             let title = window.title.isEmpty ? "" : " — \(window.title)"
-            let place = multipleDisplays ? " · scherm \(window.display)" : ""
+            let place = multipleDisplays ? " · display \(window.display)" : ""
             let age = Int(now.timeIntervalSince(window.captured))
-            let fresh = age < 5 ? "" : " · \(age) s geleden gelezen"
-            let label = window.isFront ? "Voorste venster" : "Venster"
+            let fresh = age < 5 ? "" : " · read \(age)s ago"
+            let label = window.isFront ? "Frontmost window" : "Window"
             sections.append("### \(label): \(window.app)\(title)\(place)\(fresh)\n\(chunk)")
         }
-        let frontName = windows.first?.app ?? "deze app"
+        let frontName = windows.first?.app ?? "this app"
         let screens = displayCount
-        let label = "\(windows.count) vensters" + (screens > 1 ? " op \(screens) schermen" : "")
+        let label = "\(windows.count) windows" + (screens > 1 ? " across \(screens) displays" : "")
         return ScreenSnapshot(appName: frontName, windowTitle: label, text: sections.joined(separator: "\n\n"))
     }
 
-    // MARK: Lezen
+    // MARK: Reading
 
     private func refresh(frontOnly: Bool, accurateFront: Bool) async {
         guard !busy, hasPermission else { return }
@@ -186,8 +186,8 @@ final class ScreenContext: ObservableObject {
                   let owner = window.owningApplication else { return false }
             return !ScreenReader.excludedBundles.contains(owner.bundleIdentifier)
         }
-        // Voorste app eerst; daarna de grootste vensters. Vensters die grotendeels onder andere liggen, ziet de gebruiker
-        // toch niet, maar die laten we gewoon meetellen: ScreenCaptureKit leest ze onbedekt.
+        // Frontmost app first, followed by largest windows. Even partially obscured windows are included:
+        // ScreenCaptureKit captures them unobscured.
         let ordered = candidates.sorted { a, b in
             let aFront = a.owningApplication?.processID == frontPID
             let bFront = b.owningApplication?.processID == frontPID
@@ -222,7 +222,7 @@ final class ScreenContext: ObservableObject {
             }
         }
 
-        // Vastleggen gaat via de GPU en is snel; het lezen (OCR) draait parallel en alleen als het beeld echt veranderde.
+        // Window capture is GPU-accelerated and fast; OCR runs concurrently and only when pixels actually change.
         var captured: [(window: SCWindow, isFront: Bool, accurate: Bool, image: CGImage, print: UInt64)] = []
         for job in jobs {
             let configuration = SCStreamConfiguration()
@@ -237,7 +237,7 @@ final class ScreenContext: ObservableObject {
 
         let toRead = captured.filter { item in
             guard let old = cache[item.window.windowID] else { return true }
-            // Zelfde beeld: niet opnieuw lezen. Wel opnieuw als het voorste venster eerder alleen snel gelezen werd.
+            // Identical pixels: skip OCR. Re-read if the frontmost window previously used fast recognition.
             return old.fingerprint != item.print
         }
 
@@ -275,16 +275,16 @@ final class ScreenContext: ObservableObject {
             )
         }
 
-        // Alleen vensters die er nog zijn, in de volgorde van nu.
+        // Only retain windows that are still present, in current z-order.
         let order = ordered.map(\.windowID)
         cache = kept
         windows = order.compactMap { kept[$0] }.filter { !$0.text.isEmpty }
         lastUpdate = Date()
     }
 
-    // MARK: Hulpjes
+    // MARK: Helpers
 
-    /// Een vingerafdruk van het beeld: 16×16 grijswaarden, grof afgerond. Kleine dingen als een knipperende cursor tellen niet.
+    /// Visual fingerprint: 16×16 greyscale thumbnail, coarsened so minor artifacts like a blinking cursor don't invalidate it.
     nonisolated static func fingerprint(_ image: CGImage) -> UInt64 {
         let side = 16
         var pixels = [UInt8](repeating: 0, count: side * side)
@@ -324,6 +324,6 @@ final class ScreenContext: ObservableObject {
                 best = (area, names[display.displayID] ?? "\(display.displayID)")
             }
         }
-        return best.name.isEmpty ? (names.values.first ?? "hoofdscherm") : best.name
+        return best.name.isEmpty ? (names.values.first ?? "main display") : best.name
     }
 }

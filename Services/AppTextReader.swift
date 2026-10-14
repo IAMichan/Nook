@@ -2,19 +2,19 @@ import Foundation
 import AppKit
 import ApplicationServices
 
-/// Leest de tekst van een app via de toegankelijkheidslaag van macOS (dezelfde die VoiceOver gebruikt), in plaats van
-/// met een schermafbeelding. Dat werkt ook als de app verborgen is of achter andere vensters ligt, dus Nook kan een app
-/// helemaal op de achtergrond lezen zonder dat je er iets van ziet. Vraagt eenmalig toestemming voor Toegankelijkheid.
+/// Reads an app's text through the macOS accessibility layer (the one VoiceOver uses) instead of a screenshot.
+/// That also works when the app is hidden or behind other windows, so Nook can read an app entirely in the background
+/// without the user seeing anything. Asks once for Accessibility permission.
 enum AppTextReader {
     static var hasPermission: Bool { AXIsProcessTrusted() }
 
-    /// Vraagt macOS om de toestemming (opent het systeemvenster één keer).
+    /// Asks macOS for the permission (opens the system prompt once).
     static func requestPermission() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Alle tekst in de vensters van de app, grootste venster eerst, binnen `limit` tekens. Leeg als er niets te lezen is.
+    /// All text in the app's windows, largest window first, within `limit` characters. Empty if there is nothing to read.
     static func text(pid: pid_t, limit: Int) async -> [(title: String, text: String)] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -23,7 +23,7 @@ enum AppTextReader {
         }
     }
 
-    /// Electron- en Chromium-apps (Slack, Teams, WhatsApp, Chrome) bouwen hun toegankelijkheidslaag pas als iemand erom vraagt.
+    /// Electron and Chromium apps (Slack, Teams, WhatsApp, Chrome) only build their accessibility tree when someone asks for it.
     static func wake(pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
@@ -54,7 +54,7 @@ enum AppTextReader {
         guard depth < 60, budget > 0, count < chars else { return }
         budget -= 1
         let role = (value(element, kAXRoleAttribute) as? String) ?? ""
-        // Wachtwoordvelden nooit.
+        // Never password fields.
         if role == "AXSecureTextField" { return }
         var parts: [String] = []
         if let text = value(element, kAXValueAttribute) as? String { parts.append(text) }
@@ -70,7 +70,7 @@ enum AppTextReader {
                 count += clean.count + 1
             }
         }
-        // Menu's en werkbalken zijn geen inhoud.
+        // Menus and toolbars are not content.
         if ["AXMenuBar", "AXMenu", "AXToolbar", "AXScrollBar"].contains(role) { return }
         for child in (value(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
             collect(child, depth: depth + 1, into: &lines, budget: &budget, count: &count, chars: chars)

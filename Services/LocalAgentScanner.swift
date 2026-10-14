@@ -1,22 +1,22 @@
 import Foundation
 
-/// Een agent die als proces op deze Mac draait, ook zonder dat hooks zijn gekoppeld.
+/// An agent running as a process on this Mac, even without hooks configured.
 struct DetectedAgent: Hashable {
     let pid: Int32
     let name: String
     let cwd: String
-    /// CLAUDE_CONFIG_DIR of CODEX_HOME uit de omgeving van het proces: met welk account hij draait. Leeg als onbekend.
+    /// CLAUDE_CONFIG_DIR or CODEX_HOME from process environment: which account it runs under. Empty if unknown.
     var home: String = ""
 }
 
-/// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, Hermes, …) in de lijst met processen.
-/// Zo staan ze meteen in Nook; hooks zijn alleen nodig voor details en goedkeuring.
-/// De namen zijn dezelfde als in AgentHub, zodat een agent die ook via hooks meldt er niet dubbel staat.
+/// Scans running AI agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, Hermes, …) from process table.
+/// Enables immediate visibility in Nook; hooks are only needed for rich details and approvals.
+/// Names match AgentHub so agents reporting via hooks are not duplicated.
 enum LocalAgentScanner {
     private struct Kind {
         let name: String
-        let commands: Set<String>      // naam van het programma
-        let packages: [String]         // stukje pad als het via node of python draait
+        let commands: Set<String>      // executable name
+        let packages: [String]         // path substring if running via node or python
     }
 
     private static let kinds: [Kind] = [
@@ -53,13 +53,13 @@ enum LocalAgentScanner {
         for line in list.split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
             guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]),
-                  pid != me, parent != me else { continue }   // Nooks eigen hulpprocessen (codex app-server, claude -p) niet
+                  pid != me, parent != me else { continue }   // Ignore Nook's own helper processes (codex app-server, claude -p)
             let command = String(fields[2])
             if let name = identify(command) { found.append((pid, name)) }
         }
         guard !found.isEmpty else { return [] }
 
-        // Werkmap per proces, in één keer.
+        // Working directory per process, in batch.
         var folders: [Int32: String] = [:]
         let pids = found.map { String($0.pid) }.joined(separator: ",")
         if let out = run("/usr/sbin/lsof", ["-a", "-p", pids, "-d", "cwd", "-Fpn"]) {
@@ -73,8 +73,8 @@ enum LocalAgentScanner {
         return found.map { DetectedAgent(pid: $0.pid, name: $0.name, cwd: folders[$0.pid] ?? "", home: homes[$0.pid] ?? "") }
     }
 
-    /// Leest CLAUDE_CONFIG_DIR en CODEX_HOME uit de omgeving van je eigen processen (`ps -E`).
-    /// Lukt dat niet, dan blijft het leeg en hoort de sessie bij het eerste account.
+    /// Reads CLAUDE_CONFIG_DIR and CODEX_HOME from process environment (`ps -E`).
+    /// If unavailable, remains empty and session belongs to primary account.
     private static func accountHomes(_ pids: String) -> [Int32: String] {
         guard let out = run("/bin/ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) else { return [:] }
         var result: [Int32: String] = [:]
@@ -91,18 +91,18 @@ enum LocalAgentScanner {
         return result
     }
 
-    /// Herkent een agent aan de opdrachtregel; apps (.app) en zoekopdrachten tellen niet mee.
+    /// Identifies an agent from its command line; excludes .app bundles and search commands.
     private static func identify(_ command: String) -> String? {
         let lower = command.lowercased()
         if lower.contains(".app/contents") || lower.hasPrefix("grep ") || lower.contains(" grep ") { return nil }
 
         let tokens = lower.split(separator: " ").map(String.init)
         guard let first = tokens.first else { return nil }
-        // Achtergronddiensten van een agent (voor een editor of app) zijn geen sessie van jou.
+        // Background daemon services for an editor/app are not user interactive sessions.
         if tokens.contains(where: { backgroundModes.contains($0) }) { return nil }
         let program = URL(fileURLWithPath: first).lastPathComponent
 
-        // Het eerste woord, of bij node/python het script dat daarna komt.
+        // The first command token, or for node/python the script argument following it.
         var candidates = [program]
         if interpreters.contains(program) {
             candidates += tokens.dropFirst().prefix(3).filter { !$0.hasPrefix("-") }.map { URL(fileURLWithPath: $0).lastPathComponent }

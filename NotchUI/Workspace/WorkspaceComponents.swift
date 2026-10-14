@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Kleuren van de werkruimte. Donker, zoals de rest van Nook; kleur betekent altijd een toestand.
+/// Workspace colors. Dark theme consistent with Nook; color always represents state.
 enum WS {
     static let background = Color(hex: 0x111115)
     static let surface = Color(hex: 0x17171C)
@@ -65,7 +65,7 @@ extension GitChangeKind {
     }
 }
 
-/// "● Bezig" als klein label.
+/// "● Running" as a compact status badge.
 struct StatusBadge: View {
     let status: RunStatus
     var compact = false
@@ -91,7 +91,7 @@ struct StatusBadge: View {
     }
 }
 
-/// Klein label met een kleurtje: agent, model, account.
+/// Compact tinted badge: agent, model, account.
 struct Chip: View {
     let text: String
     var color: Color = WS.secondary
@@ -112,7 +112,7 @@ struct Chip: View {
     }
 }
 
-/// Een sectiekop in het zijpaneel of de inspector.
+/// Section header for sidebar or inspector.
 struct WSSectionTitle: View {
     let title: String
     var trailing: String?
@@ -131,7 +131,7 @@ struct WSSectionTitle: View {
     }
 }
 
-/// Label en waarde naast elkaar, voor de inspector. "Niet beschikbaar" staat er altijd expliciet.
+/// Key-value row for the inspector. "Not available" is displayed explicitly when absent.
 struct InfoRow: View {
     let label: String
     let value: String?
@@ -157,7 +157,7 @@ struct InfoRow: View {
     }
 }
 
-/// Een lege toestand: rustig, met één duidelijke actie.
+/// Empty state view: calm presentation with a single clear call-to-action.
 struct WSEmptyState: View {
     let symbol: String
     let title: String
@@ -190,7 +190,7 @@ struct WSEmptyState: View {
     }
 }
 
-/// Een diff met kleuren per regel. Snel genoeg voor grote diffs dankzij LazyVStack.
+/// Syntax-colored diff view. Performant for large diffs using LazyVStack.
 struct DiffText: View {
     let text: String
 
@@ -252,7 +252,7 @@ enum WSFormat {
     }
 }
 
-/// Telt mee terwijl een beurt loopt.
+/// Increments elapsed time while a turn is active.
 struct ElapsedText: View {
     let since: Date
 
