@@ -1,5 +1,6 @@
 import SwiftUI
 import Security
+import AppKit
 
 /// Rijen voor de online koppelingen (GitHub, Stripe…) in de instellingen. Zet hem in een `Section("Diensten")` binnen een Form.
 struct CloudConnectorSettings: View {
@@ -35,10 +36,17 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     /// Welke geheime velden al een waarde in de Keychain hebben.
     @State private var stored: Set<String> = []
     @State private var note = ""
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
+                if connector.id == "github" && GitHubSignIn.isAvailable {
+                    gitHubSignInButton
+                    Text("Of plak zelf een token:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(connector.configFields, id: \.account) { field in
                     fieldRow(field)
                 }
@@ -52,6 +60,9 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                             .font(.callout)
                     }
                     Spacer()
+                    if !connector.configFields.isEmpty {
+                        Button("Plak uit klembord") { pasteFromClipboard() }
+                    }
                     if configured {
                         Button("Wis") { clear() }
                     }
@@ -91,6 +102,42 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             }
         }
         .onAppear { load() }
+        .onChange(of: gitHubSignIn.phase) { _, phase in
+            guard connector.id == "github", phase == .done else { return }
+            load()
+            refreshNow()
+        }
+    }
+
+    // MARK: GitHub in één klik
+
+    @ViewBuilder
+    private var gitHubSignInButton: some View {
+        switch gitHubSignIn.phase {
+        case .waiting(let code, let uri):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Plak deze code op GitHub. Hij staat al op je klembord.")
+                    .font(.callout)
+                Text(code)
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Open GitHub opnieuw") { NSWorkspace.shared.open(uri) }
+                    Spacer()
+                    Button("Annuleer") { gitHubSignIn.cancel() }
+                }
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Button("Probeer opnieuw") { gitHubSignIn.start() }
+            }
+        case .idle, .done:
+            Button(configured ? "Koppel GitHub opnieuw" : "Koppel met GitHub") { gitHubSignIn.start() }
+                .buttonStyle(.borderedProminent)
+        }
     }
 
     // MARK: Velden
@@ -99,14 +146,33 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     private func fieldRow(_ field: ConnectorField) -> some View {
         let binding = Binding<String>(
             get: { drafts[field.account] ?? "" },
-            set: { drafts[field.account] = $0 }
+            set: { new in
+                let old = drafts[field.account] ?? ""
+                drafts[field.account] = new
+                // Plakken zet in één keer veel tekst neer: dan bewaren we meteen, zonder extra knop.
+                if new.count - old.count >= 8 { save() }
+            }
         )
         if field.secret {
             SecureField(field.label, text: binding,
                         prompt: Text(stored.contains(field.account) ? "Bewaard in je Keychain" : field.placeholder))
+                .onSubmit { save() }
         } else {
             TextField(field.label, text: binding, prompt: Text(field.placeholder))
+                .onSubmit { save() }
         }
+    }
+
+    /// Neemt wat er op het klembord staat, en bewaart het meteen in het eerste geheime veld.
+    private func pasteFromClipboard() {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !ConnectorField.clean(text).isEmpty,
+              let field = connector.configFields.first(where: { $0.secret }) ?? connector.configFields.first else {
+            note = "Er staat niets bruikbaars op je klembord."
+            return
+        }
+        drafts[field.account] = text
+        save()
     }
 
     private var hasDraft: Bool {

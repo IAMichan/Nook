@@ -190,8 +190,8 @@ final class GitHubConnector: CloudConnectorConfig {
     static let fields = [
         ConnectorField(account: GitHubConnector.tokenAccount, label: "Token", placeholder: "ghp_… of github_pat_…", secret: true)
     ]
-    static let helpText = "Maak een token met alleen leesrechten. Klassiek: scope repo (of public_repo). Fine-grained: Pull requests, Commit statuses en Checks op alleen-lezen."
-    static let signupURL = URL(string: "https://github.com/settings/tokens")
+    static let helpText = "Het makkelijkst: klik 'Koppel met GitHub' hierboven. Lukt dat niet? Klik 'Maak een token', de rechten staan dan al goed, en plak het token hier."
+    static let signupURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,read:user&description=Nook")
 
     private enum CI { case unknown, pending, passing, failing }
 

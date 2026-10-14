@@ -35,7 +35,7 @@ Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als klein N
 Nook laat de eerste keer zelf een welkomstkaart zien. In **Instellingen › Overzicht** staat een checklist met wat er nog moet:
 1. **Brein**: Claude (API-sleutel), een andere AI (OpenAI, Google Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Ollama, LM Studio) of **Gratis op je Mac** (ingebouwd, MLX).
 2. **Privacy en toegang**: Scherm lezen, Agenda, Herinneringen en Microfoon.
-3. **Koppelingen**: zet aan wat je wilt (Mail, browser, bestanden) en plak sleutels voor GitHub, Stripe en de rest.
+3. **Koppelingen**: zet aan wat je wilt (Mail, browser, bestanden). Klik bij GitHub op **Koppel met GitHub** en bevestig de code op github.com; voor Stripe en de rest plak je een sleutel.
 4. Voor je agents: klik bij **Agents** op **Koppel…** naast Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp of Hermes. Elke andere agent kan zich melden met `nook_agent`, zie [docs/AGENTS.md](docs/AGENTS.md). Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
 
 Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tonen**.
