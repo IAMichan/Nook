@@ -17,7 +17,7 @@ enum FollowUps {
                 continue
             }
             let offer = rest.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "*_\"“”")))
-            if !offer.isEmpty, offer.count <= 60, !offers.contains(where: { $0.caseInsensitiveCompare(offer) == .orderedSame }) {
+            if !offer.isEmpty, offer.count <= 72, !isGeneric(offer), !offers.contains(where: { $0.caseInsensitiveCompare(offer) == .orderedSame }) {
                 offers.append(offer)
             }
         }
@@ -32,6 +32,12 @@ enum FollowUps {
             body = String(body.dropLast(last.count)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return body
+    }
+
+    /// Algemene aanbiedingen die niets toevoegen ("Vertel meer", "Nog iets?"), laat Nook weg.
+    private static func isGeneric(_ offer: String) -> Bool {
+        let pattern = #"^(vertel (me )?meer|meer (info|informatie|details)|nog iets( anders)?|iets anders|leg (het|dat) uit|ga door|ga verder|help me( verder)?|kun je meer|wat nog meer|tell me more|anything else)\W*$"#
+        return offer.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private static func offerText(_ line: String) -> Substring? {

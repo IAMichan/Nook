@@ -93,8 +93,15 @@ final class AppModel: ObservableObject {
         history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        // Alleen of Nook bezig is (voor zijn gezicht); de berichten zelf volgt de chat rechtstreeks.
-        chat.$busy.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Of er een Nook werkt (voor zijn gezicht en de notch in rust); de berichten zelf volgt de chat rechtstreeks.
+        chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.objectWillChange.send()
+                if self.viewModel.state.isResting { self.viewModel.show(self.viewModel.state) }
+            }
+            .store(in: &bag)
     }
 
     // MARK: Opstarten
@@ -359,9 +366,9 @@ final class AppModel: ObservableObject {
 
     // MARK: Chat
 
-    /// Het bericht waar Nook nu aan schrijft (voor grafieken en mailconcepten die tools tijdens het denken maken).
-    private var replyID: UUID?
-    private var chatTask: Task<Void, Never>?
+    /// Per Nook het bericht waar hij nu aan schrijft, en de taak die dat doet. Meerdere Nooks kunnen tegelijk werken.
+    private var replies: [UUID: UUID] = [:]
+    private var chatTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Opent de chat. `focus`: meteen kunnen typen.
     func showChat(focus: Bool = true) {
@@ -369,17 +376,28 @@ final class AppModel: ObservableObject {
         viewModel.show(.panel(.nook))
     }
 
+    /// Een nieuwe Nook. Een Nook die nog bezig is, werkt gewoon door.
     func newChat() {
-        stopChat()
-        chat.clear()
+        chat.startNew()
         attachment = nil
         showChat()
     }
 
+    func openConversation(_ id: UUID) {
+        chat.select(id)
+        showChat()
+    }
+
+    /// Stopt de Nook die je nu ziet.
     func stopChat() {
-        chatTask?.cancel()
-        chatTask = nil
-        if let id = replyID {
+        guard let id = chat.activeID else { return }
+        stop(conversation: id)
+    }
+
+    private func stop(conversation: UUID) {
+        chatTasks[conversation]?.cancel()
+        chatTasks[conversation] = nil
+        if let id = replies[conversation] {
             chat.update(id) { message in
                 message.streaming = false
                 message.status = ""
@@ -388,13 +406,15 @@ final class AppModel: ObservableObject {
                 }
             }
         }
-        replyID = nil
-        chat.setBusy(false)
+        replies[conversation] = nil
+        chat.setBusy(false, conversation: conversation)
         spokenRequest = false
     }
 
+    /// Grafieken en mailconcepten die tools tijdens het denken maken, komen bij het antwoord van de Nook die ze maakte.
     private func attachToReply(_ change: (inout ChatMessage) -> Void) {
-        if let id = replyID, chat.message(id) != nil {
+        let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
+        if let id = target, chat.message(id) != nil {
             chat.update(id, change)
         } else {
             var message = ChatMessage(role: .nook, text: "")
@@ -405,25 +425,31 @@ final class AppModel: ObservableObject {
 
     /// Stelt een vraag in de chat: het antwoord verschijnt terwijl het geschreven wordt.
     private func ask(_ text: String) {
-        if chat.busy { stopChat() }
+        let conversation = chat.ensureActive()
+        if chat.isBusy(conversation) { stop(conversation: conversation) }
         let question = ChatMessage(role: .user, text: text)
-        chat.append(question)
+        chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
         reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? "Lokaal model laden…" : "Even nadenken…"
-        chat.append(reply)
-        replyID = reply.id
-        chat.setBusy(true)
+        chat.append(reply, to: conversation)
+        replies[conversation] = reply.id
+        chat.setBusy(true, conversation: conversation)
         // De vraag kwam uit een kaart of met je stem: dan het gesprek tonen. Wie al in de chat typt, blijft daar.
         if viewModel.state != .panel(.nook) {
             warmUp()
             showChat()
         }
         let history = chat.history(before: question.id)
-        chatTask = Task { [weak self] in await self?.answer(text, history: history, replyID: reply.id) }
+        let replyID = reply.id
+        chatTasks[conversation] = Task { [weak self] in
+            await ReplyContext.$messageID.withValue(replyID) {
+                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+            }
+        }
     }
 
-    private func answer(_ text: String, history: [ChatTurn], replyID id: UUID) async {
+    private func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
         // Een vraag over een bestand uit de Shelf, of over wat er op je schermen staat.
         var snapshot: ScreenSnapshot?
         var context: String?
@@ -440,7 +466,7 @@ final class AppModel: ObservableObject {
             } catch {
                 // Geen schermtoegang: gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
                 if Self.refersToScreen(text) {
-                    finishReply(id, error: error.localizedDescription)
+                    finishReply(id, error: error.localizedDescription, conversation: conversation)
                     return
                 }
             }
@@ -452,15 +478,22 @@ final class AppModel: ObservableObject {
             sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
         }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
-        chat.update(id) { $0.sources = sources; $0.status = "Even nadenken…" }
+        chat.update(id) { $0.sources = sources; $0.status = retry ? "Ik teken de grafiek…" : "Even nadenken…" }
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
         web.note(connectors.contextLines().joined(separator: "\n"))
 
+        // Vraag je om een grafiek, dan tekent Nook hem; code of JSON in het antwoord hoort daar niet bij.
+        let wantsChart = ChartRescue.wantsChart(text)
+        var request = text
+        if retry {
+            request += "\n\n(Teken de grafiek nu echt met de tool show_chart, met echte cijfers uit de context, de tools of het web. Schrijf geen code, geen JSON en geen tabel als vervanging.)"
+        }
+
         do {
             let plan = try await brain.run(
-                userText: text,
+                userText: request,
                 followUp: !history.isEmpty,
                 history: history,
                 context: contextSummary(),
@@ -468,22 +501,47 @@ final class AppModel: ObservableObject {
                 untrusted: snapshot?.text,
                 tools: allTools,
                 onText: { [weak self] partial in
-                    guard let self, self.replyID == id else { return }
+                    guard let self, self.replies[conversation] == id else { return }
+                    var visible = FollowUps.streamingBody(partial)
+                    if wantsChart { visible = ChartRescue.hidingChartCode(visible) }
                     self.chat.update(id) { message in
-                        message.text = Self.cleanReply(FollowUps.streamingBody(partial))
+                        message.text = Self.cleanReply(visible)
                         message.status = ""
                     }
                 }
             )
-            guard !Task.isCancelled, replyID == id else { return }
+            guard !Task.isCancelled, replies[conversation] == id else { return }
             // Wat Nook hierna kan doen, komt als knoppen onder het antwoord.
             let split = FollowUps.split(plan.text)
-            var body = Self.cleanReply(split.body)
+            var rawBody = split.body
+
+            // Schreef het brein de grafiek als code, JSON of tabel? Dan tekent Nook hem alsnog zelf.
+            var rescued: [ChatChart] = []
+            let alreadyDrawn = !(chat.message(id)?.charts.isEmpty ?? true)
+            if !alreadyDrawn {
+                let extracted = ChartRescue.extract(from: rawBody, title: Conversation.title(from: text))
+                if !extracted.charts.isEmpty || wantsChart {
+                    rawBody = extracted.text
+                    rescued = extracted.charts
+                }
+                if rescued.isEmpty, wantsChart, let table = ChartRescue.chartFromTable(rawBody, title: Conversation.title(from: text)) {
+                    rescued = [table]
+                }
+                // Nog steeds geen grafiek: één keer opnieuw, met de opdracht hem echt te tekenen.
+                if rescued.isEmpty, wantsChart, !retry, !settings.useLocal {
+                    chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
+                    return
+                }
+            }
+
+            var body = Self.cleanReply(rawBody)
             if plan.actions.isEmpty, body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE" {
                 body = "Ik zie niets waar je iets aan hebt."
             }
             chat.update(id) { message in
                 message.text = body
+                message.charts.append(contentsOf: rescued)
                 message.actions = plan.actions
                 message.offers = split.offers
                 message.streaming = false
@@ -497,17 +555,19 @@ final class AppModel: ObservableObject {
                     : (!message.mails.isEmpty ? "Ik heb een mail voor je klaargezet." : (!message.charts.isEmpty ? "Hier is je grafiek." : "Ik heb een plan klaargezet."))
                 speakIfAsked(spoken)
             }
-            self.replyID = nil
-            chat.setBusy(false)
+            replies[conversation] = nil
+            chatTasks[conversation] = nil
+            chat.setBusy(false, conversation: conversation)
+            nookFinished(conversation)
             // Kleine dingen waar je zelf om vroeg, doet Nook meteen als je dat aanzette.
             if canRunWithoutAsking(plan) { runPlan(id) }
         } catch {
-            guard !Task.isCancelled, replyID == id else { return }
-            finishReply(id, error: error.localizedDescription)
+            guard !Task.isCancelled, replies[conversation] == id else { return }
+            finishReply(id, error: error.localizedDescription, conversation: conversation)
         }
     }
 
-    private func finishReply(_ id: UUID, error: String) {
+    private func finishReply(_ id: UUID, error: String, conversation: UUID) {
         chat.update(id) { message in
             message.streaming = false
             message.status = ""
@@ -518,9 +578,32 @@ final class AppModel: ObservableObject {
                 message.text += "\n\n_\(error)_"
             }
         }
-        replyID = nil
+        replies[conversation] = nil
+        chatTasks[conversation] = nil
         spokenRequest = false
-        chat.setBusy(false)
+        chat.setBusy(false, conversation: conversation)
+    }
+
+    /// Een Nook is klaar terwijl je naar iets anders keek: hij laat het even weten.
+    private func nookFinished(_ id: UUID) {
+        let watching = viewModel.state == .panel(.nook) && chat.activeID == id
+        guard !watching, let conversation = chat.conversation(id) else { return }
+        chat.markUnread(id)
+        let token = "nookdone-" + UUID().uuidString
+        viewModel.register("\(token)#open") { [weak self] in self?.openConversation(id) }
+        let preview = conversation.preview.isEmpty ? "Klaar." : conversation.preview
+        let lines = max(1, min(3, Int(ceil(Double(preview.count) / 46.0))))
+        let card = NookCard(
+            id: token,
+            mood: .done,
+            context: "Nook · \(conversation.title) · klaar",
+            title: preview,
+            detail: .none,
+            primary: CardAction(label: "Bekijk", outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: "Later", outcome: .dismiss),
+            contentHeight: 100 + CGFloat(lines) * 24
+        )
+        viewModel.present(card)
     }
 
     /// Haalt resten van tool-aanroepen en losse backslashes uit een antwoord.

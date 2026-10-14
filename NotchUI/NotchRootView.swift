@@ -76,6 +76,11 @@ struct NotchRootView: View {
                     wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
                         AgentDots(sessions: active)
                     }
+                } else if app.chat.anyBusy {
+                    // Een Nook werkt op de achtergrond aan iets: hij denkt zichtbaar mee.
+                    wings(nh: nh, nw: nw, mood: .think, animated: true) {
+                        idleBadge
+                    }
                 } else if app.settings.hideWhenIdle {
                     Color.clear
                 } else {
