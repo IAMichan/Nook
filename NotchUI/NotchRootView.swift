@@ -76,21 +76,29 @@ struct NotchRootView: View {
                     wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
                         AgentDots(sessions: active)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
                 } else if app.settings.hideWhenIdle {
                     Color.clear
                 } else {
                     wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                         idleBadge
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.openPanel() }
                 }
             case .music:
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                     EqualizerBars(color: NookTheme.music, height: 14)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
             case .track(let title, let artist):
                 wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                     trackLabel(title: title, artist: artist)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.openPanel() }
             case .done(let message):
                 doneStrip(message: message, nh: nh)
             case .nudge(let line, _):
@@ -249,7 +257,13 @@ struct NotchRootView: View {
         @ViewBuilder inner: () -> Inner
     ) -> some View {
         HStack(alignment: .top, spacing: 20) {
-            NookOrb(mood: mood, size: 46)
+            Button {
+                viewModel.show(.panel(.nook))
+            } label: {
+                NookOrb(mood: mood, size: 46)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ga naar startpagina")
             inner()
         }
         .padding(.top, nh + 14)

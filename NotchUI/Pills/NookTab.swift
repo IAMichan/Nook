@@ -1,30 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// Het Nook-tabblad: je chat met Nook. Zonder gesprek zie je je dag en een paar vragen om mee te beginnen.
-struct NookTab: View {
+/// Het Nook-tabblad: de startpagina van Nook met je dagoverzicht, actieve koppelingen en suggesties.
+struct NookHomeTab: View {
     @ObservedObject var viewModel: NotchViewModel
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        NookChatView(viewModel: viewModel, chat: app.chat)
-    }
-}
-
-private struct NookChatView: View {
-    @ObservedObject var viewModel: NotchViewModel
-    @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
     @State private var question = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if chat.isEmpty {
-                start
-            } else {
-                thread
-            }
+            start
             inputBar
                 .padding(.top, 10)
         }
@@ -34,7 +20,7 @@ private struct NookChatView: View {
         }
     }
 
-    // MARK: Zonder gesprek: je dag
+    // MARK: De startpagina: je dag en context
 
     private var start: some View {
         let items = app.todayItems
@@ -46,17 +32,49 @@ private struct NookChatView: View {
             awareness
                 .padding(.top, 4)
 
+            if !app.chat.isEmpty {
+                activeChatBanner
+                    .padding(.top, 8)
+            }
+
             VStack(spacing: 0) {
                 ForEach(items.prefix(4)) { item in
                     TodayRow(item: item) { open(item) }
                 }
             }
-            .padding(.top, 12)
+            .padding(.top, 8)
 
             Spacer(minLength: 10)
 
             suggestions
         }
+    }
+
+    private var activeChatBanner: some View {
+        Button {
+            viewModel.show(.panel(.chat))
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(app.chat.busy ? NookTheme.iris : NookTheme.mint)
+                    .frame(width: 6, height: 6)
+                Text(app.chat.busy ? "Nook denkt na in de chat…" : "Lopend gesprek (\(app.chat.messages.count) berichten)")
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                Spacer()
+                Text("Naar chat")
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.iris)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     /// In één regel waar Nook nu bij kan: zo weet je meteen dat je er alles aan kunt vragen.
@@ -104,6 +122,104 @@ private struct NookChatView: View {
         case .none:
             break
         }
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 8) {
+            TextField(
+                "",
+                text: $question,
+                prompt: Text("Vraag Nook iets…").foregroundStyle(NookTheme.textTertiary),
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .font(NookTheme.font(14))
+            .foregroundStyle(NookTheme.paper)
+            .lineLimit(1...5)
+            .focused($inputFocused)
+            .onSubmit(send)
+
+            NookIconButton(systemName: "mic", label: "Praat met Nook", size: 28) { viewModel.startListening() }
+            NookIconButton(systemName: "arrow.up", label: "Verstuur", filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: 42)
+        .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
+        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+    }
+
+    private func send() {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        question = ""
+        app.handleUserText(text)
+    }
+}
+
+typealias NookTab = NookHomeTab
+
+/// Het Chat-tabblad: je actieve gesprek met Nook.
+struct NookChatTab: View {
+    @ObservedObject var viewModel: NotchViewModel
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        NookChatView(viewModel: viewModel, chat: app.chat)
+    }
+}
+
+private struct NookChatView: View {
+    @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var chat: NookChat
+    @EnvironmentObject private var app: AppModel
+    @State private var question = ""
+    @FocusState private var inputFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if chat.isEmpty {
+                emptyState
+            } else {
+                thread
+            }
+            inputBar
+                .padding(.top, 10)
+        }
+        .onAppear {
+            // Even wachten tot het paneel de toetsenbordfocus heeft.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
+        }
+    }
+
+    // MARK: Zonder gesprek in chat: uitnodigende start
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Waar kan ik je mee helpen?")
+                .font(NookTheme.font(20, .semibold))
+                .foregroundStyle(NookTheme.paper)
+
+            Text("Stel een vraag, vraag om een conceptmail, analyseer je dag of bedien je Mac.")
+                .font(NookTheme.font(13.5))
+                .foregroundStyle(NookTheme.textSecondary)
+
+            Spacer()
+
+            suggestions
+        }
+    }
+
+    /// Vragen die je met één klik stelt; ze passen zich aan aan wat er gekoppeld is.
+    private var suggestions: some View {
+        var questions = ["Vat mijn dag samen"]
+        let ids = Set(app.connectors.active.map { $0.id })
+        if ids.contains("mail") { questions.append("Welke mail moet ik beantwoorden?") }
+        questions.append("Maak een grafiek van mijn agenda deze week")
+        if ids.contains("github") { questions.append("Wat wacht er op mij op GitHub?") }
+        questions.append("Schrijf een mail")
+        return SuggestionRow(questions: Array(questions.prefix(4))) { app.handleUserText($0) }
     }
 
     // MARK: Het gesprek

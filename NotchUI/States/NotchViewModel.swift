@@ -70,7 +70,7 @@ final class NotchViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             guard !Task.isCancelled, let self, !self.pointerInside, case .panel(let tab) = self.state else { return }
             // Midden in een gesprek klapt de chat niet vanzelf dicht; probeer het later nog eens.
-            if tab == .nook, self.app?.chat.isRecentlyActive == true {
+            if (tab == .nook || tab == .chat), self.app?.chat.isRecentlyActive == true {
                 self.scheduleAutoClose()
                 return
             }
@@ -259,6 +259,14 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Klikken op de notch opent meteen het paneel (de startpagina), zonder hover-vertraging.
+    func openPanel() {
+        hoverTask?.cancel()
+        let working = agentsActive
+        if working, let first = app?.activeAgents.first { selectedAgentID = first.id }
+        show(.panel(working ? .agents : .nook))
+    }
+
     /// Een klik buiten de notch sluit het paneel. Kaarten blijven staan tot je kiest.
     func clickedOutside() {
         if case .panel = state { show(.idle) }
@@ -289,7 +297,7 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
             switch tab {
-            case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
+            case .nook, .chat: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
             case .agents: return CGSize(width: 860, height: chrome + 386)
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
@@ -321,7 +329,7 @@ final class NotchViewModel: ObservableObject {
             }
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
-        case .nook: return (app?.chat.busy ?? false) ? .think : .rest
+        case .nook, .chat: return (app?.chat.busy ?? false) ? .think : .rest
         case .music, .shelf: return .rest
         }
     }
