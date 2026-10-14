@@ -17,7 +17,7 @@ final class AppModel: ObservableObject {
     let voice = VoiceService()
     let screen = ScreenReader()
 
-    private(set) lazy var tools = NookTools(calendar: calendar, store: store) { [weak self] in
+    private(set) lazy var tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
         self?.reloadLoops()
     }
     private(set) lazy var brain = BrainService(settings: settings)
@@ -169,8 +169,40 @@ final class AppModel: ObservableObject {
             presentSetupCard()
             return
         }
-        viewModel.show(.card(thinkingCard(context: "Even nadenken…", title: "“\(String(text.prefix(100)))”")))
+        let title = "“\(String(text.prefix(100)))”"
+
+        // Verwijst de gebruiker naar iets op het scherm ("maak er een afspraak voor"), lees dat dan meteen mee.
+        if Self.refersToScreen(text) {
+            viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: title)))
+            Task {
+                do {
+                    let snapshot = try await screen.capture()
+                    await runBrain(
+                        userText: text,
+                        snapshot: snapshot,
+                        silentIfNone: false,
+                        context: "Ik zag in \(snapshot.appName)"
+                    )
+                } catch {
+                    replaceThinking(with: errorCard(error.localizedDescription))
+                }
+            }
+            return
+        }
+
+        viewModel.show(.card(thinkingCard(context: "Even nadenken…", title: title)))
         Task { await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil) }
+    }
+
+    /// Woorden en zinnen waaruit blijkt dat het verzoek over iets op het scherm gaat.
+    private static let screenCue = try? NSRegularExpression(
+        pattern: #"\b(hier\w*|dit|deze|daar\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    static func refersToScreen(_ text: String) -> Bool {
+        guard let screenCue else { return false }
+        return screenCue.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
     private func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?) async {
