@@ -70,6 +70,17 @@ final class AppModel: ObservableObject {
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()
 
+        // Begint of stopt een agent, dan verandert wat de notch in rust laat zien.
+        hub.$sessions
+            .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" } }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.viewModel.state.isResting else { return }
+                self.viewModel.show(self.viewModel.state)
+            }
+            .store(in: &bag)
+
         // Wekwoord: alleen luisteren als je het aanzet, en even niet zolang Nook al luistert.
         wake.onWake = { [weak self] in self?.toggleVoice() }
         settings.$wakeWord
@@ -118,6 +129,11 @@ final class AppModel: ObservableObject {
 
     var agentSessions: [AgentSession] {
         demoMode ? DemoContent.agents : hub.sessions + hub.detected
+    }
+
+    /// Gekoppelde agents die nu werken of op je wachten (niet alleen "draait als proces").
+    var activeAgents: [AgentSession] {
+        agentSessions.filter { !$0.isDetected && ($0.status == .running || $0.status == .waiting || $0.approvalID != nil) }
     }
 
     var todayItems: [TodayItem] {
@@ -304,6 +320,8 @@ final class AppModel: ObservableObject {
         if case .card(let shown) = viewModel.state, shown.id == "thinking" {
             viewModel.show(.card(card))
         } else {
+            // Een vraag van een agent kan het denkkaartje opzij hebben gezet: dat hoeft niet meer terug.
+            viewModel.removePending(id: "thinking")
             viewModel.present(card)
         }
     }
@@ -615,9 +633,10 @@ final class AppModel: ObservableObject {
             primary: CardAction(label: "Toestaan", outcome: .callback("\(token)#yes", "")),
             secondary: CardAction(label: "Weigeren", outcome: .callback("\(token)#no", "")),
             contentHeight: height,
-            extra: extra
+            extra: extra,
+            urgent: true
         )
-        viewModel.present(card)
+        viewModel.presentUrgent(card)
         NookSound.play(.attention)
     }
 
@@ -662,10 +681,11 @@ final class AppModel: ObservableObject {
             )),
             primary: CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", "")),
             secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0))
+            contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0)),
+            urgent: true
         )
         if index == 0 {
-            viewModel.present(card)
+            viewModel.presentUrgent(card)
             NookSound.play(.attention)
         } else {
             viewModel.show(.card(card))
@@ -682,22 +702,63 @@ final class AppModel: ObservableObject {
         viewModel.finish(message)
     }
 
+    /// Een agent is klaar, liep vast of wacht op je: een eigen kaart met wat hij zei, zoals bij Coucou.
+    /// Alleen als je niet met iets anders bezig bent in de notch; na een paar seconden gaat hij vanzelf weg.
     private func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
-        let message: String
-        switch session.status {
-        case .done: message = "\(session.name) is klaar · \(session.project)"
-        case .failed: message = "\(session.name) liep vast · \(session.project)"
-        default: message = "\(session.name) wacht op je · \(session.project)"
-        }
         switch viewModel.state {
-        case .idle, .music, .done:
-            viewModel.finish(message, button: "Bekijk") { [weak self] in
-                self?.viewModel.selectedAgentID = session.id
-                self?.viewModel.show(.panel(.agents))
-            }
+        case .idle, .music, .done: break
+        case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
+        default: return
+        }
+
+        let token = "agentstatus-" + UUID().uuidString
+        let mood: NookMood
+        let state: String
+        let fallback: String
+        switch session.status {
+        case .done:
+            mood = .done; state = "klaar"; fallback = "Klaar met je opdracht."
+        case .failed:
+            mood = .worry; state = "liep vast"; fallback = "Er ging iets mis."
         default:
-            break
+            mood = .waiting; state = "wacht op je"; fallback = "Wacht op je antwoord in de terminal."
+        }
+        let title = session.summary.isEmpty ? fallback : session.summary
+
+        viewModel.register("\(token)#view") { [weak self] in
+            self?.viewModel.selectedAgentID = session.id
+            self?.viewModel.show(.panel(.agents))
+        }
+        viewModel.register("\(token)#terminal") { [weak self] in self?.openTerminal(for: session) }
+
+        var context = "\(session.name) · \(session.project) · \(state)"
+        if session.linesAdded + session.linesRemoved > 0 {
+            context += " · +\(session.linesAdded) −\(session.linesRemoved)"
+        }
+        let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
+        let card = NookCard(
+            id: token,
+            mood: mood,
+            context: context,
+            title: title,
+            detail: .none,
+            primary: CardAction(label: "Bekijk", outcome: .callback("\(token)#view", "")),
+            secondary: CardAction(label: "Open \(TerminalLauncher.name(for: session.hostBundleID))", outcome: .callback("\(token)#terminal", "")),
+            contentHeight: 100 + CGFloat(lines) * 24
+        )
+        viewModel.show(.card(card))
+
+        // Vanzelf weg na 5 seconden, behalve als je met de muis op de kaart staat.
+        Task { [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 5_200_000_000)
+                guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
+                if !self.viewModel.pointerInside {
+                    self.viewModel.dismissCard(id: token)
+                    return
+                }
+            }
         }
     }
 

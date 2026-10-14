@@ -75,4 +75,6 @@ struct NookCard: Equatable, Identifiable {
     var input: Bool = false
     /// Extra rustige knoppen naast de twee vaste (bijvoorbeeld "Altijd" en "In terminal").
     var extra: [CardAction] = []
+    /// Een agent wacht hierop (toestemming of vraag): de kaart gaat voor alles en blijft tot je antwoordt.
+    var urgent: Bool = false
 }

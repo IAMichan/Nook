@@ -67,7 +67,14 @@ struct NotchRootView: View {
         Group {
             switch viewModel.state {
             case .idle:
-                if app.settings.hideWhenIdle {
+                let active = app.activeAgents
+                if !active.isEmpty {
+                    // Er werkt een agent: Nook denkt mee, rechts één stipje per sessie (zoals de mini-Mochi's van Coucou).
+                    let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+                    wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
+                        AgentDots(sessions: active)
+                    }
+                } else if app.settings.hideWhenIdle {
                     Color.clear
                 } else {
                     wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
@@ -180,5 +187,33 @@ struct NotchRootView: View {
         .padding(.top, nh + 14)
         .padding(.horizontal, 28)
         .padding(.bottom, 22)
+    }
+}
+
+/// Eén stipje per actieve agent, in de kleur van zijn toestand. Wacht er een op je, dan knippert die zacht.
+private struct AgentDots: View {
+    let sessions: [AgentSession]
+
+    var body: some View {
+        let shown = Array(sessions.prefix(4))
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let pulse = 0.55 + 0.45 * abs(sin(t * 2.4))
+            HStack(spacing: 5) {
+                ForEach(shown) { session in
+                    let waiting = session.status == .waiting || session.approvalID != nil
+                    Circle()
+                        .fill(waiting ? NookTheme.amber : session.status.color)
+                        .frame(width: 8, height: 8)
+                        .opacity(waiting ? pulse : 1)
+                }
+                if sessions.count > shown.count {
+                    Text("+\(sessions.count - shown.count)")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+        }
+        .accessibilityLabel("\(sessions.count) agents actief")
     }
 }

@@ -48,7 +48,7 @@ Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tone
 | Agenda, herinneringen | Afspraken en herinneringen maken na jouw "Uitvoeren". |
 | Open punten | Nook onthoudt beloftes en taken (lokale database) en toont ze in Vandaag. |
 | Muziek | Spotify en Muziek: nu speelt, bediening, Nook danst in de notch. |
-| Agents | Claude Code, Codex, Gemini CLI e.d.: wie draait, wat doet hij (met live diff en +/− regels), wie wacht op je. Vraagt je agent toestemming, dan kan dat in de notch: **Toestaan**, **Altijd**, **Weigeren** of **In terminal**. Antwoord je in de terminal, dan verdwijnt de vraag meteen uit de notch. Meerkeuzevragen van Claude Code (AskUserQuestion) beantwoord je ook in de notch. **Open terminal** haalt het venster van de agent naar voren. |
+| Agents | Claude Code, Codex, Gemini CLI e.d.: wie draait, wat doet hij (met live diff en +/− regels), wie wacht op je. Vraagt je agent toestemming, dan kan dat in de notch: **Toestaan**, **Altijd**, **Weigeren** of **In terminal**. Antwoord je in de terminal, dan verdwijnt de vraag meteen uit de notch. Meerkeuzevragen van Claude Code (AskUserQuestion) beantwoord je ook in de notch. **Open terminal** haalt het venster van de agent naar voren. Werkt er een agent, dan zie je dat in rust in de notch (een stipje per sessie); wijs ernaar en de Agents-tab gaat open. Is hij klaar, dan krijg je een kaartje met wat hij zei. |
 | Abonnement | Hoeveel van je Claude-limiet (5 uur en week) je gebruikt, in de Agents-tab. |
 | Weekoverzicht | Op maandag in Vandaag (of via de menubalk): tijd met agents, sessies, regels code, toestemmingen, drukste dag. Alleen lokaal. |
 | Shelf | Sleep een bestand (tekst, pdf, Word, rtf) in de Shelf en klik erop om Nook er iets over te vragen. |

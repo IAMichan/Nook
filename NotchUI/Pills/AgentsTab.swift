@@ -80,12 +80,17 @@ struct AgentsTab: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(session.steps) { step in
+                    let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(step.symbol)
                             .foregroundStyle(step.color)
                             .frame(width: 12)
-                        Text(step.text)
-                            .foregroundStyle(Color(hex: 0xC9C7D2))
+                        if current {
+                            ShimmerText(text: step.text)
+                        } else {
+                            Text(step.text)
+                                .foregroundStyle(Color(hex: 0xC9C7D2))
+                        }
                     }
                     .font(NookTheme.font(13))
                 }
@@ -232,5 +237,30 @@ private struct AgentRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// De stap waar de agent nu mee bezig is: een lichtglans die over de tekst schuift.
+private struct ShimmerText: View {
+    let text: String
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
+            Text(text)
+                .foregroundStyle(
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color(hex: 0x8A8896), location: 0),
+                            .init(color: Color(hex: 0x8A8896), location: max(0, phase - 0.15)),
+                            .init(color: NookTheme.paper, location: phase),
+                            .init(color: Color(hex: 0x8A8896), location: min(1, phase + 0.15)),
+                            .init(color: Color(hex: 0x8A8896), location: 1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+        }
     }
 }

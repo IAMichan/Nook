@@ -30,6 +30,10 @@ final class NotchViewModel: ObservableObject {
 
     private var doneTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
+    private var autoCloseTask: Task<Void, Never>?
+
+    /// Draait of wacht er een gekoppelde agent? Dan is de notch in rust "aan het werk".
+    var agentsActive: Bool { !(app?.activeAgents.isEmpty ?? true) }
 
     // MARK: Toestanden
 
@@ -52,9 +56,43 @@ final class NotchViewModel: ObservableObject {
             state = target
             size = newSize
         }
+        scheduleAutoClose()
+    }
+
+    /// Het paneel klapt na een minuut zonder muis vanzelf dicht, net als bij Coucou.
+    private func scheduleAutoClose() {
+        autoCloseTask?.cancel()
+        guard case .panel = state, !pointerInside else { return }
+        autoCloseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            guard !Task.isCancelled, let self, !self.pointerInside, case .panel = self.state else { return }
+            self.show(.idle)
+        }
     }
 
     // MARK: Kaarten van buiten
+
+    /// Een vraag van een agent: gaat voor op het paneel en op gewone kaarten (die schuiven terug in de wachtrij).
+    /// Staat er al zo'n vraag, dan komt deze erachter, vóór de gewone kaarten.
+    func presentUrgent(_ card: NookCard) {
+        var urgent = card
+        urgent.urgent = true
+        let firstNormal = pending.firstIndex { !$0.urgent } ?? pending.count
+        switch state {
+        case .card(let current) where current.urgent:
+            pending.insert(urgent, at: firstNormal)
+        case .card(let current):
+            pending.insert(current, at: firstNormal)
+            show(.card(urgent))
+        default:
+            show(.card(urgent))
+        }
+    }
+
+    /// Haalt een kaart alleen uit de wachtrij, niet uit beeld.
+    func removePending(id: String) {
+        pending.removeAll { $0.id == id }
+    }
 
     /// Toont een kaart meteen als Nook in rust is, anders komt hij in de wachtrij.
     func present(_ card: NookCard) {
@@ -159,12 +197,16 @@ final class NotchViewModel: ObservableObject {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
+        scheduleAutoClose()
         guard openOnHover, inside, state.isResting else { return }
+        // Werkt er een agent, dan opent hover sneller en meteen op Agents.
+        let working = agentsActive
         hoverTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(nanoseconds: working ? 200_000_000 : 400_000_000)
             guard !Task.isCancelled, let self else { return }
             if self.pointerInside, self.state.isResting {
-                self.show(.panel(.today))
+                if working, let first = self.app?.activeAgents.first { self.selectedAgentID = first.id }
+                self.show(.panel(working ? .agents : .today))
             }
         }
     }
@@ -182,7 +224,7 @@ final class NotchViewModel: ObservableObject {
         let chrome = nh + 14 + 22   // ruimte onder de notch en onderrand
         switch state {
         case .idle:
-            if app?.settings.hideWhenIdle == true {
+            if app?.settings.hideWhenIdle == true, !agentsActive {
                 // Alleen de notch zelf; zonder notch een dun randje bovenaan om naar te wijzen.
                 return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
             }
