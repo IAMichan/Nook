@@ -18,9 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            let image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Nook")
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.menuBarIcon()
         }
 
         let menu = NSMenu()
@@ -56,6 +54,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         item.menu = menu
         statusItem = item
+    }
+
+    /// Nook zelf, net als in de notch: een rond lichtje met twee ogen. Zelf getekend zodat het
+    /// scherp blijft, en als template-afbeelding kleurt het mee met een lichte of donkere menubalk.
+    private static func menuBarIcon() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            NSColor.black.set()
+
+            // De ogen worden uit de cirkel gesneden (even-odd), zodat de menubalk erdoorheen schijnt.
+            let nook = NSBezierPath(ovalIn: NSRect(x: 1.5, y: 1.5, width: 15, height: 15))
+            for x in [5.9, 10.1] {
+                nook.append(NSBezierPath(
+                    roundedRect: NSRect(x: x, y: 6.5, width: 2, height: 3.6),
+                    xRadius: 1, yRadius: 1
+                ))
+            }
+            nook.windingRule = .evenOdd
+            nook.fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Nook"
+        return image
     }
 
     @discardableResult
