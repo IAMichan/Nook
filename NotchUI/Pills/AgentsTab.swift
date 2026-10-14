@@ -67,6 +67,7 @@ struct AgentsTab: View {
         }
         .onAppear {
             app.hub.refreshDetected()
+            app.adoptAccounts()
             app.history.refresh()
             refreshLinks()
         }
@@ -81,6 +82,7 @@ struct AgentsTab: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
+                app.adoptAccounts()
                 app.history.refresh()
             }
         }
@@ -465,68 +467,77 @@ struct AgentsTab: View {
         }
     }
 
+    /// Stappen, vraag en wijziging scrollen; de knoppen eronder blijven staan. Zo is een lang antwoord altijd helemaal te lezen.
     @ViewBuilder
     private func trackedBody(_ session: AgentSession) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(session.steps.suffix(5)) { step in
-                let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(step.symbol)
-                        .foregroundStyle(step.color)
-                        .frame(width: 12)
-                    if current {
-                        ShimmerText(text: step.text)
-                    } else {
-                        Text(step.text)
-                            .foregroundStyle(Color(hex: 0xC9C7D2))
+        ScrollView(showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(session.steps.suffix(5)) { step in
+                        let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(step.symbol)
+                                .foregroundStyle(step.color)
+                                .frame(width: 12)
+                            if current {
+                                ShimmerText(text: step.text)
+                                    .lineLimit(1)
+                            } else {
+                                Text(step.text)
+                                    .foregroundStyle(Color(hex: 0xC9C7D2))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .font(NookTheme.font(13))
                     }
                 }
-                .font(NookTheme.font(13))
-                .lineLimit(1)
-            }
-        }
 
-        if session.status == .waiting && session.approvalID == nil && !app.demoMode {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "questionmark.bubble")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(NookTheme.amber)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
-                        .font(NookTheme.font(13, .semibold))
-                        .foregroundStyle(NookTheme.paper)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(tr("agents.waitingInTerminalDetail"))
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                if session.status == .waiting && session.approvalID == nil && !app.demoMode {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "questionmark.bubble")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(NookTheme.amber)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
+                                .font(NookTheme.font(13, .semibold))
+                                .foregroundStyle(NookTheme.paper)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            Text(tr("agents.waitingInTerminalDetail"))
+                                .font(NookTheme.font(12))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+                }
+
+                if !session.diff.isEmpty || !session.file.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(session.file)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(.bottom, 4)
+                        ForEach(session.diff) { line in
+                            Text(line.text)
+                                .foregroundStyle(line.color)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .font(NookTheme.mono(11.5))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-
-        if !session.diff.isEmpty || !session.file.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(session.file)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .padding(.bottom, 4)
-                ForEach(session.diff) { line in
-                    Text(line.text).foregroundStyle(line.color)
-                }
-                Spacer(minLength: 0)
-            }
-            .font(NookTheme.mono(11.5))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
-            .clipped()
-        } else {
-            Spacer(minLength: 0)
-        }
+        .frame(maxHeight: .infinity, alignment: .top)
 
         HStack(spacing: 4) {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
@@ -609,7 +620,7 @@ struct AgentsTab: View {
                 StatPill(title: "Tokens", value: TokenTally.format(session.tokens.total))
             }
 
-            ScrollView(showsIndicators: false) {
+            ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 10) {
                     if !session.lastPrompt.isEmpty {
                         Message(author: tr("agents.you"), text: session.lastPrompt, color: NookTheme.textSecondary)
@@ -1011,8 +1022,7 @@ struct AgentsTab: View {
                                     .foregroundStyle(NookTheme.paper)
                                 Spacer()
                                 NookGhostButton(title: tr("agents.add")) {
-                                    let name = String(item.url.lastPathComponent.drop { $0 != "-" && $0 != "_" }.dropFirst())
-                                    app.addAccount(kind, label: name.prefix(1).uppercased() + name.dropFirst(), home: item.url)
+                                    app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
                                 }
                             }
                             .padding(.horizontal, 10)

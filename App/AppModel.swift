@@ -1748,6 +1748,15 @@ final class AppModel: ObservableObject {
         return profile
     }
 
+    /// Neemt accounts op die al op deze Mac staan (en die van draaiende sessies), zodat hun sessies ook in de lijst staan.
+    func adoptAccounts() {
+        guard !demoMode else { return }
+        let running = agentSessions.compactMap { session in
+            AgentKind(agentName: session.name).map { (kind: $0, home: session.home) }
+        }
+        profiles.adoptExisting(running: running)
+    }
+
     func removeAccount(_ profile: AgentProfile) {
         profiles.remove(profile.id)
         agentConnect[profile.id] = nil

@@ -116,6 +116,8 @@ final class AgentProfileStore: ObservableObject {
 
     private static let profilesKey = "agentProfiles"
     private static let preferredKey = "agentPreferredProfiles"
+    /// Mappen van accounts die je uit Nook haalde: die neemt Nook niet vanzelf weer op.
+    private static let dismissedKey = "agentDismissedHomes"
     /// Gelezen door ClaudeCodeBrain, buiten de hoofdthread: de map van het standaard-Claude-account.
     nonisolated static let brainHomeKey = "claudeBrainConfigDir"
 
@@ -138,6 +140,11 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         syncBrainHome()
+    }
+
+    private var dismissed: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: Self.dismissedKey) }
     }
 
     func profiles(for kind: AgentKind) -> [AgentProfile] {
@@ -179,6 +186,7 @@ final class AgentProfileStore: ObservableObject {
             }
         }
         if let existing = profile(kind: kind, home: folder.path) { return existing }
+        dismissed.remove(AgentProfile.normalize(folder.path))
         var id = "\(kind.rawValue)-\(slug)"
         var counter = 2
         while all.contains(where: { $0.id == id }) {
@@ -208,6 +216,7 @@ final class AgentProfileStore: ObservableObject {
     func remove(_ id: String) {
         guard let profile = profile(id: id), !profile.isDefault else { return }
         all.removeAll { $0.id == id }
+        dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
         save()
@@ -243,6 +252,33 @@ final class AgentProfileStore: ObservableObject {
     func setPreferred(_ profile: AgentProfile) {
         preferred[profile.kind] = profile.id
         save()
+    }
+
+    /// Neemt accounts op die al op je Mac staan maar nog niet in Nook: mappen als ~/.claude-werk met een login,
+    /// en de map (CLAUDE_CONFIG_DIR of CODEX_HOME) van een sessie die nu draait. Zo staan de sessies van al je
+    /// accounts samen in de lijst. Een account dat je zelf uit Nook haalde, blijft eruit.
+    func adoptExisting(running: [(kind: AgentKind, home: String)] = []) {
+        let skip = dismissed
+        var folders = discover()
+        for item in running where !item.home.isEmpty && item.kind.supportsProfiles {
+            let url = URL(fileURLWithPath: AgentProfile.normalize(item.home), isDirectory: true)
+            guard profile(kind: item.kind, home: url.path) == nil,
+                  !folders.contains(where: { $0.url.standardizedFileURL.path == url.path }),
+                  FileManager.default.fileExists(atPath: url.path) else { continue }
+            folders.append((item.kind, url))
+        }
+        for folder in folders where !skip.contains(AgentProfile.normalize(folder.url.path)) {
+            _ = add(kind: folder.kind, label: Self.label(forFolder: folder.url), home: folder.url)
+        }
+    }
+
+    /// "~/.claude-werk" → "Werk"; een map zonder achtervoegsel heet naar zichzelf.
+    static func label(forFolder url: URL) -> String {
+        let folder = url.lastPathComponent
+        var name = String(folder.drop { $0 != "-" && $0 != "_" }.dropFirst())
+        if name.isEmpty { name = folder.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        if name.isEmpty { name = "Werk" }
+        return String((name.prefix(1).uppercased() + name.dropFirst()).prefix(30))
     }
 
     /// Mappen als ~/.claude-werk of ~/.codex-klant waarin al een login staat, maar die nog niet in Nook zitten.
