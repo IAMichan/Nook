@@ -1,0 +1,23 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug \
+            -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+      - name: Errors
+        if: always()
+        run: grep -E "error:|warning:" build.log | sort -u || true
