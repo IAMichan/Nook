@@ -172,7 +172,7 @@ final class BrainService {
                 throw NookError("Het brein reageerde niet op tijd. Probeer het zo nog eens.")
             case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
                 throw NookError("Kan api.anthropic.com niet bereiken. Staat er een firewall, VPN of proxy tussen?")
-            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateUnknownRoot:
+            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot:
                 throw NookError("De beveiligde verbinding met Anthropic mislukte (\(error.localizedDescription)). Een VPN of netwerkfilter kan dit veroorzaken.")
             default:
                 throw NookError("Netwerkfout: \(error.localizedDescription)")
