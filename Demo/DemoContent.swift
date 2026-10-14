@@ -100,6 +100,17 @@ struct AgentSession: Identifiable, Equatable {
     var placeholder: String
     var steps: [AgentStep]
     var diff: [DiffLine]
+    /// Werkmap van de sessie.
+    var cwd: String = ""
+    /// De app waarin de agent draait (Terminal, iTerm, VS Code…), voor "Open terminal".
+    var hostBundleID: String = ""
+    /// Een verzoek dat nu op jouw antwoord wacht.
+    var approvalID: String? = nil
+    /// Regels erbij en eraf in deze sessie.
+    var linesAdded: Int = 0
+    var linesRemoved: Int = 0
+    /// Komt van een draaiend proces, niet van hooks.
+    var isDetected: Bool { status == .detected }
 }
 
 struct TodayItem: Identifiable {

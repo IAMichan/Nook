@@ -1,6 +1,106 @@
 import Foundation
 import Darwin
 
+/// Eén verbinding van het hook-script. Antwoorden kan maar één keer, ook als jouw klik en een time-out
+/// tegelijk komen. Verbreekt de agent zelf de verbinding (je antwoordde in de terminal, of de agent stopte),
+/// dan hoort Nook dat via `onPeerClosed`, zodat een kaart in de notch meteen kan verdwijnen.
+final class HookConnection: @unchecked Sendable {
+    private let fd: Int32
+    private let lock = NSLock()
+    private var finished = false
+    private var closedBeforeHandler = false
+    private var peerClosedHandler: (() -> Void)?
+    private var source: DispatchSourceRead?
+
+    init(fd: Int32) {
+        self.fd = fd
+    }
+
+    deinit {
+        if !finished { source?.cancel() }
+    }
+
+    /// Begint te letten op het sluiten van de andere kant. De verbinding sluit zichzelf via de cancel-handler.
+    func start(queue: DispatchQueue) {
+        let fd = self.fd
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in self?.readable() }
+        source.setCancelHandler { close(fd) }
+        self.source = source
+        source.resume()
+    }
+
+    var isOpen: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !finished
+    }
+
+    /// Wordt op de main thread aangeroepen als de agent ophangt voordat Nook antwoordde.
+    func onPeerClosed(_ handler: @escaping () -> Void) {
+        lock.lock()
+        let early = closedBeforeHandler
+        peerClosedHandler = early ? nil : handler
+        closedBeforeHandler = false
+        lock.unlock()
+        if early { DispatchQueue.main.async(execute: handler) }
+    }
+
+    /// Stuurt het antwoord (of niets) en sluit. Geeft false als er al geantwoord was of de agent al weg is.
+    @discardableResult
+    func reply(_ response: Data?) -> Bool {
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return false
+        }
+        finished = true
+        peerClosedHandler = nil
+        lock.unlock()
+
+        if var data = response {
+            data.append(10)
+            data.withUnsafeBytes { raw in
+                guard let base = raw.baseAddress else { return }
+                var offset = 0
+                while offset < raw.count {
+                    let written = write(fd, base + offset, raw.count - offset)
+                    if written <= 0 { break }
+                    offset += written
+                }
+            }
+        }
+        source?.cancel()
+        return true
+    }
+
+    private func readable() {
+        var byte: UInt8 = 0
+        let peeked = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+        if peeked > 0 {
+            // Onverwachte extra data: weggooien, de verbinding blijft open.
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            _ = read(fd, &buffer, buffer.count)
+            return
+        }
+        if peeked < 0, errno == EAGAIN || errno == EINTR { return }
+
+        lock.lock()
+        if finished {
+            lock.unlock()
+            return
+        }
+        finished = true
+        let handler = peerClosedHandler
+        peerClosedHandler = nil
+        if handler == nil { closedBeforeHandler = true }
+        lock.unlock()
+
+        source?.cancel()
+        if let handler { DispatchQueue.main.async(execute: handler) }
+    }
+}
+
 /// Kleine lokale server waar agents (via hun hook-script) gebeurtenissen naartoe sturen.
 /// Alleen jijzelf kunt erbij: het socketbestand is 0600 en elke verbinding wordt op gebruikers-ID gecontroleerd.
 final class UnixSocketServer {
@@ -8,9 +108,10 @@ final class UnixSocketServer {
     private var listenFD: Int32 = -1
     private let acceptQueue = DispatchQueue(label: "nl.imdigital.nook.hub.accept")
     private let clientQueue = DispatchQueue(label: "nl.imdigital.nook.hub.client", attributes: .concurrent)
+    private let watchQueue = DispatchQueue(label: "nl.imdigital.nook.hub.watch")
 
-    /// Wordt aangeroepen met één regel JSON. Roep de tweede closure aan om te antwoorden (of met nil om zonder antwoord af te sluiten).
-    var onMessage: ((Data, @escaping (Data?) -> Void) -> Void)?
+    /// Wordt aangeroepen met één regel JSON en de verbinding om (eenmalig) op te antwoorden.
+    var onMessage: ((Data, HookConnection) -> Void)?
 
     init(path: String) {
         self.path = path
@@ -100,20 +201,8 @@ final class UnixSocketServer {
             return
         }
 
-        handler(buffer) { response in
-            if var data = response {
-                data.append(10)
-                data.withUnsafeBytes { raw in
-                    guard let base = raw.baseAddress else { return }
-                    var offset = 0
-                    while offset < raw.count {
-                        let written = write(fd, base + offset, raw.count - offset)
-                        if written <= 0 { break }
-                        offset += written
-                    }
-                }
-            }
-            close(fd)
-        }
+        let connection = HookConnection(fd: fd)
+        connection.start(queue: watchQueue)
+        handler(buffer, connection)
     }
 }

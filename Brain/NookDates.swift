@@ -48,6 +48,16 @@ enum NookDates {
         formatter("EEE").string(from: date).replacingOccurrences(of: ".", with: "").uppercased()
     }
 
+    /// "woensdag"
+    static func weekday(_ date: Date) -> String {
+        formatter("EEEE").string(from: date)
+    }
+
+    /// "12 okt"
+    static func dayMonth(_ date: Date) -> String {
+        formatter("d MMM").string(from: date)
+    }
+
     static func dayNumber(_ date: Date) -> String {
         formatter("d").string(from: date)
     }
