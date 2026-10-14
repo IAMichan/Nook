@@ -1,7 +1,7 @@
 import Foundation
 
 enum PanelTab: String, CaseIterable, Identifiable {
-    case today, agents, music, shelf
+    case today, agents, connect, music, shelf
 
     var id: String { rawValue }
 
@@ -9,6 +9,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: return "Vandaag"
         case .agents: return "Agents"
+        case .connect: return "Koppelingen"
         case .music: return "Muziek"
         case .shelf: return "Shelf"
         }

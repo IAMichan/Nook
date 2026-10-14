@@ -77,4 +77,6 @@ struct NookCard: Equatable, Identifiable {
     var extra: [CardAction] = []
     /// Een agent wacht hierop (toestemming of vraag): de kaart gaat voor alles en blijft tot je antwoordt.
     var urgent: Bool = false
+    /// Waar Nook naar keek voor dit antwoord ("3 vensters", "Agenda", "GitHub"), als kleine labels onder de context.
+    var sources: [String] = []
 }

@@ -21,10 +21,28 @@ final class AppModel: ObservableObject {
     let recap = RecapStore()
     let speech = SpeechOutput()
     let wake = WakeWordService()
+    /// Wat er op al je schermen staat, live bijgehouden (lokaal).
+    let screenContext = ScreenContext()
+    /// Agenda, mail, browser, GitHub, Stripe…: alles waar Nook context uit haalt.
+    let connectors = ConnectorHub()
+    let codex = CodexUsage()
+    let portfolio = PortfolioConnector()
+    /// Welk onderdeel van Instellingen open staat.
+    @Published var settingsSection: SettingsSection = .general
 
-    private(set) lazy var tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
-        self?.reloadLoops()
-    }
+    private(set) lazy var tools: NookTools = {
+        let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
+            self?.reloadLoops()
+        }
+        tools.screenSnapshot = { [weak self] in
+            guard let self else { throw ScreenError.nothing }
+            return try await self.screenSnapshot()
+        }
+        return tools
+    }()
+
+    /// Nooks eigen tools plus de lees-tools van alle koppelingen die aan staan.
+    var allTools: [ToolSpec] { tools.specs + connectors.tools }
     private(set) lazy var brain = BrainService(settings: settings)
 
     /// Voorbeelddata in plaats van echte bronnen, handig om de UI te bekijken.
@@ -49,6 +67,8 @@ final class AppModel: ObservableObject {
         hub.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         nowPlaying.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
     }
 
     // MARK: Opstarten
@@ -121,8 +141,38 @@ final class AppModel: ObservableObject {
 
         hotKeys = [
             HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
-            HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) }
+            HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
+            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
         ].compactMap { $0 }
+
+        // Koppelingen: lokaal (agenda, herinneringen, mail, browser, bestanden, klembord) en diensten met een sleutel.
+        connectors.register([
+            CalendarConnector(calendar: calendar),
+            RemindersConnector(calendar: calendar),
+            MailConnector(),
+            BrowserConnector(),
+            FilesConnector(),
+            ClipboardConnector()
+        ])
+        connectors.register(CloudConnectors.makeAll())
+        connectors.register([portfolio])
+        connectors.start()
+        codex.start()
+
+        // Alle schermen live bijhouden, zodat elke vraag meteen weet wat je ziet.
+        screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
+        settings.$liveScreen
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                guard let self else { return }
+                if on && self.screenContext.hasPermission { self.screenContext.start() } else if !on { self.screenContext.stop() }
+            }
+            .store(in: &bag)
+
+        if !settings.onboardingDone {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.presentWelcome() }
+        }
 
         Task { await refreshUpcoming() }
         Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
@@ -161,6 +211,32 @@ final class AppModel: ObservableObject {
             ))
         }
 
+        let now = Date()
+        if let next = upcoming.first(where: { $0.end > now }), next.start.timeIntervalSince(now) < 3 * 3600 {
+            let starting = next.start <= now
+            items.append(TodayItem(
+                id: "event-\(next.id)",
+                title: next.title,
+                subtitle: (starting ? "Nu bezig" : "Om \(NookDates.time(next.start))") + (next.location.isEmpty ? "" : " · \(next.location)"),
+                action: "Bereid voor",
+                color: NookTheme.iris,
+                target: .action { [weak self] in
+                    self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": wat moet ik weten en wat staat er op mijn schermen dat erbij hoort?")
+                }
+            ))
+        }
+
+        for source in connectors.needingAttention.prefix(2) {
+            items.append(TodayItem(
+                id: "connector-\(source.id)",
+                title: "\(source.title): \(source.status.headline)",
+                subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
+                action: "Bekijk",
+                color: NookTheme.amber,
+                target: .action { [weak self] in self?.viewModel.show(.panel(.connect)) }
+            ))
+        }
+
         if let recapItem = weeklyRecapItem() { items.append(recapItem) }
 
         for loop in loops.prefix(3) {
@@ -189,12 +265,18 @@ final class AppModel: ObservableObject {
     private var settingsWindow: NSWindow?
 
     /// Eigen venster: de Settings-scene opent niet betrouwbaar in een app zonder Dock-icoon.
-    func openSettings() {
+    func openSettings(section: SettingsSection? = nil) {
+        if let section { settingsSection = section }
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView().environmentObject(self))
+            host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
-            window.title = "Nook Instellingen"
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.title = "Nook"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
+            window.setContentSize(NSSize(width: 820, height: 600))
+            window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
@@ -231,18 +313,24 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Verwijst de gebruiker naar iets op het scherm ("maak er een afspraak voor"), lees dat dan meteen mee.
-        if Self.refersToScreen(text) {
-            viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: title)))
+        // Nook ziet wat jij ziet: bij elke vraag (of als je naar iets op je scherm verwijst) gaat de tekst van je vensters mee.
+        // Die komt uit de live cache, dus dit kost meestal geen merkbare tijd.
+        let wantsScreen = Self.refersToScreen(text)
+            || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal)
+        if wantsScreen {
+            let cached = screenContext.cachedSnapshot() != nil
+            viewModel.show(.card(thinkingCard(context: cached ? "Even nadenken…" : "Ik kijk even mee…", title: title)))
             Task {
                 do {
-                    let snapshot = try await screen.captureAll(maxWindows: settings.useLocal ? 3 : 6, totalLimit: settings.useLocal ? 3500 : 9000)
-                    await runBrain(
-                        userText: text,
-                        snapshot: snapshot,
-                        silentIfNone: false,
-                        context: "Ik keek in je vensters"
-                    )
+                    let snapshot = try await screenSnapshot()
+                    await runBrain(userText: text, snapshot: snapshot, silentIfNone: false, context: nil)
+                } catch let error as ScreenError {
+                    // Geen schermtoegang: dan gewoon zonder scherm antwoorden, tenzij de vraag juist over het scherm ging.
+                    if Self.refersToScreen(text) {
+                        replaceThinking(with: errorCard(error.localizedDescription))
+                    } else {
+                        await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil)
+                    }
                 } catch {
                     replaceThinking(with: errorCard(error.localizedDescription))
                 }
@@ -253,6 +341,16 @@ final class AppModel: ObservableObject {
         let loading = settings.useLocal && !EmbeddedModel.shared.isLoaded
         viewModel.show(.card(thinkingCard(context: loading ? "Lokaal model laden…" : "Even nadenken…", title: title)))
         Task { await runBrain(userText: text, snapshot: nil, silentIfNone: false, context: nil) }
+    }
+
+    /// De tekst van al je vensters: uit de live cache als die aan staat, anders nu even alles lezen.
+    func screenSnapshot() async throws -> ScreenSnapshot {
+        let local = settings.useLocal
+        if settings.liveScreen {
+            if !screenContext.isRunning, screenContext.hasPermission { screenContext.start() }
+            return try await screenContext.snapshot(totalLimit: local ? 3500 : 12_000)
+        }
+        return try await screen.captureAll(maxWindows: local ? 3 : 6, totalLimit: local ? 3500 : 9000)
     }
 
     /// Woorden en zinnen waaruit blijkt dat het verzoek over iets op het scherm gaat.
@@ -281,6 +379,10 @@ final class AppModel: ObservableObject {
 
     private func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?) async {
         let followUp = isFollowUp && !silentIfNone
+        var sources: [String] = []
+        if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
+        sources.append(contentsOf: connectors.contributingTitles.prefix(4))
+        lastSources = sources
         do {
             let plan = try await brain.run(
                 userText: userText,
@@ -288,7 +390,8 @@ final class AppModel: ObservableObject {
                 context: contextSummary(),
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
-                tools: tools.specs
+                tools: allTools,
+                onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
 
             let bare = plan.text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
@@ -305,7 +408,8 @@ final class AppModel: ObservableObject {
                 remember(user: userText, nook: plan.text.isEmpty ? "(acties voorgesteld, wachten op goedkeuring)" : plan.text)
                 speakIfAsked(plan.text.isEmpty ? "Ik heb een plan klaargezet." : plan.text)
             }
-            let card = planCard(plan, context: context)
+            var card = planCard(plan, context: context)
+            card.sources = sources
             if silentIfNone {
                 viewModel.present(card)
             } else {
@@ -316,6 +420,27 @@ final class AppModel: ObservableObject {
                 spokenRequest = false
                 replaceThinking(with: errorCard(error.localizedDescription))
             }
+        }
+    }
+
+    private var lastSources: [String] = []
+    private var streamedLines = 0
+
+    /// Het antwoord verschijnt terwijl het geschreven wordt. Groeit de tekst een regel, dan groeit de kaart mee.
+    private func showStreaming(_ text: String, sources: [String]) {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        guard case .card(let shown) = viewModel.state, shown.id == "thinking" else { return }
+        let lines = min(9, max(1, Int(ceil(Double(body.count) / (body.count > 140 ? 62.0 : 46.0)))))
+        var card = shown
+        card.title = String(body.prefix(4000))
+        card.context = "Nook"
+        card.sources = sources
+        card.contentHeight = max(shown.contentHeight, 110 + CGFloat(lines) * (body.count > 140 ? 21 : 24))
+        if card.contentHeight != shown.contentHeight {
+            viewModel.show(.card(card))
+        } else {
+            viewModel.updateCard(card)
         }
     }
 
@@ -339,18 +464,11 @@ final class AppModel: ObservableObject {
         let now = Date()
         var lines = ["Nu: \(NookDates.long(now))"]
 
-        // Vanaf het begin van vandaag, zodat ook "wat had ik vanochtend" of een lopende afspraak erin staat.
-        let events = calendar.events(from: Calendar.current.startOfDay(for: now), to: now.addingTimeInterval(7 * 86_400))
-        if calendar.hasEventAccess {
-            lines.append("Agenda (Nook heeft toegang), vandaag en de komende zeven dagen:")
-            if events.isEmpty { lines.append("- geen afspraken") }
-            for event in events.prefix(40) {
-                let place = event.location.isEmpty ? "" : " | \(event.location)"
-                lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))\(place)")
-            }
-        } else {
-            lines.append("Agenda: geen toegang.")
+        // Agenda (vanaf het begin van vandaag), herinneringen, mail, browser, diensten: alles uit de cache van de koppelingen.
+        if !connectors.active.contains(where: { $0.id == "calendar" }) {
+            lines.append(calendar.hasEventAccess ? "Agenda: staat uit bij Koppelingen." : "Agenda: geen toegang.")
         }
+        lines.append(contentsOf: connectors.contextLines())
 
         if !recentExchanges.isEmpty {
             lines.append("Gesprek zojuist (voor vervolgvragen):")
@@ -377,6 +495,7 @@ final class AppModel: ObservableObject {
         if let usage = hub.planUsage {
             lines.append("Claude-abonnement gebruikt: \(usage.label)" + (usage.resetLabel.map { " (\($0))" } ?? ""))
         }
+        if let codexLine = codex.contextLine { lines.append(codexLine) }
         return lines.joined(separator: "\n")
     }
 
@@ -893,7 +1012,7 @@ final class AppModel: ObservableObject {
     /// Een bestand uit de Shelf: lees de tekst (op je Mac) en vraag wat je wilt weten.
     func askAbout(_ url: URL) {
         do {
-            let text = try Self.readText(url)
+            let text = try FileText.read(url)
             attachment = (url.lastPathComponent, text, Date())
             let card = NookCard(
                 id: "attach-" + UUID().uuidString,
@@ -910,23 +1029,6 @@ final class AppModel: ObservableObject {
         } catch {
             viewModel.show(.card(errorCard(error.localizedDescription)))
         }
-    }
-
-    private static func readText(_ url: URL) throws -> String {
-        let type = UTType(filenameExtension: url.pathExtension) ?? .data
-        var text: String?
-        if type.conforms(to: .pdf) {
-            text = PDFDocument(url: url)?.string
-        } else if type.conforms(to: .rtf) || type.conforms(to: .rtfd) || ["doc", "docx", "odt", "html", "htm"].contains(url.pathExtension.lowercased()) {
-            text = (try? NSAttributedString(url: url, options: [:], documentAttributes: nil))?.string
-        } else {
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if size < 5_000_000 { text = try? String(contentsOf: url, encoding: .utf8) }
-        }
-        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NookError("Ik kan in \(url.lastPathComponent) geen tekst lezen. Tekst, pdf, Word en rtf lukken wel.")
-        }
-        return text
     }
 
     // MARK: Kaarten
@@ -948,6 +1050,71 @@ final class AppModel: ObservableObject {
             contentHeight: 130
         )
         viewModel.show(.card(card))
+    }
+
+    /// ⌥⌘ spatie: meteen typen, waar je ook bent.
+    func openAsk() {
+        let card = NookCard(
+            id: "ask-" + UUID().uuidString,
+            mood: .listen,
+            context: screenContext.windows.isEmpty ? "Vraag Nook iets" : "Ik zie \(screenContext.windows.count) vensters" + (screenContext.displayCount > 1 ? " op \(screenContext.displayCount) schermen" : ""),
+            title: "Waar kan ik je mee helpen?",
+            detail: .none,
+            primary: CardAction(label: "Sluiten", outcome: .dismiss),
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 150,
+            input: true
+        )
+        warmUp()
+        viewModel.show(.card(card))
+    }
+
+    /// De eerste keer: in drie stappen klaar. Alles staat ook in Instellingen.
+    func presentWelcome() {
+        let token = "welcome"
+        viewModel.register("\(token)#setup") { [weak self] in
+            self?.settings.onboardingDone = true
+            self?.openSettings()
+        }
+        viewModel.register("\(token)#later") { [weak self] in self?.settings.onboardingDone = true }
+        let facts = [
+            Fact(label: "1 · brein", value: settings.brainReady ? "klaar" : "kies Claude, een andere AI of gratis lokaal"),
+            Fact(label: "2 · scherm lezen", value: CGPreflightScreenCaptureAccess() ? "aan" : "geef toestemming"),
+            Fact(label: "3 · agenda", value: calendar.hasEventAccess ? "gekoppeld" : "geef toestemming"),
+            Fact(label: "4 · koppelingen", value: "mail, GitHub, Stripe… (optioneel)")
+        ]
+        let card = NookCard(
+            id: token,
+            mood: .seen,
+            context: "Welkom bij Nook",
+            title: "Ik ben je assistent. Ik zie je schermen en ken je agenda, dus vraag me gewoon alles.",
+            detail: .facts(facts),
+            primary: CardAction(label: "Instellen", outcome: .callback("\(token)#setup", "")),
+            secondary: CardAction(label: "Later", outcome: .callback("\(token)#later", "")),
+            contentHeight: 150 + 2 * 44 + 24
+        )
+        viewModel.present(card)
+    }
+
+    /// Een bestand uit de Shelf als bijlage in een nieuwe mail zetten (Mail.app). Jij verstuurt zelf.
+    func mailFile(_ url: URL) {
+        let path = ScriptText.quote(url.path)
+        let script = """
+        tell application "Mail"
+            set m to make new outgoing message with properties {visible:true, subject:\(ScriptText.quote(url.lastPathComponent))}
+            tell content of m to make new attachment with properties {file name:(POSIX file \(path) as alias)} at after last paragraph
+            activate
+        end tell
+        """
+        Task {
+            let result = await ScriptText.run(script)
+            if result.errorNumber == -1743 {
+                viewModel.present(errorCard("Geef Nook toestemming voor Mail bij Systeeminstellingen › Privacy › Automatisering."))
+            } else {
+                store.audit(tool: "mail_file", args: url.lastPathComponent, result: "concept geopend")
+                viewModel.finish("Concept met \(url.lastPathComponent) staat klaar in Mail")
+            }
+        }
     }
 
     private func thinkingCard(context: String, title: String) -> NookCard {

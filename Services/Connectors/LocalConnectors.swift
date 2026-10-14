@@ -1,0 +1,522 @@
+import SwiftUI
+import AppKit
+import PDFKit
+import UniformTypeIdentifiers
+
+// Bronnen op je eigen Mac. Niets hiervan gaat over het netwerk; pas als je iets vraagt, gaat een korte samenvatting naar het brein.
+
+/// Hulp voor AppleScript-tekst: aanhalingstekens en backslashes onschadelijk maken.
+enum ScriptText {
+    static func quote(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    static func isRunning(_ bundleID: String) -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+    }
+
+    /// Draait AppleScript buiten de hoofdthread en geeft tekst plus foutnummer terug.
+    static func run(_ source: String) async -> (text: String?, errorNumber: Int?) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: SystemControl.appleScriptResult(source))
+            }
+        }
+    }
+}
+
+// MARK: Agenda
+
+@MainActor
+final class CalendarConnector: ContextSource {
+    let id = "calendar"
+    let title = "Agenda"
+    let symbol = "calendar"
+    let accent = NookTheme.iris
+    private(set) var status = ConnectorStatus()
+    private let calendar: CalendarService
+    private var events: [CalEvent] = []
+
+    init(calendar: CalendarService) { self.calendar = calendar }
+
+    var isActive: Bool { calendar.hasEventAccess && ConnectorToggle.isOn(id) }
+    var refreshInterval: TimeInterval { 120 }
+
+    func refresh() async {
+        guard calendar.hasEventAccess else {
+            status = ConnectorStatus(state: .off, detail: "Geef toegang bij Instellingen › Machtigingen")
+            return
+        }
+        let now = Date()
+        events = calendar.events(from: Calendar.current.startOfDay(for: now), to: now.addingTimeInterval(7 * 86_400))
+        let upcoming = events.filter { $0.end > now }
+        let today = upcoming.filter { Calendar.current.isDateInToday($0.start) }
+        var next = ""
+        if let first = upcoming.first {
+            next = first.start <= now ? "Nu: \(first.title)" : "Hierna: \(first.title) om \(NookDates.time(first.start))"
+        }
+        status = ConnectorStatus(
+            state: .ok,
+            headline: today.isEmpty ? "Vandaag niets meer" : "\(today.count) \(today.count == 1 ? "afspraak" : "afspraken") vandaag",
+            detail: next,
+            items: upcoming.prefix(5).map {
+                ConnectorItem(
+                    id: $0.id,
+                    title: $0.title,
+                    subtitle: NookDates.short($0.start) + ($0.location.isEmpty ? "" : " · \($0.location)"),
+                    tone: $0.start <= now ? .good : .neutral
+                )
+            },
+            updated: now
+        )
+    }
+
+    func contextLines() -> [String] {
+        guard calendar.hasEventAccess else { return ["Agenda: geen toegang."] }
+        if events.isEmpty { Task { await refresh() } }
+        var lines = ["Agenda (Nook heeft toegang), vandaag en de komende zeven dagen:"]
+        if events.isEmpty { lines.append("- geen afspraken") }
+        for event in events.prefix(40) {
+            let place = event.location.isEmpty ? "" : " | \(event.location)"
+            lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))\(place)")
+        }
+        return lines
+    }
+}
+
+// MARK: Herinneringen
+
+@MainActor
+final class RemindersConnector: ContextSource {
+    let id = "reminders"
+    let title = "Herinneringen"
+    let symbol = "checklist"
+    let accent = NookTheme.amber
+    private(set) var status = ConnectorStatus()
+    private let calendar: CalendarService
+    private var reminders: [ReminderItem] = []
+
+    init(calendar: CalendarService) { self.calendar = calendar }
+
+    var isActive: Bool { calendar.hasReminderAccess && ConnectorToggle.isOn(id) }
+    var refreshInterval: TimeInterval { 180 }
+
+    func refresh() async {
+        guard calendar.hasReminderAccess else {
+            status = ConnectorStatus(state: .off, detail: "Geef toegang bij Instellingen › Machtigingen")
+            return
+        }
+        reminders = await calendar.incompleteReminders()
+        let now = Date()
+        let overdue = reminders.filter { ($0.due ?? .distantFuture) < now }
+        status = ConnectorStatus(
+            state: .ok,
+            headline: reminders.isEmpty ? "Niets open" : "\(reminders.count) open",
+            detail: overdue.isEmpty ? "" : "\(overdue.count) te laat",
+            items: reminders.prefix(5).map {
+                ConnectorItem(
+                    id: $0.id,
+                    title: $0.title,
+                    subtitle: $0.due.map { "Uiterlijk \(NookDates.short($0))" } ?? $0.list,
+                    tone: ($0.due ?? .distantFuture) < now ? .attention : .neutral
+                )
+            },
+            updated: now,
+            needsAttention: !overdue.isEmpty
+        )
+    }
+
+    func contextLines() -> [String] {
+        guard !reminders.isEmpty else { return [] }
+        var lines = ["Herinneringen die openstaan:"]
+        for reminder in reminders.prefix(15) {
+            let due = reminder.due.map { " | uiterlijk \(NookDates.iso($0))" } ?? ""
+            lines.append("- \(reminder.title)\(due)" + (reminder.list.isEmpty ? "" : " | lijst \(reminder.list)"))
+        }
+        return lines
+    }
+}
+
+// MARK: Mail
+
+/// Ongelezen mail uit de app Mail. Alleen als Mail al draait: Nook start Mail nooit zelf.
+@MainActor
+final class MailConnector: ContextSource {
+    struct Message: Equatable {
+        var subject: String
+        var sender: String
+        var date: String
+    }
+
+    let id = "mail"
+    let title = "Mail"
+    let symbol = "envelope"
+    let accent = Color(hex: 0x4DA3FF)
+    private(set) var status = ConnectorStatus()
+    private var unread: [Message] = []
+    private var unreadCount = 0
+
+    var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
+    var refreshInterval: TimeInterval { 120 }
+
+    func refresh() async {
+        guard ScriptText.isRunning("com.apple.mail") else {
+            status = ConnectorStatus(state: .off, detail: "Open Mail, dan kijkt Nook mee")
+            return
+        }
+        let script = """
+        tell application "Mail"
+            set msgs to (messages of inbox whose read status is false)
+            set total to count of msgs
+            set n to total
+            if n > 15 then set n to 15
+            set out to (total as string) & linefeed
+            repeat with i from 1 to n
+                set m to item i of msgs
+                set out to out & (subject of m) & "|||" & (sender of m) & "|||" & ((date received of m) as «class isot» as string) & linefeed
+            end repeat
+            return out
+        end tell
+        """
+        let result = await ScriptText.run(script)
+        if result.errorNumber == -1743 {
+            status = ConnectorStatus(state: .error("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering."))
+            return
+        }
+        guard let text = result.text else {
+            status = ConnectorStatus(state: .error("Mail gaf geen antwoord."))
+            return
+        }
+        var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        unreadCount = Int(lines.first ?? "") ?? 0
+        if !lines.isEmpty { lines.removeFirst() }
+        unread = lines.compactMap { line in
+            let parts = line.components(separatedBy: "|||")
+            guard parts.count >= 3 else { return nil }
+            return Message(subject: parts[0], sender: parts[1], date: parts[2])
+        }
+        status = ConnectorStatus(
+            state: .ok,
+            headline: unreadCount == 0 ? "Alles gelezen" : "\(unreadCount) ongelezen",
+            detail: unread.first.map { "Laatste: \(Self.name($0.sender))" } ?? "",
+            items: unread.prefix(5).enumerated().map { index, message in
+                ConnectorItem(id: "mail-\(index)", title: message.subject, subtitle: Self.name(message.sender), tone: .neutral)
+            },
+            updated: Date()
+        )
+    }
+
+    private static func name(_ sender: String) -> String {
+        // "Lisa de Vries <lisa@…>" → "Lisa de Vries"
+        if let range = sender.range(of: " <") { return String(sender[..<range.lowerBound]).replacingOccurrences(of: "\"", with: "") }
+        return sender
+    }
+
+    func contextLines() -> [String] {
+        guard unreadCount > 0 else { return [] }
+        var lines = ["Mail: \(unreadCount) ongelezen in de inbox. Nieuwste:"]
+        for message in unread.prefix(10) {
+            lines.append("- \(message.subject) | van \(message.sender) | \(message.date)")
+        }
+        return lines
+    }
+
+    var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "search_mail",
+                description: "Zoekt in de inbox van de app Mail op onderwerp of afzender en geeft de nieuwste treffers met het begin van de tekst. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'.",
+                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Woord uit het onderwerp of (deel van) de afzender."]], "required": ["query"]],
+                kind: .read,
+                summarize: { _ in "Mail doorzoeken" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail is niet open.") }
+                    let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    let q = ScriptText.quote(query)
+                    let script = """
+                    tell application "Mail"
+                        set found to (messages of inbox whose subject contains \(q) or sender contains \(q))
+                        set n to count of found
+                        if n > 6 then set n to 6
+                        set out to ""
+                        repeat with i from 1 to n
+                            set m to item i of found
+                            set body to ""
+                            try
+                                set body to content of m
+                            end try
+                            if (length of body) > 700 then set body to text 1 thru 700 of body
+                            set out to out & "### " & (subject of m) & " | van " & (sender of m) & " | " & ((date received of m) as «class isot» as string) & linefeed & body & linefeed & linefeed
+                        end repeat
+                        return out
+                    end tell
+                    """
+                    let result = await ScriptText.run(script)
+                    let text = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    return text.isEmpty ? "Geen mail gevonden voor \"\(query)\"." : text
+                }
+            )
+        ]
+    }
+}
+
+// MARK: Browser
+
+/// Open tabbladen in Safari en Chromium-browsers (Chrome, Arc, Brave, Edge). Alleen browsers die al draaien.
+@MainActor
+final class BrowserConnector: ContextSource {
+    struct Tab: Equatable {
+        var browser: String
+        var title: String
+        var url: String
+        var active: Bool
+    }
+
+    let id = "browser"
+    let title = "Browser"
+    let symbol = "safari"
+    let accent = Color(hex: 0x5AC8FA)
+    private(set) var status = ConnectorStatus()
+    private var tabs: [Tab] = []
+
+    private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
+        ("Safari", "com.apple.Safari", true),
+        ("Google Chrome", "com.google.Chrome", false),
+        ("Arc", "company.thebrowser.Browser", false),
+        ("Brave Browser", "com.brave.Browser", false),
+        ("Microsoft Edge", "com.microsoft.edgemac", false)
+    ]
+
+    var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
+    var refreshInterval: TimeInterval { 45 }
+
+    func refresh() async {
+        var collected: [Tab] = []
+        var denied = false
+        for browser in Self.browsers where ScriptText.isRunning(browser.bundle) {
+            let titleKey = browser.safari ? "name" : "title"
+            let activeKey = browser.safari ? "current tab" : "active tab"
+            let script = """
+            tell application "\(browser.name)"
+                set out to ""
+                set wi to 0
+                repeat with w in windows
+                    set wi to wi + 1
+                    if wi > 4 then exit repeat
+                    set act to ""
+                    try
+                        set act to URL of \(activeKey) of w
+                    end try
+                    set ti to 0
+                    repeat with t in tabs of w
+                        set ti to ti + 1
+                        if ti > 15 then exit repeat
+                        set u to URL of t
+                        set mark to "0"
+                        if u is act then set mark to "1"
+                        set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
+                    end repeat
+                end repeat
+                return out
+            end tell
+            """
+            let result = await ScriptText.run(script)
+            if result.errorNumber == -1743 { denied = true }
+            for line in (result.text ?? "").components(separatedBy: .newlines) {
+                let parts = line.components(separatedBy: "|||")
+                guard parts.count >= 3, parts[2].hasPrefix("http") else { continue }
+                collected.append(Tab(browser: browser.name, title: parts[1], url: parts[2], active: parts[0] == "1"))
+            }
+        }
+        tabs = collected
+        if collected.isEmpty && denied {
+            status = ConnectorStatus(state: .error("Geef Nook toestemming voor je browser: Systeeminstellingen › Privacy › Automatisering."))
+            return
+        }
+        let active = collected.filter(\.active)
+        status = ConnectorStatus(
+            state: .ok,
+            headline: "\(collected.count) tabbladen open",
+            detail: active.first.map { "Nu: \($0.title)" } ?? "",
+            items: (active + collected.filter { !$0.active }).prefix(5).enumerated().map { index, tab in
+                ConnectorItem(id: "tab-\(index)", title: tab.title, subtitle: URL(string: tab.url)?.host ?? tab.browser,
+                              tone: tab.active ? .good : .neutral, url: URL(string: tab.url))
+            },
+            updated: Date()
+        )
+    }
+
+    func contextLines() -> [String] {
+        guard !tabs.isEmpty else { return [] }
+        var lines = ["Open browsertabbladen (* = actief tabblad van een venster):"]
+        for tab in tabs.sorted(by: { $0.active && !$1.active }).prefix(20) {
+            lines.append("- \(tab.active ? "* " : "")\(tab.title) | \(tab.url)")
+        }
+        return lines
+    }
+}
+
+// MARK: Bestanden
+
+/// Leest tekst uit gewone documenten. Gedeeld door de Shelf en de bestanden-tools.
+enum FileText {
+    static func read(_ url: URL, limit: Int = 5_000_000) throws -> String {
+        let type = UTType(filenameExtension: url.pathExtension) ?? .data
+        var text: String?
+        if type.conforms(to: .pdf) {
+            text = PDFDocument(url: url)?.string
+        } else if type.conforms(to: .rtf) || type.conforms(to: .rtfd) || ["doc", "docx", "odt", "html", "htm", "pages"].contains(url.pathExtension.lowercased()) {
+            text = (try? NSAttributedString(url: url, options: [:], documentAttributes: nil))?.string
+        } else {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if size < limit { text = try? String(contentsOf: url, encoding: .utf8) }
+        }
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NookError("Ik kan in \(url.lastPathComponent) geen tekst lezen. Tekst, pdf, Word en rtf lukken wel.")
+        }
+        return text
+    }
+
+    /// Alleen bestanden in je eigen map, niet in verborgen mappen of Bibliotheek (sleutels, wachtwoorden, instellingen).
+    static func isAllowed(_ url: URL) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard path.hasPrefix(home + "/") else { return false }
+        let relative = path.dropFirst(home.count + 1)
+        let parts = relative.split(separator: "/")
+        if parts.contains(where: { $0.hasPrefix(".") }) { return false }
+        if parts.first == "Library" { return false }
+        return true
+    }
+}
+
+/// Recent gebruikte bestanden (Spotlight) en zoeken in je bestanden.
+@MainActor
+final class FilesConnector: ContextSource {
+    let id = "files"
+    let title = "Bestanden"
+    let symbol = "doc.on.doc"
+    let accent = Color(hex: 0xB0A8FF)
+    private(set) var status = ConnectorStatus()
+    private var recent: [URL] = []
+
+    var isActive: Bool { ConnectorToggle.isOn(id) }
+    var refreshInterval: TimeInterval { 600 }
+
+    private nonisolated static func spotlight(_ arguments: [String]) async -> [URL] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let home = FileManager.default.homeDirectoryForCurrentUser.path
+                let output = (try? SystemControl.runProcess("/usr/bin/mdfind", ["-onlyin", home] + arguments)) ?? ""
+                let urls = output.components(separatedBy: .newlines).filter { !$0.isEmpty }.map { URL(fileURLWithPath: $0) }
+                continuation.resume(returning: urls)
+            }
+        }
+    }
+
+    func refresh() async {
+        let found = await Self.spotlight(["kMDItemLastUsedDate >= $time.today(-3) && kMDItemContentTypeTree == \"public.content\""])
+        let allowed = found.filter { FileText.isAllowed($0) && !$0.hasDirectoryPath }
+        let dated = allowed.prefix(300).map { url -> (URL, Date) in
+            let date = (try? url.resourceValues(forKeys: [.contentAccessDateKey]).contentAccessDate)
+                ?? (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return (url, date)
+        }
+        recent = dated.sorted { $0.1 > $1.1 }.prefix(15).map { $0.0 }
+        status = ConnectorStatus(
+            state: .ok,
+            headline: "\(recent.count) recente bestanden",
+            detail: recent.first.map { "Laatst: \($0.lastPathComponent)" } ?? "",
+            items: recent.prefix(5).enumerated().map { index, url in
+                ConnectorItem(id: "file-\(index)", title: url.lastPathComponent, subtitle: url.deletingLastPathComponent().lastPathComponent)
+            },
+            updated: Date()
+        )
+    }
+
+    func contextLines() -> [String] {
+        guard !recent.isEmpty else { return [] }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ["Recent gebruikte bestanden:"] + recent.prefix(10).map { "- " + $0.path.replacingOccurrences(of: home, with: "~") }
+    }
+
+    var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "search_files",
+                description: "Zoekt met Spotlight in de bestanden van de gebruiker (naam en inhoud) en geeft de paden van de beste treffers.",
+                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Zoekwoorden."]], "required": ["query"]],
+                kind: .read,
+                summarize: { _ in "Bestanden zoeken" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    let byName = await FilesConnector.spotlight(["-name", query])
+                    let byContent = await FilesConnector.spotlight([query])
+                    var seen = Set<String>()
+                    let home = FileManager.default.homeDirectoryForCurrentUser.path
+                    let hits = (byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20)
+                    if hits.isEmpty { return "Niets gevonden voor \"\(query)\"." }
+                    return hits.map { $0.path.replacingOccurrences(of: home, with: "~") }.joined(separator: "\n")
+                }
+            ),
+            ToolSpec(
+                name: "read_file",
+                description: "Leest de tekst van een document van de gebruiker (tekst, pdf, Word, rtf). Geef een pad uit search_files of uit de lijst met recente bestanden.",
+                schema: ["type": "object", "properties": ["path": ["type": "string", "description": "Pad, mag met ~ beginnen."]], "required": ["path"]],
+                kind: .read,
+                summarize: { _ in "Bestand lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    let raw = ((input["path"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let url = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath)
+                    guard FileText.isAllowed(url) else { throw NookError("Dat bestand mag Nook niet lezen.") }
+                    let text = try FileText.read(url)
+                    return String(text.prefix(15_000))
+                }
+            )
+        ]
+    }
+}
+
+// MARK: Klembord
+
+/// Wat je net kopieerde. Standaard uit: een klembord kan gevoelig zijn. Wachtwoorden (gemarkeerd als verborgen) slaat Nook altijd over.
+@MainActor
+final class ClipboardConnector: ContextSource {
+    let id = "clipboard"
+    let title = "Klembord"
+    let symbol = "doc.on.clipboard"
+    let accent = Color(hex: 0x9C9AA8)
+    private(set) var status = ConnectorStatus()
+
+    var isActive: Bool { ConnectorToggle.isOn(id, default: false) }
+    var refreshInterval: TimeInterval { 30 }
+
+    private var current: String? {
+        let board = NSPasteboard.general
+        let types = board.types ?? []
+        let secret = types.contains { ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"].contains($0.rawValue) }
+        guard !secret, let text = board.string(forType: .string) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func refresh() async {
+        guard isActive else {
+            status = ConnectorStatus(state: .off, detail: "Staat uit (aan te zetten bij Instellingen › Koppelingen)")
+            return
+        }
+        let text = current
+        status = ConnectorStatus(state: .ok, headline: text == nil ? "Leeg" : "Tekst gekopieerd",
+                                 detail: text.map { String($0.prefix(80)) } ?? "", updated: Date())
+    }
+
+    func contextLines() -> [String] {
+        guard isActive, let text = current else { return [] }
+        return ["Klembord (net gekopieerd):", String(text.prefix(1500))]
+    }
+}

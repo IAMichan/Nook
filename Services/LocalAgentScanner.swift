@@ -7,8 +7,9 @@ struct DetectedAgent: Hashable {
     let cwd: String
 }
 
-/// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, …) in de lijst met processen.
+/// Zoekt draaiende AI-agents (Claude Code, Codex, Gemini CLI, Aider, OpenCode, Copilot CLI, Amp, Hermes, …) in de lijst met processen.
 /// Zo staan ze meteen in Nook; hooks zijn alleen nodig voor details en goedkeuring.
+/// De namen zijn dezelfde als in AgentHub, zodat een agent die ook via hooks meldt er niet dubbel staat.
 enum LocalAgentScanner {
     private struct Kind {
         let name: String
@@ -24,7 +25,10 @@ enum LocalAgentScanner {
         Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
         Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
         Kind(name: "Amp", commands: ["amp"], packages: ["@sourcegraph/amp"]),
-        Kind(name: "Cursor Agent", commands: ["cursor-agent"], packages: []),
+        Kind(name: "Cursor", commands: ["cursor-agent"], packages: []),
+        Kind(name: "Antigravity", commands: ["agy"], packages: []),
+        Kind(name: "Hermes", commands: ["hermes"], packages: ["hermes-agent", "hermes_cli"]),
+        Kind(name: "Muse Code", commands: ["muse"], packages: []),
         Kind(name: "Qwen Code", commands: ["qwen"], packages: ["@qwen-code/qwen-code"])
     ]
 

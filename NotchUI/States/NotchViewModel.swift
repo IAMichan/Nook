@@ -250,9 +250,11 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
             switch tab {
-            case .today: return CGSize(width: 680, height: chrome + 310)
+            case .today: return CGSize(width: 700, height: chrome + 356)
             case .agents: return CGSize(width: 860, height: chrome + 386)
-            case .music, .shelf: return CGSize(width: 640, height: chrome + 180)
+            case .music: return CGSize(width: 640, height: chrome + 196)
+            case .shelf: return CGSize(width: 640, height: chrome + 180)
+            case .connect: return CGSize(width: 820, height: chrome + 330)
             }
         }
     }
@@ -278,6 +280,8 @@ final class NotchViewModel: ObservableObject {
             case .running: return .think
             default: return .rest
             }
+        case .connect:
+            return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
         case .music, .today, .shelf: return .rest
         }
     }

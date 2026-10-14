@@ -9,6 +9,13 @@ struct CalEvent: Identifiable, Equatable {
     var location: String
 }
 
+struct ReminderItem: Identifiable, Equatable {
+    var id: String
+    var title: String
+    var due: Date?
+    var list: String
+}
+
 /// Agenda en herinneringen via EventKit.
 @MainActor
 final class CalendarService {
@@ -43,6 +50,25 @@ final class CalendarService {
                     location: $0.location ?? ""
                 )
             }
+    }
+
+    /// Herinneringen die nog open staan, met de vroegste deadline eerst.
+    func incompleteReminders() async -> [ReminderItem] {
+        guard hasReminderAccess else { return [] }
+        let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
+        return await withCheckedContinuation { continuation in
+            store.fetchReminders(matching: predicate) { reminders in
+                let items = (reminders ?? []).map { reminder in
+                    ReminderItem(
+                        id: reminder.calendarItemIdentifier,
+                        title: reminder.title ?? "Zonder titel",
+                        due: reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) },
+                        list: reminder.calendar?.title ?? ""
+                    )
+                }
+                continuation.resume(returning: items.sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) })
+            }
+        }
     }
 
     func createEvent(title: String, start: Date, end: Date, location: String?, notes: String?) async throws {

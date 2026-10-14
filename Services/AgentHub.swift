@@ -581,11 +581,14 @@ final class AgentHub: ObservableObject {
         record.steps[record.steps.count - 1] = AgentStep(mark: mark, text: last.text)
     }
 
-    /// Gebeurtenisnamen van andere agents (Gemini CLI, Copilot, …) naar die van Claude Code.
+    /// Gebeurtenisnamen van andere agents (Gemini CLI, Antigravity, Copilot, Cursor, …) naar die van Claude Code.
     static func normalize(_ name: String) -> String {
         let map: [String: String] = [
             "BeforeTool": "PreToolUse", "AfterTool": "PostToolUse",
             "BeforeAgent": "UserPromptSubmit", "AfterAgent": "Stop",
+            "PreInvocation": "UserPromptSubmit", "PostInvocation": "PostToolUse",
+            "beforeSubmitPrompt": "UserPromptSubmit", "postToolUseFailure": "PostToolUseFailure",
+            "subagentStart": "SubagentStart", "subagentStop": "SubagentStop",
             "pre_tool_use": "PreToolUse", "post_tool_use": "PostToolUse",
             "preToolUse": "PreToolUse", "postToolUse": "PostToolUse",
             "user_prompt_submit": "UserPromptSubmit", "userPromptSubmitted": "UserPromptSubmit",
@@ -609,10 +612,14 @@ final class AgentHub: ObservableObject {
         case "claude-desktop": return "Claude (app)"
         case "codex": return "Codex"
         case "gemini": return "Gemini CLI"
+        case "antigravity": return "Antigravity"
         case "copilot": return "Copilot CLI"
         case "cursor": return "Cursor"
         case "opencode": return "OpenCode"
         case "amp": return "Amp"
+        case "hermes": return "Hermes"
+        case "muse": return "Muse Code"
+        case "qwen": return "Qwen Code"
         default: return id.prefix(1).uppercased() + id.dropFirst()
         }
     }
