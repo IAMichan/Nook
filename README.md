@@ -1,22 +1,40 @@
 # Nook
 
+[![Build](https://github.com/IAMichan/nook/actions/workflows/build.yml/badge.svg)](https://github.com/IAMichan/nook/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
+
 Je persoonlijke agent in de notch van je Mac.
 
-## Starten
+> **English:** Nook is a personal AI agent that lives in the MacBook notch. It listens on request, reads your screen locally (OCR) and proposes calendar events, reminders and tasks, shows what your coding agents (Claude Code, Codex) are doing, and controls music. Nothing runs without your explicit approval. The interface is in Dutch.
+
+> **Status:** vroege versie (0.1). De app compileert, maar is nog weinig in de praktijk getest. Verwacht ruwe randjes.
+
+## Vereisten
+
+- macOS 15 of nieuwer, het liefst een Mac met notch
+- Xcode 16 of nieuwer
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+- Een [Anthropic API-sleutel](https://console.anthropic.com/)
+
+## Bouwen en starten
 
 ```sh
 brew install xcodegen
-cd /Users/michanvanderhoek/IMDigital/Code/Applicaties/Nook
+git clone https://github.com/IAMichan/nook.git
+cd nook
 xcodegen
 open Nook.xcodeproj
 ```
 
 Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in de menubalk.
 
-**Eerste keer**
-1. Menubalk-stip → **Instellingen…** → plak je Anthropic API-sleutel (blijft in de Keychain).
+**De eerste keer**
+1. Menubalk-stip → **Instellingen…** → plak je Anthropic API-sleutel (die blijft in de Keychain).
 2. Zet bij Machtigingen Agenda, Herinneringen, Microfoon en Scherm lezen aan zodra je ze wilt gebruiken.
 3. Voor je agents: **Installeer hook-script** en kopieer de configuratie voor Claude Code of Codex.
+
+Wil je hem zonder API-sleutel bekijken? Kies in de menubalk **Voorbeelddata tonen**.
 
 ## Wat het doet
 
@@ -31,13 +49,16 @@ Druk op ⌘R. Nook heeft geen Dock-icoon: je ziet hem in de notch en als stip in
 | Agents | Claude Code, Codex e.d. via hooks: wie draait, wat doet hij, wie wacht op je. Riskante Bash-commando's komen als vraag in de notch. |
 | Besturen | Apps openen, links openen, volume, muziek, Opdrachten (Shortcuts), conceptmail in Mail. |
 
-## Veiligheid
+## Privacy en veiligheid
 
 - Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Nook verstuurt zelf nooit mail of berichten.
+- Wat naar Anthropic gaat: wat je zegt of typt (als tekst), herkende schermtekst als je Nook laat meekijken, en de agenda- en taakgegevens die nodig zijn voor een voorstel. Het schermbeeld zelf verlaat je Mac niet. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
 - Tekst van je scherm, agenda-titels en tool-uitkomsten gaan als "onbetrouwbare data" naar het brein, met de opdracht daar geen instructies uit te volgen.
+- Wachtwoordmanagers worden nooit gelezen.
 - De hook-socket is alleen voor jouw gebruiker (rechten 0600 + controle op gebruikers-ID).
-- Wachtwoordmanagers worden nooit gelezen. Het schermbeeld zelf verlaat je Mac niet; alleen herkende tekst gaat naar het brein.
 - Alles wat Nook uitvoert staat in een logboek (`nook.sqlite`, tabel `audit`).
+
+Een beveiligingsprobleem gevonden? Zie [SECURITY.md](SECURITY.md).
 
 ## Mappen
 
@@ -50,11 +71,22 @@ Core/      paden, instellingen + Keychain, opslag (SQLite)
 Demo/      voorbeelddata (menubalk › Voorbeelddata tonen)
 ```
 
-## Let op
+`Nook.xcodeproj`, `Info.plist` en de entitlements worden door XcodeGen gemaakt vanuit [`project.yml`](project.yml) en staan niet in git.
 
-- Deze code is geschreven zonder compiler en nog nooit gedraaid. Verwacht een paar kleine foutmeldingen bij de eerste build; plak ze terug en ze zijn snel opgelost.
-- Met ad-hoc ondertekening ziet macOS elke nieuwe build als een andere app: machtigingen en Keychain-toegang kunnen opnieuw gevraagd worden. Met een eigen Developer ID-certificaat verdwijnt dat.
-- De hook-opzet voor Claude Code en Codex is gebaseerd op hun documentatie maar niet getest tegen de huidige versies.
-- Er is geen API om meldingen van andere apps te lezen; "meldingen filteren" is daarom niet gebouwd. Meldingen van je agents lopen wel via Nook.
-- Bundle-ID `nl.imdigital.nook` is een aanname. "Nook" is de werknaam: controleer de merknaam (BOIP/EUIPO) voor een release.
-- De naam, het karakter en de geluiden van Coucou zijn niet overgenomen; boring.notch is alleen als inspiratie gebruikt (GPL-3).
+## Bekende beperkingen
+
+- De app is ad-hoc ondertekend. Daardoor ziet macOS elke nieuwe build als een andere app en kunnen machtigingen en Keychain-toegang opnieuw gevraagd worden. Met een eigen Developer ID-certificaat gebeurt dat niet.
+- De hooks voor Claude Code en Codex volgen hun documentatie, maar zijn nog niet getest met de huidige versies.
+- macOS heeft geen API om meldingen van andere apps te lezen, dus meldingen filteren zit er niet in. Meldingen van je agents lopen wel via Nook.
+
+## Meedoen
+
+Issues en pull requests zijn welkom. Lees eerst [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Dank
+
+Het idee voor een app in de notch is geïnspireerd door [boring.notch](https://github.com/TheBoredTeam/boring.notch). Er is geen code van overgenomen.
+
+## Licentie
+
+[MIT](LICENSE) © 2026 Michan van der Hoek
