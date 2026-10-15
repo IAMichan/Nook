@@ -102,6 +102,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                             .lineLimit(2)
                     }
                     Spacer()
+                    recoveryButton
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { expanded.toggle() } }
@@ -117,6 +118,23 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             guard connector.id == "github", phase == .done else { return }
             load()
             refreshNow()
+        }
+    }
+
+    // MARK: - Recovery
+
+    /// What fixes the last failure: rejected credentials open the key fields, a network problem just retries.
+    @ViewBuilder
+    private var recoveryButton: some View {
+        if configured, isOn, case .error = connector.status.state {
+            let kind = connector.status.errorKind ?? .other
+            if kind.needsReconnect {
+                Button(tr("connector.reconnect")) { withAnimation { expanded = true } }
+                    .controlSize(.small)
+            } else {
+                Button(tr("connector.retry")) { refreshNow() }
+                    .controlSize(.small)
+            }
         }
     }
 

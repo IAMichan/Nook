@@ -126,6 +126,12 @@ enum CloudHelp {
         return url
     }
 
+    /// Records a failed refresh: the text for the user and the kind of failure for the "Reconnect" / "Try again" action.
+    static func fail(_ status: inout ConnectorStatus, _ error: Error, service: String) {
+        status.state = .error(errorText(error, service: service))
+        status.errorKind = ConnectorErrorKind.classify(error)
+    }
+
     static func errorText(_ error: Error, service: String) -> String {
         if let nook = error as? NookError { return nook.message }
         if error is URLError { return "No connection to \(service). Nook will try again later." }
@@ -264,6 +270,7 @@ final class GitHubConnector: CloudConnectorConfig {
         if status.updated == nil { status.state = .loading }
         var fresh: [String: Snapshot] = [:]
         var failures: [String] = []
+        var failureKind: ConnectorErrorKind?
         for account in available {
             guard let token = CloudHelp.secret(account.key("token")) else { continue }
             do {
@@ -271,6 +278,7 @@ final class GitHubConnector: CloudConnectorConfig {
                 fresh[account.id] = snapshot
                 AccountRegistry.shared.setIdentity("@" + snapshot.login, for: account.id)
             } catch {
+                failureKind = failureKind ?? ConnectorErrorKind.classify(error)
                 failures.append((available.count > 1 ? Self.accountName(account) + ": " : "") + CloudHelp.errorText(error, service: title))
             }
         }
@@ -280,6 +288,7 @@ final class GitHubConnector: CloudConnectorConfig {
             if !failures.isEmpty { status.detail = failures.joined(separator: " · ") }
         } else {
             status.state = .error(failures.joined(separator: " · "))
+            status.errorKind = failureKind
         }
     }
 
@@ -1041,7 +1050,7 @@ final class VercelConnector: CloudConnectorConfig {
             let fresh = try await fetch(token: token, limit: 12)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1250,7 +1259,7 @@ final class StripeConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, recentCount: 5)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1439,7 +1448,7 @@ final class NotionConnector: CloudConnectorConfig {
             let fresh = try await search(token: token, query: nil, count: 8)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1675,7 +1684,7 @@ final class CalcomConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, count: 20)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1866,7 +1875,7 @@ final class N8nConnector: CloudConnectorConfig {
             let fresh = try await fetch(rawBase: rawBase, key: key, failureCount: 10)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -2037,7 +2046,7 @@ final class ResendConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, count: 20)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
