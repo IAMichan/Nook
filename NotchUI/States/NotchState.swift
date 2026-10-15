@@ -28,7 +28,6 @@ enum PanelTab: String, CaseIterable, Identifiable {
 /// A task that opens inside the notch panel, over the current tab, instead of in a separate window.
 /// Closed with Back (or Escape); clicking outside the notch does not throw away what you were doing.
 enum NotchSheet: Equatable {
-    case newSession
     case details(UUID)
     case changes(UUID, file: String?)
     case commit(UUID)
@@ -36,7 +35,6 @@ enum NotchSheet: Equatable {
 
     var title: String {
         switch self {
-        case .newSession: return tr("ws.new.title")
         case .details: return tr("agents.run.details")
         case .changes: return tr("ws.changes.title")
         case .commit: return tr("ws.commit.title")

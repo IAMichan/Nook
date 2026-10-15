@@ -108,12 +108,10 @@ extension AppModel {
             workspace.selectedRunID = id
             viewModel.selectedAgentID = "run:" + id.uuidString
         }
-        if newSession {
-            viewModel.open(.newSession)
-        } else {
-            viewModel.sheet = nil
-            viewModel.show(.panel(.agents))
-        }
+        // A new session starts in the Agents tab itself: the + next to Sessions.
+        if newSession { viewModel.selectedAgentID = "new" }
+        viewModel.sheet = nil
+        viewModel.show(.panel(.agents))
     }
 
     /// The separate main window (chat, agents and workspace side by side), opened only on request.
