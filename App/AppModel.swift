@@ -51,6 +51,13 @@ final class AppModel: ObservableObject {
         let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
             self?.reloadLoops()
         }
+        tools.mediaControl = { [weak self] action in
+            switch action {
+            case "next": self?.nowPlaying.control(.next)
+            case "previous": self?.nowPlaying.control(.previous)
+            default: self?.nowPlaying.control(.playPause)
+            }
+        }
         tools.screenSnapshot = { [weak self] in
             guard let self else { throw ScreenError.nothing }
             return try await self.screenSnapshot()

@@ -68,7 +68,7 @@ extension AppModel {
                 subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
                 action: tr("button.view"),
                 color: NookTheme.amber,
-                target: .action { [weak self] in self?.viewModel.show(.panel(.connect)) }
+                target: .action { [weak self] in self?.openSettings(section: .connections) }
             ))
         }
 

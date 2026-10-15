@@ -25,6 +25,8 @@ final class NookTools {
     private let onLoopsChanged: () -> Void
 
     private(set) var specs: [ToolSpec] = []
+    /// Controls the music player ("play_pause", "next", "previous"); set by the app to the now-playing service.
+    var mediaControl: ((String) -> Void)?
     /// Supplies screen text from the live cache (fast). Without this, read_screen captures fresh OCR.
     var screenSnapshot: (() async throws -> ScreenSnapshot)?
 
@@ -300,15 +302,10 @@ final class NookTools {
                     }
                 },
                 tag: { _ in ("", .good) },
-                run: { input in
-                    let command: String
-                    switch input["action"] as? String {
-                    case "next": command = "next track"
-                    case "previous": command = "previous track"
-                    default: command = "playpause"
-                    }
-                    let target = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty ? "Spotify" : "Music"
-                    _ = SystemControl.appleScript("tell application \"\(target)\" to \(command)")
+                run: { [weak self] input in
+                    // One implementation of music control: the now-playing service (it knows which player is active).
+                    guard let control = self?.mediaControl else { throw NookError(tr("app.unavailable")) }
+                    control((input["action"] as? String) ?? "play_pause")
                     return "Done"
                 }
             ),

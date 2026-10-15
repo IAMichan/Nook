@@ -259,7 +259,8 @@ private struct ChatMessageView: View {
                         .textSelection(.enabled)
                     HStack(spacing: 4) {
                         SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
-                        SmallGhostButton(title: "Instellingen") { app.openSettings() }
+                        let recovery = ChatRecoveryAction.forError(message.text, selection: app.settings.selection)
+                        SmallGhostButton(title: app.recoveryTitle(recovery)) { app.performRecovery(recovery) }
                     }
                 }
             } else if !message.text.isEmpty {

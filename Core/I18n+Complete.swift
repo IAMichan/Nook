@@ -5,6 +5,8 @@ import Foundation
 
 let completionTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "recovery.chooseModel": "Kies een model",
+        "recovery.openServer": "Open %@",
         "agents.run.settingsInWindow": "Modus, rechten en model in het venster…",
         "ws.sidebar.external.needsYou": "Wacht op jou",
         "ws.sidebar.external.active": "Actief buiten Nook",
@@ -172,6 +174,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "agents.accountsInSettings": "Accounts",
     ],
     .en: [
+        "recovery.chooseModel": "Choose a model",
+        "recovery.openServer": "Open %@",
         "agents.run.settingsInWindow": "Mode, permissions and model in the window…",
         "ws.sidebar.external.needsYou": "Waiting for you",
         "ws.sidebar.external.active": "Active outside Nook",
@@ -339,6 +343,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "agents.accountsInSettings": "Accounts",
     ],
     .de: [
+        "recovery.chooseModel": "Modell wählen",
+        "recovery.openServer": "%@ öffnen",
         "agents.run.settingsInWindow": "Modus, Berechtigungen und Modell im Fenster…",
         "ws.sidebar.external.needsYou": "Wartet auf dich",
         "ws.sidebar.external.active": "Aktiv außerhalb von Nook",
