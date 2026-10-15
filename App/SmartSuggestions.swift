@@ -51,6 +51,12 @@ extension AppModel {
         if active.contains("mail") {
             ideas.append((50, tr("home.suggestions.mailToReply")))
         }
+        if active.contains("notes") {
+            ideas.append((52, tr("home.suggestions.notes")))
+        }
+        if active.contains("reminders") {
+            ideas.append((51, tr("home.suggestions.reminders")))
+        }
         for source in connectors.needingAttention.prefix(1) {
             ideas.append((52, tr("suggest.source", source.title)))
         }

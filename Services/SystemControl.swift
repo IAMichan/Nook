@@ -5,23 +5,35 @@ import AppKit
 enum SystemControl {
     /// Runs AppleScript and returns the string result. Safe to call from a background thread.
     @discardableResult
-    nonisolated static func appleScript(_ source: String) -> String? {
-        guard let script = NSAppleScript(source: source) else { return nil }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if error != nil { return nil }
-        return result.stringValue
+    nonisolated static func appleScript(_ source: String, timeout: TimeInterval = 4.0) -> String? {
+        appleScriptResult(source, timeout: timeout).text
     }
 
     /// Like `appleScript`, but also returns the error number. -1743 means: macOS has not granted Nook permission.
-    nonisolated static func appleScriptResult(_ source: String) -> (text: String?, errorNumber: Int?) {
-        guard let script = NSAppleScript(source: source) else { return (nil, nil) }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if let error {
-            return (nil, error[NSAppleScript.errorNumber] as? Int)
+    nonisolated static func appleScriptResult(_ source: String, timeout: TimeInterval = 4.0) -> (text: String?, errorNumber: Int?) {
+        let semaphore = DispatchSemaphore(value: 0)
+        var text: String?
+        var errorNum: Int?
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let script = NSAppleScript(source: source) else {
+                semaphore.signal()
+                return
+            }
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if let error {
+                errorNum = error[NSAppleScript.errorNumber] as? Int
+            } else {
+                text = result.stringValue
+            }
+            semaphore.signal()
         }
-        return (result.stringValue, nil)
+
+        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+            return (nil, -1712) // errAETimeout
+        }
+        return (text, errorNum)
     }
 
     /// Runs an executable with arguments, without a shell, and returns the output.
@@ -33,8 +45,9 @@ enum SystemControl {
         process.standardOutput = out
         process.standardError = out
         try process.run()
-        process.waitUntilExit()
+        // Read data before waitUntilExit to avoid pipe buffer deadlocks
         let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         let text = String(data: data, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
             throw NookError(text.isEmpty ? "The program exited with an error." : String(text.prefix(300)))

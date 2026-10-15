@@ -188,6 +188,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.calendarChart": "Maak een grafiek van mijn agenda deze week",
         "home.suggestions.github": "Wat wacht er op mij op GitHub?",
         "home.suggestions.writeMail": "Schrijf een mail",
+        "home.suggestions.notes": "Wat staat er in mijn Notities?",
+        "home.suggestions.reminders": "Welke taken heb ik openstaan?",
+        "home.suggestions.browser": "Vat deze webpagina samen",
         "home.inputPrompt": "Vraag Nook iets…",
 
         // MARK: Chat & Cards
@@ -928,6 +931,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.calendarChart": "Create a chart of my calendar this week",
         "home.suggestions.github": "What's waiting for me on GitHub?",
         "home.suggestions.writeMail": "Write an email",
+        "home.suggestions.notes": "What is in my Notes?",
+        "home.suggestions.reminders": "What tasks do I have open?",
+        "home.suggestions.browser": "Summarize this webpage",
         "home.inputPrompt": "Ask Nook anything…",
 
         // MARK: Chat & Cards
@@ -1668,6 +1674,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "home.suggestions.calendarChart": "Erstelle ein Diagramm meines Kalenders diese Woche",
         "home.suggestions.github": "Was wartet auf mich bei GitHub?",
         "home.suggestions.writeMail": "Schreibe eine E-Mail",
+        "home.suggestions.notes": "Was steht in meinen Notizen?",
+        "home.suggestions.reminders": "Welche Aufgaben sind noch offen?",
+        "home.suggestions.browser": "Fasse diese Webseite zusammen",
         "home.inputPrompt": "Frag Nook etwas…",
 
         // MARK: Chat & Cards

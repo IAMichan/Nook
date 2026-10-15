@@ -40,10 +40,12 @@ enum SourceCatalog {
         SourceDescriptor(id: "icalfeeds", title: "Andere agenda's", kind: .apiKey),
         SourceDescriptor(id: "calcom", title: "Cal.com", kind: .apiKey),
         SourceDescriptor(id: "reminders", title: "Herinneringen", kind: .builtIn),
+        SourceDescriptor(id: "notes", title: "Notities", kind: .builtIn),
         SourceDescriptor(id: loops, title: "Open punten", kind: .nook),
         SourceDescriptor(id: "mail", title: "Mail", kind: .builtIn),
         SourceDescriptor(id: "browser", title: "Browser", kind: .builtIn),
         SourceDescriptor(id: "files", title: "Bestanden", kind: .builtIn),
+        SourceDescriptor(id: "contacts", title: "Contacten", kind: .builtIn),
         SourceDescriptor(id: "clipboard", title: "Klembord", kind: .builtIn),
         SourceDescriptor(id: screen, title: "Scherm", kind: .builtIn),
         SourceDescriptor(id: "github", title: "GitHub", kind: .oauth),
@@ -69,10 +71,14 @@ enum SourceCatalog {
     private static let exactTools: [String: String] = [
         "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
         "check_availability": "calendar",
-        "create_reminder": "reminders", "complete_reminder": "reminders",
+        "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
+        "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
+        "read_browser_tab": "browser",
         "read_screen": screen, "read_app": screen,
+        "list_running_apps": screen, "get_active_app": screen,
+        "search_contacts": "contacts", "read_clipboard": "clipboard",
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
         "search_web": web, "read_webpage": web, "web_search": web,
         "read_source": "customsources", "send_to_source": "customsources",
@@ -94,6 +100,8 @@ enum SourceCatalog {
         (#"cal\.com"#, ["calcom"]),
         (#"herinnering\w*|reminders?|erinnerung\w*"#, ["reminders"]),
         (#"taken|takenlijst|tasks?|to-?do'?s?|aufgaben"#, ["reminders", loops]),
+        (#"notitie\w*|notes?|memo'?s?|aantekening\w*"#, ["notes"]),
+        (#"contact\w*|telefoon\w*|adresboek|address book"#, ["contacts"]),
         (#"open punten|open loops?"#, [loops]),
         (#"e-?mails?|mail|mailbox|inbox|postvak\w*|posteingang"#, ["mail"]),
         (#"browser\w*|tabs?|tabblad\w*|safari|chrome"#, ["browser"]),
@@ -282,7 +290,9 @@ enum SourceRouter {
     private static let intents: [(pattern: String, ids: [String])] = [
         (#"\w*mail\w*|inbox|postvak\w*|ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read|afzender\w*|senders?|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
         (#"tabs?|tabblad\w*|pagina|page|website|site|artikel|article|browser|gelezen|las ik"#, ["browser"]),
-        (#"bestand\w*|files?|document\w*|pdf|rapport|report|notities|notes|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
+        (#"notitie\w*|notes?|memo'?s?|aantekening\w*"#, ["notes"]),
+        (#"contact\w*|telefoon\w*|telefoonnummer|e-?mailadres|adresboek|address book"#, ["contacts"]),
+        (#"bestand\w*|files?|document\w*|pdf|rapport|report|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
         (#"code|repo\w*|pull|pr\b|prs\b|issues?|ci\b|build|merge|review|commit\w*|bug\w*|release|requirements?"#, ["github"]),
         (#"deploy\w*|vercel|productie|production|site live"#, ["vercel"]),
         (#"omzet|revenue|betaling\w*|payments?|stripe|klant\w*|customers?|facturen|invoices?|abonnement\w*|subscriptions?"#, ["stripe"]),
@@ -317,8 +327,14 @@ enum SourceCapabilities {
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
         "create_event": "afspraak maken", "update_event": "afspraak aanpassen",
         "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
+        "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
+        "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_mail": "mail zoeken (inbox en verzonden)", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
-        "search_files": "bestanden zoeken", "read_file": "document lezen", "read_screen": "scherm lezen", "read_app": "een open app lezen",
+        "search_files": "bestanden zoeken", "read_file": "document lezen",
+        "read_browser_tab": "geopende webpagina lezen",
+        "read_screen": "scherm lezen", "read_app": "een geopende of gesloten app lezen",
+        "list_running_apps": "draaiende apps zien", "get_active_app": "actieve app zien",
+        "search_contacts": "contacten zoeken", "read_clipboard": "klembord lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
         "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",
@@ -388,6 +404,15 @@ enum Prefetch {
     /// At most `limit` calls, most specific first. `relevant` comes from `SourceRouter.relevant`.
     static func calls(for text: String, relevant: Set<String>, limit: Int = 3) -> [Call] {
         var calls: [Call] = []
+        if relevant.contains("notes") {
+            calls.append(Call(tool: "list_notes", input: ["limit": 8]))
+        }
+        if relevant.contains("reminders") {
+            calls.append(Call(tool: "list_reminders", input: [:]))
+        }
+        if relevant.contains("browser") {
+            calls.append(Call(tool: "read_browser_tab", input: [:]))
+        }
         if relevant.contains("mail") {
             if matches(unread, text) {
                 calls.append(Call(tool: "mail_unread", input: [:]))
@@ -407,3 +432,4 @@ enum Prefetch {
         text.range(of: #"(?<![\p{L}\d])(?:"# + pattern + ")", options: [.regularExpression, .caseInsensitive]) != nil
     }
 }
+

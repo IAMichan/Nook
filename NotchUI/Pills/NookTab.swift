@@ -141,7 +141,11 @@ struct NookHomeTab: View {
         .padding(.vertical, 6)
         .frame(minHeight: 42)
         .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 21, style: .continuous)
+                .stroke(inputFocused ? NookTheme.iris.opacity(0.65) : NookTheme.line2, lineWidth: inputFocused ? 1.5 : 1)
+        )
+        .animation(.easeInOut(duration: 0.18), value: inputFocused)
     }
 
     private func send() {
@@ -196,19 +200,50 @@ private struct NookChatView: View {
     // MARK: Empty chat state: welcoming start
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(tr("chat.emptyTitle"))
-                .font(NookTheme.font(20, .semibold))
-                .foregroundStyle(NookTheme.paper)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tr("chat.emptyTitle"))
+                    .font(NookTheme.font(20, .semibold))
+                    .foregroundStyle(NookTheme.paper)
 
-            Text(tr("chat.emptySubtitle"))
-                .font(NookTheme.font(13.5))
-                .foregroundStyle(NookTheme.textSecondary)
+                Text(tr("chat.emptySubtitle"))
+                    .font(NookTheme.font(13))
+                    .foregroundStyle(NookTheme.textSecondary)
+            }
+
+            // Quick capability badges
+            HStack(spacing: 7) {
+                quickPromptPill(icon: "note.text", label: "Notities", prompt: tr("home.suggestions.notes"))
+                quickPromptPill(icon: "safari", label: "Browser", prompt: tr("home.suggestions.browser"))
+                quickPromptPill(icon: "checklist", label: "Taken", prompt: tr("home.suggestions.reminders"))
+                quickPromptPill(icon: "calendar", label: "Agenda", prompt: tr("home.suggestions.summarizeDay"))
+            }
+            .padding(.top, 2)
 
             Spacer()
 
             suggestions
         }
+    }
+
+    private func quickPromptPill(icon: String, label: String, prompt: String) -> some View {
+        Button {
+            app.handleUserText(prompt)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+                Text(label)
+                    .font(NookTheme.font(11.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.graphite))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
@@ -316,7 +351,11 @@ private struct NookChatView: View {
         .padding(.vertical, 6)
         .frame(minHeight: 42)
         .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 21, style: .continuous)
+                .stroke(inputFocused ? NookTheme.iris.opacity(0.65) : NookTheme.line2, lineWidth: inputFocused ? 1.5 : 1)
+        )
+        .animation(.easeInOut(duration: 0.18), value: inputFocused)
     }
 
     private func send() {
@@ -353,7 +392,20 @@ private struct ChatMessageView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: 0x272731), Color(hex: 0x1E1E26)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(NookTheme.line2.opacity(0.8), lineWidth: 1)
+                )
         }
     }
 

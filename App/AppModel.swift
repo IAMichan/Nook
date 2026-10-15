@@ -218,10 +218,11 @@ final class AppModel: ObservableObject {
             HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
         ].compactMap { $0 }
 
-        // Connectors: local (calendar, reminders, mail, browser, files, clipboard) and authenticated services.
+        // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.
         connectors.register([
             CalendarConnector(calendar: calendar),
             RemindersConnector(calendar: calendar),
+            NotesConnector(),
             MailConnector(),
             BrowserConnector(),
             FilesConnector(),
@@ -959,9 +960,32 @@ final class AppModel: ObservableObject {
         options: [.caseInsensitive]
     )
 
-    /// An open app the question names ("wat staat er in Notities"), leaving out apps that have their own source.
+    /// An app the question names ("wat staat er in Notities", "lees Slack", "kijk in WhatsApp"),
+    /// including open apps and well-known Mac apps.
     static func appNamed(in text: String) -> String? {
         let own: Set<String> = ["com.apple.mail", "com.apple.iCal", "com.apple.reminders", "com.apple.finder"]
+        let lower = text.lowercased()
+
+        // Common apps mentioned directly in questions
+        let common = [
+            "notities": "Notes", "notes": "Notes",
+            "slack": "Slack", "whatsapp": "WhatsApp",
+            "teams": "Teams", "msteams": "MSTeams",
+            "discord": "Discord", "telegram": "Telegram",
+            "safari": "Safari", "chrome": "Google Chrome",
+            "edge": "Microsoft Edge", "arc": "Arc",
+            "spotify": "Spotify", "terminal": "Terminal",
+            "xcode": "Xcode", "cursor": "Cursor",
+            "figma": "Figma", "excel": "Excel", "word": "Word",
+            "notion": "Notion", "things": "Things"
+        ]
+        for (keyword, appName) in common {
+            let pattern = #"(?<![\p{L}\d])"# + keyword + #"(?![\p{L}\d])"#
+            if lower.range(of: pattern, options: .regularExpression) != nil {
+                return appName
+            }
+        }
+
         for app in ScreenReader.openApps() where !own.contains(app.bundleIdentifier ?? "") {
             guard let name = app.localizedName, name.count >= 3 else { continue }
             let pattern = #"(?<![\p{L}\d])"# + NSRegularExpression.escapedPattern(for: name) + #"(?![\p{L}\d])"#
