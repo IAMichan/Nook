@@ -28,6 +28,9 @@ struct WorkspaceView: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var pane: WorkspacePane = .sessions
     @State private var showInspector = true
+    /// Whether the inspector may be shown right now. It is switched off before the sidebar collapses and back on after the
+    /// sidebar is back, so the window never has to change two columns in one layout pass (that loops).
+    @State private var inspectorAllowed = true
     @State private var showNewSession = false
     @State private var columns: NavigationSplitViewVisibility = .all
 
@@ -84,14 +87,24 @@ struct WorkspaceView: View {
         }
         // The session list belongs to Agents; Chat has its own list of Nooks, Workspace its own tabs.
         .onChange(of: pane) { _, new in
-            withAnimation { columns = new == .sessions ? .all : .detailOnly }
+            Task { @MainActor in
+                if new == .sessions {
+                    columns = .all
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    inspectorAllowed = pane == .sessions
+                } else {
+                    inspectorAllowed = false
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if pane == new { columns = .detailOnly }
+                }
+            }
         }
     }
 
     /// Inspector accompanies session view; remains closed for Worktrees and Usage tabs.
     private var inspectorBinding: Binding<Bool> {
         Binding(
-            get: { showInspector && pane == .sessions && workspace.selectedRunID != nil },
+            get: { showInspector && inspectorAllowed && pane == .sessions && workspace.selectedRunID != nil },
             set: { newValue in
                 // SwiftUI writes false while the inspector is unavailable; don't let that overwrite the user's choice.
                 if pane == .sessions && workspace.selectedRunID != nil { showInspector = newValue }
