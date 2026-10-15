@@ -647,7 +647,7 @@ struct AgentsTab: View {
                         Message(author: tr("agents.you"), text: session.lastPrompt, color: NookTheme.textSecondary)
                     }
                     if !session.lastReply.isEmpty {
-                        Message(author: session.agent.shortName, text: session.lastReply, color: session.agent.color)
+                        Message(author: session.agent.shortName, text: session.lastReply, color: session.agent.color, markdown: true)
                     }
                     if session.lastPrompt.isEmpty && session.lastReply.isEmpty {
                         Text(tr("agents.noMessagesInTranscript"))
@@ -1303,17 +1303,23 @@ private struct Message: View {
     let author: String
     let text: String
     let color: Color
+    /// Agent replies are Markdown; render them formatted instead of as raw text.
+    var markdown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(author)
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(color)
-            Text(text)
-                .font(NookTheme.font(12.5))
-                .foregroundStyle(Color(hex: 0xC9C7D2))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            if markdown {
+                MarkdownView(text: text, size: 12.5)
+            } else {
+                Text(text)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(Color(hex: 0xC9C7D2))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         }
     }
 }
