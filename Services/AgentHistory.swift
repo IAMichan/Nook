@@ -260,6 +260,15 @@ final class AgentHistory: ObservableObject {
             ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
                         apiKey: profile.kind == .claude && profile.usesAPIKey && !(Keychain.read(profile.keychainAccount) ?? "").isEmpty)
         }
+        // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let quick = scanner.quickScan(homes)
+            Task { @MainActor in
+                guard let self else { return }
+                if self.profileAccounts != quick.accounts { self.profileAccounts = quick.accounts }
+                for (kind, path) in quick.executables where self.executables[kind] == nil { self.executables[kind] = path }
+            }
+        }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let result = scanner.scan(homes, excludingFolder: ownFolder)
             Task { @MainActor in
@@ -382,11 +391,23 @@ private final class HistoryScanner: @unchecked Sendable {
             .sorted { $0.ended > $1.ended }
 
         var usage: [String: AgentUsageSummary] = [:]
+        for home in homes where fm.fileExists(atPath: home.url.path) && home.kind != .gemini {
+            usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
+        }
+        let accounts = readAccounts(homes)
+        if homes.contains(where: { $0.kind == .gemini && fm.fileExists(atPath: $0.url.path) }) { installed.insert(.gemini) }
+
+        let executables = locateExecutables()
+        installed.formUnion(executables.keys)
+        return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
+    }
+
+    /// Who is logged in per account. Only reads small config files, so it is fast.
+    private func readAccounts(_ homes: [ProfileHome]) -> [String: AgentAccount] {
         var accounts: [String: AgentAccount] = [:]
-        for home in homes where fm.fileExists(atPath: home.url.path) {
+        for home in homes where FileManager.default.fileExists(atPath: home.url.path) {
             switch home.kind {
             case .claude:
-                usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
                 if home.apiKey {
                     // An API key takes precedence, even if an old login remains in the directory.
                     accounts[home.id] = AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "API")
@@ -394,17 +415,25 @@ private final class HistoryScanner: @unchecked Sendable {
                     accounts[home.id] = account
                 }
             case .codex:
-                usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
                 if let account = codexAccount(home.url) { accounts[home.id] = account }
             case .gemini:
-                installed.insert(.gemini)
                 if let account = geminiAccount(home.url) { accounts[home.id] = account }
             }
         }
+        return accounts
+    }
 
-        let executables = locateExecutables()
-        installed.formUnion(executables.keys)
-        return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
+    /// Fast first pass for the Accounts view: logins and executables at known locations, without reading transcripts
+    /// or consulting the user's shell.
+    func quickScan(_ homes: [ProfileHome]) -> (accounts: [String: AgentAccount], executables: [AgentKind: String]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let fm = FileManager.default
+        var found = foundExecutables
+        for kind in AgentKind.allCases where found[kind] == nil {
+            if let hit = kind.executableCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) { found[kind] = hit }
+        }
+        return (readAccounts(homes), found)
     }
 
     // MARK: Executables
