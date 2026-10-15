@@ -155,7 +155,10 @@ struct RunDetailView: View {
         let events = workspace.timeline(runID)
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                // A plain VStack, not a LazyVStack: lazily estimated row heights plus scrolling to the bottom made SwiftUI's
+                // scroll view re-adjust its offset forever (the window froze) whenever the width changed, e.g. when the
+                // sidebar collapsed or a sheet opened.
+                VStack(alignment: .leading, spacing: 10) {
                     if events.isEmpty {
                         Text(tr("ws.timeline.empty"))
                             .font(NookTheme.font(12.5))
@@ -193,7 +196,7 @@ struct RunDetailView: View {
                 .frame(maxWidth: 920, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .defaultScrollAnchor(.bottom)
             .onChange(of: events.count) { _, _ in
                 if followTail { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
