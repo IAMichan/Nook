@@ -54,6 +54,7 @@ targets:
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
+        NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.
         NSRemindersFullAccessUsageDescription: Nook creates reminders for you.
         NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions.
         NSSpeechRecognitionUsageDescription: Nook transcribes speech to text, preferably on-device.
@@ -65,11 +66,13 @@ targets:
         com.apple.security.device.audio-input: true
         com.apple.security.automation.apple-events: true
         com.apple.security.personal-information.calendars: true
+        com.apple.security.personal-information.addressbook: true
     settings:
       base:
         PRODUCT_NAME: Nook
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
-        ENABLE_HARDENED_RUNTIME: NO
+        # Hardened runtime: other programs cannot inject code into Nook and inherit its screen, microphone and automation access.
+        ENABLE_HARDENED_RUNTIME: YES
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
@@ -85,6 +88,9 @@ targets:
       - path: Brain/MailStats.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
+      - path: Brain/CommandRisk.swift
+      - path: Brain/NetworkGuard.swift
+      - path: Core/NookError.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift

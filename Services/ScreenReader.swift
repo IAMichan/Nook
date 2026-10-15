@@ -30,9 +30,13 @@ enum ScreenError: LocalizedError {
 /// The image never leaves your Mac; only recognized text may be sent to the model.
 @MainActor
 final class ScreenReader {
+    /// Password managers and Nook itself are never read, not by OCR, not through accessibility, not through scripting.
     static let excludedBundles: Set<String> = [
-        "com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess",
-        "com.apple.Passwords", "com.bitwarden.desktop", "nl.imdigital.nook"
+        "com.1password.1password", "com.agilebits.onepassword7", "com.agilebits.onepassword-osx", "com.apple.keychainaccess",
+        "com.apple.Passwords", "com.bitwarden.desktop", "com.dashlane.dashlanephonefinal", "com.dashlane.Dashlane",
+        "com.lastpass.LastPass", "com.lastpass.lastpassmacdesktop", "org.keepassxc.keepassxc", "com.keepassium.ios",
+        "in.sinew.Enpass-Desktop", "in.sinew.Enpass7", "me.proton.pass.electron", "ch.protonmail.pass", "com.nordpass.macos.NordPass",
+        "com.roboform.mac", "com.keeper.keeper", "com.apple.SecurityAgent", "nl.imdigital.nook"
     ]
 
     func capture() async throws -> ScreenSnapshot {

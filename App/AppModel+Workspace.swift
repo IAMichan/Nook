@@ -115,7 +115,7 @@ extension AppModel {
             detail = .diff(title: pending.summary, lines: edit.lines, note: assessment.note)
             height = 150 + min(166, CGFloat(edit.lines.count) * 15 + 34)
         } else {
-            detail = .command(String((ToolSummary.command(input) ?? pending.summary).prefix(160)), note: assessment.note)
+            detail = .command(String((ToolSummary.command(input) ?? pending.summary).prefix(20_000)), note: assessment.note)
             height = 214
         }
         var extra = [CardAction(label: tr("ws.approval.open"), outcome: .callback("\(token)#open", ""))]

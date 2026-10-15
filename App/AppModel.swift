@@ -726,7 +726,7 @@ final class AppModel: ObservableObject {
             chat.setBusy(false, conversation: conversation)
             nookFinished(conversation)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(plan), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            if canRunWithoutAsking(plan, request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
@@ -921,7 +921,14 @@ final class AppModel: ObservableObject {
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
     func openReference(_ reference: SourceReference) {
         guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
-        if url.isFileURL, !FileText.isAllowed(url) { return }
+        if url.isFileURL {
+            guard FileText.isAllowed(url) else { return }
+            // Opening an app, script or installer would run it: show those in Finder instead.
+            if FileText.couldExecute(url) {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                return
+            }
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -1101,8 +1108,8 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            // Automatically execute safe actions requested directly if auto-run is enabled.
-            if !silentIfNone, canRunWithoutAsking(plan) {
+            // A look at the screen is always shown first: the plan came from what is on screen, not from the user's words.
+            if !silentIfNone, canRunWithoutAsking(plan, request: nil) {
                 remember(user: userText, nook: plan.text.isEmpty ? "(meteen uitgevoerd)" : plan.text)
                 speakIfAsked(plan.text.isEmpty ? "Gedaan." : plan.text)
                 viewModel.removePending(id: "thinking")
@@ -1284,8 +1291,31 @@ final class AppModel: ObservableObject {
     /// and without side effects on third parties. Events, emails, links, shortcuts require approval.
     static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"]
 
-    private func canRunWithoutAsking(_ plan: BrainPlan) -> Bool {
-        settings.autoRunSafe && !plan.actions.isEmpty && plan.actions.allSatisfy { Self.safeTools.contains($0.tool) }
+    /// Only when the user's own words ask for each action. The prompt also carries text from others (screen, mail, web, invites),
+    /// and such text must never be enough to make Nook act without a click. `request == nil` means no user request is known.
+    private func canRunWithoutAsking(_ plan: BrainPlan, request: String?) -> Bool {
+        guard settings.autoRunSafe, !plan.actions.isEmpty, let request else { return false }
+        return plan.actions.allSatisfy { Self.safeTools.contains($0.tool) && Self.request(request, asksFor: $0) }
+    }
+
+    nonisolated static func request(_ request: String, asksFor action: PlannedAction) -> Bool {
+        let text = request.lowercased()
+        func mentions(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        switch action.tool {
+        case "open_app":
+            let name = ((action.input["name"] as? String) ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+            return !name.isEmpty && text.contains(name) && mentions(#"\b(open|start|launch|öffne|starte)"#)
+        case "media_control":
+            return mentions(#"muziek|music|musik|nummer|liedje|song|track|speel|play|pauze|pause|stop|volgende|vorige|next|previous|skip|shuffle|herhaal|repeat"#)
+        case "set_volume":
+            return mentions(#"volume|geluid|harder|zachter|louder|quieter|lauter|leiser|mute|dempen"#)
+        case "create_reminder":
+            return mentions(#"herinner|reminder|erinner|onthoud|remember"#)
+        case "add_open_loop", "complete_open_loop":
+            return mentions(#"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt"#)
+        default:
+            return false
+        }
     }
 
     private func execute(_ plan: BrainPlan) {
@@ -1613,7 +1643,7 @@ final class AppModel: ObservableObject {
         let detail: CardDetail
         let height: CGFloat
         if request.diff.isEmpty {
-            detail = .command(String(request.summary.prefix(160)), note: request.assessment.note)
+            detail = .command(String(request.summary.prefix(20_000)), note: request.assessment.note)
             height = 214
         } else {
             detail = .diff(title: request.summary, lines: request.diff, note: request.assessment.note)
@@ -2057,7 +2087,8 @@ final class AppModel: ObservableObject {
     /// Deterministically recognized action: prepared directly as an action plan without calling the brain.
     private func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
-        if canRunWithoutAsking(plan) {
+        // Recognized word for word from the user's own command, so it counts as asked for.
+        if settings.autoRunSafe, Self.safeTools.contains(tool) {
             execute(plan)
             return
         }

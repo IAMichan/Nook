@@ -178,7 +178,9 @@ final class RetrievalLedger {
 /// Such lines are not passed to the brain; the brain receives the numbered list. For tools without such lines: every line containing an
 /// https link becomes a reference, with the remainder of the line as the title.
 enum ReferenceParser {
-    static let marker = "@ref "
+    /// Includes a random part chosen at launch, so a mail, note or web page that contains a line starting with "@ref"
+    /// cannot pose as a reference (with a link of its choosing). Only Nook's own tools write this marker.
+    static let marker = "@ref-" + String(UUID().uuidString.prefix(8)) + " "
 
     static func line(title: String, url: String?, detail: String = "") -> String {
         let clean = { (text: String) in text.replacingOccurrences(of: "|", with: "/").replacingOccurrences(of: "\n", with: " ") }

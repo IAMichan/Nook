@@ -139,7 +139,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     var activeRuns: [WorkspaceRun] { runs.filter { $0.status.isActive } }
-    var attentionCount: Int { runs.filter { $0.status == .waitingApproval || $0.status == .failed && !$0.archived }.count }
+    var attentionCount: Int { runs.filter { ($0.status == .waitingApproval || $0.status == .failed) && !$0.archived }.count }
     func isRunning(_ id: UUID) -> Bool { processes[id] != nil }
 
     /// Other active sessions working in the same directory: concurrent edits could collide.
