@@ -95,6 +95,7 @@ extension AppModel {
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
+        recap.turnEnded(session: "run-" + run.id.uuidString)
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)

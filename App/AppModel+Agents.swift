@@ -22,7 +22,9 @@ extension AppModel {
             }
         }
         guard let kind = AgentKind(agentName: session.name), !session.cwd.isEmpty else { return nil }
-        return history.sessions.first { $0.agent == kind && $0.cwd == session.cwd }?.sessionID
+        // The same agent and folder can run under another account: only a transcript of this session's own account counts.
+        let account = profile(for: session)?.id
+        return history.sessions.first { $0.agent == kind && $0.cwd == session.cwd && (account == nil || $0.profileID == account) }?.sessionID
     }
 
     /// Can Nook continue this running session's conversation itself?

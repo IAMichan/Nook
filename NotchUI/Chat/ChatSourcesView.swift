@@ -393,7 +393,7 @@ struct ContextInspector: View {
         guard scope.allows(source.id) else { return tr("context.offForNook") }
         var parts: [String] = []
         if case .error(let message) = source.status.state { parts.append(message) } else if !source.status.headline.isEmpty { parts.append(source.status.headline) }
-        if let updated = source.status.updated { parts.append(tr("context.updated", NookDates.relative(updated))) }
+        if let updated = source.status.updated { parts.append(tr("context.updated", NookDates.ago(updated))) }
         return parts.isEmpty ? tr("context.connected") : parts.joined(separator: " · ")
     }
 

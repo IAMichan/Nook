@@ -80,6 +80,7 @@ struct WorkspaceView: View {
         }
         .onChange(of: workspace.selectedRunID) { _, id in
             if id != nil && pane != .sessions && pane != .chat { pane = .sessions }
+            if id != nil { app.selectedExternalSession = nil }
         }
         // The session list belongs to Agents; Chat has its own list of Nooks, Workspace its own tabs.
         .onChange(of: pane) { _, new in
@@ -105,6 +106,10 @@ struct WorkspaceView: View {
             if let id = workspace.selectedRunID, workspace.run(id) != nil {
                 RunDetailView(runID: id)
                     .id(id)
+            } else if let key = app.selectedExternalSession, let selection = app.sessionSelection(key) {
+                AgentSessionDetail(selection: selection)
+                    .id(key)
+                    .padding(20)
             } else {
                 WSEmptyState(
                     symbol: "sparkles.rectangle.stack",
@@ -152,7 +157,6 @@ struct WorkspaceView: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            DefaultAccountMenu()
             Button {
                 showInspector.toggle()
             } label: {
@@ -162,35 +166,6 @@ struct WorkspaceView: View {
             .help(tr("ws.inspector.toggle"))
             .disabled(pane != .sessions)
         }
-    }
-}
-
-/// Quickly switch default account per agent. Active and past sessions retain their configured account.
-struct DefaultAccountMenu: View {
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        Menu {
-            ForEach(RunProvider.allCases) { provider in
-                let kind = provider.kind
-                let all = app.profiles.profiles(for: kind)
-                Section(tr("ws.account.defaultFor", kind.name)) {
-                    ForEach(all) { profile in
-                        Toggle(isOn: Binding(
-                            get: { app.profiles.isPreferred(profile) },
-                            set: { if $0 { app.makeDefault(profile) } }
-                        )) {
-                            Text(AccountLabel.line(profile, app: app))
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button(tr("ws.account.manage")) { app.openSettings(section: .agents) }
-        } label: {
-            Label(tr("ws.account.menu"), systemImage: "person.crop.circle")
-        }
-        .help(tr("ws.account.menu.help"))
     }
 }
 

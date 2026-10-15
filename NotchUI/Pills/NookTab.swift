@@ -374,22 +374,79 @@ private struct TypingIndicator: View {
 private struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
+    @State private var query = ""
+    @State private var showArchived = false
+    @State private var renaming: UUID?
+    @State private var nameDraft = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             NewNookButton { app.newChat() }
 
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 10.5)).foregroundStyle(NookTheme.textTertiary)
+                TextField("", text: $query, prompt: Text(tr("nooks.search")).foregroundStyle(NookTheme.textTertiary))
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.paper)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(chat.history) { conversation in
-                        NookRow(conversation: conversation, selected: conversation.id == chat.activeID) {
-                            app.openConversation(conversation.id)
-                        }
-                        .contextMenu {
-                            Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+                    let items = chat.list(query: query, showArchived: showArchived)
+                    if items.isEmpty {
+                        Text(tr(query.isEmpty ? "nooks.none" : "nooks.noMatches"))
+                            .font(NookTheme.font(11.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 4)
+                    }
+                    ForEach(items) { conversation in
+                        if renaming == conversation.id {
+                            TextField("", text: $nameDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .font(NookTheme.font(12))
+                                .onSubmit {
+                                    chat.rename(conversation.id, to: nameDraft)
+                                    renaming = nil
+                                }
+                                .onExitCommand { renaming = nil }
+                        } else {
+                            NookRow(conversation: conversation, selected: conversation.id == chat.activeID) {
+                                app.openConversation(conversation.id)
+                            }
+                            .contextMenu {
+                                Button(tr("nooks.rename")) {
+                                    nameDraft = conversation.title
+                                    renaming = conversation.id
+                                }
+                                if !conversation.archived {
+                                    Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
+                                }
+                                Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
+                                    chat.setArchived(!conversation.archived, conversation.id)
+                                }
+                                Divider()
+                                Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+                            }
                         }
                     }
                 }
+            }
+
+            if chat.hasArchived || showArchived {
+                Button {
+                    showArchived.toggle()
+                } label: {
+                    Label(tr(showArchived ? "nooks.hideArchive" : "nooks.showArchive"), systemImage: showArchived ? "tray.full" : "archivebox")
+                        .font(NookTheme.font(11.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
             }
         }
         .padding(.trailing, 12)
@@ -460,8 +517,8 @@ private struct NookRow: View {
         switch conversation.status {
         case .working: return tr("nooks.working")
         case .waiting: return tr("nooks.waiting")
-        case .unread: return tr("nooks.doneAt", NookDates.relative(conversation.updated))
-        case .idle: return conversation.preview.isEmpty ? NookDates.relative(conversation.updated) : conversation.preview
+        case .unread: return tr("nooks.doneAt", NookDates.ago(conversation.updated))
+        case .idle: return conversation.preview.isEmpty ? NookDates.ago(conversation.updated) : conversation.preview
         }
     }
 }

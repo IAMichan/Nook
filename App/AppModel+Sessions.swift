@@ -88,4 +88,25 @@ extension AppModel {
             return key.map { !shown.contains($0) } ?? true
         }
     }
+
+    /// What an id from the session list points at ("live:<session id>", "past:<past session id>"), if it still exists.
+    func sessionSelection(_ id: String) -> AgentSessionSelection? {
+        if id.hasPrefix("live:") {
+            let key = String(id.dropFirst(5))
+            return agentSessions.first { $0.id == key }.map { .live($0) }
+        }
+        if id.hasPrefix("past:") {
+            let key = String(id.dropFirst(5))
+            return history.sessions.first { $0.id == key }.map { .past($0) }
+        }
+        return nil
+    }
+
+    /// The sessions the main window lists besides the ones Nook runs: waiting for you, active, and earlier.
+    func externalSessionRecords(limitEarlier: Int = 25) -> [AgentSessionRecord] {
+        let external = mergedSessions.filter { $0.leading != .nook }
+        let current = external.filter { $0.section != .earlier }
+        let earlier = external.filter { $0.section == .earlier }.prefix(limitEarlier)
+        return current + earlier
+    }
 }

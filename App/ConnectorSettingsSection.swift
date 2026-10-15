@@ -224,9 +224,9 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             let headline = connector.status.headline
             let base = headline.isEmpty ? tr("connect.status.connected") : headline
             // When it was last successful, providing a health indicator for the connection.
-            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? "")
+            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? "")
         case .error(let message):
-            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.relative($0)) } ?? "")
+            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.ago($0)) } ?? "")
         }
     }
 

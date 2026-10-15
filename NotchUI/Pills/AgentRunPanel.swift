@@ -121,37 +121,8 @@ struct AgentRunPanel: View {
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
-        let capabilities = run.provider.capabilities
         return Menu {
-            Section(tr("agents.run.nextTurn")) {
-                Picker(tr("agents.run.mode"), selection: Binding(
-                    get: { run.mode },
-                    set: { workspace.configure(runID, mode: $0) }
-                )) {
-                    ForEach(ExecutionMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .disabled(!idle || !capabilities.planMode)
-                Picker(tr("agents.run.permission"), selection: Binding(
-                    get: { run.permission },
-                    set: { workspace.configure(runID, permission: $0) }
-                )) {
-                    ForEach(capabilities.policies) { policy in
-                        Text(policy.label).tag(policy)
-                    }
-                }
-                .disabled(!idle)
-                Picker(tr("agents.run.model"), selection: Binding(
-                    get: { run.model },
-                    set: { workspace.configure(runID, model: $0) }
-                )) {
-                    ForEach(modelChoices(run), id: \.self) { model in
-                        Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
-                    }
-                }
-                .disabled(!idle)
-            }
+            Button(tr("agents.run.settingsInWindow")) { app.openWorkspace(run: runID) }
             Divider()
             if run.status.isActive {
                 Button(tr("ws.action.stop")) { workspace.stop(runID) }
@@ -187,12 +158,6 @@ struct AgentRunPanel: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(tr("agents.run.actions"))
-    }
-
-    private func modelChoices(_ run: WorkspaceRun) -> [String] {
-        var list = run.provider.suggestedModels
-        if !run.model.isEmpty, !list.contains(run.model) { list.append(run.model) }
-        return list
     }
 
     // MARK: Timeline

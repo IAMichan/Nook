@@ -83,10 +83,22 @@ struct RunDetailView: View {
                     Chip(text: tr("ws.header.accountGone"), color: NookTheme.amber, systemImage: "person.crop.circle.badge.exclamationmark")
                 }
                 Chip(text: (run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model)), systemImage: "cpu")
-                Chip(text: run.mode.label, color: run.mode == .plan ? Color(hex: 0x8AB4F8) : WS.secondary)
-                Chip(text: run.permission.label, color: run.permission == .bypass ? NookTheme.coral : WS.secondary,
-                     systemImage: run.permission == .bypass ? "exclamationmark.shield" : "checkmark.shield")
-                    .help(run.permission.help(for: run.provider))
+                // Mode, permissions and model of the next turn: click to change (only while the agent is idle).
+                Menu {
+                    Section(tr("agents.run.nextTurn")) { NextTurnSettings(run: run) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Chip(text: run.mode.label, color: run.mode == .plan ? Color(hex: 0x8AB4F8) : WS.secondary)
+                        Chip(text: run.permission.label, color: run.permission == .bypass ? NookTheme.coral : WS.secondary,
+                             systemImage: run.permission == .bypass ? "exclamationmark.shield" : "checkmark.shield")
+                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(WS.tertiary)
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(run.permission.help(for: run.provider))
                 Spacer(minLength: 0)
             }
             HStack(spacing: 6) {

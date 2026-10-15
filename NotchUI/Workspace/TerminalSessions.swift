@@ -84,6 +84,49 @@ final class TerminalStore: ObservableObject {
     }
 }
 
+extension TerminalStore {
+    /// The one way Nook's brain touches a shell: it proposes a command, the user approves the whole command in the plan,
+    /// and it runs in a visible terminal in the workspace, so output and errors can be read there. There is no read-only
+    /// variant and no hidden execution.
+    var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "run_command",
+                description: "Runs a shell command in a visible terminal of Nook's workspace, in an optional folder. Use it only when the user asks for something that needs a command line; the user approves the exact command first and sees its output in the terminal.",
+                schema: [
+                    "type": "object",
+                    "properties": [
+                        "command": ["type": "string", "description": "The complete shell command."],
+                        "folder": ["type": "string", "description": "Folder to run it in. Defaults to the home folder."]
+                    ],
+                    "required": ["command"]
+                ],
+                kind: .action,
+                // The whole command, never shortened: what is approved must be what is shown.
+                summarize: { input in "Terminal: \((input["command"] as? String) ?? "")" },
+                tag: { input in
+                    let level = CommandRisk.assess((input["command"] as? String) ?? "").level
+                    return level == .safe ? ("", .neutral) : (tr("terminal.tag.review"), .caution)
+                },
+                run: { input in
+                    let command = ((input["command"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !command.isEmpty else { throw NookError(tr("terminal.tool.empty")) }
+                    let home = FileManager.default.homeDirectoryForCurrentUser.path
+                    var folder = ((input["folder"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if folder.isEmpty { folder = home }
+                    folder = (folder as NSString).expandingTildeInPath
+                    var isDirectory: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else {
+                        throw NookError(tr("terminal.tool.noFolder", folder))
+                    }
+                    AppModel.shared.openTerminal(in: folder, command: command, title: String(command.prefix(40)))
+                    return tr("terminal.tool.started", command)
+                }
+            )
+        ]
+    }
+}
+
 /// Hosts a session's terminal view in SwiftUI; the same view instance is reused, so output survives tab switches.
 private struct TerminalHost: NSViewRepresentable {
     let session: TerminalSession

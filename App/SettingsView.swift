@@ -745,7 +745,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
                     Text(localDetail(source)).font(.caption).foregroundStyle(.secondary)
-                    Text(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? ""))
+                    Text(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? ""))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)

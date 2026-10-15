@@ -69,13 +69,13 @@ final class AppModel: ObservableObject {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        return tools.specs + chatTools + connectors.tools + webSpecs + BrowserStore.shared.tools
+        return tools.specs + chatTools + connectors.tools + webSpecs + BrowserStore.shared.tools + TerminalStore.shared.tools
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        tools.specs + chatTools + connectors.hubTools + connectors.sources.flatMap { $0.tools } + web.specs(includeSearch: true)
+        tools.specs + chatTools + connectors.hubTools + connectors.sources.flatMap { $0.tools } + web.specs(includeSearch: true) + BrowserStore.shared.tools + TerminalStore.shared.tools
     }
 
     /// Tools available for a chat prompt: scoped to permitted sources and tracked via ledger
@@ -201,6 +201,7 @@ final class AppModel: ObservableObject {
         // Always install newest hook script version so existing integrations stay up to date.
         try? HookScript.install()
         hub.recap = recap
+        workspace.recap = recap
         startWorkspace()
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
@@ -322,6 +323,8 @@ final class AppModel: ObservableObject {
     // MARK: Stored state used by the extensions
     // Extensions cannot hold stored properties, so state that belongs to a feature lives here.
 
+    /// The agent session open in the main window that Nook does not run itself ("live:<id>" or "past:<id>"), if any.
+    @Published var selectedExternalSession: String?
     /// The first-run flow is showing in the main window.
     @Published var showOnboarding = false
     /// The Settings window (created on first use).
