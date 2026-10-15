@@ -108,6 +108,8 @@ final class AgentHub: ObservableObject {
     private var pendingQuestions: [String: PendingQuestion] = [:]
     private let server = UnixSocketServer(path: NookPaths.socketURL.path)
     private var pruneTimer: Timer?
+    /// Every agent process from the latest scan, including those reporting via hooks: to end a session from Nook.
+    private var processes: [DetectedAgent] = []
     private var scanTimer: Timer?
 
     /// After this many seconds without answer, agent prompts user directly (hook timeout is 120s).
@@ -142,6 +144,7 @@ final class AgentHub: ObservableObject {
     func refreshDetected() {
         Task {
             let found = await LocalAgentScanner.scan()
+            processes = found
             let hooked = Set(records.values.map { "\($0.agent)|\($0.cwd)" })
             var seen = Set<String>()
             detected = found.compactMap { agent in
@@ -221,6 +224,51 @@ final class AgentHub: ObservableObject {
 
     func answerQuestionInTerminal(_ id: String) {
         closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "question is in the terminal"))
+    }
+
+    /// The multiple-choice question this session is waiting on, if any, so it can be answered in the Agents tab.
+    func question(for sessionKey: String) -> AgentQuestionRequest? {
+        pendingQuestions.values.first { $0.request.sessionKey == sessionKey }?.request
+    }
+
+    /// The process behind a session: from the process scan for detected sessions, otherwise matched on agent and folder.
+    /// Nil when unknown or ambiguous (two of the same agent in one folder), so Nook never ends the wrong one.
+    func processID(for session: AgentSession) -> Int32? {
+        if session.id.hasPrefix("proc-") { return Int32(session.id.dropFirst(5)) }
+        guard !session.cwd.isEmpty else { return nil }
+        let matches = processes.filter { $0.name == session.name && $0.cwd == session.cwd }
+        return matches.count == 1 ? matches[0].pid : nil
+    }
+
+    /// Ends a session's process: politely (SIGTERM, so the agent saves its conversation), forced after a few seconds.
+    /// Pending questions and approvals are released and the session disappears from the list.
+    @discardableResult
+    func end(_ session: AgentSession) -> Bool {
+        guard let pid = processID(for: session), pid > 1 else { return false }
+        guard kill(pid, SIGTERM) == 0 else { return false }
+        Task.detached {
+            for _ in 0..<12 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if kill(pid, 0) != 0 { return }
+            }
+            _ = kill(pid, SIGKILL)
+        }
+        forget(session.id)
+        processes.removeAll { $0.pid == pid }
+        detected.removeAll { $0.id == session.id }
+        return true
+    }
+
+    /// Removes a session from the list, releasing anything it was waiting on.
+    func forget(_ key: String) {
+        for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
+            closeApproval(id, response: nil, status: nil, step: nil)
+        }
+        for (id, pending) in pendingQuestions where pending.request.sessionKey == key {
+            closeQuestion(id, response: nil, status: nil, step: nil)
+        }
+        guard records.removeValue(forKey: key) != nil else { return }
+        rebuild()
     }
 
     // MARK: Messages

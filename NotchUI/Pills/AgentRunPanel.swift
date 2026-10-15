@@ -1,0 +1,364 @@
+import SwiftUI
+import AppKit
+
+/// A session that Nook runs itself, inside the Agents tab: the whole conversation, approvals, stop, follow-up
+/// messages, and the settings for the next turn (mode, permissions, model). Everything you would otherwise do in a
+/// terminal happens here.
+struct AgentRunPanel: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject var workspace: WorkspaceManager
+    let runID: UUID
+    @State private var draft = ""
+    @State private var expanded: Set<UUID> = []
+    @State private var confirmDelete = false
+    @State private var renaming = false
+    @State private var titleDraft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if let run = workspace.run(runID) {
+            VStack(alignment: .leading, spacing: 10) {
+                header(run)
+                timeline(run)
+                if let pending = workspace.approvals[runID], let first = pending.first {
+                    approval(run, first, more: pending.count - 1)
+                }
+                if confirmDelete {
+                    deleteConfirmation(run)
+                } else {
+                    composer(run)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onAppear {
+                workspace.loadTimeline(runID)
+                focused = true
+            }
+            .onChange(of: runID) { _, _ in
+                workspace.loadTimeline(runID)
+                draft = ""
+                renaming = false
+                confirmDelete = false
+            }
+        } else {
+            Text(tr("agents.run.gone"))
+                .font(NookTheme.font(13))
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    // MARK: Header
+
+    private func header(_ run: WorkspaceRun) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                StatusBadge(status: run.status)
+                if run.status.isActive, let started = run.turnStartedAt {
+                    HStack(spacing: 3) {
+                        Image(systemName: "timer").font(.system(size: 9.5))
+                        ElapsedText(since: started)
+                    }
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 6)
+                if let total = run.usage.totalTokens {
+                    Text(TokenTally.format(total) + " tokens")
+                        .font(NookTheme.mono(11, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                if let fraction = run.usage.contextFraction {
+                    Text("ctx \(Int((fraction * 100).rounded()))%")
+                        .font(NookTheme.mono(11, .medium))
+                        .foregroundStyle(fraction > 0.85 ? NookTheme.coral : (fraction > 0.6 ? NookTheme.amber : NookTheme.textTertiary))
+                        .help(tr("ws.header.contextHelp"))
+                }
+                actionsMenu(run)
+            }
+            if renaming {
+                TextField(tr("ws.title.placeholder"), text: $titleDraft)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(17, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .onSubmit {
+                        workspace.rename(runID, to: titleDraft)
+                        renaming = false
+                    }
+                    .onExitCommand { renaming = false }
+            } else {
+                Text(run.title)
+                    .font(NookTheme.font(17, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .onTapGesture(count: 2) {
+                        titleDraft = run.title
+                        renaming = true
+                    }
+                    .help(tr("ws.title.renameHelp"))
+            }
+            HStack(spacing: 5) {
+                Text(run.provider.displayName).foregroundStyle(run.provider.color)
+                if let profile = app.profile(for: run), app.profiles.profiles(for: profile.kind).count > 1 {
+                    Text("·")
+                    Text(AccountLabel.name(profile, app: app))
+                }
+                Text("·")
+                Text(run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model))
+                Text("·")
+                Text(run.mode == .plan ? run.mode.label : run.permission.label)
+                    .foregroundStyle(run.permission == .bypass && run.mode != .plan ? NookTheme.coral : NookTheme.textTertiary)
+                Text("·")
+                Text(run.branch.map { "\(run.projectName) · \($0)" } ?? run.projectName)
+                    .help(AgentPathFormat.tilde(run.workingDirectory))
+            }
+            .font(NookTheme.font(12, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+        }
+    }
+
+    /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
+    private func actionsMenu(_ run: WorkspaceRun) -> some View {
+        let idle = !run.status.isActive
+        let capabilities = run.provider.capabilities
+        return Menu {
+            Section(tr("agents.run.nextTurn")) {
+                Picker(tr("agents.run.mode"), selection: Binding(
+                    get: { run.mode },
+                    set: { workspace.configure(runID, mode: $0) }
+                )) {
+                    ForEach(ExecutionMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .disabled(!idle || !capabilities.planMode)
+                Picker(tr("agents.run.permission"), selection: Binding(
+                    get: { run.permission },
+                    set: { workspace.configure(runID, permission: $0) }
+                )) {
+                    ForEach(capabilities.policies) { policy in
+                        Text(policy.label).tag(policy)
+                    }
+                }
+                .disabled(!idle)
+                Picker(tr("agents.run.model"), selection: Binding(
+                    get: { run.model },
+                    set: { workspace.configure(runID, model: $0) }
+                )) {
+                    ForEach(modelChoices(run), id: \.self) { model in
+                        Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                    }
+                }
+                .disabled(!idle)
+            }
+            Divider()
+            if run.status.isActive {
+                Button(tr("ws.action.stop")) { workspace.stop(runID) }
+            } else if run.status == .failed || run.status == .stopped {
+                Button(tr("ws.action.retry")) { workspace.retry(runID) }
+            }
+            Button(tr("agents.run.rename")) {
+                titleDraft = run.title
+                renaming = true
+            }
+            Button(tr("button.openFolder")) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
+            }
+            Button(tr("agents.run.changes")) { app.openWorkspace(run: runID) }
+            Divider()
+            Button(tr("agents.run.archive")) {
+                workspace.setArchived(runID, true)
+                app.viewModel.selectedAgentID = ""
+            }
+            .disabled(!idle)
+            Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
+                .disabled(!idle)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(NookTheme.field))
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("agents.run.actions"))
+    }
+
+    private func modelChoices(_ run: WorkspaceRun) -> [String] {
+        var list = run.provider.suggestedModels
+        if !run.model.isEmpty, !list.contains(run.model) { list.append(run.model) }
+        return list
+    }
+
+    // MARK: Timeline
+
+    private func timeline(_ run: WorkspaceRun) -> some View {
+        let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
+        return ScrollViewReader { proxy in
+            ScrollView(showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 9) {
+                    if events.isEmpty {
+                        Text(tr("agents.run.empty"))
+                            .font(NookTheme.font(12.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    ForEach(events) { event in
+                        EventRow(
+                            event: event,
+                            expanded: expanded.contains(event.id),
+                            toggle: { toggle(event.id) },
+                            openFile: { _ in app.openWorkspace(run: runID) },
+                            decide: { decision in
+                                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
+                            }
+                        )
+                        .id(event.id)
+                    }
+                    if run.status.isActive {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(run.status == .waitingApproval ? tr("ws.timeline.waiting") : tr("ws.timeline.working"))
+                                .font(NookTheme.font(12))
+                                .foregroundStyle(NookTheme.textSecondary)
+                        }
+                    }
+                    if run.status == .failed || run.status == .stopped {
+                        recovery(run)
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: events.count) { _, _ in
+                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: events.last?.text.count ?? 0) { _, _ in
+                if run.status.isActive { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func recovery(_ run: WorkspaceRun) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
+                .foregroundStyle(run.status.color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
+                    .font(NookTheme.font(12.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(run.statusDetail.flatMap { $0 == "interrupted" ? nil : $0 } ?? (run.providerSessionID != nil ? tr("ws.recovery.canResume") : tr("ws.recovery.noResume")))
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9).fill(run.status.color.opacity(0.07)))
+    }
+
+    private func toggle(_ id: UUID) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    // MARK: Approval
+
+    private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "hand.raised.fill").foregroundStyle(NookTheme.amber)
+                Text(tr("ws.approval.title", run.provider.kind.shortName, pending.tool))
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                if more > 0 {
+                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            ScrollView(showsIndicators: true) {
+                Text(ToolSummary.command(pending.input.dictionary) ?? pending.summary)
+                    .font(NookTheme.mono(11.5))
+                    .foregroundStyle(NookTheme.paper)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 70)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 4) {
+                NookPrimaryButton(title: tr("button.allow")) { workspace.decide(runID, requestID: pending.id, .allow) }
+                if pending.canAlways {
+                    NookGhostButton(title: tr("button.always")) { workspace.decide(runID, requestID: pending.id, .always) }
+                }
+                NookGhostButton(title: tr("button.deny")) { workspace.decide(runID, requestID: pending.id, .deny) }
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+    }
+
+    /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
+    private func deleteConfirmation(_ run: WorkspaceRun) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("agents.run.deleteConfirm", run.title))
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                Text(tr("agents.run.deleteDetail"))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
+            NookPrimaryButton(title: tr("agents.run.delete")) {
+                confirmDelete = false
+                workspace.delete(runID)
+                app.viewModel.selectedAgentID = ""
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.coral.opacity(0.08)))
+    }
+
+    // MARK: Composer
+
+    private func composer(_ run: WorkspaceRun) -> some View {
+        let active = run.status.isActive
+        let send = {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !active else { return }
+            draft = ""
+            workspace.send(runID, text: text)
+        }
+        return VStack(alignment: .leading, spacing: 5) {
+            NookInputBar(
+                text: $draft,
+                prompt: active ? tr("agents.run.busyPrompt", run.provider.kind.shortName) : tr("agents.run.prompt"),
+                focus: $focused,
+                busy: active,
+                onStop: { workspace.stop(runID) },
+                onSend: send
+            )
+            if !active, run.mode == .plan {
+                Text(tr("agents.run.planHint"))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+    }
+}

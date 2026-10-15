@@ -11,13 +11,29 @@ struct AgentsTab: View {
     @State private var draft = ""
     /// Enabled connections per account ("<profile>|<connection>"). Loaded on open, not on every redraw.
     @State private var linked: Set<String> = []
-    @State private var copiedID: String?
+    /// Why the last action in this tab failed, shown next to its buttons.
+    @State private var actionError: String?
+    /// An action is in progress (ending a process, taking over a conversation).
+    @State private var working = false
+    /// The task for a new session in the composer.
+    @State private var newTask = ""
+    @State private var newMode: ExecutionMode = .agent
+    @State private var newPermission: PermissionPolicy = .acceptEdits
+    @State private var newModel = ""
+    @FocusState private var newTaskFocused: Bool
+    /// Progress through a multi-part question from the agent.
+    @State private var questionID = ""
+    @State private var questionStep = 0
+    @State private var questionAnswers: [[String]] = []
+    @State private var questionPicks: Set<String> = []
     @State private var renaming: String?
     @State private var nameDraft = ""
 
     private enum Selection {
         case live(AgentSession)
         case past(PastSession)
+        case run(UUID)
+        case compose(AgentProfile, String)
         case account(AgentProfile)
         case nothing
 
@@ -51,6 +67,8 @@ struct AgentsTab: View {
                     switch selection {
                     case .live(let session): liveDetail(session)
                     case .past(let session): pastDetail(session)
+                    case .run(let id): AgentRunPanel(workspace: app.workspace, runID: id)
+                    case .compose(let profile, let folder): composeDetail(profile, folder: folder)
                     case .account(let profile): accountDetail(profile)
                     case .nothing: nothingRunning
                     }
@@ -70,6 +88,8 @@ struct AgentsTab: View {
         .onChange(of: viewModel.selectedAgentID) { _, _ in
             refreshLinks()
             renaming = nil
+            actionError = nil
+            draft = ""
         }
         .onChange(of: app.agentConnect) { _, _ in refreshLinks() }
         .onChange(of: app.profiles.all) { _, _ in refreshLinks() }
@@ -101,6 +121,7 @@ struct AgentsTab: View {
             }
             Spacer(minLength: 8)
             if !app.demoMode {
+                newSessionMenu
                 ForEach(switcherKinds) { kind in
                     accountSwitcher(kind)
                 }
@@ -184,8 +205,16 @@ struct AgentsTab: View {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
         }
+        if id.hasPrefix("run:"), let uuid = UUID(uuidString: String(id.dropFirst(4))), app.workspace.run(uuid) != nil {
+            return .run(uuid)
+        }
+        if id.hasPrefix("new:") {
+            let parts = id.dropFirst(4).split(separator: "|", maxSplits: 1).map(String.init)
+            if parts.count == 2, let profile = app.profiles.profile(id: parts[0]) { return .compose(profile, parts[1]) }
+        }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
         if let first = live.first(where: { !$0.isDetected }) { return .live(first) }
+        if !app.demoMode, let run = app.workspace.activeRuns.first(where: { !$0.archived }) { return .run(run.id) }
         if let first = past.first { return .past(first) }
         if let first = live.first { return .live(first) }
         return .nothing
@@ -195,6 +224,8 @@ struct AgentsTab: View {
         switch selection {
         case .live(let session): return session.id
         case .past(let session): return "past:" + session.id
+        case .run(let id): return "run:" + id.uuidString
+        case .compose(let profile, let folder): return "new:\(profile.id)|\(folder)"
         case .account(let profile): return "account:" + profile.id
         case .nothing: return ""
         }
@@ -234,7 +265,9 @@ struct AgentsTab: View {
                         .padding(.vertical, 6)
                 }
                 if !app.demoMode {
-                    WorkspaceRunsSection(workspace: app.workspace) { id in app.openWorkspace(run: id) }
+                    WorkspaceRunsSection(workspace: app.workspace, selected: current) { id in
+                        viewModel.selectedAgentID = "run:" + id.uuidString
+                    }
                 }
                 if !past.isEmpty {
                     SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
@@ -336,8 +369,7 @@ struct AgentsTab: View {
             Spacer(minLength: 0)
             if !app.demoMode {
                 HStack(spacing: 4) {
-                    NookPrimaryButton(title: tr("ws.newSession")) { app.openWorkspace(newSession: true) }
-                    startMenu(app.profiles.preferredProfile(.claude), primary: false)
+                    startMenu(app.profiles.preferredProfile(.claude), primary: true)
                     NookGhostButton(title: tr("agents.mode.accounts")) {
                         viewModel.selectedAgentID = "account:" + app.profiles.preferredProfile(.claude).id
                     }
@@ -408,11 +440,11 @@ struct AgentsTab: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Nook detects the process, but cannot inspect its internals. A single clear explanation and button, no step list.
+    /// Nook sees the process but not its conversation. Take it over (the conversation continues in Nook), end it, or link the agent.
     private func untrackedExplanation(_ session: AgentSession) -> some View {
         let kind = AgentKind(agentName: session.name)
         let profile = app.profile(for: session)
-        let command = profile?.launchCommand ?? kind?.command ?? session.name.lowercased()
+        let canTakeOver = app.canTakeOver(session)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "eye.slash")
@@ -423,12 +455,18 @@ struct AgentsTab: View {
                     Text(session.isLinked ? tr("agents.untracked.startedBefore") : tr("agents.untracked.notLinked", session.name))
                         .font(NookTheme.font(14, .semibold))
                         .foregroundStyle(NookTheme.paper)
-                    Text(session.isLinked
-                         ? tr("agents.untracked.restartDetail", command)
-                         : tr("agents.untracked.linkDetail", session.name))
+                    Text(canTakeOver
+                         ? tr("agents.untracked.takeOverDetail", session.name)
+                         : tr("agents.untracked.endDetail", session.name))
                         .font(NookTheme.font(12.5))
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if !session.isLinked {
+                        Text(tr("agents.untracked.linkHint", session.name))
+                            .font(NookTheme.font(12))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .padding(14)
@@ -438,20 +476,33 @@ struct AgentsTab: View {
 
             Spacer(minLength: 0)
 
+            errorLine
             HStack(spacing: 4) {
-                if session.isLinked {
-                    terminalButton(session, primary: true)
-                } else if let kind {
-                    let target = profile ?? app.profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
-                    if app.agentConnect[target.id]?.isBusy == true {
-                        ProgressView().controlSize(.small).padding(.horizontal, 12)
-                    } else {
-                        NookPrimaryButton(title: tr("agents.linkAgent", kind.shortName)) { app.connect(target) }
-                    }
-                    terminalButton(session)
+                if working {
+                    ProgressView().controlSize(.small).padding(.horizontal, 12)
                 } else {
-                    NookPrimaryButton(title: tr("agents.linkAgent", session.name)) { app.openSettings(section: .agents) }
-                    terminalButton(session)
+                    if canTakeOver {
+                        NookPrimaryButton(title: tr("agents.nook.takeOver")) {
+                            perform { try await app.continueInNook(session, endingTerminal: true) }
+                        }
+                    }
+                    if app.canEnd(session) {
+                        NookGhostButton(title: tr("agents.nook.end")) {
+                            perform { try app.endSession(session) }
+                        }
+                    }
+                }
+                if !session.isLinked {
+                    if let kind {
+                        let target = profile ?? app.profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
+                        if app.agentConnect[target.id]?.isBusy == true {
+                            ProgressView().controlSize(.small).padding(.horizontal, 12)
+                        } else {
+                            NookGhostButton(title: tr("agents.linkAgent", kind.shortName)) { app.connect(target) }
+                        }
+                    } else {
+                        NookGhostButton(title: tr("agents.linkAgent", session.name)) { app.openSettings(section: .agents) }
+                    }
                 }
                 Spacer()
             }
@@ -479,7 +530,9 @@ struct AgentsTab: View {
             }
         }
 
-        if session.status == .waiting && session.approvalID == nil && !app.demoMode {
+        if !app.demoMode, let question = app.hub.question(for: session.id) {
+            questionPanel(question)
+        } else if session.status == .waiting && session.approvalID == nil && !app.demoMode {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "questionmark.bubble")
                     .font(.system(size: 15, weight: .semibold))
@@ -487,7 +540,7 @@ struct AgentsTab: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // A long question scrolls instead of pushing the conversation and buttons out of view.
                     ScrollView(showsIndicators: true) {
-                        Text(session.summary.isEmpty ? tr("agents.waitingInTerminal") : session.summary)
+                        Text(session.summary.isEmpty ? tr("agents.waiting.title", session.name) : session.summary)
                             .font(NookTheme.font(13, .semibold))
                             .foregroundStyle(NookTheme.paper)
                             .fixedSize(horizontal: false, vertical: true)
@@ -496,7 +549,7 @@ struct AgentsTab: View {
                     }
                     .frame(maxHeight: 96)
                     .fixedSize(horizontal: false, vertical: true)
-                    Text(tr("agents.waitingInTerminalDetail"))
+                    Text(app.canTakeOver(session) ? tr("agents.waiting.answerHere") : tr("agents.waiting.cannotAnswer", session.name))
                         .font(NookTheme.font(12))
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -545,7 +598,7 @@ struct AgentsTab: View {
                 }
                 NookGhostButton(title: tr("button.deny")) { app.hub.decide(id, .deny) }
                 Spacer()
-                terminalButton(session)
+                sessionMenu(session)
             }
         } else if app.demoMode {
             HStack(spacing: 4) {
@@ -571,39 +624,214 @@ struct AgentsTab: View {
         }
     }
 
-    /// Reply field under the conversation: continues the session, or copies the text to the agent's terminal.
+    /// A multiple-choice question from the agent (AskUserQuestion), answered right here: one question at a time.
+    private func questionPanel(_ request: AgentQuestionRequest) -> some View {
+        let fresh = request.id != questionID
+        let index = fresh ? 0 : min(questionStep, request.items.count - 1)
+        let item = request.items[index]
+        let picks: Set<String> = fresh ? [] : questionPicks
+        var context = tr("agents.question.asks", request.agentName)
+        if !item.header.isEmpty { context += " · " + item.header }
+        if request.items.count > 1 { context += " · \(index + 1)/\(request.items.count)" }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
+                Text(context)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            Text(item.question)
+                .font(NookTheme.font(13.5, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            ScrollView(showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(item.options.enumerated()), id: \.offset) { _, option in
+                        let chosen = picks.contains(option.label)
+                        Button {
+                            if item.multiSelect {
+                                if fresh { questionID = request.id; questionStep = 0; questionAnswers = []; questionPicks = [] }
+                                if chosen { questionPicks.remove(option.label) } else { questionPicks.insert(option.label) }
+                            } else {
+                                answer(request, index: index, labels: [option.label])
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: item.multiSelect ? (chosen ? "checkmark.square.fill" : "square") : "arrow.right.circle")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textTertiary)
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(option.label)
+                                        .font(NookTheme.font(12.5, .semibold))
+                                        .foregroundStyle(NookTheme.paper)
+                                    if !option.description.isEmpty {
+                                        Text(option.description)
+                                            .font(NookTheme.font(11.5))
+                                            .foregroundStyle(NookTheme.textSecondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(RoundedRectangle(cornerRadius: 9).fill(chosen ? NookTheme.iris.opacity(0.14) : NookTheme.field))
+                            .contentShape(RoundedRectangle(cornerRadius: 9))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 170)
+            .fixedSize(horizontal: false, vertical: true)
+            if item.multiSelect {
+                HStack {
+                    NookPrimaryButton(title: tr("agents.question.send")) {
+                        answer(request, index: index, labels: Array(picks))
+                    }
+                    .disabled(picks.isEmpty)
+                    .opacity(picks.isEmpty ? 0.5 : 1)
+                    Spacer()
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+    }
+
+    private func answer(_ request: AgentQuestionRequest, index: Int, labels: [String]) {
+        let earlier = request.id == questionID ? questionAnswers : []
+        let all = Array(earlier.prefix(index)) + [labels]
+        if index + 1 < request.items.count {
+            questionID = request.id
+            questionAnswers = all
+            questionStep = index + 1
+            questionPicks = []
+        } else {
+            app.hub.answerQuestion(request.id, selections: all)
+            questionID = ""
+            questionAnswers = []
+            questionStep = 0
+            questionPicks = []
+        }
+    }
+
+    /// Reply field under the conversation. Nook continues the conversation itself: an idle session continues as is,
+    /// a busy Claude Code session continues as a copy, and a session waiting on you is taken over (its terminal
+    /// process ends, the conversation goes on here).
+    @ViewBuilder
     private func replyBar(_ session: AgentSession) -> some View {
-        let canContinue = app.canContinue(session)
-        let busy = session.status == .running || session.status == .waiting
-        let prompt = canContinue
-            ? (busy ? tr("agents.reply.fork") : tr("agents.reply.continue"))
-            : tr("agents.reply.copy")
+        let canTakeOver = app.canTakeOver(session)
+        let kind = AgentKind(agentName: session.name)
+        let waiting = session.status == .waiting
+        let running = session.status == .running
+        let takesOver = waiting || (running && kind != .claude)
+        let prompt = !canTakeOver ? tr("agents.reply.unsupported", session.name)
+            : (takesOver ? tr("agents.reply.takeOver") : (running ? tr("agents.reply.fork") : tr("agents.reply.continue")))
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            app.send(text, to: session)
-            draft = ""
+            guard !text.isEmpty, canTakeOver else { return }
+            perform { try await app.continueInNook(session, message: text, endingTerminal: takesOver) }
         }
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            errorLine
             HStack(spacing: 6) {
-                NookInputBar(text: $draft, prompt: prompt, onSend: send)
-                terminalButton(session)
+                if canTakeOver {
+                    NookInputBar(text: $draft, prompt: prompt, busy: working, onStop: {}, onSend: send)
+                } else {
+                    Text(prompt)
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                if session.approvalID == nil { sessionMenu(session) }
             }
-            if canContinue && busy {
-                Text(tr("agents.reply.forkHint"))
+            if canTakeOver && (running || waiting) {
+                Text(takesOver ? tr("agents.reply.takeOverHint", session.name) : tr("agents.reply.forkHint"))
                     .font(NookTheme.font(11))
                     .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
+    /// Everything else for a running session: take it over in Nook, start a copy, or end it.
+    private func sessionMenu(_ session: AgentSession) -> some View {
+        let canTakeOver = app.canTakeOver(session)
+        let busy = session.status == .running || session.status == .waiting
+        return Menu {
+            if canTakeOver {
+                Button(tr("agents.nook.takeOver")) {
+                    perform { try await app.continueInNook(session, endingTerminal: true) }
+                }
+                if busy && AgentKind(agentName: session.name) == .claude {
+                    Button(tr("agents.nook.fork")) {
+                        perform { try await app.continueInNook(session) }
+                    }
+                }
+            }
+            if app.canEnd(session) {
+                if canTakeOver { Divider() }
+                Button(tr("agents.nook.end"), role: .destructive) {
+                    perform { try app.endSession(session) }
+                }
+            }
+            if !session.cwd.isEmpty {
+                Divider()
+                Button(tr("button.openFolder")) {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(NookTheme.field))
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("agents.nook.more"))
+    }
+
+    /// Why the last action failed, right above the buttons that caused it.
     @ViewBuilder
-    private func terminalButton(_ session: AgentSession, primary: Bool = false) -> some View {
-        let title = tr("agents.openTerminal", TerminalLauncher.name(for: session.hostBundleID))
-        if primary {
-            NookPrimaryButton(title: title) { app.openTerminal(for: session) }
-        } else {
-            NookGhostButton(title: title) { app.openTerminal(for: session) }
+    private var errorLine: some View {
+        if let actionError {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(NookTheme.coral)
+                Text(actionError)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// Runs an action from this tab, showing progress and any error in place.
+    private func perform(_ action: @escaping @MainActor () async throws -> Void) {
+        guard !working else { return }
+        working = true
+        actionError = nil
+        Task { @MainActor in
+            do {
+                try await action()
+            } catch {
+                actionError = error.localizedDescription
+            }
+            working = false
         }
     }
 
@@ -611,6 +839,12 @@ struct AgentsTab: View {
 
     private func pastDetail(_ session: PastSession) -> some View {
         let profile = app.profile(for: session)
+        let canContinue = app.canContinueInNook(session)
+        let send = {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, canContinue else { return }
+            perform { try await app.continueInNook(session, message: text) }
+        }
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(AgentFormat.title(session.title))
@@ -662,17 +896,131 @@ struct AgentsTab: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
 
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: tr("button.resumeInTerminal")) { app.resume(session) }
-                NookGhostButton(title: copiedID == session.id ? tr("button.copied") : tr("button.copyCommand")) {
-                    app.copyResumeCommand(session)
-                    copiedID = session.id
-                }
-                if !session.cwd.isEmpty {
-                    NookGhostButton(title: tr("button.openFolder")) {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
+            errorLine
+            if canContinue {
+                HStack(spacing: 6) {
+                    NookInputBar(text: $draft, prompt: tr("agents.reply.resume"), busy: working, onStop: {}, onSend: send)
+                    NookGhostButton(title: tr("agents.nook.open")) {
+                        perform { try await app.continueInNook(session) }
+                    }
+                    .help(tr("agents.nook.openHelp"))
+                    if !session.cwd.isEmpty {
+                        NookIconButton(systemName: "folder", label: tr("button.openFolder"), size: 30) {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
+                        }
+                        .help(tr("button.openFolder"))
                     }
                 }
+            } else {
+                HStack(spacing: 6) {
+                    Text(session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    if !session.cwd.isEmpty {
+                        NookGhostButton(title: tr("button.openFolder")) {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: Sessions: new
+
+    /// A new session that Nook runs itself: the task, and how it may work. Starts in the chosen folder with this account.
+    private func composeDetail(_ profile: AgentProfile, folder: String) -> some View {
+        let provider = app.nookProvider(for: profile.kind)
+        let policies = provider?.capabilities.policies ?? []
+        let start = {
+            let task = newTask.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !task.isEmpty else { return }
+            perform {
+                try await app.startInNook(profile, folder: folder, task: task, mode: newMode, permission: newPermission, model: newModel)
+                newTask = ""
+            }
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("agents.new.title", profile.kind.name))
+                    .font(NookTheme.font(17, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                HStack(spacing: 5) {
+                    Text(profile.kind.shortName).foregroundStyle(profile.kind.color)
+                    if app.profiles.profiles(for: profile.kind).count > 1 {
+                        Text("·")
+                        Text(displayName(profile))
+                    }
+                    Text("·")
+                    Text(AgentProfile.tildePath(folder))
+                        .truncationMode(.middle)
+                }
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+            }
+
+            ZStack(alignment: .topLeading) {
+                if newTask.isEmpty {
+                    Text(tr("agents.new.placeholder"))
+                        .font(NookTheme.font(13))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $newTask)
+                    .font(NookTheme.font(13))
+                    .foregroundStyle(NookTheme.paper)
+                    .scrollContentBackground(.hidden)
+                    .focused($newTaskFocused)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(newTaskFocused ? NookTheme.iris.opacity(0.5) : NookTheme.line2, lineWidth: 1))
+            .onAppear { newTaskFocused = true }
+
+            if let provider {
+                HStack(spacing: 6) {
+                    OptionMenu(title: tr("agents.run.mode"), value: newMode.label) {
+                        ForEach(ExecutionMode.allCases) { mode in
+                            Button(mode.label) { newMode = mode }
+                        }
+                    }
+                    OptionMenu(title: tr("agents.run.permission"), value: (policies.contains(newPermission) ? newPermission : policies.first ?? .acceptEdits).label,
+                               warning: newPermission == .bypass) {
+                        ForEach(policies) { policy in
+                            Button(policy.label) { newPermission = policy }
+                        }
+                    }
+                    OptionMenu(title: tr("agents.run.model"), value: newModel.isEmpty ? tr("ws.model.default") : newModel) {
+                        ForEach(provider.suggestedModels, id: \.self) { model in
+                            Button(model.isEmpty ? tr("ws.model.default") : model) { newModel = model }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
+            errorLine
+            HStack(spacing: 4) {
+                if working {
+                    ProgressView().controlSize(.small).padding(.horizontal, 12)
+                } else if provider != nil {
+                    NookPrimaryButton(title: tr("agents.new.start")) { start() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(newTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } else {
+                    Text(tr("agents.nook.unsupported", profile.kind.name))
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                startMenu(profile, primary: false, title: tr("agents.new.otherFolder"))
                 Spacer()
             }
         }
@@ -773,6 +1121,11 @@ struct AgentsTab: View {
 
                 if !gap.isEmpty || busy || failed {
                     connectBar(profile)
+                } else if app.nookProvider(for: kind) != nil {
+                    HStack {
+                        startMenu(profile, primary: false)
+                        Spacer()
+                    }
                 }
 
                 if !gap.program {
@@ -869,22 +1222,25 @@ struct AgentsTab: View {
         return parts.joined(separator: " · ")
     }
 
-    /// "Start session": in a recent working directory, or choose another.
-    private func startMenu(_ profile: AgentProfile, primary: Bool) -> some View {
+    /// "Start session": pick a recent working directory, or choose another, then write the task in the tab.
+    /// Nook runs the session itself, so it continues right here.
+    private func startMenu(_ profile: AgentProfile, primary: Bool, title: String? = nil) -> some View {
         let folders = app.recentFolders(profile)
         return Menu {
             if !folders.isEmpty {
                 Section(tr("agents.recentFolders")) {
                     ForEach(folders, id: \.self) { folder in
-                        Button(AgentProfile.tildePath(folder)) { app.startSession(profile, in: folder) }
+                        Button(AgentProfile.tildePath(folder)) { compose(profile, in: folder) }
                     }
                 }
             }
-            Button(tr("agents.chooseFolder")) { app.startSessionChoosingFolder(profile) }
+            Button(tr("agents.chooseFolder")) {
+                if let folder = app.chooseAgentFolder(profile.kind) { compose(profile, in: folder) }
+            }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
-                Text(app.profiles.profiles(for: profile.kind).count > 1 ? tr("agents.startWith", displayName(profile)) : tr("agents.startAgent", profile.kind.shortName))
+                Image(systemName: title == nil ? "play.fill" : "folder").font(.system(size: 10, weight: .bold))
+                Text(title ?? (app.profiles.profiles(for: profile.kind).count > 1 ? tr("agents.startWith", displayName(profile)) : tr("agents.startAgent", profile.kind.shortName)))
                     .font(NookTheme.font(14, .semibold))
                     .lineLimit(1)
             }
@@ -898,7 +1254,50 @@ struct AgentsTab: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(app.history.executables[profile.kind] == nil)
+        .disabled(app.nookProvider(for: profile.kind) == nil)
+    }
+
+    private func compose(_ profile: AgentProfile, in folder: String) {
+        viewModel.selectedAgentID = "new:\(profile.id)|\(folder)"
+    }
+
+    /// "+" at the top: a new session with any account Nook can run, in a recent folder or another one.
+    private var newSessionMenu: some View {
+        let profiles = app.profiles.all.filter { app.nookProvider(for: $0.kind) != nil }
+        return Menu {
+            ForEach(profiles) { profile in
+                let folders = app.recentFolders(profile)
+                let several = app.profiles.profiles(for: profile.kind).count > 1
+                Menu(several ? "\(profile.kind.name) · \(displayName(profile))" : profile.kind.name) {
+                    ForEach(folders, id: \.self) { folder in
+                        Button(AgentProfile.tildePath(folder)) { compose(profile, in: folder) }
+                    }
+                    if !folders.isEmpty { Divider() }
+                    Button(tr("agents.chooseFolder")) {
+                        if let folder = app.chooseAgentFolder(profile.kind) { compose(profile, in: folder) }
+                    }
+                }
+            }
+            if profiles.isEmpty {
+                Button(tr("agents.switcher.add")) { app.openSettings(section: .agents) }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "plus").font(.system(size: 10, weight: .bold))
+                Text(tr("agents.new.short")).font(NookTheme.font(12, .semibold))
+            }
+            .foregroundStyle(NookTheme.paper)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Capsule().fill(NookTheme.field))
+            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("agents.new.help"))
     }
 
     // MARK: Connect
@@ -1773,25 +2172,29 @@ private struct WorkspaceButton: View {
     }
 }
 
-/// Workspace sessions that are currently working or just finished, clickable for navigation.
+/// Sessions Nook runs itself (started here, taken over, or from the workspace): working, waiting, or recently finished.
+/// Selecting one shows it in the tab, where you control it completely.
 private struct WorkspaceRunsSection: View {
     @ObservedObject var workspace: WorkspaceManager
+    let selected: String
     let open: (UUID) -> Void
 
     var body: some View {
         let recent = workspace.runs
-            .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 6 * 3600) }
+            .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
-            .prefix(5)
+            .prefix(8)
         if !recent.isEmpty {
-            SectionHeader(title: tr("ws.windowTitle"), trailing: nil)
+            SectionHeader(title: tr("agents.inNook"), trailing: "\(recent.count)")
                 .padding(.top, 12)
             ForEach(Array(recent)) { run in
+                let isSelected = selected == "run:" + run.id.uuidString
                 Button { open(run.id) } label: {
                     HStack(spacing: 10) {
                         Image(systemName: run.status.symbol)
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(run.status.color)
+                            .symbolEffect(.pulse, options: .repeating, isActive: run.status == .running)
                             .frame(width: 16)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(run.title)
@@ -1807,10 +2210,45 @@ private struct WorkspaceRunsSection: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? NookTheme.field : Color.clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+/// "Mode  Agent ⌄": a compact choice for a new session.
+private struct OptionMenu<Content: View>: View {
+    let title: String
+    let value: String
+    var warning = false
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                    .foregroundStyle(NookTheme.textTertiary)
+                Text(value)
+                    .foregroundStyle(warning ? NookTheme.coral : NookTheme.paper)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .font(NookTheme.font(12, .semibold))
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Capsule().fill(NookTheme.field))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 }
