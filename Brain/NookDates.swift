@@ -67,16 +67,6 @@ enum NookDates {
         formatter("EEEE d MMMM yyyy").string(from: date)
     }
 
-    /// "just now", "14:20", "yesterday", "Mon" or "12 Oct": compact relative timestamp.
-    static func relative(_ date: Date) -> String {
-        let calendar = Calendar.current
-        if Date().timeIntervalSince(date) < 90 { return "net" }
-        if calendar.isDateInToday(date) { return time(date) }
-        if calendar.isDateInYesterday(date) { return "gisteren" }
-        if Date().timeIntervalSince(date) < 6 * 86_400 { return weekday(date) }
-        return dayMonth(date)
-    }
-
     /// "Wednesday 14 October 2026 08:31"
     static func long(_ date: Date) -> String {
         formatter("EEEE d MMMM yyyy HH:mm").string(from: date)

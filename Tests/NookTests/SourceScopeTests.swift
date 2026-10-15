@@ -171,4 +171,14 @@ final class PrefetchTests: XCTestCase {
     func testNothingToFetchForSourcesAlreadyInContext() {
         XCTAssertTrue(Prefetch.calls(for: "wat staat er morgen op de planning", relevant: ["calendar", "reminders"], available: available).isEmpty)
     }
+
+    func testRunCommandBelongsToTheTerminalSource() {
+        XCTAssertEqual(SourceCatalog.source(forTool: "run_command"), "terminal")
+        XCTAssertEqual(SourceCatalog.title("terminal"), "Terminal")
+        // Excluding the terminal removes the tool for that chat.
+        var scope = SourceScope()
+        scope.excluded = ["terminal"]
+        XCTAssertFalse(scope.allowsTool("run_command"))
+        XCTAssertTrue(SourceScope.automatic.allowsTool("run_command"))
+    }
 }

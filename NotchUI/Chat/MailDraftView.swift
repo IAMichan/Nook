@@ -147,23 +147,3 @@ struct SmallPrimaryButton: View {
     }
 }
 
-/// Compact subtle button for use in chat.
-struct SmallGhostButton: View {
-    let title: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(NookTheme.font(13, .semibold))
-                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}

@@ -180,7 +180,7 @@ struct ChatMessage: Identifiable {
 }
 
 /// A single Nook conversation with its own history. Multiple conversations can run concurrently.
-struct Conversation: Identifiable {
+struct Conversation: Identifiable, ConversationListItem {
     enum Status { case working, waiting, unread, idle }
 
     let id: UUID
@@ -193,6 +193,10 @@ struct Conversation: Identifiable {
     var unread = false
     /// Scope of sources this conversation can use (picker next to input field).
     var scope = SourceScope.automatic
+    /// Kept at the top of the list.
+    var pinned = false
+    /// Out of the active list but kept; found again through the archive.
+    var archived = false
 
     var isEmpty: Bool { messages.isEmpty }
 
@@ -236,7 +240,6 @@ final class NookChat: ObservableObject {
     private(set) var lastActivity = Date.distantPast
     private var saveTask: Task<Void, Never>?
 
-    private let maxConversations = 40
     private let maxMessages = 80
 
     init() {
@@ -253,10 +256,17 @@ final class NookChat: ObservableObject {
     /// Whether any conversation is busy.
     var anyBusy: Bool { conversations.contains { $0.busy } }
 
-    /// Non-empty conversations, sorted newest first.
+    /// Non-empty, not archived conversations: pinned first, then newest first.
     var history: [Conversation] {
-        conversations.filter { !$0.isEmpty || $0.busy }.sorted { $0.updated > $1.updated }
+        ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: "", showArchived: false)
     }
+
+    /// The list as shown: with a search, and optionally the archive instead.
+    func list(query: String, showArchived: Bool) -> [Conversation] {
+        ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
+    }
+
+    var hasArchived: Bool { conversations.contains { $0.archived && !$0.isEmpty } }
 
     /// Active recently? Prevents panel from closing automatically.
     var isRecentlyActive: Bool { anyBusy || Date().timeIntervalSince(lastActivity) < 180 }
@@ -313,6 +323,28 @@ final class NookChat: ObservableObject {
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
         if activeID == id { activeID = history.first?.id }
+        scheduleSave()
+    }
+
+    func rename(_ id: UUID, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = index(of: id), !trimmed.isEmpty else { return }
+        conversations[index].title = String(trimmed.prefix(80))
+        scheduleSave()
+    }
+
+    func togglePin(_ id: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].pinned.toggle()
+        if conversations[index].pinned { conversations[index].archived = false }
+        scheduleSave()
+    }
+
+    func setArchived(_ archived: Bool, _ id: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].archived = archived
+        if archived { conversations[index].pinned = false }
+        if archived, activeID == id { activeID = history.first?.id }
         scheduleSave()
     }
 
@@ -401,9 +433,13 @@ final class NookChat: ObservableObject {
         if save { scheduleSave() }
     }
 
+    /// Too many conversations: the oldest are archived (still searchable), only a very old archive is cleared.
     private func trim() {
-        let keep = conversations.sorted { $0.updated > $1.updated }.prefix(maxConversations).map(\.id)
-        conversations.removeAll { !keep.contains($0.id) }
+        for id in ConversationList.toArchive(conversations) {
+            if let index = index(of: id) { conversations[index].archived = true }
+        }
+        let drop = Set(ConversationList.toDelete(conversations))
+        conversations.removeAll { drop.contains($0.id) }
     }
 
     // MARK: Persistence
@@ -482,6 +518,8 @@ private struct StoredConversation: Codable {
     var messages: [StoredMessage]
     /// Added later: optional to remain backwards compatible with older nooks.json.
     var scope: SourceScope?
+    var pinned: Bool?
+    var archived: Bool?
 
     @MainActor
     init(_ conversation: Conversation) {
@@ -492,12 +530,16 @@ private struct StoredConversation: Codable {
         unread = conversation.unread
         messages = conversation.messages.compactMap { StoredMessage($0) }
         scope = conversation.scope == .automatic ? nil : conversation.scope
+        pinned = conversation.pinned ? true : nil
+        archived = conversation.archived ? true : nil
     }
 
     func restored() -> Conversation {
         var conversation = Conversation(id: id, title: title, created: created, updated: updated)
         conversation.unread = unread
         conversation.scope = scope ?? .automatic
+        conversation.pinned = pinned ?? false
+        conversation.archived = archived ?? false
         conversation.messages = messages.map { $0.restored() }
         return conversation
     }

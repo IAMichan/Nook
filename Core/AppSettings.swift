@@ -2,38 +2,59 @@ import Foundation
 import NaturalLanguage
 import Security
 
-/// The API key is stored in the Keychain, never in a file.
-enum Keychain {
+/// The one place secrets are read from and written to the Keychain (API keys, tokens, webhook URLs).
+///
+/// Writing updates the existing item in place and only adds one when there is none, so a failed write can no longer
+/// leave the old key deleted and the new one missing. Values are trimmed first (pasted keys often carry a newline).
+/// The data-protection keychain is deliberately not used: it needs a signed build with a keychain access group,
+/// and Nook is also run unsigned from source.
+enum SecretStore {
     static let service = "nl.imdigital.nook"
 
-    static func read(_ account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    @discardableResult
-    static func write(_ value: String, account: String) -> OSStatus {
-        let base: [String: Any] = [
+    private static func base(_ account: String) -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(base as CFDictionary)
-        guard !value.isEmpty else { return errSecSuccess }
-        var add = base
-        add[kSecValueData as String] = Data(value.utf8)
-        return SecItemAdd(add as CFDictionary, nil)
+    }
+
+    /// The secret, trimmed; nil when missing or empty.
+    static func read(_ account: String) -> String? {
+        var query = base(account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data, let text = String(data: data, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Saves the secret; an empty value removes it.
+    @discardableResult
+    static func write(_ value: String, account: String) -> OSStatus {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return remove(account) }
+        let data = Data(cleaned.utf8)
+        let status = SecItemUpdate(base(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = base(account)
+            add[kSecValueData as String] = data
+            return SecItemAdd(add as CFDictionary, nil)
+        }
+        return status
+    }
+
+    @discardableResult
+    static func remove(_ account: String) -> OSStatus {
+        let status = SecItemDelete(base(account) as CFDictionary)
+        return status == errSecItemNotFound ? errSecSuccess : status
     }
 }
+
+/// The name the rest of the app already uses.
+typealias Keychain = SecretStore
 
 @MainActor
 final class AppSettings: ObservableObject {
@@ -183,8 +204,21 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
     }
 
+    /// The active brain as one value (see `BrainSelection`); setting it writes the stored settings it is made of.
+    var selection: BrainSelection {
+        get { .resolve(useLocal: useLocal, provider: provider, localModel: localModel, providerModel: activeProviderModel) }
+        set {
+            let stored = newValue.storedValues
+            if stored.provider != provider { provider = stored.provider }
+            if useLocal != stored.useLocal { useLocal = stored.useLocal }
+            if newValue.runtime == .mlx { if localModel != newValue.model { localModel = newValue.model } } else if !newValue.model.isEmpty {
+                setProviderModel(newValue.model)
+            }
+        }
+    }
+
     /// Whether the brain runs on this Mac (built-in model, Ollama or LM Studio): no data leaves the Mac, no cost per token.
-    var isLocalBrain: Bool { useLocal || provider.isLocalServer }
+    var isLocalBrain: Bool { selection.isLocal }
 
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
@@ -274,8 +308,9 @@ final class AppSettings: ObservableObject {
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
         // AI (a key or a provider was set before this version) keeps that choice.
-        let choseExternal = defaults.string(forKey: "provider") != nil || !(Keychain.read(Self.keyAccount) ?? "").isEmpty
-        useLocal = defaults.object(forKey: "useLocal") as? Bool ?? !choseExternal
+        useLocal = BrainSelection.initialUseLocal(
+            stored: defaults.object(forKey: "useLocal") as? Bool, storedProvider: defaults.string(forKey: "provider"),
+            hasAnthropicKey: !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"

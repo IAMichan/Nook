@@ -126,18 +126,16 @@ enum CloudHelp {
         return url
     }
 
+    /// Records a failed refresh: the text for the user and the kind of failure for the "Reconnect" / "Try again" action.
+    static func fail(_ status: inout ConnectorStatus, _ error: Error, service: String) {
+        status.state = .error(errorText(error, service: service))
+        status.errorKind = ConnectorErrorKind.classify(error)
+    }
+
     static func errorText(_ error: Error, service: String) -> String {
         if let nook = error as? NookError { return nook.message }
         if error is URLError { return "No connection to \(service). Nook will try again later." }
         return "\(service) returned an unexpected response."
-    }
-
-    /// "5 min. ago"
-    static func ago(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "nl_NL")
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     static func short(_ text: String, _ max: Int = 60) -> String {
@@ -264,6 +262,7 @@ final class GitHubConnector: CloudConnectorConfig {
         if status.updated == nil { status.state = .loading }
         var fresh: [String: Snapshot] = [:]
         var failures: [String] = []
+        var failureKind: ConnectorErrorKind?
         for account in available {
             guard let token = CloudHelp.secret(account.key("token")) else { continue }
             do {
@@ -271,6 +270,7 @@ final class GitHubConnector: CloudConnectorConfig {
                 fresh[account.id] = snapshot
                 AccountRegistry.shared.setIdentity("@" + snapshot.login, for: account.id)
             } catch {
+                failureKind = failureKind ?? ConnectorErrorKind.classify(error)
                 failures.append((available.count > 1 ? Self.accountName(account) + ": " : "") + CloudHelp.errorText(error, service: title))
             }
         }
@@ -280,6 +280,7 @@ final class GitHubConnector: CloudConnectorConfig {
             if !failures.isEmpty { status.detail = failures.joined(separator: " · ") }
         } else {
             status.state = .error(failures.joined(separator: " · "))
+            status.errorKind = failureKind
         }
     }
 
@@ -502,7 +503,7 @@ final class GitHubConnector: CloudConnectorConfig {
             if pr.draft { line += " [draft]" }
             let label = ciLabel(pr.ci)
             if !label.isEmpty { line += " [\(label)]" }
-            if let updated = pr.updated { line += " · updated \(CloudHelp.ago(updated))" }
+            if let updated = pr.updated { line += " · updated \(NookDates.ago(updated))" }
             if let url = pr.url { line += " · \(url.absoluteString)" }
             out.append(line)
         }
@@ -511,7 +512,7 @@ final class GitHubConnector: CloudConnectorConfig {
         if s.reviews.isEmpty { out.append("- none") }
         for pr in s.reviews {
             var line = "- \(pr.ref) '\(pr.title)'"
-            if let updated = pr.updated { line += " · updated \(CloudHelp.ago(updated))" }
+            if let updated = pr.updated { line += " · updated \(NookDates.ago(updated))" }
             if let url = pr.url { line += " · \(url.absoluteString)" }
             out.append(line)
         }
@@ -1041,7 +1042,7 @@ final class VercelConnector: CloudConnectorConfig {
             let fresh = try await fetch(token: token, limit: 12)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1051,7 +1052,7 @@ final class VercelConnector: CloudConnectorConfig {
         if latest.isEmpty { return ["Vercel: no deployments yet."] }
         let summary = latest.prefix(4).map { d -> String in
             var part = "\(d.project): \(stateLabel(d.state))"
-            if let created = d.created { part += " (\(CloudHelp.ago(created)))" }
+            if let created = d.created { part += " (\(NookDates.ago(created)))" }
             return part
         }
         var lines = ["Vercel, latest deployments: " + summary.joined(separator: ", ")]
@@ -1163,14 +1164,14 @@ final class VercelConnector: CloudConnectorConfig {
         var detail = ""
         if let last = list.first {
             detail = "Latest: \(last.project)"
-            if let created = last.created { detail += " · \(CloudHelp.ago(created))" }
+            if let created = last.created { detail += " · \(NookDates.ago(created))" }
         }
 
         let items = list.prefix(8).map { d -> ConnectorItem in
             var parts = [stateLabel(d.state)]
             if d.production { parts.append("production") }
             if let branch = d.branch { parts.append(branch) }
-            if let created = d.created { parts.append(CloudHelp.ago(created)) }
+            if let created = d.created { parts.append(NookDates.ago(created)) }
             let title = d.message.map { "\(d.project): \(CloudHelp.short($0, 50))" } ?? d.project
             return ConnectorItem(id: d.id, title: title, subtitle: parts.joined(separator: " · "), tone: tone(d.state), url: d.url)
         }
@@ -1250,7 +1251,7 @@ final class StripeConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, recentCount: 5)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1263,7 +1264,7 @@ final class StripeConnector: CloudConnectorConfig {
             lines.append("Stripe: \(CloudHelp.plural(failed.count, "failed payment", "failed payments")) today.")
         }
         for p in s.recent.prefix(4) {
-            lines.append("Payment: \(CloudHelp.money(p.amount, currency: p.currency)) from \(CloudHelp.short(p.who, 40)), \(statusLabel(p.status)), \(CloudHelp.ago(p.created))")
+            lines.append("Payment: \(CloudHelp.money(p.amount, currency: p.currency)) from \(CloudHelp.short(p.who, 40)), \(statusLabel(p.status)), \(NookDates.ago(p.created))")
         }
         return Array(lines.prefix(8))
     }
@@ -1368,7 +1369,7 @@ final class StripeConnector: CloudConnectorConfig {
         if s.testMode { detail += " · test mode" }
 
         let items = s.recent.map { p -> ConnectorItem in
-            var subtitle = "\(statusLabel(p.status)) · \(CloudHelp.ago(p.created))"
+            var subtitle = "\(statusLabel(p.status)) · \(NookDates.ago(p.created))"
             if p.refunded > 0 { subtitle += " · \(CloudHelp.money(p.refunded, currency: p.currency)) refunded" }
             return ConnectorItem(id: p.id, title: "\(CloudHelp.money(p.amount, currency: p.currency)) · \(CloudHelp.short(p.who, 40))",
                                  subtitle: subtitle, tone: tone(p), url: dashboardURL(p, testMode: s.testMode))
@@ -1439,7 +1440,7 @@ final class NotionConnector: CloudConnectorConfig {
             let fresh = try await search(token: token, query: nil, count: 8)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1447,7 +1448,7 @@ final class NotionConnector: CloudConnectorConfig {
         guard status.state == .ok, ConnectorToggle.isOn(id), loaded, !pages.isEmpty else { return [] }
         let parts = pages.prefix(5).map { p -> String in
             var part = "'\(CloudHelp.short(p.title, 50))'"
-            if let edited = p.edited { part += " (\(CloudHelp.ago(edited)))" }
+            if let edited = p.edited { part += " (\(NookDates.ago(edited)))" }
             return part
         }
         return ["Notion, recently edited: " + parts.joined(separator: ", ")]
@@ -1593,11 +1594,11 @@ final class NotionConnector: CloudConnectorConfig {
         var detail = ""
         if let first = list.first {
             detail = "Latest: \(CloudHelp.short(first.title, 40))"
-            if let edited = first.edited { detail += " · \(CloudHelp.ago(edited))" }
+            if let edited = first.edited { detail += " · \(NookDates.ago(edited))" }
         }
         let items = list.map { p in
             ConnectorItem(id: p.id, title: p.title,
-                          subtitle: p.edited.map { "edited \(CloudHelp.ago($0))" } ?? "",
+                          subtitle: p.edited.map { "edited \(NookDates.ago($0))" } ?? "",
                           tone: .neutral, url: p.url)
         }
         status = ConnectorStatus(state: .ok,
@@ -1675,7 +1676,7 @@ final class CalcomConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, count: 20)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1866,7 +1867,7 @@ final class N8nConnector: CloudConnectorConfig {
             let fresh = try await fetch(rawBase: rawBase, key: key, failureCount: 10)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -1876,7 +1877,7 @@ final class N8nConnector: CloudConnectorConfig {
         var lines = ["n8n: \(s.active) of \(s.workflows) workflows active, \(CloudHelp.plural(recent.count, "failed run", "failed runs")) in 24 hours."]
         for f in recent.prefix(4) {
             var line = "n8n run failed: '\(CloudHelp.short(f.workflow, 50))'"
-            if let when = f.when { line += " (\(CloudHelp.ago(when)))" }
+            if let when = f.when { line += " (\(NookDates.ago(when)))" }
             lines.append(line)
         }
         return lines
@@ -1953,7 +1954,7 @@ final class N8nConnector: CloudConnectorConfig {
         let items = s.failures.prefix(8).map { f -> ConnectorItem in
             let isRecent = (f.when ?? .distantPast) > Date().addingTimeInterval(-24 * 3600)
             return ConnectorItem(id: f.id, title: f.workflow,
-                                 subtitle: "Failed" + (f.when.map { " · \(CloudHelp.ago($0))" } ?? ""),
+                                 subtitle: "Failed" + (f.when.map { " · \(NookDates.ago($0))" } ?? ""),
                                  tone: isRecent ? .bad : .neutral, url: f.url)
         }
         status = ConnectorStatus(state: .ok,
@@ -2037,7 +2038,7 @@ final class ResendConnector: CloudConnectorConfig {
             let fresh = try await fetch(key: key, count: 20)
             apply(fresh)
         } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+            CloudHelp.fail(&status, error, service: title)
         }
     }
 
@@ -2156,7 +2157,7 @@ final class ResendConnector: CloudConnectorConfig {
         }
         for e in s.emails.prefix(max(0, 8 - items.count)) {
             var subtitle = "\(eventLabel(e.event)) · to \(e.to)"
-            if let created = e.created { subtitle += " · \(CloudHelp.ago(created))" }
+            if let created = e.created { subtitle += " · \(NookDates.ago(created))" }
             items.append(ConnectorItem(id: "email-\(e.id)", title: e.subject, subtitle: subtitle,
                                        tone: tone(e.event), url: URL(string: "https://resend.com/emails/\(e.id)")))
         }

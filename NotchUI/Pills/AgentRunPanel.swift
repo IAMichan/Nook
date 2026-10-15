@@ -121,37 +121,8 @@ struct AgentRunPanel: View {
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
-        let capabilities = run.provider.capabilities
         return Menu {
-            Section(tr("agents.run.nextTurn")) {
-                Picker(tr("agents.run.mode"), selection: Binding(
-                    get: { run.mode },
-                    set: { workspace.configure(runID, mode: $0) }
-                )) {
-                    ForEach(ExecutionMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .disabled(!idle || !capabilities.planMode)
-                Picker(tr("agents.run.permission"), selection: Binding(
-                    get: { run.permission },
-                    set: { workspace.configure(runID, permission: $0) }
-                )) {
-                    ForEach(capabilities.policies) { policy in
-                        Text(policy.label).tag(policy)
-                    }
-                }
-                .disabled(!idle)
-                Picker(tr("agents.run.model"), selection: Binding(
-                    get: { run.model },
-                    set: { workspace.configure(runID, model: $0) }
-                )) {
-                    ForEach(modelChoices(run), id: \.self) { model in
-                        Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
-                    }
-                }
-                .disabled(!idle)
-            }
+            Button(tr("agents.run.settingsInWindow")) { app.openWorkspace(run: runID) }
             Divider()
             if run.status.isActive {
                 Button(tr("ws.action.stop")) { workspace.stop(runID) }
@@ -187,12 +158,6 @@ struct AgentRunPanel: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(tr("agents.run.actions"))
-    }
-
-    private func modelChoices(_ run: WorkspaceRun) -> [String] {
-        var list = run.provider.suggestedModels
-        if !run.model.isEmpty, !list.contains(run.model) { list.append(run.model) }
-        return list
     }
 
     // MARK: Timeline
@@ -275,39 +240,8 @@ struct AgentRunPanel: View {
     // MARK: Approval
 
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(NookTheme.amber)
-                Text(tr("ws.approval.title", run.provider.kind.shortName, pending.tool))
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                if more > 0 {
-                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
-                }
-                Spacer(minLength: 0)
-            }
-            ScrollView(showsIndicators: true) {
-                Text(ToolSummary.command(pending.input.dictionary) ?? pending.summary)
-                    .font(NookTheme.mono(11.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 70)
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: tr("button.allow")) { workspace.decide(runID, requestID: pending.id, .allow) }
-                if pending.canAlways {
-                    NookGhostButton(title: tr("button.always")) { workspace.decide(runID, requestID: pending.id, .always) }
-                }
-                NookGhostButton(title: tr("button.deny")) { workspace.decide(runID, requestID: pending.id, .deny) }
-                Spacer()
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+        let request = ApprovalCenter.make(pending, run: run)
+        return ApprovalView(approval: request, more: more, maxHeight: 110) { app.approvals.decide(request, $0) }
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.

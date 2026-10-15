@@ -224,14 +224,7 @@ struct UsageView: View {
     }
 
     private func quota(_ profile: AgentProfile) -> String? {
-        switch profile.kind {
-        case .claude: return app.hub.subscriptionUsage(for: profile)?.label
-        case .codex:
-            guard profile.isDefault, let snapshot = app.codex.snapshot else { return nil }
-            let parts = [snapshot.fiveHourLabel, snapshot.weeklyLabel].compactMap { $0 }
-            return parts.isEmpty ? nil : parts.joined(separator: " · ")
-        case .gemini: return nil
-        }
+        app.quota.summary(for: profile)
     }
 
     private var notes: some View {

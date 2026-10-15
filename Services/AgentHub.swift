@@ -145,11 +145,16 @@ final class AgentHub: ObservableObject {
         Task {
             let found = await LocalAgentScanner.scan()
             processes = found
-            let hooked = Set(records.values.map { "\($0.agent)|\($0.cwd)" })
-            var seen = Set<String>()
-            detected = found.compactMap { agent in
+            // A hooked session covers one process of its agent and folder, not all of them: two sessions of the same agent in
+            // the same folder stay two rows.
+            var covered: [String: Int] = [:]
+            for record in records.values { covered["\(record.agent)|\(record.cwd)", default: 0] += 1 }
+            detected = found.sorted { $0.pid < $1.pid }.compactMap { agent in
                 let key = "\(agent.name)|\(agent.cwd)"
-                guard !hooked.contains(key), seen.insert(key).inserted else { return nil }
+                if let count = covered[key], count > 0 {
+                    covered[key] = count - 1
+                    return nil
+                }
                 // Already connected? If so, this session was started before integration and just needs a restart.
                 let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
                 let kind = AgentKind(agentName: agent.name)

@@ -106,13 +106,14 @@ final class BrainService {
 
         runnerRef = runner
 
-        if settings.useLocal {
-            guard !settings.localModel.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
-            return try await EmbeddedModel.shared.run(model: settings.localModel, system: system, prompt: fitted[0] + prompt,
+        let selection = settings.selection
+        if selection.runtime == .mlx {
+            guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
+            return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fitted[0] + prompt,
                                                       profile: profile, runner: runner)
         }
         let conversation: ModelConversation
-        switch settings.provider {
+        switch selection.provider {
         case .claudeCode:
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
                                                         prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,

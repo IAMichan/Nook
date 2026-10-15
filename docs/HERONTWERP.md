@@ -1,5 +1,28 @@
 # Nook herontwerp: audit en plan
 
+## Uitvoeringsstatus
+
+Dit is de stand van zaken na de uitvoering (PR's #59 en het vervolg). Per onderdeel: wat er is, en waar het bewust anders of nog niet is.
+
+| Fase | Stand | Toelichting |
+|---|---|---|
+| F0 Veiligheid en bugs | ✅ | S1, S2, S4–S6, S8–S12, S14 gedicht; hardened runtime aan; `CommandRisk` op tokens met tests. Open: of het ingebouwde MLX-model met hardened runtime zonder extra entitlement draait, is op een echte Mac te controleren. |
+| F1 Fundament | ✅ | `SafeStorage` (nooit overschrijven, kopie naast het bestand), SQLite-migraties, `os.Logger`, modeltypes uit `Demo/`, demo-scènes alleen in debug. `AppModel` is gesplitst in één bestand per onderdeel (`AppModel+….swift`, ± 320 regels in `AppModel.swift`), `SettingsView` per sectie. Anders dan voorgesteld zijn het **extensies**, geen aparte controller-objecten: dat geeft dezelfde overzichtelijkheid zonder de views om te bouwen. |
+| F2 Brein | ✅ | Eén `ToolRunner` voor alle modellen, `ModelProfile`, `BrainSelection` (afgeleid van de opgeslagen instellingen, zodat terugdraaien kan), lokaal standaard voor nieuwe installaties, modelchip, contextbudget, `num_ctx`. Een apart `ModelClient`-protocol is er niet: `ModelConversation` (één adapter per aanbieder) vervult die rol. |
+| F3 Intelligente chat | ✅ | Gefaseerde tool discovery met `use_source`, synthese-instructie, actiestatussen tot *gecontroleerd*. Chat, schermkaarten en Meedenken lopen nu via dezelfde `prepareRun` (D10); Meedenken werkt ook met een lokaal brein. |
+| F4 Accounts en koppelingen | ✅ | `AccountRegistry`, meerdere GitHub-accounts, MCP-client, bronnen die zichzelf registreren, `ConnectorErrorKind` met **Opnieuw verbinden** / **Opnieuw proberen**, `SecretStore` (atomisch bijwerken). Niet: de data-protection keychain (vraagt een gesigneerde build met keychain-access-group; Nook draait ook ongesigneerd) en OAuth met PKCE voor Google/Microsoft (F4b, optioneel; MCP is de route). |
+| F5 Navigatie en UI | ✅ | Hoofdvenster (Chat · Agents · Werkruimte), notch met Nook · Agents · Muziek, Instellingen in 8 secties, `ApprovalCenter` + `ApprovalView`, eerste-keer-flow in het venster, alle teksten uit `AppModel` in de vertaaltabellen, Duits volledig (`I18nCoverageTests`). De Agents-tab in de notch is van ± 2.250 naar ± 790 regels (accounts, composer en gebruiksstrook eruit; de detailweergave is nu één `AgentSessionDetail` voor notch en venster). Nog niet zo ver als de schatting van ± 600: de lijstrijen en het gesprek zitten er nog in. |
+| F6 Agents | ✅ | `AgentSessionRegistry` (één lijst, dedupe, Nooks eigen processen herkend aan hun omgeving, twee processen in één map = twee rijen), `QuotaService`, Codex-limieten per accountmap, weekoverzicht telt Nook-sessies mee, juist gesprek per account, modus/rechten/model per beurt in het venster. Het venster toont ook sessies die Nook niet runt (Wacht op jou · Actief · Eerder). |
+| F7 Werkruimte | ✅ | Ingebouwde terminal (SwiftTerm) en browser (WKWebView) bestonden al; nu ook `run_command` (alleen als actie, hele commando in beeld, gevaarlijke commando's geweigerd, zichtbare terminal), `read_nook_browser`/`open_in_nook_browser`, "Open terminal hier" bij sessies. Inloggen van agents gebeurt in de ingebouwde terminal; Nook ziet het inloggen door regelmatig te controleren of het account bekend is (geen exit-code, omdat de shell blijft openstaan). |
+| F8 Afronden | ✅ | README, `docs/ASSISTANT.md`, `docs/AGENTS.md`, `CONTRIBUTING.md` bijgewerkt; Duitse vertalingen aangevuld. |
+
+Aanvullend gedaan: de Nooks-lijst (zoeken, hernoemen, vastzetten, archiveren in plaats van wissen), één relatieve-tijdhelper, `SmallGhostButton` naar de gedeelde componenten.
+
+**Bewust niet gedaan:** de Shelf als aparte lijst met recente bijlagen (slepen op de chat en de paperclip vervangen hem), het `WS`-palet in `NookTheme` opnemen (`WS` houdt de achtergronden van het venster; tekst- en accentkleuren komen al uit `NookTheme`), een apart `ChatController`-object (zie F1).
+
+---
+
+
 > Status: **akkoord, in uitvoering.** Besluiten op de open vragen (onderaan): V1 Instellingen blijft een eigen venster · V2 Nook stelt per gebruiker zelf het beste lokale model voor (op basis van chip, geheugen en wat er al geïnstalleerd is) · V3 SwiftTerm mag · V4 eerst MCP, en de koppelingsarchitectuur zo dat nieuwe koppelingen met weinig werk toe te voegen zijn · V5 Koppelingen- en Shelf-tab mogen uit de notch · V6 fase 0 direct.
 >
 > Oorspronkelijke status bij oplevering: voorstel. Er was toen nog geen code gewijzigd. Dit document is gebaseerd op het lezen van de volledige repository op commit `1a9169a` (41.000 regels Swift, 142 bestanden). Bouwen en draaien kon in deze omgeving niet (Linux, geen Xcode); elke implementatiestap wordt daarom als eigen pull request door de macOS-CI (build + `NookTests`) gecontroleerd.

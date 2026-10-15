@@ -212,7 +212,7 @@ struct RunInspector: View {
             InfoRow(label: tr("ws.inspector.approvals"), value: run.provider.capabilities.approvals ? tr("ws.inspector.approvalsInNook") : nil,
                     help: run.provider.capabilities.approvals ? nil : tr("ws.inspector.approvalsUnavailable"))
             InfoRow(label: tr("ws.inspector.started"), value: run.createdAt.formatted(date: .abbreviated, time: .shortened))
-            InfoRow(label: tr("ws.inspector.lastActive"), value: WSFormat.relative(run.updatedAt))
+            InfoRow(label: tr("ws.inspector.lastActive"), value: NookDates.ago(run.updatedAt))
             InfoRow(label: tr("ws.inspector.sessionID"), value: run.providerSessionID, mono: true,
                     help: tr("ws.inspector.sessionIDHelp"))
             if !run.instructions.isEmpty {
