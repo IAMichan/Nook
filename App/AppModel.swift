@@ -76,13 +76,22 @@ final class AppModel: ObservableObject {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        return tools.specs + chatTools + connectors.tools + webSpecs + BrowserStore.shared.tools + TerminalStore.shared.tools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
+        all += webSpecs
+        all += BrowserStore.shared.tools
+        all += TerminalStore.shared.tools
+        return all
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        tools.specs + chatTools + connectors.hubTools + connectors.sources.flatMap { $0.tools } + web.specs(includeSearch: true) + BrowserStore.shared.tools + TerminalStore.shared.tools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools
+        all += connectors.sources.flatMap { $0.tools }
+        all += web.specs(includeSearch: true)
+        all += BrowserStore.shared.tools
+        all += TerminalStore.shared.tools
+        return all
     }
 
     /// Tools available for a chat prompt: scoped to permitted sources and tracked via ledger
