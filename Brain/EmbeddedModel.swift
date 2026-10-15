@@ -18,7 +18,7 @@ final class EmbeddedModel: ObservableObject {
     static var options: [LocalModelOption] { ModelAdvisor.catalog }
 
     /// System memory of this Mac, in GB.
-    static let memoryGB = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
+    nonisolated static let memoryGB = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
 
     @Published private(set) var installed: Set<String>
     private var container: ModelContainer?

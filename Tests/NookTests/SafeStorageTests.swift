@@ -51,7 +51,7 @@ final class SafeStorageTests: XCTestCase {
         let data = Data("broken".utf8)
         let first = SafeStorage.preserve(data, for: url, now: Date(timeIntervalSince1970: 0))
         let second = SafeStorage.preserve(data, for: url, now: Date(timeIntervalSince1970: 100))
-        XCTAssertEqual(first, second)
+        XCTAssertEqual(first?.resolvingSymlinksInPath(), second?.resolvingSymlinksInPath())
         let copies = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.contains(".unreadable-") }
         XCTAssertEqual(copies.count, 1)
     }
