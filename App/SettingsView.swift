@@ -690,10 +690,11 @@ struct SettingsView: View {
                 Text(tr("settings.connections.footer"))
             }
             Section(tr("settings.connections.services")) {
-                CloudConnectorSettings(connectors: app.connectors.sources.filter { matchesSearch($0) }, capabilities: capabilityLine) {
+                CloudConnectorSettings(connectors: app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0) }, capabilities: capabilityLine) {
                     app.connectors.refreshAll()
                 }
             }
+            MCPSettingsSection()
             if matchesSearch(title: app.portfolio.title) {
                 Section(tr("settings.connections.crypto")) {
                     PortfolioSettings(portfolio: app.portfolio)
@@ -715,7 +716,7 @@ struct SettingsView: View {
     }
 
     private var localSources: [ContextSource] {
-        let ids = ["calendar", "reminders", "mail", "browser", "files", "clipboard"]
+        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard"]
         return ids.compactMap { app.connectors.source(id: $0) }.filter { matchesSearch($0) }
     }
 

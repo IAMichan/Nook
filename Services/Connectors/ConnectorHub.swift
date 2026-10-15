@@ -16,6 +16,34 @@ final class ConnectorHub: ObservableObject {
     func register(_ list: [ContextSource]) {
         for source in list where !sources.contains(where: { $0.id == source.id }) {
             sources.append(source)
+            // Tools of a source that is not in the built-in tables yet still follow the source picker.
+            let unknown = source.tools.map(\.name).filter { SourceCatalog.source(forTool: $0) == nil }
+            if SourceCatalog.descriptor(source.id) == nil || !unknown.isEmpty {
+                SourceCatalog.register(SourceCatalog.descriptor(source.id) ?? SourceDescriptor(id: source.id, title: source.title, kind: .apiKey),
+                                       tools: source.tools.map(\.name))
+            }
+        }
+    }
+
+    /// Removes a source added at runtime (an MCP server the user deleted).
+    func unregister(_ id: String) {
+        if let mcp = sources.first(where: { $0.id == id }) as? MCPConnector { mcp.disconnect() }
+        sources.removeAll { $0.id == id }
+        lastRefresh[id] = nil
+        SourceCatalog.unregister(id)
+        revision += 1
+    }
+
+    /// Keeps the MCP connectors in line with the servers in Settings.
+    func syncMCP(_ servers: [MCPServerConfig]) {
+        let wanted = Set(servers.map(\.sourceID))
+        for source in sources where source is MCPConnector && !wanted.contains(source.id) { unregister(source.id) }
+        for config in servers {
+            if let existing = sources.first(where: { $0.id == config.sourceID }) as? MCPConnector, existing.config == config { continue }
+            unregister(config.sourceID)
+            let connector = MCPConnector(config: config)
+            sources.append(connector)
+            refresh(connector)
         }
     }
 

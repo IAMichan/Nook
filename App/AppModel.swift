@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     /// Tools available for a chat prompt: scoped to permitted sources and tracked via ledger
     /// to record what Nook inspected, returned, or failed.
     func scopedTools(_ scope: SourceScope, ledger: RetrievalLedger?) -> [ToolSpec] {
-        allTools.filter { scope.allowsTool($0.name) }.map { spec in
+        allTools.filter { scope.allowsTool($0.name) }.compactMap { Self.restrictAccounts($0, to: scope) }.map { spec in
             // Read tools only; drawing a chart or drafting an email is not a retrieval tool (and never cached).
             guard spec.kind == .read, let ledger, SourceCatalog.source(forTool: spec.name) != nil else { return spec }
             let run = spec.run
@@ -90,6 +90,48 @@ final class AppModel: ObservableObject {
                 }
             )
         }
+    }
+
+    /// A tool with an `account` field only offers the accounts this chat allows. With one left, the field disappears and
+    /// that account is filled in; with none left, the tool is not offered at all. A call naming another account is refused.
+    static func restrictAccounts(_ spec: ToolSpec, to scope: SourceScope) -> ToolSpec? {
+        guard let service = SourceCatalog.source(forTool: spec.name),
+              var properties = spec.schema["properties"] as? [String: Any],
+              let field = properties["account"] as? [String: Any],
+              let names = field["enum"] as? [String] else { return spec }
+        let accounts = AccountRegistry.shared.accounts(for: service)
+        let allowed = names.filter { name in AccountRegistry.match(name, in: accounts).map { scope.allowsAccount($0.id) } ?? true }
+        guard !allowed.isEmpty else { return nil }
+        guard allowed.count < names.count else { return spec }
+        var schema = spec.schema
+        if allowed.count == 1 {
+            properties.removeValue(forKey: "account")
+            schema["required"] = ((schema["required"] as? [String]) ?? []).filter { $0 != "account" }
+        } else {
+            var restricted = field
+            restricted["enum"] = allowed
+            properties["account"] = restricted
+        }
+        schema["properties"] = properties
+        let run = spec.run
+        let only = allowed.count == 1 ? allowed[0] : nil
+        return ToolSpec(
+            name: spec.name, description: spec.description, schema: schema, kind: spec.kind,
+            summarize: { input in
+                var filled = input
+                if let only, filled["account"] == nil { filled["account"] = only }
+                return spec.summarize(filled)
+            },
+            tag: spec.tag,
+            run: { input in
+                var filled = input
+                if let only { filled["account"] = only }
+                if let chosen = filled["account"] as? String, !allowed.contains(where: { $0.caseInsensitiveCompare(chosen) == .orderedSame }) {
+                    throw NookError(tr("chat.account.notAllowed", chosen))
+                }
+                return try await run(filled)
+            }
+        )
     }
 
     /// Mock demo content for UI preview without real credentials.
@@ -230,6 +272,13 @@ final class AppModel: ObservableObject {
         ])
         connectors.register(CloudConnectors.makeAll())
         connectors.register([portfolio])
+        // MCP servers from Settings, kept in line when the user adds or removes one.
+        connectors.syncMCP(MCPServerStore.shared.servers)
+        MCPServerStore.shared.$servers
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
+            .store(in: &bag)
         connectors.start()
         codex.start()
 
@@ -794,7 +843,13 @@ final class AppModel: ObservableObject {
         guard scope.allowsTool(action.tool) else {
             return [tr("chat.plan.notAllowed", SourceCatalog.source(forTool: action.tool).map(SourceCatalog.title) ?? action.tool)]
         }
-        return ActionGate.problems(tool: action.tool, input: action.input, schema: spec.schema, parseDate: NookDates.parse)
+        // Checked again at run time: the account must still be allowed in this chat.
+        if let service = SourceCatalog.source(forTool: action.tool), let chosen = action.input["account"] as? String,
+           let account = AccountRegistry.match(chosen, in: AccountRegistry.shared.accounts(for: service)), !scope.allowsAccount(account.id) {
+            return [tr("chat.account.notAllowed", chosen)]
+        }
+        let schema = Self.restrictAccounts(spec, to: scope)?.schema ?? spec.schema
+        return ActionGate.problems(tool: action.tool, input: action.input, schema: schema, parseDate: NookDates.parse)
     }
 
     /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:

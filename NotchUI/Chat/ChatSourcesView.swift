@@ -272,6 +272,26 @@ struct ScopeMenu: View {
         )
     }
 
+    /// Services with more than one connected account: only there choosing accounts matters.
+    private var accountServices: [String] {
+        let _ = app.connectors.revision
+        guard let github = app.connectors.source(id: "github") as? GitHubConnector, github.isActive, github.accounts.count > 1 else { return [] }
+        return ["github"]
+    }
+
+    private func accountBinding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { scope.allowsAccount(id) },
+            set: { on in
+                update { scope in
+                    var excluded = scope.excludedAccounts ?? []
+                    if on { excluded.remove(id) } else { excluded.insert(id) }
+                    scope.excludedAccounts = excluded.isEmpty ? nil : excluded
+                }
+            }
+        )
+    }
+
     var body: some View {
         let current = scope
         Menu {
@@ -281,6 +301,16 @@ struct ScopeMenu: View {
                     Toggle(app.connectors.source(id: id)?.title ?? SourceCatalog.title(id), isOn: onlyBinding(id))
                 }
                 Toggle(SourceCatalog.title(SourceCatalog.web), isOn: onlyBinding(SourceCatalog.web))
+            }
+            let multi = accountServices
+            if !multi.isEmpty {
+                Section(tr("scope.accounts")) {
+                    ForEach(multi, id: \.self) { service in
+                        ForEach(AccountRegistry.shared.accounts(for: service)) { account in
+                            Toggle(account.title(service: SourceCatalog.title(service)), isOn: accountBinding(account.id))
+                        }
+                    }
+                }
             }
             Section(tr("scope.never")) {
                 Toggle(SourceCatalog.title(SourceCatalog.screen), isOn: neverBinding(SourceCatalog.screen))

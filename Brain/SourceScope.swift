@@ -35,7 +35,9 @@ enum SourceCatalog {
     static let web = "web"
     static let loops = "loops"
 
-    static let all: [SourceDescriptor] = [
+    /// Sources Nook knows out of the box. Connectors added later (MCP servers, new services) register themselves with
+    /// `register(_:tools:aliases:intents:)`, so adding one does not mean editing the tables in this file.
+    static let builtIn: [SourceDescriptor] = [
         SourceDescriptor(id: "calendar", title: "Agenda", kind: .builtIn),
         SourceDescriptor(id: "icalfeeds", title: "Andere agenda's", kind: .apiKey),
         SourceDescriptor(id: "calcom", title: "Cal.com", kind: .apiKey),
@@ -58,6 +60,55 @@ enum SourceCatalog {
         SourceDescriptor(id: "customsources", title: "Eigen bronnen", kind: .custom),
         SourceDescriptor(id: web, title: "Web", kind: .web)
     ]
+
+    static var all: [SourceDescriptor] {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        return builtIn + registry.descriptors.filter { added in !builtIn.contains { $0.id == added.id } }
+    }
+
+    /// What connectors registered at runtime: their descriptor, which tools are theirs, and how people refer to them.
+    private final class Registry: @unchecked Sendable {
+        let lock = NSLock()
+        var descriptors: [SourceDescriptor] = []
+        var tools: [String: String] = [:]
+        var aliases: [(pattern: String, ids: [String])] = []
+        var intents: [(pattern: String, ids: [String])] = []
+    }
+    private static let registry = Registry()
+
+    /// Makes a source known to the catalog: its tools then follow the source picker and per-chat restrictions, and the
+    /// router can pick it for a question. `aliases` and `intents` are regular expressions (case-insensitive).
+    static func register(_ descriptor: SourceDescriptor, tools: [String], aliases: [String] = [], intents: [String] = []) {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        registry.descriptors.removeAll { $0.id == descriptor.id }
+        registry.descriptors.append(descriptor)
+        registry.tools = registry.tools.filter { $0.value != descriptor.id }
+        for tool in tools { registry.tools[tool] = descriptor.id }
+        registry.aliases.removeAll { $0.ids == [descriptor.id] }
+        registry.intents.removeAll { $0.ids == [descriptor.id] }
+        let escapedTitle = NSRegularExpression.escapedPattern(for: descriptor.title.lowercased())
+        let allAliases = (aliases + [escapedTitle]).filter { !$0.isEmpty }
+        registry.aliases.append((allAliases.joined(separator: "|"), [descriptor.id]))
+        if !intents.isEmpty { registry.intents.append((intents.joined(separator: "|"), [descriptor.id])) }
+    }
+
+    /// Removes a runtime source (an MCP server that was deleted).
+    static func unregister(_ id: String) {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        registry.descriptors.removeAll { $0.id == id }
+        registry.tools = registry.tools.filter { $0.value != id }
+        registry.aliases.removeAll { $0.ids == [id] }
+        registry.intents.removeAll { $0.ids == [id] }
+    }
+
+    static var registeredIntents: [(pattern: String, ids: [String])] {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        return registry.intents
+    }
 
     static func descriptor(_ id: String) -> SourceDescriptor? {
         all.first { $0.id == id }
@@ -89,13 +140,23 @@ enum SourceCatalog {
 
     static func source(forTool name: String) -> String? {
         if let exact = exactTools[name] { return exact }
+        registry.lock.lock()
+        let registered = registry.tools[name]
+        registry.lock.unlock()
+        if let registered { return registered }
         if name.hasPrefix("github_") { return "github" }
         return nil
     }
 
     /// How the user refers to a source (Dutch, English, German). A single word can cover multiple sources:
     /// "agenda" covers Apple Calendar, your ICS calendars, and Cal.com combined.
-    static let aliases: [(pattern: String, ids: [String])] = [
+    static var aliases: [(pattern: String, ids: [String])] {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        return builtInAliases + registry.aliases
+    }
+
+    private static let builtInAliases: [(pattern: String, ids: [String])] = [
         (#"agenda'?s?|kalender\w*|calendars?|ical"#, ["calendar", "icalfeeds", "calcom"]),
         (#"cal\.com"#, ["calcom"]),
         (#"herinnering\w*|reminders?|erinnerung\w*"#, ["reminders"]),
@@ -143,10 +204,19 @@ struct SourceScope: Equatable, Codable {
     var excluded: Set<String> = []
     /// Mentioned in the query without restriction ("search Slack and GitHub"): prioritize searching there, send full context.
     var focus: Set<String> = []
+    /// Accounts this chat may not use ("github.werk"), on top of the sources above. Optional: chats saved before
+    /// accounts existed have none.
+    var excludedAccounts: Set<String>?
 
     static let automatic = SourceScope()
 
-    var isRestricted: Bool { mode == .only || !excluded.isEmpty }
+    var isRestricted: Bool { mode == .only || !excluded.isEmpty || !(excludedAccounts ?? []).isEmpty }
+
+    /// Whether this chat may use that account. A source that is not allowed allows none of its accounts.
+    func allowsAccount(_ id: String) -> Bool {
+        let service = id.split(separator: ".").first.map(String.init) ?? id
+        return allows(service) && !(excludedAccounts ?? []).contains(id)
+    }
 
     func allows(_ id: String) -> Bool {
         if excluded.contains(id) { return false }
@@ -313,7 +383,7 @@ enum SourceRouter {
         if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil { return allowed }
         var wanted = core.union(scope.focus)
         if scope.mode == .only { wanted.formUnion(scope.included) }
-        for intent in intents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
+        for intent in intents + SourceCatalog.registeredIntents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
             wanted.formUnion(intent.ids)
         }
         for mention in SourceCatalog.mentions(in: text) { wanted.formUnion(mention.ids) }
