@@ -40,6 +40,10 @@ struct WorkspaceSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             controls
+            TextField(tr("ws.sidebar.search"), text: $search)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
             List(selection: selectionBinding) {
                 if !workspace.activeRuns.isEmpty && filter != .running && filter != .archived {
                     Section {
@@ -66,7 +70,6 @@ struct WorkspaceSidebar: View {
                 }
             }
             .listStyle(.sidebar)
-            .searchable(text: $search, placement: .sidebar, prompt: tr("ws.sidebar.search"))
         }
         .confirmationDialog(tr("ws.delete.title"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                             presenting: confirmDelete) { run in
