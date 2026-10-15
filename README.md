@@ -44,9 +44,14 @@ Nook laat de eerste keer een welkomstkaart zien. **Instellen** opent het hoofdve
 Voor je agents: klik bij **Instellingen › Agents** op **Koppel…** naast Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp of Hermes. Elke andere agent kan zich melden met `nook_agent`, zie [docs/AGENTS.md](docs/AGENTS.md). Nook laat precies zien wat er in het instellingenbestand verandert, maakt eerst een backup en schrijft pas na jouw OK. Start de agent daarna opnieuw. Met **Claude-abonnement in de notch** zie je ook je 5-uurs- en weeklimiet (Pro/Max).
 
 **Waar vind je wat**
-- **De notch** is de snelle plek: vragen stellen, beslissingen (goedkeuringen, vragen van agents, voorstellen van Meedenken), Vandaag, een compacte lijst met agents en muziek.
-- **Het hoofdvenster** (⌥⌘W) heeft drie delen: **Chat** (al je Nooks), **Agents** (sessies, goedkeuringen, wijzigingen, commit en pull request) en **Werkruimte** (terminals, browser, worktrees).
-- **Instellingen** (⌘,) is de enige plek voor configuratie: Algemeen, Brein, Accounts & koppelingen, Assistent, Agents, Gebruik, Privacy & beveiliging (met het logboek) en Stem & geluid.
+- **De notch** is de plek waar je alles doet, zonder dat er een ander venster opengaat. Bovenin staan drie tabs (en Muziek als er iets speelt):
+  - **Nook**: vragen stellen en chatten, Vandaag en je Nooks.
+  - **Agents**: sessies volgen en besturen, goedkeuren, **Nieuwe sessie**, en per sessie de wijzigingen, commit, push en pull request. Zo'n taak opent ín de notch; met **Terug** (of Esc) ga je terug.
+  - **Werkruimte**: terminals, de browser en worktrees.
+
+  De notch opent op de tab die je het laatst gebruikte, behalve als een agent op je wacht: dan opent hij bij die agent. Een stipje naast een tab betekent: hier wacht iets op je (amber) of hier wordt gewerkt (paars).
+- **Instellingen** (⌘, of het tandwiel in de notch) is de enige plek voor configuratie en koppelen: Algemeen, Accounts & koppelingen (bovenaan wat al gekoppeld is, daaronder **Koppel** bij elke dienst), Brein, Agents (agents koppelen en hun accounts), Assistent, Stem & geluid, Privacy & beveiliging en Gebruik.
+- Liever een groot venster? Kies **Open in venster** in het menubalk-menu (⌥⌘W).
 
 Wil je Nook eerst bekijken met voorbeeldgegevens? Zet **Voorbeelddata** aan bij Instellingen › Algemeen.
 

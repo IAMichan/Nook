@@ -101,12 +101,25 @@ extension AppModel {
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
     }
 
-    /// Opens the workspace, optionally directly focused on a run.
+    /// Opens your agents in the notch, optionally on one session or straight into a new one. Everything you do with
+    /// agents happens in the notch; the separate window is only for who asks for it (menu bar › Open in window).
     func openWorkspace(run id: UUID? = nil, newSession: Bool = false) {
+        if let id {
+            workspace.selectedRunID = id
+            viewModel.selectedAgentID = "run:" + id.uuidString
+        }
+        if newSession {
+            viewModel.open(.newSession)
+        } else {
+            viewModel.sheet = nil
+            viewModel.show(.panel(.agents))
+        }
+    }
+
+    /// The separate main window (chat, agents and workspace side by side), opened only on request.
+    func openWindow() {
         if case .panel = viewModel.state { viewModel.show(.idle) }
-        if let id { workspace.selectedRunID = id }
         WorkspaceWindowController.shared.show(app: self)
-        if newSession { NotificationCenter.default.post(name: .nookWorkspaceNewSession, object: nil) }
     }
 
     /// Profile associated with a workspace run.
@@ -117,6 +130,7 @@ extension AppModel {
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString { return }
         let runID = run.id
         presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
                             open: (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) }))
@@ -282,10 +296,22 @@ extension AppModel {
         if let tool { NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue) }
     }
 
-    /// A terminal in Nook's window, in `folder`, optionally running `command` first.
+    /// A terminal in Nook, in `folder`, optionally running `command` first. Opens in the notch's Workspace tab, or in the
+    /// window if you are working there.
     func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
         TerminalStore.shared.open(in: folder, command: command, title: title)
-        openMainWindow(.workspace, tool: .terminals)
+        if WorkspaceWindowController.shared.isKey {
+            openMainWindow(.workspace, tool: .terminals)
+        } else {
+            showWorkbench(.terminals)
+        }
+    }
+
+    /// The notch's Workspace tab, on one of its tools.
+    func showWorkbench(_ tool: WorkbenchView.Tool) {
+        UserDefaults.standard.set(tool.rawValue, forKey: "workbench.tool")
+        NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue)
+        viewModel.show(.panel(.workspace))
     }
 
     /// Runs a command for the user where they can see it: the built-in terminal, or the terminal app they chose.

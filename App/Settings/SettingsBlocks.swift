@@ -231,7 +231,6 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
             Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
-            Button(tr("settings.ws.open")) { app.openWorkspace() }
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {

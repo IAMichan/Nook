@@ -5,6 +5,8 @@ struct RunInspector: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     let runID: UUID
+    /// Shown inside the notch: changes, commit and pull request open as notch tasks instead of sheets.
+    var embedded = false
     @State private var changes: GitFileChange?
     @State private var showCommit = false
     @State private var showPullRequest = false
@@ -23,7 +25,8 @@ struct RunInspector: View {
                 }
                 .padding(16)
             }
-            .background(WS.surface)
+            .scrollIndicators(embedded ? .never : .automatic)
+            .background(embedded ? Color.clear : WS.surface)
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }
@@ -120,7 +123,7 @@ struct RunInspector: View {
                     .font(NookTheme.mono(11.5))
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(files.prefix(40)) { file in
-                            Button { changes = file; workspace.markReviewed(runID) } label: { FileChangeRow(file: file) }
+                            Button { review(file) } label: { FileChangeRow(file: file) }
                                 .buttonStyle(.plain)
                         }
                         if files.count > 40 {
@@ -130,17 +133,17 @@ struct RunInspector: View {
                 }
                 HStack(spacing: 6) {
                     Button(tr("ws.git.review")) {
-                        if let first = files.first { changes = first; workspace.markReviewed(runID) }
+                        if let first = files.first { review(first) }
                     }
                     .disabled(files.isEmpty)
-                    Button(tr("ws.git.commit")) { showCommit = true }
+                    Button(tr("ws.git.commit")) { if embedded { app.viewModel.open(.commit(runID)) } else { showCommit = true } }
                         .disabled(files.isEmpty || run.status.isActive)
                         .help(run.status.isActive ? tr("ws.error.busy") : tr("ws.git.commit.help"))
                     Button(tr("ws.git.push")) { push() }
                         .disabled(busy || run.status.isActive || snapshot?.status?.detached == true)
                         .help(tr("ws.git.push.help"))
                     Menu {
-                        Button(tr("ws.git.pullRequest")) { showPullRequest = true }
+                        Button(tr("ws.git.pullRequest")) { if embedded { app.viewModel.open(.pullRequest(runID)) } else { showPullRequest = true } }
                         if run.isolation == .worktree && workspace.worktreeExists(run) {
                             Divider()
                             Button(tr("ws.worktree.remove"), role: .destructive) { confirmRemove = true }
@@ -229,6 +232,11 @@ struct RunInspector: View {
     }
 
     // MARK: Actions
+
+    private func review(_ file: GitFileChange) {
+        workspace.markReviewed(runID)
+        if embedded { app.viewModel.open(.changes(runID, file: file.path)) } else { changes = file }
+    }
 
     private func push() {
         busy = true

@@ -9,6 +9,8 @@ struct NewSessionSheet: View {
     let onStarted: (UUID) -> Void
     /// Closes the sheet (it is presented as a native AppKit sheet, see `WorkspaceWindowController.presentSheet`).
     let close: () -> Void
+    /// Shown inside the notch: no own title bar (the notch shows it) and it fills the space it gets.
+    var embedded = false
 
     @State private var config = NewRunConfig()
     @State private var project: ProjectInfo?
@@ -27,14 +29,16 @@ struct NewSessionSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(tr("ws.new.title")).font(NookTheme.font(16, .semibold))
-                Spacer()
-                Text(tr("ws.new.shortcut")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+            if !embedded {
+                HStack {
+                    Text(tr("ws.new.title")).font(NookTheme.font(16, .semibold))
+                    Spacer()
+                    Text(tr("ws.new.shortcut")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                Divider()
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     workspaceSection
@@ -43,13 +47,16 @@ struct NewSessionSheet: View {
                     isolationSection
                     instructionsSection
                 }
-                .padding(20)
+                .padding(embedded ? 4 : 20)
+                .frame(maxWidth: embedded ? 720 : CGFloat.infinity, alignment: .leading)
             }
-            Divider()
+            .scrollIndicators(.never)
+            Divider().opacity(embedded ? 0.4 : 1)
             footer
         }
-        .frame(width: 660, height: 720)
-        .background(WS.background)
+        .frame(width: embedded ? nil : 660, height: embedded ? nil : 720)
+        .frame(maxWidth: embedded ? CGFloat.infinity : nil, maxHeight: embedded ? CGFloat.infinity : nil, alignment: .topLeading)
+        .background(embedded ? Color.clear : WS.background)
         .onAppear(perform: prepare)
         .onChange(of: config.provider) { _, provider in providerChanged(provider) }
         .onChange(of: config.task) { _, task in
@@ -426,7 +433,7 @@ struct NewSessionSheet: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(starting || blockingReason != nil)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 4 : 20)
         .padding(.vertical, 12)
     }
 
@@ -498,7 +505,7 @@ struct NewSessionSheet: View {
         panel.prompt = tr("ws.new.choosePrompt")
         panel.message = tr("ws.new.chooseMessage")
         if let current = project?.path { panel.directoryURL = URL(fileURLWithPath: current) }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         select(url.path)
     }
 
@@ -508,7 +515,7 @@ struct NewSessionSheet: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = tr("ws.new.choosePrompt")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         config.worktreeRoot = url.path
     }
 

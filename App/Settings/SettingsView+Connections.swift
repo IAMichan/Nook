@@ -5,14 +5,22 @@ import AppKit
 extension SettingsView {
     // MARK: Connectors
 
+    /// Calm and in the order you need it: what is connected, what is on your Mac, and below that what you can add.
+    /// Adding a service is one click on Connect; agent accounts live under Agents.
     var connectionsSection: some View {
-        Group {
+        let services = app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0) }
+        let connected = services.filter(isConnected)
+        let available = services.filter { !isConnected($0) }
+        return Group {
             Section {
                 TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
-                Text(tr("settings.connections.legend"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !connected.isEmpty {
+                Section(tr("settings.connections.connected")) {
+                    CloudConnectorSettings(connectors: connected, capabilities: capabilityLine) {
+                        app.connectors.refreshAll()
+                    }
+                }
             }
             Section {
                 let sources = localSources
@@ -24,35 +32,45 @@ extension SettingsView {
             } footer: {
                 Text(tr("settings.connections.footer"))
             }
-            Section(tr("settings.connections.services")) {
-                CloudConnectorSettings(connectors: app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0) }, capabilities: capabilityLine) {
-                    app.connectors.refreshAll()
+            if !available.isEmpty {
+                Section {
+                    CloudConnectorSettings(connectors: available, capabilities: capabilityLine) {
+                        app.connectors.refreshAll()
+                    }
+                } header: {
+                    Text(tr("settings.connections.addService"))
+                } footer: {
+                    Text(tr("settings.connections.legend"))
                 }
             }
             MCPSettingsSection()
-            // Agent accounts (Claude Code, Codex, Gemini): the same place as every other account.
-            AccountsSettingsSection()
-            Section {} footer: {
-                Text(tr("accounts.isolationNote"))
-            }
             if matchesSearch(title: app.portfolio.title) {
                 Section(tr("settings.connections.crypto")) {
                     PortfolioSettings(portfolio: app.portfolio)
                 }
             }
-            Section {
-                ForEach(NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }, id: \.name) { item in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name)
-                        Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
+            if !others.isEmpty {
+                Section {
+                    DisclosureGroup(tr("settings.connections.moreApps")) {
+                        ForEach(others, id: \.name) { item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name)
+                                Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.vertical, 2)
+                        }
                     }
+                } footer: {
+                    Text(tr("settings.connections.notBuiltInFooter"))
                 }
-            } header: {
-                Text(tr("settings.connections.notBuiltIn"))
-            } footer: {
-                Text(tr("settings.connections.notBuiltInFooter"))
             }
         }
+    }
+
+    /// A service with its keys in place (switched on or not): it belongs at the top, under Connected.
+    func isConnected(_ source: ContextSource) -> Bool {
+        (source as? any CloudConnectorConfig)?.isConfigured ?? false
     }
 
     var localSources: [ContextSource] {
@@ -89,13 +107,11 @@ extension SettingsView {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
-                    Text(localDetail(source)).font(.caption).foregroundStyle(.secondary)
-                    Text(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? ""))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(localDetail(source)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
+            // The details (what Nook reads, what needs approval) on hover: the list itself stays quiet.
+            .help(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? ""))
         }
     }
 

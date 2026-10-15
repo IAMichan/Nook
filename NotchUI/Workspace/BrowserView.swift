@@ -183,7 +183,7 @@ struct BrowserView: View {
             do {
                 let page = try await store.pageText()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
-                app.openMainWindow(.chat)
+                if WorkspaceWindowController.shared.isKey { app.openMainWindow(.chat) } else { app.showChat() }
             } catch {
                 app.viewModel.present(app.errorCard(error.localizedDescription))
             }

@@ -106,11 +106,16 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { expanded.toggle() } }
-                Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .disabled(!configured)
+                if configured {
+                    Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                } else if !expanded {
+                    // Not connected yet: one clear button instead of a switch that cannot be used.
+                    Button(tr("connector.link")) { withAnimation { expanded = true } }
+                        .controlSize(.small)
+                }
             }
         }
         .onAppear { load() }

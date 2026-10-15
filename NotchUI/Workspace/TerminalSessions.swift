@@ -210,7 +210,7 @@ struct TerminalsView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         store.open(in: url.path)
     }
 }

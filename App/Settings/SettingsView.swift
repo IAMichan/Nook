@@ -6,7 +6,7 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, brain, connections, assistant, agents, usage, privacy, voice
+    case general, connections, brain, agents, assistant, voice, privacy, usage
 
     var id: String { rawValue }
 

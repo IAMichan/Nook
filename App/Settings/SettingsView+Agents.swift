@@ -16,6 +16,11 @@ extension SettingsView {
             } footer: {
                 Text(tr("settings.agents.linkAgentsFooter"))
             }
+            // Accounts per agent (personal, work…): next to linking the agents themselves.
+            AccountsSettingsSection()
+            Section {} footer: {
+                Text(tr("accounts.isolationNote"))
+            }
             WorkspaceSettingsSection()
         }
     }

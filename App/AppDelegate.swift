@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         talkItem = add(to: menu, title: tr("menu.talk"), action: #selector(talk))
         screenItem = add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen))
         weekRecapItem = add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap))
-        workspaceItem = add(to: menu, title: tr("menu.workspace"), action: #selector(openWorkspace), key: "w")
+        workspaceItem = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
         workspaceItem?.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         talkItem?.title = tr("menu.talk")
         screenItem?.title = tr("menu.screen")
         weekRecapItem?.title = tr("menu.weekRecap")
-        workspaceItem?.title = tr("menu.workspace")
+        workspaceItem?.title = tr("menu.window")
         demoScenesItem?.title = tr("menu.demoScenes")
         if let demoSubmenu = demoSubmenu {
             for item in demoSubmenu.items {
@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
-    @objc private func openWorkspace() { model.openWorkspace() }
+    @objc private func openWorkspace() { model.openWindow() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func showScene(_ sender: NSMenuItem) {

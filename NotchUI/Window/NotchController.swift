@@ -66,7 +66,10 @@ final class NotchController {
 
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
-        let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel).environmentObject(app))
+        let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel)
+            .environmentObject(app)
+            .environmentObject(app.workspace)
+            .environmentObject(app.workspace.settings))
         host.sizingOptions = []
         host.frame = NSRect(origin: .zero, size: Self.panelSize)
         panel.contentView = host
@@ -147,8 +150,8 @@ final class NotchController {
         } else if panel.isKeyWindow {
             // Focus is preserved during thinking: subsequent response provides a follow-up text field.
             if case .card(let card) = state, card.id == "thinking" { return }
-            // In chat, keep typing focus.
-            if state == .panel(.nook) || state == .panel(.chat) { return }
+            // Inside the panel (chat, a session, a terminal), keep typing focus.
+            if case .panel = state { return }
             // Finished typing: return focus to previously active application.
             panel.resignKey()
             previousApp?.activate(options: [])
@@ -232,7 +235,10 @@ final class NotchController {
             mirrorModel.geometry = mirrorGeometry
             mirrorModel.show(.idle)
             let panel = NotchPanel()
-            let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel).environmentObject(app))
+            let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel)
+                .environmentObject(app)
+                .environmentObject(app.workspace)
+                .environmentObject(app.workspace.settings))
             host.sizingOptions = []
             host.frame = NSRect(origin: .zero, size: Self.panelSize)
             panel.contentView = host
@@ -281,8 +287,10 @@ final class NotchController {
         // A click in another Nook window (Settings) is not treated as a global click by macOS.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             let window = event.windowNumber
+            // A click in a folder picker opened from the notch is part of what you are doing there.
+            let modal = MainActor.assumeIsolated { NSApp.modalWindow != nil }
             Task { @MainActor in
-                guard let self, window != self.panel?.windowNumber else { return }
+                guard let self, !modal, window != self.panel?.windowNumber else { return }
                 self.viewModel.clickedOutside()
             }
             return event
