@@ -1,7 +1,7 @@
 import Foundation
 
-/// Vragen om mee te beginnen die passen bij wat je nu doet: het venster dat voor staat, je volgende afspraak,
-/// agents die wachten, open punten en het moment van de dag. Geen vaste lijst, dus nooit steeds hetzelfde.
+/// Starter prompts tailored to what the user is currently doing: the frontmost window, upcoming meeting,
+/// waiting agents, open loops, and time of day. Dynamic, avoiding repetitive lists.
 extension AppModel {
     var startSuggestions: [String] {
         var ideas: [(priority: Int, text: String)] = []
@@ -9,26 +9,26 @@ extension AppModel {
         let hour = Calendar.current.component(.hour, from: now)
         let weekday = Calendar.current.component(.weekday, from: now)
 
-        // 1. Wat je nu voor je hebt.
+        // 1. What's currently in front.
         if let front = screenContext.windows.first(where: { $0.isFront }) {
             for idea in Self.ideas(forApp: front.app, bundleID: front.bundleID, title: front.title) {
                 ideas.append((100, idea))
             }
         }
 
-        // 2. Een agent die op je wacht of vastliep.
+        // 2. An agent waiting on input or stuck.
         if let waiting = hub.sessions.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
             ideas.append((95, tr("suggest.agent.waiting", waiting.name)))
         } else if let failed = hub.sessions.first(where: { $0.status == .failed }) {
             ideas.append((90, tr("suggest.agent.failed", failed.name)))
         }
 
-        // 3. Je volgende afspraak.
+        // 3. Upcoming calendar event.
         if let next = upcoming.first(where: { $0.end > now }), next.start.timeIntervalSince(now) < 4 * 3600 {
             ideas.append((85, tr("suggest.prepare", Self.short(next.title, 26))))
         }
 
-        // 4. Moment van de dag en de week.
+        // 4. Time of day and day of week.
         let todayCount = upcoming.filter { Calendar.current.isDateInToday($0.start) }.count
         if hour < 11 {
             ideas.append((70, todayCount > 0 ? tr("home.suggestions.summarizeDay") : tr("suggest.day.priority")))
@@ -43,7 +43,7 @@ extension AppModel {
             ideas.append((60, tr("suggest.cal.chart")))
         }
 
-        // 5. Wat er nog openstaat en wat er binnenkomt.
+        // 5. Open loops and inbound updates.
         if let loop = loops.first {
             ideas.append((55, loops.count > 1 ? tr("suggest.loops.many", loops.count) : tr("suggest.loops.one", Self.short(loop.title, 28))))
         }
@@ -61,7 +61,7 @@ extension AppModel {
             ideas.append((40, tr("suggest.stripe")))
         }
 
-        // Altijd iets: een ruime vraag die nooit verkeerd is.
+        // Fallback: an open-ended prompt that always works.
         ideas.append((10, hour < 12 ? tr("home.suggestions.summarizeDay") : tr("suggest.anything")))
 
         var seen = Set<String>()
@@ -72,7 +72,7 @@ extension AppModel {
             .map { $0 }
     }
 
-    /// Wat logisch is in de app die voor staat.
+    /// Relevant suggestions based on the active frontmost application.
     private static func ideas(forApp app: String, bundleID: String, title: String) -> [String] {
         let id = bundleID.lowercased()
         let name = app.lowercased()

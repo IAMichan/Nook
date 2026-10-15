@@ -34,7 +34,7 @@ final class MailUnreadTests: XCTestCase {
         XCTAssertTrue(stats.contains("Ouder dan 14 dagen: 1"))
         XCTAssertTrue(stats.contains("Meeste ongelezen van: Lisa de Vries: 2"))
         XCTAssertTrue(stats.contains("Oud: 1"))
-        // De laatste twee dagen van de reeks: gisteren 2, vandaag 1.
+        // The last two days of the range: yesterday 2, today 1.
         let perDay = stats.components(separatedBy: "\n").first { $0.hasPrefix("Per dag") } ?? ""
         XCTAssertTrue(perDay.hasSuffix(": 2, wo 14 okt: 1") || perDay.hasSuffix(": 2, wo 14 okt.: 1"), perDay)
     }

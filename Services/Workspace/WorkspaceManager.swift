@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Een toestemmingsvraag van een werkruimte-sessie die op jou wacht.
+/// A pending permission request from a workspace session awaiting confirmation.
 struct PendingPermission: Identifiable, Equatable {
     let id: String
     let runID: UUID
@@ -18,7 +18,7 @@ struct PendingPermission: Identifiable, Equatable {
     }
 }
 
-/// Wat Nook laatst van Git zag voor een sessie.
+/// Latest Git snapshot observed by Nook for a session.
 struct GitSnapshot: Equatable {
     var status: GitStatus?
     var divergence: (ahead: Int, behind: Int)?
@@ -33,7 +33,7 @@ struct GitSnapshot: Equatable {
     }
 }
 
-/// Eén regel in het worktree-overzicht.
+/// A single row in the worktree overview.
 struct WorktreeRow: Identifiable, Equatable {
     var repoRoot: String
     var worktree: GitWorktree
@@ -45,7 +45,7 @@ struct WorktreeRow: Identifiable, Equatable {
     var id: String { worktree.path }
 }
 
-/// Wat een project is in de werkruimte: een map, met Git-informatie als het een repository is.
+/// Workspace representation of a project: a directory, with Git metadata if it is a repository.
 struct ProjectInfo: Equatable {
     var path: String
     var name: String
@@ -59,9 +59,9 @@ struct ProjectInfo: Equatable {
     var isWorktree: Bool
 }
 
-/// Start en volgt coding-agents in de werkruimte. De UI praat alleen met dit object.
-/// Eén proces per beurt: een vervolgbericht start de agent opnieuw met `--resume` (Claude) of `exec resume` (Codex).
-/// Daardoor blijft er nooit een proces hangen, en werkt verder gaan na een herstart van Nook precies hetzelfde.
+/// Launches and tracks coding agents in the workspace. The UI interacts solely with this object.
+/// One process per turn: a follow-up message resumes the agent with `--resume` (Claude) or `exec resume` (Codex).
+/// This ensures no orphaned processes linger, and resuming after relaunching Nook works identically.
 @MainActor
 final class WorkspaceManager: ObservableObject {
     @Published private(set) var runs: [WorkspaceRun] = []
@@ -77,10 +77,10 @@ final class WorkspaceManager: ObservableObject {
     private let store: RunStore
     private var gitService: GitService?
 
-    /// Waar de agent staat (uit AgentHistory) en de omgeving van een account; AppModel vult dit in.
+    /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
-    /// Een sessie wacht op je (goedkeuring) of is klaar: AppModel laat het in de notch zien.
+    /// A session is waiting for approval or has finished: AppModel displays it in the notch.
     var onApproval: ((WorkspaceRun, PendingPermission) -> Void)?
     var onApprovalGone: ((String) -> Void)?
     var onTurnFinished: ((WorkspaceRun) -> Void)?
@@ -91,7 +91,7 @@ final class WorkspaceManager: ObservableObject {
     private var eventSaves: [UUID: Task<Void, Never>] = [:]
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
 
-    /// Wat Nook bijhoudt tijdens één beurt.
+    /// State tracked by Nook during a single turn.
     private struct TurnState {
         var liveTextID: UUID?
         var toolEvents: [String: UUID] = [:]
@@ -118,7 +118,7 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    // MARK: Lezen
+    // MARK: Reading
 
     func run(_ id: UUID?) -> WorkspaceRun? {
         guard let id else { return nil }
@@ -130,7 +130,7 @@ final class WorkspaceManager: ObservableObject {
         return []
     }
 
-    /// Laadt de tijdlijn van schijf als die nog niet in het geheugen staat.
+    /// Loads timeline from disk if not yet in memory.
     func loadTimeline(_ id: UUID) {
         guard events[id] == nil else { return }
         events[id] = store.loadEvents(id)
@@ -140,15 +140,15 @@ final class WorkspaceManager: ObservableObject {
     var attentionCount: Int { runs.filter { $0.status == .waitingApproval || $0.status == .failed && !$0.archived }.count }
     func isRunning(_ id: UUID) -> Bool { processes[id] != nil }
 
-    /// Andere sessies die nu in dezelfde map werken: die zouden elkaars werk kunnen overschrijven.
+    /// Other active sessions working in the same directory: concurrent edits could collide.
     func activeRuns(sharing directory: String, except id: UUID? = nil) -> [WorkspaceRun] {
         let target = WorkspacePathPolicy.normalize(directory)
         return runs.filter { $0.id != id && $0.status.isActive && WorkspacePathPolicy.normalize($0.workingDirectory) == target }
     }
 
-    // MARK: Project bekijken
+    // MARK: Inspecting Project
 
-    /// Alles wat "Nieuwe sessie" over een map wil weten. Buiten de hoofdthread.
+    /// Information required by "New Session" for a directory. Evaluated off the main thread.
     func inspectProject(_ path: String) async -> ProjectInfo {
         let git = gitService
         return await Task.detached(priority: .userInitiated) {
@@ -171,7 +171,7 @@ final class WorkspaceManager: ObservableObject {
         }.value
     }
 
-    /// Kloont een repository; daarna kies je hem als project.
+    /// Clones a repository, then selects it as the active project.
     func clone(url: String, into parent: String) async throws -> String {
         guard let git = gitService else { throw StartError.noGit }
         let path = try await Task.detached(priority: .userInitiated) { try git.clone(url: url, into: parent) }.value
@@ -179,7 +179,7 @@ final class WorkspaceManager: ObservableObject {
         return path
     }
 
-    // MARK: Nieuwe sessie
+    // MARK: New Session
 
     enum StartError: LocalizedError {
         case config(ConfigProblem)
@@ -203,9 +203,9 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Controleert alles, zet de map of worktree klaar en start de agent. Lukt de worktree niet, dan komt er geen
-    /// sessie bij en kun je het opnieuw proberen. Lukt de agent daarna niet, dan staat de sessie op "mislukt" en
-    /// probeer je hem met "Opnieuw" zonder dat er een tweede bij komt.
+    /// Validates configuration, prepares folder or worktree, and launches the agent. If worktree creation fails,
+    /// no session is added so you can retry. If the agent subsequently fails, the session is marked "failed"
+    /// and can be retried with "Retry" without duplicating the session.
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
@@ -294,9 +294,9 @@ final class WorkspaceManager: ObservableObject {
         return id
     }
 
-    // MARK: Beurten
+    // MARK: Turns
 
-    /// Een vervolgbericht. Kan alleen als de vorige beurt klaar is; een tweede proces voor dezelfde sessie komt er nooit.
+    /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     func send(_ id: UUID, text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
@@ -312,7 +312,7 @@ final class WorkspaceManager: ObservableObject {
         launchTurn(id, prompt: clean, executable: executable)
     }
 
-    /// Probeert de laatste opdracht opnieuw (na een fout of als je stopte).
+    /// Retries the previous task (after an error or when stopped).
     func retry(_ id: UUID) {
         guard let run = run(id), run.canContinue else { return }
         loadTimeline(id)
@@ -320,10 +320,10 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: lastPrompt)
     }
 
-    /// Stopt de beurt die nu loopt. Claude Code krijgt eerst een nette afbreekvraag, daarna SIGINT.
+    /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         guard let process = processes[id] else {
-            // Geen proces (meer): alleen de toestand rechtzetten.
+            // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
             return
         }
@@ -385,7 +385,7 @@ final class WorkspaceManager: ObservableObject {
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
     }
 
-    // MARK: Uitvoer van de agent
+    // MARK: Agent Output
 
     private func handle(line: String, for id: UUID) {
         guard let run = run(id) else { return }
@@ -463,7 +463,7 @@ final class WorkspaceManager: ObservableObject {
             finishLiveText(id)
             var usage = result.usage
             let state = turns[id]
-            // Meldde de afsluiting geen tokens, dan de som van de afzonderlijke modelaanroepen.
+            // If turn completion reported no tokens, sum up individual message counts.
             if (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) == 0, let messages = state?.messageUsage, !messages.isEmpty {
                 usage.inputTokens = messages.values.reduce(0) { $0 + $1.input }
                 usage.outputTokens = messages.values.reduce(0) { $0 + $1.output }
@@ -491,7 +491,7 @@ final class WorkspaceManager: ObservableObject {
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials),
                                 state: result.isError && !stopping ? .failed : .done))
             expireApprovals(id)
-            // Beurt klaar: stdin dicht, dan stopt Claude Code vanzelf.
+            // Turn finished: close stdin, allowing Claude Code to exit.
             processes[id]?.closeInput()
             if let run = run(id) { onTurnFinished?(run) }
             scheduleGitRefresh(id, delay: 0.5)
@@ -558,7 +558,7 @@ final class WorkspaceManager: ObservableObject {
         turns[id] = nil
         finishLiveText(id)
         expireApprovals(id)
-        // Tools die nog liepen, lopen niet meer.
+        // Tools that were still running are marked finished/failed.
         if var list = events[id] {
             var changed = false
             for index in list.indices where list[index].state == .running {
@@ -583,7 +583,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleGitRefresh(id, delay: 0.2)
     }
 
-    /// De laatste regels van een foutmelding, zonder kleurcodes. Herkent "niet ingelogd" en "limiet bereikt".
+    /// Tail lines of error output, stripped of ANSI escapes. Detects "not logged in" and "limit reached".
     static func cleanError(_ raw: String, status: Int32) -> String {
         let stripped = raw.replacingOccurrences(of: "\u{1B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
         let lines = stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -623,7 +623,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleGitRefresh(id, delay: 1.5)
     }
 
-    // MARK: Goedkeuren
+    // MARK: Approvals
 
     enum Decision { case allow, always, deny }
 
@@ -661,7 +661,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[runID] = nil
     }
 
-    // MARK: Beheer
+    // MARK: Management
 
     func rename(_ id: UUID, to title: String) {
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -678,7 +678,7 @@ final class WorkspaceManager: ObservableObject {
         update(id) { $0.reviewedAt = Date() }
     }
 
-    /// Haalt een sessie uit Nook. De map of worktree blijft staan (die haal je apart weg); een draaiende sessie nooit.
+    /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     func delete(_ id: UUID) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
         runs.removeAll { $0.id == id }
@@ -769,7 +769,7 @@ final class WorkspaceManager: ObservableObject {
         refreshGit(id)
     }
 
-    /// owner/repo uit de remote-URL, als het een GitHub-repository is.
+    /// owner/repo from remote URL if it is a GitHub repository.
     func githubRepository(_ id: UUID) async -> String? {
         guard let run = run(id), let git = gitService else { return nil }
         let directory = run.workingDirectory
@@ -783,7 +783,7 @@ final class WorkspaceManager: ObservableObject {
         return await Task.detached(operation: { git.currentBranch(directory) }).value
     }
 
-    /// Haalt de worktree van een sessie weg. Nooit als de sessie draait; met niet-gecommitte wijzigingen alleen met `force`.
+    /// Deletes a session's worktree. Never while the session is running; uncommitted changes require `force`.
     func removeWorktree(_ id: UUID, force: Bool) async throws {
         guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = gitService else { return }
         guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
@@ -801,7 +801,7 @@ final class WorkspaceManager: ObservableObject {
         return FileManager.default.fileExists(atPath: path)
     }
 
-    /// Alle worktrees van de repositories waar je sessies in hebt, met hun sessies en wijzigingen.
+    /// All worktrees across repositories containing sessions, with linked sessions and change statuses.
     func refreshWorktrees() {
         guard let git = gitService else { return }
         let repos = Array(Set(runs.compactMap(\.repoRoot))).sorted()
@@ -814,7 +814,7 @@ final class WorkspaceManager: ObservableObject {
                 for worktree in list {
                     let path = WorkspacePathPolicy.normalize(worktree.path)
                     let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
-                    // De hoofdmap alleen tonen als er een sessie in werkt.
+                    // Only show root workspace if a session is actively using it.
                     if worktree.isMain && linked.isEmpty { continue }
                     var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
                     if FileManager.default.fileExists(atPath: worktree.path) {
@@ -836,7 +836,7 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Verwijdert een worktree die bij geen sessie hoort (vanuit het overzicht).
+    /// Removes a worktree that is not linked to any active session (from the overview).
     func removeWorktree(repo: String, path: String, force: Bool) async throws {
         guard let git = gitService else { throw StartError.noGit }
         let target = WorkspacePathPolicy.normalize(path)
@@ -851,7 +851,7 @@ final class WorkspaceManager: ObservableObject {
         refreshWorktrees()
     }
 
-    // MARK: Openen
+    // MARK: Opening
 
     func openInEditor(_ path: String) {
         let url = URL(fileURLWithPath: path, isDirectory: true)
@@ -875,7 +875,7 @@ final class WorkspaceManager: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
-    /// Bij het afsluiten van Nook: lopende agents netjes stoppen, zodat er geen wezen achterblijven.
+    /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
         for (id, process) in processes {
             turns[id]?.stopping = true
@@ -891,7 +891,7 @@ final class WorkspaceManager: ObservableObject {
         for (id, list) in events { try? store.saveEvents(id, list) }
     }
 
-    // MARK: Bijhouden en bewaren
+    // MARK: Tracking and Persistence
 
     private func replace(_ run: WorkspaceRun) {
         guard let index = runs.firstIndex(where: { $0.id == run.id }) else { return }
@@ -946,7 +946,7 @@ final class WorkspaceManager: ObservableObject {
     }
 }
 
-/// owner/repo uit een GitHub-remote (https of ssh).
+/// owner/repo from a GitHub remote (https or ssh).
 enum GitHubRemote {
     static func repository(from url: String) -> String? {
         var rest: Substring
@@ -966,7 +966,7 @@ enum GitHubRemote {
         return parts.joined(separator: "/")
     }
 
-    /// De pagina waar je op GitHub zelf een pull request opent, met de branch al ingevuld.
+    /// GitHub comparison page to open a pull request, pre-filled with the branch.
     static func compareURL(repo: String, base: String, head: String) -> URL? {
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "?#"))
         guard let base = base.addingPercentEncoding(withAllowedCharacters: allowed),
@@ -975,7 +975,7 @@ enum GitHubRemote {
     }
 }
 
-/// Kleine opmaak voor de werkruimte.
+/// Workspace formatting helpers.
 enum AgentPathFormat {
     static func tilde(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -987,7 +987,7 @@ enum AgentPathFormat {
         if total < 60 { return "\(total)s" }
         let minutes = total / 60
         if minutes < 60 { return "\(minutes)m \(total % 60)s" }
-        return "\(minutes / 60)u \(minutes % 60)m"
+        return "\(minutes / 60)h \(minutes % 60)m"
     }
 
     static func cost(_ usd: Double) -> String {

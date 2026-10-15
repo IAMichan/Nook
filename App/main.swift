@@ -1,6 +1,6 @@
 import AppKit
 
-// Eigen startpunt in plaats van `@main`: de delegate blijft zo zeker in leven (NSApplication houdt hem maar zwak vast).
+// Custom entry point instead of `@main`: ensures the delegate remains retained (NSApplication holds it weakly).
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()

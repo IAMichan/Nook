@@ -73,13 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
-    /// Nook zelf, net als in de notch: een rond lichtje met twee ogen. Zelf getekend zodat het
-    /// scherp blijft, en als template-afbeelding kleurt het mee met een lichte of donkere menubalk.
+    /// Nook itself, mirroring the notch design: a circular glow with two eyes. Custom-drawn for crispness,
+    /// configured as a template image to adapt to light and dark menu bars.
     private static func menuBarIcon() -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
             NSColor.black.set()
 
-            // De ogen worden uit de cirkel gesneden (even-odd), zodat de menubalk erdoorheen schijnt.
+            // Cut out the eyes using the even-odd winding rule, letting the menu bar show through.
             let nook = NSBezierPath(ovalIn: NSRect(x: 1.5, y: 1.5, width: 15, height: 15))
             for x in [5.9, 10.1] {
                 nook.append(NSBezierPath(

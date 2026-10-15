@@ -1,13 +1,13 @@
 import SwiftUI
 import CryptoKit
 
-// Crypto-portfolio: openbare walletadressen en alleen-lezen beurssleutels, gewaardeerd in euro's.
+// Crypto portfolio: public wallet addresses and read-only exchange keys, valued in euros.
 //
-// Alles hier is alleen-lezen: saldo's opvragen en koersen ophalen. Nook plaatst nooit orders en verplaatst nooit geld.
+// Everything here is read-only: checking balances and fetching quotes. Nook never places orders and never transfers funds.
 
 // MARK: - Model
 
-/// Een netwerk waarop Nook een openbaar adres kan volgen.
+/// A blockchain network on which Nook can track a public address.
 enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
     case bitcoin, ethereum, solana, polygon, bnb, avalanche, arbitrum, optimism, base
     case dogecoin, litecoin, tron, xrp, cardano, cosmos, near
@@ -35,7 +35,7 @@ enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// De munt waarin het saldo van dit netwerk staat. L2's van Ethereum houden ETH aan.
+    /// The native currency for this network's balance. Ethereum L2s hold ETH.
     var coin: String {
         switch self {
         case .bitcoin: return "BTC"
@@ -56,16 +56,16 @@ enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
 
     var placeholder: String {
         switch self {
-        case .bitcoin: return "bc1q… of 1… of 3…"
+        case .bitcoin: return "bc1q… or 1… or 3…"
         case .ethereum, .polygon, .bnb, .avalanche, .arbitrum, .optimism, .base: return "0x…"
-        case .solana: return "Base58-adres"
+        case .solana: return "Base58 address"
         case .dogecoin: return "D…"
-        case .litecoin: return "ltc1… of L… of M…"
+        case .litecoin: return "ltc1… or L… or M…"
         case .tron: return "T…"
         case .xrp: return "r…"
         case .cardano: return "addr1…"
         case .cosmos: return "cosmos1…"
-        case .near: return "naam.near of 64 hex-tekens"
+        case .near: return "name.near or 64 hex characters"
         }
     }
 
@@ -76,7 +76,7 @@ enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Snelle controle zonder netwerk. Laat ook alleen veilige tekens toe, want het adres komt in een URL.
+    /// Quick offline validation. Also permits only safe characters, since the address goes into a URL.
     func isPlausible(_ raw: String) -> Bool {
         let a = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = a.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-") }
@@ -114,7 +114,7 @@ enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Een openbaar adres op een netwerk. Openbaar, dus het mag in UserDefaults.
+/// A public address on a network. Public, so it may be stored in UserDefaults.
 struct PortfolioWallet: Identifiable, Hashable, Sendable {
     let network: PortfolioNetwork
     let address: String
@@ -128,7 +128,7 @@ struct PortfolioWallet: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Een beurs waarvan Nook met een alleen-lezen sleutel de saldo's leest.
+/// An exchange where Nook reads balances with a read-only key.
 enum PortfolioExchange: String, CaseIterable, Identifiable, Sendable {
     case binance, okx, bybit, kraken, coinbase
 
@@ -150,7 +150,7 @@ enum PortfolioExchange: String, CaseIterable, Identifiable, Sendable {
     var keyLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseKeyLabel") : tr("portfolio.exchange.apiKey") }
     var secretLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseSecretLabel") : tr("portfolio.exchange.apiSecret") }
 
-    /// Uitleg voor het aanmaken van een sleutel met alleen leesrechten.
+    /// Instructions for creating a key with read-only permissions.
     var help: String {
         switch self {
         case .binance: return tr("portfolio.exchange.help.binance")
@@ -161,19 +161,19 @@ enum PortfolioExchange: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Keychain-account, bijvoorbeeld "connector.portfolio.okx.passphrase".
+    /// Keychain account name, e.g. "connector.portfolio.okx.passphrase".
     func account(_ field: String) -> String { "connector.portfolio.\(rawValue).\(field)" }
 }
 
-/// Wat je van één munt hebt, opgeteld over alle wallets en beurzen.
+/// Holdings for a single currency, aggregated across all wallets and exchanges.
 struct PortfolioHolding: Identifiable, Equatable, Sendable {
     let symbol: String
     var amount: Double
-    /// Koers in euro; nil als er geen koers te vinden was.
+    /// Price in EUR; nil if no price could be found.
     var priceEUR: Double?
-    /// Verandering in procenten over 24 uur; nil als onbekend.
+    /// 24-hour percentage change; nil if unknown.
     var change24h: Double?
-    /// Slotkoersen van de laatste 7 dagen in euro, oudste eerst. Leeg als onbekend.
+    /// Closing prices of the last 7 days in EUR, oldest first. Empty if unknown.
     var sparkline: [Double] = []
 
     var id: String { symbol }
@@ -191,17 +191,17 @@ final class PortfolioConnector: ObservableObject, ContextSource {
     var refreshInterval: TimeInterval { 300 }
 
     @Published private(set) var status = ConnectorStatus()
-    /// Gesorteerd op waarde, hoogste eerst.
+    /// Sorted by value, highest first.
     @Published private(set) var holdings: [PortfolioHolding] = []
     @Published private(set) var totalEUR: Double = 0
     @Published private(set) var wallets: [PortfolioWallet] = []
     @Published private(set) var configuredExchanges: Set<PortfolioExchange> = []
-    /// Fout per bron (sleutel: `PortfolioWallet.id` of `PortfolioExchange.sourceID`). Eén kapotte bron laat de rest staan.
+    /// Error per source (key: `PortfolioWallet.id` or `PortfolioExchange.sourceID`). A failing source does not affect the rest.
     @Published private(set) var sourceErrors: [String: String] = [:]
     @Published private(set) var isRefreshing = false
 
     private static let walletsKey = "connector.portfolio.wallets"
-    /// Er kwam een wijziging binnen tijdens het ophalen: daarna nog een keer.
+    /// A change arrived while fetching: refresh once more afterwards.
     private var refreshAgain = false
 
     init() {
@@ -213,15 +213,15 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         (!wallets.isEmpty || !configuredExchanges.isEmpty) && ConnectorToggle.isOn(id)
     }
 
-    // MARK: Instellingen
+    // MARK: - Settings
 
-    /// Voegt een openbaar adres toe. Geeft een foutmelding terug, of nil als het gelukt is.
+    /// Adds a public address. Returns an error message, or nil on success.
     @discardableResult
     func addWallet(network: PortfolioNetwork, address raw: String) -> String? {
         let address = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard network.isPlausible(address) else { return "Dit lijkt geen geldig \(network.name)-adres." }
+        guard network.isPlausible(address) else { return "This does not look like a valid \(network.name) address." }
         let wallet = PortfolioWallet(network: network, address: address)
-        guard !wallets.contains(wallet) else { return "Dit adres staat er al in." }
+        guard !wallets.contains(wallet) else { return "This address is already added." }
         wallets.append(wallet)
         saveWallets()
         scheduleRefresh()
@@ -239,20 +239,20 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         configuredExchanges.contains(exchange)
     }
 
-    /// Bewaart de sleutels in de Keychain. Geeft een foutmelding terug, of nil als het gelukt is.
+    /// Stores keys in the Keychain. Returns an error message, or nil on success.
     @discardableResult
     func saveExchange(_ exchange: PortfolioExchange, key rawKey: String, secret rawSecret: String, passphrase rawPassphrase: String = "") -> String? {
         let strip = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`"))
         let key = rawKey.trimmingCharacters(in: strip)
         let secret = rawSecret.trimmingCharacters(in: strip)
         let passphrase = rawPassphrase.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty, !secret.isEmpty else { return "Vul zowel de sleutel als het secret in." }
-        if exchange.needsPassphrase && passphrase.isEmpty { return "\(exchange.name) heeft ook de passphrase nodig." }
+        guard !key.isEmpty, !secret.isEmpty else { return "Enter both the key and the secret." }
+        if exchange.needsPassphrase && passphrase.isEmpty { return "\(exchange.name) also requires the passphrase." }
         switch exchange {
         case .kraken where Data(base64Encoded: secret) == nil:
-            return "Het Kraken-secret is geen geldige base64. Kopieer het opnieuw."
+            return "The Kraken secret is not valid base64. Copy it again."
         case .coinbase where PortfolioCoinbaseJWT.privateKey(from: secret) == nil:
-            return "Deze privésleutel kan Nook niet lezen. Gebruik een ECDSA-sleutel (niet Ed25519) en plak de hele sleutel."
+            return "Nook cannot read this private key. Use an ECDSA key (not Ed25519) and paste the entire key."
         default:
             break
         }
@@ -260,7 +260,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         let values = [("key", key), ("secret", secret), ("passphrase", exchange.needsPassphrase ? passphrase : "")]
         for (field, value) in values {
             let result = Keychain.write(value, account: exchange.account(field))
-            if result != 0 { failures.append("Keychain-fout \(result)") }
+            if result != 0 { failures.append("Keychain error \(result)") }
         }
         configuredExchanges = Set(PortfolioExchange.allCases.filter { Self.credentials(for: $0) != nil })
         sourceErrors[exchange.sourceID] = nil
@@ -287,7 +287,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
     private static func loadWallets() -> [PortfolioWallet] {
         guard let data = UserDefaults.standard.data(forKey: walletsKey),
               let stored = try? JSONDecoder().decode([StoredWallet].self, from: data) else { return [] }
-        // Een onbekend netwerk (uit een nieuwere versie) slaan we over in plaats van de hele lijst te verliezen.
+        // Skip an unknown network (from a newer version) instead of losing the entire list.
         return stored.compactMap { item in
             PortfolioNetwork(rawValue: item.network).map { PortfolioWallet(network: $0, address: item.address) }
         }
@@ -308,7 +308,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         return PortfolioCredentials(exchange: exchange, key: key, secret: secret, passphrase: passphrase)
     }
 
-    // MARK: Ophalen
+    // MARK: - Fetching
 
     func refresh() async {
         guard isActive else {
@@ -361,7 +361,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
             do {
                 book = try await PortfolioPrices.fetch(amounts: amounts)
             } catch {
-                priceError = "Koersen niet opgehaald: \(error.localizedDescription)"
+                priceError = "Prices could not be fetched: \(error.localizedDescription)"
             }
         }
 
@@ -372,7 +372,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
             if book.eurPerUSD > 0, let history = book.history[symbol] {
                 holding.sparkline = history.map { $0 * book.eurPerUSD }
             }
-            // Stof (minder dan een cent) laten we weg; munten zonder koers blijven zichtbaar.
+            // Dust (less than one cent) is omitted; coins without a price remain visible.
             if price == nil || holding.valueEUR >= 0.01 { list.append(holding) }
         }
         list.sort { lhs, rhs in
@@ -386,20 +386,20 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         var next = ConnectorStatus()
         next.updated = Date()
         if !sources.isEmpty && errors.count == sources.count {
-            next.state = .error(errors.values.sorted().first ?? "Niets opgehaald.")
+            next.state = .error(errors.values.sorted().first ?? "Nothing fetched.")
             next.headline = tr("connector.notYetFetched")
         } else {
             next.state = .ok
             next.headline = PortfolioFormat.eur(totalEUR)
         }
-        var detail = "\(list.count) \(list.count == 1 ? "munt" : "munten") · \(sources.count) \(sources.count == 1 ? "bron" : "bronnen")"
-        if !errors.isEmpty { detail += " · \(errors.count) niet bereikt" }
+        var detail = "\(list.count) \(list.count == 1 ? "coin" : "coins") · \(sources.count) \(sources.count == 1 ? "source" : "sources")"
+        if !errors.isEmpty { detail += " · \(errors.count) unreachable" }
         if let priceError = priceError { detail += " · \(priceError)" }
         next.detail = detail
         next.items = list.prefix(5).map { holding in
             ConnectorItem(
                 id: "holding.\(holding.symbol)",
-                title: "\(holding.symbol) · \(holding.priceEUR == nil ? "geen koers" : PortfolioFormat.eur(holding.valueEUR))",
+                title: "\(holding.symbol) · \(holding.priceEUR == nil ? "no price" : PortfolioFormat.eur(holding.valueEUR))",
                 subtitle: PortfolioFormat.subtitle(holding),
                 tone: Self.tone(holding.change24h)
             )
@@ -412,18 +412,18 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         return change >= 0 ? .good : .bad
     }
 
-    // MARK: Context voor het brein
+    // MARK: - Brain Context
 
     func contextLines() -> [String] {
         guard isActive, status.updated != nil else { return [] }
         var lines: [String] = []
         let time = status.updated.map(PortfolioFormat.time) ?? ""
-        lines.append("Crypto-portfolio (alleen-lezen, koersen \(time)): totaal \(PortfolioFormat.eur(totalEUR))")
+        lines.append("Crypto portfolio (read-only, prices \(time)): total \(PortfolioFormat.eur(totalEUR))")
         for holding in holdings.filter({ $0.priceEUR != nil }).prefix(5) {
             lines.append("- \(PortfolioFormat.line(holding))")
         }
         if !sourceErrors.isEmpty {
-            lines.append("- Niet opgehaald: \(failedLabels().joined(separator: ", "))")
+            lines.append("- Not fetched: \(failedLabels().joined(separator: ", "))")
         }
         return lines
     }
@@ -435,26 +435,26 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         return labels
     }
 
-    /// Volledig overzicht voor de tool.
+    /// Full overview for the tool.
     func overview() -> String {
-        guard isActive else { return "Er is geen portfolio ingesteld (Instellingen › Koppelingen › Portfolio)." }
-        guard let updated = status.updated else { return "Het portfolio is nog niet opgehaald." }
+        guard isActive else { return "No portfolio configured (Settings › Connectors › Portfolio)." }
+        guard let updated = status.updated else { return "The portfolio has not been fetched yet." }
         let exchangeNames = PortfolioExchange.allCases.filter { configuredExchanges.contains($0) }.map { $0.name }
-        let exchangeText = exchangeNames.isEmpty ? "geen" : exchangeNames.joined(separator: ", ")
+        let exchangeText = exchangeNames.isEmpty ? "none" : exchangeNames.joined(separator: ", ")
         var lines: [String] = []
-        lines.append("Totaal: \(PortfolioFormat.eur(totalEUR)) (koersen van \(PortfolioFormat.time(updated)), via Coinbase, in euro)")
-        lines.append("Bronnen: \(wallets.count) \(wallets.count == 1 ? "wallet" : "wallets"), beurzen: \(exchangeText)")
-        if holdings.isEmpty { lines.append("Geen saldo gevonden.") }
+        lines.append("Total: \(PortfolioFormat.eur(totalEUR)) (prices as of \(PortfolioFormat.time(updated)), via Coinbase, in EUR)")
+        lines.append("Sources: \(wallets.count) \(wallets.count == 1 ? "wallet" : "wallets"), exchanges: \(exchangeText)")
+        if holdings.isEmpty { lines.append("No balance found.") }
         for holding in holdings.prefix(40) {
             let trend = holding.sparkline.count > 1 ? " | 7d: " + holding.sparkline.map { PortfolioFormat.eur($0) }.joined(separator: " → ") : ""
             lines.append("- \(PortfolioFormat.line(holding))\(trend)")
         }
-        if holdings.count > 40 { lines.append("… en nog \(holdings.count - 40) kleinere posities.") }
+        if holdings.count > 40 { lines.append("… and \(holdings.count - 40) more smaller positions.") }
         for wallet in wallets {
-            if let message = sourceErrors[wallet.id] { lines.append("Fout bij \(wallet.label): \(message)") }
+            if let message = sourceErrors[wallet.id] { lines.append("Error for \(wallet.label): \(message)") }
         }
         for exchange in PortfolioExchange.allCases {
-            if let message = sourceErrors[exchange.sourceID] { lines.append("Fout bij \(exchange.name): \(message)") }
+            if let message = sourceErrors[exchange.sourceID] { lines.append("Error for \(exchange.name): \(message)") }
         }
         return lines.joined(separator: "\n")
     }
@@ -463,13 +463,13 @@ final class PortfolioConnector: ObservableObject, ContextSource {
         [
             ToolSpec(
                 name: "portfolio_overview",
-                description: "Geeft het crypto-portfolio van de gebruiker: totale waarde in euro, per munt het aantal, de waarde, de verandering over 24 uur en de koers van de laatste 7 dagen, plus bronnen die niet bereikbaar waren. Alleen-lezen: Nook kan niet handelen of geld verplaatsen.",
+                description: "Returns the user's crypto portfolio: total value in EUR, amount per coin, value, 24-hour change and 7-day price trend, plus sources that were unreachable. Read-only: Nook cannot trade or transfer funds.",
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
                 kind: .read,
-                summarize: { _ in "Portfolio lezen" },
+                summarize: { _ in "Read portfolio" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
-                    guard let self = self else { return "Portfolio is niet beschikbaar." }
+                    guard let self = self else { return "Portfolio is not available." }
                     let stale = Date().timeIntervalSince(self.status.updated ?? .distantPast) > 600
                     if self.isActive && stale { await self.refresh() }
                     return self.overview()
@@ -484,12 +484,12 @@ private struct StoredWallet: Codable {
     let address: String
 }
 
-// MARK: - Opmaak
+// MARK: - Formatting
 
 enum PortfolioFormat {
     private static let dutch = Locale(identifier: "nl_NL")
 
-    /// "€ 1.234,56", vanaf duizend zonder centen.
+    /// "€ 1.234,56", from one thousand without cents.
     static func eur(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.locale = dutch
@@ -512,7 +512,7 @@ enum PortfolioFormat {
         return (formatter.string(from: NSNumber(value: value)) ?? String(format: "%+.1f", value)) + "%"
     }
 
-    /// "0,12345678", "1,2345" of "12.345"
+    /// "0,12345678", "1,2345" or "12.345"
     static func amount(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.locale = dutch
@@ -529,25 +529,25 @@ enum PortfolioFormat {
         return formatter.string(from: date)
     }
 
-    /// "0,1234 BTC · 24u +2,3%"
+    /// "0,1234 BTC · 24h +2,3%"
     static func subtitle(_ holding: PortfolioHolding) -> String {
         var text = "\(amount(holding.amount)) \(holding.symbol)"
-        if let change = holding.change24h { text += " · 24u \(percent(change))" }
+        if let change = holding.change24h { text += " · 24h \(percent(change))" }
         return text
     }
 
-    /// "BTC: 0,1234 ≈ € 5.000 (24u +2,3%)"
+    /// "BTC: 0,1234 ≈ € 5.000 (24h +2,3%)"
     static func line(_ holding: PortfolioHolding) -> String {
         var text = "\(holding.symbol): \(amount(holding.amount))"
-        text += holding.priceEUR == nil ? " (geen koers)" : " ≈ \(eur(holding.valueEUR))"
-        if let change = holding.change24h { text += " (24u \(percent(change)))" }
+        text += holding.priceEUR == nil ? " (no price)" : " ≈ \(eur(holding.valueEUR))"
+        if let change = holding.change24h { text += " (24h \(percent(change)))" }
         return text
     }
 }
 
 // MARK: - Sparkline
 
-/// Lijntje van de koers over 7 dagen: mint als hij steeg, koraal als hij daalde.
+/// 7-day price line: mint when rising, coral when falling.
 struct PortfolioSparkline: View {
     let prices: [Double]
     var lineWidth: CGFloat = 1.5
@@ -576,11 +576,11 @@ struct PortfolioSparkline: View {
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
         }
         .accessibilityElement()
-        .accessibilityLabel(prices.count > 1 ? (isUp ? "Koers 7 dagen: gestegen" : "Koers 7 dagen: gedaald") : "Geen koersverloop")
+        .accessibilityLabel(prices.count > 1 ? (isUp ? "7-day price: up" : "7-day price: down") : "No price history")
     }
 }
 
-// MARK: - Bronnen
+// MARK: - Sources
 
 private struct PortfolioCredentials: Sendable {
     let exchange: PortfolioExchange
@@ -619,7 +619,7 @@ private struct PortfolioFetchResult: Sendable {
     var error: String?
 }
 
-/// Kleine JSON-hulp bovenop `ConnectorHTTP.session`, met de foutmelding van de dienst erbij.
+/// Small JSON helper on top of `ConnectorHTTP.session`, including service error messages.
 private enum PortfolioHTTP {
     static func get(_ url: URL, headers: [String: String] = [:]) async throws -> Any {
         var request = URLRequest(url: url)
@@ -647,17 +647,17 @@ private enum PortfolioHTTP {
         guard (200..<300).contains(code) else {
             let reason = serviceMessage(json).map { ": \($0)" } ?? "."
             switch code {
-            case 401, 403: throw NookError("De sleutel werd geweigerd (\(code))\(reason)")
-            case 404: throw NookError("Niet gevonden (404)\(reason)")
-            case 429: throw NookError("Te veel verzoeken. Nook probeert het straks opnieuw.")
-            default: throw NookError("De dienst gaf een fout (\(code))\(reason)")
+            case 401, 403: throw NookError("The key was rejected (\(code))\(reason)")
+            case 404: throw NookError("Not found (404)\(reason)")
+            case 429: throw NookError("Too many requests. Nook will try again later.")
+            default: throw NookError("The service returned an error (\(code))\(reason)")
             }
         }
-        guard let result = json else { throw NookError("Onverwacht antwoord van de dienst.") }
+        guard let result = json else { throw NookError("Unexpected response from the service.") }
         return result
     }
 
-    /// De foutmelding die beurzen in hun antwoord zetten, kort gehouden.
+    /// Error message that exchanges return in their payload, kept brief.
     private static func serviceMessage(_ json: Any?) -> String? {
         guard let object = json as? [String: Any] else { return nil }
         var candidates: [Any?] = [object["msg"], object["retMsg"], object["message"], object["error_message"]]
@@ -676,7 +676,7 @@ private enum PortfolioJSON {
         return nil
     }
 
-    /// Hele getallen als tekst (yoctoNEAR, wei) zonder overloop naar Double.
+    /// Whole numbers as text (yoctoNEAR, wei) without overflowing Double.
     static func bigDecimal(_ text: String) -> Double? {
         guard !text.isEmpty, text.allSatisfy({ $0.isNumber }) else { return nil }
         return text.reduce(0.0) { $0 * 10 + Double($1.wholeNumberValue ?? 0) }
@@ -694,7 +694,7 @@ private enum PortfolioJSON {
     }
 
     static func url(_ text: String) throws -> URL {
-        guard let url = URL(string: text) else { throw NookError("Ongeldig adres.") }
+        guard let url = URL(string: text) else { throw NookError("Invalid address.") }
         return url
     }
 }
@@ -725,17 +725,17 @@ private enum PortfolioFetch {
     }
 }
 
-// MARK: - Wallets (openbare API's, geen sleutel)
+// MARK: - Wallets (public APIs, no key required)
 
 private enum PortfolioWallets {
     static func fetch(_ wallet: PortfolioWallet) async throws -> [PortfolioBalance] {
         let address = wallet.address
-        guard wallet.network.isPlausible(address) else { throw NookError("Ongeldig adres.") }
+        guard wallet.network.isPlausible(address) else { throw NookError("Invalid address.") }
         switch wallet.network {
         case .bitcoin: return try await bitcoin(address)
         case .dogecoin: return try await blockchair(address, chain: "dogecoin", symbol: "DOGE")
         case .litecoin: return try await blockchair(address, chain: "litecoin", symbol: "LTC")
-        // Twee openbare RPC's per keten: de tweede antwoordt als de eerste plat ligt of afknijpt.
+        // Two public RPCs per chain: the second responds if the first is down or rate-limiting.
         case .ethereum: return try await evm(address, ["https://ethereum-rpc.publicnode.com", "https://cloudflare-eth.com"], symbol: "ETH")
         case .polygon: return try await evm(address, ["https://polygon-bor-rpc.publicnode.com", "https://polygon-rpc.com"], symbol: "POL")
         case .bnb: return try await evm(address, ["https://bsc-dataseed.binance.org", "https://bsc-rpc.publicnode.com"], symbol: "BNB")
@@ -756,7 +756,7 @@ private enum PortfolioWallets {
         let json = try await PortfolioHTTP.get(try PortfolioJSON.url("https://blockchain.info/balance?active=\(address)"))
         guard let object = json as? [String: Any],
               let entry = (object[address] ?? object.values.first) as? [String: Any],
-              let satoshi = PortfolioJSON.number(entry["final_balance"]) else { throw NookError("Onverwacht antwoord van blockchain.info.") }
+              let satoshi = PortfolioJSON.number(entry["final_balance"]) else { throw NookError("Unexpected response from blockchain.info.") }
         return [PortfolioBalance(symbol: "BTC", amount: satoshi / 1e8)]
     }
 
@@ -765,18 +765,18 @@ private enum PortfolioWallets {
         guard let data = (json as? [String: Any])?["data"] as? [String: Any],
               let entry = (data[address] ?? data.values.first) as? [String: Any],
               let info = entry["address"] as? [String: Any],
-              let units = PortfolioJSON.number(info["balance"]) else { throw NookError("Onverwacht antwoord van Blockchair.") }
+              let units = PortfolioJSON.number(info["balance"]) else { throw NookError("Unexpected response from Blockchair.") }
         return [PortfolioBalance(symbol: symbol, amount: units / 1e8)]
     }
 
     private static func evm(_ address: String, _ endpoints: [String], symbol: String) async throws -> [PortfolioBalance] {
-        var lastError: Error = NookError("Geen RPC bereikbaar.")
+        var lastError: Error = NookError("No RPC reachable.")
         for endpoint in endpoints {
             do {
                 let body: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "eth_getBalance", "params": [address, "latest"]]
                 let json = try await PortfolioHTTP.post(try PortfolioJSON.url(endpoint), json: body)
                 guard let hex = (json as? [String: Any])?["result"] as? String,
-                      let wei = PortfolioJSON.hex(hex) else { throw NookError("Onverwacht antwoord van de RPC.") }
+                      let wei = PortfolioJSON.hex(hex) else { throw NookError("Unexpected response from the RPC.") }
                 return [PortfolioBalance(symbol: symbol, amount: wei / 1e18)]
             } catch {
                 lastError = error
@@ -789,14 +789,14 @@ private enum PortfolioWallets {
         let body: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "getBalance", "params": [address]]
         let json = try await PortfolioHTTP.post(try PortfolioJSON.url("https://api.mainnet-beta.solana.com"), json: body)
         guard let result = (json as? [String: Any])?["result"] as? [String: Any],
-              let lamports = PortfolioJSON.number(result["value"]) else { throw NookError("Onverwacht antwoord van Solana.") }
+              let lamports = PortfolioJSON.number(result["value"]) else { throw NookError("Unexpected response from Solana.") }
         return [PortfolioBalance(symbol: "SOL", amount: lamports / 1e9)]
     }
 
     private static func tron(_ address: String) async throws -> [PortfolioBalance] {
         let json = try await PortfolioHTTP.get(try PortfolioJSON.url("https://api.trongrid.io/v1/accounts/\(address)"))
-        guard let list = (json as? [String: Any])?["data"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van TronGrid.") }
-        // Een adres dat nog nooit iets ontving heeft geen account: saldo 0.
+        guard let list = (json as? [String: Any])?["data"] as? [[String: Any]] else { throw NookError("Unexpected response from TronGrid.") }
+        // An address that never received anything has no account: balance 0.
         let sun = list.first.flatMap { PortfolioJSON.number($0["balance"]) } ?? 0
         return [PortfolioBalance(symbol: "TRX", amount: sun / 1e6)]
     }
@@ -804,23 +804,23 @@ private enum PortfolioWallets {
     private static func xrp(_ address: String) async throws -> [PortfolioBalance] {
         let body: [String: Any] = ["method": "account_info", "params": [["account": address, "ledger_index": "validated"]]]
         let json = try await PortfolioHTTP.post(try PortfolioJSON.url("https://xrplcluster.com"), json: body)
-        guard let result = (json as? [String: Any])?["result"] as? [String: Any] else { throw NookError("Onverwacht antwoord van XRPL.") }
+        guard let result = (json as? [String: Any])?["result"] as? [String: Any] else { throw NookError("Unexpected response from XRPL.") }
         if (result["error"] as? String) == "actNotFound" { return [] }
         guard let account = result["account_data"] as? [String: Any],
-              let drops = PortfolioJSON.number(account["Balance"]) else { throw NookError("Onverwacht antwoord van XRPL.") }
+              let drops = PortfolioJSON.number(account["Balance"]) else { throw NookError("Unexpected response from XRPL.") }
         return [PortfolioBalance(symbol: "XRP", amount: drops / 1e6)]
     }
 
     private static func cardano(_ address: String) async throws -> [PortfolioBalance] {
         let json = try await PortfolioHTTP.post(try PortfolioJSON.url("https://api.koios.rest/api/v1/address_info"), json: ["_addresses": [address]])
-        guard let list = json as? [[String: Any]] else { throw NookError("Onverwacht antwoord van Koios.") }
+        guard let list = json as? [[String: Any]] else { throw NookError("Unexpected response from Koios.") }
         let lovelace = list.first.flatMap { PortfolioJSON.number($0["balance"]) } ?? 0
         return [PortfolioBalance(symbol: "ADA", amount: lovelace / 1e6)]
     }
 
     private static func cosmos(_ address: String) async throws -> [PortfolioBalance] {
         let json = try await PortfolioHTTP.get(try PortfolioJSON.url("https://rest.cosmos.directory/cosmoshub/cosmos/bank/v1beta1/balances/\(address)"))
-        guard let balances = (json as? [String: Any])?["balances"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van Cosmos.") }
+        guard let balances = (json as? [String: Any])?["balances"] as? [[String: Any]] else { throw NookError("Unexpected response from Cosmos.") }
         let uatom = balances
             .filter { ($0["denom"] as? String) == "uatom" }
             .compactMap { PortfolioJSON.number($0["amount"]) }
@@ -836,12 +836,12 @@ private enum PortfolioWallets {
         let json = try await PortfolioHTTP.post(try PortfolioJSON.url("https://rpc.mainnet.near.org"), json: body)
         guard let result = (json as? [String: Any])?["result"] as? [String: Any],
               let text = result["amount"] as? String,
-              let yocto = PortfolioJSON.bigDecimal(text) else { throw NookError("Onverwacht antwoord van NEAR.") }
+              let yocto = PortfolioJSON.bigDecimal(text) else { throw NookError("Unexpected response from NEAR.") }
         return [PortfolioBalance(symbol: "NEAR", amount: yocto / 1e24)]
     }
 }
 
-// MARK: - Beurzen (alleen-lezen saldo-endpoints)
+// MARK: - Exchanges (read-only balance endpoints)
 
 private enum PortfolioExchanges {
     static func fetch(_ credentials: PortfolioCredentials) async throws -> [PortfolioBalance] {
@@ -864,13 +864,13 @@ private enum PortfolioExchanges {
         data.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// GET /api/v3/account: alleen saldo's.
+    /// GET /api/v3/account: balances only.
     private static func binance(_ c: PortfolioCredentials) async throws -> [PortfolioBalance] {
         let query = "omitZeroBalances=true&recvWindow=10000&timestamp=\(milliseconds)"
         let signature = hex(hmacSHA256(Data(query.utf8), key: Data(c.secret.utf8)))
         let url = try PortfolioJSON.url("https://api.binance.com/api/v3/account?\(query)&signature=\(signature)")
         let json = try await PortfolioHTTP.get(url, headers: ["X-MBX-APIKEY": c.key])
-        guard let balances = (json as? [String: Any])?["balances"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van Binance.") }
+        guard let balances = (json as? [String: Any])?["balances"] as? [[String: Any]] else { throw NookError("Unexpected response from Binance.") }
         return balances.compactMap { entry -> PortfolioBalance? in
             guard let asset = entry["asset"] as? String else { return nil }
             let total = (PortfolioJSON.number(entry["free"]) ?? 0) + (PortfolioJSON.number(entry["locked"]) ?? 0)
@@ -878,7 +878,7 @@ private enum PortfolioExchanges {
         }
     }
 
-    /// GET /api/v5/account/balance: alleen saldo's.
+    /// GET /api/v5/account/balance: balances only.
     private static func okx(_ c: PortfolioCredentials) async throws -> [PortfolioBalance] {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -891,12 +891,12 @@ private enum PortfolioExchanges {
             "OK-ACCESS-TIMESTAMP": timestamp,
             "OK-ACCESS-PASSPHRASE": c.passphrase
         ])
-        guard let object = json as? [String: Any] else { throw NookError("Onverwacht antwoord van OKX.") }
+        guard let object = json as? [String: Any] else { throw NookError("Unexpected response from OKX.") }
         if let code = object["code"] as? String, code != "0" {
-            throw NookError("OKX: \((object["msg"] as? String) ?? "fout \(code)")")
+            throw NookError("OKX: \((object["msg"] as? String) ?? "error \(code)")")
         }
         guard let first = (object["data"] as? [[String: Any]])?.first,
-              let details = first["details"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van OKX.") }
+              let details = first["details"] as? [[String: Any]] else { throw NookError("Unexpected response from OKX.") }
         return details.compactMap { entry -> PortfolioBalance? in
             guard let currency = entry["ccy"] as? String else { return nil }
             let total = PortfolioJSON.number(entry["cashBal"])
@@ -905,7 +905,7 @@ private enum PortfolioExchanges {
         }
     }
 
-    /// GET /v5/account/wallet-balance: alleen saldo's.
+    /// GET /v5/account/wallet-balance: balances only.
     private static func bybit(_ c: PortfolioCredentials) async throws -> [PortfolioBalance] {
         let timestamp = milliseconds
         let window = "10000"
@@ -917,22 +917,22 @@ private enum PortfolioExchanges {
             "X-BAPI-TIMESTAMP": timestamp,
             "X-BAPI-RECV-WINDOW": window
         ])
-        guard let object = json as? [String: Any] else { throw NookError("Onverwacht antwoord van Bybit.") }
+        guard let object = json as? [String: Any] else { throw NookError("Unexpected response from Bybit.") }
         if let code = PortfolioJSON.number(object["retCode"]), code != 0 {
-            throw NookError("Bybit: \((object["retMsg"] as? String) ?? "fout \(Int(code))")")
+            throw NookError("Bybit: \((object["retMsg"] as? String) ?? "error \(Int(code))")")
         }
         guard let result = object["result"] as? [String: Any],
               let first = (result["list"] as? [[String: Any]])?.first,
-              let coins = first["coin"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van Bybit.") }
+              let coins = first["coin"] as? [[String: Any]] else { throw NookError("Unexpected response from Bybit.") }
         return coins.compactMap { entry -> PortfolioBalance? in
             guard let coin = entry["coin"] as? String, let balance = PortfolioJSON.number(entry["walletBalance"]), balance > 0 else { return nil }
             return PortfolioBalance(symbol: coin, amount: balance)
         }
     }
 
-    /// POST /0/private/Balance: alleen saldo's (Kraken leest ook via POST).
+    /// POST /0/private/Balance: balances only (Kraken also reads via POST).
     private static func kraken(_ c: PortfolioCredentials) async throws -> [PortfolioBalance] {
-        guard let secret = Data(base64Encoded: c.secret) else { throw NookError("Het Kraken-secret is geen geldige base64.") }
+        guard let secret = Data(base64Encoded: c.secret) else { throw NookError("The Kraken secret is not valid base64.") }
         let nonce = milliseconds
         let path = "/0/private/Balance"
         let body = "nonce=\(nonce)"
@@ -947,18 +947,18 @@ private enum PortfolioExchanges {
         request.setValue(c.key, forHTTPHeaderField: "API-Key")
         request.setValue(signature, forHTTPHeaderField: "API-Sign")
         let json = try await PortfolioHTTP.send(request)
-        guard let object = json as? [String: Any] else { throw NookError("Onverwacht antwoord van Kraken.") }
+        guard let object = json as? [String: Any] else { throw NookError("Unexpected response from Kraken.") }
         if let errors = object["error"] as? [String], let first = errors.first {
             throw NookError("Kraken: \(first)")
         }
-        guard let result = object["result"] as? [String: Any] else { throw NookError("Onverwacht antwoord van Kraken.") }
+        guard let result = object["result"] as? [String: Any] else { throw NookError("Unexpected response from Kraken.") }
         return result.compactMap { raw, value -> PortfolioBalance? in
             guard let amount = PortfolioJSON.number(value), amount > 0 else { return nil }
             return PortfolioBalance(symbol: krakenSymbol(raw), amount: amount)
         }
     }
 
-    /// Kraken gebruikt eigen namen (XXBT, ZEUR) en achtervoegsels voor staking (DOT.S, XBT.F).
+    /// Kraken uses custom names (XXBT, ZEUR) and staking suffixes (DOT.S, XBT.F).
     private static func krakenSymbol(_ raw: String) -> String {
         var name = raw.uppercased()
         if let dot = name.firstIndex(of: ".") { name = String(name[..<dot]) }
@@ -972,10 +972,10 @@ private enum PortfolioExchanges {
         return name
     }
 
-    /// GET /api/v3/brokerage/accounts met een CDP-sleutel (ES256-JWT per verzoek): alleen saldo's.
+    /// GET /api/v3/brokerage/accounts with a CDP key (ES256-JWT per request): balances only.
     private static func coinbase(_ c: PortfolioCredentials) async throws -> [PortfolioBalance] {
         guard let key = PortfolioCoinbaseJWT.privateKey(from: c.secret) else {
-            throw NookError("Deze Coinbase-privésleutel kan Nook niet lezen. Gebruik een ECDSA-sleutel.")
+            throw NookError("Nook cannot read this Coinbase private key. Use an ECDSA key.")
         }
         let host = "api.coinbase.com"
         let path = "/api/v3/brokerage/accounts"
@@ -989,11 +989,11 @@ private enum PortfolioExchanges {
             var items = [URLQueryItem(name: "limit", value: "250")]
             if let cursor = cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
             components.queryItems = items
-            guard let url = components.url else { throw NookError("Ongeldig adres.") }
+            guard let url = components.url else { throw NookError("Invalid address.") }
             let jwt = try PortfolioCoinbaseJWT.make(keyName: c.key, key: key, method: "GET", host: host, path: path)
             let json = try await PortfolioHTTP.get(url, headers: ["Authorization": "Bearer \(jwt)"])
             guard let object = json as? [String: Any],
-                  let accounts = object["accounts"] as? [[String: Any]] else { throw NookError("Onverwacht antwoord van Coinbase.") }
+                  let accounts = object["accounts"] as? [[String: Any]] else { throw NookError("Unexpected response from Coinbase.") }
             for account in accounts {
                 guard let currency = account["currency"] as? String else { continue }
                 let available = PortfolioJSON.number((account["available_balance"] as? [String: Any])?["value"]) ?? 0
@@ -1007,9 +1007,9 @@ private enum PortfolioExchanges {
     }
 }
 
-/// JWT voor Coinbase CDP-sleutels: header {alg ES256, kid, nonce, typ}, claims {sub, iss "cdp", nbf, exp +120 s, uri}.
+/// JWT for Coinbase CDP keys: header {alg ES256, kid, nonce, typ}, claims {sub, iss "cdp", nbf, exp +120 s, uri}.
 private enum PortfolioCoinbaseJWT {
-    /// De EC-privésleutel uit wat de gebruiker plakte: PEM (SEC1 of PKCS#8), op één regel, of met "\n" erin.
+    /// The EC private key from what the user pasted: PEM (SEC1 or PKCS#8), single-line, or with "\n" escapes.
     static func privateKey(from raw: String) -> P256.Signing.PrivateKey? {
         let text = raw.replacingOccurrences(of: "\\n", with: "\n")
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"' \n\r\t"))
@@ -1049,14 +1049,14 @@ private enum PortfolioCoinbaseJWT {
     }
 }
 
-// MARK: - Koersen (Coinbase, openbaar, geen sleutel)
+// MARK: - Prices (Coinbase, public, no key required)
 
 private struct PortfolioPriceBook: Sendable {
-    /// Hoeveel euro één dollar is.
+    /// Euro value of one US dollar.
     var eurPerUSD: Double = 0
     var usd: [String: Double] = [:]
     var change: [String: Double] = [:]
-    /// Slotkoersen in dollar, oudste eerst.
+    /// Closing prices in USD, oldest first.
     var history: [String: [Double]] = [:]
 
     func priceEUR(_ symbol: String) -> Double? {
@@ -1074,17 +1074,17 @@ private struct PortfolioMarket: Sendable {
 private enum PortfolioPrices {
     static let fiat: Set<String> = ["USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY"]
     static let stablecoins: Set<String> = ["USDT", "USDC", "DAI", "BUSD", "FDUSD", "TUSD", "USDP", "PYUSD"]
-    /// Hoeveel munten koers-details (24 uur, 7 dagen) krijgen: de grootste. Zo blijft Coinbase vriendelijk.
+    /// How many coins receive price details (24 hours, 7 days): the largest. Keeps Coinbase usage friendly.
     static let marketLimit = 20
 
     static func fetch(amounts: [String: Double]) async throws -> PortfolioPriceBook {
-        // Eén verzoek geeft de dollarkoers van alles wat Coinbase kent: rates[X] = hoeveel X één dollar is.
+        // A single request returns USD rates for everything Coinbase knows: rates[X] = how much X is one dollar.
         let json = try await PortfolioHTTP.get(try PortfolioJSON.url("https://api.coinbase.com/v2/exchange-rates?currency=USD"))
         guard let rates = ((json as? [String: Any])?["data"] as? [String: Any])?["rates"] as? [String: Any] else {
-            throw NookError("Onverwacht antwoord van Coinbase.")
+            throw NookError("Unexpected response from Coinbase.")
         }
         var book = PortfolioPriceBook()
-        guard let euro = PortfolioJSON.number(rates["EUR"]), euro > 0 else { throw NookError("Geen eurokoers van Coinbase.") }
+        guard let euro = PortfolioJSON.number(rates["EUR"]), euro > 0 else { throw NookError("No EUR rate from Coinbase.") }
         book.eurPerUSD = euro
         book.usd["USD"] = 1
         for (symbol, value) in rates {
@@ -1122,7 +1122,7 @@ private enum PortfolioPrices {
         return book
     }
 
-    /// Laatste koers en 24-uursopen uit /stats, 7 dagslotkoersen uit /candles. Nil als Coinbase de munt niet kent.
+    /// Latest price and 24h open from /stats, 7 daily closes from /candles. Nil if Coinbase does not support the coin.
     private static func market(_ symbol: String) async -> PortfolioMarket? {
         let base = "https://api.exchange.coinbase.com/products/\(symbol)-USD"
         guard let statsURL = URL(string: "\(base)/stats"),
@@ -1133,7 +1133,7 @@ private enum PortfolioPrices {
         var history: [Double] = []
         if let candlesURL = URL(string: "\(base)/candles?granularity=86400"),
            let candles = (try? await PortfolioHTTP.get(candlesURL)) as? [[Any]] {
-            // [tijd, laag, hoog, open, slot, volume], nieuwste eerst.
+            // [time, low, high, open, close, volume], newest first.
             history = Array(candles.prefix(7).compactMap { $0.count > 4 ? PortfolioJSON.number($0[4]) : nil }.reversed())
         }
         return PortfolioMarket(last: last, change: change, history: history)

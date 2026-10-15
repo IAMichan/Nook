@@ -1,31 +1,31 @@
 import SwiftUI
 
-// Koppelingen met online diensten: GitHub, Vercel, Stripe, Notion, Cal.com, n8n en Resend.
-// Koppelingen lezen alleen, behalve GitHub: daar kan Nook pull requests beoordelen en samenvoegen, altijd pas na jouw goedkeuring.
-// Sleutels staan in de Keychain onder "connector.<id>.<veld>".
+// Integrations with online services: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, and Resend.
+// Connectors are read-only, except GitHub: Nook can review and merge pull requests there, always subject to your approval.
+// Keys are stored in the Keychain under "connector.<id>.<field>".
 
-// MARK: Instellingen-velden
+// MARK: - Settings Fields
 
-/// Eén invulveld voor een koppeling in de instellingen (token, adres…). De waarde gaat naar de Keychain onder `account`.
+/// A single input field for a connector in settings (token, address…). Value is saved in the Keychain under `account`.
 struct ConnectorField {
     let account: String
     let label: String
     let placeholder: String
     let secret: Bool
 
-    /// Plakken geeft vaak spaties, regeleinden of aanhalingstekens mee.
+    /// Pasting often introduces extraneous spaces, newlines, or quotes.
     static func clean(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
     }
 }
 
-/// Wat de instellingen van een online koppeling moeten weten: welke velden, uitleg en waar je een sleutel maakt.
+/// What online connector settings require: fields, instructions, and signup URL.
 @MainActor
 protocol CloudConnectorConfig: ContextSource, ObservableObject {
     static var fields: [ConnectorField] { get }
     static var helpText: String { get }
     static var signupURL: URL? { get }
-    /// Alle verplichte sleutels staan in de Keychain (los van aan/uit).
+    /// All required keys are present in the Keychain (regardless of enabled toggle).
     var isConfigured: Bool { get }
     var configFields: [ConnectorField] { get }
     var helpText: String { get }
@@ -39,7 +39,7 @@ extension CloudConnectorConfig {
 }
 
 enum CloudConnectors {
-    /// Eén exemplaar van elke online koppeling, in de volgorde van de instellingen.
+    /// Single instance of each cloud connector, in settings display order.
     @MainActor
     static func makeAll() -> [ContextSource] {
         [
@@ -56,10 +56,10 @@ enum CloudConnectors {
     }
 }
 
-// MARK: Hulpjes
+// MARK: - Helpers
 
 enum CloudHelp {
-    /// Een opgeschoonde waarde uit de Keychain, of nil als hij leeg is.
+    /// A sanitized value from the Keychain, or nil if empty.
     static func secret(_ account: String) -> String? {
         guard let value = Keychain.read(account) else { return nil }
         let cleaned = ConnectorField.clean(value)
@@ -67,20 +67,20 @@ enum CloudHelp {
     }
 
     static func url(_ string: String) throws -> URL {
-        guard let url = URL(string: string) else { throw NookError("Ongeldig adres: \(string)") }
+        guard let url = URL(string: string) else { throw NookError("Invalid address: \(string)") }
         return url
     }
 
     static func url(_ base: String, _ path: String, query: [(String, String)]) throws -> URL {
-        guard var components = URLComponents(string: base + path) else { throw NookError("Ongeldig adres: \(base)") }
+        guard var components = URLComponents(string: base + path) else { throw NookError("Invalid address: \(base)") }
         if !query.isEmpty {
             components.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         }
-        guard let url = components.url else { throw NookError("Ongeldig adres: \(base)") }
+        guard let url = components.url else { throw NookError("Invalid address: \(base)") }
         return url
     }
 
-    /// Haalt JSON op en geeft nil bij elke fout; voor extra's die mogen ontbreken.
+    /// Fetches JSON, returning nil on any error; used for optional metadata.
     static func optionalObject(_ url: URL?, headers: [String: String]) async -> [String: Any]? {
         guard let url = url else { return nil }
         guard let raw = try? await ConnectorHTTP.json(url, headers: headers) else { return nil }
@@ -107,7 +107,7 @@ enum CloudHelp {
         return nil
     }
 
-    /// Id's zijn soms tekst, soms een getal.
+    /// IDs can be either strings or numbers.
     static func string(_ value: Any?) -> String? {
         if let text = value as? String { return text }
         if let number = value as? NSNumber { return number.stringValue }
@@ -119,7 +119,7 @@ enum CloudHelp {
         return NookDates.parse(text)
     }
 
-    /// Alleen https-links worden klikbaar.
+    /// Only HTTPS URLs become clickable.
     static func link(_ string: String?) -> URL? {
         guard let string = string, let url = URL(string: string),
               url.scheme?.lowercased() == "https", url.host != nil else { return nil }
@@ -128,11 +128,11 @@ enum CloudHelp {
 
     static func errorText(_ error: Error, service: String) -> String {
         if let nook = error as? NookError { return nook.message }
-        if error is URLError { return "Geen verbinding met \(service). Nook probeert het straks opnieuw." }
-        return "\(service) gaf een onverwacht antwoord."
+        if error is URLError { return "No connection to \(service). Nook will try again later." }
+        return "\(service) returned an unexpected response."
     }
 
-    /// "5 min. geleden"
+    /// "5 min. ago"
     static func ago(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "nl_NL")
@@ -152,12 +152,12 @@ enum CloudHelp {
         "\(count) \(count == 1 ? one : many)"
     }
 
-    /// Valuta's zonder centen bij Stripe.
+    /// Zero-decimal currencies in Stripe.
     static let zeroDecimal: Set<String> = [
         "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf"
     ]
 
-    /// Bedrag in de kleinste eenheid (centen) als "€ 1.240,50".
+    /// Amount in smallest unit (cents) as "€ 1,240.50".
     static func money(_ minor: Int, currency: String) -> String {
         let code = currency.lowercased()
         let amount = zeroDecimal.contains(code) ? Double(minor) : Double(minor) / 100
@@ -168,17 +168,17 @@ enum CloudHelp {
         return formatter.string(from: NSNumber(value: amount)) ?? "\(amount) \(code.uppercased())"
     }
 
-    /// JSON-schema voor een lees-tool.
+    /// JSON schema for a read tool.
     static func schema(_ properties: [String: [String: Any]] = [:]) -> [String: Any] {
         ["type": "object", "properties": properties, "required": [String]()]
     }
 
     static func notSetUp(_ service: String) -> NookError {
-        NookError("\(service) is nog niet ingesteld of staat uit (Instellingen › Koppelingen).")
+        NookError("\(service) is not configured yet or is disabled (Settings › Connectors).")
     }
 }
 
-// MARK: GitHub
+// MARK: - GitHub
 
 @MainActor
 final class GitHubConnector: CloudConnectorConfig {
@@ -240,11 +240,11 @@ final class GitHubConnector: CloudConnectorConfig {
 
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), let s = snapshot else { return [] }
-        var lines = ["GitHub (@\(s.login)): \(CloudHelp.plural(s.mineTotal, "open PR", "open PR's")) van jou, \(CloudHelp.plural(s.reviewTotal, "reviewverzoek", "reviewverzoeken"))."]
-        lines += s.reviews.prefix(3).map { "Review gevraagd: \($0.ref) '\(CloudHelp.short($0.title))'" }
-        lines += s.mine.filter { $0.ci == .failing }.prefix(3).map { "CI faalt op \($0.ref) '\(CloudHelp.short($0.title))'" }
+        var lines = ["GitHub (@\(s.login)): \(CloudHelp.plural(s.mineTotal, "open PR", "open PRs")) authored by you, \(CloudHelp.plural(s.reviewTotal, "review request", "review requests"))."]
+        lines += s.reviews.prefix(3).map { "Review requested: \($0.ref) '\(CloudHelp.short($0.title))'" }
+        lines += s.mine.filter { $0.ci == .failing }.prefix(3).map { "CI failing on \($0.ref) '\(CloudHelp.short($0.title))'" }
         let room = max(0, 8 - lines.count)
-        lines += s.mine.filter { $0.ci != .failing }.prefix(min(room, 2)).map { "Open PR van jou: \($0.ref) '\(CloudHelp.short($0.title))'" }
+        lines += s.mine.filter { $0.ci != .failing }.prefix(min(room, 2)).map { "Open PR authored by you: \($0.ref) '\(CloudHelp.short($0.title))'" }
         return Array(lines.prefix(8))
     }
 
@@ -252,10 +252,10 @@ final class GitHubConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "github_overview",
-                description: "Haalt vers de open pull requests van de gebruiker op GitHub op, de PR's waarvoor een review van de gebruiker is gevraagd en de CI-status per PR, met links.",
+                description: "Freshly fetches the user's open pull requests on GitHub, pull requests requesting the user's review, and CI status per PR, with links.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "GitHub lezen" },
+                summarize: { _ in "Read GitHub" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
@@ -265,7 +265,7 @@ final class GitHubConnector: CloudConnectorConfig {
         ] + pullRequestTools + issueTools
     }
 
-    // MARK: Ophalen
+    // MARK: - Fetching
 
     private func headers(_ token: String) -> [String: String] {
         [
@@ -280,12 +280,12 @@ final class GitHubConnector: CloudConnectorConfig {
         let userURL = try CloudHelp.url("https://api.github.com/user")
         let userRaw = try await ConnectorHTTP.json(userURL, headers: auth)
         guard let login = CloudHelp.object(userRaw)["login"] as? String, !login.isEmpty else {
-            throw NookError("GitHub gaf geen gebruikersnaam terug.")
+            throw NookError("GitHub returned no username.")
         }
         let mineResult = try await search("is:pr is:open archived:false author:\(login)", auth: auth)
         let reviewResult = try await search("is:pr is:open archived:false review-requested:\(login)", auth: auth)
 
-        // CI alleen voor de recentste PR's, om binnen de limieten van GitHub te blijven.
+        // CI check only for most recent PRs to stay within GitHub rate limits.
         var mine = mineResult.items
         for index in mine.indices.prefix(6) {
             mine[index].ci = await ciState(repo: mine[index].repo, number: mine[index].number, auth: auth)
@@ -312,14 +312,14 @@ final class GitHubConnector: CloudConnectorConfig {
         return PullRequest(
             repo: repo,
             number: number,
-            title: (item["title"] as? String) ?? "Zonder titel",
+            title: (item["title"] as? String) ?? "Untitled",
             url: CloudHelp.link(item["html_url"] as? String),
             draft: (item["draft"] as? Bool) ?? false,
             updated: CloudHelp.date(item["updated_at"])
         )
     }
 
-    /// Check runs én de oude commit-statussen van de laatste commit van een PR.
+    /// Check runs and legacy commit statuses for the latest commit of a PR.
     private func ciState(repo: String, number: Int, auth: [String: String]) async -> CI {
         let base = "https://api.github.com/repos/\(repo)"
         guard let pull = await CloudHelp.optionalObject(URL(string: "\(base)/pulls/\(number)"), headers: auth),
@@ -354,7 +354,7 @@ final class GitHubConnector: CloudConnectorConfig {
         return seen ? .passing : .unknown
     }
 
-    // MARK: Tonen
+    // MARK: - Display
 
     private func apply(_ s: Snapshot) {
         snapshot = s
@@ -366,23 +366,23 @@ final class GitHubConnector: CloudConnectorConfig {
         }
         let detail: String
         if !failing.isEmpty {
-            detail = "CI faalt op " + failing.prefix(3).map { $0.ref }.joined(separator: ", ")
+            detail = "CI failing on " + failing.prefix(3).map { $0.ref }.joined(separator: ", ")
         } else if s.mine.contains(where: { $0.ci == .pending }) {
-            detail = "CI draait nog"
+            detail = "CI still running"
         } else if s.mine.isEmpty {
-            detail = "Geen open PR's van jou"
+            detail = "No open PRs authored by you"
         } else {
-            detail = "CI is groen"
+            detail = "CI is green"
         }
 
         var items: [ConnectorItem] = []
         for pr in s.reviews.prefix(4) {
             items.append(ConnectorItem(id: "review-\(pr.ref)", title: pr.title,
-                                       subtitle: "Review gevraagd · \(pr.ref)", tone: .attention, url: pr.url))
+                                       subtitle: "Review requested · \(pr.ref)", tone: .attention, url: pr.url))
         }
         for pr in s.mine.prefix(max(0, 8 - items.count)) {
             var parts = [pr.ref]
-            if pr.draft { parts.append("concept") }
+            if pr.draft { parts.append("draft") }
             let label = ciLabel(pr.ci)
             if !label.isEmpty { parts.append(label) }
             items.append(ConnectorItem(id: "pr-\(pr.ref)", title: pr.title,
@@ -395,9 +395,9 @@ final class GitHubConnector: CloudConnectorConfig {
 
     private func ciLabel(_ ci: CI) -> String {
         switch ci {
-        case .failing: return "CI faalt"
-        case .pending: return "CI draait"
-        case .passing: return "CI groen"
+        case .failing: return "CI failing"
+        case .pending: return "CI running"
+        case .passing: return "CI green"
         case .unknown: return ""
         }
     }
@@ -416,23 +416,23 @@ final class GitHubConnector: CloudConnectorConfig {
         }
         let s = try await fetch(token: token)
         apply(s)
-        var out = ["GitHub-account: @\(s.login)", "", "Open PR's van de gebruiker (\(s.mineTotal)):"]
-        if s.mine.isEmpty { out.append("- geen") }
+        var out = ["GitHub account: @\(s.login)", "", "Open PRs authored by user (\(s.mineTotal)):"]
+        if s.mine.isEmpty { out.append("- none") }
         for pr in s.mine {
             var line = "- \(pr.ref) '\(pr.title)'"
-            if pr.draft { line += " [concept]" }
+            if pr.draft { line += " [draft]" }
             let label = ciLabel(pr.ci)
             if !label.isEmpty { line += " [\(label)]" }
-            if let updated = pr.updated { line += " · bijgewerkt \(CloudHelp.ago(updated))" }
+            if let updated = pr.updated { line += " · updated \(CloudHelp.ago(updated))" }
             if let url = pr.url { line += " · \(url.absoluteString)" }
             out.append(line)
         }
         out.append("")
-        out.append("Review gevraagd van de gebruiker (\(s.reviewTotal)):")
-        if s.reviews.isEmpty { out.append("- geen") }
+        out.append("Review requested from user (\(s.reviewTotal)):")
+        if s.reviews.isEmpty { out.append("- none") }
         for pr in s.reviews {
             var line = "- \(pr.ref) '\(pr.title)'"
-            if let updated = pr.updated { line += " · bijgewerkt \(CloudHelp.ago(updated))" }
+            if let updated = pr.updated { line += " · updated \(CloudHelp.ago(updated))" }
             if let url = pr.url { line += " · \(url.absoluteString)" }
             out.append(line)
         }
@@ -440,24 +440,24 @@ final class GitHubConnector: CloudConnectorConfig {
     }
 }
 
-// MARK: GitHub: pull requests beoordelen en samenvoegen
+// MARK: GitHub: Review and merge pull requests
 
-/// Invoer van de PR-tools: welke repo en welke pull request. Buiten de main actor, zodat de samenvattingen van de tools hem kunnen gebruiken.
+/// Input for PR tools: which repo and which pull request. Outside the main actor so tool summaries can use it.
 enum GitHubPR {
     static let repoPattern = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
 
     static func target(_ input: [String: Any]) throws -> (repo: String, number: Int) {
         let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard ActionGate.isRepository(repo) else {
-            throw NookError("De repository moet eigenaar/naam zijn, bijvoorbeeld IAMichan/nook.")
+            throw NookError("The repository must be owner/name, for example IAMichan/nook.")
         }
         guard let number = CloudHelp.int(input["number"]), number > 0 else {
-            throw NookError("Het nummer van de pull request ontbreekt.")
+            throw NookError("The pull request number is missing.")
         }
         return (repo, number)
     }
 
-    /// "IAMichan/nook#23", voor in het plan.
+    /// "IAMichan/nook#23", for use in the plan.
     static func ref(_ input: [String: Any]) -> String {
         guard let parsed = try? GitHubPR.target(input) else { return "pull request" }
         return "\(parsed.repo)#\(parsed.number)"
@@ -470,8 +470,8 @@ enum GitHubPR {
 
     static func schema(_ extra: [String: [String: Any]] = [:], required: [String] = []) -> [String: Any] {
         var properties: [String: [String: Any]] = [
-            "repo": ["type": "string", "description": "Repository als eigenaar/naam, bijvoorbeeld IAMichan/nook."],
-            "number": ["type": "integer", "description": "Nummer van de pull request."]
+            "repo": ["type": "string", "description": "Repository as owner/name, for example IAMichan/nook."],
+            "number": ["type": "integer", "description": "Pull request number."]
         ]
         for (key, value) in extra { properties[key] = value }
         return ["type": "object", "properties": properties, "required": ["repo", "number"] + required]
@@ -479,15 +479,15 @@ enum GitHubPR {
 }
 
 extension GitHubConnector {
-    /// Lezen draait meteen; alles wat iets verandert op GitHub komt eerst als plan langs de gebruiker.
+    /// Reads run immediately; anything modifying GitHub goes through the user as a plan first.
     var pullRequestTools: [ToolSpec] {
         [
             ToolSpec(
                 name: "github_pr_details",
-                description: "Leest één pull request volledig: titel, beschrijving, auteur, status, CI, bestaande reviews en de gewijzigde bestanden met hun diff. Gebruik dit ALTIJD eerst als de gebruiker een PR wil laten beoordelen, goedkeuren of samenvoegen, en lees de diff echt voordat je een oordeel geeft.",
+                description: "Reads a single pull request completely: title, description, author, status, CI, existing reviews, and changed files with their diff. ALWAYS use this first when the user wants to review, approve, or merge a PR, and actually read the diff before rendering a verdict.",
                 schema: GitHubPR.schema(),
                 kind: .read,
-                summarize: { input in "GitHub lezen: \(GitHubPR.ref(input))" },
+                summarize: { input in "Read GitHub: \(GitHubPR.ref(input))" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
@@ -497,109 +497,109 @@ extension GitHubConnector {
             ),
             ToolSpec(
                 name: "github_review_pr",
-                description: "Geeft een review op een pull request: goedkeuren (APPROVE), wijzigingen vragen (REQUEST_CHANGES) of alleen een opmerking (COMMENT). Beoordeel eerst de diff met github_pr_details. Bij REQUEST_CHANGES en COMMENT is een tekst verplicht. Je kunt je eigen pull request niet goedkeuren.",
+                description: "Submits a review on a pull request: approve (APPROVE), request changes (REQUEST_CHANGES), or comment only (COMMENT). Inspect the diff with github_pr_details first. A comment body is required for REQUEST_CHANGES and COMMENT. You cannot approve your own pull request.",
                 schema: GitHubPR.schema([
-                    "event": ["type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "Het oordeel."],
-                    "body": ["type": "string", "description": "De tekst van de review. Verplicht bij REQUEST_CHANGES en COMMENT."]
+                    "event": ["type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"], "description": "The review action."],
+                    "body": ["type": "string", "description": "The review text. Required for REQUEST_CHANGES and COMMENT."]
                 ], required: ["event"]),
                 kind: .action,
                 summarize: { input in
                     let ref = GitHubPR.ref(input)
                     let note = GitHubPR.text(input, "body").map { " · " + CloudHelp.short($0, 50) } ?? ""
                     switch ((input["event"] as? String) ?? "").uppercased() {
-                    case "APPROVE": return "GitHub: \(ref) goedkeuren" + note
-                    case "REQUEST_CHANGES": return "GitHub: wijzigingen vragen op \(ref)" + note
-                    default: return "GitHub: review op \(ref)" + note
+                    case "APPROVE": return "GitHub: approve \(ref)" + note
+                    case "REQUEST_CHANGES": return "GitHub: request changes on \(ref)" + note
+                    default: return "GitHub: review on \(ref)" + note
                     }
                 },
                 tag: { input in
-                    ((input["event"] as? String) ?? "").uppercased() == "REQUEST_CHANGES" ? ("Blokkeert", .caution) : ("", .good)
+                    ((input["event"] as? String) ?? "").uppercased() == "REQUEST_CHANGES" ? ("Blocks", .caution) : ("", .good)
                 },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     let event = ((input["event"] as? String) ?? "").uppercased()
                     guard ["APPROVE", "REQUEST_CHANGES", "COMMENT"].contains(event) else {
-                        throw NookError("Het oordeel moet APPROVE, REQUEST_CHANGES of COMMENT zijn.")
+                        throw NookError("The review action must be APPROVE, REQUEST_CHANGES, or COMMENT.")
                     }
                     let body = GitHubPR.text(input, "body")
-                    if event != "APPROVE" && body == nil { throw NookError("Bij dit oordeel hoort een tekst.") }
+                    if event != "APPROVE" && body == nil { throw NookError("A comment body is required for this review action.") }
                     var payload: [String: Any] = ["event": event]
                     if let body = body { payload["body"] = body }
                     _ = try await self.send("POST", "/repos/\(target.repo)/pulls/\(target.number)/reviews", body: payload)
                     switch event {
-                    case "APPROVE": return "Goedgekeurd: \(target.repo)#\(target.number)"
-                    case "REQUEST_CHANGES": return "Wijzigingen gevraagd op \(target.repo)#\(target.number)"
-                    default: return "Review geplaatst op \(target.repo)#\(target.number)"
+                    case "APPROVE": return "Approved: \(target.repo)#\(target.number)"
+                    case "REQUEST_CHANGES": return "Requested changes on: \(target.repo)#\(target.number)"
+                    default: return "Review submitted on \(target.repo)#\(target.number)"
                     }
                 }
             ),
             ToolSpec(
                 name: "github_comment_pr",
-                description: "Plaatst een gewone reactie onder een pull request, zonder een oordeel.",
+                description: "Posts a regular comment on a pull request, without a review verdict.",
                 schema: GitHubPR.schema([
-                    "body": ["type": "string", "description": "De tekst van de reactie."]
+                    "body": ["type": "string", "description": "The comment text."]
                 ], required: ["body"]),
                 kind: .action,
                 summarize: { input in
-                    "GitHub: reageer op \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50)
+                    "GitHub: comment on \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50)
                 },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    guard let body = GitHubPR.text(input, "body") else { throw NookError("De tekst van de reactie ontbreekt.") }
+                    guard let body = GitHubPR.text(input, "body") else { throw NookError("Comment text is missing.") }
                     _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
-                    return "Reactie geplaatst op \(target.repo)#\(target.number)"
+                    return "Comment posted on \(target.repo)#\(target.number)"
                 }
             ),
             ToolSpec(
                 name: "github_merge_pr",
-                description: "Voegt een pull request samen. Dit is moeilijk terug te draaien: gebruik het alleen als de gebruiker het duidelijk vraagt, en kijk eerst met github_pr_details of de CI groen is en de PR geen concept is. Kies de methode die de gebruiker noemt; zonder voorkeur 'merge'.",
+                description: "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; default to 'merge'.",
                 schema: GitHubPR.schema([
-                    "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Hoe samenvoegen. Standaard merge."]
+                    "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to merge."]
                 ]),
                 kind: .action,
                 summarize: { input in
                     let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
-                    return "GitHub: \(GitHubPR.ref(input)) samenvoegen (\(method))"
+                    return "GitHub: merge \(GitHubPR.ref(input)) (\(method))"
                 },
-                tag: { _ in ("Samenvoegen", .caution) },
+                tag: { _ in ("Merge", .caution) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
                     guard ["merge", "squash", "rebase"].contains(method) else {
-                        throw NookError("De methode moet merge, squash of rebase zijn.")
+                        throw NookError("The method must be merge, squash, or rebase.")
                     }
                     let result = try await self.send("PUT", "/repos/\(target.repo)/pulls/\(target.number)/merge",
                                                      body: ["merge_method": method])
                     if (result["merged"] as? Bool) == false {
-                        throw NookError((result["message"] as? String) ?? "GitHub voegde de pull request niet samen.")
+                        throw NookError((result["message"] as? String) ?? "GitHub did not merge the pull request.")
                     }
-                    return "Samengevoegd (\(method)): \(target.repo)#\(target.number)"
+                    return "Merged (\(method)): \(target.repo)#\(target.number)"
                 }
             ),
             ToolSpec(
                 name: "github_close_pr",
-                description: "Sluit een pull request zonder samen te voegen. Alleen als de gebruiker dat duidelijk vraagt.",
+                description: "Closes a pull request without merging. Only use when explicitly requested by the user.",
                 schema: GitHubPR.schema(),
                 kind: .action,
-                summarize: { input in "GitHub: \(GitHubPR.ref(input)) sluiten" },
-                tag: { _ in ("Sluiten", .caution) },
+                summarize: { input in "GitHub: close \(GitHubPR.ref(input))" },
+                tag: { _ in ("Close", .caution) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     _ = try await self.send("PATCH", "/repos/\(target.repo)/pulls/\(target.number)", body: ["state": "closed"])
-                    return "Gesloten: \(target.repo)#\(target.number)"
+                    return "Closed: \(target.repo)#\(target.number)"
                 }
             )
         ]
     }
 
-    // MARK: Schrijven
+    // MARK: Writing
 
-    /// Doet een schrijfactie bij GitHub en geeft GitHubs eigen foutmelding door, zodat Nook kan uitleggen waarom iets niet lukt.
+    /// Performs a write action on GitHub and forwards GitHub's error message so Nook can explain why an action failed.
     fileprivate func send(_ method: String, _ path: String, body: [String: Any]) async throws -> [String: Any] {
         guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
             throw CloudHelp.notSetUp("GitHub")
@@ -615,12 +615,12 @@ extension GitHubConnector {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status) else {
-            let message = (object["message"] as? String) ?? "GitHub gaf een fout (\(status))."
+            let message = (object["message"] as? String) ?? "GitHub returned an error (\(status))."
             switch status {
             case 401:
-                throw NookError("GitHub weigerde de koppeling (401). Koppel opnieuw bij Instellingen › Koppelingen.")
+                throw NookError("GitHub rejected the connection (401). Reconnect in Settings › Connectors.")
             case 403, 404:
-                throw NookError("GitHub liet dit niet toe (\(status)): \(message) Heeft de koppeling schrijfrechten op pull requests? Koppel anders opnieuw met 'Koppel met GitHub'.")
+                throw NookError("GitHub did not permit this (\(status)): \(message) Does the connection have write access to pull requests? Otherwise reconnect using 'Connect with GitHub'.")
             default:
                 throw NookError("GitHub: \(message)")
             }
@@ -628,9 +628,9 @@ extension GitHubConnector {
         return object
     }
 
-    // MARK: Lezen
+    // MARK: Reading
 
-    /// De PR met alles wat nodig is om hem te beoordelen. Begrensd, zodat een grote diff het gesprek niet vult.
+    /// The PR with all context needed to review it. Truncated so a large diff does not flood the conversation.
     fileprivate func pullRequestDetails(repo: String, number: Int) async throws -> String {
         guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
             throw CloudHelp.notSetUp("GitHub")
@@ -649,13 +649,13 @@ extension GitHubConnector {
         let head = CloudHelp.object(pull["head"])
         let baseRef = CloudHelp.object(pull["base"])
         let merged = (pull["merged"] as? Bool) ?? false
-        let state = merged ? "samengevoegd" : ((pull["state"] as? String) == "open" ? "open" : "gesloten")
+        let state = merged ? "merged" : ((pull["state"] as? String) == "open" ? "open" : "closed")
 
-        var out = ["\(repo)#\(number) '\((pull["title"] as? String) ?? "Zonder titel")' door @\(author)"]
+        var out = ["\(repo)#\(number) '\((pull["title"] as? String) ?? "Untitled")' by @\(author)"]
         var facts = ["status: \(state)"]
-        if (pull["draft"] as? Bool) == true { facts.append("concept") }
+        if (pull["draft"] as? Bool) == true { facts.append("draft") }
         if let mergeable = pull["mergeable"] as? Bool {
-            facts.append(mergeable ? "geen conflicten" : "conflicten")
+            facts.append(mergeable ? "no conflicts" : "conflicts")
         }
         if let mergeState = pull["mergeable_state"] as? String, mergeState != "unknown" { facts.append("mergeable_state: \(mergeState)") }
         let label = ciLabel(ci)
@@ -666,13 +666,13 @@ extension GitHubConnector {
         let added = CloudHelp.int(pull["additions"]) ?? 0
         let removed = CloudHelp.int(pull["deletions"]) ?? 0
         let changed = CloudHelp.int(pull["changed_files"]) ?? files.count
-        let fileCount = CloudHelp.plural(changed, "bestand", "bestanden")
-        out.append("Van \(fromRef) naar \(toRef) · +\(added) −\(removed) in \(fileCount)")
+        let fileCount = CloudHelp.plural(changed, "file", "files")
+        out.append("From \(fromRef) to \(toRef) · +\(added) −\(removed) in \(fileCount)")
         if let url = pull["html_url"] as? String { out.append(url) }
 
         if let body = (pull["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
             out.append("")
-            out.append("Beschrijving:")
+            out.append("Description:")
             out.append(String(body.prefix(1500)))
         }
 
@@ -690,30 +690,30 @@ extension GitHubConnector {
         }
 
         out.append("")
-        out.append("Gewijzigde bestanden:")
+        out.append("Changed files:")
         var budget = 12000
         for file in files {
             let name = (file["filename"] as? String) ?? "?"
-            var block = "### \(name) (\((file["status"] as? String) ?? "gewijzigd"), +\(CloudHelp.int(file["additions"]) ?? 0) −\(CloudHelp.int(file["deletions"]) ?? 0))"
+            var block = "### \(name) (\((file["status"] as? String) ?? "modified"), +\(CloudHelp.int(file["additions"]) ?? 0) −\(CloudHelp.int(file["deletions"]) ?? 0))"
             if let patch = file["patch"] as? String, budget > 0 {
                 let cut = String(patch.prefix(min(1500, budget)))
                 budget -= cut.count
-                block += "\n" + cut + (cut.count < patch.count ? "\n… (diff ingekort)" : "")
+                block += "\n" + cut + (cut.count < patch.count ? "\n… (diff truncated)" : "")
             } else if file["patch"] == nil {
-                block += "\n(geen diff beschikbaar: binair of te groot)"
+                block += "\n(no diff available: binary or too large)"
             } else {
-                block += "\n(diff weggelaten om het kort te houden)"
+                block += "\n(diff omitted for brevity)"
             }
             out.append(block)
         }
         if (CloudHelp.int(pull["changed_files"]) ?? 0) > files.count {
-            out.append("… en nog meer bestanden (alleen de eerste \(files.count) zijn opgehaald)")
+            out.append("… and more files (only the first \(files.count) were fetched)")
         }
         return out.joined(separator: "\n")
     }
 }
 
-// MARK: GitHub: issues zoeken, lezen en bijwerken
+// MARK: GitHub: Search, read, and update issues
 
 extension GitHubConnector {
     private static func issueSchema(_ properties: [String: [String: Any]], required: [String]) -> [String: Any] {
@@ -724,27 +724,27 @@ extension GitHubConnector {
         [
             ToolSpec(
                 name: "github_search",
-                description: "Zoekt issues en pull requests op GitHub met een GitHub-zoekopdracht, de laatst bijgewerkte eerst, met status, labels en links. Voorbeelden van query: \"launch repo:IAMichan/nook\", \"is:issue is:open label:bug\", \"involves:@me deadline\". Gebruik dit om eisen, besluiten of openstaand werk in issues te vinden.",
+                description: "Searches issues and pull requests on GitHub using a GitHub query, most recently updated first, with status, labels, and links. Example queries: \"launch repo:IAMichan/nook\", \"is:issue is:open label:bug\", \"involves:@me deadline\". Use this to find requirements, decisions, or outstanding work in issues.",
                 schema: Self.issueSchema([
-                    "query": ["type": "string", "description": "GitHub-zoekopdracht (zelfde syntaxis als op github.com)."],
-                    "type": ["type": "string", "enum": ["issue", "pr", "all"], "description": "Alleen issues, alleen PR's of allebei (standaard)."] as [String: Any]
+                    "query": ["type": "string", "description": "GitHub search query (same syntax as on github.com)."],
+                    "type": ["type": "string", "enum": ["issue", "pr", "all"], "description": "Issues only, PRs only, or both (default)."] as [String: Any]
                 ], required: ["query"]),
                 kind: .read,
-                summarize: { input in "GitHub zoeken: \((input["query"] as? String) ?? "")" },
+                summarize: { input in "Search GitHub: \((input["query"] as? String) ?? "")" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !query.isEmpty else { throw NookError("De zoekopdracht ontbreekt.") }
+                    guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     return try await self.searchIssues(query, type: (input["type"] as? String) ?? "all")
                 }
             ),
             ToolSpec(
                 name: "github_issue_details",
-                description: "Leest één issue (of de discussie onder een pull request): titel, status, labels, beschrijving en de laatste reacties.",
+                description: "Reads a single issue (or the discussion on a pull request): title, status, labels, description, and recent comments.",
                 schema: GitHubPR.schema(),
                 kind: .read,
-                summarize: { input in "GitHub lezen: \(GitHubPR.ref(input))" },
+                summarize: { input in "Read GitHub: \(GitHubPR.ref(input))" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
@@ -754,23 +754,23 @@ extension GitHubConnector {
             ),
             ToolSpec(
                 name: "github_create_issue",
-                description: "Maakt een nieuw issue in een repository. Schrijf een duidelijke titel en een beschrijving (Markdown). Labels zijn optioneel, gescheiden door komma's, en moeten al bestaan in de repository.",
+                description: "Creates a new issue in a repository. Write a clear title and description (Markdown). Labels are optional, comma-separated, and must already exist in the repository.",
                 schema: Self.issueSchema([
-                    "repo": ["type": "string", "description": "Repository als eigenaar/naam."],
-                    "title": ["type": "string", "description": "Titel van het issue."],
-                    "body": ["type": "string", "description": "Beschrijving (Markdown)."],
-                    "labels": ["type": "string", "description": "Labels, gescheiden door komma's. Optioneel."]
+                    "repo": ["type": "string", "description": "Repository as owner/name."],
+                    "title": ["type": "string", "description": "Issue title."],
+                    "body": ["type": "string", "description": "Description (Markdown)."],
+                    "labels": ["type": "string", "description": "Labels, comma-separated. Optional."]
                 ], required: ["repo", "title"]),
                 kind: .action,
                 summarize: { input in
                     "GitHub: issue in \((input["repo"] as? String) ?? "?") · \(CloudHelp.short((input["title"] as? String) ?? "", 60))"
                 },
-                tag: { _ in ("maakt aan", .caution) },
+                tag: { _ in ("Create", .caution) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let repo = ((input["repo"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard ActionGate.isRepository(repo) else { throw NookError("De repository moet eigenaar/naam zijn.") }
-                    guard let title = GitHubPR.text(input, "title") else { throw NookError("De titel ontbreekt.") }
+                    guard ActionGate.isRepository(repo) else { throw NookError("The repository must be owner/name.") }
+                    guard let title = GitHubPR.text(input, "title") else { throw NookError("Title is missing.") }
                     var payload: [String: Any] = ["title": title]
                     if let body = GitHubPR.text(input, "body") { payload["body"] = body }
                     let labels = Self.labels(input)
@@ -778,47 +778,47 @@ extension GitHubConnector {
                     let result = try await self.send("POST", "/repos/\(repo)/issues", body: payload)
                     let number = CloudHelp.int(result["number"]).map { "#\($0)" } ?? ""
                     let url = (result["html_url"] as? String).map { " · \($0)" } ?? ""
-                    return "Issue aangemaakt: \(repo)\(number)\(url)"
+                    return "Issue created: \(repo)\(number)\(url)"
                 }
             ),
             ToolSpec(
                 name: "github_comment_issue",
-                description: "Plaatst een reactie onder een issue (of de discussie van een pull request).",
-                schema: GitHubPR.schema(["body": ["type": "string", "description": "De tekst van de reactie."]], required: ["body"]),
+                description: "Posts a comment on an issue (or the discussion of a pull request).",
+                schema: GitHubPR.schema(["body": ["type": "string", "description": "The comment text."]], required: ["body"]),
                 kind: .action,
-                summarize: { input in "GitHub: reageer op \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50) },
+                summarize: { input in "GitHub: comment on \(GitHubPR.ref(input)) · " + CloudHelp.short(GitHubPR.text(input, "body") ?? "", 50) },
                 tag: { _ in ("", .good) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    guard let body = GitHubPR.text(input, "body") else { throw NookError("De tekst van de reactie ontbreekt.") }
+                    guard let body = GitHubPR.text(input, "body") else { throw NookError("Comment text is missing.") }
                     let result = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
-                    return "Reactie geplaatst op \(target.repo)#\(target.number)" + ((result["html_url"] as? String).map { " · \($0)" } ?? "")
+                    return "Comment posted on \(target.repo)#\(target.number)" + ((result["html_url"] as? String).map { " · \($0)" } ?? "")
                 }
             ),
             ToolSpec(
                 name: "github_update_issue",
-                description: "Werkt een issue bij: sluiten of heropenen, de titel veranderen of labels toevoegen. Alleen wat je meegeeft verandert.",
+                description: "Updates an issue: close or reopen, change title, or add labels. Only provided fields are updated.",
                 schema: GitHubPR.schema([
-                    "state": ["type": "string", "enum": ["open", "closed"], "description": "open of closed. Optioneel."] as [String: Any],
-                    "title": ["type": "string", "description": "Nieuwe titel. Optioneel."],
-                    "labels": ["type": "string", "description": "Labels om toe te voegen, gescheiden door komma's. Optioneel."]
+                    "state": ["type": "string", "enum": ["open", "closed"], "description": "open or closed. Optional."] as [String: Any],
+                    "title": ["type": "string", "description": "New title. Optional."],
+                    "labels": ["type": "string", "description": "Labels to add, comma-separated. Optional."]
                 ]),
                 kind: .action,
                 summarize: { input in
                     var parts: [String] = []
-                    if let state = GitHubPR.text(input, "state") { parts.append(state == "closed" ? "sluiten" : "heropenen") }
-                    if let title = GitHubPR.text(input, "title") { parts.append("titel \"\(CloudHelp.short(title, 40))\"") }
+                    if let state = GitHubPR.text(input, "state") { parts.append(state == "closed" ? "close" : "reopen") }
+                    if let title = GitHubPR.text(input, "title") { parts.append("title \"\(CloudHelp.short(title, 40))\"") }
                     if let labels = GitHubPR.text(input, "labels") { parts.append("labels \(labels)") }
-                    return "GitHub: \(GitHubPR.ref(input)) " + (parts.isEmpty ? "bijwerken" : parts.joined(separator: ", "))
+                    return "GitHub: \(GitHubPR.ref(input)) " + (parts.isEmpty ? "update" : parts.joined(separator: ", "))
                 },
-                tag: { input in GitHubPR.text(input, "state") == "closed" ? ("Sluiten", .caution) : ("wijzigt", .caution) },
+                tag: { input in GitHubPR.text(input, "state") == "closed" ? ("Close", .caution) : ("Update", .caution) },
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     var payload: [String: Any] = [:]
                     if let state = GitHubPR.text(input, "state") {
-                        guard ["open", "closed"].contains(state) else { throw NookError("De status moet open of closed zijn.") }
+                        guard ["open", "closed"].contains(state) else { throw NookError("Status must be open or closed.") }
                         payload["state"] = state
                     }
                     if let title = GitHubPR.text(input, "title") { payload["title"] = title }
@@ -829,8 +829,8 @@ extension GitHubConnector {
                     if !labels.isEmpty {
                         _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/labels", body: ["labels": labels])
                     }
-                    guard !payload.isEmpty || !labels.isEmpty else { throw NookError("Er is niets om bij te werken.") }
-                    return "Bijgewerkt: \(target.repo)#\(target.number)"
+                    guard !payload.isEmpty || !labels.isEmpty else { throw NookError("There is nothing to update.") }
+                    return "Updated: \(target.repo)#\(target.number)"
                 }
             )
         ]
@@ -862,8 +862,8 @@ extension GitHubConnector {
         ])
         let root = CloudHelp.object(try await ConnectorHTTP.json(url, headers: try readHeaders()))
         let items = CloudHelp.list(root["items"])
-        if items.isEmpty { return "Geen issues of pull requests gevonden voor \"\(query)\"." }
-        var lines = ["\(CloudHelp.int(root["total_count"]) ?? items.count) treffers, de \(items.count) laatst bijgewerkte:"]
+        if items.isEmpty { return "No issues or pull requests found for \"\(query)\"." }
+        var lines = ["\(CloudHelp.int(root["total_count"]) ?? items.count) results, \(items.count) most recently updated:"]
         var refs: [String] = []
         for item in items {
             let repoURL = (item["repository_url"] as? String) ?? ""
@@ -871,11 +871,11 @@ extension GitHubConnector {
             let number = CloudHelp.int(item["number"]) ?? 0
             let kind = item["pull_request"] != nil ? "PR" : "issue"
             let labels = CloudHelp.list(item["labels"]).compactMap { $0["name"] as? String }
-            let title = (item["title"] as? String) ?? "Zonder titel"
+            let title = (item["title"] as? String) ?? "Untitled"
             var line = "- \(repo)#\(number) [\(kind), \((item["state"] as? String) ?? "?")] '\(title)'"
             if !labels.isEmpty { line += " · labels: \(labels.joined(separator: ", "))" }
-            if let updated = CloudHelp.date(item["updated_at"]) { line += " · bijgewerkt \(NookDates.short(updated))" }
-            if let author = CloudHelp.object(item["user"])["login"] as? String { line += " · door @\(author)" }
+            if let updated = CloudHelp.date(item["updated_at"]) { line += " · updated \(NookDates.short(updated))" }
+            if let author = CloudHelp.object(item["user"])["login"] as? String { line += " · by @\(author)" }
             lines.append(line)
             refs.append(ReferenceParser.line(title: "\(repo)#\(number) \(title)", url: CloudHelp.link(item["html_url"] as? String)?.absoluteString,
                                              detail: "\(kind) · \((item["state"] as? String) ?? "")"))
@@ -888,24 +888,24 @@ extension GitHubConnector {
         let base = "https://api.github.com/repos/\(repo)/issues/\(number)"
         let issue = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url(base), headers: auth))
         let comments = CloudHelp.list(try? await ConnectorHTTP.json(try CloudHelp.url(base, "/comments", query: [("per_page", "30")]), headers: auth))
-        let title = (issue["title"] as? String) ?? "Zonder titel"
+        let title = (issue["title"] as? String) ?? "Untitled"
         let labels = CloudHelp.list(issue["labels"]).compactMap { $0["name"] as? String }
-        var out = ["\(repo)#\(number) '\(title)' door @\((CloudHelp.object(issue["user"])["login"] as? String) ?? "?")"]
+        var out = ["\(repo)#\(number) '\(title)' by @\((CloudHelp.object(issue["user"])["login"] as? String) ?? "?")"]
         var facts = ["status: \((issue["state"] as? String) ?? "?")"]
         if !labels.isEmpty { facts.append("labels: \(labels.joined(separator: ", "))") }
-        if let created = CloudHelp.date(issue["created_at"]) { facts.append("geopend \(NookDates.short(created))") }
-        if let updated = CloudHelp.date(issue["updated_at"]) { facts.append("bijgewerkt \(NookDates.short(updated))") }
+        if let created = CloudHelp.date(issue["created_at"]) { facts.append("opened \(NookDates.short(created))") }
+        if let updated = CloudHelp.date(issue["updated_at"]) { facts.append("updated \(NookDates.short(updated))") }
         let assignees = CloudHelp.list(issue["assignees"]).compactMap { $0["login"] as? String }
-        if !assignees.isEmpty { facts.append("toegewezen aan: \(assignees.map { "@\($0)" }.joined(separator: ", "))") }
+        if !assignees.isEmpty { facts.append("assigned to: \(assignees.map { "@\($0)" }.joined(separator: ", "))") }
         out.append(facts.joined(separator: " · "))
         if let body = (issue["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
             out.append("")
-            out.append("Beschrijving:")
+            out.append("Description:")
             out.append(String(body.prefix(4000)))
         }
         if !comments.isEmpty {
             out.append("")
-            out.append("Reacties (laatste \(min(comments.count, 15))):")
+            out.append("Comments (last \(min(comments.count, 15))):")
             for comment in comments.suffix(15) {
                 let who = (CloudHelp.object(comment["user"])["login"] as? String) ?? "?"
                 let when = CloudHelp.date(comment["created_at"]).map { NookDates.short($0) } ?? ""
@@ -976,15 +976,15 @@ final class VercelConnector: CloudConnectorConfig {
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), loaded else { return [] }
         let latest = latestPerProject(deployments)
-        if latest.isEmpty { return ["Vercel: nog geen deploys."] }
+        if latest.isEmpty { return ["Vercel: no deployments yet."] }
         let summary = latest.prefix(4).map { d -> String in
             var part = "\(d.project): \(stateLabel(d.state))"
             if let created = d.created { part += " (\(CloudHelp.ago(created)))" }
             return part
         }
-        var lines = ["Vercel, laatste deploys: " + summary.joined(separator: ", ")]
+        var lines = ["Vercel, latest deployments: " + summary.joined(separator: ", ")]
         for d in latest where d.state == "ERROR" {
-            var line = "Vercel-deploy mislukt: \(d.project)"
+            var line = "Vercel deployment failed: \(d.project)"
             if let branch = d.branch { line += " (\(branch))" }
             if let message = d.message { line += " '\(CloudHelp.short(message))'" }
             lines.append(line)
@@ -996,10 +996,10 @@ final class VercelConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "vercel_deployments",
-                description: "Haalt vers de recentste Vercel-deploys van de gebruiker op: project, status (live, mislukt, bouwt), branch, commit en link.",
+                description: "Fetches the user's latest Vercel deployments: project, status (live, failed, building), branch, commit, and link.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "Vercel lezen" },
+                summarize: { _ in "Read Vercel" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("Vercel") }
@@ -1045,7 +1045,7 @@ final class VercelConnector: CloudConnectorConfig {
         )
     }
 
-    /// De API geeft de nieuwste eerst; per project telt alleen de laatste deploy.
+    /// The API returns newest first; only the latest deploy per project is considered.
     private func latestPerProject(_ list: [Deployment]) -> [Deployment] {
         var seen = Set<String>()
         return list.filter { seen.insert($0.project).inserted }
@@ -1054,11 +1054,11 @@ final class VercelConnector: CloudConnectorConfig {
     private func stateLabel(_ state: String) -> String {
         switch state {
         case "READY": return "live"
-        case "ERROR": return "mislukt"
-        case "BUILDING": return "bouwt"
-        case "QUEUED": return "in de wachtrij"
-        case "INITIALIZING": return "start"
-        case "CANCELED": return "geannuleerd"
+        case "ERROR": return "failed"
+        case "BUILDING": return "building"
+        case "QUEUED": return "queued"
+        case "INITIALIZING": return "initializing"
+        case "CANCELED": return "canceled"
         default: return state.lowercased()
         }
     }
@@ -1090,13 +1090,13 @@ final class VercelConnector: CloudConnectorConfig {
         }
         var detail = ""
         if let last = list.first {
-            detail = "Laatste: \(last.project)"
+            detail = "Latest: \(last.project)"
             if let created = last.created { detail += " · \(CloudHelp.ago(created))" }
         }
 
         let items = list.prefix(8).map { d -> ConnectorItem in
             var parts = [stateLabel(d.state)]
-            if d.production { parts.append("productie") }
+            if d.production { parts.append("production") }
             if let branch = d.branch { parts.append(branch) }
             if let created = d.created { parts.append(CloudHelp.ago(created)) }
             let title = d.message.map { "\(d.project): \(CloudHelp.short($0, 50))" } ?? d.project
@@ -1113,10 +1113,10 @@ final class VercelConnector: CloudConnectorConfig {
         }
         let list = try await fetch(token: token, limit: 20)
         apply(list)
-        if list.isEmpty { return "Geen Vercel-deploys gevonden." }
+        if list.isEmpty { return "No Vercel deployments found." }
         return list.map { d -> String in
             var line = "- \(d.project): \(stateLabel(d.state))"
-            if d.production { line += " [productie]" }
+            if d.production { line += " [production]" }
             if let branch = d.branch { line += " · branch \(branch)" }
             if let message = d.message { line += " · '\(CloudHelp.short(message, 100))'" }
             if let created = d.created { line += " · \(NookDates.short(created))" }
@@ -1185,13 +1185,13 @@ final class StripeConnector: CloudConnectorConfig {
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), let s = snapshot else { return [] }
         let succeeded = s.today.filter { $0.status == "succeeded" }
-        var lines = ["Stripe\(s.testMode ? " (testmodus)" : ""): \(revenueText(s)) omzet vandaag uit \(CloudHelp.plural(succeeded.count, "betaling", "betalingen"))\(s.moreToday ? " (100+)" : "")."]
+        var lines = ["Stripe\(s.testMode ? " (test mode)" : ""): \(revenueText(s)) revenue today from \(CloudHelp.plural(succeeded.count, "payment", "payments"))\(s.moreToday ? " (100+)" : "")."]
         let failed = s.today.filter { $0.status == "failed" }
         if !failed.isEmpty {
-            lines.append("Stripe: \(CloudHelp.plural(failed.count, "mislukte betaling", "mislukte betalingen")) vandaag.")
+            lines.append("Stripe: \(CloudHelp.plural(failed.count, "failed payment", "failed payments")) today.")
         }
         for p in s.recent.prefix(4) {
-            lines.append("Betaling: \(CloudHelp.money(p.amount, currency: p.currency)) van \(CloudHelp.short(p.who, 40)), \(statusLabel(p.status)), \(CloudHelp.ago(p.created))")
+            lines.append("Payment: \(CloudHelp.money(p.amount, currency: p.currency)) from \(CloudHelp.short(p.who, 40)), \(statusLabel(p.status)), \(CloudHelp.ago(p.created))")
         }
         return Array(lines.prefix(8))
     }
@@ -1200,10 +1200,10 @@ final class StripeConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "stripe_payments",
-                description: "Haalt vers de omzet van vandaag en de recentste betalingen in Stripe op: bedrag, klant, status en tijd. Alleen lezen.",
+                description: "Fetches today's revenue and the most recent payments in Stripe: amount, customer, status, and time. Read only.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "Stripe lezen" },
+                summarize: { _ in "Read Stripe" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("Stripe") }
@@ -1247,12 +1247,12 @@ final class StripeConnector: CloudConnectorConfig {
             currency: currency,
             status: (c["status"] as? String) ?? "",
             created: Date(timeIntervalSince1970: CloudHelp.double(c["created"]) ?? 0),
-            who: name ?? description ?? email ?? "Betaling",
+            who: name ?? description ?? email ?? "Payment",
             failure: c["failure_message"] as? String
         )
     }
 
-    /// Netto omzet van vandaag per valuta, de grootste eerst.
+    /// Net revenue today per currency, largest first.
     private func revenueText(_ s: Snapshot) -> String {
         var totals: [String: Int] = [:]
         for p in s.today where p.status == "succeeded" {
@@ -1268,9 +1268,9 @@ final class StripeConnector: CloudConnectorConfig {
 
     private func statusLabel(_ status: String) -> String {
         switch status {
-        case "succeeded": return "gelukt"
-        case "pending": return "in behandeling"
-        case "failed": return "mislukt"
+        case "succeeded": return "succeeded"
+        case "pending": return "pending"
+        case "failed": return "failed"
         default: return status
         }
     }
@@ -1291,13 +1291,13 @@ final class StripeConnector: CloudConnectorConfig {
         snapshot = s
         let succeeded = s.today.filter { $0.status == "succeeded" }
         let failed = s.today.filter { $0.status == "failed" }
-        var detail = CloudHelp.plural(succeeded.count, "betaling", "betalingen") + (s.moreToday ? "+" : "") + " vandaag"
-        if !failed.isEmpty { detail += " · \(failed.count) mislukt" }
-        if s.testMode { detail += " · testmodus" }
+        var detail = CloudHelp.plural(succeeded.count, "payment", "payments") + (s.moreToday ? "+" : "") + " today"
+        if !failed.isEmpty { detail += " · \(failed.count) failed" }
+        if s.testMode { detail += " · test mode" }
 
         let items = s.recent.map { p -> ConnectorItem in
             var subtitle = "\(statusLabel(p.status)) · \(CloudHelp.ago(p.created))"
-            if p.refunded > 0 { subtitle += " · \(CloudHelp.money(p.refunded, currency: p.currency)) terugbetaald" }
+            if p.refunded > 0 { subtitle += " · \(CloudHelp.money(p.refunded, currency: p.currency)) refunded" }
             return ConnectorItem(id: p.id, title: "\(CloudHelp.money(p.amount, currency: p.currency)) · \(CloudHelp.short(p.who, 40))",
                                  subtitle: subtitle, tone: tone(p), url: dashboardURL(p, testMode: s.testMode))
         }
@@ -1311,12 +1311,12 @@ final class StripeConnector: CloudConnectorConfig {
         }
         let s = try await fetch(key: key, recentCount: 15)
         apply(s)
-        var out = ["Omzet vandaag (netto): \(revenueText(s)) · \(status.detail)", "", "Recente betalingen:"]
-        if s.recent.isEmpty { out.append("- geen") }
+        var out = ["Today's revenue (net): \(revenueText(s)) · \(status.detail)", "", "Recent payments:"]
+        if s.recent.isEmpty { out.append("- none") }
         for p in s.recent {
             var line = "- \(CloudHelp.money(p.amount, currency: p.currency)) · \(p.who) · \(statusLabel(p.status)) · \(NookDates.short(p.created))"
-            if p.refunded > 0 { line += " · \(CloudHelp.money(p.refunded, currency: p.currency)) terugbetaald" }
-            if let failure = p.failure, !failure.isEmpty { line += " · reden: \(failure)" }
+            if p.refunded > 0 { line += " · \(CloudHelp.money(p.refunded, currency: p.currency)) refunded" }
+            if let failure = p.failure, !failure.isEmpty { line += " · reason: \(failure)" }
             if let url = dashboardURL(p, testMode: s.testMode) { line += " · \(url.absoluteString)" }
             out.append(line)
         }
@@ -1378,19 +1378,19 @@ final class NotionConnector: CloudConnectorConfig {
             if let edited = p.edited { part += " (\(CloudHelp.ago(edited)))" }
             return part
         }
-        return ["Notion, recent bewerkt: " + parts.joined(separator: ", ")]
+        return ["Notion, recently edited: " + parts.joined(separator: ", ")]
     }
 
     var tools: [ToolSpec] {
         [
             ToolSpec(
                 name: "notion_search",
-                description: "Zoekt in de Notion-pagina's die met Nook gedeeld zijn, de laatst bewerkte eerst. Zonder zoekterm geeft het de recent bewerkte pagina's, met links.",
+                description: "Searches Notion pages shared with Nook, most recently edited first. Without a search term, returns recently edited pages with links.",
                 schema: CloudHelp.schema([
-                    "query": ["type": "string", "description": "Zoekterm in de paginatitel. Optioneel."]
+                    "query": ["type": "string", "description": "Search term in page title. Optional."]
                 ]),
                 kind: .read,
-                summarize: { _ in "Notion lezen" },
+                summarize: { _ in "Read Notion" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("Notion") }
@@ -1400,10 +1400,10 @@ final class NotionConnector: CloudConnectorConfig {
             ),
             ToolSpec(
                 name: "notion_read_page",
-                description: "Leest de tekst van één Notion-pagina (kopjes, alinea's, lijstjes, to-do's, citaten, code). Geef het id of de link uit notion_search. Gebruik dit om een document echt te lezen voordat je het samenvat of vergelijkt.",
-                schema: ["type": "object", "properties": ["page": ["type": "string", "description": "Id of link van de pagina."]], "required": ["page"]],
+                description: "Reads the text of a single Notion page (headings, paragraphs, lists, to-dos, quotes, code). Provide the ID or link from notion_search. Use this to actually read a document before summarizing or comparing it.",
+                schema: ["type": "object", "properties": ["page": ["type": "string", "description": "Page ID or link."]], "required": ["page"]],
                 kind: .read,
-                summarize: { _ in "Notion-pagina lezen" },
+                summarize: { _ in "Read Notion page" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("Notion") }
@@ -1413,7 +1413,7 @@ final class NotionConnector: CloudConnectorConfig {
         ]
     }
 
-    /// Het id uit een id of link: de laatste 32 hextekens (met of zonder streepjes).
+    /// The ID from an ID or link: the trailing 32 hex characters (with or without hyphens).
     nonisolated static func pageID(_ raw: String) -> String? {
         let hex = raw.lowercased().replacingOccurrences(of: "-", with: "")
         guard let range = hex.range(of: #"[0-9a-f]{32}(?![0-9a-f])"#, options: [.regularExpression, .backwards]) else { return nil }
@@ -1426,7 +1426,7 @@ final class NotionConnector: CloudConnectorConfig {
         guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(NotionConnector.tokenAccount) else {
             throw CloudHelp.notSetUp("Notion")
         }
-        guard let pageID = Self.pageID(raw) else { throw NookError("Geen geldig Notion-id of -link: \(raw)") }
+        guard let pageID = Self.pageID(raw) else { throw NookError("Invalid Notion ID or link: \(raw)") }
         let headers = ["Authorization": "Bearer \(token)", "Notion-Version": "2022-06-28"]
         let page = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url("https://api.notion.com/v1/pages/\(pageID)"), headers: headers))
         let info = parse(page)
@@ -1444,11 +1444,11 @@ final class NotionConnector: CloudConnectorConfig {
             pages += 1
         } while cursor != nil && pages < 5
         var text = lines.joined(separator: "\n")
-        if text.count > 15_000 { text = String(text.prefix(15_000)) + "\n… (ingekort)" }
-        var out = ["\(info?.title ?? "Notion-pagina")" + (info?.edited.map { " · bewerkt \(NookDates.short($0))" } ?? ""), ""]
-        out.append(text.isEmpty ? "(Geen tekst op deze pagina, of alleen onderdelen die Nook niet leest, zoals databases en afbeeldingen.)" : text)
-        out.append(ReferenceParser.line(title: info?.title ?? "Notion-pagina", url: info?.url?.absoluteString,
-                                        detail: info?.edited.map { "bewerkt \(NookDates.short($0))" } ?? ""))
+        if text.count > 15_000 { text = String(text.prefix(15_000)) + "\n… (truncated)" }
+        var out = ["\(info?.title ?? "Notion page")" + (info?.edited.map { " · edited \(NookDates.short($0))" } ?? ""), ""]
+        out.append(text.isEmpty ? "(No text on this page, or only unsupported blocks such as databases and images.)" : text)
+        out.append(ReferenceParser.line(title: info?.title ?? "Notion page", url: info?.url?.absoluteString,
+                                        detail: info?.edited.map { "edited \(NookDates.short($0))" } ?? ""))
         return out.joined(separator: "\n")
     }
 
@@ -1456,7 +1456,7 @@ final class NotionConnector: CloudConnectorConfig {
         guard let type = block["type"] as? String else { return nil }
         let content = CloudHelp.object(block[type])
         guard let text = plainText(content["rich_text"]) else {
-            if type == "child_page", let title = content["title"] as? String { return "[subpagina] \(title)" }
+            if type == "child_page", let title = content["title"] as? String { return "[subpage] \(title)" }
             return nil
         }
         switch type {
@@ -1491,7 +1491,7 @@ final class NotionConnector: CloudConnectorConfig {
     private func parse(_ obj: [String: Any]) -> Page? {
         guard let id = obj["id"] as? String else { return nil }
         var title = ""
-        // Databases hebben "title" bovenaan, pagina's een eigenschap van het type "title".
+        // Databases have "title" at root; pages have a property of type "title".
         if let text = plainText(obj["title"]) { title = text }
         if title.isEmpty {
             for (_, value) in CloudHelp.object(obj["properties"]) {
@@ -1504,7 +1504,7 @@ final class NotionConnector: CloudConnectorConfig {
         }
         return Page(
             id: id,
-            title: title.isEmpty ? "Zonder titel" : title,
+            title: title.isEmpty ? "Untitled" : title,
             edited: CloudHelp.date(obj["last_edited_time"]),
             url: CloudHelp.link(obj["url"] as? String)
         )
@@ -1520,12 +1520,12 @@ final class NotionConnector: CloudConnectorConfig {
         loaded = true
         var detail = ""
         if let first = list.first {
-            detail = "Laatst: \(CloudHelp.short(first.title, 40))"
+            detail = "Latest: \(CloudHelp.short(first.title, 40))"
             if let edited = first.edited { detail += " · \(CloudHelp.ago(edited))" }
         }
         let items = list.map { p in
             ConnectorItem(id: p.id, title: p.title,
-                          subtitle: p.edited.map { "bewerkt \(CloudHelp.ago($0))" } ?? "",
+                          subtitle: p.edited.map { "edited \(CloudHelp.ago($0))" } ?? "",
                           tone: .neutral, url: p.url)
         }
         status = ConnectorStatus(state: .ok,
@@ -1541,15 +1541,15 @@ final class NotionConnector: CloudConnectorConfig {
         let list = try await search(token: token, query: query, count: 20)
         if !hasQuery { apply(Array(list.prefix(8))) }
         if list.isEmpty {
-            return hasQuery ? "Geen Notion-pagina's gevonden voor '\(query ?? "")'." : "Geen Notion-pagina's gedeeld met Nook."
+            return hasQuery ? "No Notion pages found for '\(query ?? "")'." : "No Notion pages shared with Nook."
         }
         let lines = list.map { p -> String in
             var line = "- \(p.title) (id \(p.id))"
-            if let edited = p.edited { line += " · bewerkt \(NookDates.short(edited))" }
+            if let edited = p.edited { line += " · edited \(NookDates.short(edited))" }
             return line
         }
         let refs = list.prefix(10).map { p in
-            ReferenceParser.line(title: p.title, url: p.url?.absoluteString, detail: p.edited.map { "bewerkt \(NookDates.short($0))" } ?? "")
+            ReferenceParser.line(title: p.title, url: p.url?.absoluteString, detail: p.edited.map { "edited \(NookDates.short($0))" } ?? "")
         }
         return (lines + refs).joined(separator: "\n")
     }
@@ -1609,14 +1609,14 @@ final class CalcomConnector: CloudConnectorConfig {
 
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), loaded else { return [] }
-        if bookings.isEmpty { return ["Cal.com: geen komende boekingen."] }
-        var lines = ["Cal.com: \(CloudHelp.plural(bookings.count, "komende boeking", "komende boekingen"))."]
+        if bookings.isEmpty { return ["Cal.com: no upcoming bookings."] }
+        var lines = ["Cal.com: \(CloudHelp.plural(bookings.count, "upcoming booking", "upcoming bookings"))."]
         for b in bookings.prefix(4) {
-            lines.append("Boeking: \(line(for: b))")
+            lines.append("Booking: \(line(for: b))")
         }
         let pending = bookings.filter { $0.needsConfirmation }
         if !pending.isEmpty {
-            lines.append("Cal.com: \(CloudHelp.plural(pending.count, "boeking wacht", "boekingen wachten")) op bevestiging.")
+            lines.append("Cal.com: \(CloudHelp.plural(pending.count, "booking awaiting", "bookings awaiting")) confirmation.")
         }
         return Array(lines.prefix(8))
     }
@@ -1625,10 +1625,10 @@ final class CalcomConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "calcom_bookings",
-                description: "Haalt vers de komende Cal.com-boekingen van de gebruiker op: titel, tijd, met wie, status en link.",
+                description: "Fetches upcoming Cal.com bookings for the user: title, time, attendee, status, and link.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "Cal.com lezen" },
+                summarize: { _ in "Read Cal.com" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("Cal.com") }
@@ -1659,7 +1659,7 @@ final class CalcomConnector: CloudConnectorConfig {
         let attendee = CloudHelp.list(b["attendees"]).first.flatMap { ($0["name"] as? String) ?? ($0["email"] as? String) }
         return Booking(
             id: uid ?? CloudHelp.string(b["id"]) ?? UUID().uuidString,
-            title: (b["title"] as? String) ?? "Afspraak",
+            title: (b["title"] as? String) ?? "Appointment",
             start: start,
             end: CloudHelp.date(b["end"]) ?? CloudHelp.date(b["endTime"]),
             status: ((b["status"] as? String) ?? "accepted").lowercased(),
@@ -1670,9 +1670,9 @@ final class CalcomConnector: CloudConnectorConfig {
 
     private func line(for b: Booking) -> String {
         var text = "'\(CloudHelp.short(b.title, 50))'"
-        if let who = b.attendee { text += " met \(who)" }
+        if let who = b.attendee { text += " with \(who)" }
         text += ", \(NookDates.short(b.start))"
-        if b.needsConfirmation { text += " (wacht op bevestiging)" }
+        if b.needsConfirmation { text += " (awaiting confirmation)" }
         return text
     }
 
@@ -1689,13 +1689,13 @@ final class CalcomConnector: CloudConnectorConfig {
         } else {
             headline = tr("connect.calcom.noBookings")
         }
-        var detail = "\(today) vandaag · \(list.count) komend"
-        if !pending.isEmpty { detail += " · \(pending.count) te bevestigen" }
+        var detail = "\(today) today · \(list.count) upcoming"
+        if !pending.isEmpty { detail += " · \(pending.count) to confirm" }
 
         let items = list.prefix(8).map { b -> ConnectorItem in
             var subtitle = NookDates.short(b.start)
-            if let who = b.attendee { subtitle += " · met \(who)" }
-            if b.needsConfirmation { subtitle += " · bevestigen" }
+            if let who = b.attendee { subtitle += " · with \(who)" }
+            if b.needsConfirmation { subtitle += " · confirm" }
             return ConnectorItem(id: b.id, title: b.title, subtitle: subtitle,
                                  tone: b.needsConfirmation ? .attention : .neutral, url: b.url)
         }
@@ -1709,7 +1709,7 @@ final class CalcomConnector: CloudConnectorConfig {
         }
         let list = try await fetch(key: key, count: 40)
         apply(list)
-        if list.isEmpty { return "Geen komende Cal.com-boekingen." }
+        if list.isEmpty { return "No upcoming Cal.com bookings." }
         return list.map { b -> String in
             var text = "- \(line(for: b))"
             if let url = b.url { text += " · \(url.absoluteString)" }
@@ -1719,7 +1719,7 @@ final class CalcomConnector: CloudConnectorConfig {
 }
 
 extension CalcomConnector: AgendaSource {
-    func agendaNames() -> [String] { ["Cal.com-boekingen"] }
+    func agendaNames() -> [String] { ["Cal.com bookings"] }
 
     func agendaEntries(from: Date, to: Date) async throws -> AgendaResult {
         guard let key = CloudHelp.secret(CalcomConnector.keyAccount) else { throw CloudHelp.notSetUp("Cal.com") }
@@ -1801,9 +1801,9 @@ final class N8nConnector: CloudConnectorConfig {
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), let s = snapshot else { return [] }
         let recent = s.recentFailures
-        var lines = ["n8n: \(s.active) van \(s.workflows) workflows actief, \(CloudHelp.plural(recent.count, "mislukte run", "mislukte runs")) in 24 uur."]
+        var lines = ["n8n: \(s.active) of \(s.workflows) workflows active, \(CloudHelp.plural(recent.count, "failed run", "failed runs")) in 24 hours."]
         for f in recent.prefix(4) {
-            var line = "n8n-run mislukt: '\(CloudHelp.short(f.workflow, 50))'"
+            var line = "n8n run failed: '\(CloudHelp.short(f.workflow, 50))'"
             if let when = f.when { line += " (\(CloudHelp.ago(when)))" }
             lines.append(line)
         }
@@ -1814,10 +1814,10 @@ final class N8nConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "n8n_status",
-                description: "Haalt vers de n8n-workflows van de gebruiker op (hoeveel actief) en de recent mislukte runs met workflow, tijd en link. Alleen lezen.",
+                description: "Fetches the user's n8n workflows (active count) and recent failed runs with workflow, time, and link. Read only.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "n8n lezen" },
+                summarize: { _ in "Read n8n" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("n8n") }
@@ -1827,14 +1827,14 @@ final class N8nConnector: CloudConnectorConfig {
         ]
     }
 
-    /// "https://n8n.example.com/" of ".../api/v1" wordt "https://n8n.example.com".
+    /// "https://n8n.example.com/" or ".../api/v1" becomes "https://n8n.example.com".
     private func normalizedBase(_ raw: String) throws -> String {
         var base = raw
         while base.hasSuffix("/") { base.removeLast() }
         if base.hasSuffix("/api/v1") { base = String(base.dropLast("/api/v1".count)) }
         guard let url = URL(string: base), let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http", url.host != nil else {
-            throw NookError("Het n8n-adres moet beginnen met https://")
+            throw NookError("The n8n address must start with https://")
         }
         return base
     }
@@ -1876,12 +1876,12 @@ final class N8nConnector: CloudConnectorConfig {
         snapshot = s
         let recent = s.recentFailures
         let detail = recent.isEmpty
-            ? "Geen fouten in 24 uur"
-            : CloudHelp.plural(recent.count, "mislukte run", "mislukte runs") + " in 24 uur"
+            ? "No errors in 24 hours"
+            : CloudHelp.plural(recent.count, "failed run", "failed runs") + " in 24 hours"
         let items = s.failures.prefix(8).map { f -> ConnectorItem in
             let isRecent = (f.when ?? .distantPast) > Date().addingTimeInterval(-24 * 3600)
             return ConnectorItem(id: f.id, title: f.workflow,
-                                 subtitle: "Mislukt" + (f.when.map { " · \(CloudHelp.ago($0))" } ?? ""),
+                                 subtitle: "Failed" + (f.when.map { " · \(CloudHelp.ago($0))" } ?? ""),
                                  tone: isRecent ? .bad : .neutral, url: f.url)
         }
         status = ConnectorStatus(state: .ok,
@@ -1897,8 +1897,8 @@ final class N8nConnector: CloudConnectorConfig {
         }
         let s = try await fetch(rawBase: rawBase, key: key, failureCount: 25)
         apply(s)
-        var out = ["Workflows: \(s.workflows), waarvan \(s.active) actief.", "", "Recent mislukte runs:"]
-        if s.failures.isEmpty { out.append("- geen") }
+        var out = ["Workflows: \(s.workflows), with \(s.active) active.", "", "Recent failed runs:"]
+        if s.failures.isEmpty { out.append("- none") }
         for f in s.failures {
             var line = "- \(f.workflow) (run \(f.id))"
             if let when = f.when { line += " · \(NookDates.short(when))" }
@@ -1971,15 +1971,15 @@ final class ResendConnector: CloudConnectorConfig {
 
     func contextLines() -> [String] {
         guard status.state == .ok, ConnectorToggle.isOn(id), let s = snapshot else { return [] }
-        var lines = ["Resend: \(CloudHelp.plural(s.domains.count, "domein", "domeinen")), \(CloudHelp.plural(s.emails.count, "recente mail", "recente mails"))."]
+        var lines = ["Resend: \(CloudHelp.plural(s.domains.count, "domain", "domains")), \(CloudHelp.plural(s.emails.count, "recent email", "recent emails"))."]
         for d in s.unverified.prefix(3) {
-            lines.append("Resend-domein niet geverifieerd: \(d.name) (\(d.status))")
+            lines.append("Resend domain not verified: \(d.name) (\(d.status))")
         }
         for e in s.troubled.prefix(3) {
-            lines.append("Mail \(eventLabel(e.event)): '\(CloudHelp.short(e.subject, 50))' aan \(e.to)")
+            lines.append("Email \(eventLabel(e.event)): '\(CloudHelp.short(e.subject, 50))' to \(e.to)")
         }
         if let last = s.emails.first {
-            lines.append("Laatste mail: '\(CloudHelp.short(last.subject, 50))' aan \(last.to), \(eventLabel(last.event))")
+            lines.append("Latest email: '\(CloudHelp.short(last.subject, 50))' to \(last.to), \(eventLabel(last.event))")
         }
         return Array(lines.prefix(8))
     }
@@ -1988,10 +1988,10 @@ final class ResendConnector: CloudConnectorConfig {
         [
             ToolSpec(
                 name: "resend_overview",
-                description: "Leest vers de recent via Resend verzonden mails (aan wie, onderwerp, afgeleverd/gebounced) en de status van de domeinen. Verstuurt nooit iets.",
+                description: "Fetches emails recently sent via Resend (recipient, subject, delivered/bounced) and domain status. Never sends anything.",
                 schema: CloudHelp.schema(),
                 kind: .read,
-                summarize: { _ in "Resend lezen" },
+                summarize: { _ in "Read Resend" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
                     guard let self = self else { throw CloudHelp.notSetUp("Resend") }
@@ -2007,9 +2007,9 @@ final class ResendConnector: CloudConnectorConfig {
         let domainsRaw = try await ConnectorHTTP.json(domainsURL, headers: auth)
         let domains = CloudHelp.list(CloudHelp.object(domainsRaw)["data"]).compactMap { d -> Domain? in
             guard let did = CloudHelp.string(d["id"]), let name = d["name"] as? String else { return nil }
-            return Domain(id: did, name: name, status: (d["status"] as? String) ?? "onbekend")
+            return Domain(id: did, name: name, status: (d["status"] as? String) ?? "unknown")
         }
-        // De mail-lijst is een extra: zonder die rechten tonen we alleen de domeinen.
+        // The email list is optional: without those permissions we only display domains.
         let emailsObject = await CloudHelp.optionalObject(URL(string: "https://api.resend.com/emails?limit=\(count)"), headers: auth)
         let emails = CloudHelp.list(emailsObject?["data"]).compactMap { e -> Email? in
             guard let eid = CloudHelp.string(e["id"]) else { return nil }
@@ -2019,13 +2019,13 @@ final class ResendConnector: CloudConnectorConfig {
             } else {
                 to = (e["to"] as? String) ?? "?"
             }
-            return Email(id: eid, to: to, subject: (e["subject"] as? String) ?? "(geen onderwerp)",
+            return Email(id: eid, to: to, subject: (e["subject"] as? String) ?? "(no subject)",
                          event: (e["last_event"] as? String) ?? "", created: parseDate(e["created_at"]))
         }
         return Snapshot(domains: domains, emails: emails)
     }
 
-    /// Resend geeft soms "2023-04-03 22:13:42.674981+00" in plaats van ISO 8601.
+    /// Resend sometimes returns "2023-04-03 22:13:42.674981+00" instead of ISO 8601.
     private func parseDate(_ value: Any?) -> Date? {
         guard let text = value as? String, !text.isEmpty else { return nil }
         if let date = NookDates.parse(text) { return date }
@@ -2039,14 +2039,14 @@ final class ResendConnector: CloudConnectorConfig {
 
     private func eventLabel(_ event: String) -> String {
         switch event {
-        case "delivered": return "afgeleverd"
-        case "sent": return "verstuurd"
-        case "opened": return "geopend"
-        case "clicked": return "aangeklikt"
-        case "bounced": return "gebounced"
-        case "complained": return "als spam gemeld"
-        case "delivery_delayed": return "vertraagd"
-        case "": return "onbekend"
+        case "delivered": return "delivered"
+        case "sent": return "sent"
+        case "opened": return "opened"
+        case "clicked": return "clicked"
+        case "bounced": return "bounced"
+        case "complained": return "reported as spam"
+        case "delivery_delayed": return "delayed"
+        case "": return "unknown"
         default: return event
         }
     }
@@ -2074,16 +2074,16 @@ final class ResendConnector: CloudConnectorConfig {
             headline = tr("connect.resend.recentMails", s.emails.count)
         }
         let detail = troubled.isEmpty
-            ? "Geen bounces"
-            : CloudHelp.plural(troubled.count, "probleem", "problemen") + " met bezorging"
+            ? "No bounces"
+            : CloudHelp.plural(troubled.count, "delivery issue", "delivery issues")
 
         var items: [ConnectorItem] = unverified.prefix(3).map { d in
-            ConnectorItem(id: "domain-\(d.id)", title: d.name, subtitle: "Domein · \(d.status)",
+            ConnectorItem(id: "domain-\(d.id)", title: d.name, subtitle: "Domain · \(d.status)",
                           tone: d.status == "failed" ? .bad : .attention,
                           url: URL(string: "https://resend.com/domains/\(d.id)"))
         }
         for e in s.emails.prefix(max(0, 8 - items.count)) {
-            var subtitle = "\(eventLabel(e.event)) · aan \(e.to)"
+            var subtitle = "\(eventLabel(e.event)) · to \(e.to)"
             if let created = e.created { subtitle += " · \(CloudHelp.ago(created))" }
             items.append(ConnectorItem(id: "email-\(e.id)", title: e.subject, subtitle: subtitle,
                                        tone: tone(e.event), url: URL(string: "https://resend.com/emails/\(e.id)")))
@@ -2098,14 +2098,14 @@ final class ResendConnector: CloudConnectorConfig {
         }
         let s = try await fetch(key: key, count: 50)
         apply(s)
-        var out = ["Domeinen:"]
-        if s.domains.isEmpty { out.append("- geen") }
+        var out = ["Domains:"]
+        if s.domains.isEmpty { out.append("- none") }
         for d in s.domains { out.append("- \(d.name): \(d.status)") }
         out.append("")
-        out.append("Recente mails:")
-        if s.emails.isEmpty { out.append("- geen (of de sleutel mag de mail-lijst niet lezen)") }
+        out.append("Recent emails:")
+        if s.emails.isEmpty { out.append("- none (or the key does not have permission to read emails)") }
         for e in s.emails {
-            var line = "- '\(e.subject)' aan \(e.to) · \(eventLabel(e.event))"
+            var line = "- '\(e.subject)' to \(e.to) · \(eventLabel(e.event))"
             if let created = e.created { line += " · \(NookDates.short(created))" }
             out.append(line)
         }
@@ -2113,11 +2113,11 @@ final class ResendConnector: CloudConnectorConfig {
     }
 }
 
-// MARK: Pull requests uit de werkruimte
+// MARK: Pull requests from workspace
 
-/// Een pull request openen met de GitHub-koppeling die je al hebt. Alleen na jouw klik in de werkruimte.
+/// Open a pull request using the existing GitHub connection. Only after explicit user action in the workspace.
 enum GitHubPullRequests {
-    /// Is de GitHub-koppeling aan en is er een token? Anders opent Nook de vergelijkpagina op github.com.
+    /// Whether the GitHub connector is active and has a token. Otherwise Nook opens the compare page on github.com.
     static var isAvailable: Bool {
         ConnectorToggle.isOn("github") && CloudHelp.secret(GitHubConnector.tokenAccount) != nil
     }
@@ -2141,7 +2141,7 @@ enum GitHubPullRequests {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status), let link = object["html_url"] as? String, let result = URL(string: link) else {
-            var message = (object["message"] as? String) ?? "GitHub gaf een fout (\(status))."
+            var message = (object["message"] as? String) ?? "GitHub returned an error (\(status))."
             if let errors = object["errors"] as? [[String: Any]] {
                 let details = errors.compactMap { $0["message"] as? String }
                 if !details.isEmpty { message += " " + details.joined(separator: " ") }

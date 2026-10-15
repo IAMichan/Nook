@@ -1,10 +1,11 @@
 import Foundation
 
-/// Alle koppelingen op één plek: ververst ze op de achtergrond, elk in zijn eigen tempo, en geeft het brein
-/// in één keer de context en de lees-tools van alles wat aan staat. Een vraag wacht nooit op netwerk: de context komt uit de cache.
+/// Central hub for all integrations: refreshes in the background at respective intervals,
+/// providing the brain with unified context and read tools for active sources. Queries never block on network:
+/// context is read directly from cache.
 @MainActor
 final class ConnectorHub: ObservableObject {
-    /// Gaat omhoog na elke verversing, zodat de UI weet dat er iets nieuws is.
+    /// Increments after each refresh so UI knows new data is available.
     @Published private(set) var revision = 0
 
     private(set) var sources: [ContextSource] = []
@@ -27,7 +28,7 @@ final class ConnectorHub: ObservableObject {
     /// Where the model can look: everything active, plus sources whose tools can run without a cache.
     var searchable: [ContextSource] { sources.filter { $0.isActive || $0.canLookUp } }
 
-    /// Koppelingen waar iets op jou wacht (falende CI, herinnering te laat…).
+    /// Integrations with pending user actions (failing CI, overdue reminder, etc.).
     var needingAttention: [ContextSource] { active.filter { $0.status.needsAttention } }
 
     func start() {
@@ -48,7 +49,7 @@ final class ConnectorHub: ObservableObject {
         }
     }
 
-    /// Ververst één bron (bijvoorbeeld na het opslaan van een sleutel).
+    /// Refreshes a single source (e.g. after saving a key).
     func refresh(_ source: ContextSource) {
         guard !running.contains(source.id) else { return }
         running.insert(source.id)
@@ -65,7 +66,7 @@ final class ConnectorHub: ObservableObject {
         for source in sources { refresh(source) }
     }
 
-    /// Alles wat aan staat, als korte regels voor het brein.
+    /// All active sources as brief context lines for the brain.
     func contextLines() -> [String] {
         var lines: [String] = []
         for source in active {
@@ -77,9 +78,9 @@ final class ConnectorHub: ObservableObject {
         return lines
     }
 
-    /// Context voor één vraag: bronnen die de gebruiker uitsloot gaan niet mee, relevante bronnen volledig, de rest als één regel
-    /// met de tool waarmee het brein er gericht in kan kijken. Zo gaat niet bij elke vraag alles van elke bron naar het brein.
-    /// `full` nil = alles volledig (zoals de kaarten in de notch het gebruiken).
+    /// Context for a single query: excluded sources are omitted, relevant sources included in full,
+    /// and remaining sources listed as a single line with their read tools. This prevents prompt bloat.
+    /// `full` nil = everything in full (as used by notch cards).
     func contextLines(scope: SourceScope, full: Set<String>?) -> (lines: [String], fullTitles: [String]) {
         var lines: [String] = []
         var fullTitles: [String] = []
@@ -94,19 +95,19 @@ final class ConnectorHub: ObservableObject {
                 let readTools = source.tools.filter { $0.kind == .read }.map(\.name)
                 var line = "- \(source.title)"
                 if source.isActive, !source.status.headline.isEmpty { line += ": \(source.status.headline)" }
-                if !readTools.isEmpty { line += " (lees gericht met \(readTools.joined(separator: ", ")))" }
+                if !readTools.isEmpty { line += " (read directly with \(readTools.joined(separator: ", ")))" }
                 brief.append(line)
             }
         }
         if !brief.isEmpty {
-            lines.append("Ook gekoppeld, niet volledig meegestuurd (kijk erin met de tool als de vraag erom vraagt):")
+            lines.append("Also connected, not included in full (query with the tool if relevant):")
             lines.append(contentsOf: brief)
         }
         if scope.allows("calendar"), let coverage = agendaCoverageLine { lines.append(coverage) }
         return (lines, fullTitles)
     }
 
-    /// Welke bronnen er nu iets aan de context bijdragen, voor het "Ik keek in…"-regeltje boven een antwoord.
+    /// Which sources currently contribute to context, for the "I checked..." header above an answer.
     var contributingTitles: [String] {
         active.filter { !$0.contextLines().isEmpty }.map { $0.title }
     }

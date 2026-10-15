@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Rijen voor het Portfolio in een gegroepeerde Form-sectie: openbare walletadressen en alleen-lezen beurssleutels.
-/// Adressen staan in UserDefaults (ze zijn openbaar), sleutels in de Keychain.
+/// Rows for Portfolio in a grouped Form section: public wallet addresses and read-only exchange keys.
+/// Addresses are stored in UserDefaults (they are public), keys in the Keychain.
 struct PortfolioSettings: View {
     @ObservedObject var portfolio: PortfolioConnector
 
@@ -86,7 +86,7 @@ struct PortfolioSettings: View {
     }
 }
 
-/// Sleutelvelden voor één beurs, ingeklapt tot je ze nodig hebt.
+/// Credential fields for a single exchange, collapsed until needed.
 private struct PortfolioExchangeFields: View {
     @ObservedObject var portfolio: PortfolioConnector
     let exchange: PortfolioExchange

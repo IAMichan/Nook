@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Andere agenda's: elke agenda met een ICS-adres (Google Agenda, Outlook, iCloud, Fastmail, Proton, werkagenda's…).
-// Het adres is geheim (iedereen die het kent kan je agenda lezen) en staat dus in de Keychain. Alleen lezen, alleen https.
+// Other calendars: any calendar with an ICS URL (Google Calendar, Outlook, iCloud, Fastmail, Proton, work calendars…).
+// The URL is secret (anyone with the URL can view your calendar) and is stored in Keychain. Read-only, HTTPS only.
 
 @MainActor
 final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
@@ -24,16 +24,16 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
         let calendar: ICSCalendar
     }
 
-    /// Per adres de laatst gelezen agenda.
+    /// Most recently read calendar per URL.
     private var cache: [URL: Feed] = [:]
     private var loaded = false
 
     var isConfigured: Bool { !urls().isEmpty }
     var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
 
-    // MARK: Adressen
+    // MARK: URLs
 
-    /// Meerdere adressen mogen achter elkaar, gescheiden door een spatie, komma of regeleinde.
+    /// Multiple URLs can be provided together, separated by a space, comma, or newline.
     private func urls() -> [URL] {
         guard let raw = CloudHelp.secret(CalendarFeedsConnector.keyAccount) else { return [] }
         let spaced = raw.replacingOccurrences(of: #"(?<=\S)(?=(?:https?|webcals?)://)"#, with: " ", options: .regularExpression)
@@ -43,7 +43,7 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
             .filter { seen.insert($0).inserted }
     }
 
-    /// webcal:// is gewoon https; onversleutelde http-adressen weigeren we.
+    /// webcal:// is plain HTTPS; unencrypted HTTP URLs are rejected.
     private static func normalized(_ text: String) -> URL? {
         var value = ConnectorField.clean(text)
         guard !value.isEmpty else { return nil }
@@ -54,7 +54,7 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
         return url
     }
 
-    // MARK: Ophalen
+    // MARK: Fetching
 
     private func download(_ url: URL) async throws -> ICSCalendar {
         var request = URLRequest(url: url)
@@ -65,8 +65,8 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
         guard (200..<300).contains(code) else {
             switch code {
             case 401, 403, 404: throw NookError(tr("connect.feeds.rejected", code))
-            case 429: throw NookError("Te veel verzoeken. Nook probeert het straks opnieuw.")
-            default: throw NookError("De agenda gaf een fout (\(code)).")
+            case 429: throw NookError("Too many requests. Nook will retry shortly.")
+            default: throw NookError("The calendar returned an error (\(code)).")
             }
         }
         guard data.count <= 12_000_000 else { throw NookError(tr("connect.feeds.tooBig")) }
@@ -79,10 +79,10 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
 
     private func feedName(_ calendar: ICSCalendar, _ url: URL) -> String {
         if let name = calendar.name, !name.isEmpty { return name }
-        return url.host ?? "Agenda"
+        return url.host ?? "Calendar"
     }
 
-    /// Haalt alle adressen op. Geeft per adres de agenda of de foutmelding.
+    /// Fetches all calendar URLs. Returns the parsed calendar or error message per URL.
     private func fetchAll() async -> (ok: [URL: Feed], errors: [String]) {
         var ok: [URL: Feed] = [:]
         var errors: [String] = []
@@ -91,8 +91,8 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
                 let calendar = try await download(url)
                 ok[url] = Feed(name: feedName(calendar, url), calendar: calendar)
             } catch {
-                // Het adres zelf noemen we nooit: het is geheim.
-                let label = cache[url]?.name ?? url.host ?? "Agenda"
+                // Never expose the raw URL: it is confidential.
+                let label = cache[url]?.name ?? url.host ?? "Calendar"
                 errors.append("\(label): \(CloudHelp.errorText(error, service: label))")
                 if let old = cache[url] { ok[url] = old }
             }
@@ -149,8 +149,8 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
         guard status.state == .ok, ConnectorToggle.isOn(id), loaded else { return [] }
         let now = Date()
         let list = upcoming(days: 7).filter { $0.end > now }
-        var lines = ["Andere agenda's (\(cache.values.map { $0.name }.sorted().joined(separator: ", "))), de komende zeven dagen:"]
-        if list.isEmpty { lines.append("- geen afspraken") }
+        var lines = ["Other calendars (\(cache.values.map { $0.name }.sorted().joined(separator: ", "))), next seven days:"]
+        if list.isEmpty { lines.append("- no events") }
         for entry in list.prefix(25) {
             let place = entry.location.isEmpty ? "" : " | \(entry.location)"
             lines.append("- \(entry.title) | \(NookDates.iso(entry.start)) – \(NookDates.iso(entry.end)) | \(entry.calendar)\(place)")
@@ -158,7 +158,7 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
         return lines
     }
 
-    // MARK: Beschikbaarheid
+    // MARK: Availability
 
     func agendaNames() -> [String] {
         cache.values.map { "\($0.name) (ICS)" }.sorted()
