@@ -23,6 +23,8 @@ final class NotchPanel: NSPanel {
         // Panel ignores mouse events by default; controller disables click-through
         // whenever cursor hovers over the notch shape.
         ignoresMouseEvents = true
+        // The notch is always dark: system controls inside it (menus, pickers, text fields) follow.
+        appearance = NSAppearance(named: .darkAqua)
     }
 
     // Required to allow typing in text fields.
@@ -32,5 +34,13 @@ final class NotchPanel: NSPanel {
     // Ensures the panel renders above the menu bar and notch.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
+    }
+}
+
+extension NSOpenPanel {
+    /// Runs the open panel above the notch, so a folder picker opened from the notch is never hidden behind it.
+    func runAboveNotch() -> NSApplication.ModalResponse {
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 4)
+        return runModal()
     }
 }

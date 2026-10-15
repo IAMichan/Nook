@@ -77,9 +77,8 @@ struct AgentsTab: View {
             }
             Spacer(minLength: 8)
             if !app.demoMode {
-                // Starting a session and managing accounts happen in the window and in Settings, not here.
-                NookGhostButton(title: tr("agents.newSession")) { app.openWorkspace(newSession: true) }
-                WorkspaceButton(workspace: app.workspace) { app.openWorkspace() }
+                // Starting a session happens right here; accounts are managed in Settings.
+                NewSessionButton { viewModel.open(.newSession) }
             }
         }
     }
@@ -189,7 +188,7 @@ struct AgentsTab: View {
             Spacer(minLength: 0)
             if !app.demoMode {
                 HStack(spacing: 4) {
-                    NookPrimaryButton(title: tr("agents.newSession")) { app.openWorkspace(newSession: true) }
+                    NookPrimaryButton(title: tr("agents.newSession")) { viewModel.open(.newSession) }
                     NookGhostButton(title: tr("agents.accountsInSettings")) { app.openSettings(section: .connections) }
                     Spacer()
                 }
@@ -291,6 +290,29 @@ struct UsageLimit: Identifiable {
 }
 
 // MARK: Components
+
+/// "+ New session": the one primary action of the Agents tab. Quiet until you point at it.
+struct NewSessionButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus").font(.system(size: 10.5, weight: .bold))
+                Text(tr("agents.newSession")).font(NookTheme.font(12.5, .semibold))
+            }
+            .foregroundStyle(NookTheme.paper)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("ws.newSession.help"))
+    }
+}
 
 struct SectionHeader: View {
     let title: String
@@ -703,41 +725,6 @@ struct ShimmerText: View {
 }
 
 
-// MARK: Workspace in the notch
-
-/// "Workspace" at the top of the Agents tab, with a badge when sessions are running or waiting.
-struct WorkspaceButton: View {
-    @ObservedObject var workspace: WorkspaceManager
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        let waiting = workspace.runs.filter { $0.status == .waitingApproval }.count
-        let active = workspace.activeRuns.count
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "rectangle.split.3x1")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(tr("ws.windowTitle"))
-                    .font(NookTheme.font(12, .semibold))
-                if waiting > 0 || active > 0 {
-                    Text("\(waiting > 0 ? waiting : active)")
-                        .font(NookTheme.mono(10.5, .semibold))
-                        .foregroundStyle(waiting > 0 ? NookTheme.amber : NookTheme.iris)
-                }
-            }
-            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(Capsule().fill(NookTheme.field))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(tr("ws.openHelp"))
-    }
-}
 
 /// Sessions Nook runs itself (started here, taken over, or from the workspace): working, waiting, or recently finished.
 /// Selecting one shows it in the tab, where you control it completely.

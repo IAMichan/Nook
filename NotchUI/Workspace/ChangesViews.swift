@@ -6,6 +6,10 @@ struct ChangesSheet: View {
     @Environment(\.dismiss) private var dismiss
     let runID: UUID
     let initialFile: GitFileChange?
+    /// Set when shown inside the notch: closes it there (and the notch shows the title).
+    var onClose: (() -> Void)? = nil
+    private var embedded: Bool { onClose != nil }
+    private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var selected: String?
     @State private var diff = ""
     @State private var loading = false
@@ -15,16 +19,18 @@ struct ChangesSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(tr("ws.changes.title")).font(NookTheme.font(15, .semibold))
-                if let run = workspace.run(runID) {
-                    Text(run.branch ?? run.projectName).font(NookTheme.mono(12)).foregroundStyle(WS.secondary)
+            if !embedded {
+                HStack {
+                    Text(tr("ws.changes.title")).font(NookTheme.font(15, .semibold))
+                    if let run = workspace.run(runID) {
+                        Text(run.branch ?? run.projectName).font(NookTheme.mono(12)).foregroundStyle(WS.secondary)
+                    }
+                    Spacer()
+                    Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
                 }
-                Spacer()
-                Button(tr("button.close")) { dismiss() }.keyboardShortcut(.cancelAction)
+                .padding(14)
+                Divider()
             }
-            .padding(14)
-            Divider()
             HSplitView {
                 List(selection: $selected) {
                     ForEach(files) { file in
@@ -32,6 +38,7 @@ struct ChangesSheet: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(embedded ? .hidden : .automatic)
                 .frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
                 Group {
                     if loading {
@@ -44,11 +51,12 @@ struct ChangesSheet: View {
                         DiffText(text: diff)
                     }
                 }
-                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 820, idealWidth: 1040, minHeight: 520, idealHeight: 700)
-        .background(WS.background)
+        .frame(minWidth: embedded ? nil : 820, idealWidth: embedded ? nil : 1040, maxWidth: embedded ? CGFloat.infinity : nil,
+               minHeight: embedded ? nil : 520, idealHeight: embedded ? nil : 700, maxHeight: embedded ? CGFloat.infinity : nil)
+        .background(embedded ? Color.clear : WS.background)
         .onAppear {
             workspace.markReviewed(runID)
             selected = initialFile?.path ?? files.first?.path
@@ -79,6 +87,10 @@ struct CommitSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
     let runID: UUID
+    /// Set when shown inside the notch: closes it there (and the notch shows the title).
+    var onClose: (() -> Void)? = nil
+    private var embedded: Bool { onClose != nil }
+    private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var message = ""
     @State private var included: Set<String> = []
     @State private var working = false
@@ -89,7 +101,7 @@ struct CommitSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tr("ws.commit.title")).font(NookTheme.font(15, .semibold))
+            if !embedded { Text(tr("ws.commit.title")).font(NookTheme.font(15, .semibold)) }
             if let run = workspace.run(runID) {
                 Text(tr("ws.commit.where", run.branch ?? "HEAD", AgentPathFormat.tilde(run.workingDirectory)))
                     .font(NookTheme.font(12)).foregroundStyle(WS.secondary)
@@ -125,15 +137,16 @@ struct CommitSheet: View {
             HStack {
                 Text(tr("ws.commit.note")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
                 Spacer()
-                Button(tr("button.cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("button.cancel")) { close() }.keyboardShortcut(.cancelAction)
                 Button(tr("ws.commit.action", included.count)) { commit() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(working || included.isEmpty || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || done != nil)
             }
         }
-        .padding(18)
+        .padding(embedded ? 0 : 18)
         .frame(width: 560)
+        .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
         .onAppear { included = Set(files.map(\.path)) }
     }
 
@@ -144,7 +157,7 @@ struct CommitSheet: View {
             do {
                 done = try await workspace.commit(runID, message: message, paths: Array(included))
                 try? await Task.sleep(nanoseconds: 900_000_000)
-                dismiss()
+                close()
             } catch let failure {
                 error = failure.localizedDescription
             }
@@ -158,6 +171,10 @@ struct PullRequestSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
     let runID: UUID
+    /// Set when shown inside the notch: closes it there (and the notch shows the title).
+    var onClose: (() -> Void)? = nil
+    private var embedded: Bool { onClose != nil }
+    private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var title = ""
     @State private var bodyText = ""
     @State private var base = ""
@@ -171,7 +188,7 @@ struct PullRequestSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tr("ws.pr.title")).font(NookTheme.font(15, .semibold))
+            if !embedded { Text(tr("ws.pr.title")).font(NookTheme.font(15, .semibold)) }
             if loading {
                 ProgressView()
             } else if repo == nil {
@@ -197,14 +214,15 @@ struct PullRequestSheet: View {
             }
             HStack {
                 Spacer()
-                Button(tr("button.close")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
                 Button(GitHubPullRequests.isAvailable ? tr("ws.pr.create") : tr("ws.pr.openGitHub")) { create() }
                     .buttonStyle(.borderedProminent)
                     .disabled(working || repo == nil || branch == nil || base.isEmpty || title.isEmpty || created != nil)
             }
         }
-        .padding(18)
+        .padding(embedded ? 0 : 18)
         .frame(width: 560)
+        .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
         .task {
             let run = workspace.run(runID)
             title = run?.title ?? ""
@@ -221,7 +239,7 @@ struct PullRequestSheet: View {
         let cleanBase = base.hasPrefix("origin/") ? String(base.dropFirst(7)) : base
         guard GitHubPullRequests.isAvailable else {
             if let url = GitHubRemote.compareURL(repo: repo, base: cleanBase, head: branch) { NSWorkspace.shared.open(url) }
-            dismiss()
+            close()
             return
         }
         working = true

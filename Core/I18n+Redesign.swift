@@ -5,6 +5,14 @@ import Foundation
 
 let redesignTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        // Everything in the notch
+        "connector.link": "Koppel",
+        "settings.connections.connected": "Gekoppeld",
+        "settings.connections.addService": "Koppel een dienst",
+        "settings.connections.moreApps": "Andere apps en diensten",
+        "notch.back": "Terug",
+        "agents.run.details": "Details",
+        "menu.window": "Open in venster",
         "settings.section.usage": "Gebruik",
         "settings.section.usage.sub": "Limieten van je abonnementen, en tokens en kosten van je agents.",
         "settings.section.connections": "Accounts & koppelingen",
@@ -124,6 +132,14 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.serverNotRunning": "%@ draait nu niet. Start de app en laad een model.",
     ],
     .en: [
+        // Everything in the notch
+        "connector.link": "Connect",
+        "settings.connections.connected": "Connected",
+        "settings.connections.addService": "Connect a service",
+        "settings.connections.moreApps": "Other apps and services",
+        "notch.back": "Back",
+        "agents.run.details": "Details",
+        "menu.window": "Open in window",
         "settings.section.usage": "Usage",
         "settings.section.usage.sub": "Your subscriptions' limits, and the tokens and costs of your agents.",
         "settings.section.connections": "Accounts & connections",
@@ -239,6 +255,14 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.serverNotRunning": "%@ is not running right now. Start the app and load a model.",
     ],
     .de: [
+        // Everything in the notch
+        "connector.link": "Verbinden",
+        "settings.connections.connected": "Verbunden",
+        "settings.connections.addService": "Dienst verbinden",
+        "settings.connections.moreApps": "Andere Apps und Dienste",
+        "notch.back": "Zurück",
+        "agents.run.details": "Details",
+        "menu.window": "Im Fenster öffnen",
         "settings.section.usage": "Nutzung",
         "settings.section.usage.sub": "Limits deiner Abos sowie Tokens und Kosten deiner Agents.",
         "settings.section.connections": "Konten & Verbindungen",

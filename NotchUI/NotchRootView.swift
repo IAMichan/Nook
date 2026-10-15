@@ -191,7 +191,7 @@ struct NotchRootView: View {
 
     // MARK: Idle and Music: Nook left of the notch, something compact on the right
 
-    /// On the right when idle: amber if an agent is waiting; otherwise today's score.
+    /// On the right when idle: amber if an agent is waiting; otherwise, quietly, how many things are on today.
     @ViewBuilder
     private var idleBadge: some View {
         let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
@@ -203,9 +203,10 @@ struct NotchRootView: View {
                     .foregroundStyle(NookTheme.amber)
             }
         } else if app.todayItems.count > 0 {
+            // Calm: what is on today is information, not an alarm. Amber is kept for things that wait for you.
             Text("\(app.todayItems.count)")
-                .font(NookTheme.font(12, .semibold))
-                .foregroundStyle(NookTheme.amber)
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
         }
     }
 

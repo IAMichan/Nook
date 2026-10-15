@@ -59,7 +59,7 @@ extension AppModel {
 
     /// Opens the first-run flow in the main window.
     func startOnboarding() {
-        openWorkspace()
+        openWindow()
         showOnboarding = true
     }
 

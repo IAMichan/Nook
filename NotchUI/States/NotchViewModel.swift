@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 @MainActor
 final class NotchViewModel: ObservableObject {
@@ -9,6 +10,21 @@ final class NotchViewModel: ObservableObject {
     @Published var selectedAgentID: String = "cc"
     @Published private(set) var doneButtonTitle = tr("button.close")
     private var doneButtonAction: (() -> Void)?
+
+    /// A task open inside the panel (new session, changes, commit…). Resizes the panel to give it room.
+    @Published var sheet: NotchSheet? {
+        didSet {
+            guard sheet != oldValue else { return }
+            withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
+            scheduleAutoClose()
+        }
+    }
+
+    /// The tab you used last: the notch opens there again, unless an agent is waiting for you.
+    private(set) var lastTab: PanelTab {
+        get { PanelTab(rawValue: UserDefaults.standard.string(forKey: "notch.lastTab") ?? "") ?? .chat }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "notch.lastTab") }
+    }
 
     /// Chat should immediately receive keyboard focus (following a prompt or ⌥⌘ Space), but not on hover.
     var focusChat = false
@@ -68,6 +84,16 @@ final class NotchViewModel: ObservableObject {
             }
         }
         if case .panel = target, state.kind != "panel" { app?.warmUp() }
+        if case .panel(let tab) = target {
+            switch tab {
+            case .chat, .agents, .workspace: lastTab = tab
+            default: break
+            }
+            // Tasks belong to Agents; another tab means you moved on.
+            if tab != .agents, sheet != nil { sheet = nil }
+        } else if sheet != nil {
+            sheet = nil
+        }
         let newSize = layoutSize(for: target)
         let growing = newSize.width * newSize.height > size.width * size.height
         let sameKind = state.kind == target.kind
@@ -82,10 +108,10 @@ final class NotchViewModel: ObservableObject {
     /// Automatically collapses the panel after one minute without mouse activity.
     private func scheduleAutoClose() {
         autoCloseTask?.cancel()
-        guard case .panel = state, !pointerInside else { return }
+        guard case .panel(let openTab) = state, !pointerInside, sheet == nil, openTab != .workspace else { return }
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
-            guard !Task.isCancelled, let self, !self.pointerInside, case .panel(let tab) = self.state else { return }
+            guard !Task.isCancelled, let self, !self.pointerInside, self.sheet == nil, case .panel(let tab) = self.state else { return }
             // Chat does not auto-collapse during a conversation; retry later.
             if (tab == .nook || tab == .chat), self.app?.chat.isRecentlyActive == true {
                 self.scheduleAutoClose()
@@ -264,28 +290,41 @@ final class NotchViewModel: ObservableObject {
             return
         }
         guard openOnHover, inside, state.isResting else { return }
-        // If an agent is running, hover opens faster and navigates directly to Agents.
+        // If an agent is running, hover opens a little faster.
         let working = agentsActive
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: working ? 200_000_000 : 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.pointerInside, self.state.isResting {
-                if working, let first = self.app?.activeAgents.first { self.selectedAgentID = first.id }
-                self.show(.panel(working ? .agents : .nook))
-            }
+            if self.pointerInside, self.state.isResting { self.show(.panel(self.homeTab())) }
         }
     }
 
-    /// Clicking the notch opens the panel immediately (home tab), without hover delay.
+    /// Clicking the notch opens the panel immediately, without hover delay.
     func openPanel() {
         hoverTask?.cancel()
-        let working = agentsActive
-        if working, let first = app?.activeAgents.first { selectedAgentID = first.id }
-        show(.panel(working ? .agents : .nook))
+        show(.panel(homeTab()))
     }
 
-    /// Clicking outside the notch closes the panel. Cards remain until an option is selected.
+    /// Where the panel opens: at the agent that waits for you, otherwise at the tab you used last. Predictable, no jumping.
+    private func homeTab() -> PanelTab {
+        if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
+            selectedAgentID = waiting.id
+            return .agents
+        }
+        return lastTab
+    }
+
+    /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab.
+    func open(_ sheet: NotchSheet) {
+        if state != .panel(.agents) { show(.panel(.agents)) }
+        self.sheet = sheet
+    }
+
+    /// Clicking outside the notch closes the panel. Cards remain until an option is selected, and an open task
+    /// (a form you are filling in) stays until you close it yourself.
     func clickedOutside() {
+        // A folder picker opened from the notch is not "outside": keep the panel while it is up.
+        guard sheet == nil, NSApp.modalWindow == nil else { return }
         if case .panel = state { show(.idle) }
     }
 
@@ -318,10 +357,15 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
             let big = AppSettings.shared.panelLarge
+            if sheet != nil {
+                // A task in the notch gets room to breathe, whatever the size setting.
+                return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
+            }
             switch tab {
             case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
             case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
-            case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 386), NotchController.panelSize.height))
+            case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
+            case .workspace: return CGSize(width: big ? 1180 : 940, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
             case .connect: return CGSize(width: 820, height: chrome + 330)
@@ -360,7 +404,7 @@ final class NotchViewModel: ObservableObject {
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
         case .nook, .chat: return (app?.chat.anyBusy ?? false) ? .think : .rest
-        case .music, .shelf: return .rest
+        case .music, .shelf, .workspace: return .rest
         }
     }
 }

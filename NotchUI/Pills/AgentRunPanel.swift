@@ -32,10 +32,12 @@ struct AgentRunPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onAppear {
                 workspace.loadTimeline(runID)
+                if run.repoRoot != nil { workspace.refreshGit(runID) }
                 focused = true
             }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
+                if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 draft = ""
                 renaming = false
                 confirmDelete = false
@@ -74,6 +76,7 @@ struct AgentRunPanel: View {
                         .foregroundStyle(fraction > 0.85 ? NookTheme.coral : (fraction > 0.6 ? NookTheme.amber : NookTheme.textTertiary))
                         .help(tr("ws.header.contextHelp"))
                 }
+                changesChip(run)
                 actionsMenu(run)
             }
             if renaming {
@@ -118,11 +121,38 @@ struct AgentRunPanel: View {
         }
     }
 
+    /// "+12 −3 · 4 files": what the agent changed, one click away. Hidden while nothing changed.
+    @ViewBuilder
+    private func changesChip(_ run: WorkspaceRun) -> some View {
+        let files = workspace.git[runID]?.status?.files ?? []
+        if run.repoRoot != nil, !files.isEmpty {
+            let added = files.compactMap(\.added).reduce(0, +)
+            let removed = files.compactMap(\.removed).reduce(0, +)
+            Button {
+                workspace.markReviewed(runID)
+                app.viewModel.open(.changes(runID, file: nil))
+            } label: {
+                HStack(spacing: 6) {
+                    Text("+\(added)").foregroundStyle(NookTheme.mint)
+                    Text("−\(removed)").foregroundStyle(NookTheme.coral)
+                    Text(tr("ws.inspector.filesChanged", files.count)).foregroundStyle(NookTheme.textSecondary)
+                }
+                .font(NookTheme.mono(11, .medium))
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Capsule().fill(NookTheme.field))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(tr("agents.run.changes"))
+        }
+    }
+
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
         return Menu {
-            Button(tr("agents.run.settingsInWindow")) { app.openWorkspace(run: runID) }
+            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
             Divider()
             if run.status.isActive {
                 Button(tr("ws.action.stop")) { workspace.stop(runID) }
@@ -136,7 +166,8 @@ struct AgentRunPanel: View {
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
-            Button(tr("agents.run.changes")) { app.openWorkspace(run: runID) }
+            Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
+                .disabled(run.repoRoot == nil)
             Divider()
             Button(tr("agents.run.archive")) {
                 workspace.setArchived(runID, true)
@@ -177,7 +208,7 @@ struct AgentRunPanel: View {
                             event: event,
                             expanded: expanded.contains(event.id),
                             toggle: { toggle(event.id) },
-                            openFile: { _ in app.openWorkspace(run: runID) },
+                            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
                             decide: { decision in
                                 if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
                             }
