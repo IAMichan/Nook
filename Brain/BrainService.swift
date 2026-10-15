@@ -46,7 +46,39 @@ final class BrainService {
         // web tools: only when the Web source is allowed for this request.
         let webAllowed = settings.webSearch && allTools.contains { SourceCatalog.source(forTool: $0.name) == SourceCatalog.web }
 
-        let system = profile.isSmall ? localSystemPrompt(tools: offered) : systemPrompt()
+        // Staged discovery: tools that are not offered up front stay reachable. The model sees one line per source and
+        // can unlock a source's tools with use_source, so it can use every allowed source without reading every tool.
+        let offeredNames = Set(offered.map(\.name))
+        var hidden: [String: [ToolSpec]] = [:]
+        if !settings.useLocal, !offered.isEmpty {
+            for tool in allTools where !offeredNames.contains(tool.name) {
+                guard let source = SourceCatalog.source(forTool: tool.name) else { continue }
+                hidden[source, default: []].append(tool)
+            }
+        }
+        var runnerRef: ToolRunner?
+        let useSource: ToolSpec? = hidden.isEmpty ? nil : ToolSpec(
+            name: "use_source",
+            description: "Unlocks the tools of another connected source for this request. Use it when the answer needs a source whose tools you do not have yet.",
+            schema: ["type": "object", "properties": ["source": ["type": "string", "enum": hidden.keys.sorted(), "description": "Id of the source."]], "required": ["source"]],
+            kind: .read,
+            summarize: { _ in "Open source" },
+            tag: { _ in ("", .neutral) },
+            run: { input in
+                let id = (input["source"] as? String) ?? ""
+                guard let tools = hidden[id], let runner = runnerRef else {
+                    return "Unknown source. Choose one of: \(hidden.keys.sorted().joined(separator: ", "))."
+                }
+                let known = Set(runner.tools.map(\.name))
+                runner.replaceTools(runner.tools + tools.filter { !known.contains($0.name) }.map { Self.loopTool($0, compact: profile.compactDescriptions) })
+                return "Tools of \(SourceCatalog.title(id)) are now available: \(tools.map(\.name).joined(separator: ", "))."
+            }
+        )
+        let catalog = hidden.isEmpty ? "" : "\n\nMore connected sources (call use_source with the id to get their tools): "
+            + hidden.keys.sorted().map { "\($0) — \(SourceCatalog.title($0)) (\(hidden[$0]?.count ?? 0) tools)" }.joined(separator: "; ") + "."
+        let offeredWithDiscovery = offered + (useSource.map { [$0] } ?? [])
+
+        let system = (profile.isSmall ? localSystemPrompt(tools: offeredWithDiscovery) : systemPrompt()) + catalog
         let toolsText = offered.reduce(0) { $0 + $1.name.count + (profile.compactDescriptions ? 80 : $1.description.count) + 200 }
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: 6, length: 300) : ""
         let request = "Request: \(userText)\n\n(\(settings.languageInstruction(for: userText)) Answer in plain sentences; never output JSON or code unless the request is about code.)"
@@ -66,11 +98,13 @@ final class BrainService {
         prompt += request
 
         let runner = ToolRunner(
-            tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
+            tools: offeredWithDiscovery.map { Self.loopTool($0, compact: profile.compactDescriptions) },
             limits: .init(rounds: profile.rounds, calls: profile.isSmall ? 6 : 12, repairs: 2),
             validate: { tool, input, schema in ActionGate.problems(tool: tool, input: input, schema: schema, parseDate: NookDates.parse) },
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
+
+        runnerRef = runner
 
         if settings.useLocal {
             guard !settings.localModel.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
@@ -224,6 +258,8 @@ final class BrainService {
         }
         if names.contains("show_chart") { lines.append("For a chart, use show_chart with real numbers.") }
         if names.contains("compose_mail") { lines.append("To write an email, use compose_mail.") }
+        if names.contains("use_source") { lines.append("If you need a connected source whose tools you do not have, call use_source first.") }
+        lines.append("If sources disagree, say so and cite both.")
         lines += [
             "If the user refers to something on screen (here, this, that), use the text in <screen_content>.",
             "When given numbered sources ([1]), put the number right after the fact. Never invent sources.",
@@ -274,6 +310,12 @@ final class BrainService {
         What the user sees:
         - <screen_content> contains text from all visible windows across all displays, frontmost window first. Determine which window relates to the query; "this", "here", "that", and "that email" usually refer to the frontmost window. If <screen_content> is missing, retrieve it with read_screen.
         - If inspecting the screen during an automated background check and nothing actionable is found, respond ONLY with the word NONE.
+
+        Combining sources:
+        - For a question that spans several sources (mail, documents, chat messages, issues, calendar), look in each relevant one, then bring the findings together per topic rather than per source.
+        - When sources disagree (a different date, owner, number or status), say so explicitly and cite both, e.g. "The mail says Friday [1], the issue says Monday [3]." Prefer the most recent, and say which you assume.
+        - Say what you could not find or check. Do not fill gaps with guesses.
+        - When the outcome is an action (a meeting, a reply, an issue), first gather what is needed (who, when, availability), then propose the action with all details filled in.
 
         Sources and evidence:
         - Tool outputs include numbered citations: [1], [2]. Place the reference number immediately after each key fact derived from it, e.g. "The deadline is November 1 [2]." Never fabricate numbers or URLs.

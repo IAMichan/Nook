@@ -1167,7 +1167,7 @@ final class AppModel: ObservableObject {
                 context: contextSummary(),
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
-                tools: allTools,
+                tools: scopedTools(.automatic, ledger: nil),
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
@@ -1585,7 +1585,7 @@ final class AppModel: ObservableObject {
             context: contextSummary(),
             untrustedLabel: "\(snapshot.appName) — \(snapshot.windowTitle)",
             untrusted: snapshot.text,
-            tools: allTools
+            tools: scopedTools(.automatic, ledger: nil)
         ) else { return }
 
         let split = FollowUps.split(plan.text)
