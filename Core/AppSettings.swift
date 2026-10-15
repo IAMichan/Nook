@@ -183,6 +183,26 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
     }
 
+    /// Whether the brain runs on this Mac (built-in model, Ollama or LM Studio): no data leaves the Mac, no cost per token.
+    var isLocalBrain: Bool { useLocal || provider.isLocalServer }
+
+    /// What the active model can handle: prompts, tools and rounds are sized to it.
+    var brainProfile: ModelProfile {
+        if useLocal { return ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall }
+        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel) }
+        return .cloud
+    }
+
+    /// Short label for the model chip: "Qwen 2.5 (7B)", "Ollama · qwen2.5:7b", "Claude · claude-haiku-5-5".
+    var brainLabel: String {
+        if useLocal {
+            if localModel.isEmpty { return tr("brain.chip.noModel") }
+            return ModelAdvisor.catalog.first { $0.id == localModel }?.title ?? activeModelName
+        }
+        let name = activeProviderModel.isEmpty ? tr("brain.chip.firstModel") : activeProviderModel
+        return "\(provider.title.components(separatedBy: " (").first ?? provider.title) · \(name)"
+    }
+
     /// Whether Nook can reason. Local models or local server backends do not require an API key.
     var brainReady: Bool {
         if useLocal { return !localModel.isEmpty }
@@ -252,7 +272,10 @@ final class AppSettings: ObservableObject {
         language = defaults.string(forKey: "language") ?? "nl"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
-        useLocal = UserDefaults.standard.bool(forKey: "useLocal")
+        // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
+        // AI (a key or a provider was set before this version) keeps that choice.
+        let choseExternal = defaults.string(forKey: "provider") != nil || !(Keychain.read(Self.keyAccount) ?? "").isEmpty
+        useLocal = defaults.object(forKey: "useLocal") as? Bool ?? !choseExternal
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"

@@ -42,51 +42,51 @@ enum ClaudeCodeBrain {
         return nil
     }
 
-    static func run(model: String, system: String, prompt: String, tools: [ToolSpec], allowWebSearch: Bool, onText: ((String) -> Void)?) async throws -> BrainPlan {
-        guard let path = executable else {
-            throw NookError("Could not find Claude Code on your Mac. Install it (claude.com/product/claude-code), run `claude` in the terminal to log in, and try again.")
-        }
-        let known = Set(tools.map(\.name))
-        var actions: [PlannedAction] = []
-        var sessionID: String?
-        var message = prompt
-        var finalText = ""
-        let fullSystem = system + "\n\n" + protocolText(tools, allowWebSearch: allowWebSearch)
-
-        for _ in 0..<5 {
-            let result = try await call(path: path, model: model, system: fullSystem, message: message, resume: sessionID, allowWebSearch: allowWebSearch)
-            sessionID = result.session ?? sessionID
-            let extracted = EmbeddedModel.extractToolCalls(from: result.text, knownTools: known)
-            if !extracted.text.isEmpty {
-                finalText = extracted.text
-                onText?(finalText)
-            }
-            guard !extracted.calls.isEmpty else { break }
-
-            var results: [String] = []
-            for call in extracted.calls {
-                guard let spec = tools.first(where: { $0.name == call.name }) else { continue }
-                switch spec.kind {
-                case .read:
-                    do {
-                        let output = try await spec.run(call.input)
-                        results.append("Result of \(call.name):\n" + UntrustedText.wrap(output))
-                    } catch {
-                        results.append("Error in \(call.name): \(error.localizedDescription)")
-                    }
-                case .action:
-                    actions.append(PlannedAction(tool: call.name, input: call.input))
-                    results.append("\(call.name) has been proposed to the user and will only execute after confirmation.")
-                }
-            }
-            // Actions only: finished, the plan is set. Otherwise continue with results.
-            if results.allSatisfy({ $0.contains("has been proposed to the user") }) { break }
-            message = results.joined(separator: "\n\n") + "\n\nNow respond to the request in natural language, or invoke another tool only if strictly necessary."
-        }
-        return BrainPlan(text: finalText.trimmingCharacters(in: .whitespacesAndNewlines), actions: actions)
+    /// A conversation for the shared tool loop. Nook's tools go through a text protocol (JSON on its own line), which the
+    /// loop picks up; the Claude Code session is resumed between rounds.
+    static func conversation(model: String, system: String, prompt: String, allowWebSearch: Bool) -> ModelConversation {
+        ClaudeCodeConversation(model: model, system: system, prompt: prompt, allowWebSearch: allowWebSearch)
     }
 
-    private static func protocolText(_ tools: [ToolSpec], allowWebSearch: Bool) -> String {
+    @MainActor
+    private final class ClaudeCodeConversation: ModelConversation {
+        let model: String
+        let system: String
+        let allowWebSearch: Bool
+        var message: String
+        var sessionID: String?
+
+        init(model: String, system: String, prompt: String, allowWebSearch: Bool) {
+            self.model = model
+            self.system = system
+            self.message = prompt
+            self.allowWebSearch = allowWebSearch
+        }
+
+        func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
+            guard let path = ClaudeCodeBrain.executable else {
+                throw NookError("Could not find Claude Code on your Mac. Install it (claude.com/product/claude-code), run `claude` in the terminal to log in, and try again.")
+            }
+            let fullSystem = system + "\n\n" + ClaudeCodeBrain.protocolText(tools, allowWebSearch: allowWebSearch)
+            let result = try await ClaudeCodeBrain.call(path: path, model: model, system: fullSystem, message: message,
+                                                        resume: sessionID, allowWebSearch: allowWebSearch)
+            sessionID = result.session ?? sessionID
+            if !result.text.isEmpty { onText?(result.text) }
+            // Tool calls are written as JSON in the text: the shared loop extracts them.
+            return ModelTurn(text: result.text, calls: [])
+        }
+
+        func addResults(_ results: [(call: ToolCallRequest, output: String, isError: Bool)]) {
+            message = results.map { "Result of \($0.call.name):\n\($0.output)" }.joined(separator: "\n\n")
+                + "\n\nNow respond to the request in natural language, or invoke another tool only if strictly necessary."
+        }
+
+        func addInstruction(_ text: String) {
+            message += "\n\n" + text
+        }
+    }
+
+    fileprivate static func protocolText(_ tools: [LoopTool], allowWebSearch: Bool) -> String {
         guard !tools.isEmpty else { return "" }
         var lines = [
             "You have these tools from Nook. To use one, reply ONLY with JSON for each tool call on its own line, like {\"name\": \"list_events\", \"parameters\": {\"from\": \"…\", \"to\": \"…\"}}. You will receive the result back. Actions (calendar, reminders, email, apps) are shown to the user first.",
@@ -103,7 +103,7 @@ enum ClaudeCodeBrain {
         return lines.joined(separator: "\n")
     }
 
-    private struct CallResult {
+    fileprivate struct CallResult {
         var text: String
         var session: String?
     }
@@ -134,7 +134,7 @@ enum ClaudeCodeBrain {
         return arguments
     }
 
-    private static func call(path: String, model: String, system: String, message: String, resume: String?, allowWebSearch: Bool) async throws -> CallResult {
+    fileprivate static func call(path: String, model: String, system: String, message: String, resume: String?, allowWebSearch: Bool) async throws -> CallResult {
         let arguments = Self.arguments(message: message, model: model, system: system, resume: resume, allowWebSearch: allowWebSearch)
         let output = try await execute(path, arguments)
         // Never retry without the isolation flags: that would load the user's own hooks and permission rules.

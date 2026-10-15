@@ -90,6 +90,8 @@ targets:
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
       - path: Brain/NetworkGuard.swift
+      - path: Brain/ToolLoop.swift
+      - path: Brain/ModelAdvisor.swift
       - path: Core/NookError.swift
       - path: Core/SafeStorage.swift
       - path: Services/Workspace/WorkspaceModels.swift

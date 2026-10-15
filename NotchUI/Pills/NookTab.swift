@@ -287,6 +287,7 @@ private struct NookChatView: View {
         VStack(alignment: .leading, spacing: 6) {
             // Allowed sources for this Nook, context payload, and optional file attachment.
             HStack(spacing: 8) {
+                BrainChip()
                 ScopeMenu(chat: chat)
                 if let name = app.attachmentName {
                     AttachmentChip(name: name) { app.clearAttachment() }

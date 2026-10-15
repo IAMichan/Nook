@@ -515,10 +515,10 @@ final class AppModel: ObservableObject {
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = "Ik lees \(file.name)…" }
-            let limit = settings.useLocal ? 12_000 : 40_000
+            let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
-        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
+        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
             do {
                 snapshot = try await screenSnapshot()
@@ -597,11 +597,8 @@ final class AppModel: ObservableObject {
         if !fetched.isEmpty {
             brainContext += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
         }
-        // A small local model gets no read tools at all: Nook already looked things up, and a half-made tool call is
-        // what turns into JSON in the answer.
-        if settings.useLocal {
-            tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
-        }
+        // Small local models get read tools too (they used to get none, so a calendar question beyond the context failed):
+        // the brain offers only the most relevant few, and the shared tool loop repairs or stops bad calls.
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
@@ -651,7 +648,7 @@ final class AppModel: ObservableObject {
                     rescued = [table]
                 }
                 // Still missing chart: retry once with strict instruction to invoke show_chart.
-                if rescued.isEmpty, wantsChart, !retry, !settings.useLocal {
+                if rescued.isEmpty, wantsChart, !retry, !settings.brainProfile.isSmall {
                     chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
                     await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                     return
@@ -984,7 +981,7 @@ final class AppModel: ObservableObject {
 
     /// Text from all visible windows: from live cache if enabled, or read on-demand.
     func screenSnapshot() async throws -> ScreenSnapshot {
-        let local = settings.useLocal
+        let local = settings.brainProfile.isSmall
         if settings.liveScreen {
             if !screenContext.isRunning, screenContext.hasPermission { screenContext.start() }
             return try await screenContext.snapshot(totalLimit: local ? 3500 : 12_000)
@@ -1842,8 +1839,7 @@ final class AppModel: ObservableObject {
             agentConnect[profile.id] = .failed(problems.joined(separator: "\n"))
             return
         }
-        // No brain configured yet? Default to using Claude Code CLI.
-        if kind == .claude, !settings.brainReady { settings.provider = .claudeCode }
+        // The brain is never switched to an external service on the user's behalf: that is always their own choice.
 
         let hasProgram = history.executables[kind] != nil
         // An account that signs in with a key it already holds needs no Terminal login.
@@ -2178,7 +2174,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func answerCard(_ text: String, offers: [String] = []) -> NookCard {
+    func answerCard(_ text: String, offers: [String] = []) -> NookCard {
         let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
         let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
@@ -2196,7 +2192,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func errorCard(_ message: String) -> NookCard {
+    func errorCard(_ message: String) -> NookCard {
         let lines = max(1, Int(ceil(Double(message.count) / 46.0)))
         let token = "error-" + UUID().uuidString
         viewModel.register("\(token)#settings") { [weak self] in self?.openSettings() }
@@ -2213,6 +2209,11 @@ final class AppModel: ObservableObject {
     }
 
     private func presentSetupCard() {
+        // Local brain without a model: propose the one that suits this Mac instead of sending the user to Settings.
+        if settings.isLocalBrain {
+            presentLocalSetupCard()
+            return
+        }
         let token = "setup-" + UUID().uuidString
         viewModel.register("\(token)#open") { [weak self] in self?.openSettings() }
         let card = NookCard(

@@ -65,6 +65,7 @@ struct SettingsView: View {
     @State private var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
     @State private var fetchedModels: [String] = []
     @State private var fetchingModels = false
+    @State private var recommendations: [ModelAdvisor.Recommendation] = []
 
     var body: some View {
         NavigationSplitView {
@@ -270,22 +271,52 @@ struct SettingsView: View {
 
     // MARK: Brain
 
-    private enum BrainKind: Hashable { case claude, other, local }
+    private enum BrainKind: Hashable { case local, external }
+    private enum LocalRuntime: Hashable { case builtIn, ollama, lmstudio }
+    private enum ExternalKind: Hashable { case claude, other }
 
+    /// Local first: the built-in model, Ollama and LM Studio all keep everything on the Mac. External is a deliberate choice.
     private var brainKind: Binding<BrainKind> {
         Binding(
-            get: { settings.useLocal ? .local : ([.claude, .claudeCode].contains(settings.provider) ? .claude : .other) },
+            get: { settings.isLocalBrain ? .local : .external },
             set: { kind in
                 testResult = nil
                 fetchedModels = []
                 switch kind {
-                case .local: settings.useLocal = true
-                case .claude:
+                case .local:
+                    if !settings.isLocalBrain { settings.useLocal = true }
+                case .external:
                     settings.useLocal = false
-                    if settings.provider != .claudeCode { settings.provider = .claude }
-                case .other:
-                    settings.useLocal = false
-                    if [.claude, .claudeCode].contains(settings.provider) { settings.provider = .openai }
+                    if settings.provider.isLocalServer { settings.provider = .claude }
+                }
+            }
+        )
+    }
+
+    private var localRuntime: Binding<LocalRuntime> {
+        Binding(
+            get: { settings.useLocal ? .builtIn : (settings.provider == .ollama ? .ollama : .lmstudio) },
+            set: { runtime in
+                testResult = nil
+                fetchedModels = []
+                switch runtime {
+                case .builtIn: settings.useLocal = true
+                case .ollama: settings.useLocal = false; settings.provider = .ollama
+                case .lmstudio: settings.useLocal = false; settings.provider = .lmstudio
+                }
+            }
+        )
+    }
+
+    private var externalKind: Binding<ExternalKind> {
+        Binding(
+            get: { [.claude, .claudeCode].contains(settings.provider) ? .claude : .other },
+            set: { kind in
+                testResult = nil
+                fetchedModels = []
+                switch kind {
+                case .claude: if settings.provider != .claudeCode { settings.provider = .claude }
+                case .other: if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isLocalServer { settings.provider = .openai }
                 }
             }
         )
@@ -294,20 +325,37 @@ struct SettingsView: View {
     private var brainSection: some View {
         Group {
             Section {
-                Picker(tr("settings.brain.thinksWith"), selection: brainKind) {
-                    Text(tr("settings.brain.claude")).tag(BrainKind.claude)
-                    Text(tr("settings.brain.otherAI")).tag(BrainKind.other)
-                    Text(tr("settings.brain.freeLocal")).tag(BrainKind.local)
+                Picker(tr("settings.brain.where"), selection: brainKind) {
+                    Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
+                    Text(tr("settings.brain.externalChoice")).tag(BrainKind.external)
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Text(brainExplanation)
+                Text(settings.isLocalBrain ? tr("settings.brain.localDefault") : tr("settings.brain.externalWarning"))
             }
 
-            if settings.useLocal {
-                Section(tr("settings.brain.localModelTitle")) { localFields }
+            if settings.isLocalBrain {
+                Section(tr("brain.advice.title")) { adviceRows }
+                Section {
+                    Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
+                        Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
+                        Text("Ollama").tag(LocalRuntime.ollama)
+                        Text("LM Studio").tag(LocalRuntime.lmstudio)
+                    }
+                    .pickerStyle(.segmented)
+                    if settings.useLocal { localFields } else { providerFields }
+                }
             } else {
-                Section([.claude, .claudeCode].contains(settings.provider) ? tr("settings.brain.claude") : tr("settings.brain.provider")) { providerFields }
+                Section {
+                    Picker(tr("settings.brain.thinksWith"), selection: externalKind) {
+                        Text(tr("settings.brain.claude")).tag(ExternalKind.claude)
+                        Text(tr("settings.brain.otherAI")).tag(ExternalKind.other)
+                    }
+                    .pickerStyle(.segmented)
+                    providerFields
+                } footer: {
+                    Text(brainExplanation)
+                }
             }
 
             Section {
@@ -328,10 +376,58 @@ struct SettingsView: View {
                 }
             }
         }
+        .task { recommendations = await app.brainRecommendations() }
+    }
+
+    /// The models Nook proposes for this Mac, best first, with one button to use or install each.
+    private var adviceRows: some View {
+        Group {
+            Text(tr("brain.advice.memory", EmbeddedModel.memoryGB))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(recommendations.prefix(3).enumerated()), id: \.offset) { index, recommendation in
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(AppModel.title(of: recommendation)).fontWeight(index == 0 ? .semibold : .regular)
+                            if index == 0, recommendation.choice != .unavailable {
+                                Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                            }
+                        }
+                        Text(recommendation.reason).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    adviceButton(recommendation)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func adviceButton(_ recommendation: ModelAdvisor.Recommendation) -> some View {
+        switch recommendation.choice {
+        case .unavailable:
+            EmptyView()
+        case .mlx(let option) where installing == option.id:
+            ProgressView(value: installFraction).frame(width: 90)
+        case .mlx(let option) where settings.useLocal && settings.localModel == option.id:
+            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .server(let model) where !settings.useLocal && settings.activeProviderModel == model.name
+                && settings.provider == (model.server == .ollama ? .ollama : .lmstudio):
+            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .mlx(let option) where !recommendation.ready:
+            Button(tr("brain.advice.install")) { Task { await install(option.id) } }
+                .disabled(installing != nil)
+        default:
+            Button(tr("brain.advice.use")) {
+                Task {
+                    try? await app.useRecommendation(recommendation)
+                    testResult = nil
+                }
+            }
+        }
     }
 
     private var brainExplanation: String {
-        if settings.useLocal { return tr("settings.brain.localExplanation") }
         if [.claude, .claudeCode].contains(settings.provider) {
             return tr("settings.brain.claudeExplanation")
         }
@@ -340,7 +436,9 @@ struct SettingsView: View {
 
     private var providerFields: some View {
         Group {
-            if [.claude, .claudeCode].contains(settings.provider) {
+            if settings.provider.isLocalServer {
+                EmptyView()
+            } else if [.claude, .claudeCode].contains(settings.provider) {
                 Picker(tr("settings.brain.connectVia"), selection: $settings.provider) {
                     Text(tr("settings.brain.apiKey")).tag(AIProvider.claude)
                     Text(tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
@@ -349,7 +447,7 @@ struct SettingsView: View {
                 .onChange(of: settings.provider) { _, _ in testResult = nil }
             } else {
                 Picker(tr("settings.brain.provider"), selection: $settings.provider) {
-                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode }) { Text($0.title).tag($0) }
+                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { Text($0.title).tag($0) }
                 }
                 .onChange(of: settings.provider) { _, _ in
                     fetchedModels = []
@@ -489,7 +587,9 @@ struct SettingsView: View {
             try await local.install(id) { fraction in
                 Task { @MainActor in installFraction = fraction }
             }
+            settings.useLocal = true
             settings.localModel = id
+            recommendations = await app.brainRecommendations()
             status = "\(local.title(for: id)) is ready and currently active."
             await testConnection()
         } catch {
