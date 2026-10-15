@@ -135,7 +135,7 @@ struct AgentsTab: View {
                     SectionHeader(title: tr("agents.nowActive"), trailing: "\(tracked.count)")
                         .padding(.top, 12)
                     ForEach(tracked) { session in
-                        SessionRow(
+                        AgentListRow(
                             title: session.summary.isEmpty ? session.project : AgentFormat.title(session.summary),
                             state: .live(session),
                             folder: session.project,
@@ -151,7 +151,7 @@ struct AgentsTab: View {
                     SectionHeader(title: tr("agents.untrackedHeader"), trailing: "\(untracked.count)")
                         .padding(.top, 12)
                     ForEach(untracked) { session in
-                        SessionRow(
+                        AgentListRow(
                             title: session.project,
                             state: .untracked,
                             folder: session.project,
@@ -168,7 +168,7 @@ struct AgentsTab: View {
                     SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
                         .padding(.top, 12)
                     ForEach(past) { session in
-                        SessionRow(
+                        AgentListRow(
                             title: AgentFormat.title(session.title),
                             state: .past,
                             folder: session.project,
@@ -208,7 +208,7 @@ struct AgentsTab: View {
 
 /// One session in the list, the same for every kind: what it is about, its state on the right (working, waits for
 /// you, done…), and underneath in which folder, with which account and which agent.
-struct SessionRow: View {
+struct AgentListRow: View {
     enum Kind {
         case run(WorkspaceRun)
         case live(AgentSession)
@@ -728,7 +728,7 @@ struct WorkspaceRunsSection: View {
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
             .prefix(12)
         ForEach(Array(recent)) { run in
-            SessionRow(
+            AgentListRow(
                 title: run.title,
                 state: .run(run),
                 folder: run.isolation == .worktree ? "\(run.projectName) · \(run.branch ?? "worktree")" : run.projectName,
