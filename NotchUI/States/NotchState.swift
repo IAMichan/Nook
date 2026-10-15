@@ -5,10 +5,16 @@ enum PanelTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Tabs in the notch: Nook (home and chat together), Agents, and Music only while a player is open.
+    @MainActor
+    static func visible(musicAvailable: Bool) -> [PanelTab] {
+        musicAvailable ? [.chat, .agents, .music] : [.chat, .agents]
+    }
+
     var title: String {
         switch self {
         case .nook: return tr("tab.nook")
-        case .chat: return tr("tab.chat")
+        case .chat: return tr("tab.nook")
         case .agents: return tr("tab.agents")
         case .connect: return tr("tab.connect")
         case .music: return tr("tab.music")

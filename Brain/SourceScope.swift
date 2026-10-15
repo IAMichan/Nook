@@ -126,7 +126,7 @@ enum SourceCatalog {
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
-        "read_browser_tab": "browser",
+        "read_browser_tab": "browser", "read_nook_browser": "browser", "open_in_nook_browser": "browser",
         "read_screen": screen, "read_app": screen,
         "list_running_apps": screen, "get_active_app": screen,
         "search_contacts": "contacts", "read_clipboard": "clipboard",

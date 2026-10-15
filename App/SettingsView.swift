@@ -6,7 +6,7 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, brain, assistant, connections, agents, voice, privacy
+    case general, brain, connections, assistant, agents, usage, privacy, voice
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .assistant: return tr("settings.section.assistant")
         case .connections: return tr("settings.section.connections")
         case .agents: return tr("settings.section.agents")
+        case .usage: return tr("settings.section.usage")
         case .voice: return tr("settings.section.voice")
         case .privacy: return tr("settings.section.privacy")
         }
@@ -29,6 +30,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .assistant: return tr("settings.section.assistant.sub")
         case .connections: return tr("settings.section.connections.sub")
         case .agents: return tr("settings.section.agents.sub")
+        case .usage: return tr("settings.section.usage.sub")
         case .voice: return tr("settings.section.voice.sub")
         case .privacy: return tr("settings.section.privacy.sub")
         }
@@ -41,6 +43,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .assistant: return "sparkles"
         case .connections: return "link"
         case .agents: return "terminal"
+        case .usage: return "chart.bar.xaxis"
         case .voice: return "waveform"
         case .privacy: return "lock.shield"
         }
@@ -146,6 +149,7 @@ struct SettingsView: View {
         case .assistant: assistantSection
         case .connections: connectionsSection
         case .agents: agentsSection
+        case .usage: usageSection
         case .voice: voiceSection
         case .privacy: privacySection
         }
@@ -695,6 +699,11 @@ struct SettingsView: View {
                 }
             }
             MCPSettingsSection()
+            // Agent accounts (Claude Code, Codex, Gemini): the same place as every other account.
+            AccountsSettingsSection()
+            Section {} footer: {
+                Text(tr("accounts.isolationNote"))
+            }
             if matchesSearch(title: app.portfolio.title) {
                 Section(tr("settings.connections.crypto")) {
                     PortfolioSettings(portfolio: app.portfolio)
@@ -776,10 +785,6 @@ struct SettingsView: View {
 
     private var agentsSection: some View {
         Group {
-            AccountsSettingsSection()
-            Section {} footer: {
-                Text(tr("accounts.isolationNote"))
-            }
             Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
@@ -789,21 +794,33 @@ struct SettingsView: View {
             } footer: {
                 Text(tr("settings.agents.linkAgentsFooter"))
             }
+            WorkspaceSettingsSection()
+        }
+    }
+
+    // MARK: Usage
+
+    /// All usage in one place: plan limits per account, tokens and reported costs of agent sessions.
+    private var usageSection: some View {
+        Group {
             Section(tr("settings.agents.subscriptions")) {
                 LabeledContent("Claude") {
-                    Text(app.hub.planUsage.map { $0.label } ?? "koppel \"Claude-abonnement in de notch\"").foregroundStyle(.secondary)
+                    Text(app.hub.planUsage.map { $0.label } ?? tr("settings.usage.claudeMissing")).foregroundStyle(.secondary)
                 }
                 LabeledContent("Codex") {
-                    Text(app.codex.snapshot.flatMap { [$0.fiveHourLabel, $0.weeklyLabel].compactMap { $0 }.joined(separator: " · ") } ?? "niet gevonden")
+                    Text(app.codex.snapshot.flatMap { [$0.fiveHourLabel, $0.weeklyLabel].compactMap { $0 }.joined(separator: " · ") } ?? tr("settings.usage.codexMissing"))
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent(tr("settings.usage.brain")) {
+                    Text(settings.isLocalBrain ? tr("settings.usage.brainLocal") : tr("settings.usage.brainExternal", settings.provider.title))
                         .foregroundStyle(.secondary)
                 }
             }
-            WorkspaceSettingsSection()
-            Section(tr("settings.agents.weekRecap")) {
-                HStack {
-                    Button(tr("button.view")) { app.showWeekRecap() }
-                    Button(tr("button.clear")) { app.recap.clear(); status = tr("settings.agents.weekRecapCleared") }
-                }
+            Section {
+                UsageView()
+                    .environmentObject(app.workspace)
+                    .frame(minHeight: 520)
+                    .listRowInsets(EdgeInsets())
             }
         }
     }
@@ -927,6 +944,7 @@ struct SettingsView: View {
                 Text(tr("settings.privacy.permissionsFooter"))
             }
             .id(refreshTick)
+            AuditLogSection()
             Section(tr("settings.privacy.whatLeavesMac")) {
                 promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
                 promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))

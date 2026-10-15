@@ -1,144 +1,8 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
-/// The Nook tab: Nook's home view with your daily overview, active connections, and suggestions.
-struct NookHomeTab: View {
-    @ObservedObject var viewModel: NotchViewModel
-    @EnvironmentObject private var app: AppModel
-    @State private var question = ""
-    @FocusState private var inputFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            start
-            inputBar
-                .padding(.top, 10)
-        }
-        .onAppear {
-            // Wait briefly for the panel to acquire keyboard focus.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
-        }
-    }
-
-    // MARK: Home view: your day and context
-
-    private var start: some View {
-        let items = app.todayItems
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
-                .font(NookTheme.font(20, .semibold))
-                .foregroundStyle(NookTheme.paper)
-
-            awareness
-                .padding(.top, 4)
-
-            if !app.chat.isEmpty {
-                activeChatBanner
-                    .padding(.top, 8)
-            }
-
-            VStack(spacing: 0) {
-                ForEach(items.prefix(4)) { item in
-                    TodayRow(item: item) { open(item) }
-                }
-            }
-            .padding(.top, 8)
-
-            Spacer(minLength: 10)
-
-            suggestions
-        }
-    }
-
-    private var activeChatBanner: some View {
-        Button {
-            viewModel.show(.panel(.chat))
-        } label: {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(app.chat.busy ? NookTheme.iris : NookTheme.mint)
-                    .frame(width: 6, height: 6)
-                Text(app.chat.busy ? tr("home.chatBusyBanner") : tr("home.chatActiveBanner", app.chat.messages.count))
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(NookTheme.paper)
-                Spacer()
-                Text(tr("home.toChat"))
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.iris)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(NookTheme.iris)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// A single line summarizing what Nook can access: clarifies what you can ask about.
-    private var awareness: some View {
-        let _ = app.connectors.revision
-        var parts: [String] = []
-        let screen = app.screenContext
-        if !screen.windows.isEmpty {
-            parts.append(tr("home.awareness.windows", screen.windows.count) + (screen.displayCount > 1 ? tr("home.awareness.screens", screen.displayCount) : ""))
-        }
-        for source in app.connectors.active.prefix(4) where source.status.state == .ok && !source.status.headline.isEmpty {
-            parts.append("\(source.title.lowercased()): \(source.status.headline.lowercased())")
-        }
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(parts.isEmpty ? NookTheme.textTertiary : NookTheme.mint)
-                .frame(width: 6, height: 6)
-            Text(parts.isEmpty ? tr("home.awareness.empty") : tr("home.awareness.prefix", parts.joined(separator: " · ")))
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
-        }
-    }
-
-    /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
-    private var suggestions: some View {
-        SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
-    }
-
-    private func open(_ item: TodayItem) {
-        switch item.target {
-        case .card(let scene):
-            viewModel.show(.card(DemoContent.card(for: scene)))
-        case .agent(let id):
-            viewModel.selectedAgentID = id
-            viewModel.show(.panel(.agents))
-        case .action(let run):
-            run()
-        case .none:
-            break
-        }
-    }
-
-    private var inputBar: some View {
-        NookInputBar(
-            text: $question,
-            prompt: tr("home.inputPrompt"),
-            focus: $inputFocused,
-            onMic: { viewModel.startListening() },
-            onSend: send
-        )
-    }
-
-    private func send() {
-        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        question = ""
-        app.handleUserText(text)
-    }
-}
-
-typealias NookTab = NookHomeTab
-
-/// The Chat tab: your active conversation with Nook.
+/// The Nook tab: home and chat in one. An empty conversation shows your day and suggestions; a running one the thread.
 struct NookChatTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -148,18 +12,21 @@ struct NookChatTab: View {
     }
 }
 
-private struct NookChatView: View {
+/// The chat, shared by the notch and the main window. `compact` is the notch version: a narrower list of Nooks.
+struct NookChatView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var chat: NookChat
+    var compact = true
     @EnvironmentObject private var app: AppModel
     @State private var question = ""
+    @State private var dropTargeted = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            if !chat.history.isEmpty {
+            if !chat.history.isEmpty || !compact {
                 NookList(chat: chat)
-                    .frame(width: 168)
+                    .frame(width: compact ? 168 : 220)
             }
             VStack(alignment: .leading, spacing: 0) {
                 if chat.isEmpty {
@@ -171,59 +38,69 @@ private struct NookChatView: View {
                     .padding(.top, 10)
             }
         }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .overlay(Text(tr("chat.dropFile")).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper))
+                    .allowsHitTesting(false)
+            }
+        }
+        // Drop a file anywhere on the chat: Nook reads it and you ask about it (this replaces the old Shelf tab).
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                DispatchQueue.main.async { app.askAbout(url) }
+            }
+            return true
+        }
         .onAppear {
             // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
     }
 
-    // MARK: Empty chat state: welcoming start
+    // MARK: Empty chat: your day and where to start
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let items = app.todayItems
+        return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(tr("chat.emptyTitle"))
+                Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
                     .font(NookTheme.font(20, .semibold))
                     .foregroundStyle(NookTheme.paper)
-
                 Text(tr("chat.emptySubtitle"))
                     .font(NookTheme.font(13))
                     .foregroundStyle(NookTheme.textSecondary)
             }
 
-            // Quick capability badges
-            HStack(spacing: 7) {
-                quickPromptPill(icon: "note.text", label: "Notities", prompt: tr("home.suggestions.notes"))
-                quickPromptPill(icon: "safari", label: "Browser", prompt: tr("home.suggestions.browser"))
-                quickPromptPill(icon: "checklist", label: "Taken", prompt: tr("home.suggestions.reminders"))
-                quickPromptPill(icon: "calendar", label: "Agenda", prompt: tr("home.suggestions.summarizeDay"))
+            if !items.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(items.prefix(compact ? 3 : 6)) { item in
+                        TodayRow(item: item) { open(item) }
+                    }
+                }
             }
-            .padding(.top, 2)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             suggestions
         }
     }
 
-    private func quickPromptPill(icon: String, label: String, prompt: String) -> some View {
-        Button {
-            app.handleUserText(prompt)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(NookTheme.iris)
-                Text(label)
-                    .font(NookTheme.font(11.5, .medium))
-                    .foregroundStyle(NookTheme.paper)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.graphite))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+    private func open(_ item: TodayItem) {
+        switch item.target {
+        case .card(let scene):
+            viewModel.show(.card(DemoContent.card(for: scene)))
+        case .agent(let id):
+            viewModel.selectedAgentID = id
+            if compact { viewModel.show(.panel(.agents)) } else { app.openWorkspace() }
+        case .action(let run):
+            run()
+        case .none:
+            break
         }
-        .buttonStyle(.plain)
     }
 
     /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).

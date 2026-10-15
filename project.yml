@@ -21,6 +21,10 @@ packages:
   SwiftTransformers:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.0
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    # The built-in terminal (Workspace › Terminals). Pinned: a stable release whose API matches TerminalSessions.swift.
+    exactVersion: 1.16.0
 targets:
   Nook:
     type: application
@@ -43,6 +47,8 @@ targets:
         product: HuggingFace
       - package: SwiftTransformers
         product: Tokenizers
+      - package: SwiftTerm
+        product: SwiftTerm
     info:
       path: App/Info.plist
       properties:
@@ -67,6 +73,7 @@ targets:
         com.apple.security.automation.apple-events: true
         com.apple.security.personal-information.calendars: true
         com.apple.security.personal-information.addressbook: true
+        com.apple.security.network.client: true
     settings:
       base:
         PRODUCT_NAME: Nook

@@ -70,6 +70,7 @@ extension AppModel {
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
+        workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
     }
 
     /// Opens the workspace, optionally directly focused on a run.
@@ -161,8 +162,8 @@ extension AppModel {
         }
         let intro = "echo " + TerminalLauncher.shellQuote(tr("accounts.reauthIntro", profile.kind.name))
         do {
-            try TerminalLauncher.run(command: intro + " && " + command, in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-login-\(profile.id)")
+            try runVisibly(intro + " && " + command, in: FileManager.default.homeDirectoryForCurrentUser.path,
+                           name: "nook-login-\(profile.id)", title: tr("accounts.terminalTitle.login", profile.kind.name))
         } catch {
             viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
             return
@@ -189,8 +190,8 @@ extension AppModel {
         case .gemini: return
         }
         do {
-            try TerminalLauncher.run(command: command, in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-logout-\(profile.id)")
+            try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
+                           name: "nook-logout-\(profile.id)", title: tr("accounts.terminalTitle.logout", profile.kind.name))
         } catch {
             viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
             return
@@ -280,4 +281,33 @@ extension AgentProfile {
 
 extension Notification.Name {
     static let nookWorkspaceNewSession = Notification.Name("nookWorkspaceNewSession")
+    /// Switches the main window to a part (object: WorkspacePane raw value).
+    static let nookMainWindowPane = Notification.Name("nookMainWindowPane")
+    /// Switches Workspace to a tool (object: WorkbenchView.Tool raw value).
+    static let nookWorkbenchTool = Notification.Name("nookWorkbenchTool")
+}
+
+extension AppModel {
+    /// Opens Nook's main window on a part (and, in Workspace, a tool).
+    func openMainWindow(_ pane: WorkspacePane, tool: WorkbenchView.Tool? = nil) {
+        if case .panel = viewModel.state { viewModel.show(.idle) }
+        WorkspaceWindowController.shared.show(app: self)
+        NotificationCenter.default.post(name: .nookMainWindowPane, object: pane.rawValue)
+        if let tool { NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue) }
+    }
+
+    /// A terminal in Nook's window, in `folder`, optionally running `command` first.
+    func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
+        TerminalStore.shared.open(in: folder, command: command, title: title)
+        openMainWindow(.workspace, tool: .terminals)
+    }
+
+    /// Runs a command for the user where they can see it: the built-in terminal, or the terminal app they chose.
+    func runVisibly(_ command: String, in folder: String, name: String, title: String) throws {
+        if workspace.settings.terminalBundleID == WorkspaceSettings.builtInTerminal {
+            openTerminal(in: folder, command: command, title: title)
+        } else {
+            try TerminalLauncher.run(command: command, in: folder, name: name)
+        }
+    }
 }

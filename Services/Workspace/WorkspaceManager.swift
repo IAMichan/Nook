@@ -947,9 +947,17 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    /// Opens a terminal in Nook's own window (set by the app). Used when the built-in terminal is chosen.
+    var openBuiltInTerminal: ((_ folder: String) -> Void)?
+
     func openTerminal(_ path: String) {
+        if settings.terminalBundleID == WorkspaceSettings.builtInTerminal, let openBuiltInTerminal {
+            openBuiltInTerminal(path)
+            return
+        }
         let url = URL(fileURLWithPath: path, isDirectory: true)
-        let bundle = settings.terminalBundleID.isEmpty ? "com.apple.Terminal" : settings.terminalBundleID
+        let bundle = settings.terminalBundleID.isEmpty || settings.terminalBundleID == WorkspaceSettings.builtInTerminal
+            ? "com.apple.Terminal" : settings.terminalBundleID
         guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
                 ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else { return }
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())

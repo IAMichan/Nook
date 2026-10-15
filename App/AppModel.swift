@@ -65,7 +65,7 @@ final class AppModel: ObservableObject {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        return tools.specs + chatTools + connectors.tools + webSpecs
+        return tools.specs + chatTools + connectors.tools + webSpecs + BrowserStore.shared.tools
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
@@ -1938,9 +1938,8 @@ final class AppModel: ObservableObject {
         if !hasProgram { steps.append(kind.installCommand) }
         steps.append(profile.commandPrefix + kind.loginCommand)
         do {
-            try TerminalLauncher.run(command: steps.joined(separator: " && "),
-                                     in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-connect-\(profile.id)")
+            try runVisibly(steps.joined(separator: " && "), in: FileManager.default.homeDirectoryForCurrentUser.path,
+                           name: "nook-connect-\(profile.id)", title: tr("accounts.terminalTitle.login", kind.name))
         } catch {
             agentConnect[profile.id] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
             return
@@ -2154,6 +2153,14 @@ final class AppModel: ObservableObject {
     // MARK: Files
 
     /// Shelf file: reads extracted text locally and answers user questions about it.
+    /// Gives the chat a piece of text to ask about (an open web page), like dropping a file.
+    func attachText(name: String, text: String) {
+        attachment = (name, text, Date())
+        var message = ChatMessage(role: .nook, text: tr("chat.attached", name))
+        message.sources = [name]
+        chat.append(message)
+    }
+
     func askAbout(_ url: URL) {
         do {
             let text = try FileText.read(url)

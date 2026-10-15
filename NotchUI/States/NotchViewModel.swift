@@ -47,6 +47,19 @@ final class NotchViewModel: ObservableObject {
     func show(_ new: NotchState) {
         doneTask?.cancel()
         var target = new
+        // The notch has one Nook tab (home and chat in one), Agents, and Music while something plays. Older routes
+        // still work: home and shelf land on Nook; connections are managed in Settings.
+        if case .panel(let tab) = new {
+            switch tab {
+            case .nook, .shelf:
+                target = .panel(.chat)
+            case .connect:
+                app?.openSettings(section: .connections)
+                target = .panel(.chat)
+            default:
+                break
+            }
+        }
         if case .idle = new {
             if !pending.isEmpty {
                 target = .card(pending.removeFirst())
