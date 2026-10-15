@@ -129,7 +129,7 @@ final class AgentHub: ObservableObject {
         do {
             try server.start()
         } catch {
-            NSLog("Nook hub: \(error.localizedDescription)")
+            Log.agents.error("Hook socket: \(error.localizedDescription, privacy: .public)")
         }
         pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.prune() }

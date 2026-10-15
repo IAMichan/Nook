@@ -106,7 +106,6 @@ final class AppModel: ObservableObject {
     private var hotKeys: [HotKey] = []
     private var watchTimer: Timer?
     private var lastScreenHash: Int?
-    private var lastAutoRun = Date.distantPast
     private var autoBusy = false
     /// Prompt was spoken: enables spoken voice response.
     private var spokenRequest = false
@@ -1079,7 +1078,6 @@ final class AppModel: ObservableObject {
         var sources: [String] = []
         if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
-        lastSources = sources
         // Allow opening URLs seen on screen or cited by user, plus verified search results.
         web.note(userText)
         if let snapshot { web.note(snapshot.text) }
@@ -1136,8 +1134,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var lastSources: [String] = []
-    private var streamedLines = 0
 
     /// Response streams in real-time. As text wraps to new lines, the card expands.
     private func showStreaming(_ text: String, sources: [String]) {
@@ -1482,7 +1478,6 @@ final class AppModel: ObservableObject {
         thinkAlong.didLook(bundleID: bundle, window: window, print: print)
 
         autoBusy = true
-        lastAutoRun = Date()
         let appName = frontApp?.localizedName ?? "deze app"
         Task {
             await thinkAlongRun(bundleID: bundle, appName: appName, window: window)
@@ -1800,40 +1795,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Whether Nook can continue this session's conversation itself (Claude Code with a known session id).
-    func canContinue(_ session: AgentSession) -> Bool {
-        AgentKind(agentName: session.name) == .claude && !session.sessionID.isEmpty
-            && !session.cwd.isEmpty && ClaudeCodeBrain.executable != nil
-    }
-
-    /// Sends a message to a session. Claude Code: continues the conversation in a new Terminal window; while the
-    /// original is still working it forks the conversation, so two processes never write to the same session.
-    /// Other agents: copies the text and brings their terminal forward.
-    func send(_ text: String, to session: AgentSession) {
-        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return }
-        guard canContinue(session), let program = ClaudeCodeBrain.executable else {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(message, forType: .string)
-            openTerminal(for: session)
-            return
-        }
-        guard FileManager.default.fileExists(atPath: session.cwd) else {
-            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
-            return
-        }
-        var arguments = ["--resume", session.sessionID]
-        if session.status == .running || session.status == .waiting { arguments.append("--fork-session") }
-        arguments.append(message)
-        let prefix = profile(for: session)?.commandPrefix ?? ""
-        let command = prefix + ([program] + arguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
-        do {
-            try TerminalLauncher.run(command: command, in: session.cwd, name: "nook-send-claude")
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
     // MARK: Agent Integration
 
     /// Checks whether primary account for this agent is fully set up: binary found, authenticated, hooks enabled.
@@ -1966,29 +1927,6 @@ final class AppModel: ObservableObject {
         profiles.setPreferred(profile)
     }
 
-    /// Launches agent with this profile in a new Terminal window within `folder`.
-    func startSession(_ profile: AgentProfile, in folder: String) {
-        do {
-            try TerminalLauncher.run(command: profile.launchCommand, in: folder, name: "nook-start-\(profile.id)")
-            viewModel.show(.idle)
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
-    /// Prompts for directory and starts a session with this profile.
-    func startSessionChoosingFolder(_ profile: AgentProfile) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Start hier"
-        panel.message = "In welke map start \(profile.kind.name)?"
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        startSession(profile, in: url.path)
-    }
-
     /// Recent directories worked in with this profile, sorted newest first.
     func recentFolders(_ profile: AgentProfile, limit: Int = 5) -> [String] {
         var seen = Set<String>()
@@ -1999,36 +1937,6 @@ final class AppModel: ObservableObject {
             if result.count == limit { break }
         }
         return result
-    }
-
-    /// Resumes a past session in a new Terminal window within its original directory.
-    func resume(_ session: PastSession) {
-        guard FileManager.default.fileExists(atPath: session.cwd) else {
-            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
-            return
-        }
-        do {
-            try TerminalLauncher.run(command: resumeCommand(for: session, absolute: true), in: session.cwd,
-                                     name: "nook-resume-\(session.agent.rawValue)")
-            viewModel.show(.idle)
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
-    /// Command string to resume session with original profile. `absolute` uses full path
-    /// when the binary path is known.
-    func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
-        var program = session.agent.command
-        if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
-        let prefix = profile(for: session)?.commandPrefix ?? ""
-        return prefix + ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
-    }
-
-    func copyResumeCommand(_ session: PastSession) {
-        let command = "cd \(TerminalLauncher.shellQuote(session.cwd)) && \(resumeCommand(for: session))"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(command, forType: .string)
     }
 
     // MARK: Quick Commands

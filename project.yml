@@ -91,6 +91,7 @@ targets:
       - path: Brain/CommandRisk.swift
       - path: Brain/NetworkGuard.swift
       - path: Core/NookError.swift
+      - path: Core/SafeStorage.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift

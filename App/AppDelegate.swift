@@ -44,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspaceItem?.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
+        // Demo scenes show made-up confirmations: only in development builds. Sample data stays in Settings › General.
+        #if DEBUG
         let demo = NSMenuItem(title: tr("menu.demoScenes"), action: nil, keyEquivalent: "")
         let demoMenu = NSMenu()
         for scene in DemoScene.allCases {
@@ -59,8 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let demoData = add(to: menu, title: tr("menu.demoData"), action: #selector(toggleDemo(_:)))
         demoItem = demoData
-
         menu.addItem(.separator())
+        #endif
 
         let hover = add(to: menu, title: tr("menu.hover"), action: #selector(toggleHover(_:)))
         hoverItem = hover

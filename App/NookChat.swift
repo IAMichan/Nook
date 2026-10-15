@@ -424,13 +424,12 @@ final class NookChat: ObservableObject {
             conversations: conversations.filter { !$0.isEmpty }.map { StoredConversation($0) }
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
-        try? data.write(to: Self.fileURL, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.fileURL.path)
+        try? SafeStorage.write(data, to: Self.fileURL)
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.fileURL),
-              let stored = try? JSONDecoder().decode(StoredChats.self, from: data) else { return }
+        // Conversation by conversation, and an unreadable file is kept aside: the next save must never wipe your history.
+        guard let stored = SafeStorage.load(StoredChats.self, from: Self.fileURL, skipped: { $0.skipped }).value else { return }
         conversations = stored.conversations.map { $0.restored() }.filter { !$0.isEmpty }
         activeID = stored.active.flatMap { id in conversations.contains { $0.id == id } ? id : nil }
             ?? history.first?.id
@@ -441,8 +440,35 @@ final class NookChat: ObservableObject {
 
 /// Persisted conversation representation. Pending actions are serialized as text lines rather than executable actions.
 private struct StoredChats: Codable {
+    /// Format version, written since version 2. Files without it are version 1 and read the same way.
+    var version: Int? = 2
     var active: UUID?
     var conversations: [StoredConversation]
+    /// Conversations in the file that could not be read (kept in the backup copy).
+    var skipped = 0
+
+    init(active: UUID?, conversations: [StoredConversation]) {
+        self.active = active
+        self.conversations = conversations
+    }
+
+    private enum CodingKeys: String, CodingKey { case version, active, conversations }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version)
+        active = try? container.decodeIfPresent(UUID.self, forKey: .active)
+        let list = try container.decode(LossyArray<StoredConversation>.self, forKey: .conversations)
+        conversations = list.elements
+        skipped = list.skipped
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(2, forKey: .version)
+        try container.encodeIfPresent(active, forKey: .active)
+        try container.encode(conversations, forKey: .conversations)
+    }
 }
 
 private struct StoredConversation: Codable {

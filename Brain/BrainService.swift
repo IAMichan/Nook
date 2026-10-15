@@ -50,7 +50,7 @@ final class BrainService {
         let started = CFAbsoluteTimeGetCurrent()
         defer {
             let seconds = CFAbsoluteTimeGetCurrent() - started
-            print(String(format: "[Nook] brain %@ (%@): %.1f s", settings.useLocal ? "local" : settings.provider.rawValue, settings.activeModelName, seconds))
+            Log.brain.info("brain \(self.settings.useLocal ? "local" : self.settings.provider.rawValue, privacy: .public) (\(self.settings.activeModelName, privacy: .public)): \(seconds, format: .fixed(precision: 1)) s")
         }
         // A local model only receives tools when the request calls for them (shorter prompt is much faster locally).
         // A cloud model always receives tools, enabling Nook to handle anything in chat.
