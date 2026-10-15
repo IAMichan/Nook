@@ -47,6 +47,8 @@ struct ConnectorStatus: Equatable {
     var updated: Date?
     /// Something requires attention (failing CI, requested review): shows amber badge in tab.
     var needsAttention: Bool = false
+    /// Why the last refresh failed (only meaningful while `state` is `.error`).
+    var errorKind: ConnectorErrorKind?
 }
 
 /// A source supplying context to Nook: calendar, mail, GitHub, Stripe, etc.
@@ -124,10 +126,10 @@ enum ConnectorHTTP {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             switch status {
-            case 401, 403: throw NookError("The credentials were rejected (\(status)). Check them in Settings › Integrations.")
-            case 404: throw NookError("Not found (404). Is the URL correct?")
-            case 429: throw NookError("Too many requests. Nook will retry shortly.")
-            default: throw NookError("The service returned an error (\(status)).")
+            case 401, 403: throw NookError("The credentials were rejected (\(status)). Check them in Settings › Integrations.", kind: .auth)
+            case 404: throw NookError("Not found (404). Is the URL correct?", kind: .config)
+            case 429: throw NookError("Too many requests. Nook will retry shortly.", kind: .rateLimited)
+            default: throw NookError("The service returned an error (\(status)).", kind: .other)
             }
         }
         return try JSONSerialization.jsonObject(with: data)

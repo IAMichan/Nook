@@ -69,24 +69,26 @@ enum LocalAgentScanner {
                 else if line.hasPrefix("n"), let pid = current { folders[pid] = String(line.dropFirst()) }
             }
         }
-        let homes = accountHomes(pids)
-        return found.map { DetectedAgent(pid: $0.pid, name: $0.name, cwd: folders[$0.pid] ?? "", home: homes[$0.pid] ?? "") }
+        // The environment of each process: which account it runs under, and whether Nook started it itself.
+        let environments = environmentLines(pids)
+        return found.compactMap { item in
+            let line = environments[item.pid] ?? ""
+            guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
+            let home = AgentProcessEnvironment.value(of: "CLAUDE_CONFIG_DIR", in: line)
+                ?? AgentProcessEnvironment.value(of: "CODEX_HOME", in: line) ?? ""
+            return DetectedAgent(pid: item.pid, name: item.name, cwd: folders[item.pid] ?? "", home: home)
+        }
     }
 
-    /// Reads CLAUDE_CONFIG_DIR and CODEX_HOME from process environment (`ps -E`).
-    /// If unavailable, remains empty and session belongs to primary account.
-    private static func accountHomes(_ pids: String) -> [Int32: String] {
+    /// The command line and environment of each process (`ps -E`), by pid. Empty if unavailable: then every session
+    /// belongs to the primary account and none is recognised as Nook's own.
+    private static func environmentLines(_ pids: String) -> [Int32: String] {
         guard let out = run("/bin/ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) else { return [:] }
         var result: [Int32: String] = [:]
         for line in out.split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
             guard fields.count == 2, let pid = Int32(fields[0]) else { continue }
-            for token in fields[1].split(separator: " ") {
-                for variable in ["CLAUDE_CONFIG_DIR=", "CODEX_HOME="] where token.hasPrefix(variable) {
-                    let value = String(token.dropFirst(variable.count))
-                    if !value.isEmpty { result[pid] = value }
-                }
-            }
+            result[pid] = String(fields[1])
         }
         return result
     }

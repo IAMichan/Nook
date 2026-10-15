@@ -74,14 +74,22 @@ struct CodexUsageSnapshot: Equatable {
 /// falling back to the latest session log under ~/.codex/sessions. No-op if ~/.codex does not exist.
 @MainActor
 final class CodexUsage: ObservableObject {
-    @Published private(set) var snapshot: CodexUsageSnapshot?
+    /// Latest limits per Codex account, by the account's home directory (`CODEX_HOME`).
+    @Published private(set) var snapshots: [String: CodexUsageSnapshot] = [:]
+
+    /// The account directories to read, set by the app from its Codex accounts. Without it, only the default one is read.
+    var homes: () -> [URL] = { [CodexUsage.codexHome] }
+
+    private struct HomeState {
+        /// Last modified timestamp of newest session log; changes indicate Codex activity.
+        var lastSessionDate: Date?
+        var lastAppServerFetch: Date?
+        var busy = false
+    }
 
     private var timer: Timer?
     private let queue = DispatchQueue(label: "nl.imdigital.nook.codexusage", qos: .utility)
-    private var busy = false
-    /// Last modified timestamp of newest session log; changes indicate Codex activity.
-    private var lastSessionDate: Date?
-    private var lastAppServerFetch: Date?
+    private var states: [String: HomeState] = [:]
 
     /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
     private nonisolated static let appServerInterval: TimeInterval = 10 * 60
@@ -99,6 +107,14 @@ final class CodexUsage: ObservableObject {
         timer = nil
     }
 
+    /// The limits of the default account (the one in `~/.codex`, or `CODEX_HOME` of Nook's own environment).
+    var snapshot: CodexUsageSnapshot? { snapshots[Self.codexHome.path] }
+
+    /// The limits of one account directory; the default account when `home` is nil.
+    func snapshot(home: URL?) -> CodexUsageSnapshot? {
+        snapshots[(home ?? Self.codexHome).path]
+    }
+
     /// Single summary line for Nook context, e.g. "Codex limit: 5h 42% · week 18%".
     var contextLine: String? {
         guard let snapshot, Date().timeIntervalSince(snapshot.updatedAt) < 12 * 3600 else { return nil }
@@ -110,17 +126,28 @@ final class CodexUsage: ObservableObject {
     }
 
     private func refresh() {
-        guard !busy else { return }
-        let home = Self.codexHome
-        // No Codex on this Mac: check presence once per minute, nothing else.
+        var wanted: [URL] = []
+        var seen = Set<String>()
+        for home in homes() + [Self.codexHome] where seen.insert(home.path).inserted { wanted.append(home) }
+        // Accounts that are gone no longer show limits.
+        for key in snapshots.keys where !seen.contains(key) { snapshots[key] = nil }
+        for home in wanted { refresh(home) }
+    }
+
+    private func refresh(_ home: URL) {
+        let key = home.path
+        var state = states[key] ?? HomeState()
+        guard !state.busy else { return }
+        // No Codex for this account: check presence once per minute, nothing else.
         guard FileManager.default.fileExists(atPath: home.path) else {
-            if snapshot != nil { snapshot = nil }
+            if snapshots[key] != nil { snapshots[key] = nil }
             return
         }
-        busy = true
-        let previousSessionDate = lastSessionDate
-        let lastFetch = lastAppServerFetch
-        let hasSnapshot = snapshot != nil
+        state.busy = true
+        states[key] = state
+        let previousSessionDate = state.lastSessionDate
+        let lastFetch = state.lastAppServerFetch
+        let hasSnapshot = snapshots[key] != nil
         queue.async { [weak self] in
             let result = CodexUsage.work(
                 home: home,
@@ -130,10 +157,12 @@ final class CodexUsage: ObservableObject {
             )
             Task { @MainActor in
                 guard let self else { return }
-                self.busy = false
-                self.lastSessionDate = result.newestSessionDate ?? self.lastSessionDate
-                if result.askedAppServer { self.lastAppServerFetch = Date() }
-                if let fresh = result.snapshot, fresh != self.snapshot { self.snapshot = fresh }
+                var state = self.states[key] ?? HomeState()
+                state.busy = false
+                state.lastSessionDate = result.newestSessionDate ?? state.lastSessionDate
+                if result.askedAppServer { state.lastAppServerFetch = Date() }
+                self.states[key] = state
+                if let fresh = result.snapshot, fresh != self.snapshots[key] { self.snapshots[key] = fresh }
             }
         }
     }
@@ -168,7 +197,7 @@ final class CodexUsage: ObservableObject {
             let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval } ?? true
             if !hasSnapshot || sessionChanged || due {
                 result.askedAppServer = true
-                if let usage = readRateLimits(codex: codex) {
+                if let usage = readRateLimits(codex: codex, home: home) {
                     result.snapshot = usage
                     return result
                 }
@@ -210,7 +239,7 @@ final class CodexUsage: ObservableObject {
     }
 
     /// Starts `codex app-server`, requests `account/rateLimits/read`, and stops the process. `nil` if Codex is not signed in.
-    private nonisolated static func readRateLimits(codex: String) -> CodexUsageSnapshot? {
+    private nonisolated static func readRateLimits(codex: String, home: URL) -> CodexUsageSnapshot? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: codex)
         process.arguments = ["app-server"]
@@ -219,6 +248,8 @@ final class CodexUsage: ObservableObject {
             URL(fileURLWithPath: codex).deletingLastPathComponent().path,
             "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", env["PATH"] ?? "",
         ].joined(separator: ":")
+        // Each account has its own directory, and so its own limits.
+        env["CODEX_HOME"] = home.path
         process.environment = env
         let input = Pipe()
         let output = Pipe()

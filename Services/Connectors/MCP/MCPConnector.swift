@@ -127,6 +127,7 @@ final class MCPConnector: ContextSource, ObservableObject {
         } catch {
             disconnect()
             status.state = .error(error.localizedDescription)
+            status.errorKind = ConnectorErrorKind.classify(error)
         }
     }
 

@@ -102,6 +102,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                             .lineLimit(2)
                     }
                     Spacer()
+                    recoveryButton
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { expanded.toggle() } }
@@ -117,6 +118,23 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             guard connector.id == "github", phase == .done else { return }
             load()
             refreshNow()
+        }
+    }
+
+    // MARK: - Recovery
+
+    /// What fixes the last failure: rejected credentials open the key fields, a network problem just retries.
+    @ViewBuilder
+    private var recoveryButton: some View {
+        if configured, isOn, case .error = connector.status.state {
+            let kind = connector.status.errorKind ?? .other
+            if kind.needsReconnect {
+                Button(tr("connector.reconnect")) { withAnimation { expanded = true } }
+                    .controlSize(.small)
+            } else {
+                Button(tr("connector.retry")) { refreshNow() }
+                    .controlSize(.small)
+            }
         }
     }
 
@@ -206,9 +224,9 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             let headline = connector.status.headline
             let base = headline.isEmpty ? tr("connect.status.connected") : headline
             // When it was last successful, providing a health indicator for the connection.
-            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? "")
+            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? "")
         case .error(let message):
-            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.relative($0)) } ?? "")
+            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.ago($0)) } ?? "")
         }
     }
 
