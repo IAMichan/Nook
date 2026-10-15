@@ -28,28 +28,26 @@ struct WorkspaceView: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var pane: WorkspacePane = .sessions
     @State private var showInspector = true
-    /// Whether the inspector may be shown right now. It is switched off before the sidebar collapses and back on after the
-    /// sidebar is back, so the window never has to change two columns in one layout pass (that loops).
-    @State private var inspectorAllowed = true
     @State private var showNewSession = false
-    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
-            WorkspaceSidebar(pane: $pane, showNewSession: $showNewSession)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
-        } detail: {
+        // Plain stacks instead of NavigationSplitView + .inspector: the split view's child controllers kept reporting a new
+        // min/max size to each other on every constraints pass, which aborts with "needing another Update Constraints in
+        // Window pass" when switching pane or opening a sheet.
+        HStack(spacing: 0) {
+            if pane == .sessions {
+                WorkspaceSidebar(pane: $pane, showNewSession: $showNewSession)
+                    .frame(width: 290)
+                Divider()
+            }
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(WS.background)
-                .inspector(isPresented: inspectorBinding) {
-                    if let run = workspace.run(workspace.selectedRunID) {
-                        RunInspector(runID: run.id)
-                            .inspectorColumnWidth(min: 260, ideal: 320, max: 480)
-                    } else {
-                        Color.clear.inspectorColumnWidth(min: 260, ideal: 320, max: 480)
-                    }
-                }
+            if showInspector, pane == .sessions, let run = workspace.run(workspace.selectedRunID) {
+                Divider()
+                RunInspector(runID: run.id)
+                    .frame(width: 320)
+            }
         }
         .toolbar { toolbar }
         // Presented as a native AppKit sheet: SwiftUI's own `.sheet` re-negotiates its presentation window on every layout
@@ -86,37 +84,11 @@ struct WorkspaceView: View {
             if workspace.selectedRunID == nil {
                 workspace.selectedRunID = workspace.runs.first { !$0.archived }?.id
             }
-            columns = pane == .sessions ? .all : .detailOnly
         }
         .onChange(of: workspace.selectedRunID) { _, id in
             if id != nil && pane != .sessions && pane != .chat { pane = .sessions }
             if id != nil { app.selectedExternalSession = nil }
         }
-        // The session list belongs to Agents; Chat has its own list of Nooks, Workspace its own tabs.
-        .onChange(of: pane) { _, new in
-            Task { @MainActor in
-                if new == .sessions {
-                    columns = .all
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    inspectorAllowed = pane == .sessions
-                } else {
-                    inspectorAllowed = false
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    if pane == new { columns = .detailOnly }
-                }
-            }
-        }
-    }
-
-    /// Inspector accompanies session view; remains closed for Worktrees and Usage tabs.
-    private var inspectorBinding: Binding<Bool> {
-        Binding(
-            get: { showInspector && inspectorAllowed && pane == .sessions && workspace.selectedRunID != nil },
-            set: { newValue in
-                // SwiftUI writes false while the inspector is unavailable; don't let that overwrite the user's choice.
-                if pane == .sessions && workspace.selectedRunID != nil { showInspector = newValue }
-            }
-        )
     }
 
     @ViewBuilder
