@@ -128,7 +128,9 @@ struct BrowserView: View {
                     .disabled(!store.canGoBack)
                 Button { store.webView.goForward() } label: { Image(systemName: "chevron.right") }
                     .disabled(!store.canGoForward)
-                Button { store.loading ? store.webView.stopLoading() : store.webView.reload() } label: {
+                Button {
+                    if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
+                } label: {
                     Image(systemName: store.loading ? "xmark" : "arrow.clockwise")
                 }
                 TextField(tr("workbench.browser.address"), text: $store.address)
