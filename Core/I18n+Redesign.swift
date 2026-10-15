@@ -6,6 +6,13 @@ import Foundation
 let redesignTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         // Everything in the notch
+        "compose.heading": "Wat zullen we bouwen in ",
+        "compose.pickProject": "welke map",
+        "compose.prompt": "Beschrijf wat de agent moet doen. Return start de sessie.",
+        "compose.readOnly": "Alleen lezen",
+        "compose.currentCheckout": "Huidige map",
+        "compose.newWorktree": "Nieuwe worktree",
+        "compose.from": "Vanaf %@",
         "connector.link": "Koppel",
         "settings.connections.connected": "Gekoppeld",
         "settings.connections.addService": "Koppel een dienst",
@@ -133,6 +140,13 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         // Everything in the notch
+        "compose.heading": "What should we build in ",
+        "compose.pickProject": "which folder",
+        "compose.prompt": "Describe what the agent should do. Return starts the session.",
+        "compose.readOnly": "Read only",
+        "compose.currentCheckout": "Current checkout",
+        "compose.newWorktree": "New worktree",
+        "compose.from": "From %@",
         "connector.link": "Connect",
         "settings.connections.connected": "Connected",
         "settings.connections.addService": "Connect a service",
@@ -256,6 +270,13 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         // Everything in the notch
+        "compose.heading": "Was bauen wir in ",
+        "compose.pickProject": "welchem Ordner",
+        "compose.prompt": "Beschreibe, was der Agent tun soll. Return startet die Sitzung.",
+        "compose.readOnly": "Nur lesen",
+        "compose.currentCheckout": "Aktueller Checkout",
+        "compose.newWorktree": "Neuer Worktree",
+        "compose.from": "Von %@",
         "connector.link": "Verbinden",
         "settings.connections.connected": "Verbunden",
         "settings.connections.addService": "Dienst verbinden",

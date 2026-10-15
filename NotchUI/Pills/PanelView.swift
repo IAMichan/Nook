@@ -156,7 +156,6 @@ private struct NotchSheetView: View {
 
     private var subtitle: String? {
         switch sheet {
-        case .newSession: return nil
         case .details(let id), .changes(let id, _), .commit(let id), .pullRequest(let id):
             return app.workspace.run(id)?.title
         }
@@ -166,10 +165,6 @@ private struct NotchSheetView: View {
     private var content: some View {
         let close = { viewModel.sheet = nil }
         switch sheet {
-        case .newSession:
-            NewSessionSheet(onStarted: { id in
-                viewModel.selectedAgentID = "run:" + id.uuidString
-            }, close: close, embedded: true)
         case .details(let id):
             RunInspector(runID: id, embedded: true)
         case .changes(let id, let file):
