@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Contacts
 
 /// A single capability of Nook. Read tools execute immediately during reasoning; action tools are presented to you as a plan first.
 struct ToolSpec {
@@ -335,6 +336,107 @@ final class NookTools {
                     guard let name = input["name"] as? String else { throw NookError("Shortcut name is missing.") }
                     _ = try await Task.detached { try SystemControl.runShortcut(name) }.value
                     return "Shortcut \(name) executed"
+                }
+            ),
+            ToolSpec(
+                name: "list_running_apps",
+                description: "Geeft een overzicht van alle apps die momenteel draaien op de Mac van de gebruiker, inclusief welke app nu voorop staat. Gebruik dit voor vragen als 'welke apps staan er open', 'wat draait er nu', of om te bepalen welke app de gebruiker gebruikt.",
+                schema: object([:], required: []),
+                kind: .read,
+                summarize: { _ in "Geopende apps bekijken" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                    let apps = ScreenReader.openApps()
+                    if apps.isEmpty { return "Geen geopende Dock-apps gevonden." }
+                    let lines = apps.map { app -> String in
+                        let name = app.localizedName ?? "Onbekende app"
+                        let isFront = app.processIdentifier == frontPID ? " (actief venster)" : ""
+                        let bundle = app.bundleIdentifier.map { " [\($0)]" } ?? ""
+                        return "- \(name)\(isFront)\(bundle)"
+                    }
+                    return "Geopende applicaties op deze Mac:\n" + lines.joined(separator: "\n")
+                }
+            ),
+            ToolSpec(
+                name: "get_active_app",
+                description: "Geeft de app en het venster dat de gebruiker op dit moment voor zich heeft.",
+                schema: object([:], required: []),
+                kind: .read,
+                summarize: { _ in "Actieve app bekijken" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    guard let front = NSWorkspace.shared.frontmostApplication else { return "Geen actieve app gevonden." }
+                    let name = front.localizedName ?? "Onbekend"
+                    let bundle = front.bundleIdentifier ?? ""
+                    return "Voorste app: \(name) (\(bundle))"
+                }
+            ),
+            ToolSpec(
+                name: "read_clipboard",
+                description: "Leest de huidige tekst die de gebruiker op het klembord heeft gekopieerd. Slaat wachtwoorden en verborgen klembordinhoud over.",
+                schema: object([:], required: []),
+                kind: .read,
+                summarize: { _ in "Klembord lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    let board = NSPasteboard.general
+                    let types = board.types ?? []
+                    let secret = types.contains { ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"].contains($0.rawValue) }
+                    guard !secret, let text = board.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        return "Het klembord is leeg of bevat geen leesbare tekst."
+                    }
+                    let truncated = String(text.prefix(4000))
+                    return "Inhoud klembord:\n\(truncated)" + (text.count > 4000 ? "\n… (ingekort)" : "")
+                }
+            ),
+            ToolSpec(
+                name: "search_contacts",
+                description: "Zoekt in het adresboek / de Contacten van de gebruiker op naam, bedrijf of email, en geeft telefoonnummers en emailadressen terug. Gebruik dit voor vragen als 'wat is het nummer van Lisa', 'zoek contactgegevens van...'.",
+                schema: object(["query": string("Naam, bedrijf of zoekterm van het contact.")], required: ["query"]),
+                kind: .read,
+                summarize: { input in "Contact zoeken: \((input["query"] as? String) ?? "")" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    guard let query = (input["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else {
+                        throw NookError("Zoekterm ontbreekt.")
+                    }
+                    let store = CNContactStore()
+                    let auth = CNContactStore.authorizationStatus(for: .contacts)
+                    if auth == .notDetermined {
+                        _ = try? await store.requestAccess(for: .contacts)
+                    }
+                    guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+                        throw NookError("Nook heeft geen toegang tot Contacten. Geef toegang in Systeeminstellingen › Privacy en beveiliging › Contacten.")
+                    }
+                    let keys: [CNKeyDescriptor] = [
+                        CNContactGivenNameKey as CNKeyDescriptor,
+                        CNContactFamilyNameKey as CNKeyDescriptor,
+                        CNContactOrganizationNameKey as CNKeyDescriptor,
+                        CNContactPhoneNumbersKey as CNKeyDescriptor,
+                        CNContactEmailAddressesKey as CNKeyDescriptor,
+                        CNContactJobTitleKey as CNKeyDescriptor
+                    ]
+                    let predicate = CNContact.predicateForContacts(matchingName: query)
+                    guard let contacts = try? store.unifiedContacts(matching: predicate, keysToFetch: keys), !contacts.isEmpty else {
+                        return "Geen contacten gevonden voor \"\(query)\"."
+                    }
+                    var lines: [String] = []
+                    var refs: [String] = []
+                    for contact in contacts.prefix(10) {
+                        let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+                        var parts: [String] = []
+                        if !contact.organizationName.isEmpty { parts.append(contact.organizationName) }
+                        if !contact.jobTitle.isEmpty { parts.append(contact.jobTitle) }
+                        let phones = contact.phoneNumbers.map { "\($0.label ?? "tel"): \($0.value.stringValue)" }
+                        let emails = contact.emailAddresses.map { String($0.value) }
+                        var details = parts.joined(separator: ", ")
+                        if !phones.isEmpty { details += (details.isEmpty ? "" : " | ") + phones.joined(separator: ", ") }
+                        if !emails.isEmpty { details += (details.isEmpty ? "" : " | ") + emails.joined(separator: ", ") }
+                        lines.append("- **\(name)**" + (details.isEmpty ? "" : ": \(details)"))
+                        refs.append(ReferenceParser.line(title: name, url: nil, detail: details))
+                    }
+                    return (lines + refs).joined(separator: "\n")
                 }
             )
         ]

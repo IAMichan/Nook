@@ -114,75 +114,227 @@ final class ScreenReader {
     /// - If the app is closed, Nook launches it hidden (no window, not frontmost), reads it and quits it again.
     /// - Nothing is ever shown, activated or unhidden. Only without Accessibility permission does Nook fall back to
     ///   screen text, and then only from windows that are already visible.
+    static let appAliases: [String: String] = [
+        "notities": "Notes",
+        "notes": "Notes",
+        "agenda": "Calendar",
+        "calendar": "Calendar",
+        "herinneringen": "Reminders",
+        "reminders": "Reminders",
+        "berichten": "Messages",
+        "messages": "Messages",
+        "muziek": "Music",
+        "music": "Music",
+        "teksteditor": "TextEdit",
+        "textedit": "TextEdit",
+        "instellingen": "System Settings",
+        "systeeminstellingen": "System Settings",
+        "terminal": "Terminal",
+        "finder": "Finder"
+    ]
+
+    /// Specialized extractors for standard scriptable macOS applications.
+    static func readScriptableApp(_ query: String) async -> [(title: String, text: String)]? {
+        let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Notes / Notities
+        if q == "notes" || q == "notities" || q.contains("notitie") || q.contains("note") {
+            let script = """
+            tell application "Notes"
+                set total to count of notes
+                set n to total
+                if n > 6 then set n to 6
+                set out to ""
+                repeat with i from 1 to n
+                    set notitem to note i
+                    set nname to name of notitem
+                    set ndate to ((modification date of notitem) as «class isot» as string)
+                    set nfolder to ""
+                    try
+                        set nfolder to name of container of notitem
+                    end try
+                    set nbody to ""
+                    try
+                        set nbody to plaintext of notitem
+                    end try
+                    if (length of nbody) > 800 then set nbody to text 1 thru 800 of nbody
+                    set folderStr to ""
+                    if nfolder is not "" then set folderStr to " [" & nfolder & "]"
+                    set out to out & "### " & nname & folderStr & " (" & (text 1 thru 10 of ndate) & ")" & linefeed & nbody & linefeed & linefeed
+                end repeat
+                return out
+            end tell
+            """
+            let res = await ScriptText.run(script, timeout: 3.5)
+            if let text = res.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return [("Apple Notities", text)]
+            }
+        }
+
+        // Browsers: Safari, Google Chrome, Microsoft Edge, Arc
+        if q == "safari" || q == "chrome" || q == "google chrome" || q == "edge" || q == "microsoft edge" || q == "arc" || q == "browser" {
+            let appName = q.contains("safari") ? "Safari" : (q.contains("chrome") ? "Google Chrome" : (q.contains("edge") ? "Microsoft Edge" : "Arc"))
+            let jsScript = appName == "Safari"
+                ? "tell application \"Safari\" to if (count of documents) > 0 then return (name of front document) & \"|||\" & (URL of front document) & linefeed & (text of front document) end if"
+                : "tell application \"\(appName)\" to if (count of windows) > 0 then set t to active tab of front window; return (title of t) & \"|||\" & (URL of t) & linefeed & (execute front window's active tab javascript \"document.body.innerText\") end if"
+            let res = await ScriptText.run(jsScript, timeout: 3.5)
+            if let text = res.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                let header = String(lines.first ?? "").components(separatedBy: "|||")
+                let body = lines.count > 1 ? String(lines[1]) : ""
+                let title = header.first ?? "Webpagina"
+                let url = header.count > 1 ? header[1] : ""
+                let content = "URL: \(url)\n\n" + String(body.prefix(8000))
+                return [(title, content)]
+            }
+        }
+
+        // Terminal / iTerm
+        if q == "terminal" {
+            let script = """
+            tell application "Terminal"
+                if (count of windows) > 0 then
+                    return contents of selected tab of front window
+                end if
+            end tell
+            """
+            let res = await ScriptText.run(script, timeout: 2.5)
+            if let text = res.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return [("Terminal venster", String(text.suffix(4000)))]
+            }
+        }
+
+        // Finder
+        if q == "finder" {
+            let script = """
+            tell application "Finder"
+                set out to ""
+                try
+                    set sel to selection as alias list
+                    if (count of sel) > 0 then
+                        set out to "Geselecteerd in Finder:" & linefeed
+                        repeat with f in sel
+                            set out to out & "- " & (POSIX path of f) & linefeed
+                        end repeat
+                    end if
+                end try
+                try
+                    set targetFolder to (target of front window) as alias
+                    set out to out & "Huidige map in Finder: " & (POSIX path of targetFolder) & linefeed
+                end try
+                return out
+            end tell
+            """
+            let res = await ScriptText.run(script, timeout: 2.5)
+            if let text = res.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return [("Finder", text)]
+            }
+        }
+
+        // Spotify / Music
+        if q == "spotify" || q == "muziek" || q == "music" {
+            let targetApp = q == "spotify" ? "Spotify" : "Music"
+            let script = """
+            tell application "\(targetApp)"
+                if player state is playing then
+                    return (name of current track) & "|||" & (artist of current track) & "|||" & (album of current track)
+                else
+                    return "PAUSED"
+                end if
+            end tell
+            """
+            let res = await ScriptText.run(script, timeout: 2.0)
+            if let text = res.text, text != "PAUSED", !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let parts = text.components(separatedBy: "|||")
+                if parts.count >= 2 {
+                    return [("Spelend in \(targetApp)", "Nummer: \(parts[0])\nArtiest: \(parts[1])" + (parts.count > 2 ? "\nAlbum: \(parts[2])" : ""))]
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// Reads one app: first checks specialized native AppleScript, then accessibility tree, then window OCR.
     func captureApp(_ query: String, totalLimit: Int = 8000) async throws -> ScreenSnapshot {
-        let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !wanted.isEmpty else { throw NookError("Which app?") }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw NookError("Welke app wil je lezen?") }
+        let canonicalName = Self.appAliases[trimmed.lowercased()] ?? trimmed
+        let wanted = canonicalName.lowercased()
+
+        // 1. Direct specialized native script reading (Notes, Safari, Chrome, Edge, Terminal, Finder, Music)
+        if let scriptSections = await Self.readScriptableApp(wanted), !scriptSections.isEmpty {
+            return Self.snapshot(canonicalName, scriptSections, note: nil)
+        }
+
         let apps = Self.openApps()
         let exact = apps.filter { ($0.localizedName ?? "").lowercased() == wanted }
         let loose = apps.filter {
             ($0.localizedName ?? "").lowercased().contains(wanted) || ($0.bundleIdentifier ?? "").lowercased().contains(wanted)
+                || wanted.contains(($0.localizedName ?? "").lowercased())
         }
         var app = exact.first ?? loose.first
         let canRead = AppTextReader.hasPermission
 
+        // 2. Closed app handling
         if app == nil {
-            guard let url = Self.installedApp(named: query) else {
-                throw NookError("I can't find an app called \(query) on this Mac.")
+            guard let url = Self.installedApp(named: canonicalName) else {
+                throw NookError("Ik kan geen app genaamd \"\(query)\" vinden op deze Mac.")
             }
             if let bundle = Bundle(url: url)?.bundleIdentifier, Self.excludedBundles.contains(bundle) {
                 throw ScreenError.excluded(FileManager.default.displayName(atPath: url.path))
             }
-            guard canRead else {
-                AppTextReader.requestPermission()
-                throw NookError("To read closed apps in the background, Nook needs Accessibility permission: System Settings › Privacy & Security › Accessibility. Turn Nook on there and ask again.")
+
+            // Closed app: check if scriptable reading can wake it
+            if let scriptSections = await Self.readScriptableApp(wanted), !scriptSections.isEmpty {
+                return Self.snapshot(canonicalName, scriptSections, note: nil)
             }
-            app = try await Self.launchHidden(url)
-            guard let app else { throw NookError("\(query) would not start in the background.") }
-            defer { app.terminate() }
-            let name = app.localizedName ?? query
-            let sections = await Self.readHidden(app, launched: true, limit: totalLimit)
-            guard !sections.isEmpty else {
-                throw NookError("\(name) shows nothing to read after launching (it opens without a window).")
-            }
-            return Self.snapshot(name, sections, note: "(\(name) was closed; Nook read it in the background and quit it again.)")
+
+            // Report clearly that app is installed but closed
+            let appTitle = FileManager.default.displayName(atPath: url.path)
+            throw NookError("\(appTitle) staat geïnstalleerd op je Mac maar is momenteel niet geopend. Vraag Nook 'open \(appTitle)' om de app te starten, waarna Nook de inhoud kan inzien.")
         }
 
-        guard let app else { throw NookError("I can't find \(query).") }
-        let name = app.localizedName ?? query
+        guard let app else { throw NookError("Kan app \"\(query)\" niet vinden.") }
+        let name = app.localizedName ?? canonicalName
+
+        // 3. Accessibility reading (fast & non-intrusive)
         if canRead {
             let sections = await Self.readHidden(app, launched: false, limit: totalLimit)
             if !sections.isEmpty { return Self.snapshot(name, sections, note: nil) }
         }
 
-        // No accessibility or nothing found: only what is already visible on screen, without moving anything.
-        guard CGPreflightScreenCaptureAccess() else {
-            if !canRead { AppTextReader.requestPermission() }
-            throw ScreenError.noPermission
+        // 4. Window OCR via ScreenCaptureKit (reads visible windows without activating)
+        if CGPreflightScreenCaptureAccess() {
+            let windows = await Self.windows(of: app)
+            if !windows.isEmpty {
+                var sections: [(title: String, text: String)] = []
+                var remaining = totalLimit
+                for window in windows.prefix(3) where remaining > 200 {
+                    let configuration = SCStreamConfiguration()
+                    configuration.width = min(Int(window.frame.width * 1.5), 2400)
+                    configuration.height = min(Int(window.frame.height * 1.5), 2400)
+                    let filter = SCContentFilter(desktopIndependentWindow: window)
+                    guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
+                          let text = try? await Self.recognize(image, fast: false) else { continue }
+                    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !cleanText.isEmpty else { continue }
+                    let chunk = String(cleanText.prefix(remaining))
+                    remaining -= chunk.count
+                    sections.append((window.title ?? "", chunk))
+                }
+                if !sections.isEmpty {
+                    return Self.snapshot(name, sections, note: nil)
+                }
+            }
         }
-        let windows = await Self.windows(of: app)
-        guard !windows.isEmpty else {
-            if !canRead { AppTextReader.requestPermission() }
-            throw NookError(canRead
-                ? "\(name) has no window with content right now."
-                : "\(name) is not on screen. Give Nook Accessibility permission (System Settings › Privacy & Security › Accessibility) and it reads apps in the background.")
+
+        if !canRead {
+            AppTextReader.requestPermission()
+            throw NookError("\(name) is geopend, maar Nook heeft Toegankelijkheid-toestemming nodig om de tekst uit de vensters te lezen: Systeeminstellingen › Privacy en beveiliging › Toegankelijkheid.")
         }
-        var sections: [(title: String, text: String)] = []
-        var remaining = totalLimit
-        for window in windows.prefix(3) where remaining > 200 {
-            let configuration = SCStreamConfiguration()
-            configuration.width = min(Int(window.frame.width * 1.5), 2400)
-            configuration.height = min(Int(window.frame.height * 1.5), 2400)
-            let filter = SCContentFilter(desktopIndependentWindow: window)
-            guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
-                  let text = try? await Self.recognize(image, fast: false) else { continue }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            let chunk = String(trimmed.prefix(remaining))
-            remaining -= chunk.count
-            sections.append((window.title ?? "", chunk))
-        }
-        guard !sections.isEmpty else { throw ScreenError.nothing }
-        return Self.snapshot(name, sections, note: nil)
+
+        throw NookError("\(name) heeft op dit moment geen leesbare tekst of vensterinhoud.")
     }
 
     /// Launches an app hidden and without activating it, and waits until it runs.

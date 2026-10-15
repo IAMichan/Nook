@@ -32,7 +32,11 @@ struct NookInputBar: View {
         .padding(.vertical, 6)
         .frame(minHeight: 42)
         .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 21, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 21, style: .continuous)
+                .stroke((focus?.wrappedValue ?? false) ? NookTheme.iris.opacity(0.65) : NookTheme.line2, lineWidth: (focus?.wrappedValue ?? false) ? 1.5 : 1)
+        )
+        .animation(.easeInOut(duration: 0.18), value: focus?.wrappedValue ?? false)
     }
 
     @ViewBuilder

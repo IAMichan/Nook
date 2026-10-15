@@ -91,6 +91,23 @@ final class CalendarService {
         return await Self.fetch(store, predicate)
     }
 
+    /// All reminders, optionally including completed ones.
+    func allReminders(includeCompleted: Bool = false) async -> [ReminderItem] {
+        guard hasReminderAccess else { return [] }
+        let predicate = includeCompleted
+            ? store.predicateForReminders(in: nil)
+            : store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
+        return await Self.fetch(store, predicate)
+    }
+
+    /// Searches reminders by query (title or list name).
+    func searchReminders(query: String) async -> [ReminderItem] {
+        let items = await allReminders(includeCompleted: false)
+        let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return items }
+        return items.filter { $0.title.lowercased().contains(q) || $0.list.lowercased().contains(q) }
+    }
+
     /// Nonisolated helper: EventKit invokes the callback on its own thread.
     private nonisolated static func fetch(_ store: EKEventStore, _ predicate: NSPredicate) async -> [ReminderItem] {
         await withCheckedContinuation { continuation in

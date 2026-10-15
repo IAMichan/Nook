@@ -15,11 +15,11 @@ enum ScriptText {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
-    /// Runs AppleScript off the main thread and returns text plus error number.
-    static func run(_ source: String) async -> (text: String?, errorNumber: Int?) {
+    /// Runs AppleScript off the main thread with a timeout and returns text plus error number.
+    static func run(_ source: String, timeout: TimeInterval = 4.0) async -> (text: String?, errorNumber: Int?) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: SystemControl.appleScriptResult(source))
+                continuation.resume(returning: SystemControl.appleScriptResult(source, timeout: timeout))
             }
         }
     }
@@ -137,6 +137,8 @@ final class RemindersConnector: ContextSource {
         )
     }
 
+    var canLookUp: Bool { ConnectorToggle.isOn(id) }
+
     func contextLines() -> [String] {
         guard !reminders.isEmpty else { return [] }
         var lines = ["Reminders that are open:"]
@@ -145,6 +147,60 @@ final class RemindersConnector: ContextSource {
             lines.append("- \(reminder.title)\(due)" + (reminder.list.isEmpty ? "" : " | list \(reminder.list)"))
         }
         return lines
+    }
+
+    var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "list_reminders",
+                description: "Geeft de openstaande herinneringen uit de app Herinneringen, gesorteerd op vervaldatum. Gebruik dit wanneer de gebruiker vraagt om herinneringen te tonen of welke taken er openstaan.",
+                schema: ["type": "object", "properties": [
+                    "include_completed": ["type": "boolean", "description": "Optioneel ook afgeronde herinneringen tonen (standaard false)."] as [String: Any]
+                ]],
+                kind: .read,
+                summarize: { _ in "Herinneringen bekijken" },
+                tag: { _ in ("", .neutral) },
+                run: { [calendar = self.calendar] input in
+                    let completed = (input["include_completed"] as? Bool) ?? false
+                    let items = await calendar.allReminders(includeCompleted: completed)
+                    if items.isEmpty { return "Geen herinneringen gevonden in de app Herinneringen." }
+                    let lines = items.prefix(30).map {
+                        let due = $0.due.map { " (uiterlijk: \(NookDates.short($0)))" } ?? ""
+                        let list = $0.list.isEmpty ? "" : " [lijst: \($0.list)]"
+                        return "- \($0.title)\(due)\(list) [id: \($0.id)]"
+                    }
+                    let refs = items.prefix(8).map {
+                        ReferenceParser.line(title: $0.title, url: nil, detail: $0.list.isEmpty ? "Herinneringen" : $0.list)
+                    }
+                    return (lines + refs).joined(separator: "\n")
+                }
+            ),
+            ToolSpec(
+                name: "search_reminders",
+                description: "Zoekt in de app Herinneringen op trefwoord in de titel of lijst van de herinnering.",
+                schema: ["type": "object", "properties": [
+                    "query": ["type": "string", "description": "Zoekterm voor de herinnering."]
+                ], "required": ["query"]],
+                kind: .read,
+                summarize: { input in "Herinnering zoeken: \((input["query"] as? String) ?? "")" },
+                tag: { _ in ("", .neutral) },
+                run: { [calendar = self.calendar] input in
+                    let q = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !q.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    let items = await calendar.searchReminders(query: q)
+                    if items.isEmpty { return "Geen herinneringen gevonden voor \"\(q)\"." }
+                    let lines = items.prefix(15).map {
+                        let due = $0.due.map { " (uiterlijk: \(NookDates.short($0)))" } ?? ""
+                        let list = $0.list.isEmpty ? "" : " [lijst: \($0.list)]"
+                        return "- \($0.title)\(due)\(list) [id: \($0.id)]"
+                    }
+                    let refs = items.prefix(6).map {
+                        ReferenceParser.line(title: $0.title, url: nil, detail: $0.list.isEmpty ? "Herinneringen" : $0.list)
+                    }
+                    return (lines + refs).joined(separator: "\n")
+                }
+            )
+        ]
     }
 }
 
@@ -490,6 +546,8 @@ final class BrowserConnector: ContextSource {
         )
     }
 
+    var canLookUp: Bool { ConnectorToggle.isOn(id) }
+
     func contextLines() -> [String] {
         guard !tabs.isEmpty else { return [] }
         var lines = ["Open browser tabs (* = active tab of a window):"]
@@ -497,6 +555,101 @@ final class BrowserConnector: ContextSource {
             lines.append("- \(tab.active ? "* " : "")\(tab.title) | \(tab.url)")
         }
         return lines
+    }
+
+    var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "read_browser_tab",
+                description: "Leest de tekst van het huidige actieve tabblad (of een specifiek tabblad) in Safari, Google Chrome, Microsoft Edge of Arc. Gebruik dit wanneer de gebruiker vraagt wat er op het scherm/tabblad in de browser staat, of om een webpagina die open staat samen te vatten.",
+                schema: ["type": "object", "properties": [
+                    "browser": ["type": "string", "description": "Optionele browsernaam (Safari, Google Chrome, Microsoft Edge, Arc). Indien leeg, pakt hij de actieve browser."] as [String: Any]
+                ]],
+                kind: .read,
+                summarize: { _ in "Browsertabblad lezen" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    let targetBrowser = (input["browser"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    var scripts: [(String, String)] = []
+
+                    if targetBrowser == nil || targetBrowser?.lowercased().contains("safari") == true {
+                        if ScriptText.isRunning("com.apple.Safari") {
+                            scripts.append(("Safari", """
+                            tell application "Safari"
+                                if (count of documents) > 0 then
+                                    set doc to front document
+                                    set docTitle to name of doc
+                                    set docURL to URL of doc
+                                    set docText to text of doc
+                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
+                                    return docTitle & "|||" & docURL & linefeed & docText
+                                end if
+                            end tell
+                            """))
+                        }
+                    }
+                    if targetBrowser == nil || targetBrowser?.lowercased().contains("chrome") == true {
+                        if ScriptText.isRunning("com.google.Chrome") {
+                            scripts.append(("Google Chrome", """
+                            tell application "Google Chrome"
+                                if (count of windows) > 0 then
+                                    set tab to active tab of front window
+                                    set docTitle to title of tab
+                                    set docURL to URL of tab
+                                    set docText to execute front window's active tab javascript "document.body.innerText"
+                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
+                                    return docTitle & "|||" & docURL & linefeed & docText
+                                end if
+                            end tell
+                            """))
+                        }
+                    }
+                    if targetBrowser == nil || targetBrowser?.lowercased().contains("edge") == true {
+                        if ScriptText.isRunning("com.microsoft.edgemac") {
+                            scripts.append(("Microsoft Edge", """
+                            tell application "Microsoft Edge"
+                                if (count of windows) > 0 then
+                                    set tab to active tab of front window
+                                    set docTitle to title of tab
+                                    set docURL to URL of tab
+                                    set docText to execute front window's active tab javascript "document.body.innerText"
+                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
+                                    return docTitle & "|||" & docURL & linefeed & docText
+                                end if
+                            end tell
+                            """))
+                        }
+                    }
+                    if targetBrowser == nil || targetBrowser?.lowercased().contains("arc") == true {
+                        if ScriptText.isRunning("company.thebrowser.Browser") {
+                            scripts.append(("Arc", """
+                            tell application "Arc"
+                                if (count of windows) > 0 then
+                                    set tab to active tab of front window
+                                    set docTitle to title of tab
+                                    set docURL to URL of tab
+                                    return docTitle & "|||" & docURL
+                                end if
+                            end tell
+                            """))
+                        }
+                    }
+
+                    for (browserName, script) in scripts {
+                        let result = await ScriptText.run(script, timeout: 3.5)
+                        if let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                            let header = String(lines.first ?? "").components(separatedBy: "|||")
+                            let body = lines.count > 1 ? String(lines[1]) : ""
+                            let title = header.first ?? "Webpagina"
+                            let url = header.count > 1 ? header[1] : ""
+                            return "## \(title) (\(browserName))\nBron: \(url)\n\n\(body)\n\n" + ReferenceParser.line(title: title, url: url.isEmpty ? nil : url, detail: browserName)
+                        }
+                    }
+                    return "Geen geopende webpagina met tekst gevonden in Safari, Chrome of Edge."
+                }
+            )
+        ]
     }
 }
 
