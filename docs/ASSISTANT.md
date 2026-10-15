@@ -14,6 +14,7 @@ NookChatView (invoer, bronkiezer, modelchip, bijlage)   — gedeeld door de notc
           Context       SourceRouter.relevant → ConnectorHub.contextLines(scope:full:)
                         relevante bronnen volledig, de rest als één regel met de tool om erin te kijken
        3. Tools         AppModel.scopedTools: alleen tools van toegestane bronnen en accounts; lees-tools via RetrievalLedger
+                        ChatIntent (nl/en/de) herkent wat de vraag wil; die tools staan altijd vooraan   (Brain/ChatIntent.swift)
                         Gefaseerd: een startset (kleiner voor lokale modellen) plus één regel per overige bron;
                         het brein ontgrendelt een bron met `use_source` (BrainService.run)
        4. Brein         BrainService.run met BrainSelection (ingebouwd MLX, Ollama, LM Studio of extern), één ToolRunner
@@ -127,6 +128,7 @@ Dit staat ook in de app, bij **Instellingen › Accounts & koppelingen › Nog n
 `Tests/NookTests` (doel `NookTests` in `project.yml`, draait in CI met `xcodebuild test`) test de kern, die alleen Foundation gebruikt:
 
 * bronkeuze uit de vraag (nl/en/de), samenvoegen met de bronkiezer, routering;
+* intentie uit de vraag (nl/en/de): welke actie, vraag of opdracht, kleine praat, datumoverzicht voor lokale modellen (`ChatIntentTests`);
 * het grootboek: bron per tool, gelukt/leeg/mislukt, time-out, geen dubbele aanroep, cache, nummering;
 * bronverwijzingen: alleen echte nummers blijven staan, alleen veilige links;
 * prompt-injectie: tekst van derden kan de omlijning niet sluiten;
@@ -140,6 +142,6 @@ Alle tools in deze tests zijn nep (mocks). De koppelingen zelf (Mail via AppleSc
 * De bronkeuze uit de vraag werkt met trefwoorden en is geen taalbegrip. Een ongewone formulering wordt soms niet herkend; de bronkiezer werkt altijd.
 * De interne teksten voor het brein en de beschrijvingen van wat een koppeling kan zijn in het Nederlands. De knoppen en meldingen zijn vertaald (nl/en/de).
 * `search_mail` zoekt op onderwerp en afzender of ontvanger, niet in de hele tekst: in de inhoud zoeken via AppleScript is te traag.
-* Een klein lokaal model blijft zwak in meerstaps-redeneren over vijf of meer bronnen. De loop vangt fouten op, maar de kwaliteit van de synthese hangt af van het model. `RoutingEvalTests` meet of de juiste bronnen gekozen worden, niet de kwaliteit van het antwoord.
+* Een klein lokaal model blijft zwak in meerstaps-redeneren over vijf of meer bronnen. Vraag je duidelijk om één actie en stelt het model die niet voor, dan vraagt Nook het nog één keer met alleen die tool. Zie [CHAT-PLAN.md](CHAT-PLAN.md) voor de volgende stappen. De loop vangt fouten op, maar de kwaliteit van de synthese hangt af van het model. `RoutingEvalTests` meet of de juiste bronnen gekozen worden, niet de kwaliteit van het antwoord.
 * Google (Gmail, Drive) en Microsoft (Teams, OneDrive) vragen een eigen app-registratie met OAuth (PKCE) en zijn niet ingebouwd; MCP is daarvoor de route.
 * Voorgestelde acties worden na een herstart niet opnieuw aangeboden (bewust). De uitkomst per stap blijft als tekst in het gesprek.

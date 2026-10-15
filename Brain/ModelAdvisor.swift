@@ -18,6 +18,10 @@ struct ModelProfile: Equatable {
     static let cloud = ModelProfile(contextTokens: 120_000, maxOutputTokens: 8_192, maxTools: 64, compactDescriptions: false, rounds: 6, isSmall: false)
     static let localLarge = ModelProfile(contextTokens: 16_384, maxOutputTokens: 1_200, maxTools: 14, compactDescriptions: true, rounds: 4, isSmall: true)
     static let localSmall = ModelProfile(contextTokens: 8_192, maxOutputTokens: 800, maxTools: 8, compactDescriptions: true, rounds: 3, isSmall: true)
+    /// A compact model that is good with tools (Qwen 3, 4B): a few more tools and rounds, the same small window.
+    static let localCompact = ModelProfile(contextTokens: 8_192, maxOutputTokens: 900, maxTools: 10, compactDescriptions: true, rounds: 4, isSmall: true)
+    /// 12B and up: a larger window and more tools.
+    static let localXL = ModelProfile(contextTokens: 24_576, maxOutputTokens: 1_500, maxTools: 18, compactDescriptions: true, rounds: 5, isSmall: true)
 
     /// Rough token count (no tokenizer needed): about 3.5 characters per token for mixed Dutch/English text and JSON.
     static func estimateTokens(_ text: String) -> Int { (text.count * 2 + 6) / 7 }
@@ -90,14 +94,19 @@ enum ModelAdvisor {
         }
     }
 
-    /// Built-in choices (MLX, 4-bit). Qwen 2.5 is preferred for its reliable tool calling.
+    /// Built-in choices (MLX, 4-bit). Qwen 3 is preferred for its reliable tool calling and Dutch; the 30B model is a
+    /// mixture of experts with 3B active parameters, so it answers about as fast as a 4B model on a Mac with enough memory.
+    /// Older models stay listed so an installed one keeps working.
     static let catalog: [LocalModelOption] = [
+        LocalModelOption(id: "mlx-community/Qwen3-4B-Instruct-2507-4bit", title: "Qwen 3 (4B)", sizeGB: 2.3, minMemoryGB: 8, toolSkill: 4, profile: .localCompact),
+        LocalModelOption(id: "mlx-community/Qwen3-8B-4bit", title: "Qwen 3 (8B)", sizeGB: 4.6, minMemoryGB: 16, toolSkill: 6, profile: .localLarge),
+        LocalModelOption(id: "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit", title: "Qwen 3 (30B-A3B)", sizeGB: 17.2, minMemoryGB: 32, toolSkill: 8,
+                         profile: ModelProfile(contextTokens: 24_576, maxOutputTokens: 2_000, maxTools: 24, compactDescriptions: false, rounds: 6, isSmall: true)),
         LocalModelOption(id: "mlx-community/Qwen2.5-3B-Instruct-4bit", title: "Qwen 2.5 (3B)", sizeGB: 1.9, minMemoryGB: 8, toolSkill: 2, profile: .localSmall),
         LocalModelOption(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", title: "Llama 3.2 (3B)", sizeGB: 1.8, minMemoryGB: 8, toolSkill: 1, profile: .localSmall),
         LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)", sizeGB: 4.3, minMemoryGB: 16, toolSkill: 4, profile: .localLarge),
         LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)", sizeGB: 4.5, minMemoryGB: 16, toolSkill: 3, profile: .localLarge),
-        LocalModelOption(id: "mlx-community/Qwen2.5-14B-Instruct-4bit", title: "Qwen 2.5 (14B)", sizeGB: 8.3, minMemoryGB: 32, toolSkill: 5,
-                         profile: ModelProfile(contextTokens: 24_576, maxOutputTokens: 1_500, maxTools: 18, compactDescriptions: true, rounds: 5, isSmall: true))
+        LocalModelOption(id: "mlx-community/Qwen2.5-14B-Instruct-4bit", title: "Qwen 2.5 (14B)", sizeGB: 8.3, minMemoryGB: 32, toolSkill: 5, profile: .localXL)
     ]
 
     struct Recommendation: Equatable {
@@ -161,7 +170,7 @@ enum ModelAdvisor {
     /// Profile for a model served by Ollama or LM Studio, from its name (size hints like "7b", "14b").
     static func profile(forServerModel name: String) -> ModelProfile {
         let size = parameterBillions(name) ?? 3
-        if size >= 12 { return catalog.last!.profile }
+        if size >= 12 { return .localXL }
         return size >= 6 ? .localLarge : .localSmall
     }
 

@@ -157,19 +157,36 @@ final class OllamaConversation: ModelConversation {
         var body: [String: Any] = [
             "model": model,
             "messages": messages,
-            "stream": false,
+            // Streamed, so the answer appears while it is written instead of after the whole answer is done.
+            "stream": true,
             "options": ["num_ctx": profile.contextTokens, "num_predict": profile.maxOutputTokens, "temperature": 0.2]
         ]
         if !tools.isEmpty {
             body["tools"] = tools.map { ["type": "function", "function": ["name": $0.name, "description": $0.description, "parameters": $0.schema]] }
         }
-        let object = try await LocalHTTP.post(url, body: body, key: nil, provider: .ollama, model: model)
-        guard let message = object["message"] as? [String: Any] else { throw NookError("Unexpected response from Ollama.") }
-        let text = (message["content"] as? String) ?? ""
-        if !text.isEmpty { onText?(text) }
-        let rawCalls = (message["tool_calls"] as? [[String: Any]]) ?? []
+        let lines = try await LocalHTTP.stream(url, body: body, provider: .ollama, model: model)
+        var text = ""
+        var rawCalls: [[String: Any]] = []
+        var received = false
+        var lastEmit = Date.distantPast
+        for try await line in lines {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
+            if let error = object["error"] as? String { throw NookError("Ollama: \(error)") }
+            guard let message = object["message"] as? [String: Any] else { continue }
+            received = true
+            text += (message["content"] as? String) ?? ""
+            rawCalls += (message["tool_calls"] as? [[String: Any]]) ?? []
+            if let onText, Date().timeIntervalSince(lastEmit) > 0.05 {
+                lastEmit = Date()
+                let visible = EmbeddedModel.visible(text)
+                if !visible.isEmpty { onText(visible) }
+            }
+        }
+        guard received else { throw NookError("Unexpected response from Ollama.") }
+        let visible = EmbeddedModel.visible(text)
+        if !visible.isEmpty { onText?(visible) }
         guard !rawCalls.isEmpty else { return ModelTurn(text: text, calls: []) }
-        messages.append(message)
+        messages.append(["role": "assistant", "content": text, "tool_calls": rawCalls])
         let calls = rawCalls.map { call -> ToolCallRequest in
             let function = (call["function"] as? [String: Any]) ?? [:]
             var input = (function["arguments"] as? [String: Any]) ?? [:]
@@ -195,36 +212,71 @@ final class OllamaConversation: ModelConversation {
 /// JSON POST with the error messages users need (server not running, wrong key, unknown model).
 enum LocalHTTP {
     static func post(_ url: URL, body: [String: Any], key: String?, provider: AIProvider, model: String) async throws -> [String: Any] {
+        let request = try self.request(url, body: body, key: key, provider: provider)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let error as URLError {
+            throw connectionError(error, provider: provider)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (200..<300).contains(status) else { throw statusError(status, object: object, provider: provider, model: model) }
+        return object
+    }
+
+    /// The same request, streamed: the response arrives line by line (Ollama sends one JSON object per line).
+    static func stream(_ url: URL, body: [String: Any], provider: AIProvider, model: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
+        let request = try self.request(url, body: body, key: nil, provider: provider)
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch let error as URLError {
+            throw connectionError(error, provider: provider)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            var raw = ""
+            for try await line in bytes.lines { raw += line }
+            let object = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any] ?? [:]
+            throw statusError(status, object: object, provider: provider, model: model)
+        }
+        return bytes.lines
+    }
+
+    private static func request(_ url: URL, body: [String: Any], key: String?, provider: AIProvider) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = provider.isLocalServer ? 180 : 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key, !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
+    }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch let error as URLError where [.cannotConnectToHost, .cannotFindHost, .networkConnectionLost].contains(error.code) {
-            if provider.isLocalServer { throw NookError(tr("brain.unavailable.server", provider.title)) }
-            throw NookError("Cannot reach \(provider.title).")
-        } catch let error as URLError where error.code == .timedOut {
-            throw NookError(provider.isLocalServer
+    private static func connectionError(_ error: URLError, provider: AIProvider) -> Error {
+        switch error.code {
+        case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost:
+            if provider.isLocalServer { return NookError(tr("brain.unavailable.server", provider.title)) }
+            return NookError("Cannot reach \(provider.title).")
+        case .timedOut:
+            return NookError(provider.isLocalServer
                 ? "\(provider.title) took too long. A smaller model answers faster; choose one in Settings › Brain."
                 : "\(provider.title) did not answer in time.")
+        default:
+            return error
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard (200..<300).contains(status) else {
-            let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? (object["error"] as? String) ?? "status \(status)"
-            switch status {
-            case 401, 403: throw NookError("\(provider.title) rejected the API key: \(message)")
-            case 404: throw NookError("Model \(model) was not found on \(provider.title). Select a different model in Settings › Brain.")
-            case 429: throw NookError("Rate limit reached on \(provider.title). Please wait a moment.")
-            default: throw NookError("\(provider.title): \(message)")
-            }
+    }
+
+    private static func statusError(_ status: Int, object: [String: Any], provider: AIProvider, model: String) -> NookError {
+        let message = ((object["error"] as? [String: Any])?["message"] as? String) ?? (object["error"] as? String) ?? "status \(status)"
+        switch status {
+        case 401, 403: return NookError("\(provider.title) rejected the API key: \(message)")
+        case 404: return NookError("Model \(model) was not found on \(provider.title). Select a different model in Settings › Brain.")
+        case 429: return NookError("Rate limit reached on \(provider.title). Please wait a moment.")
+        default: return NookError("\(provider.title): \(message)")
         }
-        return object
     }
 }
