@@ -49,7 +49,6 @@ struct NewSessionSheet: View {
         }
         .frame(width: 660, height: 720)
         .background(WS.background)
-        .preferredColorScheme(.dark)
         .onAppear(perform: prepare)
         .onChange(of: config.provider) { _, provider in providerChanged(provider) }
         .onChange(of: config.task) { _, task in

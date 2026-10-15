@@ -49,7 +49,6 @@ struct ChangesSheet: View {
         }
         .frame(minWidth: 820, idealWidth: 1040, minHeight: 520, idealHeight: 700)
         .background(WS.background)
-        .preferredColorScheme(.dark)
         .onAppear {
             workspace.markReviewed(runID)
             selected = initialFile?.path ?? files.first?.path
@@ -135,7 +134,6 @@ struct CommitSheet: View {
         }
         .padding(18)
         .frame(width: 560)
-        .preferredColorScheme(.dark)
         .onAppear { included = Set(files.map(\.path)) }
     }
 
@@ -207,7 +205,6 @@ struct PullRequestSheet: View {
         }
         .padding(18)
         .frame(width: 560)
-        .preferredColorScheme(.dark)
         .task {
             let run = workspace.run(runID)
             title = run?.title ?? ""

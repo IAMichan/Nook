@@ -55,7 +55,6 @@ struct WorkspaceView: View {
                 workspace.selectedRunID = id
             }
         }
-        .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
         .frame(minWidth: 760, minHeight: 520)
         .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in

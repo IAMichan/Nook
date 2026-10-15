@@ -39,6 +39,10 @@ final class WorkspaceWindowController {
             // appearance resize the window in a layout loop.
             host.sizingOptions = []
             let window = NSWindow(contentViewController: host)
+            // Dark for the window and everything presented from it (sheets inherit the window's appearance). Asking for it
+            // with `.preferredColorScheme` inside the window and inside each sheet makes the sheets re-negotiate it on every
+            // layout pass, which loops ("needing another Update Constraints in Window pass").
+            window.appearance = NSAppearance(named: .darkAqua)
             window.title = tr("ws.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.titlebarAppearsTransparent = false
