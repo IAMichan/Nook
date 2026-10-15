@@ -6,8 +6,9 @@ struct NewSessionSheet: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
-    @Environment(\.dismiss) private var dismiss
     let onStarted: (UUID) -> Void
+    /// Closes the sheet (it is presented as a native AppKit sheet, see `WorkspaceWindowController.presentSheet`).
+    let close: () -> Void
 
     @State private var config = NewRunConfig()
     @State private var project: ProjectInfo?
@@ -417,7 +418,7 @@ struct NewSessionSheet: View {
                 Text(reason).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
             }
             Spacer()
-            Button(tr("button.cancel")) { dismiss() }
+            Button(tr("button.cancel")) { close() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(starting)
             Button(tr("ws.new.start")) { start() }
@@ -552,7 +553,7 @@ struct NewSessionSheet: View {
                 settings.defaultIsolation = config.isolation
                 settings.defaultPermission = config.permission
                 onStarted(id)
-                dismiss()
+                close()
             } catch let failure {
                 // Nothing was created (except as indicated by error): retrying will not create duplicate sessions.
                 error = failure.localizedDescription

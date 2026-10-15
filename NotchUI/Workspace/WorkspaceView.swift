@@ -52,10 +52,18 @@ struct WorkspaceView: View {
                 }
         }
         .toolbar { toolbar }
-        .sheet(isPresented: $showNewSession) {
-            NewSessionSheet { id in
-                pane = .sessions
-                workspace.selectedRunID = id
+        // Presented as a native AppKit sheet: SwiftUI's own `.sheet` re-negotiates its presentation window on every layout
+        // pass here and aborts with "needing another Update Constraints in Window pass".
+        .onChange(of: showNewSession) { _, show in
+            guard show else { return }
+            WorkspaceWindowController.shared.presentSheet(size: NSSize(width: 660, height: 720), onClosed: { showNewSession = false }) { close in
+                NewSessionSheet(onStarted: { id in
+                    pane = .sessions
+                    workspace.selectedRunID = id
+                }, close: close)
+                .environmentObject(app)
+                .environmentObject(workspace)
+                .environmentObject(workspace.settings)
             }
         }
         .sheet(isPresented: $app.showOnboarding) {

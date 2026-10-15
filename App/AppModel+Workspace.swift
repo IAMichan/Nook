@@ -20,6 +20,8 @@ extension RunProvider {
     }
 }
 
+private final class SheetBox { var sheet: NSWindow? }
+
 /// The workspace window controller. A single window; opening brings it to front.
 @MainActor
 final class WorkspaceWindowController {
@@ -27,6 +29,28 @@ final class WorkspaceWindowController {
     private var window: NSWindow?
 
     var isKey: Bool { window?.isKeyWindow ?? false }
+
+    /// Shows `content` as a native sheet on the workspace window. The content gets a closure that ends the sheet;
+    /// `onClosed` runs once it has ended, however it was closed.
+    func presentSheet<V: View>(size: NSSize, onClosed: @escaping () -> Void,
+                               @ViewBuilder content: (@escaping () -> Void) -> V) {
+        guard let parent = window, parent.attachedSheet == nil else { onClosed(); return }
+        let box = SheetBox()
+        let close: () -> Void = { [weak parent] in
+            if let sheet = box.sheet { parent?.endSheet(sheet) }
+        }
+        let host = NSHostingController(rootView: content(close).onExitCommand(perform: close))
+        host.sizingOptions = []
+        let sheet = NSWindow(contentViewController: host)
+        sheet.styleMask = [.titled]
+        sheet.setContentSize(size)
+        box.sheet = sheet
+        parent.beginSheet(sheet) { _ in
+            sheet.orderOut(nil)
+            box.sheet = nil
+            onClosed()
+        }
+    }
 
     func show(app: AppModel) {
         if window == nil {
