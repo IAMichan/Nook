@@ -84,12 +84,18 @@ final class TerminalStore: ObservableObject {
     }
 }
 
+/// A container that never asks for a size of its own: the terminal fills whatever SwiftUI gives it. A terminal view that
+/// reports an intrinsic size makes the window re-run its layout again and again.
+private final class TerminalContainer: NSView {
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+}
+
 /// Hosts a session's terminal view in SwiftUI; the same view instance is reused, so output survives tab switches.
 private struct TerminalHost: NSViewRepresentable {
     let session: TerminalSession
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = TerminalContainer()
         attach(to: container)
         return container
     }
@@ -100,6 +106,7 @@ private struct TerminalHost: NSViewRepresentable {
 
     private func attach(to container: NSView) {
         session.view.removeFromSuperview()
+        session.view.translatesAutoresizingMaskIntoConstraints = true
         session.view.frame = container.bounds
         session.view.autoresizingMask = [.width, .height]
         container.addSubview(session.view)

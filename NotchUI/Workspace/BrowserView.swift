@@ -109,10 +109,31 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     }
 }
 
+/// Hosts the browser's web view in a container without an intrinsic size, so the window's layout does not loop.
+private final class WebViewContainer: NSView {
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+}
+
 private struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
-    func makeNSView(context: Context) -> WKWebView { webView }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+
+    func makeNSView(context: Context) -> NSView {
+        let container = WebViewContainer()
+        attach(to: container)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        if webView.superview !== container { attach(to: container) }
+    }
+
+    private func attach(to container: NSView) {
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = true
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+    }
 }
 
 /// Workspace › Browser.
