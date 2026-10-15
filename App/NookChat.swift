@@ -152,6 +152,8 @@ struct ChatMessage: Identifiable {
                 let outcome: String
                 switch index < actionStates.count ? actionStates[index] : .pending {
                 case .done(let result): outcome = "completed: \(result)"
+                case .verified(let result): outcome = "completed and confirmed: \(result)"
+                case .approved: outcome = "approved, not yet run"
                 case .failed(let error): outcome = "failed: \(error)"
                 case .notRun: outcome = "not executed"
                 case .skipped: outcome = "skipped by user"
@@ -529,6 +531,8 @@ private struct StoredMessage: Codable {
                 let state: String
                 switch index < message.actionStates.count ? message.actionStates[index] : .pending {
                 case .done(let result): state = "✓ " + result
+                case .verified(let result): state = "✓✓ " + result
+                case .approved: state = "not executed"
                 case .failed(let error): state = "✗ failed: \(error)"
                 case .duplicate(let when): state = "already completed on \(when)"
                 case .skipped: state = "skipped"

@@ -5,6 +5,8 @@ import Foundation
 
 let redesignTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chat.plan.verified": "gecontroleerd",
+        "chat.plan.approved": "Goedgekeurd, wacht op zijn beurt",
         // Model chip
         "brain.chip.local": "Lokaal",
         "brain.chip.external": "Extern",
@@ -87,6 +89,8 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.serverNotRunning": "%@ draait nu niet. Start de app en laad een model.",
     ],
     .en: [
+        "chat.plan.verified": "confirmed",
+        "chat.plan.approved": "Approved, waiting its turn",
         "brain.chip.local": "Local",
         "brain.chip.external": "External",
         "brain.chip.noModel": "No model chosen",
@@ -165,6 +169,8 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.serverNotRunning": "%@ is not running right now. Start the app and load a model.",
     ],
     .de: [
+        "chat.plan.verified": "bestätigt",
+        "chat.plan.approved": "Genehmigt, wartet auf seine Reihe",
         "brain.chip.local": "Lokal",
         "brain.chip.external": "Extern",
         "brain.chip.noModel": "Kein Modell gewählt",

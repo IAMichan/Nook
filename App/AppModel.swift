@@ -883,7 +883,7 @@ final class AppModel: ObservableObject {
         var failure: String?
         for (index, state) in states.enumerated() {
             switch state {
-            case .done(let result): done.append(result)
+            case .done(let result), .verified(let result): done.append(result)
             case .failed(let error): failure = failure ?? tr("chat.plan.stepFailed", index + 1, error)
             case .duplicate: failure = failure ?? tr("chat.plan.duplicateHint")
             default: break
@@ -903,7 +903,9 @@ final class AppModel: ObservableObject {
                 return self.actionProblems(PlannedAction(tool: step.tool, input: step.input), scope: scope)
             },
             execute: { [weak self] step in
-                guard let self, let spec = self.allTools.first(where: { $0.name == step.tool }), spec.kind == .action else {
+                guard let self, let found = self.allTools.first(where: { $0.name == step.tool }), found.kind == .action,
+                      // The same account rules as when the plan was made: one allowed account is filled in, others refused.
+                      let spec = Self.restrictAccounts(found, to: scope) else {
                     throw NookError(tr("chat.plan.unavailable", step.tool))
                 }
                 let args = Self.json(step.input)
@@ -918,8 +920,32 @@ final class AppModel: ObservableObject {
             },
             executedBefore: { [weak self] key in self?.store.executedAction(key, within: ActionGate.duplicateWindow) },
             recordExecuted: { [weak self] key, step, result in self?.store.recordExecuted(key, tool: step.tool, result: result) },
-            progress: progress
+            progress: progress,
+            verify: { [weak self] step, result in await self?.verify(step, result: result) }
         )
+    }
+
+    /// Reads the result of an action back where that is possible on the Mac itself. nil = cannot be checked.
+    private func verify(_ step: PlanRunner.Step, result: String) async -> Bool? {
+        switch step.tool {
+        case "create_event":
+            guard let id = Self.createdID(in: result) else { return nil }
+            return calendar.eventExists(id)
+        case "update_event":
+            guard let id = step.input["id"] as? String else { return nil }
+            return calendar.eventExists(id)
+        case "create_reminder":
+            guard let id = Self.createdID(in: result) else { return nil }
+            return calendar.reminderExists(id)
+        default:
+            return nil
+        }
+    }
+
+    /// The "(id …)" a create tool puts in its result.
+    nonisolated static func createdID(in result: String) -> String? {
+        guard let range = result.range(of: #"\(id ([^)]+)\)"#, options: .regularExpression) else { return nil }
+        return String(result[range].dropFirst(4).dropLast()).trimmingCharacters(in: .whitespaces)
     }
 
     func cancelPlan(_ id: UUID) {
@@ -938,7 +964,7 @@ final class AppModel: ObservableObject {
     /// Modifies proposed action inputs (e.g. message text) and re-validates.
     func editAction(_ id: UUID, index: Int, key: String, value: String) {
         guard let message = chat.message(id), index < message.actions.count else { return }
-        if case .done = message.actionStates[safe: index] ?? .pending { return }
+        if (message.actionStates[safe: index] ?? .pending).result != nil { return }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         var action = message.actions[index]
         action.input[key] = value
@@ -1388,7 +1414,7 @@ final class AppModel: ObservableObject {
         reloadLoops()
         await refreshUpcoming()
         var results: [String] = []
-        for state in states { if case .done(let result) = state { results.append(result) } }
+        for state in states { if let result = state.result { results.append(result) } }
         if case .failed(let failure) = Self.planOutcome(states) { return (results, failure) }
         return (results, nil)
     }
