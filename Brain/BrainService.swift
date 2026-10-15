@@ -61,7 +61,7 @@ final class BrainService {
             let label = (untrustedLabel ?? "screen").replacingOccurrences(of: "\"", with: "'")
             prompt += "<screen_content label=\"\(UntrustedText.neutralize(label))\">\n\(UntrustedText.neutralize(untrusted))\n</screen_content>\n\n"
         }
-        prompt += "Request: \(userText)\n\n(\(settings.languageInstruction))"
+        prompt += "Request: \(userText)\n\n(\(settings.languageInstruction(for: userText)) Answer in plain sentences; never output JSON or code unless the request is about code.)"
 
         if settings.useLocal {
             return try await runLocal(prompt: Self.historyPrefix(history, limit: 6, length: 300) + prompt, tools: tools)

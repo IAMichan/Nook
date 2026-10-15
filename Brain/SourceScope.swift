@@ -384,46 +384,53 @@ enum SourceCapabilities {
     }
 }
 
-/// Lookups Nook runs itself before asking the model. A small local model rarely calls tools on its own, so for the sources
-/// a question is about, Nook fetches the data first and hands it over; the model only has to read and answer.
+/// Lookups Nook runs itself before asking the model, for every source and every app the question is about, so the
+/// answer never depends on a (small, local) model deciding to call a tool. General: for each relevant source Nook runs
+/// one read tool that needs no input; the hints below only pick the best input when a source has a choice.
 enum Prefetch {
     struct Call {
         let tool: String
         let input: [String: Any]
     }
 
+    /// A read tool Nook could run: its name, the source it belongs to and the inputs it requires.
+    struct Available {
+        let name: String
+        let source: String
+        let required: [String]
+    }
+
+    /// Sources whose data is always in the context in full already.
+    static let inContext: Set<String> = SourceRouter.core
+
     private static let unread = #"ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read"#
     private static let reply = #"beantwoord\w*|antwoord\w*|reageer|reageren|terugmail\w*|terugschrijv\w*|reply|respond|answer|follow.?up|opvolg\w*"#
 
-    /// One overview tool per service, used when the question is about that service.
-    private static let overviews: [(source: String, tool: String)] = [
-        ("github", "github_overview"), ("stripe", "stripe_payments"), ("vercel", "vercel_deployments"),
-        ("calcom", "calcom_bookings"), ("n8n", "n8n_status"), ("resend", "resend_overview"), ("portfolio", "portfolio_overview")
-    ]
+    /// Best input for a few tools, by what the question asks.
+    private static func hint(_ tool: String, _ text: String) -> (rank: Int, input: [String: Any]) {
+        switch tool {
+        case "mail_unread": return (matches(unread, text) ? 0 : 9, [:])
+        case "inbox_mail":
+            return matches(reply, text) ? (1, ["days": 14, "unanswered_only": true]) : (2, ["days": 7])
+        case "list_notes": return (1, ["limit": 8])
+        case "list_reminders": return (1, [:])
+        case "read_browser_tab": return (1, [:])
+        default: return (5, [:])
+        }
+    }
 
-    /// At most `limit` calls, most specific first. `relevant` comes from `SourceRouter.relevant`.
-    static func calls(for text: String, relevant: Set<String>, limit: Int = 3) -> [Call] {
+    /// One call per relevant source (at most `limit`), using a read tool without required inputs.
+    static func calls(for text: String, relevant: Set<String>, available: [Available], limit: Int = 4) -> [Call] {
         var calls: [Call] = []
-        if relevant.contains("notes") {
-            calls.append(Call(tool: "list_notes", input: ["limit": 8]))
-        }
-        if relevant.contains("reminders") {
-            calls.append(Call(tool: "list_reminders", input: [:]))
-        }
-        if relevant.contains("browser") {
-            calls.append(Call(tool: "read_browser_tab", input: [:]))
-        }
-        if relevant.contains("mail") {
-            if matches(unread, text) {
-                calls.append(Call(tool: "mail_unread", input: [:]))
-            } else if matches(reply, text) {
-                calls.append(Call(tool: "inbox_mail", input: ["days": 14, "unanswered_only": true]))
-            } else {
-                calls.append(Call(tool: "inbox_mail", input: ["days": 7]))
+        let order = SourceCatalog.all.map(\.id)
+        for source in relevant.subtracting(inContext).sorted(by: { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }) {
+            let candidates = available.filter { $0.source == source && $0.required.isEmpty }
+            let best = candidates.enumerated().min { a, b in
+                let ha = hint(a.element.name, text).rank, hb = hint(b.element.name, text).rank
+                return ha != hb ? ha < hb : a.offset < b.offset
             }
-        }
-        for overview in overviews where relevant.contains(overview.source) {
-            calls.append(Call(tool: overview.tool, input: [:]))
+            guard let pick = best?.element else { continue }
+            calls.append(Call(tool: pick.name, input: hint(pick.name, text).input))
         }
         return Array(calls.prefix(limit))
     }

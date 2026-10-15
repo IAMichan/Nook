@@ -119,33 +119,13 @@ struct NookHomeTab: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField(
-                "",
-                text: $question,
-                prompt: Text(tr("home.inputPrompt")).foregroundStyle(NookTheme.textTertiary),
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(NookTheme.font(14))
-            .foregroundStyle(NookTheme.paper)
-            .lineLimit(1...5)
-            .focused($inputFocused)
-            .onSubmit(send)
-
-            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
-            NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: 42)
-        .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
-        .overlay(
-            RoundedRectangle(cornerRadius: 21, style: .continuous)
-                .stroke(inputFocused ? NookTheme.iris.opacity(0.65) : NookTheme.line2, lineWidth: inputFocused ? 1.5 : 1)
+        NookInputBar(
+            text: $question,
+            prompt: tr("home.inputPrompt"),
+            focus: $inputFocused,
+            onMic: { viewModel.startListening() },
+            onSend: send
         )
-        .animation(.easeInOut(duration: 0.18), value: inputFocused)
     }
 
     private func send() {
@@ -325,37 +305,15 @@ private struct NookChatView: View {
     }
 
     private var inputField: some View {
-        HStack(spacing: 8) {
-            TextField(
-                "",
-                text: $question,
-                prompt: Text(chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(NookTheme.font(14))
-            .foregroundStyle(NookTheme.paper)
-            .lineLimit(1...5)
-            .focused($inputFocused)
-            .onSubmit(send)
-
-            if chat.busy {
-                NookIconButton(systemName: "stop.fill", label: tr("button.stop"), size: 28) { app.stopChat() }
-            } else {
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28) { viewModel.startListening() }
-                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, size: 28, action: send)
-            }
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: 42)
-        .background(RoundedRectangle(cornerRadius: 21, style: .continuous).fill(NookTheme.field))
-        .overlay(
-            RoundedRectangle(cornerRadius: 21, style: .continuous)
-                .stroke(inputFocused ? NookTheme.iris.opacity(0.65) : NookTheme.line2, lineWidth: inputFocused ? 1.5 : 1)
+        NookInputBar(
+            text: $question,
+            prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
+            focus: $inputFocused,
+            busy: chat.busy,
+            onMic: { viewModel.startListening() },
+            onStop: { app.stopChat() },
+            onSend: send
         )
-        .animation(.easeInOut(duration: 0.18), value: inputFocused)
     }
 
     private func send() {

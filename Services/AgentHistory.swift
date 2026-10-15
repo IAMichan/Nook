@@ -1,8 +1,8 @@
 import Foundation
 import SwiftUI
 
-/// Welke agent een eerdere sessie of account hoort bij. Van Claude Code en Codex leest Nook ook de sessies;
-/// van Gemini CLI alleen met welk Google-account je bent ingelogd.
+/// Which agent a past session or account belongs to. Nook also reads sessions from Claude Code and Codex;
+/// for Gemini CLI, it only reads which Google account you are logged in with.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
     case claude, codex, gemini
 
@@ -16,7 +16,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Het commando in de terminal.
+    /// The terminal command.
     var command: String {
         switch self {
         case .claude: return "claude"
@@ -25,7 +25,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Kort, voor op een knop of in een kop.
+    /// Short label, for buttons or headers.
     var shortName: String {
         switch self {
         case .claude: return "Claude"
@@ -42,7 +42,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// De koppeling in Instellingen › Agents die voortgang en toestemming naar de notch brengt.
+    /// The integration in Settings › Agents that brings progress and permissions to the notch.
     var hookTarget: AgentConfigInstaller.Target {
         switch self {
         case .claude: return .claudeHooks
@@ -51,7 +51,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Alles wat Nook voor deze agent koppelt met één klik.
+    /// Everything Nook connects for this agent with one click.
     var targets: [AgentConfigInstaller.Target] {
         switch self {
         case .claude: return [.claudeHooks, .claudeStatusLine]
@@ -60,7 +60,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Hoe je de agent installeert als hij er nog niet is.
+    /// How to install the agent if it is not present yet.
     var installCommand: String {
         switch self {
         case .claude:
@@ -72,7 +72,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Inloggen. Claude Code en Gemini CLI vragen het zelf bij de eerste start; Codex heeft er een eigen commando voor.
+    /// Log in command. Claude Code and Gemini CLI prompt automatically on first launch; Codex has a dedicated command.
     var loginCommand: String {
         switch self {
         case .claude: return "claude"
@@ -81,7 +81,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Kandidaat-paden voor de agent, naast wat je shell vindt.
+    /// Candidate paths for the agent, in addition to what your shell finds.
     var executableCandidates: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var paths = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin",
@@ -94,7 +94,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         return paths.map { "\($0)/\(command)" }
     }
 
-    /// De gewone map van de agent, waar het eerste account staat.
+    /// The default directory of the agent where the primary account resides.
     var defaultHome: URL {
         switch self {
         case .claude: return HistoryScanner.claudeHome
@@ -113,7 +113,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// Tokens uit een transcript. `cacheRead` is wat de agent opnieuw uit de cache las: goedkoop, maar telt mee voor je limiet.
+/// Tokens from a transcript. `cacheRead` represents cached reads: cheap, but still counted against rate limits.
 struct TokenTally: Equatable {
     var input = 0
     var output = 0
@@ -129,7 +129,7 @@ struct TokenTally: Equatable {
 
     static func += (lhs: inout TokenTally, rhs: TokenTally) { lhs = lhs + rhs }
 
-    /// "845k", "1,2M".
+    /// "845k", "1.2M".
     static func format(_ count: Int) -> String {
         switch count {
         case ..<1_000: return "\(count)"
@@ -140,7 +140,7 @@ struct TokenTally: Equatable {
     }
 }
 
-/// Een afgelopen (of nog lopende) sessie, uit het transcript dat de agent zelf bewaart.
+/// A completed (or still running) session, from the transcript saved by the agent itself.
 struct PastSession: Identifiable, Equatable {
     let agent: AgentKind
     var sessionID: String
@@ -154,19 +154,19 @@ struct PastSession: Identifiable, Equatable {
     var tokens: TokenTally
     var lastPrompt: String
     var lastReply: String
-    /// Met welk account (`AgentProfile.id`) deze sessie liep.
+    /// Which account (`AgentProfile.id`) this session ran with.
     var profileID = ""
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
     var project: String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return cwd.isEmpty || name.isEmpty || name == "/" ? "geen map" : name
+        return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
     }
 
     var duration: TimeInterval { max(0, ended.timeIntervalSince(started)) }
 
-    /// Het commando om verder te gaan waar je was.
+    /// The command to resume where you left off.
     var resumeArguments: [String] {
         switch agent {
         case .claude: return ["--resume", sessionID]
@@ -176,16 +176,16 @@ struct PastSession: Identifiable, Equatable {
     }
 }
 
-/// Met welk account een agent is ingelogd, uit zijn eigen instellingen.
+/// Which account an agent is logged in with, from its own configuration.
 struct AgentAccount: Equatable {
     let agent: AgentKind
-    /// E-mailadres, of "API-sleutel" als er geen account is.
+    /// Email address, or "API key" if there is no account.
     var name: String
     var organization: String
     var plan: String
 }
 
-/// Hoe ver het koppelen met één klik is.
+/// Progress of one-click connecting.
 enum AgentConnectProgress: Equatable {
     case working(String)
     case waitingForLogin(String)
@@ -206,13 +206,13 @@ enum AgentConnectProgress: Equatable {
     }
 }
 
-/// Gebruik over een periode, voor één agent.
+/// Usage over a period of time, for a single agent.
 struct AgentUsageSummary: Equatable {
     var today = TokenTally()
     var week = TokenTally()
     var sessionsToday = 0
     var sessionsWeek = 0
-    /// Tokens per dag, de laatste 7 dagen, oudste eerst.
+    /// Tokens per day for the last 7 days, oldest first.
     var perDay: [(day: Date, tokens: Int)] = []
 
     static func == (lhs: AgentUsageSummary, rhs: AgentUsageSummary) -> Bool {
@@ -221,35 +221,35 @@ struct AgentUsageSummary: Equatable {
     }
 }
 
-/// Eerdere sessies, tokengebruik en accounts van Claude Code en Codex. Leest alleen hun eigen bestanden op deze Mac
-/// (~/.claude en ~/.codex), op de achtergrond, en leest een transcript pas opnieuw als het veranderd is.
+/// Past sessions, token usage, and accounts from Claude Code and Codex. Only reads their own files on this Mac
+/// (~/.claude and ~/.codex) in the background, re-reading a transcript only when it has changed.
 @MainActor
 final class AgentHistory: ObservableObject {
     @Published private(set) var sessions: [PastSession] = []
-    /// Per account (`AgentProfile.id`): met wie je bent ingelogd.
+    /// Per account (`AgentProfile.id`): who is logged in.
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
-    /// Per account: tokens en sessies van vandaag en deze week.
+    /// Per account: tokens and sessions for today and this week.
     @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
-    /// Welke agents op deze Mac staan (er is een ~/.claude of ~/.codex).
+    /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
-    /// Agents waarvan het programma op deze Mac staat.
+    /// Agents whose executable exists on this Mac.
     @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
 
-    /// Welke accounts Nook leest; AppModel houdt dit gelijk met `AgentProfileStore`.
+    /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
     var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
 
     private let scanner = HistoryScanner()
     private var lastRefresh = Date.distantPast
 
-    /// Het eerste account van elke agent (de gewone map, zoals `claude` in je terminal hem gebruikt).
+    /// The default account for each agent (the standard directory, as used by `claude` in the terminal).
     var accounts: [AgentKind: AgentAccount] {
         var result: [AgentKind: AgentAccount] = [:]
         for kind in AgentKind.allCases { result[kind] = profileAccounts[kind.rawValue] }
         return result
     }
 
-    /// Ververst als het langer dan `minimumInterval` geleden is. De Agents-tab roept dit aan als hij opent.
+    /// Refreshes if more than `minimumInterval` has elapsed. Called by the Agents tab when opened.
     func refresh(minimumInterval: TimeInterval = 20) {
         guard !loading, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
         loading = true
@@ -283,19 +283,19 @@ final class AgentHistory: ObservableObject {
     }
 }
 
-/// Een account zoals de scanner het nodig heeft: welke map, van welke agent.
+/// An account as needed by the scanner: which directory, for which agent.
 struct ProfileHome: Sendable {
     var id: String
     var kind: AgentKind
     var url: URL
     var isDefault: Bool
-    /// Dit account logt in met een API-sleutel uit Nooks Keychain (Claude Code).
+    /// This account logs in using an API key from Nook's Keychain (Claude Code).
     var apiKey = false
 }
 
-// MARK: Lezen
+// MARK: Reading
 
-/// Doet het leeswerk. Wordt alleen vanaf één achtergrondtaak tegelijk gebruikt (zie `AgentHistory.loading`).
+/// Performs file scanning and parsing. Used only from one background task at a time (see `AgentHistory.loading`).
 private final class HistoryScanner: @unchecked Sendable {
     struct Result {
         var sessions: [PastSession]
@@ -305,7 +305,7 @@ private final class HistoryScanner: @unchecked Sendable {
         var executables: [AgentKind: String]
     }
 
-    /// Eén tokenregel, met een sleutel om dubbele regels over transcripten heen maar één keer te tellen.
+    /// A single token entry, with a key to deduplicate entries across transcripts.
     struct UsageEntry {
         var key: String
         var date: Date
@@ -325,7 +325,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private var cache: [String: (key: CacheKey, parsed: Parsed)] = [:]
     private let lock = NSLock()
 
-    /// Zoveel dagen terug lezen we transcripten.
+    /// How many days back to read transcripts.
     private static let days = 30
     private static let maxFiles = 400
 
@@ -351,7 +351,7 @@ private final class HistoryScanner: @unchecked Sendable {
         var seenFolders = Set<String>()
 
         for home in homes where home.kind != .gemini {
-            // Twee accounts met dezelfde map: maar één keer lezen.
+            // Two accounts with the same directory: read only once.
             guard fm.fileExists(atPath: home.url.path), seenFolders.insert(home.url.standardizedFileURL.path).inserted else { continue }
             installed.insert(home.kind)
             let found = home.kind == .claude ? claudeFiles(home.url, since: since) : codexFiles(home.url, since: since)
@@ -376,7 +376,7 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         cache = fresh
 
-        // Sessies voor de lijst: zonder de gesprekken die Nook zelf via Claude Code voert (zijn eigen map).
+        // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
         let sessions = parsedAll.compactMap { $0.parsed.session }
             .filter { $0.prompts > 0 && $0.cwd != ownFolder }
             .sorted { $0.ended > $1.ended }
@@ -388,7 +388,7 @@ private final class HistoryScanner: @unchecked Sendable {
             case .claude:
                 usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
                 if home.apiKey {
-                    // Met een sleutel telt die, ook als er in de map nog een oude login staat.
+                    // An API key takes precedence, even if an old login remains in the directory.
                     accounts[home.id] = AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "API")
                 } else if let account = claudeAccount(home.url, isDefault: home.isDefault) {
                     accounts[home.id] = account
@@ -407,13 +407,13 @@ private final class HistoryScanner: @unchecked Sendable {
         return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
     }
 
-    // MARK: Programma's
+    // MARK: Executables
 
     private var foundExecutables: [AgentKind: String] = [:]
     private var lastShellLookup = Date.distantPast
 
-    /// Waar claude, codex en gemini staan. Eerst de bekende plekken; wat daar niet staat, vraagt Nook hooguit
-    /// eens per minuut aan je eigen shell (voor nvm, asdf en dergelijke).
+    /// Where claude, codex, and gemini are located. First checks known locations; for anything missing, Nook
+    /// queries the user's shell at most once per minute (for nvm, asdf, etc.).
     private func locateExecutables() -> [AgentKind: String] {
         let fm = FileManager.default
         var missing: [AgentKind] = []
@@ -429,7 +429,7 @@ private final class HistoryScanner: @unchecked Sendable {
         if !missing.isEmpty, Date().timeIntervalSince(lastShellLookup) > 60 {
             lastShellLookup = Date()
             let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
-            // Elk antwoord krijgt een eigen voorvoegsel: een interactieve shell kan zelf ook iets printen.
+            // Each response receives its own prefix: an interactive shell may output extraneous text.
             let script = missing.map { "printf 'NOOK-\($0.rawValue):%s\\n' \"$(command -v \($0.command) 2>/dev/null)\"" }
                 .joined(separator: "; ")
             let lines = Self.run(shell, ["-ilc", script], timeout: 6)?.components(separatedBy: .newlines) ?? []
@@ -460,7 +460,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return String(data: data, encoding: .utf8)
     }
 
-    // MARK: Gebruik
+    // MARK: Usage
 
     private func summarize(_ parsed: [Parsed], excludingFolder ownFolder: String) -> AgentUsageSummary {
         var calendar = Calendar(identifier: .gregorian)
@@ -491,7 +491,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return summary
     }
 
-    // MARK: Bestanden zoeken
+    // MARK: File Discovery
 
     static var claudeHome: URL {
         if let custom = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !custom.isEmpty {
@@ -506,14 +506,14 @@ private final class HistoryScanner: @unchecked Sendable {
         return CacheKey(modified: modified, size: values.fileSize ?? 0)
     }
 
-    /// ~/.claude/projects/<map>/<sessie>.jsonl
+    /// ~/.claude/projects/<dir>/<session>.jsonl
     private func claudeFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("projects", isDirectory: true)
         guard let projects = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
         var result: [(url: URL, key: CacheKey)] = []
         for project in projects {
-            // Een map die al lang niet is aangeraakt, hoeft niet doorzocht te worden.
+            // A directory that hasn't been modified recently does not need to be searched.
             if let modified = attributes(project)?.modified, modified < since { continue }
             guard let names = try? fm.contentsOfDirectory(atPath: project.path) else { continue }
             for name in names where name.hasSuffix(".jsonl") {
@@ -524,7 +524,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return result
     }
 
-    /// ~/.codex/sessions/JJJJ/MM/DD/rollout-*.jsonl, alleen de mappen van de afgelopen dagen.
+    /// ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl, only directories from recent days.
     private func codexFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("sessions", isDirectory: true)
@@ -591,7 +591,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 if !text.isEmpty { session.lastReply = text }
                 if let raw = message["usage"] as? [String: Any] {
                     let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
-                    // Claude Code schrijft per antwoord een regel per blok, elk met hetzelfde gebruik.
+                    // Claude Code writes a line per block for each reply, each containing identical usage.
                     guard id == ":" || seenUsage.insert(id).inserted else { return }
                     let tokens = TokenTally(
                         input: Self.int(raw["input_tokens"]),
@@ -621,7 +621,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return Parsed(session: session, entries: entries)
     }
 
-    /// Wat je zelf typte, niet wat Claude Code zelf toevoegt (opdrachten, uitvoer, onderbrekingen).
+    /// User-typed input, excluding what Claude Code injects automatically (commands, output, interrupts).
     private static func isTypedPrompt(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -630,8 +630,8 @@ private final class HistoryScanner: @unchecked Sendable {
         return true
     }
 
-    /// ~/.claude.json: met welk account Claude Code is ingelogd. Met een eigen map (CLAUDE_CONFIG_DIR) staat het
-    /// bestand in die map.
+    /// ~/.claude.json: which account Claude Code is logged in with. When using a custom directory (CLAUDE_CONFIG_DIR),
+    /// the file is stored in that directory.
     private func claudeAccount(_ configHome: URL, isDefault: Bool) -> AgentAccount? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var candidates = [configHome.appendingPathComponent(".claude.json"), configHome.appendingPathComponent(".config.json")]
@@ -644,7 +644,7 @@ private final class HistoryScanner: @unchecked Sendable {
             if let oauth = root["oauthAccount"] as? [String: Any] {
                 let email = (oauth["emailAddress"] as? String) ?? (oauth["displayName"] as? String) ?? "Claude-account"
                 let org = (oauth["organizationName"] as? String) ?? ""
-                // Een organisatie die gewoon "<email>'s Organization" heet, zegt niets extra's.
+                // An organization simply named "<email>'s Organization" adds no useful detail.
                 let cleanOrg = org.contains(email) || org.hasSuffix("'s Organization") ? "" : org
                 return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(oauth))
             }
@@ -666,7 +666,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
     private func parseCodex(_ url: URL) -> Parsed {
         guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return Parsed(session: nil, entries: []) }
-        // rollout-2026-10-14T10-12-33-<uuid>.jsonl: de uuid is wat `codex resume` wil.
+        // rollout-2026-10-14T10-12-33-<uuid>.jsonl: the uuid is what `codex resume` expects.
         let base = url.deletingPathExtension().lastPathComponent
         let fallbackID = base.count > 36 ? String(base.suffix(36)) : base
         var session = PastSession(
@@ -706,7 +706,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 case "agent_message":
                     if let text = payload["message"] as? String, !text.isEmpty { session.lastReply = text }
                 case "token_count":
-                    // Het totaal van de sessie tot nu toe; het verschil met de vorige regel is wat erbij kwam.
+                    // Cumulative session total so far; the delta with the previous line is the incremental usage.
                     guard let info = payload["info"] as? [String: Any],
                           let total = info["total_token_usage"] as? [String: Any] else { return }
                     let cached = Self.int(total["cached_input_tokens"])
@@ -740,7 +740,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return Parsed(session: session, entries: entries)
     }
 
-    /// ~/.codex/auth.json: ingelogd met ChatGPT (e-mail en abonnement staan in het id-token) of met een API-sleutel.
+    /// ~/.codex/auth.json: logged in with ChatGPT (email and plan in id-token) or with an API key.
     private func codexAccount(_ home: URL) -> AgentAccount? {
         guard let data = try? Data(contentsOf: home.appendingPathComponent("auth.json")),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
@@ -758,7 +758,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Gemini CLI
 
-    /// ~/.gemini/google_accounts.json (actief Google-account) en settings.json (hoe je bent ingelogd).
+    /// ~/.gemini/google_accounts.json (active Google account) and settings.json (login method).
     private func geminiAccount(_ home: URL) -> AgentAccount? {
         let settings = (try? Data(contentsOf: home.appendingPathComponent("settings.json")))
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
@@ -776,7 +776,7 @@ private final class HistoryScanner: @unchecked Sendable {
         }
     }
 
-    /// Alleen het middelste deel van een JWT: de gegevens. Niets wordt gecontroleerd of verstuurd.
+    /// Extracts only the payload part of a JWT. Nothing is verified or transmitted externally.
     private static func jwtClaims(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }
@@ -786,7 +786,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    // MARK: Hulpjes
+    // MARK: Helpers
 
     private func forEachLine(_ data: Data, _ body: (Data) -> Void) {
         var start = data.startIndex
@@ -809,7 +809,7 @@ private final class HistoryScanner: @unchecked Sendable {
         (value as? NSNumber)?.intValue ?? 0
     }
 
-    /// Tekst uit een bericht: een string, of de tekstblokken uit een lijst.
+    /// Text extracted from a message: either a direct string or concatenated text blocks from an array.
     private static func text(_ content: Any?) -> String {
         if let string = content as? String { return string }
         guard let blocks = content as? [[String: Any]] else { return "" }

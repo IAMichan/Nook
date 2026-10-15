@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 import Security
 
 /// The API key is stored in the Keychain, never in a file.
@@ -58,6 +59,28 @@ final class AppSettings: ObservableObject {
         ("auto", "Taal van mijn vraag")
     ]
 
+    /// The language to answer this request in: the chosen language, or with "auto" the language the request is written in.
+    func answerLanguage(for text: String) -> NLLanguage? {
+        if language != "auto" { return NLLanguage(rawValue: language) }
+        return Self.detectLanguage(text)
+    }
+
+    /// The language a text is written in, when it is clear enough to tell.
+    static func detectLanguage(_ text: String) -> NLLanguage? {
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8 else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let best = recognizer.languageHypotheses(withMaximum: 1).max(by: { $0.value < $1.value }), best.value > 0.5 else { return nil }
+        return best.key
+    }
+
+    /// Prompt sentence for one request, naming the language explicitly: small models drift to English otherwise.
+    func languageInstruction(for text: String) -> String {
+        guard language == "auto", let detected = Self.detectLanguage(text),
+              let name = Locale(identifier: "en").localizedString(forLanguageCode: detected.rawValue) else { return languageInstruction }
+        return "Always respond in \(name), the language of the request, even if the data or tools are in a different language."
+    }
+
     /// Prompt sentence, e.g. "Always respond in English."
     var languageInstruction: String {
         if language == "auto" { return "Respond in the language the user writes in." }
@@ -112,6 +135,10 @@ final class AppSettings: ObservableObject {
     /// When idle, only the notch itself: Nook appears when hovered or when activity occurs.
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
+    }
+    /// Larger panel (wider and taller) for chat and agents.
+    @Published var panelLarge: Bool {
+        didSet { UserDefaults.standard.set(panelLarge, forKey: "panelLarge") }
     }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
@@ -230,6 +257,7 @@ final class AppSettings: ObservableObject {
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")

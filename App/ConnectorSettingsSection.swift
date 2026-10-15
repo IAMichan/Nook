@@ -2,10 +2,10 @@ import SwiftUI
 import Security
 import AppKit
 
-/// Rijen voor de online koppelingen (GitHub, Stripe…) in de instellingen. Zet hem in een `Section("Diensten")` binnen een Form.
+/// Rows for online connectors (GitHub, Stripe, etc.) in settings. Place in a Section within a Form.
 struct CloudConnectorSettings: View {
     let connectors: [ContextSource]
-    /// Eén regel over hoe de koppeling werkt en wat hij kan, per id.
+    /// One-line description of how the connector works and its capabilities, per id.
     var capabilities: (String) -> String = { _ in "" }
     let onChange: () -> Void
 
@@ -15,7 +15,7 @@ struct CloudConnectorSettings: View {
         }
     }
 
-    /// Opent het existential zodat de rij de koppeling kan observeren.
+    /// Opens the existential so the row can observe the connector.
     private static func row(for connector: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
         guard let config = connector as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
         return makeRow(config, capabilities: capabilities, onChange: onChange)
@@ -26,7 +26,7 @@ struct CloudConnectorSettings: View {
     }
 }
 
-/// Eén koppeling: icoon, naam, status, aan/uit en (uitgeklapt) de velden voor de sleutel.
+/// A single connector: icon, title, status, toggle, and (expanded) credential fields.
 private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     @ObservedObject var connector: C
     var capabilities: String = ""
@@ -36,7 +36,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     @State private var isOn = true
     @State private var configured = false
     @State private var drafts: [String: String] = [:]
-    /// Welke geheime velden al een waarde in de Keychain hebben.
+    /// Which secret fields already have a value stored in the Keychain.
     @State private var stored: Set<String> = []
     @State private var note = ""
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
@@ -87,7 +87,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             .padding(.vertical, 4)
         } label: {
             HStack(spacing: 10) {
-                // De hele rij klapt open, niet alleen het pijltje: anders lijkt klikken op een dienst niets te doen.
+                // Expanding the entire row, not just the chevron: makes tapping a service more intuitive.
                 HStack(spacing: 10) {
                     SiteIcon(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 20)
                         .frame(width: 22)
@@ -117,7 +117,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         }
     }
 
-    // MARK: GitHub in één klik
+    // MARK: - One-Click GitHub
 
     @ViewBuilder
     private var gitHubSignInButton: some View {
@@ -148,7 +148,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         }
     }
 
-    // MARK: Velden
+    // MARK: - Fields
 
     @ViewBuilder
     private func fieldRow(_ field: ConnectorField) -> some View {
@@ -157,7 +157,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             set: { new in
                 let old = drafts[field.account] ?? ""
                 drafts[field.account] = new
-                // Plakken zet in één keer veel tekst neer: dan bewaren we meteen, zonder extra knop.
+                // Pasting inserts a large chunk of text at once: save immediately without requiring extra button clicks.
                 if new.count - old.count >= 8 { save() }
             }
         )
@@ -171,7 +171,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         }
     }
 
-    /// Neemt wat er op het klembord staat, en bewaart het meteen in het eerste geheime veld.
+    /// Takes text from the clipboard and saves it directly into the first secret field.
     private func pasteFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string),
               !ConnectorField.clean(text).isEmpty,
@@ -191,7 +191,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         }
     }
 
-    // MARK: Status
+    // MARK: - Status
 
     private var stateText: String {
         if !configured { return tr("connector.notConfigured") }
@@ -202,7 +202,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         case .ok:
             let headline = connector.status.headline
             let base = headline.isEmpty ? tr("connect.status.connected") : headline
-            // Wanneer het voor het laatst lukte, zodat je ziet of de koppeling gezond is.
+            // When it was last successful, providing a health indicator for the connection.
             return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.relative($0)) } ?? "")
         case .error(let message):
             return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.relative($0)) } ?? "")
@@ -218,7 +218,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         }
     }
 
-    // MARK: Acties
+    // MARK: - Actions
 
     private func load() {
         isOn = ConnectorToggle.isOn(connector.id)
@@ -242,7 +242,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         for field in connector.configFields {
             guard let draft = drafts[field.account] else { continue }
             let cleaned = ConnectorField.clean(draft)
-            // Een leeg geheim veld betekent: laat de bewaarde sleutel staan.
+            // An empty secret field means: keep the existing saved key.
             if field.secret && cleaned.isEmpty { continue }
             if Keychain.write(cleaned, account: field.account) != errSecSuccess { failed = true }
         }
@@ -276,7 +276,7 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     }
 }
 
-/// Diensten die Nook (nog) niet zelf koppelt, met eerlijk wat er nu wel kan.
+/// Services Nook does not yet connect directly, explaining current alternatives.
 struct NotYetBuiltIn {
     let name: String
     let how: String

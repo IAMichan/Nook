@@ -3,9 +3,9 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-// Bronnen op je eigen Mac. Niets hiervan gaat over het netwerk; pas als je iets vraagt, gaat een korte samenvatting naar het brein.
+// Sources on your own Mac. None of this goes over the network; only when you ask something does a short summary go to the brain.
 
-/// Hulp voor AppleScript-tekst: aanhalingstekens en backslashes onschadelijk maken.
+/// Helper for AppleScript text: escaping quotes and backslashes.
 enum ScriptText {
     static func quote(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
@@ -15,7 +15,7 @@ enum ScriptText {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
-    /// Draait AppleScript buiten de hoofdthread met time-out en geeft tekst plus foutnummer terug.
+    /// Runs AppleScript off the main thread with a timeout and returns text plus error number.
     static func run(_ source: String, timeout: TimeInterval = 4.0) async -> (text: String?, errorNumber: Int?) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -25,7 +25,7 @@ enum ScriptText {
     }
 }
 
-// MARK: Agenda
+// MARK: - Calendar
 
 @MainActor
 final class CalendarConnector: ContextSource {
@@ -44,7 +44,7 @@ final class CalendarConnector: ContextSource {
 
     func refresh() async {
         guard calendar.hasEventAccess else {
-            status = ConnectorStatus(state: .off, detail: "Geef toegang bij Instellingen › Machtigingen")
+            status = ConnectorStatus(state: .off, detail: "Grant access in Settings › Permissions")
             return
         }
         let now = Date()
@@ -72,10 +72,10 @@ final class CalendarConnector: ContextSource {
     }
 
     func contextLines() -> [String] {
-        guard calendar.hasEventAccess else { return ["Agenda: geen toegang."] }
+        guard calendar.hasEventAccess else { return ["Calendar: no access."] }
         if events.isEmpty { Task { await refresh() } }
-        var lines = ["Agenda (Nook heeft toegang), vandaag en de komende zeven dagen:"]
-        if events.isEmpty { lines.append("- geen afspraken") }
+        var lines = ["Calendar (Nook has access), today and the next seven days:"]
+        if events.isEmpty { lines.append("- no events") }
         for event in events.prefix(40) {
             let place = event.location.isEmpty ? "" : " | \(event.location)"
             lines.append("- \(event.title) | \(NookDates.iso(event.start)) – \(NookDates.iso(event.end))\(place)")
@@ -95,7 +95,7 @@ extension CalendarConnector: AgendaSource {
     }
 }
 
-// MARK: Herinneringen
+// MARK: - Reminders
 
 @MainActor
 final class RemindersConnector: ContextSource {
@@ -114,7 +114,7 @@ final class RemindersConnector: ContextSource {
 
     func refresh() async {
         guard calendar.hasReminderAccess else {
-            status = ConnectorStatus(state: .off, detail: "Geef toegang bij Instellingen › Machtigingen")
+            status = ConnectorStatus(state: .off, detail: "Grant access in Settings › Permissions")
             return
         }
         reminders = await calendar.incompleteReminders()
@@ -141,10 +141,10 @@ final class RemindersConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard !reminders.isEmpty else { return [] }
-        var lines = ["Herinneringen die openstaan:"]
+        var lines = ["Reminders that are open:"]
         for reminder in reminders.prefix(15) {
-            let due = reminder.due.map { " | uiterlijk \(NookDates.iso($0))" } ?? ""
-            lines.append("- \(reminder.title)\(due)" + (reminder.list.isEmpty ? "" : " | lijst \(reminder.list)"))
+            let due = reminder.due.map { " | due \(NookDates.iso($0))" } ?? ""
+            lines.append("- \(reminder.title)\(due)" + (reminder.list.isEmpty ? "" : " | list \(reminder.list)"))
         }
         return lines
     }
@@ -204,24 +204,24 @@ final class RemindersConnector: ContextSource {
     }
 }
 
-// MARK: Mail
+// MARK: - Mail
 
-/// Ongelezen mail uit de app Mail. Alleen als Mail al draait: Nook start Mail nooit zelf.
+/// Mail from the Mail app, kept ready in the background so a question about mail is answered instantly from memory:
+/// the newest messages of every inbox (with read and replied state) and the start of the text of the ones still waiting
+/// for a reply. Only while Mail is already running: in the background Nook never starts Mail itself.
 @MainActor
 final class MailConnector: ContextSource {
-    struct Message: Equatable {
-        var subject: String
-        var sender: String
-        var date: String
-    }
-
     let id = "mail"
     let title = "Mail"
     let symbol = "envelope"
     let accent = Color(hex: 0x4DA3FF)
     private(set) var status = ConnectorStatus()
-    private var unread: [Message] = []
     private var unreadCount = 0
+    private var recent: [MailStats.InboxRow] = []
+    /// Bodies already read, by message key, so each refresh only reads new mail.
+    private var bodies: [String: String] = [:]
+    private var loadedAt: Date?
+    private var loading: Task<Void, Never>?
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -231,7 +231,7 @@ final class MailConnector: ContextSource {
     static func ensureRunning() async throws {
         guard !ScriptText.isRunning("com.apple.mail") else { return }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") else {
-            throw NookError("Mail staat niet op deze Mac.")
+            throw NookError("Mail is not installed on this Mac.")
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
@@ -240,48 +240,55 @@ final class MailConnector: ContextSource {
         for _ in 0..<40 where !ScriptText.isRunning("com.apple.mail") {
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
-        guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail wilde niet starten.") }
+        guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail failed to launch.") }
         // Give the inbox a moment to load.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
     }
-    var refreshInterval: TimeInterval { 120 }
+    var refreshInterval: TimeInterval { 60 }
+
+    /// Fresh enough to answer from memory.
+    var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
 
     func refresh() async {
         guard ScriptText.isRunning("com.apple.mail") else {
-            status = ConnectorStatus(state: .off, detail: "Open Mail, dan kijkt Nook mee")
+            status = ConnectorStatus(state: .off, detail: "Open Mail, and Nook will follow along")
             return
         }
-        let script = """
-        tell application "Mail"
-            set msgs to (messages of inbox whose read status is false)
-            set total to count of msgs
-            set n to total
-            if n > 15 then set n to 15
-            set out to (total as string) & linefeed
-            repeat with i from 1 to n
-                set m to item i of msgs
-                set out to out & (subject of m) & "|||" & (sender of m) & "|||" & ((date received of m) as «class isot» as string) & linefeed
-            end repeat
-            return out
-        end tell
-        """
-        let result = await ScriptText.run(script)
+        // One load at a time: a question that arrives during a background refresh waits for that one.
+        if let loading { await loading.value; return }
+        let task = Task { await self.load() }
+        loading = task
+        await task.value
+        loading = nil
+    }
+
+    private func load() async {
+        let result = await ScriptText.run(MailStats.recentScript())
         if result.errorNumber == -1743 {
-            status = ConnectorStatus(state: .error("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering."))
+            status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
         }
         guard let text = result.text else {
-            status = ConnectorStatus(state: .error("Mail gaf geen antwoord."))
+            status = ConnectorStatus(state: .error("Mail did not respond."))
             return
         }
-        var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        unreadCount = Int(lines.first ?? "") ?? 0
-        if !lines.isEmpty { lines.removeFirst() }
-        unread = lines.compactMap { line in
-            let parts = line.components(separatedBy: "|||")
-            guard parts.count >= 3 else { return nil }
-            return Message(subject: parts[0], sender: parts[1], date: parts[2])
+        let parsed = MailStats.recent(text)
+        unreadCount = parsed.unread
+        var rows = parsed.rows
+        // Read the start of the text of mail that still waits for a reply, newest first, only what is not read yet.
+        let waiting = MailStats.select(rows, now: Date(), days: 14, unansweredOnly: true, limit: 10)
+        let missing = waiting.filter { bodies[$0.key] == nil }
+        if !missing.isEmpty {
+            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing))).text ?? "")
+            for (n, row) in missing.enumerated() { bodies[row.key] = texts[n] ?? "" }
         }
+        let keys = Set(rows.map(\.key))
+        bodies = bodies.filter { keys.contains($0.key) }
+        for index in rows.indices { rows[index].body = bodies[rows[index].key] ?? "" }
+        recent = rows
+        loadedAt = Date()
+
+        let unread = rows.filter { !$0.read }
         status = ConnectorStatus(
             state: .ok,
             headline: unreadCount == 0 ? tr("connect.local.mailAllRead") : tr("connect.local.mailUnread", unreadCount),
@@ -293,6 +300,18 @@ final class MailConnector: ContextSource {
         )
     }
 
+    /// Recent inbox mail from memory, refreshed first only when it is stale.
+    func inbox(days: Int, unansweredOnly: Bool) async throws -> String {
+        try await Self.ensureRunning()
+        if !isFresh { await refresh() }
+        if case .error(let message) = status.state { throw NookError(message) }
+        let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
+        guard !rows.isEmpty else {
+            return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
+        }
+        return MailStats.describe(rows, date: NookDates.iso)
+    }
+
     nonisolated static func name(_ sender: String) -> String {
         // "Lisa de Vries <lisa@…>" → "Lisa de Vries"
         if let range = sender.range(of: " <") { return String(sender[..<range.lowerBound]).replacingOccurrences(of: "\"", with: "") }
@@ -301,11 +320,22 @@ final class MailConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard status.state == .ok else { return [] }
-        // "Nothing unread" is an answer too: without this line the model does not know it already saw Mail.
-        guard unreadCount > 0 else { return ["Mail: geen ongelezen mail in de inbox."] }
-        var lines = ["Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread). Nieuwste:"]
-        for message in unread.prefix(10) {
-            lines.append("- \(message.subject) | van \(message.sender) | \(message.date)")
+        var lines = [unreadCount == 0 ? "Mail: geen ongelezen mail in de inbox."
+                     : "Mail: \(unreadCount) ongelezen in de inbox (per dag, account of afzender: mail_unread)."]
+        // What still needs a reply goes along in full, so "which mail do I need to answer" needs no lookup at all.
+        let waiting = MailStats.select(recent, now: Date(), days: 14, unansweredOnly: true, limit: 10)
+        if !waiting.isEmpty {
+            lines.append("Mail die nog een antwoord kan gebruiken (laatste 14 dagen, nog niet beantwoord, geen automatische mail):")
+            for row in waiting {
+                let snippet = row.body.replacingOccurrences(of: "\n", with: " ").prefix(160)
+                lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date)) | \(row.read ? "gelezen" : "ongelezen")"
+                             + (snippet.isEmpty ? "" : " | \"\(snippet)\""))
+            }
+        }
+        let unread = recent.filter { !$0.read && !waiting.contains($0) }.prefix(8)
+        if !unread.isEmpty {
+            lines.append("Andere nieuwste ongelezen:")
+            for row in unread { lines.append("- \(row.subject) | van \(row.sender) | \(NookDates.iso(row.date))") }
         }
         return lines
     }
@@ -314,84 +344,52 @@ final class MailConnector: ContextSource {
         [
             ToolSpec(
                 name: "mail_unread",
-                description: "Telt de ongelezen mail in de inbox van de app Mail, vers opgehaald: het totaal, per account, per dag van ontvangst (de laatste 14 dagen) en de afzenders met de meeste ongelezen mail. Gebruik dit voor vragen als 'hoeveel mail heb ik nog niet gelezen' en voor een grafiek van ongelezen mail.",
+                description: "Counts unread mail in the inbox of the Mail app, freshly fetched: total, per account, per day received (the last 14 days) and senders with the most unread mail. Use this for questions like 'how many unread emails do I have' and for an unread mail chart.",
                 schema: ["type": "object", "properties": [String: Any]()],
                 kind: .read,
-                summarize: { _ in "Ongelezen mail tellen" },
+                summarize: { _ in "Count unread mail" },
                 tag: { _ in ("", .neutral) },
                 run: { _ in
                     try await MailConnector.ensureRunning()
                     let result = await ScriptText.run(MailStats.unreadScript)
                     if result.errorNumber == -1743 {
-                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                        throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
-                    guard let raw = result.text else { throw NookError("Mail gaf geen antwoord.") }
+                    guard let raw = result.text else { throw NookError("Mail did not respond.") }
                     return MailStats.unread(raw, now: Date())
                 }
             ),
             ToolSpec(
                 name: "inbox_mail",
-                description: "Geeft de recente mail in de inbox van de app Mail (nieuwste eerst): onderwerp, afzender, datum, of hij gelezen is, of de gebruiker al antwoordde, en het begin van de tekst, met een link per bericht. Gebruik dit voor vragen als 'welke mail moet ik nog beantwoorden', 'wat is er vandaag binnengekomen' of 'heb ik iets belangrijks gemist'. Beoordeel zelf welke mails een antwoord nodig hebben: echte mensen met een vraag of verzoek, nog niet beantwoord; nieuwsbrieven, meldingen en reclame niet.",
+                description: "Returns recent mail in the inbox of the Mail app (newest first): subject, sender, date, whether it is read, whether the user already replied, and the start of the body text, with a link per message. Use this for questions like 'which emails do I still need to reply to', 'what arrived today', or 'did I miss anything important'. Judge for yourself which emails need a reply: real people with a question or request, not yet replied to; newsletters, notifications, and spam do not.",
                 schema: ["type": "object", "properties": [
-                    "days": ["type": "integer", "description": "Hoeveel dagen terug (standaard 7, hooguit 30)."],
-                    "unanswered_only": ["type": "boolean", "description": "Alleen mail waarop de gebruiker nog niet antwoordde (standaard false)."] as [String: Any]
+                    "days": ["type": "integer", "description": "How many days back (default 7, at most 30)."],
+                    "unanswered_only": ["type": "boolean", "description": "Only mail to which the user has not replied yet (default false)."] as [String: Any]
                 ]],
                 kind: .read,
-                summarize: { _ in "Inbox lezen" },
+                summarize: { _ in "Read inbox" },
                 tag: { _ in ("", .neutral) },
-                run: { input in
-                    try await MailConnector.ensureRunning()
+                run: { [weak self] input in
+                    guard let self else { throw NookError("Mail is niet beschikbaar.") }
                     let days = min(30, max(1, (input["days"] as? Int) ?? Int((input["days"] as? Double) ?? 7)))
                     let unanswered = (input["unanswered_only"] as? Bool) ?? false
-                    let filter = "date received > ((current date) - \(days) * days)" + (unanswered ? " and was replied to is false" : "")
-                    let script = """
-                    tell application "Mail"
-                        set found to (messages of inbox whose \(filter))
-                        set n to count of found
-                        if n > 25 then set n to 25
-                        set out to ""
-                        repeat with i from 1 to n
-                            set m to item i of found
-                            set body to ""
-                            try
-                                set body to content of m
-                            end try
-                            if (length of body) > 400 then set body to text 1 thru 400 of body
-                            set mid to ""
-                            try
-                                set mid to message id of m
-                            end try
-                            set state to "ongelezen"
-                            if read status of m then set state to "gelezen"
-                            if was replied to of m then set state to state & ", beantwoord"
-                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & state & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                        end repeat
-                        return out
-                    end tell
-                    """
-                    let result = await ScriptText.run(script)
-                    if result.errorNumber == -1743 {
-                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
-                    }
-                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !raw.isEmpty else { return "Geen mail in de inbox van de laatste \(days) dagen" + (unanswered ? " waarop je nog niet antwoordde." : ".") }
-                    return MailConnector.format(raw, sent: false, status: true)
+                    return try await self.inbox(days: days, unansweredOnly: unanswered)
                 }
             ),
             ToolSpec(
                 name: "search_mail",
-                description: "Zoekt in de app Mail op onderwerp of afzender (inbox) of op onderwerp of ontvanger (verzonden) en geeft de nieuwste treffers met het begin van de tekst en een link naar het bericht. Gebruik dit voor vragen als 'wat schreef Lisa over de offerte'. Zoek met mailbox sent naar wat de gebruiker zelf schreef of beloofde.",
+                description: "Searches the Mail app by subject or sender (inbox) or by subject or recipient (sent) and returns the newest matches with the start of the text and a link to the message. Use this for questions like 'what did Lisa write about the proposal'. Use mailbox sent to find what the user wrote or promised.",
                 schema: ["type": "object", "properties": [
-                    "query": ["type": "string", "description": "Woord uit het onderwerp, of (deel van) de afzender of ontvanger."],
-                    "mailbox": ["type": "string", "enum": ["inbox", "sent"], "description": "inbox (standaard) of sent (verzonden)."] as [String: Any]
+                    "query": ["type": "string", "description": "Keyword in the subject, or (part of) the sender or recipient."],
+                    "mailbox": ["type": "string", "enum": ["inbox", "sent"], "description": "inbox (default) or sent."] as [String: Any]
                 ], "required": ["query"]],
                 kind: .read,
-                summarize: { _ in "Mail doorzoeken" },
+                summarize: { _ in "Search mail" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     try await MailConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
                     let q = ScriptText.quote(query)
                     let box = sent ? "sent mailbox" : "inbox"
@@ -424,17 +422,17 @@ final class MailConnector: ContextSource {
                     """
                     let result = await ScriptText.run(script)
                     if result.errorNumber == -1743 {
-                        throw NookError("Geef Nook toestemming om Mail te lezen: Systeeminstellingen › Privacy › Automatisering.")
+                        throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !raw.isEmpty else { return "Geen mail gevonden voor \"\(query)\"" + (sent ? " in verzonden." : ".") }
+                    guard !raw.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
                     return MailConnector.format(raw, sent: sent)
                 }
             )
         ]
     }
 
-    /// Maakt de treffers leesbaar voor het brein, met een verwijzing per bericht (een message:-link opent hem in Mail).
+    /// Formats matches to be readable for the brain, with a reference per message (a message: link opens it in Mail).
     /// `status`: the recipient slot holds the status (read, replied) instead, for inbox_mail.
     nonisolated static func format(_ raw: String, sent: Bool, status: Bool = false) -> String {
         var blocks: [String] = []
@@ -444,16 +442,16 @@ final class MailConnector: ContextSource {
             let header = String(lines.first ?? "").components(separatedBy: "|||")
             guard header.count >= 5 else { continue }
             let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
-            let who = sent ? "aan \(header[2])" : "van \(header[1])"
+            let who = sent ? "to \(header[2])" : "from \(header[1])"
             let state = status && !header[2].isEmpty ? " | \(header[2])" : ""
             blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\n\(body)")
-            refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(geen onderwerp)" : header[0], url: messageLink(header[4]),
+            refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: messageLink(header[4]),
                                              detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
         }
         return (blocks + refs).joined(separator: "\n\n")
     }
 
-    /// message:%3C…%3E opent het bericht in Mail. Alleen met een echt message-id, anders geen link.
+    /// message:%3C…%3E opens the message in Mail. Only with a valid message id, otherwise no link.
     nonisolated static func messageLink(_ id: String) -> String? {
         let trimmed = id.trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
         guard !trimmed.isEmpty, trimmed.contains("@"),
@@ -462,9 +460,9 @@ final class MailConnector: ContextSource {
     }
 }
 
-// MARK: Browser
+// MARK: - Browser
 
-/// Open tabbladen in Safari en Chromium-browsers (Chrome, Arc, Brave, Edge). Alleen browsers die al draaien.
+/// Open tabs in Safari and Chromium browsers (Chrome, Arc, Brave, Edge). Only browsers that are already running.
 @MainActor
 final class BrowserConnector: ContextSource {
     struct Tab: Equatable {
@@ -532,7 +530,7 @@ final class BrowserConnector: ContextSource {
         }
         tabs = collected
         if collected.isEmpty && denied {
-            status = ConnectorStatus(state: .error("Geef Nook toestemming voor je browser: Systeeminstellingen › Privacy › Automatisering."))
+            status = ConnectorStatus(state: .error("Grant Nook permission for your browser: System Settings › Privacy & Security › Automation."))
             return
         }
         let active = collected.filter(\.active)
@@ -552,7 +550,7 @@ final class BrowserConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard !tabs.isEmpty else { return [] }
-        var lines = ["Open browsertabbladen (* = actief tabblad van een venster):"]
+        var lines = ["Open browser tabs (* = active tab of a window):"]
         for tab in tabs.sorted(by: { $0.active && !$1.active }).prefix(20) {
             lines.append("- \(tab.active ? "* " : "")\(tab.title) | \(tab.url)")
         }
@@ -655,9 +653,9 @@ final class BrowserConnector: ContextSource {
     }
 }
 
-// MARK: Bestanden
+// MARK: - Files
 
-/// Leest tekst uit gewone documenten. Gedeeld door de Shelf en de bestanden-tools.
+/// Reads text from standard documents. Shared by the Shelf and file tools.
 enum FileText {
     static func read(_ url: URL, limit: Int = 5_000_000) throws -> String {
         let type = UTType(filenameExtension: url.pathExtension) ?? .data
@@ -671,12 +669,12 @@ enum FileText {
             if size < limit { text = try? String(contentsOf: url, encoding: .utf8) }
         }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NookError("Ik kan in \(url.lastPathComponent) geen tekst lezen. Tekst, pdf, Word en rtf lukken wel.")
+            throw NookError("I cannot read text from \(url.lastPathComponent). Plain text, PDF, Word, and RTF work.")
         }
         return text
     }
 
-    /// Alleen bestanden in je eigen map, niet in verborgen mappen of Bibliotheek (sleutels, wachtwoorden, instellingen).
+    /// Only files in your own home folder, not in hidden folders or Library (keys, passwords, settings).
     static func isAllowed(_ url: URL) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
@@ -689,7 +687,7 @@ enum FileText {
     }
 }
 
-/// Recent gebruikte bestanden (Spotlight) en zoeken in je bestanden.
+/// Recently used files (Spotlight) and searching your files.
 @MainActor
 final class FilesConnector: ContextSource {
     let id = "files"
@@ -736,27 +734,27 @@ final class FilesConnector: ContextSource {
     func contextLines() -> [String] {
         guard !recent.isEmpty else { return [] }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return ["Recent gebruikte bestanden:"] + recent.prefix(10).map { "- " + $0.path.replacingOccurrences(of: home, with: "~") }
+        return ["Recently used files:"] + recent.prefix(10).map { "- " + $0.path.replacingOccurrences(of: home, with: "~") }
     }
 
     var tools: [ToolSpec] {
         [
             ToolSpec(
                 name: "search_files",
-                description: "Zoekt met Spotlight in de bestanden van de gebruiker (naam en inhoud) en geeft de paden van de beste treffers.",
-                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Zoekwoorden."]], "required": ["query"]],
+                description: "Searches the user's files using Spotlight (name and content) and returns paths of the best matches.",
+                schema: ["type": "object", "properties": ["query": ["type": "string", "description": "Search terms."]], "required": ["query"]],
                 kind: .read,
-                summarize: { _ in "Bestanden zoeken" },
+                summarize: { _ in "Search files" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
+                    guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     let byName = await FilesConnector.spotlight(["-name", query])
                     let byContent = await FilesConnector.spotlight([query])
                     var seen = Set<String>()
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
                     let hits = (byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20)
-                    if hits.isEmpty { return "Niets gevonden voor \"\(query)\"." }
+                    if hits.isEmpty { return "Nothing found for \"\(query)\"." }
                     let paths = hits.map { $0.path.replacingOccurrences(of: home, with: "~") }
                     let refs = hits.prefix(8).map {
                         ReferenceParser.line(title: $0.lastPathComponent, url: $0.absoluteString, detail: $0.deletingLastPathComponent().path.replacingOccurrences(of: home, with: "~"))
@@ -766,19 +764,19 @@ final class FilesConnector: ContextSource {
             ),
             ToolSpec(
                 name: "read_file",
-                description: "Leest de tekst van een document van de gebruiker (tekst, pdf, Word, rtf). Geef een pad uit search_files of uit de lijst met recente bestanden.",
-                schema: ["type": "object", "properties": ["path": ["type": "string", "description": "Pad, mag met ~ beginnen."]], "required": ["path"]],
+                description: "Reads the text of a user document (plain text, PDF, Word, RTF). Provide a path from search_files or from the recent files list.",
+                schema: ["type": "object", "properties": ["path": ["type": "string", "description": "Path, may start with ~."]], "required": ["path"]],
                 kind: .read,
-                summarize: { _ in "Bestand lezen" },
+                summarize: { _ in "Read file" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     let raw = ((input["path"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let url = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath)
-                    guard FileText.isAllowed(url) else { throw NookError("Dat bestand mag Nook niet lezen.") }
+                    guard FileText.isAllowed(url) else { throw NookError("Nook is not allowed to read that file.") }
                     let text = try FileText.read(url)
-                    let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map { "bewerkt \(NookDates.short($0))" } ?? ""
+                    let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map { "modified \(NookDates.short($0))" } ?? ""
                     var output = String(text.prefix(15_000))
-                    if text.count > 15_000 { output += "\n… (ingekort: de eerste 15.000 tekens van \(text.count))" }
+                    if text.count > 15_000 { output += "\n… (truncated: the first 15,000 characters of \(text.count))" }
                     return output + "\n" + ReferenceParser.line(title: url.lastPathComponent, url: url.absoluteString, detail: modified)
                 }
             )
@@ -786,9 +784,9 @@ final class FilesConnector: ContextSource {
     }
 }
 
-// MARK: Klembord
+// MARK: - Clipboard
 
-/// Wat je net kopieerde. Standaard uit: een klembord kan gevoelig zijn. Wachtwoorden (gemarkeerd als verborgen) slaat Nook altijd over.
+/// What you just copied. Off by default: a clipboard can be sensitive. Passwords (marked as concealed/transient) are always skipped by Nook.
 @MainActor
 final class ClipboardConnector: ContextSource {
     let id = "clipboard"
@@ -821,6 +819,6 @@ final class ClipboardConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard isActive, let text = current else { return [] }
-        return ["Klembord (net gekopieerd):", String(text.prefix(1500))]
+        return ["Clipboard (recently copied):", String(text.prefix(1500))]
     }
 }

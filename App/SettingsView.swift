@@ -159,6 +159,8 @@ struct SettingsView: View {
         var done: Bool
         var button: String
         var section: SettingsSection
+        /// Permission request run in place; nil means the button navigates to `section`.
+        var request: (@MainActor () async -> Void)? = nil
     }
 
     private var checklist: [Step] {
@@ -168,9 +170,11 @@ struct SettingsView: View {
             Step(title: tr("settings.checklist.brain"), detail: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain.notReady"),
                  done: settings.brainReady, button: tr("button.choose"), section: .brain),
             Step(title: tr("settings.checklist.screen"), detail: CGPreflightScreenCaptureAccess() ? tr("settings.checklist.screen.granted") : tr("settings.checklist.screen.notGranted"),
-                 done: CGPreflightScreenCaptureAccess(), button: tr("button.allow"), section: .privacy),
+                 done: CGPreflightScreenCaptureAccess(), button: tr("button.allow"), section: .privacy,
+                 request: { _ = CGRequestScreenCaptureAccess() }),
             Step(title: tr("settings.checklist.calendar"), detail: app.calendar.hasEventAccess ? tr("settings.checklist.calendar.granted") : tr("settings.checklist.calendar.notGranted"),
-                 done: app.calendar.hasEventAccess, button: tr("button.allow"), section: .privacy),
+                 done: app.calendar.hasEventAccess, button: tr("button.allow"), section: .privacy,
+                 request: { _ = await app.calendar.requestEvents(); app.connectors.refreshAll() }),
             Step(title: tr("settings.checklist.connectors"), detail: tr("settings.checklist.connectors.detail", app.connectors.active.count),
                  done: app.connectors.active.count >= 3, button: tr("button.view"), section: .connections)
         ]
@@ -190,12 +194,12 @@ struct SettingsView: View {
                     StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
                         if !step.done {
                             Button(step.button) {
-                                if step.section == .privacy, step.title.contains("schermen") || step.title.contains("screens") || step.title.contains("Bildschirm") {
-                                    CGRequestScreenCaptureAccess()
-                                } else if step.section == .privacy {
-                                    Task { await app.calendar.requestEvents(); refreshTick += 1 }
+                                if let request = step.request {
+                                    // Ask for access right here instead of jumping to the Privacy page.
+                                    app.requestPermission { await request(); refreshTick += 1 }
+                                } else {
+                                    app.settingsSection = step.section
                                 }
-                                app.settingsSection = step.section
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
@@ -805,17 +809,16 @@ struct SettingsView: View {
         Group {
             Section {
                 permissionRow(tr("settings.privacy.screenReading"), detail: tr("settings.privacy.screenReadingDetail"), granted: CGPreflightScreenCaptureAccess()) {
-                    CGRequestScreenCaptureAccess()
-                    refreshTick += 1
+                    _ = CGRequestScreenCaptureAccess()
                 }
                 permissionRow(tr("settings.privacy.calendar"), detail: tr("settings.privacy.calendarDetail"), granted: app.calendar.hasEventAccess) {
-                    Task { await app.calendar.requestEvents(); refreshTick += 1; app.connectors.refreshAll() }
+                    _ = await app.calendar.requestEvents(); app.connectors.refreshAll()
                 }
                 permissionRow(tr("settings.privacy.reminders"), detail: tr("settings.privacy.remindersDetail"), granted: app.calendar.hasReminderAccess) {
-                    Task { await app.calendar.requestReminders(); refreshTick += 1; app.connectors.refreshAll() }
+                    await app.calendar.requestReminders(); app.connectors.refreshAll()
                 }
                 permissionRow(tr("settings.privacy.micSpeech"), detail: tr("settings.privacy.micSpeechDetail"), granted: VoiceService.permissionsGranted) {
-                    Task { _ = await app.voice.requestPermissions(); refreshTick += 1 }
+                    _ = await app.voice.requestPermissions()
                 }
             } header: {
                 Text(tr("settings.privacy.permissions"))
@@ -851,12 +854,14 @@ struct SettingsView: View {
         }
     }
 
-    private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping () -> Void) -> some View {
+    private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
         StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
             if granted {
                 Text(tr("music.on")).foregroundStyle(.secondary)
             } else {
-                Button(tr("button.allow"), action: request)
+                Button(tr("button.allow")) {
+                    app.requestPermission { await request(); refreshTick += 1 }
+                }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }

@@ -1,93 +1,93 @@
 import Foundation
 
-// Eén blik over alle agenda's: Apple Agenda (met alles wat daarin zit, ook Google en Outlook-accounts uit macOS),
-// agenda's via een ICS-adres en Cal.com. Zo kan Nook antwoorden op "ben ik 13 oktober beschikbaar?" zonder dat
-// de gebruiker zelf hoeft te zeggen in welke agenda hij moet kijken.
+// Single unified view across all calendars: Apple Calendar (with everything inside it, including Google and Outlook accounts from macOS),
+// calendars via an ICS URL, and Cal.com. This enables Nook to answer questions like "am I available on October 13?" without
+// requiring the user to specify which calendar to inspect.
 
 struct AgendaEntry: Equatable {
     var title: String
     var start: Date
     var end: Date
     var allDay: Bool = false
-    /// False als de afspraak als "beschikbaar" staat gemarkeerd.
+    /// False if the event is marked as "free" / "available".
     var busy: Bool = true
     var location: String = ""
-    /// Naam van de agenda waar het uit komt.
+    /// Name of the originating calendar.
     var calendar: String
 }
 
 struct AgendaResult {
     var entries: [AgendaEntry]
-    /// Dingen die niet lukten maar de rest niet in de weg zaten, voor de gebruiker.
+    /// Non-fatal issues encountered during fetching, presented to user.
     var problems: [String] = []
 }
 
-/// Een bron die afspraken kan geven voor de beschikbaarheidscheck.
+/// A source providing events for availability checking.
 @MainActor
 protocol AgendaSource: ContextSource {
-    /// Wat er gecontroleerd wordt, bijvoorbeeld "Werk (Google)".
+    /// What is being inspected, e.g. "Work (Google)".
     func agendaNames() -> [String]
-    /// Vers opgehaalde afspraken die de periode raken.
+    /// Freshly fetched events overlapping the time range.
     func agendaEntries(from: Date, to: Date) async throws -> AgendaResult
 }
 
 extension ConnectorHub {
     var agendaSources: [AgendaSource] { sources.compactMap { $0 as? AgendaSource } }
 
-    /// Tools van de hub zelf: die kijken over alle bronnen heen.
+    /// Hub-level tools: inspect across all sources.
     var hubTools: [ToolSpec] {
         [
             ToolSpec(
                 name: "check_availability",
-                description: "Controleert ALLE agenda's van de gebruiker tegelijk (Apple Agenda en alles wat daarin zit, agenda's via een ICS-adres zoals Google of Outlook, Cal.com) en geeft per dag wat bezet is en wanneer hij vrij is. Gebruik dit METEEN bij elke vraag als \"ben ik op 13 oktober beschikbaar?\", \"wanneer heb ik tijd?\" of \"past dinsdag 14:00?\", ook als de periode in de context staat. Geef from en to (ISO 8601); voor één hele dag volstaat from als datum (bijvoorbeeld 2027-10-13). Meld in je antwoord in welke agenda's je keek.",
+                description: "Checks ALL calendars of the user simultaneously (Apple Calendar and its connected accounts, calendars via an ICS URL such as Google or Outlook, Cal.com) and returns busy intervals and free time per day. Use this IMMEDIATELY for any question like \"am I available on October 13?\", \"when do I have time?\", or \"does Tuesday 2 PM work?\", even if the period is mentioned in context. Provide from and to (ISO 8601); for a single full day, from as a date (e.g. 2027-10-13) suffices. Mention in your response which calendars were checked.",
                 schema: [
                     "type": "object",
                     "properties": [
-                        "from": ["type": "string", "description": "Begin, ISO 8601. Alleen een datum (2027-10-13) betekent die hele dag."],
-                        "to": ["type": "string", "description": "Einde, ISO 8601. Weglaten voor één hele dag. Hooguit 14 dagen na from."]
+                        "from": ["type": "string", "description": "Start, ISO 8601. Date only (2027-10-13) covers the entire day."],
+                        "to": ["type": "string", "description": "End, ISO 8601. Omit for a single full day. At most 14 days after from."]
                     ],
                     "required": ["from"]
                 ],
                 kind: .read,
-                summarize: { _ in "Alle agenda's controleren" },
+                summarize: { _ in "Checking all calendars" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
-                    guard let self else { throw NookError("De koppelingen zijn niet beschikbaar.") }
+                    guard let self else { throw NookError("Integrations are not available.") }
                     guard let fromText = (input["from"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
                           let from = NookDates.parse(fromText) else {
-                        throw NookError("from moet een datum of ISO 8601 zijn.")
+                        throw NookError("from must be a date or ISO 8601 string.")
                     }
                     let calendar = Calendar.current
                     var to = (input["to"] as? String).flatMap { NookDates.parse($0) }
                     if let end = to, (input["to"] as? String)?.count == 10 {
-                        // "to" als alleen een datum: die dag telt nog mee.
+                        // "to" as date only: that entire day is included.
                         to = calendar.date(byAdding: .day, value: 1, to: end)
                     }
                     let end = to ?? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: from)) ?? from.addingTimeInterval(86_400)
-                    guard end > from else { throw NookError("to moet na from liggen.") }
+                    guard end > from else { throw NookError("to must be after from.") }
                     return try await self.availability(from: from, to: min(end, from.addingTimeInterval(14 * 86_400)))
                 }
             ),
             ToolSpec(
                 name: "list_sources",
-                description: "Laat zien welke bronnen Nook nu kent (agenda's, mail, diensten, eigen bronnen), welke aan staan en welke nog niet gekoppeld zijn. Gebruik dit als de gebruiker vraagt over een app of dienst waarvan je geen gegevens ziet, zodat je kunt vragen welke app hij gebruikt en kunt uitleggen hoe die te koppelen is.",
+                description: "Shows which sources Nook currently knows (calendars, mail, services, custom sources), which are active, and which are not yet connected. Use this when the user asks about an app or service with no data visible, so you can ask which app they use and explain how to connect it.",
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
                 kind: .read,
-                summarize: { _ in "Bronnen bekijken" },
+                summarize: { _ in "Viewing sources" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] _ in
-                    guard let self else { throw NookError("De koppelingen zijn niet beschikbaar.") }
+                    guard let self else { throw NookError("Integrations are not available.") }
                     return self.sourceOverview()
                 }
             )
         ]
     }
 
-    /// Regel voor de context: in welke agenda's Nook bij een beschikbaarheidsvraag kijkt.
+    /// Context prompt line: which calendars Nook checks for availability queries.
     var agendaCoverageLine: String? {
         let names = agendaSources.filter { $0.isActive }.flatMap { $0.agendaNames() }
         guard !names.isEmpty else { return nil }
-        return "Agenda's waar check_availability in kijkt: " + names.joined(separator: "; ") + "."
+        return "Calendars checked by check_availability: " + names.joined(separator: "; ") + "."
     }
 
     func sourceOverview() -> String {
@@ -95,23 +95,23 @@ extension ConnectorHub {
         let on = sources.filter { $0.isActive }
         let off = sources.filter { !$0.isActive }
         if !on.isEmpty {
-            lines.append("Aan:")
+            lines.append("Enabled:")
             for source in on {
                 let headline = source.status.headline
                 lines.append("- \(source.title)" + (headline.isEmpty ? "" : ": \(headline)"))
             }
         }
         if !off.isEmpty {
-            lines.append("Nog niet gekoppeld of uit: " + off.map { $0.title }.joined(separator: ", ") + ".")
+            lines.append("Not yet connected or disabled: " + off.map { $0.title }.joined(separator: ", ") + ".")
         }
-        lines.append("Koppelen kan bij Instellingen › Koppelingen: een agenda via zijn ICS-adres (Google Agenda, Outlook, iCloud…) onder Andere agenda's; bijna elke andere app of dienst met een web-API onder Eigen bronnen (alleen lezen). Een app zonder API kan via een opdracht uit Opdrachten (run_shortcut).")
-        lines.append("Vraag de gebruiker welke app hij bedoelt als je hem hier niet in ziet staan, en zeg wat de makkelijkste manier is om hem te koppelen.")
+        lines.append("You can connect services in Settings › Integrations: a calendar via its ICS URL (Google Calendar, Outlook, iCloud…) under Other calendars; almost any other app or service with a web API under Custom sources (read-only). An app without an API can be invoked via Shortcuts (run_shortcut).")
+        lines.append("Ask the user which app they mean if it is not listed here, and explain the easiest way to connect it.")
         return lines.joined(separator: "\n")
     }
 
-    // MARK: Beschikbaarheid
+    // MARK: Availability
 
-    /// Gewone werktijden voor de vrije momenten, tenzij de gebruiker zelf een korter stuk vroeg.
+    /// Standard working hours for free slots, unless the user requested a shorter window.
     private static let dayStartHour = 8
     private static let dayEndHour = 19
 
@@ -135,10 +135,10 @@ extension ConnectorHub {
         let hasFeeds = agendaSources.contains { $0.id == "icalfeeds" && $0.isActive }
 
         var lines: [String] = []
-        lines.append("Periode: \(NookDates.long(from)) tot \(NookDates.long(to))")
-        lines.append(checked.isEmpty ? "Gecontroleerd: niets (geen agenda gekoppeld of geen toegang)." : "Gecontroleerd: " + checked.joined(separator: "; ") + ".")
-        if !problems.isEmpty { lines.append("Kon niet lezen: " + problems.joined(separator: "; ") + ".") }
-        if !skipped.isEmpty { lines.append("Niet gecontroleerd (uit of geen toegang): " + skipped.joined(separator: ", ") + ".") }
+        lines.append("Period: \(NookDates.long(from)) to \(NookDates.long(to))")
+        lines.append(checked.isEmpty ? "Checked: none (no calendar connected or access not granted)." : "Checked: " + checked.joined(separator: "; ") + ".")
+        if !problems.isEmpty { lines.append("Could not read: " + problems.joined(separator: "; ") + ".") }
+        if !skipped.isEmpty { lines.append("Not checked (disabled or no access): " + skipped.joined(separator: ", ") + ".") }
 
         let wholeDays = to.timeIntervalSince(from) >= 20 * 3600
         var day = calendar.startOfDay(for: from)
@@ -153,16 +153,16 @@ extension ConnectorHub {
 
             lines.append("")
             lines.append(NookDates.day(day) + ":")
-            if today.isEmpty { lines.append("- geen afspraken in de gecontroleerde agenda's") }
+            if today.isEmpty { lines.append("- no events in the checked calendars") }
             for entry in timed.prefix(30) {
                 let place = entry.location.isEmpty ? "" : " | \(CloudHelp.short(entry.location, 40))"
-                lines.append("- bezet \(NookDates.time(max(entry.start, day)))–\(NookDates.time(min(entry.end, next))) \(CloudHelp.short(entry.title)) [\(entry.calendar)]\(place)")
+                lines.append("- busy \(NookDates.time(max(entry.start, day)))–\(NookDates.time(min(entry.end, next))) \(CloudHelp.short(entry.title)) [\(entry.calendar)]\(place)")
             }
             for entry in allDay.prefix(10) {
-                lines.append("- hele dag: \(CloudHelp.short(entry.title)) [\(entry.calendar)] (blokkeert niet vanzelf, oordeel zelf)")
+                lines.append("- all day: \(CloudHelp.short(entry.title)) [\(entry.calendar)] (does not block automatically, judge for yourself)")
             }
             for entry in marked.prefix(10) {
-                lines.append("- staat als beschikbaar: \(NookDates.time(entry.start)) \(CloudHelp.short(entry.title)) [\(entry.calendar)]")
+                lines.append("- marked as available: \(NookDates.time(entry.start)) \(CloudHelp.short(entry.title)) [\(entry.calendar)]")
             }
 
             let windowStart = wholeDays
@@ -173,20 +173,20 @@ extension ConnectorHub {
                 : min(to, next)
             if windowEnd > windowStart {
                 let free = Self.freeSlots(busy: timed, from: windowStart, to: windowEnd)
-                let label = wholeDays ? "vrij (\(NookDates.time(windowStart))–\(NookDates.time(windowEnd)))" : "vrij"
-                lines.append("- \(label): " + (free.isEmpty ? "geen" : free.map { "\(NookDates.time($0.0))–\(NookDates.time($0.1))" }.joined(separator: ", ")))
+                let label = wholeDays ? "free (\(NookDates.time(windowStart))–\(NookDates.time(windowEnd)))" : "free"
+                lines.append("- \(label): " + (free.isEmpty ? "none" : free.map { "\(NookDates.time($0.0))–\(NookDates.time($0.1))" }.joined(separator: ", ")))
             }
             day = next
         }
 
         lines.append("")
         lines.append(hasFeeds
-            ? "Staat er nog een agenda of app niet bij? Vraag de gebruiker welke hij nog gebruikt."
-            : "Let op: dit is alles waar Nook in kan kijken. Gebruikt de gebruiker ook een andere agenda (Google Agenda, Outlook, een werkagenda) die niet in de lijst hierboven staat? Vraag dan welke, en leg uit dat hij die kan koppelen bij Instellingen › Koppelingen › Andere agenda's met het ICS-adres van die agenda.")
+            ? "Is another calendar or app missing? Ask the user which one they use."
+            : "Note: this is everything Nook can access. Does the user also use another calendar (Google Calendar, Outlook, work calendar) not in the list above? Ask which one, and explain they can connect it under Settings › Integrations › Other calendars using its ICS URL.")
         return lines.joined(separator: "\n")
     }
 
-    /// De gaten tussen afspraken binnen het venster, vanaf een kwartier.
+    /// Gaps between events within the window, 15 minutes or longer.
     private static func freeSlots(busy: [AgendaEntry], from: Date, to: Date) -> [(Date, Date)] {
         var cursor = from
         var slots: [(Date, Date)] = []

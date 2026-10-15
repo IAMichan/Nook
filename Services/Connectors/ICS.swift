@@ -1,7 +1,7 @@
 import Foundation
 
-// Leest agenda's in het ICS-formaat (RFC 5545): genoeg voor Google Agenda, Outlook, iCloud, Fastmail, Proton en Cal.com.
-// Geen netwerk hier; alleen tekst erin, afspraken eruit.
+// Parses calendars in ICS format (RFC 5545): supports Google Calendar, Outlook, iCloud, Fastmail, Proton, and Cal.com.
+// No networking here; pure text in, events out.
 
 struct ICSEvent {
     var uid: String
@@ -14,7 +14,7 @@ struct ICSEvent {
     var zone: TimeZone
     var rule: ICSRule?
     var exceptions: Set<Date>
-    /// Gevuld bij een los aangepaste herhaling: het oorspronkelijke begin van die herhaling.
+    /// Populated for individually modified recurrence instances: the original start date of that instance.
     var recurrenceID: Date?
 }
 
@@ -25,7 +25,7 @@ struct ICSRule {
     var interval = 1
     var count: Int?
     var until: Date?
-    /// Ordinaal 0 = elke; weekdag volgens Calendar (1 = zondag … 7 = zaterdag).
+    /// Ordinal 0 = every; weekday according to Calendar (1 = Sunday … 7 = Saturday).
     var byDay: [(ordinal: Int, weekday: Int)] = []
     var byMonthDay: [Int] = []
     var byMonth: [Int] = []
@@ -46,7 +46,7 @@ struct ICSCalendar {
         let date: Date
     }
 
-    // MARK: Inlezen
+    // MARK: Parsing
 
     static func parse(_ text: String) -> ICSCalendar {
         var calendarName: String?
@@ -78,7 +78,7 @@ struct ICSCalendar {
         return ICSCalendar(name: calendarName, events: events)
     }
 
-    /// Plakt regels weer aan elkaar die in het bestand zijn afgebroken (beginnen met een spatie of tab).
+    /// Unfolds lines that were wrapped in the file (starting with a space or tab).
     private static func unfold(_ text: String) -> [String] {
         var lines: [String] = []
         for raw in text.components(separatedBy: .newlines) {
@@ -142,9 +142,9 @@ struct ICSCalendar {
             .replacingOccurrences(of: "\\\\", with: "\\")
     }
 
-    // MARK: Datums
+    // MARK: Dates
 
-    /// Outlook gebruikt Windows-namen voor tijdzones.
+    /// Outlook uses Windows timezone names.
     private static let windowsZones: [String: String] = [
         "W. Europe Standard Time": "Europe/Amsterdam",
         "Romance Standard Time": "Europe/Paris",
@@ -219,7 +219,7 @@ struct ICSCalendar {
         return sign * total
     }
 
-    // MARK: Afspraak bouwen
+    // MARK: Building Events
 
     private static func makeEvent(_ lines: [Line]) -> ICSEvent? {
         func first(_ name: String) -> Line? { lines.first { $0.name == name } }
@@ -250,7 +250,7 @@ struct ICSCalendar {
 
         return ICSEvent(
             uid: first("UID")?.value ?? UUID().uuidString,
-            title: first("SUMMARY").map { unescape($0.value) } ?? "Zonder titel",
+            title: first("SUMMARY").map { unescape($0.value) } ?? "Untitled",
             location: first("LOCATION").map { unescape($0.value) } ?? "",
             start: start.date,
             end: end,
@@ -285,7 +285,7 @@ struct ICSCalendar {
         if let until = parts["UNTIL"] {
             let line = Line(name: "UNTIL", params: until.count == 8 ? ["VALUE": "DATE"] : ["TZID": zone.identifier], value: until)
             if let parsed = parseDate(line) {
-                // Een UNTIL zonder tijd geldt tot het einde van die dag.
+                // An UNTIL without time applies until the end of that day.
                 rule.until = until.count == 8 ? parsed.date.addingTimeInterval(86_399) : parsed.date
             }
         }
@@ -300,9 +300,9 @@ struct ICSCalendar {
         return rule
     }
 
-    // MARK: Herhalingen uitrollen
+    // MARK: Expanding Recurrences
 
-    /// Alle beginmomenten van een herhalende afspraak tot `limit`.
+    /// All start dates of a recurring event up to `limit`.
     private static func starts(of event: ICSEvent, rule: ICSRule, until limit: Date) -> [Date] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = event.zone
@@ -313,7 +313,7 @@ struct ICSCalendar {
         var produced = 0
         let cap = 4_000
 
-        /// Geeft false zodra er gestopt moet worden.
+        /// Returns false when expansion should terminate.
         func emit(_ date: Date) -> Bool {
             if date < event.start { return true }
             if date > limit { return false }
@@ -418,7 +418,7 @@ struct ICSCalendar {
         return result
     }
 
-    // MARK: Afspraken in een periode
+    // MARK: Events in a Date Range
 
     func entries(from: Date, to: Date, label: String) -> [AgendaEntry] {
         let overridden = Set(events.compactMap { event in event.recurrenceID.map { InstanceKey(uid: event.uid, date: $0) } })

@@ -586,16 +586,7 @@ struct AgentsTab: View {
         }
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                TextField("", text: $draft, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 14)
-                    .frame(height: 34)
-                    .background(Capsule().fill(NookTheme.field))
-                    .onSubmit(send)
-                NookIconButton(systemName: "arrow.up", label: tr("button.send"), filled: true, action: send)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                NookInputBar(text: $draft, prompt: prompt, onSend: send)
                 terminalButton(session)
             }
             if canContinue && busy {

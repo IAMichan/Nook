@@ -2,13 +2,13 @@ import AppKit
 import Foundation
 import Security
 
-/// Koppelen met GitHub in één klik. Nook vraagt een code, zet die op je klembord, opent GitHub en wacht
-/// tot jij hem daar bevestigt. Dat heet de "device flow": de app heeft geen geheim nodig en je hoeft geen
-/// token met de hand te maken.
+/// Connect to GitHub in one click. Nook requests a code, copies it to your clipboard, opens GitHub,
+/// and waits for confirmation. This uses the OAuth "device flow": the app requires no secret and
+/// you don't need to generate a token manually.
 ///
-/// Eenmalig in te stellen door de beheerder: maak op github.com een OAuth-app aan (Settings › Developer
-/// settings › OAuth Apps), zet "Enable Device Flow" aan, en vul het Client ID hieronder in. Het Client ID is
-/// openbaar en geen geheim. Zolang het leeg is, toont Nook alleen het plakken van een token.
+/// One-time setup by maintainer: create an OAuth app on github.com (Settings › Developer
+/// settings › OAuth Apps), enable "Enable Device Flow", and fill in Client ID below. Client ID is
+/// public, not a secret. While empty, Nook displays token pasting only.
 @MainActor
 final class GitHubSignIn: ObservableObject {
     static let shared = GitHubSignIn()
@@ -19,7 +19,7 @@ final class GitHubSignIn: ObservableObject {
 
     enum Phase: Equatable {
         case idle
-        /// Wacht tot jij de code bevestigt op github.com.
+        /// Waiting for code confirmation on github.com.
         case waiting(code: String, uri: URL)
         case done
         case failed(String)
@@ -57,7 +57,7 @@ final class GitHubSignIn: ObservableObject {
         do {
             let code = try await requestCode()
             guard let uri = URL(string: code.verificationURI) else {
-                throw NookError("GitHub gaf een ongeldig adres terug.")
+                throw NookError("GitHub returned an invalid address.")
             }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(code.userCode, forType: .string)
@@ -71,7 +71,7 @@ final class GitHubSignIn: ObservableObject {
                 switch try await poll(deviceCode: code.deviceCode) {
                 case .token(let token):
                     guard Keychain.write(token, account: GitHubConnector.tokenAccount) == errSecSuccess else {
-                        throw NookError("De Keychain weigerde de koppeling. Probeer het nog eens.")
+                        throw NookError("Keychain rejected the credentials. Please try again.")
                     }
                     phase = .done
                     return
@@ -81,7 +81,7 @@ final class GitHubSignIn: ObservableObject {
                     interval += 5
                 }
             }
-            throw NookError("De code is verlopen. Probeer het nog eens.")
+            throw NookError("The code has expired. Please try again.")
         } catch is CancellationError {
             return
         } catch {
@@ -118,8 +118,8 @@ final class GitHubSignIn: ObservableObject {
         switch json["error"] as? String {
         case "authorization_pending": return .pending
         case "slow_down": return .slowDown
-        case "access_denied": throw NookError("Je hebt de koppeling geweigerd op GitHub.")
-        case "expired_token": throw NookError("De code is verlopen. Probeer het nog eens.")
+        case "access_denied": throw NookError("You declined the authorization on GitHub.")
+        case "expired_token": throw NookError("The code has expired. Please try again.")
         default: throw NookError(Self.message(json))
         }
     }
@@ -134,7 +134,7 @@ final class GitHubSignIn: ObservableObject {
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, _) = try await ConnectorHTTP.session.data(for: request)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw NookError("GitHub gaf een onbegrijpelijk antwoord.")
+            throw NookError("GitHub returned an invalid response.")
         }
         return object
     }
@@ -146,6 +146,6 @@ final class GitHubSignIn: ObservableObject {
     }
 
     private static func message(_ json: [String: Any]) -> String {
-        (json["error_description"] as? String) ?? "GitHub gaf een fout."
+        (json["error_description"] as? String) ?? "GitHub returned an error."
     }
 }

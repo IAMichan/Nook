@@ -145,20 +145,30 @@ final class SourceCapabilitiesTests: XCTestCase {
 }
 
 final class PrefetchTests: XCTestCase {
+    private let available: [Prefetch.Available] = [
+        .init(name: "mail_unread", source: "mail", required: []),
+        .init(name: "inbox_mail", source: "mail", required: []),
+        .init(name: "search_mail", source: "mail", required: ["query"]),
+        .init(name: "github_overview", source: "github", required: []),
+        .init(name: "github_search", source: "github", required: ["query"]),
+        .init(name: "list_events", source: "calendar", required: ["from", "to"])
+    ]
+
     func testMailQuestionsFetchTheRightMail() {
         let mail: Set<String> = ["calendar", "reminders", "mail"]
-        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: mail).map(\.tool), ["inbox_mail"])
-        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: mail).first?.input["unanswered_only"] as? Bool, true)
-        XCTAssertEqual(Prefetch.calls(for: "maak een grafiek van hoeveel mails ik nog niet heb gelezen", relevant: mail).map(\.tool), ["mail_unread"])
-        XCTAssertEqual(Prefetch.calls(for: "wat is er binnengekomen in mijn mail", relevant: mail).map(\.tool), ["inbox_mail"])
+        let reply = Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: mail, available: available)
+        XCTAssertEqual(reply.map(\.tool), ["inbox_mail"])
+        XCTAssertEqual(reply.first?.input["unanswered_only"] as? Bool, true)
+        XCTAssertEqual(Prefetch.calls(for: "maak een grafiek van hoeveel mails ik nog niet heb gelezen", relevant: mail, available: available).map(\.tool), ["mail_unread"])
+        XCTAssertEqual(Prefetch.calls(for: "wat is er binnengekomen in mijn mail", relevant: mail, available: available).map(\.tool), ["inbox_mail"])
     }
 
-    func testNothingToFetchForCoreOnly() {
-        XCTAssertTrue(Prefetch.calls(for: "hoe laat is mijn volgende afspraak", relevant: ["calendar", "reminders"]).isEmpty)
+    func testEverySourceGetsOneLookupWithoutRequiredInput() {
+        let calls = Prefetch.calls(for: "hoe staat het met mijn code en mail", relevant: ["calendar", "mail", "github"], available: available)
+        XCTAssertEqual(calls.map(\.tool), ["inbox_mail", "github_overview"])
     }
 
-    func testRouterAndPrefetchTogether() {
-        let relevant = SourceRouter.relevant(to: "Welke mail moet ik beantwoorden?", scope: .automatic, active: ["calendar", "mail", "github"])
-        XCTAssertEqual(Prefetch.calls(for: "Welke mail moet ik beantwoorden?", relevant: relevant).map(\.tool), ["inbox_mail"])
+    func testNothingToFetchForSourcesAlreadyInContext() {
+        XCTAssertTrue(Prefetch.calls(for: "wat staat er morgen op de planning", relevant: ["calendar", "reminders"], available: available).isEmpty)
     }
 }

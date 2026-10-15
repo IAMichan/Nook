@@ -1,22 +1,22 @@
 import Foundation
 
-/// Houdt bij welke AI-agents er draaien, op basis van hun hooks, en brengt hun vragen naar de notch:
-/// toestemming (alleen als de agent het jou zelf ook zou vragen) en meerkeuzevragen (AskUserQuestion).
-/// Antwoord je in de terminal, dan verdwijnt de vraag in de notch meteen.
+/// Tracks running AI agents based on their hooks and surfaces their questions to the notch:
+/// permissions (only when the agent would prompt the user directly) and multiple-choice questions (AskUserQuestion).
+/// If answered in the terminal, the question card in the notch is dismissed immediately.
 @MainActor
 final class AgentHub: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
-    /// Agents die als proces draaien maar (nog) niet via hooks melden.
+    /// Agents running as OS processes that do not (yet) report via hooks.
     @Published private(set) var detected: [AgentSession] = []
-    /// Toestemmingsvragen die nu wachten, oudste eerst.
+    /// Pending permission requests, oldest first.
     @Published private(set) var approvals: [ApprovalRequest] = []
-    /// Gebruik van je Claude-abonnement, als de statusregel gekoppeld is.
-    /// Blijft bewaard, zodat je het ook ziet als Claude Code even niet draait.
+    /// Claude subscription usage when the status line integration is connected.
+    /// Persisted so it remains visible even when Claude Code is not currently running.
     @Published private(set) var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
         didSet { Self.savePlanUsage(planUsage) }
     }
 
-    /// Hetzelfde voor extra Claude-accounts, per map (CLAUDE_CONFIG_DIR). Het eerste account staat in `planUsage`.
+    /// Same for additional Claude accounts, per directory (CLAUDE_CONFIG_DIR). Primary account is in `planUsage`.
     @Published private(set) var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
         didSet {
             if let data = try? JSONEncoder().encode(profilePlanUsage) { UserDefaults.standard.set(data, forKey: Self.profilePlanUsageKey) }
@@ -31,13 +31,13 @@ final class AgentHub: ObservableObject {
         return (try? JSONDecoder().decode([String: PlanUsage].self, from: data)) ?? [:]
     }
 
-    /// Het abonnementsgebruik van een Claude-account.
+    /// Subscription usage of a Claude account.
     func subscriptionUsage(for profile: AgentProfile) -> PlanUsage? {
         guard let home = profile.home else { return planUsage }
         return profilePlanUsage[AgentProfile.normalize(home)]
     }
 
-    /// De map van het account uit de omgeving van de hook; leeg als het de gewone map is.
+    /// Account directory from hook environment; empty if standard directory.
     private static func accountHome(_ env: [String: Any], agentID: String) -> String {
         let kind: AgentKind = agentID == "codex" ? .codex : .claude
         guard agentID == "codex" || agentID.hasPrefix("claude"),
@@ -57,8 +57,8 @@ final class AgentHub: ObservableObject {
     }
 
     var onApproval: ((ApprovalRequest) -> Void)?
-    /// Een vraag is beantwoord (hier of elders) of verlopen: haal de kaart weg. De tekst is een bevestiging
-    /// om te tonen als jij in Nook antwoordde, anders nil.
+    /// A question was answered (here or externally) or expired: remove the card. The text is a confirmation
+    /// to display if answered from Nook, nil otherwise.
     var onApprovalGone: ((String, String?) -> Void)?
     var onQuestion: ((AgentQuestionRequest) -> Void)?
     var onQuestionGone: ((String, String?) -> Void)?
@@ -76,7 +76,7 @@ final class AgentHub: ObservableObject {
         var lastMessage: String
         var updated: Date
         var hostBundleID: String
-        /// De map van het account (CLAUDE_CONFIG_DIR of CODEX_HOME); leeg voor de gewone map.
+        /// Account directory (CLAUDE_CONFIG_DIR or CODEX_HOME); empty for standard directory.
         var home: String = ""
         var diff: [DiffLine]
         var linesAdded: Int
@@ -110,7 +110,7 @@ final class AgentHub: ObservableObject {
     private var pruneTimer: Timer?
     private var scanTimer: Timer?
 
-    /// Na zoveel seconden zonder antwoord vraagt de agent het weer zelf (de hook-time-out is 120 s).
+    /// After this many seconds without answer, agent prompts user directly (hook timeout is 120s).
     private static let approvalTimeout: UInt64 = 110
     private static let questionTimeout: UInt64 = 120
 
@@ -138,7 +138,7 @@ final class AgentHub: ObservableObject {
         }
     }
 
-    /// Zoekt draaiende agents. Wat al via hooks binnenkomt, staat er niet dubbel in.
+    /// Discovers running agents. Ones already reporting via hooks are not duplicated.
     func refreshDetected() {
         Task {
             let found = await LocalAgentScanner.scan()
@@ -147,7 +147,7 @@ final class AgentHub: ObservableObject {
             detected = found.compactMap { agent in
                 let key = "\(agent.name)|\(agent.cwd)"
                 guard !hooked.contains(key), seen.insert(key).inserted else { return nil }
-                // Al gekoppeld? Dan startte deze sessie vóór de koppeling en hoeft hij alleen opnieuw te starten.
+                // Already connected? If so, this session was started before integration and just needs a restart.
                 let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
                 let kind = AgentKind(agentName: agent.name)
                 let accountHome = kind.flatMap { kind in
@@ -156,19 +156,19 @@ final class AgentHub: ObservableObject {
                 let linked = AgentConfigInstaller.Target.forAgent(named: agent.name)
                     .map { AgentConfigInstaller.state(of: $0, home: accountHome.isEmpty ? nil : home) == .installed } ?? false
                 let steps: [AgentStep] = linked ? [
-                    AgentStep(mark: .blocked, text: "Gestart vóór de koppeling: Nook kan niet meekijken"),
-                    AgentStep(mark: .todo, text: "Sluit hem af en start \(agent.name) opnieuw")
+                    AgentStep(mark: .blocked, text: "Started before integration: Nook cannot monitor"),
+                    AgentStep(mark: .todo, text: "Quit and restart \(agent.name)")
                 ] : [
-                    AgentStep(mark: .blocked, text: "Nog niet gekoppeld: Nook kan niet meekijken"),
-                    AgentStep(mark: .todo, text: "Koppel \(agent.name) en start hem opnieuw")
+                    AgentStep(mark: .blocked, text: "Not connected yet: Nook cannot monitor"),
+                    AgentStep(mark: .todo, text: "Connect \(agent.name) and restart it")
                 ]
                 return AgentSession(
                     id: "proc-\(agent.pid)",
                     name: agent.name,
                     project: Self.projectName(agent.cwd),
                     status: .detected,
-                    file: agent.cwd.isEmpty ? "draait op deze Mac" : Self.shortPath(agent.cwd),
-                    placeholder: "Typ in de terminal van \(agent.name) om verder te gaan",
+                    file: agent.cwd.isEmpty ? "running on this Mac" : Self.shortPath(agent.cwd),
+                    placeholder: "Type in the terminal of \(agent.name) to continue",
                     steps: steps,
                     diff: [],
                     cwd: agent.cwd,
@@ -179,7 +179,7 @@ final class AgentHub: ObservableObject {
         }
     }
 
-    // MARK: Antwoorden vanuit Nook
+    // MARK: Answers from Nook
 
     func approval(id: String) -> ApprovalRequest? {
         pendingApprovals[id]?.request
@@ -191,15 +191,15 @@ final class AgentHub: ObservableObject {
         switch decision {
         case .allow:
             recap?.decision(allowed: true)
-            closeApproval(id, response: response, status: .running, step: (.running, "toegestaan via Nook"), message: "Toegestaan")
+            closeApproval(id, response: response, status: .running, step: (.running, "allowed via Nook"), message: "Allowed")
         case .always:
             recap?.decision(allowed: true)
-            closeApproval(id, response: response, status: .running, step: (.running, "altijd toegestaan via Nook"), message: "Altijd toegestaan")
+            closeApproval(id, response: response, status: .running, step: (.running, "always allowed via Nook"), message: "Always allowed")
         case .deny:
             recap?.decision(allowed: false)
-            closeApproval(id, response: response, status: .running, step: (.failed, "geweigerd via Nook"), message: "Geweigerd")
+            closeApproval(id, response: response, status: .running, step: (.failed, "denied via Nook"), message: "Denied")
         case .terminal:
-            closeApproval(id, response: nil, status: .waiting, step: (.blocked, "wacht op je in de terminal"))
+            closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the terminal"))
         }
     }
 
@@ -216,14 +216,14 @@ final class AgentHub: ObservableObject {
         recap?.questionAnswered()
         let summary = selections.flatMap { $0 }.joined(separator: ", ")
         closeQuestion(id, response: try? JSONSerialization.data(withJSONObject: payload), status: .running,
-                      step: (.done, "jij koos: " + Self.shorten(summary, 50)), message: "Antwoord verstuurd")
+                      step: (.done, "you chose: " + Self.shorten(summary, 50)), message: "Answer sent")
     }
 
     func answerQuestionInTerminal(_ id: String) {
-        closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "vraag staat in de terminal"))
+        closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "question is in the terminal"))
     }
 
-    // MARK: Berichten
+    // MARK: Messages
 
     private func handle(_ data: Data, _ connection: HookConnection) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -248,7 +248,7 @@ final class AgentHub: ObservableObject {
             return
         }
 
-        // Sessies die Nook zelf in de werkruimte draait, volgt de werkruimte al (met eigen goedkeuringen): hier niet dubbel.
+        // Sessions run directly by Nook workspace are tracked there (with their own approvals); don't duplicate here.
         if let run = env["NOOK_RUN_ID"] as? String, !run.isEmpty {
             connection.reply(nil)
             return
@@ -306,7 +306,7 @@ final class AgentHub: ObservableObject {
         let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
         let input = (event["tool_input"] as? [String: Any]) ?? (event["toolArgs"] as? [String: Any]) ?? [:]
 
-        // Een meerkeuzevraag van de agent.
+        // Multiple-choice question from agent.
         if mode == "ask" {
             guard kind == "PreToolUse", tool == "AskUserQuestion", let items = AgentQuestionRequest.parse(input) else {
                 records[key] = record
@@ -319,7 +319,7 @@ final class AgentHub: ObservableObject {
             return
         }
 
-        // Toestemming: de agent wacht op ons antwoord.
+        // Permission: agent is waiting for our response.
         if mode == "permission" {
             if kind == "PermissionRequest" {
                 guard tool != "AskUserQuestion" else {
@@ -335,7 +335,7 @@ final class AgentHub: ObservableObject {
                 return
             }
             if kind == "PreToolUse", tool == "Bash" {
-                // Oude koppeling (vóór PermissionRequest): alleen commando's die niet duidelijk onschuldig zijn.
+                // Legacy integration (prior to PermissionRequest): only commands that are not clearly safe.
                 Self.push(&record, .running, Self.describe(tool: tool, input: input))
                 if let command = Self.commandText(input), CommandRisk.assess(command).level != .safe {
                     requestApproval(key: key, record: &record, tool: tool, input: input, kind: .legacyPreToolUse, connection: connection)
@@ -362,7 +362,7 @@ final class AgentHub: ObservableObject {
             if let prompt = event["prompt"] as? String {
                 record.lastPrompt = prompt
                 record.lastMessage = ""
-                Self.push(&record, .done, "opdracht: " + Self.shorten(prompt, 60))
+                Self.push(&record, .done, "prompt: " + Self.shorten(prompt, 60))
             }
             recap?.prompt(session: key, project: record.project, agent: name)
         case "PreToolUse":
@@ -381,16 +381,16 @@ final class AgentHub: ObservableObject {
         case "PostToolUseFailure":
             Self.complete(&record, as: .failed)
         case "Notification":
-            let message = (event["message"] as? String) ?? "wacht op je"
+            let message = (event["message"] as? String) ?? "waiting for you"
             record.lastMessage = message
-            // Staat de vraag al als kaart in de notch, dan niet nog een melding.
+            // If the question is already presented as a card in the notch, don't show another alert.
             let asking = pendingApprovals.values.contains { $0.request.sessionKey == key }
                 || pendingQuestions.values.contains { $0.request.sessionKey == key }
-            // "Claude is waiting for your input" is Claude Code's rustmelding na een afgeronde beurt: geen vraag aan jou.
+            // "Claude is waiting for your input" is Claude Code's idle message after finishing a turn: not a prompt to you.
             let idle = message.lowercased().contains("waiting for your input")
             if idle && !asking {
                 if record.status != .done { record.status = .done }
-                Self.push(&record, .done, "klaar, wacht op je volgende opdracht")
+                Self.push(&record, .done, "done, waiting for your next prompt")
             } else if !asking {
                 record.status = .waiting
                 Self.push(&record, .blocked, Self.shorten(message, 70))
@@ -402,25 +402,25 @@ final class AgentHub: ObservableObject {
                 record.lastMessage = last
             }
             Self.complete(&record, as: .done)
-            Self.push(&record, .done, "klaar")
+            Self.push(&record, .done, "done")
             attention = true
             recap?.turnEnded(session: key)
         case "StopFailure":
             record.status = .failed
-            let error = (event["error"] as? String) ?? (event["message"] as? String) ?? "gestopt met een fout"
+            let error = (event["error"] as? String) ?? (event["message"] as? String) ?? "stopped with an error"
             Self.complete(&record, as: .failed)
             Self.push(&record, .failed, Self.shorten(error, 70))
             attention = true
             recap?.turnEnded(session: key)
         case "SubagentStart":
             let type = (event["agent_type"] as? String) ?? (event["subagent_type"] as? String) ?? ""
-            Self.push(&record, .running, type.isEmpty ? "hulpagent gestart" : "hulpagent: \(type)")
+            Self.push(&record, .running, type.isEmpty ? "subagent started" : "subagent: \(type)")
         case "SubagentStop":
             Self.complete(&record, as: .done)
         case "Interrupt":
             record.status = .done
             Self.complete(&record, as: .failed)
-            Self.push(&record, .failed, "onderbroken")
+            Self.push(&record, .failed, "interrupted")
             recap?.turnEnded(session: key)
         default:
             break
@@ -434,7 +434,7 @@ final class AgentHub: ObservableObject {
         if mode != "permission" { connection.reply(nil) }
     }
 
-    // MARK: Toestemming
+    // MARK: Permissions
 
     private func requestApproval(
         key: String,
@@ -468,17 +468,17 @@ final class AgentHub: ObservableObject {
 
         record.status = .waiting
         if let edit { record.diff = edit.lines }
-        Self.replaceLast(&record, .blocked, "wacht op jou: " + Self.shorten(summary, 50))
+        Self.replaceLast(&record, .blocked, "waiting for you: " + Self.shorten(summary, 50))
 
         connection.onPeerClosed { [weak self] in
             Task { @MainActor in
-                self?.closeApproval(id, response: nil, status: .running, step: (.running, "beantwoord in de terminal"))
+                self?.closeApproval(id, response: nil, status: .running, step: (.running, "answered in the terminal"))
             }
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.approvalTimeout * 1_000_000_000)
-            // Geen antwoord gekregen: de agent vraagt het dan zelf, zoals normaal.
-            self?.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "wacht op je in de terminal"))
+            // No answer received: the agent will prompt directly, as normal.
+            self?.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the terminal"))
         }
         onApproval?(request)
     }
@@ -517,7 +517,7 @@ final class AgentHub: ObservableObject {
                 "hookSpecificOutput": [
                     "hookEventName": "PreToolUse",
                     "permissionDecision": value,
-                    "permissionDecisionReason": value == "allow" ? "Goedgekeurd via Nook" : "Geweigerd via Nook"
+                    "permissionDecisionReason": value == "allow" ? "Approved via Nook" : "Denied via Nook"
                 ]
             ]
         case .permission(let suggestions, let canAlways):
@@ -527,12 +527,12 @@ final class AgentHub: ObservableObject {
                 result = ["behavior": "allow"]
             case .always:
                 result = ["behavior": "allow"]
-                // Claude Code onthoudt de regel dan zelf, net als bij "Yes, and don't ask again".
+                // Claude Code persists rule itself, just like "Yes, and don't ask again".
                 if canAlways, let suggestions = suggestions as? [Any], !suggestions.isEmpty {
                     result["updatedPermissions"] = suggestions
                 }
             case .deny:
-                result = ["behavior": "deny", "message": "Geweigerd via Nook"]
+                result = ["behavior": "deny", "message": "Denied via Nook"]
             case .terminal:
                 return nil
             }
@@ -541,7 +541,7 @@ final class AgentHub: ObservableObject {
         return try? JSONSerialization.data(withJSONObject: payload)
     }
 
-    // MARK: Vragen
+    // MARK: Questions
 
     private func askQuestion(
         key: String,
@@ -554,16 +554,16 @@ final class AgentHub: ObservableObject {
         let request = AgentQuestionRequest(id: id, sessionKey: key, agentName: record.agent, project: record.project, items: items)
         pendingQuestions[id] = PendingQuestion(request: request, connection: connection, rawQuestions: raw)
         record.status = .waiting
-        Self.push(&record, .blocked, "vraag: " + Self.shorten(items[0].question, 60))
+        Self.push(&record, .blocked, "question: " + Self.shorten(items[0].question, 60))
 
         connection.onPeerClosed { [weak self] in
             Task { @MainActor in
-                self?.closeQuestion(id, response: nil, status: .running, step: (.done, "beantwoord in de terminal"))
+                self?.closeQuestion(id, response: nil, status: .running, step: (.done, "answered in the terminal"))
             }
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.questionTimeout * 1_000_000_000)
-            self?.closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "vraag staat in de terminal"))
+            self?.closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "question is in the terminal"))
         }
         onQuestion?(request)
     }
@@ -587,7 +587,7 @@ final class AgentHub: ObservableObject {
         onQuestionGone?(id, message)
     }
 
-    // MARK: Lijst
+    // MARK: Session List
 
     private func prune() {
         let now = Date()
@@ -627,7 +627,7 @@ final class AgentHub: ObservableObject {
                     project: record.project,
                     status: record.status,
                     file: file,
-                    placeholder: "Typ in de terminal van \(record.agent) om verder te gaan",
+                    placeholder: "Type in the terminal of \(record.agent) to continue",
                     steps: record.steps,
                     diff: diff,
                     cwd: record.cwd,
@@ -645,7 +645,7 @@ final class AgentHub: ObservableObject {
             }
     }
 
-    // MARK: Hulpfuncties
+    // MARK: Helper Functions
 
     private static func push(_ record: inout Record, _ mark: AgentStep.Mark, _ text: String) {
         record.steps.append(AgentStep(mark: mark, text: text))
@@ -660,13 +660,13 @@ final class AgentHub: ObservableObject {
         record.steps[record.steps.count - 1] = AgentStep(mark: mark, text: text)
     }
 
-    /// De laatste stap die nog bezig was (of op jou wachtte), afsluiten.
+    /// Closes the last step that was running (or waiting for user input).
     private static func complete(_ record: inout Record, as mark: AgentStep.Mark) {
         guard let last = record.steps.last, last.mark == .running || last.mark == .blocked else { return }
         record.steps[record.steps.count - 1] = AgentStep(mark: mark, text: last.text)
     }
 
-    /// Gebeurtenisnamen van andere agents (Gemini CLI, Antigravity, Copilot, Cursor, …) naar die van Claude Code.
+    /// Normalizes event names from other agents (Gemini CLI, Antigravity, Copilot, Cursor, etc.) to Claude Code convention.
     static func normalize(_ name: String) -> String {
         let map: [String: String] = [
             "BeforeTool": "PreToolUse", "AfterTool": "PostToolUse",
@@ -711,7 +711,7 @@ final class AgentHub: ObservableObject {
 
     static func projectName(_ cwd: String) -> String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return name.isEmpty || cwd.isEmpty || name == "/" ? "geen map" : name
+        return name.isEmpty || cwd.isEmpty || name == "/" ? "no folder" : name
     }
 
     static func shortPath(_ path: String) -> String {
@@ -719,7 +719,7 @@ final class AgentHub: ObservableObject {
         return parts.suffix(2).joined(separator: "/")
     }
 
-    /// De eerste bruikbare alinea van een antwoord in Markdown, als platte zin.
+    /// Extracts the first useful paragraph of a Markdown reply as a plain sentence.
     static func oneLine(_ markdown: String, limit: Int = 220) -> String {
         var inCode = false
         var paragraph: [String] = []
@@ -747,7 +747,7 @@ final class AgentHub: ObservableObject {
         return single.count > limit ? String(single.prefix(limit)) + "…" : single
     }
 
-    /// Het commando, ook als een agent het als lijst stuurt (Codex: ["bash", "-lc", "npm test"]).
+    /// The command text, even when an agent provides it as an argument array (Codex: ["bash", "-lc", "npm test"]).
     static func commandText(_ input: [String: Any]) -> String? {
         if let text = input["command"] as? String { return text }
         if let parts = input["command"] as? [String], !parts.isEmpty {
@@ -794,7 +794,7 @@ final class AgentHub: ObservableObject {
         if let command = commandText(input) { return command }
         if let path = filePath(input) { return "\(tool) \(shortPath(path))" }
         if let url = input["url"] as? String { return url }
-        if let query = input["query"] as? String { return "zoekt: \(query)" }
+        if let query = input["query"] as? String { return "searching: \(query)" }
         if tool.hasPrefix("mcp__") {
             return tool.components(separatedBy: "__").dropFirst().joined(separator: " › ")
         }
@@ -802,7 +802,7 @@ final class AgentHub: ObservableObject {
            let text = String(data: data, encoding: .utf8), text != "{}" {
             return "\(tool) \(shorten(text, 140))"
         }
-        return tool.isEmpty ? "iets op je Mac" : tool
+        return tool.isEmpty ? "activity on your Mac" : tool
     }
 
     private static func assess(
@@ -813,21 +813,21 @@ final class AgentHub: ObservableObject {
         if let command = commandText(input) {
             let assessment = CommandRisk.assess(command)
             if assessment.level == .safe {
-                return CommandAssessment(level: .review, title: "", note: "Leest alleen · lijkt onschuldig")
+                return CommandAssessment(level: .review, title: "", note: "Read-only · looks harmless")
             }
             return assessment
         }
         if let edit {
-            let file = filePath(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? "een bestand"
-            return CommandAssessment(level: .review, title: "", note: "Past \(file) aan · +\(edit.added) −\(edit.removed)")
+            let file = filePath(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? "a file"
+            return CommandAssessment(level: .review, title: "", note: "Modifies \(file) · +\(edit.added) −\(edit.removed)")
         }
         if let url = input["url"] as? String {
-            return CommandAssessment(level: .review, title: "", note: "Haalt iets op van \(URL(string: url)?.host ?? "internet")")
+            return CommandAssessment(level: .review, title: "", note: "Fetches from \(URL(string: url)?.host ?? "the internet")")
         }
         if tool.hasPrefix("mcp__") {
-            return CommandAssessment(level: .review, title: "", note: "Gebruikt een externe koppeling (MCP)")
+            return CommandAssessment(level: .review, title: "", note: "Uses external integration (MCP)")
         }
-        return CommandAssessment(level: .review, title: "", note: "Lees het even na")
+        return CommandAssessment(level: .review, title: "", note: "Please review")
     }
 
     private static func describe(tool: String, input: [String: Any]) -> String {
@@ -839,27 +839,27 @@ final class AgentHub: ObservableObject {
             let path = filePath(input) ?? ""
             let verb: String
             switch tool {
-            case "Read", "read_file": verb = "Leest"
-            case "Write", "write_file": verb = "Schrijft"
-            default: verb = "Past aan"
+            case "Read", "read_file": verb = "Reads"
+            case "Write", "write_file": verb = "Writes"
+            default: verb = "Modifies"
             }
             return "\(verb) \(URL(fileURLWithPath: path).lastPathComponent)"
         case "Grep", "Glob", "search_file_content", "glob":
-            return "Zoekt \(shorten((input["pattern"] as? String) ?? "", 40))"
+            return "Searches \(shorten((input["pattern"] as? String) ?? "", 40))"
         case "WebFetch", "web_fetch":
             let host = URL(string: (input["url"] as? String) ?? "")?.host ?? ""
-            return "Haalt op: \(host)"
+            return "Fetches: \(host)"
         case "WebSearch", "google_web_search":
-            return "Zoekt online: \(shorten((input["query"] as? String) ?? "", 40))"
+            return "Searches online: \(shorten((input["query"] as? String) ?? "", 40))"
         case "Task", "Agent":
-            return "Hulpagent: \(shorten((input["description"] as? String) ?? "", 40))"
+            return "Subagent: \(shorten((input["description"] as? String) ?? "", 40))"
         case "TodoWrite":
-            return "Werkt de takenlijst bij"
+            return "Updates task list"
         default:
             if tool.hasPrefix("mcp__") {
-                return "Koppeling: " + tool.components(separatedBy: "__").dropFirst().joined(separator: " › ")
+                return "Integration: " + tool.components(separatedBy: "__").dropFirst().joined(separator: " › ")
             }
-            return tool.isEmpty ? "bezig" : tool
+            return tool.isEmpty ? "busy" : tool
         }
     }
 }
