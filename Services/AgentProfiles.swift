@@ -124,9 +124,11 @@ final class AgentProfileStore: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         var stored: [AgentProfile] = []
-        if let data = defaults.data(forKey: Self.profilesKey),
-           let decoded = try? JSONDecoder().decode([AgentProfile].self, from: data) {
-            stored = decoded
+        if let data = defaults.data(forKey: Self.profilesKey) {
+            // Account by account; if any cannot be read, a copy of the stored list is kept in Nook's folder.
+            let backup = NookPaths.supportDirectory.appendingPathComponent("agentProfiles.json")
+            stored = SafeStorage.decode(LossyArray<AgentProfile>.self, data: data, original: backup, skipped: { $0.skipped })
+                .value?.elements ?? []
         }
         var result: [AgentProfile] = []
         for kind in AgentKind.allCases {

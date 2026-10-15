@@ -65,7 +65,7 @@ final class AppModel: ObservableObject {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        return tools.specs + chatTools + connectors.tools + webSpecs
+        return tools.specs + chatTools + connectors.tools + webSpecs + BrowserStore.shared.tools
     }
     private(set) lazy var brain = BrainService(settings: settings)
 
@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     /// Tools available for a chat prompt: scoped to permitted sources and tracked via ledger
     /// to record what Nook inspected, returned, or failed.
     func scopedTools(_ scope: SourceScope, ledger: RetrievalLedger?) -> [ToolSpec] {
-        allTools.filter { scope.allowsTool($0.name) }.map { spec in
+        allTools.filter { scope.allowsTool($0.name) }.compactMap { Self.restrictAccounts($0, to: scope) }.map { spec in
             // Read tools only; drawing a chart or drafting an email is not a retrieval tool (and never cached).
             guard spec.kind == .read, let ledger, SourceCatalog.source(forTool: spec.name) != nil else { return spec }
             let run = spec.run
@@ -90,6 +90,48 @@ final class AppModel: ObservableObject {
                 }
             )
         }
+    }
+
+    /// A tool with an `account` field only offers the accounts this chat allows. With one left, the field disappears and
+    /// that account is filled in; with none left, the tool is not offered at all. A call naming another account is refused.
+    static func restrictAccounts(_ spec: ToolSpec, to scope: SourceScope) -> ToolSpec? {
+        guard let service = SourceCatalog.source(forTool: spec.name),
+              var properties = spec.schema["properties"] as? [String: Any],
+              let field = properties["account"] as? [String: Any],
+              let names = field["enum"] as? [String] else { return spec }
+        let accounts = AccountRegistry.shared.accounts(for: service)
+        let allowed = names.filter { name in AccountRegistry.match(name, in: accounts).map { scope.allowsAccount($0.id) } ?? true }
+        guard !allowed.isEmpty else { return nil }
+        guard allowed.count < names.count else { return spec }
+        var schema = spec.schema
+        if allowed.count == 1 {
+            properties.removeValue(forKey: "account")
+            schema["required"] = ((schema["required"] as? [String]) ?? []).filter { $0 != "account" }
+        } else {
+            var restricted = field
+            restricted["enum"] = allowed
+            properties["account"] = restricted
+        }
+        schema["properties"] = properties
+        let run = spec.run
+        let only = allowed.count == 1 ? allowed[0] : nil
+        return ToolSpec(
+            name: spec.name, description: spec.description, schema: schema, kind: spec.kind,
+            summarize: { input in
+                var filled = input
+                if let only, filled["account"] == nil { filled["account"] = only }
+                return spec.summarize(filled)
+            },
+            tag: spec.tag,
+            run: { input in
+                var filled = input
+                if let only { filled["account"] = only }
+                if let chosen = filled["account"] as? String, !allowed.contains(where: { $0.caseInsensitiveCompare(chosen) == .orderedSame }) {
+                    throw NookError(tr("chat.account.notAllowed", chosen))
+                }
+                return try await run(filled)
+            }
+        )
     }
 
     /// Mock demo content for UI preview without real credentials.
@@ -106,7 +148,6 @@ final class AppModel: ObservableObject {
     private var hotKeys: [HotKey] = []
     private var watchTimer: Timer?
     private var lastScreenHash: Int?
-    private var lastAutoRun = Date.distantPast
     private var autoBusy = false
     /// Prompt was spoken: enables spoken voice response.
     private var spokenRequest = false
@@ -231,6 +272,13 @@ final class AppModel: ObservableObject {
         ])
         connectors.register(CloudConnectors.makeAll())
         connectors.register([portfolio])
+        // MCP servers from Settings, kept in line when the user adds or removes one.
+        connectors.syncMCP(MCPServerStore.shared.servers)
+        MCPServerStore.shared.$servers
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
+            .store(in: &bag)
         connectors.start()
         codex.start()
 
@@ -516,10 +564,10 @@ final class AppModel: ObservableObject {
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = "Ik lees \(file.name)…" }
-            let limit = settings.useLocal ? 12_000 : 40_000
+            let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
-        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.useLocal) {
+        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
             do {
                 snapshot = try await screenSnapshot()
@@ -598,11 +646,8 @@ final class AppModel: ObservableObject {
         if !fetched.isEmpty {
             brainContext += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
         }
-        // A small local model gets no read tools at all: Nook already looked things up, and a half-made tool call is
-        // what turns into JSON in the answer.
-        if settings.useLocal {
-            tools = tools.filter { $0.kind == .action || SourceCatalog.source(forTool: $0.name) == nil }
-        }
+        // Small local models get read tools too (they used to get none, so a calendar question beyond the context failed):
+        // the brain offers only the most relevant few, and the shared tool loop repairs or stops bad calls.
 
         web.note(text)
         if let snapshot { web.note(snapshot.text) }
@@ -652,7 +697,7 @@ final class AppModel: ObservableObject {
                     rescued = [table]
                 }
                 // Still missing chart: retry once with strict instruction to invoke show_chart.
-                if rescued.isEmpty, wantsChart, !retry, !settings.useLocal {
+                if rescued.isEmpty, wantsChart, !retry, !settings.brainProfile.isSmall {
                     chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
                     await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                     return
@@ -726,7 +771,7 @@ final class AppModel: ObservableObject {
             chat.setBusy(false, conversation: conversation)
             nookFinished(conversation)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(plan), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            if canRunWithoutAsking(plan, request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
@@ -798,7 +843,13 @@ final class AppModel: ObservableObject {
         guard scope.allowsTool(action.tool) else {
             return [tr("chat.plan.notAllowed", SourceCatalog.source(forTool: action.tool).map(SourceCatalog.title) ?? action.tool)]
         }
-        return ActionGate.problems(tool: action.tool, input: action.input, schema: spec.schema, parseDate: NookDates.parse)
+        // Checked again at run time: the account must still be allowed in this chat.
+        if let service = SourceCatalog.source(forTool: action.tool), let chosen = action.input["account"] as? String,
+           let account = AccountRegistry.match(chosen, in: AccountRegistry.shared.accounts(for: service)), !scope.allowsAccount(account.id) {
+            return [tr("chat.account.notAllowed", chosen)]
+        }
+        let schema = Self.restrictAccounts(spec, to: scope)?.schema ?? spec.schema
+        return ActionGate.problems(tool: action.tool, input: action.input, schema: schema, parseDate: NookDates.parse)
     }
 
     /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:
@@ -832,7 +883,7 @@ final class AppModel: ObservableObject {
         var failure: String?
         for (index, state) in states.enumerated() {
             switch state {
-            case .done(let result): done.append(result)
+            case .done(let result), .verified(let result): done.append(result)
             case .failed(let error): failure = failure ?? tr("chat.plan.stepFailed", index + 1, error)
             case .duplicate: failure = failure ?? tr("chat.plan.duplicateHint")
             default: break
@@ -852,7 +903,9 @@ final class AppModel: ObservableObject {
                 return self.actionProblems(PlannedAction(tool: step.tool, input: step.input), scope: scope)
             },
             execute: { [weak self] step in
-                guard let self, let spec = self.allTools.first(where: { $0.name == step.tool }), spec.kind == .action else {
+                guard let self, let found = self.allTools.first(where: { $0.name == step.tool }), found.kind == .action,
+                      // The same account rules as when the plan was made: one allowed account is filled in, others refused.
+                      let spec = Self.restrictAccounts(found, to: scope) else {
                     throw NookError(tr("chat.plan.unavailable", step.tool))
                 }
                 let args = Self.json(step.input)
@@ -867,8 +920,32 @@ final class AppModel: ObservableObject {
             },
             executedBefore: { [weak self] key in self?.store.executedAction(key, within: ActionGate.duplicateWindow) },
             recordExecuted: { [weak self] key, step, result in self?.store.recordExecuted(key, tool: step.tool, result: result) },
-            progress: progress
+            progress: progress,
+            verify: { [weak self] step, result in await self?.verify(step, result: result) }
         )
+    }
+
+    /// Reads the result of an action back where that is possible on the Mac itself. nil = cannot be checked.
+    private func verify(_ step: PlanRunner.Step, result: String) async -> Bool? {
+        switch step.tool {
+        case "create_event":
+            guard let id = Self.createdID(in: result) else { return nil }
+            return calendar.eventExists(id)
+        case "update_event":
+            guard let id = step.input["id"] as? String else { return nil }
+            return calendar.eventExists(id)
+        case "create_reminder":
+            guard let id = Self.createdID(in: result) else { return nil }
+            return calendar.reminderExists(id)
+        default:
+            return nil
+        }
+    }
+
+    /// The "(id …)" a create tool puts in its result.
+    nonisolated static func createdID(in result: String) -> String? {
+        guard let range = result.range(of: #"\(id ([^)]+)\)"#, options: .regularExpression) else { return nil }
+        return String(result[range].dropFirst(4).dropLast()).trimmingCharacters(in: .whitespaces)
     }
 
     func cancelPlan(_ id: UUID) {
@@ -887,7 +964,7 @@ final class AppModel: ObservableObject {
     /// Modifies proposed action inputs (e.g. message text) and re-validates.
     func editAction(_ id: UUID, index: Int, key: String, value: String) {
         guard let message = chat.message(id), index < message.actions.count else { return }
-        if case .done = message.actionStates[safe: index] ?? .pending { return }
+        if (message.actionStates[safe: index] ?? .pending).result != nil { return }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         var action = message.actions[index]
         action.input[key] = value
@@ -921,7 +998,14 @@ final class AppModel: ObservableObject {
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
     func openReference(_ reference: SourceReference) {
         guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
-        if url.isFileURL, !FileText.isAllowed(url) { return }
+        if url.isFileURL {
+            guard FileText.isAllowed(url) else { return }
+            // Opening an app, script or installer would run it: show those in Finder instead.
+            if FileText.couldExecute(url) {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                return
+            }
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -978,7 +1062,7 @@ final class AppModel: ObservableObject {
 
     /// Text from all visible windows: from live cache if enabled, or read on-demand.
     func screenSnapshot() async throws -> ScreenSnapshot {
-        let local = settings.useLocal
+        let local = settings.brainProfile.isSmall
         if settings.liveScreen {
             if !screenContext.isRunning, screenContext.hasPermission { screenContext.start() }
             return try await screenContext.snapshot(totalLimit: local ? 3500 : 12_000)
@@ -1072,7 +1156,6 @@ final class AppModel: ObservableObject {
         var sources: [String] = []
         if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
         sources.append(contentsOf: connectors.contributingTitles.prefix(4))
-        lastSources = sources
         // Allow opening URLs seen on screen or cited by user, plus verified search results.
         web.note(userText)
         if let snapshot { web.note(snapshot.text) }
@@ -1084,7 +1167,7 @@ final class AppModel: ObservableObject {
                 context: contextSummary(),
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
-                tools: allTools,
+                tools: scopedTools(.automatic, ledger: nil),
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
@@ -1101,8 +1184,8 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            // Automatically execute safe actions requested directly if auto-run is enabled.
-            if !silentIfNone, canRunWithoutAsking(plan) {
+            // A look at the screen is always shown first: the plan came from what is on screen, not from the user's words.
+            if !silentIfNone, canRunWithoutAsking(plan, request: nil) {
                 remember(user: userText, nook: plan.text.isEmpty ? "(meteen uitgevoerd)" : plan.text)
                 speakIfAsked(plan.text.isEmpty ? "Gedaan." : plan.text)
                 viewModel.removePending(id: "thinking")
@@ -1129,8 +1212,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var lastSources: [String] = []
-    private var streamedLines = 0
 
     /// Response streams in real-time. As text wraps to new lines, the card expands.
     private func showStreaming(_ text: String, sources: [String]) {
@@ -1284,8 +1365,31 @@ final class AppModel: ObservableObject {
     /// and without side effects on third parties. Events, emails, links, shortcuts require approval.
     static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"]
 
-    private func canRunWithoutAsking(_ plan: BrainPlan) -> Bool {
-        settings.autoRunSafe && !plan.actions.isEmpty && plan.actions.allSatisfy { Self.safeTools.contains($0.tool) }
+    /// Only when the user's own words ask for each action. The prompt also carries text from others (screen, mail, web, invites),
+    /// and such text must never be enough to make Nook act without a click. `request == nil` means no user request is known.
+    private func canRunWithoutAsking(_ plan: BrainPlan, request: String?) -> Bool {
+        guard settings.autoRunSafe, !plan.actions.isEmpty, let request else { return false }
+        return plan.actions.allSatisfy { Self.safeTools.contains($0.tool) && Self.request(request, asksFor: $0) }
+    }
+
+    nonisolated static func request(_ request: String, asksFor action: PlannedAction) -> Bool {
+        let text = request.lowercased()
+        func mentions(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        switch action.tool {
+        case "open_app":
+            let name = ((action.input["name"] as? String) ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+            return !name.isEmpty && text.contains(name) && mentions(#"\b(open|start|launch|öffne|starte)"#)
+        case "media_control":
+            return mentions(#"muziek|music|musik|nummer|liedje|song|track|speel|play|pauze|pause|stop|volgende|vorige|next|previous|skip|shuffle|herhaal|repeat"#)
+        case "set_volume":
+            return mentions(#"volume|geluid|harder|zachter|louder|quieter|lauter|leiser|mute|dempen"#)
+        case "create_reminder":
+            return mentions(#"herinner|reminder|erinner|onthoud|remember"#)
+        case "add_open_loop", "complete_open_loop":
+            return mentions(#"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt"#)
+        default:
+            return false
+        }
     }
 
     private func execute(_ plan: BrainPlan) {
@@ -1310,7 +1414,7 @@ final class AppModel: ObservableObject {
         reloadLoops()
         await refreshUpcoming()
         var results: [String] = []
-        for state in states { if case .done(let result) = state { results.append(result) } }
+        for state in states { if let result = state.result { results.append(result) } }
         if case .failed(let failure) = Self.planOutcome(states) { return (results, failure) }
         return (results, nil)
     }
@@ -1452,7 +1556,6 @@ final class AppModel: ObservableObject {
         thinkAlong.didLook(bundleID: bundle, window: window, print: print)
 
         autoBusy = true
-        lastAutoRun = Date()
         let appName = frontApp?.localizedName ?? "deze app"
         Task {
             await thinkAlongRun(bundleID: bundle, appName: appName, window: window)
@@ -1482,7 +1585,7 @@ final class AppModel: ObservableObject {
             context: contextSummary(),
             untrustedLabel: "\(snapshot.appName) — \(snapshot.windowTitle)",
             untrusted: snapshot.text,
-            tools: allTools
+            tools: scopedTools(.automatic, ledger: nil)
         ) else { return }
 
         let split = FollowUps.split(plan.text)
@@ -1613,7 +1716,7 @@ final class AppModel: ObservableObject {
         let detail: CardDetail
         let height: CGFloat
         if request.diff.isEmpty {
-            detail = .command(String(request.summary.prefix(160)), note: request.assessment.note)
+            detail = .command(String(request.summary.prefix(20_000)), note: request.assessment.note)
             height = 214
         } else {
             detail = .diff(title: request.summary, lines: request.diff, note: request.assessment.note)
@@ -1770,40 +1873,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Whether Nook can continue this session's conversation itself (Claude Code with a known session id).
-    func canContinue(_ session: AgentSession) -> Bool {
-        AgentKind(agentName: session.name) == .claude && !session.sessionID.isEmpty
-            && !session.cwd.isEmpty && ClaudeCodeBrain.executable != nil
-    }
-
-    /// Sends a message to a session. Claude Code: continues the conversation in a new Terminal window; while the
-    /// original is still working it forks the conversation, so two processes never write to the same session.
-    /// Other agents: copies the text and brings their terminal forward.
-    func send(_ text: String, to session: AgentSession) {
-        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return }
-        guard canContinue(session), let program = ClaudeCodeBrain.executable else {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(message, forType: .string)
-            openTerminal(for: session)
-            return
-        }
-        guard FileManager.default.fileExists(atPath: session.cwd) else {
-            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
-            return
-        }
-        var arguments = ["--resume", session.sessionID]
-        if session.status == .running || session.status == .waiting { arguments.append("--fork-session") }
-        arguments.append(message)
-        let prefix = profile(for: session)?.commandPrefix ?? ""
-        let command = prefix + ([program] + arguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
-        do {
-            try TerminalLauncher.run(command: command, in: session.cwd, name: "nook-send-claude")
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
     // MARK: Agent Integration
 
     /// Checks whether primary account for this agent is fully set up: binary found, authenticated, hooks enabled.
@@ -1851,8 +1920,7 @@ final class AppModel: ObservableObject {
             agentConnect[profile.id] = .failed(problems.joined(separator: "\n"))
             return
         }
-        // No brain configured yet? Default to using Claude Code CLI.
-        if kind == .claude, !settings.brainReady { settings.provider = .claudeCode }
+        // The brain is never switched to an external service on the user's behalf: that is always their own choice.
 
         let hasProgram = history.executables[kind] != nil
         // An account that signs in with a key it already holds needs no Terminal login.
@@ -1870,9 +1938,8 @@ final class AppModel: ObservableObject {
         if !hasProgram { steps.append(kind.installCommand) }
         steps.append(profile.commandPrefix + kind.loginCommand)
         do {
-            try TerminalLauncher.run(command: steps.joined(separator: " && "),
-                                     in: FileManager.default.homeDirectoryForCurrentUser.path,
-                                     name: "nook-connect-\(profile.id)")
+            try runVisibly(steps.joined(separator: " && "), in: FileManager.default.homeDirectoryForCurrentUser.path,
+                           name: "nook-connect-\(profile.id)", title: tr("accounts.terminalTitle.login", kind.name))
         } catch {
             agentConnect[profile.id] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
             return
@@ -1936,29 +2003,6 @@ final class AppModel: ObservableObject {
         profiles.setPreferred(profile)
     }
 
-    /// Launches agent with this profile in a new Terminal window within `folder`.
-    func startSession(_ profile: AgentProfile, in folder: String) {
-        do {
-            try TerminalLauncher.run(command: profile.launchCommand, in: folder, name: "nook-start-\(profile.id)")
-            viewModel.show(.idle)
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
-    /// Prompts for directory and starts a session with this profile.
-    func startSessionChoosingFolder(_ profile: AgentProfile) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Start hier"
-        panel.message = "In welke map start \(profile.kind.name)?"
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        startSession(profile, in: url.path)
-    }
-
     /// Recent directories worked in with this profile, sorted newest first.
     func recentFolders(_ profile: AgentProfile, limit: Int = 5) -> [String] {
         var seen = Set<String>()
@@ -1969,36 +2013,6 @@ final class AppModel: ObservableObject {
             if result.count == limit { break }
         }
         return result
-    }
-
-    /// Resumes a past session in a new Terminal window within its original directory.
-    func resume(_ session: PastSession) {
-        guard FileManager.default.fileExists(atPath: session.cwd) else {
-            viewModel.present(errorCard("De map van deze sessie bestaat niet meer: \(session.cwd)"))
-            return
-        }
-        do {
-            try TerminalLauncher.run(command: resumeCommand(for: session, absolute: true), in: session.cwd,
-                                     name: "nook-resume-\(session.agent.rawValue)")
-            viewModel.show(.idle)
-        } catch {
-            viewModel.present(errorCard("Ik kon Terminal niet openen: \(error.localizedDescription)"))
-        }
-    }
-
-    /// Command string to resume session with original profile. `absolute` uses full path
-    /// when the binary path is known.
-    func resumeCommand(for session: PastSession, absolute: Bool = false) -> String {
-        var program = session.agent.command
-        if absolute, session.agent == .claude, let path = ClaudeCodeBrain.executable { program = path }
-        let prefix = profile(for: session)?.commandPrefix ?? ""
-        return prefix + ([program] + session.resumeArguments).map(TerminalLauncher.shellQuote).joined(separator: " ")
-    }
-
-    func copyResumeCommand(_ session: PastSession) {
-        let command = "cd \(TerminalLauncher.shellQuote(session.cwd)) && \(resumeCommand(for: session))"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(command, forType: .string)
     }
 
     // MARK: Quick Commands
@@ -2057,7 +2071,8 @@ final class AppModel: ObservableObject {
     /// Deterministically recognized action: prepared directly as an action plan without calling the brain.
     private func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
-        if canRunWithoutAsking(plan) {
+        // Recognized word for word from the user's own command, so it counts as asked for.
+        if settings.autoRunSafe, Self.safeTools.contains(tool) {
             execute(plan)
             return
         }
@@ -2138,6 +2153,14 @@ final class AppModel: ObservableObject {
     // MARK: Files
 
     /// Shelf file: reads extracted text locally and answers user questions about it.
+    /// Gives the chat a piece of text to ask about (an open web page), like dropping a file.
+    func attachText(name: String, text: String) {
+        attachment = (name, text, Date())
+        var message = ChatMessage(role: .nook, text: tr("chat.attached", name))
+        message.sources = [name]
+        chat.append(message)
+    }
+
     func askAbout(_ url: URL) {
         do {
             let text = try FileText.read(url)
@@ -2239,7 +2262,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func answerCard(_ text: String, offers: [String] = []) -> NookCard {
+    func answerCard(_ text: String, offers: [String] = []) -> NookCard {
         let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
         let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
@@ -2257,7 +2280,7 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func errorCard(_ message: String) -> NookCard {
+    func errorCard(_ message: String) -> NookCard {
         let lines = max(1, Int(ceil(Double(message.count) / 46.0)))
         let token = "error-" + UUID().uuidString
         viewModel.register("\(token)#settings") { [weak self] in self?.openSettings() }
@@ -2274,6 +2297,11 @@ final class AppModel: ObservableObject {
     }
 
     private func presentSetupCard() {
+        // Local brain without a model: propose the one that suits this Mac instead of sending the user to Settings.
+        if settings.isLocalBrain {
+            presentLocalSetupCard()
+            return
+        }
         let token = "setup-" + UUID().uuidString
         viewModel.register("\(token)#open") { [weak self] in self?.openSettings() }
         let card = NookCard(

@@ -7,9 +7,15 @@ import Foundation
 
 /// The execution state of a single step in a plan.
 enum ActionStepState: Codable, Equatable {
+    /// Proposed by the brain; the user has not decided yet.
     case pending
+    /// The user pressed Run; waiting for its turn.
+    case approved
     case running
+    /// The service reported success.
     case done(String)
+    /// Succeeded, and Nook read the result back from the service (the event exists, the reminder is there).
+    case verified(String)
     case failed(String)
     /// Was not reached because an earlier step failed.
     case notRun
@@ -20,15 +26,23 @@ enum ActionStepState: Codable, Equatable {
 
     var isFinished: Bool {
         switch self {
-        case .done, .skipped, .duplicate: return true
+        case .done, .verified, .skipped, .duplicate: return true
         default: return false
+        }
+    }
+
+    /// The result text of a step that succeeded.
+    var result: String? {
+        switch self {
+        case .done(let result), .verified(let result): return result
+        default: return nil
         }
     }
 
     /// Whether this step is eligible to run (or retry).
     var canRun: Bool {
         switch self {
-        case .pending, .failed, .notRun: return true
+        case .pending, .approved, .failed, .notRun: return true
         default: return false
         }
     }
@@ -233,15 +247,22 @@ struct PlanRunner {
     var executedBefore: (String) -> Date?
     var recordExecuted: (String, Step, String) -> Void
     var progress: ([ActionStepState]) -> Void = { _ in }
+    /// Reads the result back from the service: true = confirmed, false = not found, nil = cannot be checked.
+    var verify: (Step, String) async -> Bool? = { _, _ in nil }
 
     /// `include`: which steps the user kept enabled. `force`: steps permitted to run despite being duplicates.
     func run(_ steps: [Step], states initial: [ActionStepState], include: [Bool], force: Set<Int> = []) async -> [ActionStepState] {
         var states = initial.count == steps.count ? initial : Array(repeating: .pending, count: steps.count)
+        // The user's click approves every step that is still to run; that is visible before the first one starts.
+        for index in steps.indices where (index < include.count ? include[index] : true) && states[index].canRun {
+            states[index] = .approved
+        }
+        progress(states)
         var stopped = false
         for index in steps.indices {
             let included = index < include.count ? include[index] : true
             switch states[index] {
-            case .done: continue
+            case .done, .verified: continue
             case .duplicate where !force.contains(index): continue
             case .skipped where !included: continue
             default: break
@@ -272,8 +293,14 @@ struct PlanRunner {
             progress(states)
             do {
                 let result = try await execute(step)
-                states[index] = .done(result)
                 recordExecuted(key, step, result)
+                switch await verify(step, result) {
+                case .some(true): states[index] = .verified(result)
+                case .some(false):
+                    states[index] = .failed("The service reported success, but Nook could not find the result afterwards. Check it yourself.")
+                    stopped = true
+                case .none: states[index] = .done(result)
+                }
             } catch {
                 states[index] = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
                 stopped = true

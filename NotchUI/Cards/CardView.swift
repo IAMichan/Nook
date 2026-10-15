@@ -216,10 +216,17 @@ private struct CommandDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 0) {
-                Text("$ ").foregroundStyle(NookTheme.textTertiary)
-                Text(command).foregroundStyle(NookTheme.paper).lineLimit(2)
+            // The whole command, never cut off: what you approve is exactly what runs. Long commands scroll.
+            ScrollView(.vertical) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text("$ ").foregroundStyle(NookTheme.textTertiary)
+                    Text(command).foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxHeight: command.count > 140 ? 120 : nil)
             .font(NookTheme.mono(13.5))
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)

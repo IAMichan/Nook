@@ -40,10 +40,22 @@ enum TerminalLauncher {
         exec \(shellQuote(shell)) -i -l -c \(shellQuote(command))
 
         """
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).command")
+        removeOldScripts()
+        // A unique name: two launches at once must not overwrite each other's script.
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID().uuidString.prefix(8)).command")
         try script.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         guard NSWorkspace.shared.open(url) else { throw NookError("macOS refused to open the script.") }
+    }
+
+    /// Scripts from earlier launches (they can contain your messages to an agent) are removed after an hour.
+    private static func removeOldScripts() {
+        let folder = FileManager.default.temporaryDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for file in files where file.pathExtension == "command" && file.lastPathComponent.hasPrefix("nook-") {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if Date().timeIntervalSince(modified) > 3600 { try? FileManager.default.removeItem(at: file) }
+        }
     }
 
     /// Quotes text with single quotes for the shell.

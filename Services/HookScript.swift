@@ -247,9 +247,4 @@ enum HookScript {
     static func command(_ arguments: String) -> String {
         "\"\(NookPaths.hookScriptURL.path)\" \(arguments)"
     }
-
-    static func copyToPasteboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }

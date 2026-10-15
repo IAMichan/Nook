@@ -77,8 +77,7 @@ final class WebTools {
             tag: { _ in ("", .neutral) },
             run: { [weak self] input in
                 let raw = ((input["url"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-                      let host = url.host, !WebTools.isPrivate(host) else {
+                guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
                     throw NookError("Invalid web address.")
                 }
                 guard self?.isKnown(raw) == true else {
@@ -149,11 +148,12 @@ final class WebTools {
         return results
     }
 
+    /// Reads a public page. The host is resolved and checked, and so is every redirect (see `NetworkGuard`).
     nonisolated static func read(_ url: URL) async throws -> String {
-        let (data, response) = try await session.data(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, response) = try await NetworkGuard.fetch(url)
+        let status = response.statusCode
         guard (200..<300).contains(status) else { throw NookError("Page returned status \(status).") }
-        let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
         guard data.count < 4_000_000 else { throw NookError("Page is too large to read.") }
         let raw = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
         let text = type.contains("html") || raw.contains("<html") ? readable(raw) : raw
@@ -198,17 +198,4 @@ final class WebTools {
         return result
     }
 
-    /// Disallows addresses on the local network or local machine.
-    nonisolated static func isPrivate(_ host: String) -> Bool {
-        let lower = host.lowercased()
-        if lower == "localhost" || lower.hasSuffix(".local") || lower.hasSuffix(".internal") || lower.hasSuffix(".lan") { return true }
-        let parts = lower.split(separator: ".").compactMap { Int($0) }
-        if parts.count == 4 {
-            if parts[0] == 10 || parts[0] == 127 || parts[0] == 0 { return true }
-            if parts[0] == 169 && parts[1] == 254 { return true }
-            if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
-            if parts[0] == 192 && parts[1] == 168 { return true }
-        }
-        return lower.contains(":")   // IPv6 literal
-    }
 }

@@ -1,20 +1,28 @@
 import SwiftUI
 
-/// Active content view displayed in workspace main area.
+/// The three parts of Nook's main window: the chat, the agents, and the workspace with its tools.
+/// (Usage moved to Settings › Usage, so every function has one place.)
 enum WorkspacePane: String, CaseIterable, Identifiable {
-    case sessions, worktrees, usage
+    case chat, sessions, workspace
     var id: String { rawValue }
-    var title: String { tr("ws.pane." + rawValue) }
+    var title: String {
+        switch self {
+        case .chat: return tr("main.chat")
+        case .sessions: return tr("main.agents")
+        case .workspace: return tr("main.workspace")
+        }
+    }
     var symbol: String {
         switch self {
-        case .sessions: return "bubble.left.and.text.bubble.right"
-        case .worktrees: return "arrow.triangle.branch"
-        case .usage: return "chart.bar.xaxis"
+        case .chat: return "bubble.left.and.bubble.right"
+        case .sessions: return "person.2.wave.2"
+        case .workspace: return "hammer"
         }
     }
 }
 
-/// Workspace view: left sidebar (projects/sessions), center stage (session), right panel (inspector).
+/// Nook's main window. Chat: all conversations. Agents: sidebar of sessions, the session, and its inspector.
+/// Workspace: terminals, the browser and worktrees.
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -50,15 +58,26 @@ struct WorkspaceView: View {
         .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
         .frame(minWidth: 760, minHeight: 520)
-        .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in showNewSession = true }
+        .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in
+            pane = .sessions
+            showNewSession = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nookMainWindowPane)) { note in
+            if let raw = note.object as? String, let target = WorkspacePane(rawValue: raw) { pane = target }
+        }
         .onAppear {
             app.history.refresh()
             if workspace.selectedRunID == nil {
                 workspace.selectedRunID = workspace.runs.first { !$0.archived }?.id
             }
+            columns = pane == .sessions ? .all : .detailOnly
         }
         .onChange(of: workspace.selectedRunID) { _, id in
-            if id != nil && pane != .sessions { pane = .sessions }
+            if id != nil && pane != .sessions && pane != .chat { pane = .sessions }
+        }
+        // The session list belongs to Agents; Chat has its own list of Nooks, Workspace its own tabs.
+        .onChange(of: pane) { _, new in
+            withAnimation { columns = new == .sessions ? .all : .detailOnly }
         }
     }
 
@@ -88,10 +107,12 @@ struct WorkspaceView: View {
                     action: (tr("ws.newSession"), { showNewSession = true })
                 )
             }
-        case .worktrees:
-            WorktreesView()
-        case .usage:
-            UsageView()
+        case .chat:
+            NookChatView(viewModel: app.viewModel, chat: app.chat, compact: false)
+                .padding(20)
+                .background(NookTheme.notch)
+        case .workspace:
+            WorkbenchView()
         }
     }
 
@@ -114,7 +135,7 @@ struct WorkspaceView: View {
             }
             .pickerStyle(.segmented)
             .labelStyle(.titleOnly)
-            .frame(width: 300)
+            .frame(width: 330)
             .background {
                 // ⌘1, ⌘2, ⌘3 switch views.
                 ForEach(Array(WorkspacePane.allCases.enumerated()), id: \.element) { index, item in

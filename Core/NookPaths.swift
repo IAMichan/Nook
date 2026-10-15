@@ -10,16 +10,19 @@ enum NookPaths {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        // Also for folders created by older versions or another tool: only the user may enter (the hook socket relies on it).
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         return dir
     }()
+
+    /// Empty working folder for the Claude Code brain, outside the support folder, so it never sees Nook's own data.
+    static var brainScratchDirectory: URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nook-brain", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return dir
+    }
 
     static var socketURL: URL { supportDirectory.appendingPathComponent("hub.sock") }
     static var hookScriptURL: URL { supportDirectory.appendingPathComponent("nook-hook.sh") }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
-}
-
-struct NookError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }

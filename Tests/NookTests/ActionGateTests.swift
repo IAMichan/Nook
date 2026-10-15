@@ -165,3 +165,43 @@ final class ActionGateTests: XCTestCase {
         XCTAssertEqual(executed, 0, "A model tool call is not blindly executed")
     }
 }
+
+/// Approved and verified: what the user decided and what Nook could confirm afterwards are visible per step.
+@MainActor
+final class ActionStatesTests: XCTestCase {
+    private func runner(verify: @escaping (PlanRunner.Step, String) async -> Bool?, seen: @escaping ([ActionStepState]) -> Void) -> PlanRunner {
+        PlanRunner(
+            check: { _ in [] },
+            execute: { step in "done \(step.tool)" },
+            executedBefore: { _ in nil },
+            recordExecuted: { _, _, _ in },
+            progress: seen,
+            verify: verify
+        )
+    }
+
+    func testStepsAreApprovedBeforeRunningAndVerifiedAfter() async {
+        var snapshots: [[ActionStepState]] = []
+        let steps = [PlanRunner.Step(tool: "create_event", input: [:]), PlanRunner.Step(tool: "open_app", input: [:])]
+        let result = await runner(verify: { step, _ in step.tool == "create_event" ? true : nil }, seen: { snapshots.append($0) })
+            .run(steps, states: [.pending, .pending], include: [true, true])
+        XCTAssertEqual(snapshots.first, [.approved, .approved], "the click approves every step first")
+        XCTAssertEqual(result, [.verified("done create_event"), .done("done open_app")])
+    }
+
+    func testUnconfirmedResultStopsThePlan() async {
+        let steps = [PlanRunner.Step(tool: "create_event", input: [:]), PlanRunner.Step(tool: "create_reminder", input: [:])]
+        let result = await runner(verify: { _, _ in false }, seen: { _ in }).run(steps, states: [.pending, .pending], include: [true, true])
+        guard case .failed = result[0] else { return XCTFail("a result that cannot be found is not reported as success") }
+        XCTAssertEqual(result[1], .notRun)
+    }
+
+    func testVerifiedStepsAreNotRepeated() async {
+        var ran = 0
+        let runner = PlanRunner(check: { _ in [] }, execute: { _ in ran += 1; return "x" }, executedBefore: { _ in nil }, recordExecuted: { _, _, _ in })
+        _ = await runner.run([PlanRunner.Step(tool: "a", input: [:])], states: [.verified("x")], include: [true])
+        XCTAssertEqual(ran, 0)
+        XCTAssertTrue(ActionStepState.verified("x").isFinished)
+        XCTAssertEqual(ActionStepState.verified("x").result, "x")
+    }
+}

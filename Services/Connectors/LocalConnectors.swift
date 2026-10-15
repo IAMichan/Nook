@@ -683,7 +683,36 @@ enum FileText {
         let parts = relative.split(separator: "/")
         if parts.contains(where: { $0.hasPrefix(".") }) { return false }
         if parts.first == "Library" { return false }
-        return true
+        return !isSensitive(url)
+    }
+
+    /// Keys, certificates, keychains and password exports are never read, wherever they are.
+    static let sensitiveExtensions: Set<String> = [
+        "pem", "key", "p12", "pfx", "p8", "keychain", "keychain-db", "kdbx", "kdb", "1pux", "1pif", "agilekeychain",
+        "opvault", "psafe3", "gpg", "asc", "ovpn", "mobileprovision", "cer", "der", "crt", "jks", "keystore"
+    ]
+
+    static func isSensitive(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        if sensitiveExtensions.contains(ext) { return true }
+        let name = url.deletingPathExtension().lastPathComponent.lowercased()
+        let patterns = ["id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "credentials", "passwords", "wachtwoorden", "recovery-codes", "recovery codes", "seed phrase", "secret"]
+        return patterns.contains { name.contains($0) } && ["", "txt", "csv", "json", "md", "rtf"].contains(ext)
+    }
+
+    /// Opening these would run something (apps, scripts, installers, automations) instead of showing it.
+    static func couldExecute(_ url: URL) -> Bool {
+        let risky: Set<String> = [
+            "app", "command", "sh", "zsh", "bash", "tool", "terminal", "pkg", "mpkg", "dmg", "scpt", "scptd", "applescript",
+            "workflow", "shortcut", "jar", "py", "rb", "pl", "js", "action", "prefpane", "saver", "webloc", "inetloc", "fileloc", "url"
+        ]
+        if risky.contains(url.pathExtension.lowercased()) { return true }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue,
+           FileManager.default.isExecutableFile(atPath: url.path) {
+            return true
+        }
+        return isDirectory.boolValue && (try? url.resourceValues(forKeys: [.isPackageKey]).isPackage) == true
     }
 }
 

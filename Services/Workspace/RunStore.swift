@@ -40,8 +40,9 @@ final class RunStore: @unchecked Sendable {
     func loadRuns(now: Date = Date()) -> [WorkspaceRun] {
         lock.lock()
         defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: runsURL),
-              let runs = try? Self.decoder.decode([WorkspaceRun].self, from: data) else { return [] }
+        // Entry by entry, and an unreadable file is kept aside: the next save must never wipe your sessions.
+        guard let runs = SafeStorage.load(LossyArray<WorkspaceRun>.self, from: runsURL, decoder: Self.decoder, skipped: { $0.skipped })
+            .value?.elements else { return [] }
         return runs.map { run in
             guard run.status.isActive else { return run }
             var recovered = run
@@ -62,8 +63,8 @@ final class RunStore: @unchecked Sendable {
     func loadEvents(_ id: UUID) -> [RunEvent] {
         lock.lock()
         defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: eventsURL(id)),
-              var events = try? Self.decoder.decode([RunEvent].self, from: data) else { return [] }
+        guard var events = SafeStorage.load(LossyArray<RunEvent>.self, from: eventsURL(id), decoder: Self.decoder, skipped: { $0.skipped })
+            .value?.elements else { return [] }
         // A tool or approval still running when Nook stopped is no longer running.
         for index in events.indices where events[index].state == .running || events[index].state == .pending {
             events[index].state = events[index].kind == .approval ? .expired : .failed

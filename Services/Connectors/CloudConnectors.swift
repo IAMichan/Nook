@@ -189,7 +189,7 @@ final class GitHubConnector: CloudConnectorConfig {
     let refreshInterval: TimeInterval = 180
     @Published private(set) var status = ConnectorStatus()
 
-    static let tokenAccount = "connector.github.token"
+    nonisolated static let tokenAccount = "connector.github.token"
     static var fields: [ConnectorField] {
         [ConnectorField(account: GitHubConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ghp_… / github_pat_…", secret: true)]
     }
@@ -218,38 +218,104 @@ final class GitHubConnector: CloudConnectorConfig {
         let reviewTotal: Int
     }
 
-    private var snapshot: Snapshot?
+    /// Latest data per account (key: account id).
+    private var snapshots: [String: Snapshot] = [:]
 
-    var isConfigured: Bool { CloudHelp.secret(GitHubConnector.tokenAccount) != nil }
+    /// Accounts with a token, primary first. One GitHub connection can hold several accounts ("Werk", "Persoonlijk").
+    var accounts: [ServiceAccount] {
+        AccountRegistry.shared.accounts(for: id).filter { CloudHelp.secret($0.key("token")) != nil }
+    }
+
+    var isConfigured: Bool { !accounts.isEmpty }
     var isActive: Bool { isConfigured && ConnectorToggle.isOn(id) }
 
+    /// The account a tool call is for. Without `account` a read uses the primary account; an action with several accounts
+    /// has `account` as a required field, so the review screen never runs it on a guessed account.
+    fileprivate func credentials(_ input: [String: Any]) throws -> (account: ServiceAccount, token: String) {
+        guard ConnectorToggle.isOn(id) else { throw CloudHelp.notSetUp("GitHub") }
+        let available = accounts
+        guard !available.isEmpty else { throw CloudHelp.notSetUp("GitHub") }
+        let account: ServiceAccount
+        if let reference = (input["account"] as? String)?.trimmingCharacters(in: .whitespaces), !reference.isEmpty {
+            guard let match = AccountRegistry.match(reference, in: available) else {
+                throw NookError("There is no GitHub account \"\(reference)\". Accounts: \(available.map(Self.accountName).joined(separator: ", ")).")
+            }
+            account = match
+        } else {
+            account = available[0]
+        }
+        guard let token = CloudHelp.secret(account.key("token")) else { throw CloudHelp.notSetUp("GitHub") }
+        return (account, token)
+    }
+
+    /// How an account is named to the model and in plans: its label, else its login.
+    static func accountName(_ account: ServiceAccount) -> String {
+        if !account.label.isEmpty { return account.label }
+        return account.identity ?? account.id
+    }
+
     func refresh() async {
-        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
-            snapshot = nil
+        let available = accounts
+        guard ConnectorToggle.isOn(id), !available.isEmpty else {
+            snapshots = [:]
             if status != ConnectorStatus() { status = ConnectorStatus() }
             return
         }
         if status.updated == nil { status.state = .loading }
-        do {
-            let fresh = try await fetch(token: token)
-            apply(fresh)
-        } catch {
-            status.state = .error(CloudHelp.errorText(error, service: title))
+        var fresh: [String: Snapshot] = [:]
+        var failures: [String] = []
+        for account in available {
+            guard let token = CloudHelp.secret(account.key("token")) else { continue }
+            do {
+                let snapshot = try await fetch(token: token)
+                fresh[account.id] = snapshot
+                AccountRegistry.shared.setIdentity("@" + snapshot.login, for: account.id)
+            } catch {
+                failures.append((available.count > 1 ? Self.accountName(account) + ": " : "") + CloudHelp.errorText(error, service: title))
+            }
+        }
+        snapshots = fresh
+        if let first = available.compactMap({ fresh[$0.id] }).first {
+            apply(first)
+            if !failures.isEmpty { status.detail = failures.joined(separator: " · ") }
+        } else {
+            status.state = .error(failures.joined(separator: " · "))
         }
     }
 
     func contextLines() -> [String] {
-        guard status.state == .ok, ConnectorToggle.isOn(id), let s = snapshot else { return [] }
-        var lines = ["GitHub (@\(s.login)): \(CloudHelp.plural(s.mineTotal, "open PR", "open PRs")) authored by you, \(CloudHelp.plural(s.reviewTotal, "review request", "review requests"))."]
-        lines += s.reviews.prefix(3).map { "Review requested: \($0.ref) '\(CloudHelp.short($0.title))'" }
-        lines += s.mine.filter { $0.ci == .failing }.prefix(3).map { "CI failing on \($0.ref) '\(CloudHelp.short($0.title))'" }
-        let room = max(0, 8 - lines.count)
-        lines += s.mine.filter { $0.ci != .failing }.prefix(min(room, 2)).map { "Open PR authored by you: \($0.ref) '\(CloudHelp.short($0.title))'" }
-        return Array(lines.prefix(8))
+        guard status.state == .ok, ConnectorToggle.isOn(id) else { return [] }
+        let available = accounts
+        var lines: [String] = []
+        for account in available {
+            guard let s = snapshots[account.id] else { continue }
+            let who = available.count > 1 ? "GitHub account \"\(Self.accountName(account))\" (@\(s.login))" : "GitHub (@\(s.login))"
+            lines.append("\(who): \(CloudHelp.plural(s.mineTotal, "open PR", "open PRs")) authored by you, \(CloudHelp.plural(s.reviewTotal, "review request", "review requests")).")
+            lines += s.reviews.prefix(3).map { "Review requested: \($0.ref) '\(CloudHelp.short($0.title))'" }
+            lines += s.mine.filter { $0.ci == .failing }.prefix(3).map { "CI failing on \($0.ref) '\(CloudHelp.short($0.title))'" }
+            let room = max(0, 8 - lines.count)
+            lines += s.mine.filter { $0.ci != .failing }.prefix(min(room, 2)).map { "Open PR authored by you: \($0.ref) '\(CloudHelp.short($0.title))'" }
+        }
+        return Array(lines.prefix(12))
+    }
+
+    /// With several accounts, every GitHub tool gets an `account` field (required for actions).
+    fileprivate func withAccount(_ schema: [String: Any], required: Bool) -> [String: Any] {
+        let names = accounts.map(Self.accountName)
+        guard names.count > 1 else { return schema }
+        var copy = schema
+        var properties = (schema["properties"] as? [String: Any]) ?? [:]
+        properties["account"] = [
+            "type": "string", "enum": names,
+            "description": "Which GitHub account: \(names.joined(separator: " or ")). Pick the one that has access to the repository; ask the user if unclear."
+        ] as [String: Any]
+        copy["properties"] = properties
+        if required { copy["required"] = ((schema["required"] as? [String]) ?? []) + ["account"] }
+        return copy
     }
 
     var tools: [ToolSpec] {
-        [
+        let all = [
             ToolSpec(
                 name: "github_overview",
                 description: "Freshly fetches the user's open pull requests on GitHub, pull requests requesting the user's review, and CI status per PR, with links.",
@@ -257,12 +323,26 @@ final class GitHubConnector: CloudConnectorConfig {
                 kind: .read,
                 summarize: { _ in "Read GitHub" },
                 tag: { _ in ("", .neutral) },
-                run: { [weak self] _ in
+                run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
-                    return try await self.overview()
+                    return try await self.overview(input)
                 }
             )
         ] + pullRequestTools + issueTools
+        // Plans show which account an action uses.
+        return all.map { spec in
+            let summarize = spec.summarize
+            return ToolSpec(
+                name: spec.name, description: spec.description, schema: withAccount(spec.schema, required: spec.kind == .action),
+                kind: spec.kind,
+                summarize: { input in
+                    let line = summarize(input)
+                    guard let account = (input["account"] as? String), !account.isEmpty else { return line }
+                    return line + " · " + account
+                },
+                tag: spec.tag, run: spec.run
+            )
+        }
     }
 
     // MARK: - Fetching
@@ -357,7 +437,6 @@ final class GitHubConnector: CloudConnectorConfig {
     // MARK: - Display
 
     private func apply(_ s: Snapshot) {
-        snapshot = s
         let failing = s.mine.filter { $0.ci == .failing }
 
         var headline = tr("connect.github.openPrs", s.mineTotal)
@@ -410,13 +489,13 @@ final class GitHubConnector: CloudConnectorConfig {
         }
     }
 
-    private func overview() async throws -> String {
-        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
-            throw CloudHelp.notSetUp("GitHub")
-        }
+    private func overview(_ input: [String: Any]) async throws -> String {
+        let (account, token) = try credentials(input)
         let s = try await fetch(token: token)
-        apply(s)
-        var out = ["GitHub account: @\(s.login)", "", "Open PRs authored by user (\(s.mineTotal)):"]
+        snapshots[account.id] = s
+        if account == accounts.first { apply(s) }
+        let label = accounts.count > 1 ? " (account \(Self.accountName(account)))" : ""
+        var out = ["GitHub account: @\(s.login)\(label)", "", "Open PRs authored by user (\(s.mineTotal)):"]
         if s.mine.isEmpty { out.append("- none") }
         for pr in s.mine {
             var line = "- \(pr.ref) '\(pr.title)'"
@@ -492,7 +571,7 @@ extension GitHubConnector {
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    return try await self.pullRequestDetails(repo: target.repo, number: target.number)
+                    return try await self.pullRequestDetails(repo: target.repo, number: target.number, input: input)
                 }
             ),
             ToolSpec(
@@ -526,7 +605,7 @@ extension GitHubConnector {
                     if event != "APPROVE" && body == nil { throw NookError("A comment body is required for this review action.") }
                     var payload: [String: Any] = ["event": event]
                     if let body = body { payload["body"] = body }
-                    _ = try await self.send("POST", "/repos/\(target.repo)/pulls/\(target.number)/reviews", body: payload)
+                    _ = try await self.send("POST", "/repos/\(target.repo)/pulls/\(target.number)/reviews", body: payload, input: input)
                     switch event {
                     case "APPROVE": return "Approved: \(target.repo)#\(target.number)"
                     case "REQUEST_CHANGES": return "Requested changes on: \(target.repo)#\(target.number)"
@@ -549,7 +628,7 @@ extension GitHubConnector {
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     guard let body = GitHubPR.text(input, "body") else { throw NookError("Comment text is missing.") }
-                    _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
+                    _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body], input: input)
                     return "Comment posted on \(target.repo)#\(target.number)"
                 }
             ),
@@ -573,7 +652,7 @@ extension GitHubConnector {
                         throw NookError("The method must be merge, squash, or rebase.")
                     }
                     let result = try await self.send("PUT", "/repos/\(target.repo)/pulls/\(target.number)/merge",
-                                                     body: ["merge_method": method])
+                                                     body: ["merge_method": method], input: input)
                     if (result["merged"] as? Bool) == false {
                         throw NookError((result["message"] as? String) ?? "GitHub did not merge the pull request.")
                     }
@@ -590,7 +669,7 @@ extension GitHubConnector {
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    _ = try await self.send("PATCH", "/repos/\(target.repo)/pulls/\(target.number)", body: ["state": "closed"])
+                    _ = try await self.send("PATCH", "/repos/\(target.repo)/pulls/\(target.number)", body: ["state": "closed"], input: input)
                     return "Closed: \(target.repo)#\(target.number)"
                 }
             )
@@ -600,10 +679,8 @@ extension GitHubConnector {
     // MARK: Writing
 
     /// Performs a write action on GitHub and forwards GitHub's error message so Nook can explain why an action failed.
-    fileprivate func send(_ method: String, _ path: String, body: [String: Any]) async throws -> [String: Any] {
-        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
-            throw CloudHelp.notSetUp("GitHub")
-        }
+    fileprivate func send(_ method: String, _ path: String, body: [String: Any], input: [String: Any]) async throws -> [String: Any] {
+        let token = try credentials(input).token
         let url = try CloudHelp.url("https://api.github.com" + path)
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -631,11 +708,8 @@ extension GitHubConnector {
     // MARK: Reading
 
     /// The PR with all context needed to review it. Truncated so a large diff does not flood the conversation.
-    fileprivate func pullRequestDetails(repo: String, number: Int) async throws -> String {
-        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
-            throw CloudHelp.notSetUp("GitHub")
-        }
-        let auth = headers(token)
+    fileprivate func pullRequestDetails(repo: String, number: Int, input: [String: Any]) async throws -> String {
+        let auth = headers(try credentials(input).token)
         let base = "https://api.github.com/repos/\(repo)/pulls/\(number)"
         let pull = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url(base), headers: auth))
         let files = CloudHelp.list(try await ConnectorHTTP.json(try CloudHelp.url(base, "/files", query: [("per_page", "30")]), headers: auth))
@@ -736,7 +810,7 @@ extension GitHubConnector {
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Search query is missing.") }
-                    return try await self.searchIssues(query, type: (input["type"] as? String) ?? "all")
+                    return try await self.searchIssues(query, type: (input["type"] as? String) ?? "all", input: input)
                 }
             ),
             ToolSpec(
@@ -749,7 +823,7 @@ extension GitHubConnector {
                 run: { [weak self] input in
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    return try await self.issueDetails(repo: target.repo, number: target.number)
+                    return try await self.issueDetails(repo: target.repo, number: target.number, input: input)
                 }
             ),
             ToolSpec(
@@ -775,7 +849,7 @@ extension GitHubConnector {
                     if let body = GitHubPR.text(input, "body") { payload["body"] = body }
                     let labels = Self.labels(input)
                     if !labels.isEmpty { payload["labels"] = labels }
-                    let result = try await self.send("POST", "/repos/\(repo)/issues", body: payload)
+                    let result = try await self.send("POST", "/repos/\(repo)/issues", body: payload, input: input)
                     let number = CloudHelp.int(result["number"]).map { "#\($0)" } ?? ""
                     let url = (result["html_url"] as? String).map { " · \($0)" } ?? ""
                     return "Issue created: \(repo)\(number)\(url)"
@@ -792,7 +866,7 @@ extension GitHubConnector {
                     guard let self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
                     guard let body = GitHubPR.text(input, "body") else { throw NookError("Comment text is missing.") }
-                    let result = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body])
+                    let result = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/comments", body: ["body": body], input: input)
                     return "Comment posted on \(target.repo)#\(target.number)" + ((result["html_url"] as? String).map { " · \($0)" } ?? "")
                 }
             ),
@@ -823,11 +897,11 @@ extension GitHubConnector {
                     }
                     if let title = GitHubPR.text(input, "title") { payload["title"] = title }
                     if !payload.isEmpty {
-                        _ = try await self.send("PATCH", "/repos/\(target.repo)/issues/\(target.number)", body: payload)
+                        _ = try await self.send("PATCH", "/repos/\(target.repo)/issues/\(target.number)", body: payload, input: input)
                     }
                     let labels = Self.labels(input)
                     if !labels.isEmpty {
-                        _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/labels", body: ["labels": labels])
+                        _ = try await self.send("POST", "/repos/\(target.repo)/issues/\(target.number)/labels", body: ["labels": labels], input: input)
                     }
                     guard !payload.isEmpty || !labels.isEmpty else { throw NookError("There is nothing to update.") }
                     return "Updated: \(target.repo)#\(target.number)"
@@ -842,10 +916,8 @@ extension GitHubConnector {
             .filter { !$0.isEmpty }
     }
 
-    private func readHeaders() throws -> [String: String] {
-        guard ConnectorToggle.isOn(id), let token = CloudHelp.secret(GitHubConnector.tokenAccount) else {
-            throw CloudHelp.notSetUp("GitHub")
-        }
+    private func readHeaders(_ input: [String: Any]) throws -> [String: String] {
+        let token = try credentials(input).token
         return [
             "Authorization": "Bearer \(token)",
             "Accept": "application/vnd.github+json",
@@ -853,14 +925,14 @@ extension GitHubConnector {
         ]
     }
 
-    fileprivate func searchIssues(_ query: String, type: String) async throws -> String {
+    fileprivate func searchIssues(_ query: String, type: String, input: [String: Any]) async throws -> String {
         var q = query
         if type == "issue", !q.contains("is:issue") { q += " is:issue" }
         if type == "pr", !q.contains("is:pr") { q += " is:pr" }
         let url = try CloudHelp.url("https://api.github.com", "/search/issues", query: [
             ("q", q), ("sort", "updated"), ("order", "desc"), ("per_page", "15")
         ])
-        let root = CloudHelp.object(try await ConnectorHTTP.json(url, headers: try readHeaders()))
+        let root = CloudHelp.object(try await ConnectorHTTP.json(url, headers: try readHeaders(input)))
         let items = CloudHelp.list(root["items"])
         if items.isEmpty { return "No issues or pull requests found for \"\(query)\"." }
         var lines = ["\(CloudHelp.int(root["total_count"]) ?? items.count) results, \(items.count) most recently updated:"]
@@ -883,8 +955,8 @@ extension GitHubConnector {
         return (lines + refs).joined(separator: "\n")
     }
 
-    fileprivate func issueDetails(repo: String, number: Int) async throws -> String {
-        let auth = try readHeaders()
+    fileprivate func issueDetails(repo: String, number: Int, input: [String: Any]) async throws -> String {
+        let auth = try readHeaders(input)
         let base = "https://api.github.com/repos/\(repo)/issues/\(number)"
         let issue = CloudHelp.object(try await ConnectorHTTP.json(try CloudHelp.url(base), headers: auth))
         let comments = CloudHelp.list(try? await ConnectorHTTP.json(try CloudHelp.url(base, "/comments", query: [("per_page", "30")]), headers: auth))
@@ -2119,13 +2191,30 @@ final class ResendConnector: CloudConnectorConfig {
 enum GitHubPullRequests {
     /// Whether the GitHub connector is active and has a token. Otherwise Nook opens the compare page on github.com.
     static var isAvailable: Bool {
-        ConnectorToggle.isOn("github") && CloudHelp.secret(GitHubConnector.tokenAccount) != nil
+        ConnectorToggle.isOn("github") && !tokens.isEmpty
     }
 
+    /// Tokens of all GitHub accounts, primary first.
+    private static var tokens: [String] {
+        AccountRegistry.shared.accounts(for: "github").compactMap { CloudHelp.secret($0.key("token")) }
+    }
+
+    /// Tries the accounts in order: the first one with access to the repository opens the pull request.
     static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool) async throws -> URL {
-        guard let token = CloudHelp.secret(GitHubConnector.tokenAccount), ConnectorToggle.isOn("github") else {
-            throw CloudHelp.notSetUp("GitHub")
+        let available = tokens
+        guard ConnectorToggle.isOn("github"), !available.isEmpty else { throw CloudHelp.notSetUp("GitHub") }
+        var lastError: Error = CloudHelp.notSetUp("GitHub")
+        for token in available {
+            do {
+                return try await create(repo: repo, title: title, body: body, head: head, base: base, draft: draft, token: token)
+            } catch {
+                lastError = error
+            }
         }
+        throw lastError
+    }
+
+    private static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool, token: String) async throws -> URL {
         let url = try CloudHelp.url("https://api.github.com/repos/\(repo)/pulls")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

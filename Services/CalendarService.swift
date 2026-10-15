@@ -207,6 +207,15 @@ final class CalendarService {
         return reminder.calendarItemIdentifier
     }
 
+    /// Whether an event with this identifier exists (used to confirm an action really happened).
+    func eventExists(_ id: String) -> Bool {
+        store.event(withIdentifier: id) != nil
+    }
+
+    func reminderExists(_ id: String) -> Bool {
+        store.calendarItem(withIdentifier: id) is EKReminder
+    }
+
     /// Marks a reminder as completed, by ID or (if unique) by title. Returns the title.
     func completeReminder(_ idOrTitle: String) async throws -> String {
         guard await requestReminders() else {

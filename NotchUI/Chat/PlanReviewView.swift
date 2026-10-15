@@ -100,6 +100,11 @@ struct PlanReview: View {
         switch state(index) {
         case .done:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+        case .verified:
+            Image(systemName: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+                .help(tr("chat.plan.verified"))
+        case .approved:
+            Image(systemName: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: 18)
         case .failed:
             Image(systemName: "xmark.circle.fill").foregroundStyle(NookTheme.coral).frame(width: 18)
         case .running:
@@ -130,6 +135,10 @@ struct PlanReview: View {
         switch state(index) {
         case .done(let result):
             Text(result).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint).fixedSize(horizontal: false, vertical: true)
+        case .verified(let result):
+            Text(result + " · " + tr("chat.plan.verified")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint).fixedSize(horizontal: false, vertical: true)
+        case .approved:
+            Text(tr("chat.plan.approved")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
         case .failed(let error):
             Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft).fixedSize(horizontal: false, vertical: true)
         case .duplicate(let when):

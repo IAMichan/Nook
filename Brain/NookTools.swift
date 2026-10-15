@@ -380,6 +380,10 @@ final class NookTools {
                 summarize: { _ in "Klembord lezen" },
                 tag: { _ in ("", .neutral) },
                 run: { _ in
+                    // Follows the Clipboard switch in Settings, like the clipboard context does.
+                    guard ConnectorToggle.isOn("clipboard", default: false) else {
+                        throw NookError("Het klembord staat uit. Zet het aan bij Instellingen › Koppelingen › Klembord.")
+                    }
                     let board = NSPasteboard.general
                     let types = board.types ?? []
                     let secret = types.contains { ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"].contains($0.rawValue) }

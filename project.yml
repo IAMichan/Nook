@@ -21,6 +21,10 @@ packages:
   SwiftTransformers:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.0
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    # The built-in terminal (Workspace › Terminals). Pinned: a stable release whose API matches TerminalSessions.swift.
+    exactVersion: 1.16.0
 targets:
   Nook:
     type: application
@@ -43,6 +47,8 @@ targets:
         product: HuggingFace
       - package: SwiftTransformers
         product: Tokenizers
+      - package: SwiftTerm
+        product: SwiftTerm
     info:
       path: App/Info.plist
       properties:
@@ -54,6 +60,7 @@ targets:
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
+        NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.
         NSRemindersFullAccessUsageDescription: Nook creates reminders for you.
         NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions.
         NSSpeechRecognitionUsageDescription: Nook transcribes speech to text, preferably on-device.
@@ -65,11 +72,14 @@ targets:
         com.apple.security.device.audio-input: true
         com.apple.security.automation.apple-events: true
         com.apple.security.personal-information.calendars: true
+        com.apple.security.personal-information.addressbook: true
+        com.apple.security.network.client: true
     settings:
       base:
         PRODUCT_NAME: Nook
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
-        ENABLE_HARDENED_RUNTIME: NO
+        # Hardened runtime: other programs cannot inject code into Nook and inherit its screen, microphone and automation access.
+        ENABLE_HARDENED_RUNTIME: YES
         DEVELOPMENT_TEAM: 35SMNHP9K7
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
@@ -85,6 +95,14 @@ targets:
       - path: Brain/MailStats.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
+      - path: Brain/CommandRisk.swift
+      - path: Brain/NetworkGuard.swift
+      - path: Brain/ToolLoop.swift
+      - path: Brain/ModelAdvisor.swift
+      - path: Core/NookError.swift
+      - path: Core/SafeStorage.swift
+      - path: Core/Accounts.swift
+      - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift

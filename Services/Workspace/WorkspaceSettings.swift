@@ -61,7 +61,7 @@ final class WorkspaceSettings: ObservableObject {
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
         worktreeRoot = defaults.string(forKey: "ws.worktreeRoot").flatMap { $0.isEmpty ? nil : $0 } ?? Self.standardWorktreeRoot
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
-        terminalBundleID = defaults.string(forKey: "ws.terminal") ?? "com.apple.Terminal"
+        terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
@@ -110,7 +110,11 @@ final class WorkspaceSettings: ObservableObject {
         AppChoice(bundleID: "com.exafunction.windsurf", name: "Windsurf")
     ]
 
+    /// The terminal inside Nook's main window (Workspace › Terminals).
+    static let builtInTerminal = "nook.builtin"
+
     static let terminalCandidates: [AppChoice] = [
+        AppChoice(bundleID: builtInTerminal, name: "Nook"),
         AppChoice(bundleID: "com.apple.Terminal", name: "Terminal"),
         AppChoice(bundleID: "com.googlecode.iterm2", name: "iTerm"),
         AppChoice(bundleID: "com.mitchellh.ghostty", name: "Ghostty"),
@@ -121,6 +125,6 @@ final class WorkspaceSettings: ObservableObject {
 
     /// Only apps installed on this Mac.
     static func installed(_ candidates: [AppChoice]) -> [AppChoice] {
-        candidates.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
+        candidates.filter { $0.bundleID == builtInTerminal || NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
     }
 }

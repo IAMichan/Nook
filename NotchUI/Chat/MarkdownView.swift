@@ -163,7 +163,38 @@ enum MarkdownBlock {
     /// Bold, italic, code, and links within an inline span.
     static func inline(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        guard let parsed = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
+        // Answers can repeat text from mails or web pages: only web and mail links stay clickable, and a link whose text
+        // hides where it goes gets its real host next to it.
+        var result = AttributedString()
+        var open: (url: URL, text: String)?
+        func close() {
+            guard let link = open else { return }
+            open = nil
+            if let host = link.url.host?.lowercased(), !link.text.lowercased().contains(host) {
+                var suffix = AttributedString(" (\(host))")
+                suffix.foregroundColor = NookTheme.textTertiary
+                result += suffix
+            }
+        }
+        for run in parsed.runs {
+            var piece = AttributedString(parsed[run.range])
+            let url = run.link.flatMap { isSafeLink($0) ? $0 : nil }
+            if run.link != nil, url == nil { piece.link = nil }
+            if open?.url != url { close() }
+            if let url { open = (url, (open?.text ?? "") + String(piece.characters)) }
+            result += piece
+        }
+        close()
+        return result
+    }
+
+    static func isSafeLink(_ url: URL) -> Bool {
+        switch url.scheme?.lowercased() {
+        case "https", "http": return url.host != nil && url.user == nil
+        case "mailto": return true
+        default: return false
+        }
     }
 }
 
@@ -180,6 +211,9 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
+        .environment(\.openURL, OpenURLAction { url in
+            MarkdownBlock.isSafeLink(url) ? .systemAction : .discarded
+        })
     }
 
     @ViewBuilder

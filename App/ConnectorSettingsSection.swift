@@ -53,6 +53,9 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
                 ForEach(connector.configFields, id: \.account) { field in
                     fieldRow(field)
                 }
+                if connector.id == "github" {
+                    ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
+                }
                 Text(connector.helpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -273,6 +276,86 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             await target.refresh()
             done()
         }
+    }
+}
+
+/// More accounts of the same service ("GitHub · Werk"): each with its own name and key. The first account is the one
+/// configured above; these come on top of it.
+struct ExtraAccountsView: View {
+    let service: String
+    let field: String
+    let placeholder: String
+    let onChange: () -> Void
+
+    @State private var accounts: [ServiceAccount] = []
+    @State private var newLabel = ""
+    @State private var drafts: [String: String] = [:]
+    @State private var primaryLabel = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Text(tr("accounts.title")).font(.callout.weight(.medium))
+            HStack {
+                TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
+                    .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
+                if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
+                    Text(identity).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            ForEach(accounts) { account in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.label)
+                        if let identity = account.identity { Text(identity).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .frame(width: 140, alignment: .leading)
+                    SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))
+                        .onSubmit { save(account) }
+                    Button(tr("button.save")) { save(account) }
+                        .disabled((drafts[account.id] ?? "").isEmpty)
+                    Button(role: .destructive) { remove(account) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                }
+            }
+            HStack {
+                TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")))
+                Button(tr("accounts.add")) {
+                    AccountRegistry.shared.add(service: service, label: newLabel)
+                    newLabel = ""
+                    load()
+                }
+                .disabled(newLabel.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            Text(tr("accounts.hint")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear(perform: load)
+    }
+
+    private func binding(_ account: ServiceAccount) -> Binding<String> {
+        Binding(get: { drafts[account.id] ?? "" }, set: { drafts[account.id] = $0 })
+    }
+
+    private func load() {
+        let all = AccountRegistry.shared.accounts(for: service)
+        primaryLabel = all.first?.label ?? ""
+        accounts = Array(all.dropFirst())
+    }
+
+    private func save(_ account: ServiceAccount) {
+        let value = ConnectorField.clean(drafts[account.id] ?? "")
+        guard !value.isEmpty else { return }
+        Keychain.write(value, account: account.key(field))
+        drafts[account.id] = ""
+        load()
+        onChange()
+    }
+
+    private func remove(_ account: ServiceAccount) {
+        Keychain.write("", account: account.key(field))
+        AccountRegistry.shared.remove(account.id)
+        load()
+        onChange()
     }
 }
 

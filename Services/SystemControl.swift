@@ -11,30 +11,42 @@ enum SystemControl {
 
     /// Like `appleScript`, but also returns the error number. -1743 means: macOS has not granted Nook permission.
     nonisolated static func appleScriptResult(_ source: String, timeout: TimeInterval = 4.0) -> (text: String?, errorNumber: Int?) {
+        final class Box: @unchecked Sendable {
+            let lock = NSLock()
+            var text: String?
+            var errorNumber: Int?
+        }
+        let box = Box()
         let semaphore = DispatchSemaphore(value: 0)
-        var text: String?
-        var errorNum: Int?
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        // NSAppleScript is not thread-safe: all scripts run one after another on one queue. The result goes through a lock,
+        // so a script that finishes after the timeout cannot write into a result that was already returned.
+        scriptQueue.async {
             guard let script = NSAppleScript(source: source) else {
                 semaphore.signal()
                 return
             }
             var error: NSDictionary?
             let result = script.executeAndReturnError(&error)
+            box.lock.lock()
             if let error {
-                errorNum = error[NSAppleScript.errorNumber] as? Int
+                box.errorNumber = error[NSAppleScript.errorNumber] as? Int
             } else {
-                text = result.stringValue
+                box.text = result.stringValue
             }
+            box.lock.unlock()
             semaphore.signal()
         }
 
         if semaphore.wait(timeout: .now() + timeout) == .timedOut {
             return (nil, -1712) // errAETimeout
         }
-        return (text, errorNum)
+        box.lock.lock()
+        defer { box.lock.unlock() }
+        return (box.text, box.errorNumber)
     }
+
+    private static let scriptQueue = DispatchQueue(label: "nl.imdigital.nook.applescript", qos: .userInitiated)
 
     /// Runs an executable with arguments, without a shell, and returns the output.
     nonisolated static func runProcess(_ path: String, _ arguments: [String]) throws -> String {

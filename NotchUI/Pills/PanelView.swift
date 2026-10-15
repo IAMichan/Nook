@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The expanded panel with four tabs. The tab bar is always at the top.
+/// The expanded panel: Nook (home and chat in one), Agents, and Music while something plays.
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
@@ -22,7 +22,7 @@ struct PanelView: View {
     private var header: some View {
         HStack(spacing: 0) {
             HStack(spacing: 22) {
-                ForEach(PanelTab.allCases) { t in
+                ForEach(PanelTab.visible(musicAvailable: viewModel.app?.nowPlaying.current != nil || tab == .music)) { t in
                     Button {
                         viewModel.show(.panel(t))
                     } label: {
@@ -68,12 +68,9 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .nook: NookHomeTab(viewModel: viewModel)
-        case .chat: NookChatTab(viewModel: viewModel)
+        case .nook, .chat, .connect, .shelf: NookChatTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
-        case .connect: ConnectTab(viewModel: viewModel)
         case .music: MusicTab()
-        case .shelf: ShelfTab()
         }
     }
 }
