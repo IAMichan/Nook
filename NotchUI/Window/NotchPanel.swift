@@ -38,9 +38,14 @@ final class NotchPanel: NSPanel {
 }
 
 extension NSOpenPanel {
-    /// Runs the open panel above the notch, so a folder picker opened from the notch is never hidden behind it.
+    /// Runs the open panel in front of the notch. `runModal()` puts the panel on the modal level itself, which is below the
+    /// notch, so the notch drops to the normal level while the picker is open and goes back afterwards.
     func runAboveNotch() -> NSApplication.ModalResponse {
-        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 4)
+        let notches = NSApp.windows.compactMap { $0 as? NotchPanel }
+        let levels = notches.map(\.level)
+        notches.forEach { $0.level = .normal }
+        NSApp.activate(ignoringOtherApps: true)
+        defer { zip(notches, levels).forEach { $0.level = $1 } }
         return runModal()
     }
 }
