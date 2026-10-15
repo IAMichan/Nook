@@ -35,7 +35,9 @@ final class WorkspaceWindowController {
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings)
             let host = NSHostingController(rootView: root)
-            host.sizingOptions = [.minSize]
+            // The window sets its own minSize; letting the hosting view also drive it makes the inspector's
+            // appearance resize the window in a layout loop.
+            host.sizingOptions = []
             let window = NSWindow(contentViewController: host)
             window.title = tr("ws.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
