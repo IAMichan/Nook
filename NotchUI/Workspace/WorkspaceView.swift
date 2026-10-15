@@ -64,7 +64,6 @@ struct WorkspaceView: View {
                 app.showOnboarding = false
             }
         }
-        .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
         .frame(minWidth: 760, minHeight: 520)
         .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in
