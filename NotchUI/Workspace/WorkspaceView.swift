@@ -66,7 +66,10 @@ struct WorkspaceView: View {
     private var inspectorBinding: Binding<Bool> {
         Binding(
             get: { showInspector && pane == .sessions && workspace.selectedRunID != nil },
-            set: { showInspector = $0 }
+            set: { newValue in
+                // SwiftUI writes false while the inspector is unavailable; don't let that overwrite the user's choice.
+                if pane == .sessions && workspace.selectedRunID != nil { showInspector = newValue }
+            }
         )
     }
 
