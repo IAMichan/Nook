@@ -57,11 +57,11 @@ public final class I18n: ObservableObject, @unchecked Sendable {
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        if let val = translations[lang]?[key] ?? workspaceTranslations[lang]?[key] {
+        if let val = agentsTranslations[lang]?[key] ?? translations[lang]?[key] ?? workspaceTranslations[lang]?[key] {
             return val
         }
         for fallback in [AppLanguage.nl, .en] where fallback != lang {
-            if let val = translations[fallback]?[key] ?? workspaceTranslations[fallback]?[key] { return val }
+            if let val = agentsTranslations[fallback]?[key] ?? translations[fallback]?[key] ?? workspaceTranslations[fallback]?[key] { return val }
         }
         return key
     }

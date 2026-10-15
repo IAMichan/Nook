@@ -27,6 +27,18 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(spec.extraEnvironment["CLAUDE_CONFIG_DIR"], "/Users/x/.claude-werk")
     }
 
+    func testClaudeForkOnlyWithResume() {
+        var forked = input(.claude, resume: "sess-1")
+        forked.forkSession = true
+        let args = AgentCommand.spec(forked).arguments
+        XCTAssertEqual(value(after: "--resume", in: args), "sess-1")
+        XCTAssertTrue(args.contains("--fork-session"), "a taken-over conversation that is still running is copied, never written to twice")
+        XCTAssertFalse(AgentCommand.spec(input(.claude, resume: "sess-1")).arguments.contains("--fork-session"))
+        var fresh = input(.claude)
+        fresh.forkSession = true
+        XCTAssertFalse(AgentCommand.spec(fresh).arguments.contains("--fork-session"), "nothing to copy without a session")
+    }
+
     func testClaudePermissionModes() {
         XCTAssertEqual(AgentCommand.claudePermissionMode(mode: .plan, permission: .bypass), "plan")
         XCTAssertEqual(AgentCommand.claudePermissionMode(mode: .agent, permission: .ask), "default")

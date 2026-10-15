@@ -24,6 +24,17 @@ Bij **Instellingen → Agents** koppel je deze agents met één klik. Nook laat 
 
 Start de agent opnieuw na het koppelen. Toestemming geven vanuit de notch kan nu alleen bij Claude Code en Codex; bij de andere agents beslist Nook nooit iets en vraagt de agent het je zelf, zoals altijd.
 
+## Alles vanuit de Agents-tab
+
+In de Agents-tab bedien je je agents zonder terminal:
+
+- **Lopende sessie**: keur goed of weiger, beantwoord meerkeuzevragen en typ een vervolgbericht. Nook zet het gesprek dan zelf voort (een sessie die nog bezig is als kopie, zodat de twee elkaar niet storen). Via ⋯ neem je de sessie helemaal over: Nook sluit het oude proces af en het gesprek gaat in de tab verder. Je kunt een sessie daar ook beëindigen.
+- **Sessie die Nook alleen als proces ziet**: neem hem over in Nook of beëindig hem.
+- **Eerdere sessie**: typ verder of kies Open in Nook; het gesprek gaat verder waar je bleef.
+- **Nieuwe sessie**: kies + Nieuw (of Start bij een account), een map en de opdracht.
+
+Sessies die Nook zelf draait staan onder **In Nook**, met het hele gesprek, goedkeuringen, stoppen, opnieuw proberen en per beurt de modus, rechten en het model. Dat kan bij Claude Code en Codex; andere agents kun je vanuit Nook volgen en beëindigen. Inloggen en installeren gaat nog via een Terminal-venster.
+
 ## Zelf een agent koppelen
 
 ### Via het hook-script (aanrader)

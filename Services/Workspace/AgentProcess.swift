@@ -36,6 +36,8 @@ enum AgentCommand {
         var workingDirectory: String
         /// To resume an earlier agent session.
         var resumeSessionID: String?
+        /// Claude Code: resume as a copy of the conversation (`--fork-session`), leaving the original untouched.
+        var forkSession = false
         /// CLAUDE_CONFIG_DIR or CODEX_HOME for the chosen account; empty for the primary account.
         var accountEnvironment: [String: String]
         var runID: UUID
@@ -57,7 +59,10 @@ enum AgentCommand {
                 "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission)
             ]
             if !input.model.isEmpty { arguments += ["--model", input.model] }
-            if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--resume", resume] }
+            if let resume = input.resumeSessionID, !resume.isEmpty {
+                arguments += ["--resume", resume]
+                if input.forkSession { arguments.append("--fork-session") }
+            }
             let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
             if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,

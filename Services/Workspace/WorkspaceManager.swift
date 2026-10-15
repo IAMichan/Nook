@@ -90,6 +90,8 @@ final class WorkspaceManager: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var eventSaves: [UUID: Task<Void, Never>] = [:]
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
+    private var forkNext: Set<UUID> = []
 
     /// State tracked by Nook during a single turn.
     private struct TurnState {
@@ -294,6 +296,86 @@ final class WorkspaceManager: ObservableObject {
         return id
     }
 
+    /// Takes over an existing agent conversation (running in a terminal, or an earlier session) as a Nook session.
+    /// Nothing starts yet: the first message resumes the conversation (`--resume`, `exec resume`). `fork` makes that
+    /// first turn a copy (Claude Code only), so a conversation that is still running elsewhere is never written to twice.
+    /// Already taken over? Returns that session instead of adding a second one.
+    @discardableResult
+    func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
+               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false) async throws -> UUID {
+        if !fork, let existing = runs.first(where: { $0.provider == provider && $0.providerSessionID == sessionID }) {
+            if existing.archived { setArchived(existing.id, false) }
+            selectedRunID = existing.id
+            return existing.id
+        }
+        let projectPath = WorkspacePathPolicy.normalize(directory)
+        let verdict = WorkspacePathPolicy.verdict(for: projectPath)
+        guard verdict == .ok else { throw StartError.workspace(verdict) }
+        guard executable(provider) != nil else { throw StartError.noExecutable(provider) }
+
+        var repoRoot: String?
+        var branch: String?
+        if let git = gitService {
+            repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value
+            if repoRoot != nil { branch = await Task.detached { git.currentBranch(projectPath) }.value }
+        }
+        let id = UUID()
+        let now = Date()
+        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let permission = provider.capabilities.policies.contains(settings.defaultPermission)
+            ? settings.defaultPermission : (provider.capabilities.policies.first ?? .acceptEdits)
+        let run = WorkspaceRun(
+            id: id,
+            title: clean.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: clean),
+            task: clean,
+            provider: provider,
+            profileID: profileID,
+            model: "",
+            mode: .agent,
+            permission: permission,
+            isolation: .folder,
+            projectPath: projectPath,
+            workingDirectory: projectPath,
+            repoRoot: repoRoot,
+            branch: branch,
+            baseBranch: nil,
+            worktreePath: nil,
+            instructions: "",
+            status: .completed,
+            statusDetail: nil,
+            providerSessionID: sessionID,
+            createdAt: now,
+            updatedAt: now,
+            archived: false,
+            usage: RunUsage(),
+            turnStartedAt: nil,
+            reviewedAt: nil,
+            lastChangeAt: nil,
+            changedFiles: nil
+        )
+        runs.insert(run, at: 0)
+        events[id] = []
+        if fork { forkNext.insert(id) }
+        settings.rememberProject(repoRoot ?? projectPath)
+        selectedRunID = id
+        for entry in history where !entry.text.isEmpty {
+            append(id, RunEvent(kind: entry.kind, text: entry.text, state: entry.kind == .assistant ? .done : nil))
+        }
+        append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
+        scheduleSave()
+        return id
+    }
+
+    /// Changes how the next turn runs: mode, permissions, and model. Only between turns; a running turn keeps its settings.
+    func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
+        guard let run = run(id), !run.status.isActive else { return }
+        update(id) {
+            if let mode { $0.mode = mode }
+            if let permission, run.provider.capabilities.policies.contains(permission) { $0.permission = permission }
+            if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+    }
+
     // MARK: Turns
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
@@ -355,6 +437,7 @@ final class WorkspaceManager: ObservableObject {
             instructions: run.instructions,
             workingDirectory: run.workingDirectory,
             resumeSessionID: run.providerSessionID,
+            forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id
         )
@@ -379,6 +462,7 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         processes[id] = process
+        forkNext.remove(id)
         run.move(to: .running)
         run.turnStartedAt = Date()
         replace(run)
