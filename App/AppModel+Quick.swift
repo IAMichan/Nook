@@ -15,9 +15,9 @@ extension AppModel {
             let command: NowPlayingService.Command
             let message: String
             switch action {
-            case "next": command = .next; message = "Volgend nummer"
-            case "previous": command = .previous; message = "Vorig nummer"
-            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? "Gepauzeerd" : "Muziek hervat"
+            case "next": command = .next; message = tr("app.quick.next")
+            case "previous": command = .previous; message = tr("app.quick.previous")
+            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? tr("app.quick.paused") : tr("app.quick.resumed")
             }
             nowPlaying.control(command)
             viewModel.finish(message)
@@ -33,7 +33,7 @@ extension AppModel {
         case .weekRecap:
             showWeekRecap()
         case .time:
-            let text = "Het is \(NookDates.time(Date()))."
+            let text = tr("app.quick.time", NookDates.time(Date()))
             viewModel.show(.card(answerCard(text)))
             if settings.speakAnswers { speech.speak(text, language: settings.language) }
         }
@@ -46,14 +46,14 @@ extension AppModel {
             let command: NowPlayingService.Command
             let message: String
             switch action {
-            case "next": command = .next; message = "Volgend nummer."
-            case "previous": command = .previous; message = "Vorig nummer."
-            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? "Gepauzeerd." : "Muziek hervat."
+            case "next": command = .next; message = tr("app.quick.next") + "."
+            case "previous": command = .previous; message = tr("app.quick.previous") + "."
+            default: command = .playPause; message = nowPlaying.current?.isPlaying == true ? tr("app.quick.paused") + "." : tr("app.quick.resumed") + "."
             }
             nowPlaying.control(command)
             return message
         case .time:
-            return "Het is \(NookDates.time(Date()))."
+            return tr("app.quick.time", NookDates.time(Date()))
         default:
             return nil
         }
@@ -67,6 +67,6 @@ extension AppModel {
             execute(plan)
             return
         }
-        viewModel.show(.card(planCard(plan, context: "Snelle opdracht")))
+        viewModel.show(.card(planCard(plan, context: tr("app.quick.context"))))
     }
 }

@@ -98,7 +98,7 @@ extension AppModel {
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
-        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? "Lokaal model laden…" : "Even nadenken…"
+        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
@@ -127,12 +127,12 @@ extension AppModel {
         let screenAllowed = scope.allows(SourceCatalog.screen)
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
-            chat.update(id) { $0.status = "Ik lees \(file.name)…" }
+            chat.update(id) { $0.status = tr("app.status.reading", file.name) }
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
         } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
-            if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = "Ik kijk even mee…" } }
+            if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
             do {
                 snapshot = try await screenSnapshot()
             } catch {
@@ -161,7 +161,7 @@ extension AppModel {
             self.chat.update(id) { message in
                 message.retrieval = steps
                 if let running = steps.last(where: { $0.outcome == .running }), message.text.isEmpty {
-                    message.status = "Ik kijk in \(running.sourceTitle)…"
+                    message.status = tr("app.status.looking", running.sourceTitle)
                 }
             }
         }
@@ -170,7 +170,7 @@ extension AppModel {
                 $0.sources = sources
                 $0.contextSources = summary.titles
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
-                $0.status = retry ? (wantsChart ? "Ik teken de grafiek…" : "Ik zoek verder…") : "Even nadenken…"
+                $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }
         }
         guard !Task.isCancelled else { return }
@@ -224,7 +224,7 @@ extension AppModel {
                 }
                 // Still missing chart: retry once with strict instruction to invoke show_chart.
                 if rescued.isEmpty, wantsChart, !retry, !settings.brainProfile.isSmall {
-                    chat.update(id) { $0.text = ""; $0.status = "Ik teken de grafiek…" }
+                    chat.update(id) { $0.text = ""; $0.status = tr("app.status.drawing") }
                     await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                     return
                 }
@@ -237,7 +237,7 @@ extension AppModel {
             // Code or JSON for a question that is not about code, or an answer in another language: also try once more.
             let broken = !nothing && rescued.isEmpty && plan.actions.isEmpty && Self.looksBroken(rawBody, question: text, expected: settings.answerLanguage(for: text))
             if nothing || broken, !retry {
-                chat.update(id) { $0.text = ""; $0.status = "Ik zoek verder…" }
+                chat.update(id) { $0.text = ""; $0.status = tr("app.status.searching") }
                 await answer(text, history: history, replyID: id, conversation: conversation, retry: true)
                 return
             }
@@ -252,7 +252,7 @@ extension AppModel {
             if plan.actions.isEmpty, unusable, !found.isEmpty, chat.message(id)?.charts.isEmpty ?? true {
                 body = Self.digest(found)
             } else if plan.actions.isEmpty, bareBody == "NONE" {
-                body = "Ik vond hier niets over. Zeg erbij waar ik moet kijken?"
+                body = tr("app.found.nothing")
             }
             let cited = Citations.used(in: body)
             // Prioritize cited references first, followed by other retrieved sources.
@@ -283,13 +283,13 @@ extension AppModel {
                 message.status = ""
                 if body.isEmpty && message.charts.isEmpty && message.mails.isEmpty && plan.actions.isEmpty {
                     message.text = wantsChart
-                        ? "Ik vond geen cijfers om een grafiek van te maken. Zeg erbij waar ik moet kijken?"
-                        : "Daar heb ik geen antwoord op. Probeer het anders te vragen?"
+                        ? tr("app.found.noNumbers")
+                        : tr("app.noAnswerRetry")
                 }
             }
             if let message = chat.message(id) {
                 let spoken = !message.text.isEmpty ? message.text
-                    : (!message.mails.isEmpty ? "Ik heb een mail voor je klaargezet." : (!message.charts.isEmpty ? "Hier is je grafiek." : "Ik heb een plan klaargezet."))
+                    : (!message.mails.isEmpty ? tr("app.spoken.mail") : (!message.charts.isEmpty ? tr("app.spoken.chart") : tr("app.plan.ready")))
                 speakIfAsked(spoken)
             }
             replies[conversation] = nil

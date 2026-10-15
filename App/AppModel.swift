@@ -42,6 +42,8 @@ final class AppModel: ObservableObject {
     let workspace = WorkspaceManager()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace)
+    /// The subscription limits of every agent account.
+    var quota: QuotaService { QuotaService(hub: hub, codex: codex) }
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .general
 
@@ -140,9 +142,9 @@ final class AppModel: ObservableObject {
     @Published var demoMode = false
     /// Integration progress for an agent profile (one-click setup in Agents tab or Settings).
     /// Per account (`AgentProfile.id`).
-    @Published private(set) var agentConnect: [String: AgentConnectProgress] = [:]
-    @Published private(set) var loops: [OpenLoop] = []
-    @Published private(set) var upcoming: [CalEvent] = []
+    @Published var agentConnect: [String: AgentConnectProgress] = [:]
+    @Published var loops: [OpenLoop] = []
+    @Published var upcoming: [CalEvent] = []
 
     var viewModel: NotchViewModel { notch.viewModel }
 
@@ -282,6 +284,10 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        codex.homes = { [weak self] in
+            guard let self else { return [] }
+            return self.profiles.profiles(for: .codex).map { $0.homeURL }
+        }
         codex.start()
 
         // Continuously index visible screen text locally so every query has immediate visual context.
@@ -316,6 +322,8 @@ final class AppModel: ObservableObject {
     // MARK: Stored state used by the extensions
     // Extensions cannot hold stored properties, so state that belongs to a feature lives here.
 
+    /// The first-run flow is showing in the main window.
+    @Published var showOnboarding = false
     /// The Settings window (created on first use).
     var settingsWindow: NSWindow?
     /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.

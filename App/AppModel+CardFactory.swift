@@ -21,7 +21,7 @@ extension AppModel {
         do {
             let text = try FileText.read(url)
             attachment = (url.lastPathComponent, text, Date())
-            var message = ChatMessage(role: .nook, text: "Ik heb **\(url.lastPathComponent)** gelezen. Wat wil je erover weten? Ik kan het samenvatten, er een grafiek of mail van maken, of acties eruit halen.")
+            var message = ChatMessage(role: .nook, text: tr("app.file.read", url.lastPathComponent))
             message.sources = ["Bestand"]
             chat.append(message)
             showChat()
@@ -41,11 +41,11 @@ extension AppModel {
         let card = NookCard(
             id: token,
             mood: .remind,
-            context: "Open punt · sinds \(NookDates.short(loop.created))",
+            context: tr("app.loop.since", NookDates.short(loop.created)),
             title: loop.title,
             detail: .none,
-            primary: CardAction(label: "Afgerond", outcome: .callback("\(token)#done", "Afgevinkt")),
-            secondary: CardAction(label: "Later", outcome: .dismiss),
+            primary: CardAction(label: tr("app.loop.done"), outcome: .callback("\(token)#done", tr("app.loop.checked"))),
+            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
             contentHeight: 130
         )
         viewModel.show(.card(card))
@@ -57,28 +57,31 @@ extension AppModel {
         showChat(focus: true)
     }
 
-    /// First-run onboarding card: 3-step setup guide.
+    /// Opens the first-run flow in the main window.
+    func startOnboarding() {
+        openWorkspace()
+        showOnboarding = true
+    }
+
+    /// First-run onboarding card: leads into the 3-step setup in the main window.
     func presentWelcome() {
         let token = "welcome"
-        viewModel.register("\(token)#setup") { [weak self] in
-            self?.settings.onboardingDone = true
-            self?.openSettings()
-        }
+        viewModel.register("\(token)#setup") { [weak self] in self?.startOnboarding() }
         viewModel.register("\(token)#later") { [weak self] in self?.settings.onboardingDone = true }
         let facts = [
-            Fact(label: "1 · brein", value: settings.brainReady ? "klaar" : "kies Claude, een andere AI of gratis lokaal"),
-            Fact(label: "2 · scherm lezen", value: CGPreflightScreenCaptureAccess() ? "aan" : "geef toestemming"),
-            Fact(label: "3 · agenda", value: calendar.hasEventAccess ? "gekoppeld" : "geef toestemming"),
-            Fact(label: "4 · koppelingen", value: "mail, GitHub, Stripe… (optioneel)")
+            Fact(label: tr("app.welcome.brain"), value: settings.brainReady ? tr("app.welcome.ready") : tr("app.welcome.chooseBrain")),
+            Fact(label: tr("app.welcome.screen"), value: CGPreflightScreenCaptureAccess() ? tr("app.welcome.on") : tr("app.welcome.allow")),
+            Fact(label: tr("app.welcome.calendar"), value: calendar.hasEventAccess ? tr("app.welcome.connected") : tr("app.welcome.allow")),
+            Fact(label: tr("app.welcome.connections"), value: tr("app.welcome.connectionsValue"))
         ]
         let card = NookCard(
             id: token,
             mood: .seen,
-            context: "Welkom bij Nook",
-            title: "Ik ben je assistent. Ik zie je schermen en ken je agenda, dus vraag me gewoon alles.",
+            context: tr("onboarding.title"),
+            title: tr("app.welcome.title"),
             detail: .facts(facts),
-            primary: CardAction(label: "Instellen", outcome: .callback("\(token)#setup", "")),
-            secondary: CardAction(label: "Later", outcome: .callback("\(token)#later", "")),
+            primary: CardAction(label: tr("app.welcome.setup"), outcome: .callback("\(token)#setup", "")),
+            secondary: CardAction(label: tr("button.later"), outcome: .callback("\(token)#later", "")),
             contentHeight: 150 + 2 * 44 + 24
         )
         viewModel.present(card)
@@ -97,10 +100,10 @@ extension AppModel {
         Task {
             let result = await ScriptText.run(script)
             if result.errorNumber == -1743 {
-                viewModel.present(errorCard("Geef Nook toestemming voor Mail bij Systeeminstellingen › Privacy › Automatisering."))
+                viewModel.present(errorCard(tr("app.mail.permission")))
             } else {
                 store.audit(tool: "mail_file", args: url.lastPathComponent, result: "concept geopend")
-                viewModel.finish("Concept met \(url.lastPathComponent) staat klaar in Mail")
+                viewModel.finish(tr("app.mail.draftReady", url.lastPathComponent))
             }
         }
     }
@@ -112,14 +115,14 @@ extension AppModel {
             context: context,
             title: title,
             detail: .none,
-            primary: CardAction(label: "Verberg", outcome: .dismiss),
+            primary: CardAction(label: tr("app.hide"), outcome: .dismiss),
             secondary: CardAction(label: "", outcome: .dismiss),
             contentHeight: 130
         )
     }
 
     func answerCard(_ text: String, offers: [String] = []) -> NookCard {
-        let body = text.isEmpty ? "Daar heb ik geen antwoord op." : String(text.prefix(4000))
+        let body = text.isEmpty ? tr("app.noAnswer") : String(text.prefix(4000))
         let lines = min(9, max(1, Int(ceil(Double(body.count) / 46.0))))
         let token = "answer-" + UUID().uuidString
         return NookCard(
@@ -128,7 +131,7 @@ extension AppModel {
             context: "Nook",
             title: body,
             detail: .none,
-            primary: CardAction(label: "Oké", outcome: .dismiss),
+            primary: CardAction(label: tr("app.ok"), outcome: .dismiss),
             secondary: CardAction(label: "", outcome: .dismiss),
             contentHeight: 140 + CGFloat(lines) * 24 + (offers.isEmpty ? 0 : 40),
             input: true,
@@ -143,11 +146,11 @@ extension AppModel {
         return NookCard(
             id: token,
             mood: .worry,
-            context: "Dat lukte niet",
+            context: tr("app.error.context"),
             title: String(message.prefix(240)),
             detail: .none,
-            primary: CardAction(label: "Oké", outcome: .dismiss),
-            secondary: CardAction(label: "Instellingen", outcome: .callback("\(token)#settings", "")),
+            primary: CardAction(label: tr("app.ok"), outcome: .dismiss),
+            secondary: CardAction(label: tr("app.settings"), outcome: .callback("\(token)#settings", "")),
             contentHeight: 90 + CGFloat(lines) * 24
         )
     }
@@ -163,11 +166,11 @@ extension AppModel {
         let card = NookCard(
             id: token,
             mood: .waiting,
-            context: "Eerst even instellen",
-            title: "Ik heb een API-sleutel of een gratis lokaal model nodig om te kunnen denken.",
+            context: tr("app.setup.context"),
+            title: tr("app.setup.title"),
             detail: .none,
-            primary: CardAction(label: "Open instellingen", outcome: .callback("\(token)#open", "")),
-            secondary: CardAction(label: "Later", outcome: .dismiss),
+            primary: CardAction(label: tr("app.setup.open"), outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
             contentHeight: 138
         )
         viewModel.show(.card(card))

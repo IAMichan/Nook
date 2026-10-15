@@ -14,7 +14,7 @@ extension AppModel {
             return
         }
         if manual {
-            viewModel.show(.card(thinkingCard(context: "Ik kijk even mee…", title: "Ik lees wat er op je scherm staat.")))
+            viewModel.show(.card(thinkingCard(context: tr("app.look.context"), title: tr("app.look.title"))))
         }
         Task {
             do {
@@ -28,7 +28,7 @@ extension AppModel {
                     userText: "This is what the user currently has on screen. Do you see anything you can help with, such as an event, a commitment, or a task? Propose an appropriate action. If nothing relevant: NONE.",
                     snapshot: snapshot,
                     silentIfNone: !manual,
-                    context: "Ik zag in \(snapshot.appName)"
+                    context: tr("app.look.saw", snapshot.appName)
                 )
             } catch {
                 if manual { replaceThinking(with: errorCard(error.localizedDescription)) }
@@ -99,7 +99,7 @@ extension AppModel {
         if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }
         guard !body.isEmpty || !plan.actions.isEmpty else { return }
 
-        let line = Self.nudgeLine(body: body, fallback: planSteps(plan.actions).first.map { "Zal ik dit doen? \($0.text)" })
+        let line = Self.nudgeLine(body: body, fallback: planSteps(plan.actions).first.map { tr("app.nudge.shall", $0.text) })
         guard !line.isEmpty, !thinkAlong.alreadyOffered(line) else { return }
 
         let offer = BrainPlan(text: body, actions: plan.actions)
@@ -140,25 +140,25 @@ extension AppModel {
         }
 
         let steps = planSteps(plan.actions)
-        let title = plan.text.isEmpty ? "Zal ik dit voor je doen?" : String(plan.text.prefix(600))
+        let title = plan.text.isEmpty ? tr("app.nudge.title") : String(plan.text.prefix(600))
         let long = title.count > 140
         let lines = min(8, max(1, Int(ceil(Double(title.count) / (long ? 62.0 : 46.0)))))
         var height = 150 + CGFloat(lines) * (long ? 21 : 24)
         if !steps.isEmpty { height += CGFloat(steps.count * 30) + 14 }
         if !offers.isEmpty { height += 40 }
 
-        let no = CardAction(label: "Nee", outcome: .callback("\(token)#no", ""))
+        let no = CardAction(label: tr("app.no"), outcome: .callback("\(token)#no", ""))
         return NookCard(
             id: token,
             mood: .seen,
-            context: "Ik dacht mee",
+            context: tr("app.nudge.context"),
             title: title,
             detail: steps.isEmpty ? .none : .steps(steps),
-            primary: CardAction(label: plan.actions.isEmpty ? "Handig" : "Doe maar", outcome: .callback("\(token)#yes", "")),
+            primary: CardAction(label: plan.actions.isEmpty ? tr("app.nudge.handy") : tr("app.nudge.doIt"), outcome: .callback("\(token)#yes", "")),
             secondary: no,
             contentHeight: min(470, height),
             input: true,
-            extra: [CardAction(label: "Niet in deze app", outcome: .callback("\(token)#mute", "Ik denk niet meer mee in \(appName)"))],
+            extra: [CardAction(label: tr("app.nudge.mute"), outcome: .callback("\(token)#mute", tr("app.nudge.muted", appName)))],
             sources: [appName],
             offers: offers,
             escape: no
@@ -176,22 +176,22 @@ extension AppModel {
         }
         viewModel.register("\(token)#watch") { [weak self] in self?.settings.autoWatch = true }
         let facts = [
-            Fact(label: "meedenken", value: "ik bied zelf hulp aan"),
-            Fact(label: "kleine dingen zelf doen", value: "muziek, volume, apps"),
-            Fact(label: "altijd eerst vragen", value: "agenda, mail, links"),
-            Fact(label: "uitzetten", value: "Instellingen › Assistent")
+            Fact(label: tr("app.intro.alongLabel"), value: tr("app.intro.alongValue")),
+            Fact(label: tr("app.intro.smallLabel"), value: tr("app.intro.smallValue")),
+            Fact(label: tr("app.intro.askLabel"), value: tr("app.intro.askValue")),
+            Fact(label: tr("app.intro.offLabel"), value: tr("app.intro.offValue"))
         ]
         let card = NookCard(
             id: token,
             mood: .seen,
-            context: "Nieuw in Nook",
-            title: "Zal ik meedenken terwijl je werkt? Zie ik iets wat ik voor je kan doen, dan bied ik het aan.",
+            context: tr("app.intro.context"),
+            title: tr("app.intro.title"),
             detail: .facts(facts),
-            primary: CardAction(label: "Zet aan", outcome: .callback("\(token)#all", "Ik denk vanaf nu mee")),
-            secondary: CardAction(label: "Later", outcome: .dismiss),
+            primary: CardAction(label: tr("app.intro.enable"), outcome: .callback("\(token)#all", tr("app.intro.enabled"))),
+            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
             contentHeight: 150 + 2 * 44 + 24,
-            extra: [CardAction(label: "Alleen meedenken", outcome: .callback("\(token)#watch", "Ik denk vanaf nu mee"))],
-            escape: CardAction(label: "Later", outcome: .dismiss)
+            extra: [CardAction(label: tr("app.intro.onlyAlong"), outcome: .callback("\(token)#watch", tr("app.intro.enabled")))],
+            escape: CardAction(label: tr("button.later"), outcome: .dismiss)
         )
         viewModel.present(card)
     }

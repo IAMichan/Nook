@@ -37,7 +37,7 @@ extension AppModel {
     func connect(_ profile: AgentProfile) {
         let kind = profile.kind
         if agentConnect[profile.id]?.isBusy == true { return }
-        agentConnect[profile.id] = .working("Bezig met koppelen…")
+        agentConnect[profile.id] = .working(tr("app.connect.working"))
 
         let home = profile.home.map { _ in profile.homeURL }
         if home != nil { try? FileManager.default.createDirectory(at: profile.homeURL, withIntermediateDirectories: true) }
@@ -65,19 +65,19 @@ extension AppModel {
         }
 
         let who = profile.isDefault ? kind.name : "\(kind.name) (\(profile.label))"
-        var steps = ["echo " + TerminalLauncher.shellQuote("Nook koppelt \(who). " + (hasProgram
-            ? "Log hieronder in met het juiste account; Nook ziet het vanzelf."
-            : "Eerst installeren, daarna inloggen. Nook ziet het vanzelf."))]
+        var steps = ["echo " + TerminalLauncher.shellQuote(tr("app.connect.intro", who) + " " + (hasProgram
+            ? tr("app.connect.loginHint")
+            : tr("app.connect.installHint")))]
         if !hasProgram { steps.append(kind.installCommand) }
         steps.append(profile.commandPrefix + kind.loginCommand)
         do {
             try runVisibly(steps.joined(separator: " && "), in: FileManager.default.homeDirectoryForCurrentUser.path,
                            name: "nook-connect-\(profile.id)", title: tr("accounts.terminalTitle.login", kind.name))
         } catch {
-            agentConnect[profile.id] = .failed("Ik kon Terminal niet openen: \(error.localizedDescription)")
+            agentConnect[profile.id] = .failed(tr("app.connect.terminalFailed", error.localizedDescription))
             return
         }
-        agentConnect[profile.id] = .waitingForLogin(hasProgram ? "Log in in het Terminal-venster…" : "Installeren en inloggen in Terminal…")
+        agentConnect[profile.id] = .waitingForLogin(hasProgram ? tr("app.connect.loginWait") : tr("app.connect.installWait"))
         waitForLogin(profile)
     }
 
@@ -93,7 +93,7 @@ extension AppModel {
                     return
                 }
             }
-            self?.agentConnect[profile.id] = .failed("Ik zag nog geen login. Ben je klaar in Terminal? Klik dan nog eens op Koppel.")
+            self?.agentConnect[profile.id] = .failed(tr("app.connect.noLogin"))
         }
     }
 
@@ -102,7 +102,7 @@ extension AppModel {
         // Newly installed? Rescan so Claude Code is immediately available as a provider.
         if kind == .claude { ClaudeCodeBrain.resetLocation(); settings.objectWillChange.send() }
         let running = agentSessions.contains { self.profile(for: $0)?.id == profile.id }
-        agentConnect[profile.id] = .done(running ? "Alles gekoppeld. Start lopende sessies opnieuw." : "Alles gekoppeld.")
+        agentConnect[profile.id] = .done(running ? tr("app.connect.doneRestart") : tr("app.connect.done"))
         history.refresh(minimumInterval: 0)
     }
 
@@ -112,7 +112,6 @@ extension AppModel {
     @discardableResult
     func addAccount(_ kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
         let profile = profiles.add(kind: kind, label: label, home: home)
-        viewModel.selectedAgentID = "account:" + profile.id
         if history.profileAccounts[profile.id] == nil || !isFullyConnected(profile) { connect(profile) }
         return profile
     }
@@ -129,7 +128,6 @@ extension AppModel {
     func removeAccount(_ profile: AgentProfile) {
         profiles.remove(profile.id)
         agentConnect[profile.id] = nil
-        viewModel.selectedAgentID = "account:" + profiles.preferredProfile(profile.kind).id
     }
 
     func makeDefault(_ profile: AgentProfile) {

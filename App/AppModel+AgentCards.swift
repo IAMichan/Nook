@@ -41,7 +41,7 @@ extension AppModel {
         }
 
         var extra: [CardAction] = []
-        if approval.canTerminal { extra.append(CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", ""))) }
+        if approval.canTerminal { extra.append(CardAction(label: tr("approval.inTerminal"), outcome: .callback("\(token)#terminal", ""))) }
         if let open { extra.append(CardAction(label: open.label, outcome: .callback("\(token)#open", ""))) }
         if approval.canAlways { extra.insert(CardAction(label: tr("button.always"), outcome: .callback("\(token)#always", "")), at: 0) }
 
@@ -100,7 +100,7 @@ extension AppModel {
                 options: item.options.map { ChoiceOption(label: $0.label, description: $0.description) },
                 multiSelect: item.multiSelect
             )),
-            primary: CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", "")),
+            primary: CardAction(label: tr("approval.inTerminal"), outcome: .callback("\(token)#terminal", "")),
             secondary: CardAction(label: "", outcome: .dismiss),
             contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0)),
             urgent: true
@@ -139,11 +139,11 @@ extension AppModel {
         let fallback: String
         switch session.status {
         case .done:
-            mood = .done; state = "klaar"; fallback = "Klaar met je opdracht."
+            mood = .done; state = tr("app.agent.done.state"); fallback = tr("app.agent.done.fallback")
         case .failed:
-            mood = .worry; state = "liep vast"; fallback = "Er ging iets mis."
+            mood = .worry; state = tr("app.agent.failed.state"); fallback = tr("app.agent.failed.fallback")
         default:
-            mood = .waiting; state = "wacht op je"; fallback = "Wacht op je antwoord in de terminal."
+            mood = .waiting; state = tr("app.agent.waiting.state"); fallback = tr("app.agent.waiting.fallback")
         }
         let title = session.summary.isEmpty ? fallback : session.summary
 
@@ -164,8 +164,8 @@ extension AppModel {
             context: context,
             title: title,
             detail: .none,
-            primary: CardAction(label: "Bekijk", outcome: .callback("\(token)#view", "")),
-            secondary: CardAction(label: "Open \(TerminalLauncher.name(for: session.hostBundleID))", outcome: .callback("\(token)#terminal", "")),
+            primary: CardAction(label: tr("button.view"), outcome: .callback("\(token)#view", "")),
+            secondary: CardAction(label: tr("app.agent.openApp", TerminalLauncher.name(for: session.hostBundleID)), outcome: .callback("\(token)#terminal", "")),
             contentHeight: 100 + CGFloat(lines) * 24
         )
         viewModel.show(.card(card))
@@ -186,7 +186,7 @@ extension AppModel {
     /// Activates the window running this agent.
     func openTerminal(for session: AgentSession) {
         if !TerminalLauncher.activate(sessionBundleID: session.hostBundleID) {
-            viewModel.present(errorCard("Ik vind de terminal van \(session.name) niet. Staat hij nog open?"))
+            viewModel.present(errorCard(tr("app.agent.noTerminal", session.name)))
         }
     }
 }

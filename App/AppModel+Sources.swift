@@ -136,10 +136,10 @@ extension AppModel {
     static func digest(_ fetched: [String]) -> String {
         let lines = fetched.joined(separator: "\n").components(separatedBy: .newlines)
         let headings = lines.filter { $0.hasPrefix("### ") }.prefix(10).map { "- " + $0.dropFirst(4) }
-        if !headings.isEmpty { return "Dit vond ik:\n\n" + headings.joined(separator: "\n") }
+        if !headings.isEmpty { return tr("app.digest.found") + "\n\n" + headings.joined(separator: "\n") }
         let items = lines.filter { $0.hasPrefix("- ") || $0.hasSuffix(":") }.prefix(20)
-        if !items.isEmpty { return "Dit vond ik:\n\n" + items.joined(separator: "\n") }
-        return "Dit vond ik:\n\n" + String(lines.joined(separator: "\n").prefix(800))
+        if !items.isEmpty { return tr("app.digest.found") + "\n\n" + items.joined(separator: "\n") }
+        return tr("app.digest.found") + "\n\n" + String(lines.joined(separator: "\n").prefix(800))
     }
 
     /// An answer that is no answer: code or JSON for a question that is not about code, or in another language than asked.
@@ -261,7 +261,7 @@ extension AppModel {
 
         // Calendar (from start of today), reminders, mail, browser, services: cached connector state.
         if scope.allows("calendar"), !connectors.active.contains(where: { $0.id == "calendar" }) {
-            lines.append(calendar.hasEventAccess ? "Calendar: disabled in Connectors." : "Agenda: geen toegang.")
+            lines.append(calendar.hasEventAccess ? "Calendar: disabled in Connectors." : "Calendar: no access.")
         }
         let sourceContext = connectors.contextLines(scope: scope, full: relevant)
         lines.append(contentsOf: sourceContext.lines)

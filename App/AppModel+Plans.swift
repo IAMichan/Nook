@@ -79,7 +79,7 @@ extension AppModel {
     func planRunner(scope: SourceScope, progress: @escaping ([ActionStepState]) -> Void = { _ in }) -> PlanRunner {
         PlanRunner(
             check: { [weak self] step in
-                guard let self else { return ["Nook is niet beschikbaar."] }
+                guard let self else { return [tr("app.unavailable")] }
                 return self.actionProblems(PlannedAction(tool: step.tool, input: step.input), scope: scope)
             },
             execute: { [weak self] step in
@@ -170,15 +170,15 @@ extension AppModel {
         guard !plan.actions.isEmpty else { return answerCard(plan.text, offers: offers) }
 
         let token = "plan-" + UUID().uuidString
-        let title = plan.text.isEmpty ? "Zo regel ik het:" : String(plan.text.prefix(160))
+        let title = plan.text.isEmpty ? tr("app.plan.title") : String(plan.text.prefix(160))
         let titleLines = max(1, Int(ceil(Double(title.count) / 46.0)))
 
         let steps = planSteps(plan.actions)
 
         var detail: CardDetail = .steps(steps)
         var detailHeight = CGFloat(steps.count * 30)
-        var contextLine = context ?? "Plan · \(steps.count) \(steps.count == 1 ? "stap" : "stappen")"
-        var primaryLabel = "Uitvoeren"
+        var contextLine = context ?? tr(steps.count == 1 ? "app.plan.steps.one" : "app.plan.steps.many", steps.count)
+        var primaryLabel = tr("app.plan.run")
 
         if plan.actions.count == 1, plan.actions[0].tool == "create_event",
            let start = NookTools.parseDate(plan.actions[0].input, "start") {
@@ -189,16 +189,16 @@ extension AppModel {
                 top: NookDates.weekdayCaps(start),
                 big: NookDates.dayNumber(start),
                 line: "\(NookDates.time(start)) – \(NookDates.time(end))" + (location.isEmpty ? "" : " · \(location)"),
-                subline: "Agenda · \((input["title"] as? String) ?? "Afspraak")"
+                subline: tr("app.plan.event", (input["title"] as? String) ?? tr("app.plan.appointment"))
             )
             detailHeight = 36
-            contextLine = context ?? "Voorstel"
-            primaryLabel = "Toevoegen"
+            contextLine = context ?? tr("app.plan.proposal")
+            primaryLabel = tr("app.plan.add")
         }
 
         viewModel.register("\(token)#run") { [weak self] in self?.execute(plan) }
 
-        let cancel = CardAction(label: "Annuleren", outcome: .dismiss)
+        let cancel = CardAction(label: tr("button.cancel"), outcome: .dismiss)
         return NookCard(
             id: token,
             mood: .think,

@@ -55,6 +55,12 @@ struct WorkspaceView: View {
                 workspace.selectedRunID = id
             }
         }
+        .sheet(isPresented: $app.showOnboarding) {
+            OnboardingView {
+                app.settings.onboardingDone = true
+                app.showOnboarding = false
+            }
+        }
         .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
         .frame(minWidth: 760, minHeight: 520)

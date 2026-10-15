@@ -41,21 +41,21 @@ extension AppModel {
                 if silentIfNone {
                     viewModel.dismissCard(id: "thinking")
                 } else {
-                    replaceThinking(with: answerCard("Ik zie niets waar je iets aan hebt."))
+                    replaceThinking(with: answerCard(tr("app.look.nothing")))
                 }
                 return
             }
 
             // A look at the screen is always shown first: the plan came from what is on screen, not from the user's words.
             if !silentIfNone, canRunWithoutAsking(plan, request: nil) {
-                speakIfAsked(plan.text.isEmpty ? "Gedaan." : plan.text)
+                speakIfAsked(plan.text.isEmpty ? tr("app.done") : plan.text)
                 viewModel.removePending(id: "thinking")
                 execute(plan)
                 return
             }
 
             if !silentIfNone {
-                speakIfAsked(plan.text.isEmpty ? "Ik heb een plan klaargezet." : plan.text)
+                speakIfAsked(plan.text.isEmpty ? tr("app.plan.ready") : plan.text)
             }
             var card = planCard(plan, context: context, offers: split.offers)
             card.sources = sources

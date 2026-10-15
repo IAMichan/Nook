@@ -195,28 +195,14 @@ struct SettingsView: View {
                 }
             }
             Section {
-                ForEach(checklist) { step in
-                    StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
-                        if !step.done {
-                            Button(step.button) {
-                                if let request = step.request {
-                                    // Ask for access right here instead of jumping to the Privacy page.
-                                    app.requestPermission { await request(); refreshTick += 1 }
-                                } else {
-                                    app.settingsSection = step.section
-                                }
-                            }
+                StatusRow(title: tr("settings.overview.readyToUse"),
+                          detail: tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count),
+                          state: checklist.allSatisfy(\.done) ? .done : .todo) {
+                    if !checklist.allSatisfy(\.done) {
+                        Button(tr("settings.setup.open")) { app.startOnboarding() }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
-                        }
                     }
-                }
-            } header: {
-                HStack {
-                    Text(tr("settings.overview.readyToUse"))
-                    Spacer()
-                    Text(tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count))
-                        .monospacedDigit()
                 }
             }
             Section {
@@ -804,12 +790,12 @@ struct SettingsView: View {
     private var usageSection: some View {
         Group {
             Section(tr("settings.agents.subscriptions")) {
-                LabeledContent("Claude") {
-                    Text(app.hub.planUsage.map { $0.label } ?? tr("settings.usage.claudeMissing")).foregroundStyle(.secondary)
-                }
-                LabeledContent("Codex") {
-                    Text(app.codex.snapshot.flatMap { [$0.fiveHourLabel, $0.weeklyLabel].compactMap { $0 }.joined(separator: " · ") } ?? tr("settings.usage.codexMissing"))
-                        .foregroundStyle(.secondary)
+                ForEach(app.profiles.all.filter { $0.kind != .gemini }) { profile in
+                    LabeledContent("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))") {
+                        Text(app.quota.summary(for: profile)
+                             ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : "settings.usage.codexMissing"))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 LabeledContent(tr("settings.usage.brain")) {
                     Text(settings.isLocalBrain ? tr("settings.usage.brainLocal") : tr("settings.usage.brainExternal", settings.provider.title))

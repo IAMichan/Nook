@@ -24,8 +24,8 @@ extension AppModel {
             items.append(TodayItem(
                 id: "nudge-\(missed.card.id)",
                 title: missed.line,
-                subtitle: "Ik dacht mee in \(missed.app) · \(NookDates.time(missed.date))",
-                action: "Bekijk",
+                subtitle: tr("app.today.alongIn", missed.app, NookDates.time(missed.date)),
+                action: tr("button.view"),
                 color: NookTheme.iris,
                 target: .action { [weak self] in
                     self?.missedNudge = nil
@@ -40,7 +40,7 @@ extension AppModel {
                 id: "agent-\(session.id)",
                 title: title,
                 subtitle: session.project,
-                action: "Bekijk",
+                action: tr("button.view"),
                 color: session.status.color,
                 target: .agent(session.id)
             ))
@@ -52,8 +52,8 @@ extension AppModel {
             items.append(TodayItem(
                 id: "event-\(next.id)",
                 title: next.title,
-                subtitle: (starting ? "Nu bezig" : "Om \(NookDates.time(next.start))") + (next.location.isEmpty ? "" : " · \(next.location)"),
-                action: "Bereid voor",
+                subtitle: (starting ? tr("app.today.now") : tr("app.today.at", NookDates.time(next.start))) + (next.location.isEmpty ? "" : " · \(next.location)"),
+                action: tr("app.today.prepare"),
                 color: NookTheme.iris,
                 target: .action { [weak self] in
                     self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": what do I need to know and what on my screen is relevant?")
@@ -66,7 +66,7 @@ extension AppModel {
                 id: "connector-\(source.id)",
                 title: "\(source.title): \(source.status.headline)",
                 subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
-                action: "Bekijk",
+                action: tr("button.view"),
                 color: NookTheme.amber,
                 target: .action { [weak self] in self?.viewModel.show(.panel(.connect)) }
             ))
@@ -78,8 +78,8 @@ extension AppModel {
             items.append(TodayItem(
                 id: "loop-\(loop.id)",
                 title: loop.title,
-                subtitle: "Open sinds \(NookDates.short(loop.created))",
-                action: "Afronden",
+                subtitle: tr("app.today.openSince", NookDates.short(loop.created)),
+                action: tr("app.today.finish"),
                 color: NookTheme.amber,
                 target: .action { [weak self] in self?.presentLoop(loop) }
             ))

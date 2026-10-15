@@ -9,40 +9,21 @@ struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
     @State private var draft = ""
-    /// Enabled connections per account ("<profile>|<connection>"). Loaded on open, not on every redraw.
-    @State private var linked: Set<String> = []
     /// Why the last action in this tab failed, shown next to its buttons.
     @State private var actionError: String?
     /// An action is in progress (ending a process, taking over a conversation).
     @State private var working = false
-    /// The task for a new session in the composer.
-    @State private var newTask = ""
-    @State private var newMode: ExecutionMode = .agent
-    @State private var newPermission: PermissionPolicy = .acceptEdits
-    @State private var newModel = ""
-    @FocusState private var newTaskFocused: Bool
     /// Progress through a multi-part question from the agent.
     @State private var questionID = ""
     @State private var questionStep = 0
     @State private var questionAnswers: [[String]] = []
     @State private var questionPicks: Set<String> = []
-    @State private var renaming: String?
-    @State private var nameDraft = ""
 
     private enum Selection {
         case live(AgentSession)
         case past(PastSession)
         case run(UUID)
-        case compose(AgentProfile, String)
-        case account(AgentProfile)
         case nothing
-
-        var isAccounts: Bool {
-            switch self {
-            case .account: return true
-            default: return false
-            }
-        }
     }
 
     var body: some View {
@@ -52,14 +33,8 @@ struct AgentsTab: View {
         VStack(alignment: .leading, spacing: 12) {
             header(live: live, past: past, selection: selection)
             HStack(alignment: .top, spacing: 16) {
-                Group {
-                    if selection.isAccounts {
-                        accountList(selection)
-                    } else {
-                        sessionList(live: live, past: past, selection: selection)
-                    }
-                }
-                .frame(width: 236)
+                sessionList(live: live, past: past, selection: selection)
+                    .frame(width: 236)
 
                 Rectangle().fill(NookTheme.line).frame(width: 1)
 
@@ -68,31 +43,21 @@ struct AgentsTab: View {
                     case .live(let session): liveDetail(session)
                     case .past(let session): pastDetail(session)
                     case .run(let id): AgentRunPanel(workspace: app.workspace, runID: id)
-                    case .compose(let profile, let folder): composeDetail(profile, folder: folder)
-                    case .account(let profile): accountDetail(profile)
                     case .nothing: nothingRunning
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-            if !selection.isAccounts && !app.demoMode {
-                usageStrip
             }
         }
         .onAppear {
             app.hub.refreshDetected()
             app.adoptAccounts()
             app.history.refresh()
-            refreshLinks()
         }
         .onChange(of: viewModel.selectedAgentID) { _, _ in
-            refreshLinks()
-            renaming = nil
             actionError = nil
             draft = ""
         }
-        .onChange(of: app.agentConnect) { _, _ in refreshLinks() }
-        .onChange(of: app.profiles.all) { _, _ in refreshLinks() }
         // Keep sessions and usage up to date while the tab remains open.
         .task {
             while !Task.isCancelled {
@@ -112,82 +77,25 @@ struct AgentsTab: View {
         let badge: (String, Color)? = waiting > 0 ? ("\(waiting)", NookTheme.amber)
             : (working > 0 ? ("\(working)", NookTheme.iris) : (live.isEmpty ? nil : ("\(live.count)", NookTheme.textTertiary)))
 
-        return HStack(spacing: 6) {
-            ModeButton(title: tr("agents.mode.sessions"), badge: badge, selected: !selection.isAccounts) {
-                viewModel.selectedAgentID = live.first?.id ?? past.first.map { "past:" + $0.id } ?? ""
-            }
-            ModeButton(title: tr("agents.mode.accounts"), badge: nil, selected: selection.isAccounts) {
-                viewModel.selectedAgentID = "account:" + app.profiles.preferredProfile(.claude).id
+        return HStack(spacing: 8) {
+            Text(tr("agents.mode.sessions"))
+                .font(NookTheme.font(13.5, .semibold))
+                .foregroundStyle(NookTheme.paper)
+            if let badge {
+                Text(badge.0)
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(badge.1)
+                    .padding(.horizontal, 6)
+                    .frame(height: 18)
+                    .background(Capsule().fill(badge.1.opacity(0.16)))
             }
             Spacer(minLength: 8)
             if !app.demoMode {
-                newSessionMenu
-                ForEach(switcherKinds) { kind in
-                    accountSwitcher(kind)
-                }
+                // Starting a session and managing accounts happen in the window and in Settings, not here.
+                NookGhostButton(title: tr("agents.newSession")) { app.openWorkspace(newSession: true) }
                 WorkspaceButton(workspace: app.workspace) { app.openWorkspace() }
             }
         }
-    }
-
-    /// Agents whose default account can be switched at the top: only those installed on this Mac that support multiple accounts.
-    private var switcherKinds: [AgentKind] {
-        AgentKind.allCases.filter { kind in
-            kind.supportsProfiles && (app.history.installed.contains(kind) || app.profiles.profiles(for: kind).count > 1)
-        }
-    }
-
-    /// "● Claude  Personal ⌄": one-click default account switching, or add an account.
-    private func accountSwitcher(_ kind: AgentKind) -> some View {
-        let current = app.profiles.preferredProfile(kind)
-        let all = app.profiles.profiles(for: kind)
-        return Menu {
-            Section(tr("agents.switcher.defaultFor", kind.name)) {
-                ForEach(all) { profile in
-                    Toggle(isOn: Binding(
-                        get: { app.profiles.isPreferred(profile) },
-                        set: { if $0 { app.makeDefault(profile) } }
-                    )) {
-                        Text(menuLine(profile))
-                    }
-                }
-            }
-            Divider()
-            Button(tr("agents.switcher.add")) { app.openSettings(section: .agents) }
-            Button(tr("agents.switcher.manage")) { viewModel.selectedAgentID = "account:" + current.id }
-        } label: {
-            HStack(spacing: 6) {
-                Circle().fill(kind.color).frame(width: 6, height: 6)
-                Text(kind.shortName)
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                Text(displayName(current))
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(Capsule().fill(NookTheme.field))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(tr("agents.switcher.help", kind.shortName))
-    }
-
-    private func menuLine(_ profile: AgentProfile) -> String {
-        let name = displayName(profile)
-        guard let email = app.history.profileAccounts[profile.id]?.name, email != name else {
-            return name + " (" + tr("agents.notLoggedInShort") + ")"
-        }
-        return "\(name) · \(email)"
     }
 
     // MARK: Selection
@@ -195,22 +103,12 @@ struct AgentsTab: View {
     /// Content displayed on the right. Falls back sensibly if the selected item is gone: running items take priority.
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
-        if id.hasPrefix("account:") {
-            let key = String(id.dropFirst(8))
-            if let profile = app.profiles.profile(id: key) { return .account(profile) }
-            if let kind = AgentKind(rawValue: key) { return .account(app.profiles.preferredProfile(kind)) }
-            return .account(app.profiles.preferredProfile(.claude))
-        }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
         }
         if id.hasPrefix("run:"), let uuid = UUID(uuidString: String(id.dropFirst(4))), app.workspace.run(uuid) != nil {
             return .run(uuid)
-        }
-        if id.hasPrefix("new:") {
-            let parts = id.dropFirst(4).split(separator: "|", maxSplits: 1).map(String.init)
-            if parts.count == 2, let profile = app.profiles.profile(id: parts[0]) { return .compose(profile, parts[1]) }
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
         if let first = live.first(where: { !$0.isDetected }) { return .live(first) }
@@ -225,8 +123,6 @@ struct AgentsTab: View {
         case .live(let session): return session.id
         case .past(let session): return "past:" + session.id
         case .run(let id): return "run:" + id.uuidString
-        case .compose(let profile, let folder): return "new:\(profile.id)|\(folder)"
-        case .account(let profile): return "account:" + profile.id
         case .nothing: return ""
         }
     }
@@ -294,68 +190,6 @@ struct AgentsTab: View {
         return displayName(profile)
     }
 
-    /// Always visible at the bottom of Sessions: quota usage across all your accounts, even when idle.
-    @ViewBuilder
-    private var usageStrip: some View {
-        let profiles = app.profiles.all.filter {
-            app.history.executables[$0.kind] != nil || app.history.profileAccounts[$0.id] != nil
-        }
-        if !profiles.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Rectangle().fill(NookTheme.line).frame(height: 1)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(profiles) { profile in
-                            usageChip(profile)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func usageChip(_ profile: AgentProfile) -> some View {
-        let windows = limits(for: profile)
-        let several = app.profiles.profiles(for: profile.kind).count > 1
-        let name = several ? "\(profile.kind.shortName) · \(displayName(profile))" : profile.kind.shortName
-        return Button { viewModel.selectedAgentID = "account:" + profile.id } label: {
-            HStack(spacing: 8) {
-                Circle().fill(profile.kind.color).frame(width: 6, height: 6)
-                Text(name)
-                    .font(NookTheme.font(11.5, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                if app.history.profileAccounts[profile.id] == nil {
-                    Text(tr("agents.notLoggedInShort"))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.amber)
-                } else if windows.isEmpty {
-                    Text(tr("agents.noLimitsYet"))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                } else {
-                    ForEach(windows) { window in
-                        HStack(spacing: 4) {
-                            Text(window.label.lowercased())
-                                .foregroundStyle(NookTheme.textTertiary)
-                            Text("\(Int(window.percent.rounded()))%")
-                                .font(NookTheme.mono(11, .semibold))
-                                .foregroundStyle(AgentFormat.color(percent: window.percent))
-                        }
-                        .font(NookTheme.font(11.5))
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(Capsule().fill(NookTheme.field))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(tr("agents.viewAccount"))
-    }
-
     /// Nothing active and no history: explain how to get started.
     private var nothingRunning: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -369,10 +203,8 @@ struct AgentsTab: View {
             Spacer(minLength: 0)
             if !app.demoMode {
                 HStack(spacing: 4) {
-                    startMenu(app.profiles.preferredProfile(.claude), primary: true)
-                    NookGhostButton(title: tr("agents.mode.accounts")) {
-                        viewModel.selectedAgentID = "account:" + app.profiles.preferredProfile(.claude).id
-                    }
+                    NookPrimaryButton(title: tr("agents.newSession")) { app.openWorkspace(newSession: true) }
+                    NookGhostButton(title: tr("agents.accountsInSettings")) { app.openSettings(section: .connections) }
                     Spacer()
                 }
             }
@@ -409,23 +241,18 @@ struct AgentsTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// "Claude Code · Work · michiel@… · 5h 34%  ›": indicates which account this session is running under.
+    /// "Claude Code · Work · michiel@… · 5h 34%": which account this session is running under.
     @ViewBuilder
     private func accountLink(for session: AgentSession) -> some View {
         if !app.demoMode, let profile = app.profile(for: session) {
-            Button { viewModel.selectedAgentID = "account:" + profile.id } label: {
-                HStack(spacing: 5) {
-                    Text(session.name).foregroundStyle(profile.kind.color)
-                    Text("·")
-                    Text(liveAccountLine(profile))
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
-                }
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
+            HStack(spacing: 5) {
+                Text(session.name).foregroundStyle(profile.kind.color)
+                Text("·")
+                Text(liveAccountLine(profile))
             }
-            .buttonStyle(.plain)
-            .help(tr("agents.viewAccount"))
+            .font(NookTheme.font(12, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
         } else {
             Text(session.name)
                 .font(NookTheme.font(12, .medium))
@@ -925,502 +752,6 @@ struct AgentsTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Sessions: new
-
-    /// A new session that Nook runs itself: the task, and how it may work. Starts in the chosen folder with this account.
-    private func composeDetail(_ profile: AgentProfile, folder: String) -> some View {
-        let provider = app.nookProvider(for: profile.kind)
-        let policies = provider?.capabilities.policies ?? []
-        let start = {
-            let task = newTask.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !task.isEmpty else { return }
-            perform {
-                try await app.startInNook(profile, folder: folder, task: task, mode: newMode, permission: newPermission, model: newModel)
-                newTask = ""
-            }
-        }
-        return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(tr("agents.new.title", profile.kind.name))
-                    .font(NookTheme.font(17, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                HStack(spacing: 5) {
-                    Text(profile.kind.shortName).foregroundStyle(profile.kind.color)
-                    if app.profiles.profiles(for: profile.kind).count > 1 {
-                        Text("·")
-                        Text(displayName(profile))
-                    }
-                    Text("·")
-                    Text(AgentProfile.tildePath(folder))
-                        .truncationMode(.middle)
-                }
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
-            }
-
-            ZStack(alignment: .topLeading) {
-                if newTask.isEmpty {
-                    Text(tr("agents.new.placeholder"))
-                        .font(NookTheme.font(13))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $newTask)
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(NookTheme.paper)
-                    .scrollContentBackground(.hidden)
-                    .focused($newTaskFocused)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(newTaskFocused ? NookTheme.iris.opacity(0.5) : NookTheme.line2, lineWidth: 1))
-            .onAppear { newTaskFocused = true }
-
-            if let provider {
-                HStack(spacing: 6) {
-                    OptionMenu(title: tr("agents.run.mode"), value: newMode.label) {
-                        ForEach(ExecutionMode.allCases) { mode in
-                            Button(mode.label) { newMode = mode }
-                        }
-                    }
-                    OptionMenu(title: tr("agents.run.permission"), value: (policies.contains(newPermission) ? newPermission : policies.first ?? .acceptEdits).label,
-                               warning: newPermission == .bypass) {
-                        ForEach(policies) { policy in
-                            Button(policy.label) { newPermission = policy }
-                        }
-                    }
-                    OptionMenu(title: tr("agents.run.model"), value: newModel.isEmpty ? tr("ws.model.default") : newModel) {
-                        ForEach(provider.suggestedModels, id: \.self) { model in
-                            Button(model.isEmpty ? tr("ws.model.default") : model) { newModel = model }
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-
-            errorLine
-            HStack(spacing: 4) {
-                if working {
-                    ProgressView().controlSize(.small).padding(.horizontal, 12)
-                } else if provider != nil {
-                    NookPrimaryButton(title: tr("agents.new.start")) { start() }
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .disabled(newTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } else {
-                    Text(tr("agents.nook.unsupported", profile.kind.name))
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                startMenu(profile, primary: false, title: tr("agents.new.otherFolder"))
-                Spacer()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    // MARK: Accounts: list
-
-    private func accountList(_ selection: Selection) -> some View {
-        let current = selectedID(selection)
-        return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(AgentKind.allCases) { kind in
-                    HStack(spacing: 6) {
-                        Circle().fill(kind.color).frame(width: 6, height: 6)
-                        Text(kind.name)
-                        Spacer()
-                        if kind.supportsProfiles {
-                            Button { app.openSettings(section: .agents) } label: {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .frame(width: 20, height: 20)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(tr("agents.addAccountHelp", kind.shortName))
-                        }
-                    }
-                    .font(NookTheme.font(11.5, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.top, kind == AgentKind.allCases.first ? 0 : 10)
-
-                    ForEach(app.profiles.profiles(for: kind)) { profile in
-                        ProfileRow(
-                            name: displayName(profile),
-                            detail: rowDetail(profile),
-                            warning: rowWarning(profile),
-                            isDefault: app.profiles.profiles(for: kind).count > 1 && app.profiles.isPreferred(profile),
-                            highest: limits(for: profile).map(\.percent).max(),
-                            color: kind.color,
-                            selected: current == "account:" + profile.id
-                        ) {
-                            viewModel.selectedAgentID = "account:" + profile.id
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func rowDetail(_ profile: AgentProfile) -> String {
-        if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
-        let gap = missing(profile)
-        if gap.program { return tr("agents.notInstalledShort") }
-        if gap.login { return tr("agents.notLoggedInShort") }
-        let email = app.history.profileAccounts[profile.id]?.name ?? ""
-        return gap.targets.isEmpty ? email : tr("agents.notYetLinkedShort")
-    }
-
-    private func rowWarning(_ profile: AgentProfile) -> Bool {
-        if app.agentConnect[profile.id]?.isBusy == true { return false }
-        return !missing(profile).isEmpty
-    }
-
-    // MARK: Accounts: detail
-
-    private func accountDetail(_ profile: AgentProfile) -> some View {
-        let kind = profile.kind
-        let account = app.history.profileAccounts[profile.id]
-        let summary = app.history.profileUsage[profile.id] ?? AgentUsageSummary()
-        let windows = limits(for: profile)
-        let recent = Array(app.history.sessions(for: profile).prefix(5))
-        let planName = plan(for: profile)
-        let gap = missing(profile)
-        let busy = app.agentConnect[profile.id]?.isBusy == true
-        let failed: Bool = { if case .failed? = app.agentConnect[profile.id] { return true }; return false }()
-
-        return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .center, spacing: 8) {
-                        nameField(profile)
-                        if !planName.isEmpty { Badge(text: planName, color: kind.color) }
-                        Spacer()
-                        if gap.isEmpty && !busy {
-                            Label(tr("agents.linked"), systemImage: "checkmark.circle.fill")
-                                .font(NookTheme.font(12, .semibold))
-                                .foregroundStyle(NookTheme.mint)
-                        }
-                    }
-                    Text(accountLine(profile, account))
-                        .font(NookTheme.font(12.5))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .textSelection(.enabled)
-                }
-
-                if !gap.isEmpty || busy || failed {
-                    connectBar(profile)
-                } else if app.nookProvider(for: kind) != nil {
-                    HStack {
-                        startMenu(profile, primary: false)
-                        Spacer()
-                    }
-                }
-
-                if !gap.program {
-                    Button { app.openSettings(section: .agents) } label: {
-                        Label(tr("accounts.manageInSettings"), systemImage: "gearshape")
-                            .font(NookTheme.font(12, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if windows.isEmpty {
-                    if !gap.program && !gap.login { limitHint(profile) }
-                } else {
-                    HStack(spacing: 10) {
-                        ForEach(windows) { LimitCard(limit: $0) }
-                    }
-                    if kind == .claude, let updated = app.hub.subscriptionUsage(for: profile)?.updated {
-                        Text(tr("agents.updatedFromStatusLine", AgentFormat.relative(updated)))
-                            .font(NookTheme.font(11))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.top, -6)
-                    }
-                }
-
-                if kind != .gemini && account != nil {
-                    HStack(alignment: .bottom, spacing: 10) {
-                        StatCard(title: tr("agents.today"), value: TokenTally.format(summary.today.total) + " tokens",
-                                 detail: AgentFormat.count(summary.sessionsToday, tr("agents.session"), tr("agents.sessions")))
-                        StatCard(title: tr("agents.last7Days"), value: TokenTally.format(summary.week.total) + " tokens",
-                                 detail: AgentFormat.count(summary.sessionsWeek, tr("agents.session"), tr("agents.sessions")))
-                        DayBars(days: summary.perDay, color: kind.color)
-                    }
-                }
-
-                if !recent.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        SectionHeader(title: tr("agents.recentWithAccount"), trailing: nil)
-                        ForEach(recent) { session in
-                            PastRow(session: session, account: nil, selected: false, showAgent: false) {
-                                viewModel.selectedAgentID = "past:" + session.id
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// The account name, with an edit icon to rename it ("Work", "Bettr").
-    @ViewBuilder
-    private func nameField(_ profile: AgentProfile) -> some View {
-        if renaming == profile.id {
-            TextField("", text: $nameDraft, prompt: Text(profile.isDefault ? tr("agents.personal") : tr("agents.name")).foregroundStyle(NookTheme.textTertiary))
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(15, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .padding(.horizontal, 8)
-                .frame(width: 180, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(NookTheme.field))
-                .onSubmit {
-                    app.profiles.rename(profile.id, to: nameDraft)
-                    renaming = nil
-                }
-                .onExitCommand { renaming = nil }
-        } else {
-            Button {
-                nameDraft = profile.label
-                renaming = profile.id
-            } label: {
-                HStack(spacing: 6) {
-                    Text("\(profile.kind.shortName) · \(displayName(profile))")
-                        .font(NookTheme.font(15, .semibold))
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                    Image(systemName: "pencil")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-            }
-            .buttonStyle(.plain)
-            .help(tr("agents.renameHelp"))
-        }
-    }
-
-    private func accountLine(_ profile: AgentProfile, _ account: AgentAccount?) -> String {
-        guard let account else {
-            return app.history.executables[profile.kind] == nil ? tr("agents.notInstalled") : tr("agents.notLoggedIn")
-        }
-        var parts = [account.name]
-        if !account.organization.isEmpty { parts.append(account.organization) }
-        if !profile.isDefault { parts.append(profile.displayHome) }
-        return parts.joined(separator: " · ")
-    }
-
-    /// "Start session": pick a recent working directory, or choose another, then write the task in the tab.
-    /// Nook runs the session itself, so it continues right here.
-    private func startMenu(_ profile: AgentProfile, primary: Bool, title: String? = nil) -> some View {
-        let folders = app.recentFolders(profile)
-        return Menu {
-            if !folders.isEmpty {
-                Section(tr("agents.recentFolders")) {
-                    ForEach(folders, id: \.self) { folder in
-                        Button(AgentProfile.tildePath(folder)) { compose(profile, in: folder) }
-                    }
-                }
-            }
-            Button(tr("agents.chooseFolder")) {
-                if let folder = app.chooseAgentFolder(profile.kind) { compose(profile, in: folder) }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: title == nil ? "play.fill" : "folder").font(.system(size: 10, weight: .bold))
-                Text(title ?? (app.profiles.profiles(for: profile.kind).count > 1 ? tr("agents.startWith", displayName(profile)) : tr("agents.startAgent", profile.kind.shortName)))
-                    .font(NookTheme.font(14, .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(primary ? NookTheme.ink : NookTheme.paper)
-            .padding(.horizontal, 16)
-            .frame(height: 38)
-            .background(Capsule().fill(primary ? NookTheme.paper : NookTheme.field))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(app.nookProvider(for: profile.kind) == nil)
-    }
-
-    private func compose(_ profile: AgentProfile, in folder: String) {
-        viewModel.selectedAgentID = "new:\(profile.id)|\(folder)"
-    }
-
-    /// "+" at the top: a new session with any account Nook can run, in a recent folder or another one.
-    private var newSessionMenu: some View {
-        let profiles = app.profiles.all.filter { app.nookProvider(for: $0.kind) != nil }
-        return Menu {
-            ForEach(profiles) { profile in
-                let folders = app.recentFolders(profile)
-                let several = app.profiles.profiles(for: profile.kind).count > 1
-                Menu(several ? "\(profile.kind.name) · \(displayName(profile))" : profile.kind.name) {
-                    ForEach(folders, id: \.self) { folder in
-                        Button(AgentProfile.tildePath(folder)) { compose(profile, in: folder) }
-                    }
-                    if !folders.isEmpty { Divider() }
-                    Button(tr("agents.chooseFolder")) {
-                        if let folder = app.chooseAgentFolder(profile.kind) { compose(profile, in: folder) }
-                    }
-                }
-            }
-            if profiles.isEmpty {
-                Button(tr("agents.switcher.add")) { app.openSettings(section: .agents) }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "plus").font(.system(size: 10, weight: .bold))
-                Text(tr("agents.new.short")).font(NookTheme.font(12, .semibold))
-            }
-            .foregroundStyle(NookTheme.paper)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(Capsule().fill(NookTheme.field))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(tr("agents.new.help"))
-    }
-
-    // MARK: Connect
-
-    private func refreshLinks() {
-        var result: Set<String> = []
-        for profile in app.profiles.all {
-            let home = profile.isDefault ? nil : profile.homeURL
-            for target in profile.kind.targets where AgentConfigInstaller.state(of: target, home: home) == .installed {
-                result.insert(profile.id + "|" + target.rawValue)
-            }
-        }
-        if result != linked { linked = result }
-    }
-
-    /// Missing prerequisites for this account.
-    private struct Missing {
-        var program: Bool
-        var login: Bool
-        var targets: [AgentConfigInstaller.Target]
-        var isEmpty: Bool { !program && !login && targets.isEmpty }
-    }
-
-    private func missing(_ profile: AgentProfile) -> Missing {
-        Missing(
-            program: app.history.executables[profile.kind] == nil,
-            login: app.history.profileAccounts[profile.id] == nil,
-            targets: profile.kind.targets.filter { !linked.contains(profile.id + "|" + $0.rawValue) }
-        )
-    }
-
-    /// A single button that configures everything for this account: install, login, and notch connections.
-    private func connectBar(_ profile: AgentProfile) -> some View {
-        let kind = profile.kind
-        let gap = missing(profile)
-        let progress = app.agentConnect[profile.id]
-        let busy = progress?.isBusy == true
-        let failed: Bool = { if case .failed? = progress { return true }; return false }()
-
-        let title: String
-        let detail: String
-        if busy {
-            title = progress?.text ?? tr("chat.plan.running")
-            detail = tr("agents.followStepsInTerminal")
-        } else if failed {
-            title = tr("agents.linkFailed")
-            detail = progress?.text ?? ""
-        } else {
-            title = gap.login && !profile.isDefault ? tr("agents.loginWithAccount") : tr("agents.linkWithOneClick", kind.shortName)
-            var parts: [String] = []
-            if gap.program { parts.append(tr("agents.installStep", kind.command)) }
-            if gap.login { parts.append(tr("agents.loginStep")) }
-            if !gap.targets.isEmpty {
-                parts.append(kind == .claude ? tr("agents.enableLimitsStep") : tr("agents.enableProgressStep"))
-            }
-            detail = "Nook " + parts.joined(separator: ", ") + "."
-        }
-        let buttonTitle = gap.program ? tr("button.installAndLink") : (gap.login ? tr("agents.login") : tr("button.link"))
-
-        return HStack(spacing: 12) {
-            Image(systemName: failed ? "exclamationmark.triangle.fill" : "link")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(failed ? NookTheme.coral : kind.color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                Text(detail)
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            if busy {
-                ProgressView().controlSize(.small)
-            } else {
-                NookPrimaryButton(title: failed ? tr("button.tryAgain") : buttonTitle) { app.connect(profile) }
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(kind.color.opacity(0.25), lineWidth: 1))
-    }
-
-    /// No rate limits known: explains why and how to make them visible.
-    @ViewBuilder
-    private func limitHint(_ profile: AgentProfile) -> some View {
-        let kind = profile.kind
-        let statusLineMissing = kind == .claude && !linked.contains(profile.id + "|" + AgentConfigInstaller.Target.claudeStatusLine.rawValue)
-        HStack(spacing: 12) {
-            Image(systemName: "gauge.with.dots.needle.33percent")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-            VStack(alignment: .leading, spacing: 2) {
-                if statusLineMissing {
-                    Text(tr("agents.seeLimits"))
-                        .font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
-                    Text(tr("agents.seeLimitsDetail"))
-                        .font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
-                } else if kind == .gemini {
-                    Text(tr("agents.noLimitsKnown"))
-                        .font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
-                    Text(tr("agents.noLimitsGemini"))
-                        .font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
-                } else if kind == .codex && !profile.isDefault {
-                    Text(tr("agents.codexLimitsFirstOnly"))
-                        .font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
-                    Text(tr("agents.codexLimitsFirstOnlyDetail"))
-                        .font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
-                } else {
-                    Text(tr("agents.noLimitsYet"))
-                        .font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
-                    Text(kind == .claude
-                         ? tr("agents.noLimitsClaudeAccount")
-                         : tr("agents.noLimitsCodex"))
-                        .font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            Spacer(minLength: 0)
-            if statusLineMissing {
-                NookGhostButton(title: tr("button.link")) { app.connect(profile) }
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-    }
-
     // MARK: Data
 
     /// "Work", or for the first unnamed account: organization name, otherwise "Personal".
@@ -1434,30 +765,12 @@ struct AgentsTab: View {
 
     /// The 5-hour and weekly subscription limits, if reported by the agent.
     private func limits(for profile: AgentProfile) -> [UsageLimit] {
-        switch profile.kind {
-        case .claude:
-            guard let usage = app.hub.subscriptionUsage(for: profile) else { return [] }
-            return [
-                usage.fiveHour.map { UsageLimit(label: tr("agents.fiveHour"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) },
-                usage.sevenDay.map { UsageLimit(label: tr("agents.week"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) }
-            ].compactMap { $0 }
-        case .gemini:
-            return []
-        case .codex:
-            guard profile.isDefault, let snapshot = app.codex.snapshot else { return [] }
-            return [
-                snapshot.fiveHour.map { UsageLimit(label: tr("agents.fiveHour"), percent: Double($0.percent()), resetsAt: $0.resetsAt) },
-                snapshot.weekly.map { UsageLimit(label: tr("agents.week"), percent: Double($0.percent()), resetsAt: $0.resetsAt) }
-            ].compactMap { $0 }
-        }
+        app.quota.limits(for: profile).map { UsageLimit(label: $0.label, percent: $0.percent, resetsAt: $0.resetsAt) }
     }
 
     private func plan(for profile: AgentProfile) -> String {
         if let plan = app.history.profileAccounts[profile.id]?.plan, !plan.isEmpty { return plan }
-        if profile.kind == .codex, profile.isDefault, let raw = app.codex.snapshot?.planType, !raw.isEmpty {
-            return raw.prefix(1).uppercased() + raw.dropFirst()
-        }
-        return ""
+        return app.quota.codexPlan(for: profile)
     }
 }
 
@@ -1593,83 +906,6 @@ private struct Bar: View {
             }
         }
         .frame(height: 4)
-    }
-}
-
-private struct LimitCard: View {
-    let limit: UsageLimit
-
-    var body: some View {
-        let color = AgentFormat.color(percent: limit.percent)
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(limit.label)
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                Spacer()
-                Text("\(Int(limit.percent.rounded()))%")
-                    .font(NookTheme.mono(15, .semibold))
-                    .foregroundStyle(color)
-            }
-            Bar(fraction: limit.percent / 100, color: color)
-            Text(AgentFormat.reset(limit.resetsAt) ?? tr("agents.spaceEnough"))
-                .font(NookTheme.font(11))
-                .foregroundStyle(NookTheme.textTertiary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-    }
-}
-
-private struct StatCard: View {
-    let title: String
-    let value: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(NookTheme.font(11.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-            Text(value)
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.paper)
-            Text(detail)
-                .font(NookTheme.font(11.5))
-                .foregroundStyle(NookTheme.textSecondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-    }
-}
-
-/// Daily token usage over the past week as seven bars.
-private struct DayBars: View {
-    let days: [(day: Date, tokens: Int)]
-    let color: Color
-
-    var body: some View {
-        let peak = max(1, days.map { $0.tokens }.max() ?? 1)
-        HStack(alignment: .bottom, spacing: 5) {
-            ForEach(days.indices, id: \.self) { index in
-                let entry = days[index]
-                VStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(entry.tokens > 0 ? color.opacity(index == days.count - 1 ? 1 : 0.6) : NookTheme.line2)
-                        .frame(width: 10, height: max(3, 40 * CGFloat(entry.tokens) / CGFloat(peak)))
-                    Text(AgentFormat.weekdayLetter(entry.day))
-                        .font(NookTheme.font(9.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                .help("\(TokenTally.format(entry.tokens)) tokens")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(minHeight: 74)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
     }
 }
 
@@ -2012,100 +1248,6 @@ private struct UntrackedRow: View {
     }
 }
 
-/// An account in the list: name, email (or missing requirements), and quota utilization.
-private struct ProfileRow: View {
-    let name: String
-    let detail: String
-    let warning: Bool
-    let isDefault: Bool
-    let highest: Double?
-    let color: Color
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Circle().fill(color).frame(width: 7, height: 7)
-                    Text(name)
-                        .font(NookTheme.font(12.5, .semibold))
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                    if isDefault {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(color)
-                            .help(tr("agents.defaultAccount"))
-                    }
-                    Spacer(minLength: 4)
-                    if let highest {
-                        Text("\(Int(highest.rounded()))%")
-                            .font(NookTheme.mono(10.5, .medium))
-                            .foregroundStyle(AgentFormat.color(percent: highest))
-                    }
-                }
-                Text(detail)
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(warning ? NookTheme.amber : NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.leading, 15)
-                if let highest {
-                    Bar(fraction: highest / 100, color: AgentFormat.color(percent: highest))
-                        .padding(.leading, 15)
-                        .padding(.top, 2)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(selected ? Color(hex: 0x18181E) : (hovering ? Color(hex: 0x121216) : NookTheme.field))
-            )
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? color.opacity(0.4) : Color.clear, lineWidth: 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
-/// "Sessions" or "Accounts" tab at the top, with a badge counting active sessions.
-private struct ModeButton: View {
-    let title: String
-    let badge: (String, Color)?
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(selected ? NookTheme.ink : (hovering ? NookTheme.paper : NookTheme.textSecondary))
-                if let badge {
-                    Text(badge.0)
-                        .font(NookTheme.mono(10.5, .semibold))
-                        .foregroundStyle(selected ? NookTheme.ink : badge.1)
-                        .padding(.horizontal, 6)
-                        .frame(height: 16)
-                        .background(Capsule().fill(selected ? NookTheme.ink.opacity(0.1) : badge.1.opacity(0.16)))
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(Capsule().fill(selected ? NookTheme.paper : (hovering ? Color(hex: 0x18181E) : NookTheme.field)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
 /// The step currently being executed: a shimmer effect traversing the text.
 private struct ShimmerText: View {
     let text: String
@@ -2212,39 +1354,5 @@ private struct WorkspaceRunsSection: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-}
-
-/// "Mode  Agent ⌄": a compact choice for a new session.
-private struct OptionMenu<Content: View>: View {
-    let title: String
-    let value: String
-    var warning = false
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        Menu {
-            content()
-        } label: {
-            HStack(spacing: 5) {
-                Text(title)
-                    .foregroundStyle(NookTheme.textTertiary)
-                Text(value)
-                    .foregroundStyle(warning ? NookTheme.coral : NookTheme.paper)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
-            .font(NookTheme.font(12, .semibold))
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(Capsule().fill(NookTheme.field))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 }

@@ -29,7 +29,7 @@ extension AppModel {
         Task { [weak self] in
             guard let self else { return }
             guard await voice.requestPermissions() else {
-                viewModel.present(errorCard("Nook mag nog niet luisteren. Zet de microfoon en spraakherkenning aan bij Systeminstellingen › Privacy en beveiliging."))
+                viewModel.present(errorCard(tr("app.voice.permission")))
                 return
             }
             warmUp()
@@ -80,11 +80,11 @@ extension AppModel {
         NookCard(
             id: "listening",
             mood: .listen,
-            context: "Ik luister, praat gerust",
-            title: text.isEmpty ? "Zeg het maar…" : "“\(text)”",
+            context: tr("app.voice.listening"),
+            title: text.isEmpty ? tr("app.voice.say") : "“\(text)”",
             detail: .waveform,
-            primary: CardAction(label: "Klaar", outcome: .callback("listening#done", "")),
-            secondary: CardAction(label: "Annuleren", outcome: .callback("listening#cancel", "")),
+            primary: CardAction(label: tr("app.voice.done"), outcome: .callback("listening#done", "")),
+            secondary: CardAction(label: tr("button.cancel"), outcome: .callback("listening#cancel", "")),
             contentHeight: 166
         )
     }
