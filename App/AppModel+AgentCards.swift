@@ -9,47 +9,50 @@ extension AppModel {
     // MARK: Agents
 
     func presentApproval(_ request: ApprovalRequest) {
-        let token = "approval-" + request.id
-        let danger = request.assessment.level == .danger
-        let id = request.id
-
-        viewModel.register("\(token)#yes") { [weak self] in self?.hub.decide(id, .allow) }
-        viewModel.register("\(token)#always") { [weak self] in self?.hub.decide(id, .always) }
-        viewModel.register("\(token)#no") { [weak self] in self?.hub.decide(id, .deny) }
-        viewModel.register("\(token)#terminal") { [weak self] in
-            guard let self else { return }
-            let host = self.hub.sessions.first { $0.id == request.sessionKey }?.hostBundleID
-            self.hub.decide(id, .terminal)
-            TerminalLauncher.activate(sessionBundleID: host)
-        }
-
         var context = "\(request.agentName) · \(request.project)"
         let others = hub.approvals.count - 1
         if others > 0 { context += " · nog \(others) wachtend" }
+        presentApprovalCard(ApprovalCenter.make(request), context: context, open: nil)
+    }
+
+    /// The notch card for a permission request, the same for terminal sessions and sessions Nook runs. The whole command
+    /// is on the card (scrolled when long), so what you allow is what you saw.
+    func presentApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?) {
+        let token = approval.cardToken
+        viewModel.register("\(token)#yes") { [weak self] in self?.approvals.decide(approval, .allow) }
+        viewModel.register("\(token)#always") { [weak self] in self?.approvals.decide(approval, .always) }
+        viewModel.register("\(token)#no") { [weak self] in self?.approvals.decide(approval, .deny) }
+        viewModel.register("\(token)#terminal") { [weak self] in
+            guard let self, case .hook(let requestID) = approval.origin else { return }
+            let host = self.hub.sessions.first { $0.approvalID == requestID }?.hostBundleID
+            self.approvals.decide(approval, .terminal)
+            TerminalLauncher.activate(sessionBundleID: host)
+        }
+        viewModel.register("\(token)#open") { open?.action() }
 
         let detail: CardDetail
         let height: CGFloat
-        if request.diff.isEmpty {
-            detail = .command(String(request.summary.prefix(20_000)), note: request.assessment.note)
+        if approval.diff.isEmpty {
+            detail = .command(approval.command, note: approval.note)
             height = 214
         } else {
-            detail = .diff(title: request.summary, lines: request.diff, note: request.assessment.note)
-            height = 150 + min(166, CGFloat(request.diff.count) * 15 + 34)
+            detail = .diff(title: approval.command, lines: approval.diff, note: approval.note)
+            height = 150 + min(166, CGFloat(approval.diff.count) * 15 + 34)
         }
 
-        var extra = [CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", ""))]
-        if request.canAlways {
-            extra.insert(CardAction(label: "Altijd", outcome: .callback("\(token)#always", "")), at: 0)
-        }
+        var extra: [CardAction] = []
+        if approval.canTerminal { extra.append(CardAction(label: "In terminal", outcome: .callback("\(token)#terminal", ""))) }
+        if let open { extra.append(CardAction(label: open.label, outcome: .callback("\(token)#open", ""))) }
+        if approval.canAlways { extra.insert(CardAction(label: tr("button.always"), outcome: .callback("\(token)#always", "")), at: 0) }
 
         let card = NookCard(
             id: token,
-            mood: danger ? .worry : .waiting,
+            mood: approval.danger ? .worry : .waiting,
             context: context,
-            title: request.title,
+            title: approval.title,
             detail: detail,
-            primary: CardAction(label: "Toestaan", outcome: .callback("\(token)#yes", "")),
-            secondary: CardAction(label: "Weigeren", outcome: .callback("\(token)#no", "")),
+            primary: CardAction(label: tr("button.allow"), outcome: .callback("\(token)#yes", "")),
+            secondary: CardAction(label: tr("button.deny"), outcome: .callback("\(token)#no", "")),
             contentHeight: height,
             extra: extra,
             urgent: true

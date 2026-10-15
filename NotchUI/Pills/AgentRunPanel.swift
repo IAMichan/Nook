@@ -275,39 +275,8 @@ struct AgentRunPanel: View {
     // MARK: Approval
 
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(NookTheme.amber)
-                Text(tr("ws.approval.title", run.provider.kind.shortName, pending.tool))
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                if more > 0 {
-                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
-                }
-                Spacer(minLength: 0)
-            }
-            ScrollView(showsIndicators: true) {
-                Text(ToolSummary.command(pending.input.dictionary) ?? pending.summary)
-                    .font(NookTheme.mono(11.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 70)
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: tr("button.allow")) { workspace.decide(runID, requestID: pending.id, .allow) }
-                if pending.canAlways {
-                    NookGhostButton(title: tr("button.always")) { workspace.decide(runID, requestID: pending.id, .always) }
-                }
-                NookGhostButton(title: tr("button.deny")) { workspace.decide(runID, requestID: pending.id, .deny) }
-                Spacer()
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+        let request = ApprovalCenter.make(pending, run: run)
+        return ApprovalView(approval: request, more: more, maxHeight: 110) { app.approvals.decide(request, $0) }
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.

@@ -539,7 +539,7 @@ struct ApprovalRow: View {
                 Spacer(minLength: 0)
                 Text(stateLabel).font(NookTheme.font(11.5, .semibold)).foregroundStyle(color)
             }
-            if expanded || event.state == .pending, let detail = event.detail {
+            if expanded, let detail = event.detail {
                 CodeBlock(title: tr("ws.tool.input"), text: detail)
             }
         }
@@ -570,52 +570,27 @@ struct ApprovalRow: View {
 
 /// Above the input field: the oldest pending question awaiting your decision, with action buttons.
 struct ApprovalBar: View {
-    @EnvironmentObject private var workspace: WorkspaceManager
+    @EnvironmentObject private var app: AppModel
     let run: WorkspaceRun
     let pending: [PendingPermission]
 
     var body: some View {
         if let first = pending.first {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(NookTheme.amber)
-                    Text(tr("ws.approval.title", run.provider.kind.shortName, first.tool))
-                        .font(NookTheme.font(13, .semibold))
-                    if pending.count > 1 {
-                        Text(tr("ws.approval.more", pending.count - 1)).font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
+            let approval = ApprovalCenter.make(first, run: run)
+            ApprovalView(approval: approval, more: pending.count - 1, maxHeight: 220) { app.approvals.decide(approval, $0) }
+                .background {
+                    // ⌘⇧↩ allows, ⌘⇧⌫ denies: kept from before.
+                    Group {
+                        Button("") { app.approvals.decide(approval, .allow) }.keyboardShortcut(.return, modifiers: [.command, .shift])
+                        Button("") { app.approvals.decide(approval, .deny) }.keyboardShortcut(.delete, modifiers: [.command, .shift])
                     }
-                    Spacer()
+                    .opacity(0)
+                    .allowsHitTesting(false)
                 }
-                Text(ToolSummary.command(first.input.dictionary) ?? first.summary)
-                    .font(NookTheme.mono(12))
-                    .foregroundStyle(WS.text)
-                    .lineLimit(4)
-                    .textSelection(.enabled)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(WS.code))
-                HStack(spacing: 8) {
-                    Button(tr("button.allow")) { workspace.decide(run.id, requestID: first.id, .allow) }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.return, modifiers: [.command, .shift])
-                        .help(tr("ws.approval.allowHelp"))
-                    if first.canAlways {
-                        Button(tr("button.always")) { workspace.decide(run.id, requestID: first.id, .always) }
-                            .help(tr("ws.approval.alwaysHelp"))
-                    }
-                    Button(tr("button.deny"), role: .destructive) { workspace.decide(run.id, requestID: first.id, .deny) }
-                        .keyboardShortcut(.delete, modifiers: [.command, .shift])
-                    Spacer()
-                }
-                .controlSize(.small)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.amber.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.amber.opacity(0.35), lineWidth: 1))
-            .padding(.horizontal, 18)
-            .padding(.top, 8)
-            .frame(maxWidth: 956)
-            .frame(maxWidth: .infinity)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .frame(maxWidth: 956)
+                .frame(maxWidth: .infinity)
         }
     }
 }

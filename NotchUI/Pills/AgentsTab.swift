@@ -591,14 +591,10 @@ struct AgentsTab: View {
         }
 
         if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: tr("button.allow")) { app.hub.decide(id, .allow) }
-                if request.canAlways {
-                    NookGhostButton(title: tr("button.always")) { app.hub.decide(id, .always) }
-                }
-                NookGhostButton(title: tr("button.deny")) { app.hub.decide(id, .deny) }
-                Spacer()
-                sessionMenu(session)
+            let approval = ApprovalCenter.make(request)
+            VStack(alignment: .leading, spacing: 6) {
+                ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
+                HStack { Spacer(); sessionMenu(session) }
             }
         } else if app.demoMode {
             HStack(spacing: 4) {

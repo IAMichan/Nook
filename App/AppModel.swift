@@ -40,6 +40,8 @@ final class AppModel: ObservableObject {
     let chat = NookChat()
     /// Coding agents spawned and tracked by Nook in dedicated terminal windows.
     let workspace = WorkspaceManager()
+    /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
+    private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace)
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .general
 
