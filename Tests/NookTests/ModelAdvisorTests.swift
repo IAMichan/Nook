@@ -12,15 +12,15 @@ final class ModelAdvisorTests: XCTestCase {
     }
 
     func testPicksByMemory() {
-        XCTAssertEqual(mlxID(first(8)), "mlx-community/Qwen2.5-3B-Instruct-4bit")
-        XCTAssertEqual(mlxID(first(16)), "mlx-community/Qwen2.5-7B-Instruct-4bit")
-        XCTAssertEqual(mlxID(first(24)), "mlx-community/Qwen2.5-7B-Instruct-4bit")
-        XCTAssertEqual(mlxID(first(64)), "mlx-community/Qwen2.5-14B-Instruct-4bit")
+        XCTAssertEqual(mlxID(first(8)), "mlx-community/Qwen3-4B-Instruct-2507-4bit")
+        XCTAssertEqual(mlxID(first(16)), "mlx-community/Qwen3-8B-4bit")
+        XCTAssertEqual(mlxID(first(24)), "mlx-community/Qwen3-8B-4bit")
+        XCTAssertEqual(mlxID(first(64)), "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit")
     }
 
     func testInstalledBestModelIsReadyAndFirst() {
-        let top = first(16, installed: ["mlx-community/Qwen2.5-7B-Instruct-4bit"])
-        XCTAssertEqual(mlxID(top), "mlx-community/Qwen2.5-7B-Instruct-4bit")
+        let top = first(16, installed: ["mlx-community/Qwen3-8B-4bit"])
+        XCTAssertEqual(mlxID(top), "mlx-community/Qwen3-8B-4bit")
         XCTAssertTrue(top.ready)
     }
 
@@ -52,7 +52,7 @@ final class ModelAdvisorTests: XCTestCase {
         XCTAssertEqual(ModelAdvisor.parameterBillions("llama3.2:3b-instruct-q4"), 3)
         XCTAssertEqual(ModelAdvisor.parameterBillions("phi3.5:3.8b"), 4)
         XCTAssertNil(ModelAdvisor.parameterBillions("mistral"))
-        XCTAssertEqual(ModelAdvisor.profile(forServerModel: "qwen2.5:14b"), ModelAdvisor.catalog.last?.profile)
+        XCTAssertEqual(ModelAdvisor.profile(forServerModel: "qwen2.5:14b"), .localXL)
         XCTAssertEqual(ModelAdvisor.profile(forServerModel: "llama3.2:3b"), .localSmall)
     }
 

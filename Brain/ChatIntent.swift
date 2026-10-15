@@ -1,0 +1,171 @@
+import Foundation
+
+/// What one chat message asks for, recognized on the Mac itself before any model runs (Dutch, English and German).
+///
+/// A small local model picks badly from a long tool list and often answers about the context instead of the question.
+/// The intent tells the brain which tools belong to this request (they are always offered first), whether the user
+/// wants Nook to *do* something, and which single action to fill in when the model proposed nothing.
+struct ChatIntent: Equatable {
+    enum Kind: String, CaseIterable {
+        case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
+        case chart, screen, browser, files, github, notion, clipboard, web
+    }
+
+    /// Recognized kinds, strongest first.
+    var kinds: [Kind] = []
+    /// The user asks Nook to do something (make, send, plan, open…), not only a question.
+    var wantsAction = false
+    /// A greeting or thanks: no sources or tools needed.
+    var isSmallTalk = false
+
+    var isEmpty: Bool { kinds.isEmpty }
+
+    /// Tools that belong to this request, most important first. Names may include tools that are not connected.
+    var tools: [String] {
+        var seen = Set<String>()
+        return kinds.flatMap { Self.toolsByKind[$0] ?? [] }.filter { seen.insert($0).inserted }
+    }
+
+    /// The one action this request is about, when it clearly asks for one.
+    var primaryAction: String? {
+        guard wantsAction else { return nil }
+        for kind in kinds {
+            if kind == .event, moves { return "update_event" }
+            if let action = Self.actionByKind[kind] { return action }
+        }
+        return nil
+    }
+
+    /// "Move my meeting", "verplaats de afspraak": an existing event changes.
+    private(set) var moves = false
+
+    // MARK: Recognition
+
+    static func detect(_ raw: String) -> ChatIntent {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        var intent = ChatIntent()
+        guard !text.isEmpty else { return intent }
+
+        func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+
+        var kinds: [Kind] = []
+        let writesMail = has(#"(schrijf|stuur|verstuur|beantwoord|antwoord|maak|write|send|draft|reply|answer|schreib|sende|beantworte)\b[^.?!]{0,40}\b(e-?mail|mail|mailtje|bericht)"#)
+            || has(#"\b(e-?mail|mail)(tje)? (naar|aan|to|an)\b"#) || has(#"^(mail|e-?mail) \p{L}+"#) || has(#"\b(reply to|antwoord op|reageer op)\b"#)
+        if has(#"herinner|herinnering|\breminder|remind me|erinner|vergeet (ik )?niet|niet vergeten|don'?t forget"#) { kinds.append(.reminder) }
+        if has(#"beschikbaar|\bvrij\b|\bbezet\b|available|availability|\bfree (on|at|this|next|tomorrow|today)|am i free|verfügbar|\bfrei\b|tijd voor een|time for a"#) { kinds.append(.availability) }
+        if has(#"afspra|meeting|vergader|overleg|\bcall\b|inplannen|\bplan\b[^.?!]{0,30}\bin\b|agenda|calendar|kalender|\btermin|\bevent|evenement|verplaats|reschedule|\bmove (my|the)\b|verschieb|lunch met|diner met|lunch with|dinner with"#) { kinds.append(.event) }
+        if writesMail { kinds.append(.mailWrite) }
+        if has(#"notitie|noteer|\bnotes?\b|aantekening|\bmemo|notiz|schrijf (dit|het|dat) op|write (this|it|that) down"#) { kinds.append(.note) }
+        if has(#"\btaak\b|\btaken\b|\btodos?\b|to-do|open punt|actiepunt|nog (te )?doen|moet ik (vandaag|nog)|\btasks?\b|\baufgabe"#) { kinds.append(.todo) }
+        if !writesMail, has(#"\bmails?\b|e-?mails?\b|inbox|ongelezen|unread|postvak|\bpost\b"#) { kinds.append(.mailRead) }
+        if has(#"telefoonnummer|nummer van|mailadres|e-?mailadres|adres van|\bcontact|phone number|email address|telefonnummer"#) { kinds.append(.contacts) }
+        if has(#"muziek|liedje|\bnummer\b(?! van)|\bspeel|afspelen|spotify|pauzeer|\bmusic\b|\bsong|\bplay\b|\bmusik"#) { kinds.append(.music) }
+        if has(#"volume|\bgeluid|harder|zachter|louder|quieter|lautstärke|leiser|lauter"#) { kinds.append(.volume) }
+        if has(#"^(open|start|launch|öffne|starte)\s+\S+(\s+\S+)?$|\b(open|start) (de |het |the )?app\b"#) { kinds.append(.openApp) }
+        if has(#"shortcut|kurzbefehl|opdracht(en)? (uitvoeren|draaien)"#) { kinds.append(.shortcut) }
+        if has(#"grafiek|diagram|\bchart|\bplot\b|visualiseer|visualize|staafdiagram|taartdiagram"#) { kinds.append(.chart) }
+        if has(#"scherm|\bhier\b|\bdit\b|\bdeze (mail|pagina|tekst|tabel|code)|\bthis\b|\bscreen|bildschirm|venster|\bwindow|\bdas hier"#) { kinds.append(.screen) }
+        if has(#"browser|tabblad|\btabs?\b|webpagina|\bpagina\b|artikel|website|\bsite\b|article|webseite"#) { kinds.append(.browser) }
+        if has(#"bestand|document|\bpdf|\bmap\b|\bfile|folder|\bdatei|\bordner"#) { kinds.append(.files) }
+        if has(#"github|pull request|\bprs?\b|\bissues?\b|\brepo|\bmerge"#) { kinds.append(.github) }
+        if has(#"notion|\bwiki\b"#) { kinds.append(.notion) }
+        if has(#"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert"#) { kinds.append(.clipboard) }
+        if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) { kinds.append(.web) }
+        // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
+        // the meeting" is a mail, "remind me of the call" is a reminder.
+        intent.kinds = kinds.sorted { (Self.priority.firstIndex(of: $0) ?? 99) < (Self.priority.firstIndex(of: $1) ?? 99) }
+        intent.moves = has(#"verplaats|reschedule|\bmove (my|the)\b|verschieb|\bverzet"#)
+
+        let polite = text
+            .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
+        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|open|start|speel|pauzeer|verplaats|annuleer|mail|beantwoord|teken|create|make|add|schedule|book|send|write|remind|note|put|set|move|cancel|draft|reply|play|pause|draw|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
+        let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
+        let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b"#)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)
+
+        let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
+        intent.isSmallTalk = kinds.isEmpty && greeting
+        return intent
+    }
+
+    // MARK: Tables
+
+    /// Tools per kind, the most useful first. Action tools come before the lookups that support them.
+    static let toolsByKind: [Kind: [String]] = [
+        .reminder: ["create_reminder", "list_reminders", "search_reminders", "complete_reminder"],
+        .event: ["create_event", "update_event", "list_events", "check_availability"],
+        .availability: ["check_availability", "list_events"],
+        .note: ["create_note", "search_notes", "list_notes", "read_note"],
+        .todo: ["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
+        .mailWrite: ["compose_mail", "search_contacts", "search_mail"],
+        .mailRead: ["inbox_mail", "search_mail", "mail_unread"],
+        .contacts: ["search_contacts"],
+        .music: ["media_control"],
+        .volume: ["set_volume"],
+        .openApp: ["open_app", "open_url"],
+        .shortcut: ["run_shortcut"],
+        .chart: ["show_chart"],
+        .screen: ["read_screen", "read_app"],
+        .browser: ["read_browser_tab", "read_webpage"],
+        .files: ["search_files", "read_file"],
+        .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
+        .notion: ["notion_search", "notion_read_page"],
+        .clipboard: ["read_clipboard"],
+        .web: ["search_web", "read_webpage"]
+    ]
+
+    /// Order of kinds when several match: the thing to make first, then what it is about.
+    static let priority: [Kind] = [
+        .chart, .mailWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .openApp, .shortcut,
+        .contacts, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
+    ]
+
+    /// The action to fill in when a request of this kind clearly asks Nook to act.
+    static let actionByKind: [Kind: String] = [
+        .reminder: "create_reminder", .event: "create_event", .note: "create_note", .todo: "add_open_loop",
+        .mailWrite: "compose_mail", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
+        .shortcut: "run_shortcut", .chart: "show_chart"
+    ]
+
+    // MARK: Dates
+
+    /// The coming days with their dates, so a small model can turn "friday at 3" into ISO 8601 without doing calendar math.
+    static func dateSheet(now: Date = Date(), calendar: Calendar = .current, days: Int = 8) -> String {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.calendar = calendar
+        format.timeZone = calendar.timeZone
+        format.dateFormat = "EEEE yyyy-MM-dd"
+        let offset = DateFormatter()
+        offset.locale = Locale(identifier: "en_US_POSIX")
+        offset.timeZone = calendar.timeZone
+        offset.dateFormat = "xxx"
+        let start = calendar.startOfDay(for: now)
+        let lines = (0..<max(days, 1)).compactMap { day -> String? in
+            guard let date = calendar.date(byAdding: .day, value: day, to: start) else { return nil }
+            let label = day == 0 ? "today" : (day == 1 ? "tomorrow" : "")
+            return label.isEmpty ? format.string(from: date) : "\(label): \(format.string(from: date))"
+        }
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.timeZone = calendar.timeZone
+        clock.dateFormat = "HH:mm"
+        return "Dates (timezone offset \(offset.string(from: now)), now \(clock.string(from: now))): " + lines.joined(separator: "; ")
+            + ". Example: friday 3 pm = \(example(now: now, calendar: calendar, format: offset))."
+    }
+
+    private static func example(now: Date, calendar: Calendar, format offset: DateFormatter) -> String {
+        let start = calendar.startOfDay(for: now)
+        // The next Friday (weekday 6), or today when it is Friday.
+        let weekday = calendar.component(.weekday, from: start)
+        let ahead = (6 - weekday + 7) % 7
+        let friday = calendar.date(byAdding: .day, value: ahead, to: start) ?? start
+        let day = DateFormatter()
+        day.locale = Locale(identifier: "en_US_POSIX")
+        day.calendar = calendar
+        day.timeZone = calendar.timeZone
+        day.dateFormat = "yyyy-MM-dd"
+        return "\(day.string(from: friday))T15:00:00\(offset.string(from: friday))"
+    }
+}

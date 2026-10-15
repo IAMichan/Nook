@@ -99,6 +99,7 @@ targets:
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
       - path: Brain/ModelAdvisor.swift
+      - path: Brain/ChatIntent.swift
       - path: Brain/BrainSelection.swift
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift

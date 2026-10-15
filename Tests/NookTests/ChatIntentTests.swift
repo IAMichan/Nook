@@ -1,0 +1,70 @@
+import XCTest
+
+/// Recognizing what a chat message asks for, before any model runs: the right tools for a small local model, and the one
+/// action to fill in when the model proposed nothing. New phrasings that users try belong here.
+final class ChatIntentTests: XCTestCase {
+    private func action(_ text: String) -> String? { ChatIntent.detect(text).primaryAction }
+
+    func testActionsInDutch() {
+        XCTAssertEqual(action("Herinner me morgen om 9 uur aan de tandarts"), "create_reminder")
+        XCTAssertEqual(action("Zet vrijdag om 15:00 een afspraak met Lisa in mijn agenda"), "create_event")
+        XCTAssertEqual(action("Plan een meeting met Jan op maandag om 10 uur"), "create_event")
+        XCTAssertEqual(action("Verplaats mijn afspraak met Lisa naar maandag"), "update_event")
+        XCTAssertEqual(action("Stuur een mail naar Lisa dat ik later ben"), "compose_mail")
+        XCTAssertEqual(action("Maak een notitie: boodschappen melk en eieren"), "create_note")
+        XCTAssertEqual(action("Kun je een taak toevoegen om de offerte af te maken?"), "add_open_loop")
+        XCTAssertEqual(action("Nook, vergeet niet dat ik de huur moet betalen"), "create_reminder")
+    }
+
+    func testActionsInEnglishAndGerman() {
+        XCTAssertEqual(action("Remind me to call Jan tomorrow"), "create_reminder")
+        XCTAssertEqual(action("Can you schedule a meeting with Lisa on Friday at 3?"), "create_event")
+        XCTAssertEqual(action("Write an email to Tom about the invoice"), "compose_mail")
+        XCTAssertEqual(action("Erinnere mich morgen an den Zahnarzt"), "create_reminder")
+    }
+
+    func testWhatToMakeWinsOverWhatItIsAbout() {
+        XCTAssertEqual(action("Maak een grafiek van mijn afspraken per dag"), "show_chart")
+        XCTAssertEqual(action("Stuur Lisa een mail over de meeting van vrijdag"), "compose_mail")
+        XCTAssertEqual(action("Herinner me aan de call met Jan"), "create_reminder")
+        XCTAssertEqual(action("Zet de muziek wat zachter"), "set_volume")
+        XCTAssertNil(action("Open de pull request van Jan"), "a pull request is not an app")
+        XCTAssertEqual(action("open Safari"), "open_app")
+    }
+
+    func testQuestionsAreNotActions() {
+        XCTAssertNil(action("Ben ik vrijdag vrij?"))
+        XCTAssertNil(action("Wat staat er morgen in mijn agenda?"))
+        XCTAssertNil(action("Heb ik nog ongelezen mail van Lisa?"))
+        XCTAssertNil(action("Wat is de hoofdstad van Frankrijk?"))
+        let free = ChatIntent.detect("Ben ik vrijdag vrij?")
+        XCTAssertEqual(free.tools.first, "check_availability")
+        XCTAssertTrue(ChatIntent.detect("Heb ik nog ongelezen mail?").tools.contains("inbox_mail"))
+    }
+
+    func testSmallTalk() {
+        XCTAssertTrue(ChatIntent.detect("Hoi!").isSmallTalk)
+        XCTAssertTrue(ChatIntent.detect("Bedankt Nook").isSmallTalk)
+        XCTAssertTrue(ChatIntent.detect("thanks!").isSmallTalk)
+        XCTAssertFalse(ChatIntent.detect("Hoi, ben ik morgen vrij?").isSmallTalk)
+        XCTAssertTrue(ChatIntent.detect("Wat is de hoofdstad van Frankrijk?").isEmpty)
+    }
+
+    func testToolsOfTheActionComeFirst() {
+        let tools = ChatIntent.detect("Herinner me aan de call met Jan").tools
+        XCTAssertEqual(tools.first, "create_reminder")
+        XCTAssertEqual(Set(tools).count, tools.count, "no duplicates")
+    }
+
+    func testDateSheetSpellsOutTheComingDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 9, minute: 30))!
+        let sheet = ChatIntent.dateSheet(now: now, calendar: calendar)
+        XCTAssertTrue(sheet.contains("today: Thursday 2026-10-15"), sheet)
+        XCTAssertTrue(sheet.contains("tomorrow: Friday 2026-10-16"), sheet)
+        XCTAssertTrue(sheet.contains("+02:00"), sheet)
+        XCTAssertTrue(sheet.contains("now 09:30"), sheet)
+        XCTAssertTrue(sheet.contains("2026-10-16T15:00:00+02:00"), sheet)
+    }
+}
