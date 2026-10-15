@@ -84,6 +84,8 @@ final class WorkspaceManager: ObservableObject {
     var onApproval: ((WorkspaceRun, PendingPermission) -> Void)?
     var onApprovalGone: ((String) -> Void)?
     var onTurnFinished: ((WorkspaceRun) -> Void)?
+    /// The week recap: sessions Nook runs itself count too, not only the ones in a terminal.
+    var recap: RecapStore?
 
     private var processes: [UUID: AgentProcess] = [:]
     private var turns: [UUID: TurnState] = [:]
@@ -466,6 +468,7 @@ final class WorkspaceManager: ObservableObject {
         run.move(to: .running)
         run.turnStartedAt = Date()
         replace(run)
+        recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
     }
 
@@ -515,6 +518,7 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.toolEvents[callID] = event.id
             turns[id]?.toolNames[callID] = name
             turns[id]?.toolInputs[callID] = input
+            recap?.toolUse(name)
             append(id, event)
         case .toolResult(let callID, let output, let isError):
             if let eventID = turns[id]?.toolEvents[callID] {
@@ -728,6 +732,7 @@ final class WorkspaceManager: ObservableObject {
         }
         process.send(line)
         approvals[runID]?.removeAll { $0.id == requestID }
+        recap?.decision(allowed: decision != .deny)
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
         if approvals[runID]?.isEmpty ?? true { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)

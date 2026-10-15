@@ -57,6 +57,7 @@ struct WorkspaceSidebar: View {
                         }
                     }
                 }
+                if filter != .archived { externalSections }
                 if groups.isEmpty && (workspace.activeRuns.isEmpty || filter == .archived) {
                     Text(search.isEmpty ? tr("ws.sidebar.emptyFilter") : tr("ws.sidebar.noMatches"))
                         .font(NookTheme.font(12))
@@ -79,8 +80,75 @@ struct WorkspaceSidebar: View {
     private var selectionBinding: Binding<UUID?> {
         Binding(get: { workspace.selectedRunID }, set: { id in
             workspace.selectedRunID = id
-            if id != nil { pane = .sessions }
+            if id != nil {
+                app.selectedExternalSession = nil
+                pane = .sessions
+            }
         })
+    }
+
+    // MARK: Sessions Nook does not run
+
+    /// Agent sessions started in a terminal or app (seen through hooks and the process list) and earlier ones from
+    /// transcripts: the same list as in the notch, so every conversation can be found here too.
+    @ViewBuilder
+    private var externalSections: some View {
+        let records = app.externalSessionRecords().filter(matchesExternalSearch)
+        ForEach([AgentSessionRecord.Section.needsYou, .active, .earlier], id: \.rawValue) { section in
+            let rows = records.filter { $0.section == section }
+            if !rows.isEmpty {
+                Section(externalTitle(section)) {
+                    ForEach(rows) { record in
+                        externalRow(record)
+                    }
+                }
+            }
+        }
+    }
+
+    private func externalTitle(_ section: AgentSessionRecord.Section) -> String {
+        switch section {
+        case .needsYou: return tr("ws.sidebar.external.needsYou")
+        case .active: return tr("ws.sidebar.external.active")
+        case .inNook: return tr("ws.sidebar.activeNow")
+        case .earlier: return tr("ws.sidebar.external.earlier")
+        }
+    }
+
+    private func matchesExternalSearch(_ record: AgentSessionRecord) -> Bool {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return true }
+        return [record.title, record.cwd, record.agent].contains { $0.lowercased().contains(query) }
+    }
+
+    private func externalRow(_ record: AgentSessionRecord) -> some View {
+        let selected = app.selectedExternalSession == record.id
+        return Button {
+            workspace.selectedRunID = nil
+            app.selectedExternalSession = record.id
+            pane = .sessions
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.title.isEmpty ? URL(fileURLWithPath: record.cwd).lastPathComponent : record.title)
+                    .font(NookTheme.font(13, .medium))
+                    .foregroundStyle(WS.text)
+                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Circle().fill(record.phase == .needsYou ? NookTheme.amber : (record.phase == .working ? NookTheme.iris : WS.tertiary))
+                        .frame(width: 5, height: 5)
+                    Text(record.agent).lineLimit(1)
+                    Spacer(minLength: 2)
+                    Text(NookDates.ago(record.updated)).foregroundStyle(WS.tertiary)
+                }
+                .font(NookTheme.font(11))
+                .foregroundStyle(WS.secondary)
+            }
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? Color.accentColor.opacity(0.25) : Color.clear)
     }
 
     private var controls: some View {
@@ -293,7 +361,7 @@ struct SessionRow: View {
                             .foregroundStyle(NookTheme.iris)
                             .help(tr("ws.sidebar.unreviewedHelp"))
                     }
-                    Text(WSFormat.relative(run.updatedAt))
+                    Text(NookDates.ago(run.updatedAt))
                         .foregroundStyle(WS.tertiary)
                 }
                 .font(NookTheme.font(11))

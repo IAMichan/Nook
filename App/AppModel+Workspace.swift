@@ -90,58 +90,16 @@ extension AppModel {
         profiles.profile(id: run.profileID)
     }
 
-    /// Earlier sessions from transcripts, excluding workspace runs (which are already listed there in more detail).
-    var pastSessionsOutsideWorkspace: [PastSession] {
-        let own = Set(workspace.runs.compactMap(\.providerSessionID))
-        return history.sessions.filter { !own.contains($0.sessionID) }
-    }
-
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        let token = "wsapproval-" + pending.id
         let runID = run.id
-        let requestID = pending.id
-        viewModel.register("\(token)#yes") { [weak self] in self?.workspace.decide(runID, requestID: requestID, .allow) }
-        viewModel.register("\(token)#always") { [weak self] in self?.workspace.decide(runID, requestID: requestID, .always) }
-        viewModel.register("\(token)#no") { [weak self] in self?.workspace.decide(runID, requestID: requestID, .deny) }
-        viewModel.register("\(token)#open") { [weak self] in self?.openWorkspace(run: runID) }
-
-        let input = pending.input.dictionary
-        let assessment: CommandAssessment
-        if let command = ToolSummary.command(input) {
-            assessment = CommandRisk.assess(command)
-        } else {
-            assessment = CommandAssessment(level: .review, title: "", note: tr("ws.approval.note"))
-        }
-        let detail: CardDetail
-        let height: CGFloat
-        if let edit = AgentHub.editDiff(tool: pending.tool, input: input) {
-            detail = .diff(title: pending.summary, lines: edit.lines, note: assessment.note)
-            height = 150 + min(166, CGFloat(edit.lines.count) * 15 + 34)
-        } else {
-            detail = .command(String((ToolSummary.command(input) ?? pending.summary).prefix(20_000)), note: assessment.note)
-            height = 214
-        }
-        var extra = [CardAction(label: tr("ws.approval.open"), outcome: .callback("\(token)#open", ""))]
-        if pending.canAlways { extra.insert(CardAction(label: tr("button.always"), outcome: .callback("\(token)#always", "")), at: 0) }
-        let card = NookCard(
-            id: token,
-            mood: assessment.level == .danger ? .worry : .waiting,
-            context: "\(run.provider.displayName) · \(run.title)",
-            title: tr("ws.approval.title", run.provider.kind.shortName, pending.tool),
-            detail: detail,
-            primary: CardAction(label: tr("button.allow"), outcome: .callback("\(token)#yes", "")),
-            secondary: CardAction(label: tr("button.deny"), outcome: .callback("\(token)#no", "")),
-            contentHeight: height,
-            extra: extra,
-            urgent: true
-        )
-        viewModel.presentUrgent(card)
-        NookSound.play(.attention)
+        presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
+                            open: (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) }))
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
+        recap.turnEnded(session: "run-" + run.id.uuidString)
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)

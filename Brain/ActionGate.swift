@@ -127,6 +127,12 @@ enum ActionGate {
             }
         }
 
+        // A command from the brain never runs when it is clearly dangerous, whatever the user would click.
+        if tool == "run_command", let command = input["command"] as? String {
+            let assessment = CommandRisk.assess(command)
+            if assessment.level == .danger { problems.append("Dit commando voer ik niet uit: \(assessment.title)") }
+        }
+
         // Fields with fixed semantics.
         var dates: [String: Date] = [:]
         for key in ["start", "end", "due", "from", "to", "date"] {

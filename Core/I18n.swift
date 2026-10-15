@@ -56,14 +56,17 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         self.language = initial
     }
 
+    /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
+    static var tables: [[AppLanguage: [String: String]]] {
+        [completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+    }
+
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        if let val = redesignTranslations[lang]?[key] ?? agentsTranslations[lang]?[key] ?? translations[lang]?[key] ?? workspaceTranslations[lang]?[key] {
-            return val
-        }
+        for table in tables { if let val = table[lang]?[key] { return val } }
         // German falls back to English before Dutch: closer for a German reader than the other way round.
         let fallbacks: [AppLanguage] = lang == .de ? [.en, .nl] : [.nl, .en]
         for fallback in fallbacks where fallback != lang {
-            if let val = redesignTranslations[fallback]?[key] ?? agentsTranslations[fallback]?[key] ?? translations[fallback]?[key] ?? workspaceTranslations[fallback]?[key] { return val }
+            for table in tables { if let val = table[fallback]?[key] { return val } }
         }
         return key
     }

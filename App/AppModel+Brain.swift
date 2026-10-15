@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Choosing and installing the local brain: Nook proposes the model that suits this Mac and sets it up in one click.
 extension AppModel {
@@ -98,5 +99,41 @@ extension AppModel {
                 contentHeight: 168
             )))
         }
+    }
+
+    // MARK: Chat errors
+
+    /// The label of the button that fixes a chat error.
+    func recoveryTitle(_ action: ChatRecoveryAction) -> String {
+        switch action {
+        case .chooseModel: return tr("recovery.chooseModel")
+        case .openLocalServer(let runtime): return tr("recovery.openServer", runtime == .ollama ? "Ollama" : "LM Studio")
+        case .reconnectBrain, .reconnectConnection: return tr("connector.reconnect")
+        case .openSettings: return tr("app.settings")
+        }
+    }
+
+    func performRecovery(_ action: ChatRecoveryAction) {
+        switch action {
+        case .chooseModel, .reconnectBrain:
+            openSettings(section: .brain)
+        case .reconnectConnection:
+            openSettings(section: .connections)
+        case .openLocalServer(let runtime):
+            let name = runtime == .ollama ? "Ollama" : "LM Studio"
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: runtime == .ollama ? "com.electron.ollama" : "ai.elementlabs.lmstudio")
+                ?? Self.installedApp(named: name) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            } else {
+                openSettings(section: .brain)
+            }
+        case .openSettings:
+            openSettings()
+        }
+    }
+
+    private static func installedApp(named name: String) -> URL? {
+        let applications = URL(fileURLWithPath: "/Applications/\(name).app")
+        return FileManager.default.fileExists(atPath: applications.path) ? applications : nil
     }
 }
