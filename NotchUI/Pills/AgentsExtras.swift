@@ -316,7 +316,7 @@ struct AgentsUsagePanel: View {
                 Spacer(minLength: 0)
             }
             if limits.isEmpty {
-                Text(profile.kind == .gemini || profile.kind == .antigravity ? tr("agents.usage.geminiNoLimits") : tr("ws.usage.quotaUnavailable"))
+                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits") : tr("ws.usage.quotaUnavailable"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
             } else {

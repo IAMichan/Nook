@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     /// Calendar, mail, browser, GitHub, Stripe, etc.: context sources for Nook.
     let connectors = ConnectorHub()
     let codex = CodexUsage()
+    /// Antigravity's quota windows, read from Google.
+    let antigravityUsage = AntigravityUsage()
     /// Claude's subscription limits, read from Anthropic for every Claude account.
     private(set) lazy var claudeUsage = ClaudeUsage(hub: hub) { [weak self] in self?.profiles.profiles(for: .claude) ?? [] }
 
@@ -34,6 +36,7 @@ final class AppModel: ObservableObject {
     func refreshQuotas() {
         codex.refreshNow()
         claudeUsage.refreshNow()
+        antigravityUsage.refreshNow()
     }
     /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.
     let history = AgentHistory()
@@ -51,7 +54,7 @@ final class AppModel: ObservableObject {
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace)
     /// The subscription limits of every agent account.
-    var quota: QuotaService { QuotaService(hub: hub, codex: codex) }
+    var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .general
 
@@ -192,6 +195,7 @@ final class AppModel: ObservableObject {
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        antigravityUsage.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         profiles.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
@@ -332,6 +336,8 @@ final class AppModel: ObservableObject {
             return self.profiles.profiles(for: .codex).map { $0.homeURL }
         }
         codex.start()
+        antigravityUsage.home = { [weak self] in self?.profiles.profiles(for: .antigravity).first?.homeURL ?? AgentKind.antigravity.defaultHome }
+        antigravityUsage.start()
         claudeUsage.start()
 
         // Continuously index visible screen text locally so every query has immediate visual context.
