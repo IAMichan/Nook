@@ -118,6 +118,10 @@ struct GitWorktree: Equatable, Identifiable, Sendable {
 struct GitService: Sendable {
     let executable: String
 
+    /// Result of `locate()`, resolved once per launch: spawning `git --version` on every call is slow and must never
+    /// happen on the main thread (e.g. each time a view creates its model).
+    static let shared: GitService? = locate()
+
     /// Locates Git. Nil if unavailable (on macOS: without Command Line Tools, /usr/bin/git does not work).
     static func locate(fileManager: FileManager = .default) -> GitService? {
         for path in ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"] where fileManager.isExecutableFile(atPath: path) {
