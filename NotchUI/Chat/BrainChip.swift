@@ -8,6 +8,14 @@ struct BrainChip: View {
     @ObservedObject private var local = EmbeddedModel.shared
     @State private var servers: [ServerModel] = []
 
+    /// The maker's mark for the model in use: from the model's own name first ("claude-haiku", "Qwen 3"), else its provider.
+    private var logo: BrandLogo? {
+        if settings.useLocal {
+            return BrandLogo.forName(settings.brainLabel)
+        }
+        return BrandLogo.forName(settings.activeProviderModel) ?? BrandLogo.forProvider(settings.provider)
+    }
+
     var body: some View {
         Menu {
             Section(tr("brain.chip.installed")) {
@@ -33,18 +41,9 @@ struct BrainChip: View {
             Divider()
             Button(tr("brain.chip.settings")) { app.openSettings(section: .brain) }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: settings.isLocalBrain ? "cpu" : "cloud")
-                    .font(.system(size: 11, weight: .semibold))
-                Text((settings.isLocalBrain ? tr("brain.chip.local") : tr("brain.chip.external")) + " · " + settings.brainLabel)
-                    .font(NookTheme.font(11.5, .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(settings.isLocalBrain ? NookTheme.mint : NookTheme.amber)
+            ComposerPill(symbol: logo == nil ? (settings.isLocalBrain ? "cpu" : "cloud") : nil, brand: logo, text: settings.brainLabel)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .composerMenu()
         .help(tr("brain.chip.help"))
         .task { servers = await app.localServerModels() }
     }

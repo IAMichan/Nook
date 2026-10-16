@@ -338,11 +338,11 @@ struct EventRow: View {
     var body: some View {
         switch event.kind {
         case .user:
-            ChatBubble(fromUser: true, text: event.text)
+            ConversationMessage(fromUser: true, text: event.text)
                 .padding(.top, 6)
 
         case .assistant:
-            MarkdownView(text: event.text, size: 13.5)
+            ConversationMessage(fromUser: false, text: event.text)
                 .padding(.horizontal, 2)
 
         case .thinking:

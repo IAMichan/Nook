@@ -89,6 +89,7 @@ final class VoiceService: ObservableObject {
     ) {
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
+            VoiceLevel.shared.measure(buffer)
         }
     }
 
@@ -139,7 +140,43 @@ final class VoiceService: ObservableObject {
         request = nil
         task = nil
         isListening = false
+        VoiceLevel.shared.reset()
         onPartial = nil
         onFinish = nil
+    }
+}
+
+/// How loud you speak while Nook listens, 0…1, so the orb can move with your voice.
+/// Written on the audio thread, read by the orb every frame.
+final class VoiceLevel: @unchecked Sendable {
+    static let shared = VoiceLevel()
+
+    private let lock = NSLock()
+    private var level: Float = 0
+
+    var current: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return Double(level)
+    }
+
+    func measure(_ buffer: AVAudioPCMBuffer) {
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+        let count = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<count { sum += samples[i] * samples[i] }
+        let rms = (sum / Float(count)).squareRoot()
+        // Speech sits roughly between -50 dB (soft) and -10 dB (loud).
+        let decibels = 20 * log10(max(rms, 0.000_001))
+        let value = min(max((decibels + 50) / 40, 0), 1)
+        lock.lock()
+        level = value
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        level = 0
+        lock.unlock()
     }
 }

@@ -707,6 +707,8 @@ struct Message: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
+    /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
+    var onReply: ((String) -> Void)? = nil
     @State private var messages: [AgentChatMessage] = []
 
     private var agentColor: Color { AgentKind(agentName: session.name)?.color ?? NookTheme.iris }
@@ -767,7 +769,9 @@ struct AgentConversation: View {
         if message.isThinking {
             ThinkingBubble(text: message.text)
         } else {
-            ChatBubble(fromUser: message.fromUser, text: message.text)
+            let open = !message.fromUser && message.id == shown.last?.id && session.status != .running
+            ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor,
+                               onChoose: open ? onReply : nil)
         }
     }
 
@@ -800,32 +804,6 @@ private extension AgentSession {
         case .failed: return tr("agents.live.failed")
         case .done: return tr("agents.live.done")
         case .detected: return tr("agents.live.notTracked")
-        }
-    }
-}
-
-/// One message in a conversation: what you wrote in a soft box on the right, the agent's answer as plain text.
-struct ChatBubble: View {
-    let fromUser: Bool
-    let text: String
-
-    var body: some View {
-        if fromUser {
-            HStack(spacing: 0) {
-                Spacer(minLength: 48)
-                Text(text)
-                    .font(NookTheme.font(13.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x19191B)))
-            }
-        } else {
-            MarkdownView(text: text, size: 13.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -883,7 +861,6 @@ struct ThinkingBubble: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-
 /// A dot that gently pulses while the agent is running.
 struct PulseDot: View {
     let color: Color

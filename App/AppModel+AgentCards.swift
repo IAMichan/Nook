@@ -127,6 +127,8 @@ extension AppModel {
     /// Displayed unless user is active in notch; auto-dismisses after a short timeout.
     func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
+        // The last agent finished: a small celebration.
+        if session.status == .done, !activeAgents.contains(where: { $0.id != session.id }) { NookPresence.shared.celebrate() }
         switch viewModel.state {
         case .idle, .music, .track, .done, .nudge: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
