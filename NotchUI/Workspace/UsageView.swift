@@ -206,7 +206,7 @@ struct UsageView: View {
     private var accountQuotas: some View {
         VStack(alignment: .leading, spacing: 8) {
             WSSectionTitle(title: tr("ws.usage.accountQuotas"))
-            ForEach(app.profiles.all.filter { $0.kind != .gemini }) { profile in
+            ForEach(app.profiles.all.filter { $0.kind != .gemini && $0.kind != .antigravity }) { profile in
                 HStack(spacing: 8) {
                     Circle().fill(profile.kind.color).frame(width: 6, height: 6)
                     Text("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))").font(NookTheme.font(12, .medium))

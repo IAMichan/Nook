@@ -15,7 +15,7 @@ extension RunProvider {
         switch kind {
         case .claude: self = .claude
         case .codex: self = .codex
-        case .gemini: return nil
+        case .gemini, .antigravity: return nil
         }
     }
 }
@@ -157,6 +157,7 @@ extension AppModel {
         case .claude: command = profile.environmentPrefixOnly + "claude /login"
         case .codex: command = profile.environmentPrefixOnly + "codex login"
         case .gemini: command = "gemini"
+        case .antigravity: command = "agy"
         }
         let intro = "echo " + TerminalLauncher.shellQuote(tr("accounts.reauthIntro", profile.kind.name))
         do {
@@ -186,7 +187,7 @@ extension AppModel {
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /logout"
         case .codex: command = profile.environmentPrefixOnly + "codex logout"
-        case .gemini: return
+        case .gemini, .antigravity: return
         }
         do {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
@@ -222,7 +223,7 @@ extension AppModel {
                 try Self.pipeKey(clean, to: executable, arguments: ["login", "--with-api-key"], environment: environment)
             }.value
             profiles.setAuth(profile.id, .apiKey)
-        case .gemini:
+        case .gemini, .antigravity:
             return
         }
         history.refresh(minimumInterval: 0)

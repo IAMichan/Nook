@@ -13,8 +13,8 @@ struct AccountsSettingsSection: View {
                 ForEach(app.profiles.profiles(for: kind)) { profile in
                     AccountSettingsRow(profile: profile, isExpanded: binding(profile))
                 }
-                if kind == .gemini {
-                    Text(tr("accounts.geminiSingle"))
+                if kind == .gemini || kind == .antigravity {
+                    Text(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if kind.supportsProfiles {
@@ -101,7 +101,7 @@ private struct AccountSettingsRow: View {
             .onSubmit { app.profiles.rename(profile.id, to: name) }
             .onAppear { name = profile.label }
 
-        if profile.kind != .gemini {
+        if profile.kind != .gemini && profile.kind != .antigravity {
             Picker(tr("accounts.method"), selection: Binding(
                 get: { profile.auth ?? .cli },
                 set: { method in

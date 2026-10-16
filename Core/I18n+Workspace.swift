@@ -407,6 +407,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.logoutHelp": "Logt alleen dit account uit, in zijn eigen map.",
         "accounts.isolationNote": "Elk account heeft een eigen map (CLAUDE_CONFIG_DIR of CODEX_HOME). Wissel je het standaardaccount, dan houden lopende en eerdere sessies hun eigen account.",
         "accounts.geminiSingle": "Gemini CLI kent geen aparte accountmappen: je kunt maar één Google-account tegelijk gebruiken. Wisselen doe je in Gemini CLI zelf.",
+        "accounts.antigravitySingle": "Antigravity kent geen aparte accountmappen: je gebruikt het Google-account waarmee je in Antigravity zelf bent ingelogd. Wisselen doe je daar.",
         "accounts.codexLimitsNote": "Limieten toont Nook alleen voor het eerste Codex-account; Codex meldt ze niet per map.",
     ],
 
@@ -812,6 +813,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.logoutHelp": "Logs out only this account, in its own folder.",
         "accounts.isolationNote": "Each account has its own folder (CLAUDE_CONFIG_DIR or CODEX_HOME). Switching the default account leaves running and earlier sessions on their own account.",
         "accounts.geminiSingle": "Gemini CLI has no separate account folders: you can only use one Google account at a time. Switch accounts in Gemini CLI itself.",
+        "accounts.antigravitySingle": "Antigravity has no separate account folders: it uses the Google account you are signed in with in Antigravity itself. Switch accounts there.",
         "accounts.codexLimitsNote": "Nook shows limits only for the first Codex account; Codex doesn't report them per folder.",
     ],
 
@@ -934,5 +936,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.logout": "Abmelden",
         "accounts.isolationNote": "Jedes Konto hat einen eigenen Ordner (CLAUDE_CONFIG_DIR oder CODEX_HOME). Ein Wechsel des Standardkontos ändert laufende Sitzungen nicht.",
         "accounts.geminiSingle": "Gemini CLI kennt keine getrennten Kontoordner: Es kann nur ein Google-Konto gleichzeitig genutzt werden.",
+        "accounts.antigravitySingle": "Antigravity kennt keine getrennten Kontoordner: Es wird das Google-Konto genutzt, mit dem du in Antigravity angemeldet bist.",
     ]
 ]

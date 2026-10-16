@@ -27,7 +27,7 @@ struct QuotaService {
                 usage.fiveHour.map { QuotaLimit(label: tr("agents.fiveHour"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) },
                 usage.sevenDay.map { QuotaLimit(label: tr("agents.week"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) }
             ].compactMap { $0 }
-        case .gemini:
+        case .gemini, .antigravity:
             return []
         case .codex:
             guard let snapshot = codex.snapshot(home: profile.home.map { _ in profile.homeURL }) else { return [] }
