@@ -151,7 +151,7 @@ final class NotesConnector: ContextSource {
                         return out
                     end tell
                     """
-                    let result = await ScriptText.run(script)
+                    let result = await ScriptText.run(script, timeout: 8)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
@@ -175,9 +175,9 @@ final class NotesConnector: ContextSource {
             ),
             ToolSpec(
                 name: "search_notes",
-                description: "Zoekt in Apple Notities op trefwoorden in de titel of inhoud van notities. Geeft de gevonden notities met het begin van de tekst.",
+                description: "Zoekt in ALLE notities van Apple Notities op trefwoorden in de titel en de hele inhoud. Geef een of meer losse trefwoorden (geen hele zin); notities met de meeste treffers komen eerst. Geeft per notitie het begin van de tekst en het id: lees een relevante notitie daarna volledig met read_note.",
                 schema: ["type": "object", "properties": [
-                    "query": ["type": "string", "description": "Zoekterm(en) waarnaar gezocht moet worden."]
+                    "query": ["type": "string", "description": "Een of meer trefwoorden, gescheiden door spaties, bijvoorbeeld \"verbouwing offerte\"."]
                 ], "required": ["query"]],
                 kind: .read,
                 summarize: { input in "Notities zoeken naar \"\((input["query"] as? String) ?? "")\"" },
@@ -186,12 +186,16 @@ final class NotesConnector: ContextSource {
                     try await NotesConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
-                    let q = ScriptText.quote(query)
-                    let script = """
+                    // Every word on its own: a note about "de verbouwing van de keuken" is found with "keuken verbouwing".
+                    let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
+                    let anyWord = { (fields: [String]) in
+                        words.flatMap { word in fields.map { "\($0) contains \(ScriptText.quote(word))" } }.joined(separator: " or ")
+                    }
+                    let script = { (filter: String) in """
                     tell application "Notes"
-                        set found to (notes whose name contains \(q) or plaintext contains \(q))
+                        set found to (notes whose \(filter))
                         set n to count of found
-                        if n > 10 then set n to 10
+                        if n > 25 then set n to 25
                         set out to ""
                         repeat with i from 1 to n
                             set notitem to item i of found
@@ -206,28 +210,38 @@ final class NotesConnector: ContextSource {
                             try
                                 set nbody to plaintext of notitem
                             end try
-                            if (length of nbody) > 600 then set nbody to text 1 thru 600 of nbody
+                            if (length of nbody) > 800 then set nbody to text 1 thru 800 of nbody
                             set out to out & "<<<NOTE>>>" & nid & "|||" & nname & "|||" & ndate & "|||" & nfolder & linefeed & nbody & linefeed
                         end repeat
                         return out
                     end tell
-                    """
-                    let result = await ScriptText.run(script)
+                    """ }
+                    // Scripts run one after another; searching the text of thousands of notes can take a while.
+                    let result = await ScriptText.run(script(anyWord(["name", "plaintext"])), timeout: 20)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
+                    }
+                    if result.errorNumber == -1712 {
+                        throw NookError("Notities doorzoeken duurde te lang. Probeer een specifieker trefwoord.")
                     }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "Geen notities gevonden voor \"\(query)\"." }
 
-                    var blocks: [String] = []
-                    var refs: [String] = []
-                    for chunk in raw.components(separatedBy: "<<<NOTE>>>") where !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    struct Found { var header: [String]; var body: String }
+                    let notes = raw.components(separatedBy: "<<<NOTE>>>").compactMap { chunk -> Found? in
                         let lines = chunk.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
                         let header = String(lines.first ?? "").components(separatedBy: "|||")
-                        guard header.count >= 3 else { continue }
-                        let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                        guard header.count >= 3 else { return nil }
+                        return Found(header: header, body: lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : "")
+                    }
+                    let terms = Research.Terms(words: words)
+                    let ranked = Research.best(notes, terms: terms, keep: 10, title: { $0.header[1] }, text: \.body)
+                    var blocks: [String] = []
+                    var refs: [String] = []
+                    for note in ranked {
+                        let header = note.header
                         let folder = header.count > 3 && !header[3].isEmpty ? " [map: \(header[3])]" : ""
-                        blocks.append("### \(header[1])\(folder) | \(String(header[2].prefix(10)))\n\(body)")
+                        blocks.append("### \(header[1])\(folder) | \(String(header[2].prefix(10))) [id: \(header[0])]\n\(note.body)")
                         refs.append(ReferenceParser.line(title: header[1], url: nil, detail: "\(header.count > 3 ? header[3] : "Notities") · \(String(header[2].prefix(10)))"))
                     }
                     return (blocks + refs).joined(separator: "\n\n")
@@ -268,7 +282,7 @@ final class NotesConnector: ContextSource {
                         return nname & "|||" & ndate & linefeed & nbody
                     end tell
                     """
-                    let result = await ScriptText.run(script)
+                    let result = await ScriptText.run(script, timeout: 10)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
@@ -277,7 +291,8 @@ final class NotesConnector: ContextSource {
                     }
                     let lines = raw.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
                     let header = String(lines.first ?? "").components(separatedBy: "|||")
-                    let body = lines.count > 1 ? String(lines[1]) : ""
+                    var body = lines.count > 1 ? String(lines[1]) : ""
+                    if body.count > 15_000 { body = String(body.prefix(15_000)) + "\n… (ingekort: de eerste 15.000 tekens)" }
                     let title = header.first ?? idOrTitle
                     let date = header.count > 1 ? String(header[1].prefix(10)) : ""
                     return "## Notitie: \(title) (\(date))\n\n\(body)\n\n" + ReferenceParser.line(title: title, url: nil, detail: "Notities · \(date)")

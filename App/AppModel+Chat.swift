@@ -165,7 +165,7 @@ extension AppModel {
                 }
             }
         }
-        let prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger) { [weak self] summary in
+        let prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, history: history) { [weak self] summary in
             self?.chat.update(id) {
                 $0.sources = sources
                 $0.contextSources = summary.titles

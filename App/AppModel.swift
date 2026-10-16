@@ -289,7 +289,12 @@ final class AppModel: ObservableObject {
             MailConnector(),
             BrowserConnector(),
             FilesConnector(),
-            ClipboardConnector()
+            ClipboardConnector(),
+            // Apps without an API: their local database, read-only (Messages and WhatsApp need Full Disk Access).
+            MessagesConnector(),
+            WhatsAppConnector(),
+            BearConnector(),
+            ThingsConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
         connectors.register([portfolio])

@@ -30,6 +30,8 @@ struct ChatIntent: Equatable {
     var primaryAction: String? {
         guard wantsAction else { return nil }
         for kind in kinds {
+            // "Vat mijn notitie over X samen" reads a note; it only makes one when asked to ("zet het in een notitie").
+            if kind == .note, readsNotes { continue }
             if kind == .event, moves { return "update_event" }
             if let action = Self.actionByKind[kind] { return action }
         }
@@ -38,6 +40,8 @@ struct ChatIntent: Equatable {
 
     /// "Move my meeting", "verplaats de afspraak": an existing event changes.
     private(set) var moves = false
+    /// "Wat staat er in mijn notitie over…", "vat mijn notities samen": notes are where the answer is, not what to make.
+    private(set) var readsNotes = false
 
     // MARK: Recognition
 
@@ -75,6 +79,9 @@ struct ChatIntent: Equatable {
         // the meeting" is a mail, "remind me of the call" is a reminder.
         intent.kinds = kinds.sorted { (Self.priority.firstIndex(of: $0) ?? 99) < (Self.priority.firstIndex(of: $1) ?? 99) }
         intent.moves = has(#"verplaats|reschedule|\bmove (my|the)\b|verschieb|\bverzet"#)
+        let makesNote = has(#"\b(zet|schrijf|sla|bewaar|voeg|put|save|add|write|speicher)[^.?!]{0,40}\b(in|als|naar|to|into|as) (een |mijn |de |a |my )?(nieuwe |new )?(notitie|notities|note|notes)\b|\bals notitie|\bas a note|(maak|create|make|nieuwe|new|erstelle) (een |a |eine )?(nieuwe |new |neue )?(notitie|note|notiz)\b|\bnoteer|schrijf (dit|het|dat) op|write (this|it|that) down|neue notiz"#)
+        let readsNote = has(#"(in|uit|from|aus) (mijn|de|m'n|my|the|meine?n?) (\w+ )?(notitie|notities|notes?|notiz\w*)|(lees|zoek|vind|vat|samenvat\w*|wat staat|wat stond|read|search|find|summari[sz]e|what does|lies|such|finde)[^.?!]{0,40}(notitie|notities|notes?|notiz\w*)"#)
+        intent.readsNotes = readsNote && !makesNote
 
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
@@ -96,10 +103,10 @@ struct ChatIntent: Equatable {
         .reminder: ["create_reminder", "list_reminders", "search_reminders", "complete_reminder"],
         .event: ["create_event", "update_event", "list_events", "check_availability"],
         .availability: ["check_availability", "list_events"],
-        .note: ["create_note", "search_notes", "list_notes", "read_note"],
+        .note: ["create_note", "search_notes", "read_note", "list_notes"],
         .todo: ["add_open_loop", "list_open_loops", "complete_open_loop", "list_reminders"],
-        .mailWrite: ["compose_mail", "search_contacts", "search_mail"],
-        .mailRead: ["inbox_mail", "search_mail", "mail_unread"],
+        .mailWrite: ["compose_mail", "search_contacts", "search_mail", "read_mail"],
+        .mailRead: ["inbox_mail", "search_mail", "read_mail", "mail_unread"],
         .contacts: ["search_contacts"],
         .music: ["media_control"],
         .volume: ["set_volume"],

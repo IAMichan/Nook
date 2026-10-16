@@ -177,10 +177,11 @@ extension AppModel {
     }
 
     /// `prefetch: false` skips the up-front lookups (for questions about the screen itself, where they only add waiting).
+    /// `history` lets a follow-up ("en het budget?") search on with what the conversation was about.
     /// `onSummary` fires as soon as the source choice is known, before the lookups run.
     func prepareRun(
         text: String, scope: SourceScope, snapshotText: String?, ledger: RetrievalLedger, prefetch: Bool = true,
-        onSummary: ((_ summary: (text: String, titles: [String])) -> Void)? = nil
+        history: [ChatTurn] = [], onSummary: ((_ summary: (text: String, titles: [String])) -> Void)? = nil
     ) async -> PreparedRun {
         // Only sources relevant to this query are included in full; others as one-line summaries.
         var activeIDs = Set(connectors.searchable.map { $0.id })
@@ -190,44 +191,110 @@ extension AppModel {
         onSummary?(summary)
         let tools = scopedTools(scope, ledger: ledger)
 
-        // Nook looks up what the question is about itself, for every relevant source and any app the question names,
-        // all at once, and hands the results to the brain. The answer never waits on the model deciding to call a tool,
-        // and a cloud model saves its tool round trips.
-        var context = summary.text
-        var fetched: [String] = []
-        if prefetch {
+        // Nook does the research itself, for every model: it searches each relevant source with the words that carry
+        // the question (everywhere it can search when the question names no source), ranks what it finds across
+        // sources and reads the best matches in full. The model answers from the documents themselves and never has
+        // to work out on its own which tool to call with which words.
+        var found: [String] = []
+        var opened: [String] = []
+        var searched = ""
+        let intent = ChatIntent.detect(text)
+        if prefetch, !intent.isSmallTalk {
+            let profile = settings.brainProfile
+            let roomy = !profile.isSmall || profile.contextTokens >= 16_000
             let available = tools.compactMap { spec -> Prefetch.Available? in
                 guard spec.kind == .read, let source = SourceCatalog.source(forTool: spec.name) else { return nil }
-                return Prefetch.Available(name: spec.name, source: source, required: (spec.schema["required"] as? [String]) ?? [])
+                return Prefetch.Available(name: spec.name, source: source, required: (spec.schema["required"] as? [String]) ?? [],
+                                          query: Prefetch.Available.queryField(spec.schema))
             }
-            var calls = Prefetch.calls(for: text, relevant: relevant, available: available)
+            let terms = Research.terms(in: text, history: history)
+            let previous = history.last(where: \.fromUser).map { SourceRouter.relevant(to: $0.text, scope: scope, active: activeIDs) } ?? []
+            let sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
+                                           available: available, active: activeIDs.filter { scope.allows($0) })
+            var calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
             if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
                 calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
             }
-            let runnable = calls.compactMap { call in tools.first(where: { $0.name == call.tool }).map { (call, $0) } }
-            if !runnable.isEmpty {
-                fetched = await withTaskGroup(of: (Int, String?).self) { group in
-                    for (index, item) in runnable.enumerated() {
-                        group.addTask { @MainActor in
-                            let output = try? await RetrievalLedger.withTimeout(8) { try await item.1.run(item.0.input) }
-                            return (index, output)
-                        }
-                    }
-                    var results: [(Int, String)] = []
-                    for await (index, output) in group { if let output { results.append((index, String(output.prefix(5000)))) } }
-                    return results.sorted { $0.0 < $1.0 }.map(\.1)
-                }
+            // Only what is about the question reaches the model: unrelated items that matched one common word are left
+            // out, and of an app's whole window only the passages about the question are kept.
+            let searchLimit = profile.isSmall ? (roomy ? 2_500 : 1_800) : 5_000
+            let shape: (String, String) -> String = { tool, output in
+                tool == "read_app" ? Research.focus(output, terms: terms, limit: searchLimit) : Research.relevantOnly(output, tool: tool, terms: terms)
             }
-            if !fetched.isEmpty {
-                context += "\n\nLooked up for this question (answer from this):\n" + fetched.joined(separator: "\n\n")
+            let results = await Self.runAll(calls, tools: tools, timeout: 22, limit: searchLimit, shape: shape)
+            found = results.map(\.output)
+
+            // Open the best hits in full: the start of a note or a file name is rarely the answer. A source Nook does
+            // not know (an MCP server) is opened with its own read tool.
+            let readers = Set(tools.map(\.name))
+            let hits = Research.toOpen(results, terms: terms, wantsContent: Research.wantsContent(text), available: readers,
+                                       limit: profile.isSmall ? (roomy ? 3 : 2) : 4, openers: Research.openers(available))
+            let reads = hits.compactMap { hit in hit.read.map { Prefetch.Call(tool: $0, input: hit.input) } }
+            let readLimit = profile.isSmall ? (roomy ? 4_000 : 2_500) : 10_000
+            opened = await Self.runAll(reads, tools: tools, timeout: 15, limit: readLimit) { _, output in
+                // A long document keeps the parts about the question, so they are not cut off.
+                output.count > readLimit ? Research.focus(output, terms: terms, limit: readLimit) : output
+            }.map(\.output)
+
+            if !ledger.steps.isEmpty {
+                let words = terms.query(limit: 6)
+                let outcomes = ledger.steps.map { step -> String in
+                    switch step.outcome {
+                    case .found(let count): return "\(step.sourceTitle) (\(step.tool): \(count) results)"
+                    case .empty: return "\(step.sourceTitle) (\(step.tool): nothing found)"
+                    case .failed(let error): return "\(step.sourceTitle) (\(step.tool): failed, \(error))"
+                    case .running: return "\(step.sourceTitle) (\(step.tool))"
+                    }
+                }
+                searched = (words.isEmpty ? "Nook looked in: " : "Nook searched for \"\(words)\" in: ") + outcomes.joined(separator: "; ") + "."
             }
         }
+
+        // What was found goes first: when the context is too long for the model, the general overview gives way, not
+        // the documents that answer the question.
+        let overview = summary.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        var context = overview.first.map(String.init) ?? ""
+        if !found.isEmpty || !opened.isEmpty || !searched.isEmpty {
+            context += "\n\nLooked up for this question (answer from this first):\n" + searched
+            if !opened.isEmpty {
+                context += "\n\nRead in full (the best matches):\n" + opened.joined(separator: "\n\n")
+            }
+            if !found.isEmpty {
+                context += "\n\nSearch results:\n" + found.joined(separator: "\n\n")
+            }
+        }
+        if overview.count > 1 { context += "\n\n" + overview[1] }
 
         // URLs the user or the screen mentioned may be opened by the web tools.
         web.note(text)
         if let snapshotText { web.note(snapshotText) }
         web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
-        return PreparedRun(scope: scope, relevant: relevant, summary: summary, ledger: ledger, tools: tools, context: context, fetched: fetched)
+        return PreparedRun(scope: scope, relevant: relevant, summary: summary, ledger: ledger, tools: tools, context: context,
+                           fetched: opened + found)
+    }
+
+    /// Runs lookups at once, each with a time limit; returns the ones that answered, in the order asked.
+    private static func runAll(_ calls: [Prefetch.Call], tools: [ToolSpec], timeout: Double, limit: Int,
+                               shape: @escaping (String, String) -> String = { $1 }) async -> [(tool: String, output: String)] {
+        let runnable = calls.compactMap { call in tools.first(where: { $0.name == call.tool }).map { (call, $0) } }
+        guard !runnable.isEmpty else { return [] }
+        return await withTaskGroup(of: (Int, String, String?).self) { group in
+            for (index, item) in runnable.enumerated() {
+                group.addTask { @MainActor in
+                    let output = try? await RetrievalLedger.withTimeout(timeout) { try await item.1.run(item.0.input) }
+                    return (index, item.0.tool, output)
+                }
+            }
+            var results: [(Int, String, String)] = []
+            for await (index, tool, output) in group {
+                guard let raw = output, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                let output = shape(tool, raw)
+                var text = String(output.prefix(limit))
+                if output.count > limit { text += "\n… (shortened)" }
+                results.append((index, tool, text))
+            }
+            return results.sorted { $0.0 < $1.0 }.map { (tool: $0.1, output: $0.2) }
+        }
     }
 
     func contextSummary() -> String {

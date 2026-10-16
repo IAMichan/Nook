@@ -74,8 +74,11 @@ extension SettingsView {
     }
 
     var localSources: [ContextSource] {
-        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard"]
-        return ids.compactMap { app.connectors.source(id: $0) }.filter { matchesSearch($0) }
+        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "bear", "things"]
+        // Apps that are not on this Mac are not worth a row.
+        return ids.compactMap { app.connectors.source(id: $0) }
+            .filter { ($0 as? AppDatabaseConnector)?.isInstalled ?? true }
+            .filter { matchesSearch($0) }
     }
 
     func matchesSearch(_ source: ContextSource) -> Bool {
