@@ -40,6 +40,9 @@ final class FinishedSessions: ObservableObject {
     }
 
     func reopen(_ key: String) {
+        if kept.removeValue(forKey: key) != nil {
+            UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
+        }
         guard keys.contains(key) else { return }
         order.removeAll { $0 == key }
         keys = Set(order)

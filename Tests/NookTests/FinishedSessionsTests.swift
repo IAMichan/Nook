@@ -9,6 +9,11 @@ final class FinishedSessionsTests: XCTestCase {
         key = "Test Agent|finished-sessions-test-\(UUID().uuidString)"
     }
 
+    override func setUp() {
+        super.setUp()
+        FinishedSessions.shared.reopen(key)
+    }
+
     override func tearDown() {
         FinishedSessions.shared.reopen(key)
         super.tearDown()

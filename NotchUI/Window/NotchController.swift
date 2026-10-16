@@ -63,6 +63,7 @@ final class NotchController {
         viewModel.geometry = geometry
         viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
         viewModel.onDragEnded = { [weak self] in self?.dragStart = nil }
+        viewModel.onAnnounce = { [weak self] info in self?.announce(info) }
 
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
@@ -94,7 +95,11 @@ final class NotchController {
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 self?.stateChanged(state)
-                if state.isResting { self?.refreshMirrorContent() }
+                if state.isResting {
+                    self?.refreshMirrorContent()
+                } else {
+                    self?.cancelAnnouncement()
+                }
             }
             .store(in: &cancellables)
 
@@ -207,10 +212,73 @@ final class NotchController {
     private func followMouseIfNeeded() {
         guard settings.screenChoice == "mouse" || showsOnAllScreens, viewModel.state.isResting, dragStart == nil,
               let screen = NotchGeometry.screenWithMouse(), screen.frame != geometry.screenFrame else { return }
+        // While announcing a track on all screens, avoid hopping the main window between displays mid-animation
+        // unless the mouse is actually inside the notch area on the target screen.
+        if case .track = viewModel.state, showsOnAllScreens {
+            let targetGeometry = NotchGeometry.make(for: screen)
+            let targetSize = viewModel.size
+            let s = targetGeometry.screenFrame
+            let targetRect = NSRect(x: s.midX - targetSize.width / 2, y: s.maxY - targetSize.height, width: targetSize.width, height: targetSize.height)
+            guard targetRect.insetBy(dx: -4, dy: -4).contains(NSEvent.mouseLocation) else { return }
+        }
         screenChanged()
     }
 
     // MARK: Notch on every screen
+
+    private var announceTask: Task<Void, Never>?
+
+    private var allViewModels: [NotchViewModel] {
+        if showsOnAllScreens {
+            return [viewModel] + mirrors.values.map(\.viewModel)
+        } else {
+            return [viewModel]
+        }
+    }
+
+    /// A new track: notch expands briefly showing current playback synchronously on all screens.
+    func announce(_ info: NowPlayingInfo) {
+        guard viewModel.state.isResting else { return }
+        announceTask?.cancel()
+
+        withAnimation(NookTheme.open) {
+            for vm in allViewModels {
+                vm.show(.track(title: info.title, artist: info.artist))
+            }
+        }
+
+        announceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.dismissTrackAnnouncement()
+        }
+    }
+
+    /// Dismisses the track announcement across all notches synchronously.
+    func dismissTrackAnnouncement() {
+        announceTask?.cancel()
+        announceTask = nil
+        withAnimation(NookTheme.close) {
+            for vm in allViewModels {
+                if case .track = vm.state {
+                    vm.show(.idle)
+                }
+            }
+        }
+    }
+
+    /// Cancels any running announcement immediately (e.g. playback stopped or panel/card opened).
+    func cancelAnnouncement() {
+        announceTask?.cancel()
+        announceTask = nil
+        withAnimation(NookTheme.close) {
+            for vm in allViewModels {
+                if case .track = vm.state {
+                    vm.show(.idle)
+                }
+            }
+        }
+    }
 
     /// Puts an idle notch on every screen except the one the real Nook is on.
     private func refreshMirrors() {
@@ -234,7 +302,11 @@ final class NotchController {
             let mirrorModel = NotchViewModel()
             mirrorModel.app = app
             mirrorModel.geometry = mirrorGeometry
-            mirrorModel.show(.idle)
+            if case .track(let title, let artist) = viewModel.state {
+                mirrorModel.show(.track(title: title, artist: artist))
+            } else {
+                mirrorModel.show(.idle)
+            }
             let panel = NotchPanel()
             let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel)
                 .environmentObject(app)
@@ -261,6 +333,14 @@ final class NotchController {
 
     /// Keeps the copies in sync with the idle state (music, hide when idle, agents).
     private func refreshMirrorContent() {
+        if case .track(let title, let artist) = viewModel.state {
+            for mirror in mirrors.values {
+                if mirror.viewModel.state != viewModel.state {
+                    mirror.viewModel.show(.track(title: title, artist: artist))
+                }
+            }
+            return
+        }
         for mirror in mirrors.values { mirror.viewModel.show(.idle) }
     }
 

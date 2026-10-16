@@ -35,6 +35,8 @@ final class NotchViewModel: ObservableObject {
     /// Floating mode only: the controller repositions the panel during dragging.
     var onDragMoved: (() -> Void)?
     var onDragEnded: (() -> Void)?
+    /// Coordinated multi-screen track announcement.
+    var onAnnounce: ((NowPlayingInfo) -> Void)?
 
     private var callbacks: [String: () -> Void] = [:]
     private var choiceHandlers: [String: ([String]) -> Void] = [:]
@@ -234,6 +236,10 @@ final class NotchViewModel: ObservableObject {
 
     /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
     func announce(_ info: NowPlayingInfo) {
+        if let onAnnounce {
+            onAnnounce(info)
+            return
+        }
         guard state.isResting else { return }
         show(.track(title: info.title, artist: info.artist))
         doneTask = Task { [weak self] in
