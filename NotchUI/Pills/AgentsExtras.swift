@@ -266,7 +266,7 @@ private struct PullRequestRow: View {
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
-    private var profiles: [AgentProfile] { app.profiles.all }
+    private var profiles: [AgentProfile] { app.linkedProfiles }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -316,7 +316,9 @@ struct AgentsUsagePanel: View {
                 Spacer(minLength: 0)
             }
             if limits.isEmpty {
-                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits") : tr("ws.usage.quotaUnavailable"))
+                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits")
+                     : profile.kind == .antigravity && app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken")
+                     : tr("ws.usage.quotaUnavailable"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
             } else {
@@ -326,7 +328,9 @@ struct AgentsUsagePanel: View {
                             Text(limit.label).foregroundStyle(NookTheme.textSecondary)
                             Spacer()
                             Text("\(Int(limit.percent.rounded()))%").foregroundStyle(AgentFormat.color(percent: limit.percent))
-                            if let reset = AgentFormat.reset(limit.resetsAt) {
+                            if let note = limit.note {
+                                Text(note).foregroundStyle(NookTheme.textTertiary)
+                            } else if let reset = AgentFormat.reset(limit.resetsAt) {
                                 Text(reset).foregroundStyle(NookTheme.textTertiary)
                             }
                         }

@@ -18,6 +18,11 @@ extension AppModel {
             && profile.kind.targets.allSatisfy { AgentConfigInstaller.state(of: $0, home: profile.home.map { _ in profile.homeURL }) == .installed }
     }
 
+    /// The accounts that are actually linked: signed in (or holding an API key). Accounts that were never connected stay out of the lists.
+    var linkedProfiles: [AgentProfile] {
+        profiles.all.filter { history.profileAccounts[$0.id] != nil }
+    }
+
     /// Resolves account profile for a running session, or nil if unknown.
     func profile(for session: AgentSession) -> AgentProfile? {
         guard let kind = AgentKind(agentName: session.name) else { return nil }
