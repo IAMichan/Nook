@@ -110,7 +110,7 @@ final class WorkspaceSettings: ObservableObject {
         AppChoice(bundleID: "com.exafunction.windsurf", name: "Windsurf")
     ]
 
-    /// The terminal inside Nook's main window (Workspace › Terminals).
+    /// The terminal inside Nook's main window (Agents › Terminals).
     static let builtInTerminal = "nook.builtin"
 
     static let terminalCandidates: [AppChoice] = [

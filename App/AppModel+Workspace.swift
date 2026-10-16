@@ -284,13 +284,13 @@ extension Notification.Name {
     static let nookWorkspaceNewSession = Notification.Name("nookWorkspaceNewSession")
     /// Switches the main window to a part (object: WorkspacePane raw value).
     static let nookMainWindowPane = Notification.Name("nookMainWindowPane")
-    /// Switches Workspace to a tool (object: WorkbenchView.Tool raw value).
+    /// Switches the main window's Agents part to a tool (object: WorkbenchTool raw value).
     static let nookWorkbenchTool = Notification.Name("nookWorkbenchTool")
 }
 
 extension AppModel {
-    /// Opens Nook's main window on a part (and, in Workspace, a tool).
-    func openMainWindow(_ pane: WorkspacePane, tool: WorkbenchView.Tool? = nil) {
+    /// Opens Nook's main window on a part (and, in Agents, a tool).
+    func openMainWindow(_ pane: WorkspacePane, tool: WorkbenchTool? = nil) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
         WorkspaceWindowController.shared.show(app: self)
         NotificationCenter.default.post(name: .nookMainWindowPane, object: pane.rawValue)
@@ -302,7 +302,7 @@ extension AppModel {
     func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
         TerminalStore.shared.open(in: folder, command: command, title: title)
         if WorkspaceWindowController.shared.isKey {
-            openMainWindow(.workspace, tool: .terminals)
+            openMainWindow(.sessions, tool: .terminals)
             return
         }
         if let session = sessionID(workingIn: folder) {
@@ -315,7 +315,7 @@ extension AppModel {
     }
 
     /// The Agents tab on one of the tools that belong to no single session.
-    func showWorkbench(_ tool: WorkbenchView.Tool) {
+    func showWorkbench(_ tool: WorkbenchTool) {
         switch tool {
         case .terminals: viewModel.selectedAgentID = AgentsPage.terminals
         case .browser: viewModel.selectedAgentID = AgentsPage.browser

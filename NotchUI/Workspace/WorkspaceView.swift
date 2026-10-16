@@ -1,34 +1,59 @@
 import SwiftUI
 
-/// The three parts of Nook's main window: the chat, the agents, and the workspace with its tools.
-/// (Usage moved to Settings › Usage, so every function has one place.)
+/// The two parts of Nook's main window: the chat and the agents. Terminals, the browser and worktrees are tools of the
+/// agents. (Usage moved to Settings › Usage, so every function has one place.)
 enum WorkspacePane: String, CaseIterable, Identifiable {
-    case chat, sessions, workspace
+    case chat, sessions
     var id: String { rawValue }
     var title: String {
         switch self {
         case .chat: return tr("main.chat")
         case .sessions: return tr("main.agents")
-        case .workspace: return tr("main.workspace")
         }
     }
     var symbol: String {
         switch self {
         case .chat: return "bubble.left.and.bubble.right"
         case .sessions: return "person.2.wave.2"
-        case .workspace: return "hammer"
         }
     }
 }
 
-/// Nook's main window. Chat: all conversations. Agents: sidebar of sessions, the session, and its inspector.
-/// Workspace: terminals, the browser and worktrees.
+/// What the Agents part of the window shows next to the session list: the selected session, or one of its tools.
+/// The terminal opens on the selected session's folder; the browser and worktrees are shared.
+enum WindowTool: String, CaseIterable, Identifiable {
+    case conversation, terminal, browser, worktrees
+    var id: String { rawValue }
+    var title: String { tr("ws.tool." + rawValue) }
+    var symbol: String {
+        switch self {
+        case .conversation: return "text.bubble"
+        case .terminal: return "terminal"
+        case .browser: return "safari"
+        case .worktrees: return "arrow.triangle.branch"
+        }
+    }
+
+    init(_ tool: WorkbenchTool) {
+        switch tool {
+        case .terminals: self = .terminal
+        case .browser: self = .browser
+        case .worktrees: self = .worktrees
+        }
+    }
+}
+
+/// Nook's main window. Chat: all conversations. Agents: sidebar of sessions, then the session with its inspector, or
+/// one of its tools: a terminal in its folder, the browser, the worktrees.
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var pane: WorkspacePane = .sessions
     @State private var showInspector = true
     @State private var showNewSession = false
+    @State private var tool: WindowTool = .conversation
+    /// A terminal was just opened on request: keep it in front instead of the selected session's.
+    @State private var keepOpenedTerminal = false
 
     var body: some View {
         // Plain stacks instead of NavigationSplitView + .inspector: the split view's child controllers kept reporting a new
@@ -43,7 +68,7 @@ struct WorkspaceView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(WS.background)
-            if showInspector, pane == .sessions, let run = workspace.run(workspace.selectedRunID) {
+            if showInspector, pane == .sessions, tool == .conversation, let run = workspace.run(workspace.selectedRunID) {
                 Divider()
                 RunInspector(runID: run.id)
                     .frame(width: 320)
@@ -78,7 +103,22 @@ struct WorkspaceView: View {
             showNewSession = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .nookMainWindowPane)) { note in
-            if let raw = note.object as? String, let target = WorkspacePane(rawValue: raw) { pane = target }
+            // "workspace" was the third part before its tools moved to Agents.
+            if let raw = note.object as? String, let target = WorkspacePane(rawValue: raw == "workspace" ? "sessions" : raw) { pane = target }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nookWorkbenchTool)) { note in
+            guard let raw = note.object as? String, let target = WorkbenchTool(rawValue: raw) else { return }
+            pane = .sessions
+            let next = WindowTool(target)
+            if next == .terminal && tool != .terminal { keepOpenedTerminal = true }
+            tool = next
+        }
+        .onChange(of: tool) { _, new in
+            if new == .terminal && !keepOpenedTerminal { showSessionTerminal() }
+            keepOpenedTerminal = false
+        }
+        .onChange(of: app.selectedExternalSession) { _, key in
+            if tool == .terminal { showSessionTerminal() } else if key != nil { tool = .conversation }
         }
         .onAppear {
             app.history.refresh()
@@ -87,14 +127,21 @@ struct WorkspaceView: View {
             }
         }
         .onChange(of: workspace.selectedRunID) { _, id in
-            if id != nil && pane != .sessions && pane != .chat { pane = .sessions }
             if id != nil { app.selectedExternalSession = nil }
+            // Picking a session shows it; on the terminal tool, its terminal.
+            if tool == .terminal { showSessionTerminal() } else if id != nil { tool = .conversation }
         }
     }
 
     @ViewBuilder
     private var detail: some View {
         switch pane {
+        case .sessions where tool == .terminal:
+            TerminalsView()
+        case .sessions where tool == .browser:
+            BrowserView()
+        case .sessions where tool == .worktrees:
+            WorktreesView()
         case .sessions:
             if let id = workspace.selectedRunID, workspace.run(id) != nil {
                 RunDetailView(runID: id)
@@ -115,8 +162,28 @@ struct WorkspaceView: View {
             NookChatView(viewModel: app.viewModel, chat: app.chat, compact: false)
                 .padding(20)
                 .background(NookTheme.notch)
-        case .workspace:
-            WorkbenchView()
+        }
+    }
+
+    /// The folder the selected session works in: its worktree for a session Nook runs, the session's folder otherwise.
+    private var selectedDirectory: String? {
+        if let run = workspace.run(workspace.selectedRunID) { return run.workingDirectory }
+        guard let key = app.selectedExternalSession, let selection = app.sessionSelection(key) else { return nil }
+        switch selection {
+        case .live(let session): return session.cwd.isEmpty ? nil : session.cwd
+        case .past(let session): return session.cwd.isEmpty ? nil : session.cwd
+        }
+    }
+
+    /// On the terminal tool, the selected session's terminal is the one in front: an existing one in its folder, or a
+    /// new one there.
+    private func showSessionTerminal() {
+        guard let directory = selectedDirectory else { return }
+        let store = TerminalStore.shared
+        if let existing = store.sessions(in: directory).last {
+            if !store.sessions(in: directory).contains(where: { $0.id == store.selected }) { store.selected = existing.id }
+        } else {
+            store.open(in: directory)
         }
     }
 
@@ -150,6 +217,16 @@ struct WorkspaceView: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            if pane == .sessions {
+                Picker(tr("ws.tool.label"), selection: $tool) {
+                    ForEach(WindowTool.allCases) { item in
+                        Label(item.title, systemImage: item.symbol).tag(item)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.iconOnly)
+                .help(tr("ws.tool.label"))
+            }
             Button {
                 showInspector.toggle()
             } label: {
@@ -157,7 +234,7 @@ struct WorkspaceView: View {
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help(tr("ws.inspector.toggle"))
-            .disabled(pane != .sessions)
+            .disabled(pane != .sessions || tool != .conversation)
         }
     }
 }
