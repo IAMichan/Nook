@@ -216,3 +216,45 @@ final class LineCollector: @unchecked Sendable {
         return lines
     }
 }
+
+final class AgentTranscriptTests: XCTestCase {
+    func testAntigravityPromptCleaning() {
+        let envelope = """
+        <USER_REQUEST>
+        Zorg ervoor dat de animatie synchroon loopt.
+        </USER_REQUEST>
+        <ADDITIONAL_METADATA>
+        The current local time is: 2026-10-16T15:35:32+02:00.
+        </ADDITIONAL_METADATA>
+        <USER_SETTINGS_CHANGE>
+        The user changed setting Model Selection.
+        </USER_SETTINGS_CHANGE>
+        """
+        XCTAssertEqual(AgentTranscript.cleanAntigravityPrompt(envelope), "Zorg ervoor dat de animatie synchroon loopt.")
+
+        let plain = "Gewoon een directe prompt zonder tags."
+        XCTAssertEqual(AgentTranscript.cleanAntigravityPrompt(plain), "Gewoon een directe prompt zonder tags.")
+    }
+
+    func testAntigravityTranscriptRecent() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let file = tempDir.appendingPathComponent("transcript.jsonl")
+        let lines = [
+            #"{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-10-16T13:35:32Z","content":"<USER_REQUEST>\nToon transcript\n</USER_REQUEST>"}"#,
+            #"{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-10-16T13:35:33Z","input_tokens":100,"output_tokens":50,"tool_calls":[{"name":"run_command","args":{"CommandLine":"ls","Cwd":"/app"}}]}"#,
+            #"{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-10-16T13:35:35Z","input_tokens":200,"output_tokens":30,"content":"Ik heb het gevonden."}"#
+        ].joined(separator: "\n")
+        try lines.write(to: file, atomically: true, encoding: .utf8)
+
+        let messages = AgentTranscript.recent(path: file.path)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertTrue(messages[0].fromUser)
+        XCTAssertEqual(messages[0].text, "Toon transcript")
+        XCTAssertFalse(messages[1].fromUser)
+        XCTAssertEqual(messages[1].text, "Ik heb het gevonden.")
+    }
+}
+

@@ -120,6 +120,7 @@ targets:
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/AgentProcess.swift
+      - path: Services/AgentTranscript.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

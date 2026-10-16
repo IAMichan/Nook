@@ -74,9 +74,14 @@ struct AgentSessionDetail: View {
 
     // MARK: Live session
 
-    /// The transcript behind a session Nook only sees as a process (it was running before Nook started).
+    /// The transcript behind a session Nook only sees as a process (it was running before Nook started), or matching history.
     private func transcript(for session: AgentSession) -> PastSession? {
-        session.isDetected ? app.detectedTranscripts()[session.id] : nil
+        if let transcript = app.detectedTranscripts()[session.id] { return transcript }
+        if let id = app.conversationID(for: session), let past = app.history.sessions.first(where: { $0.sessionID == id }) {
+            return past
+        }
+        guard !session.cwd.isEmpty, let kind = AgentKind(agentName: session.name) else { return nil }
+        return app.history.sessions.first { $0.agent == kind && $0.cwd == session.cwd }
     }
 
     /// The earlier record of this conversation, for its title and branch.
@@ -94,12 +99,13 @@ struct AgentSessionDetail: View {
 
     /// The session as the conversation view needs it: with the transcript of a session that was already running.
     private func withTranscript(_ session: AgentSession) -> AgentSession {
-        guard let transcript = transcript(for: session) else { return session }
         var shown = session
-        shown.transcriptPath = transcript.path
-        shown.lastPrompt = transcript.lastPrompt
-        shown.lastReply = transcript.lastReply
-        shown.sessionID = transcript.sessionID
+        if let transcript = transcript(for: session) {
+            if shown.transcriptPath.isEmpty { shown.transcriptPath = transcript.path }
+            if shown.lastPrompt.isEmpty { shown.lastPrompt = transcript.lastPrompt }
+            if shown.lastReply.isEmpty { shown.lastReply = transcript.lastReply }
+            if shown.sessionID.isEmpty { shown.sessionID = transcript.sessionID }
+        }
         return shown
     }
 

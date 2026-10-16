@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SQLite3
 
 /// Which agent a past session or account belongs to. Nook also reads sessions from Claude Code and Codex;
 /// for Gemini CLI, it only reads which Google account you are logged in with.
@@ -184,7 +185,7 @@ struct PastSession: Identifiable, Equatable {
         case .claude: return ["--resume", sessionID]
         case .codex: return ["resume", sessionID]
         case .gemini: return ["--resume", sessionID]
-        case .antigravity: return []
+        case .antigravity: return ["--resume", sessionID]
         }
     }
 }
@@ -381,13 +382,14 @@ private final class HistoryScanner: @unchecked Sendable {
             case .claude: found = claudeFiles(home.url, since: since)
             case .codex: found = codexFiles(home.url, since: since)
             case .gemini: found = geminiFiles(home.url, since: since)
-            case .antigravity: found = []
+            case .antigravity: found = antigravityFiles(home.url, since: since)
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
         files.sort { $0.key.modified > $1.key.modified }
         files = Array(files.prefix(Self.maxFiles))
 
+        let antigravitySummaries = readAntigravitySummaries(homes)
         var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
         var parsedAll: [(profile: String, parsed: Parsed)] = []
         for file in files {
@@ -400,7 +402,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 case .claude: parsed = parseClaude(file.url)
                 case .codex: parsed = parseCodex(file.url)
                 case .gemini: parsed = parseGemini(file.url)
-                case .antigravity: parsed = Parsed(session: nil, entries: [])
+                case .antigravity: parsed = parseAntigravity(file.url, summaries: antigravitySummaries)
                 }
             }
             parsed.session?.profileID = file.profile
@@ -678,6 +680,138 @@ private final class HistoryScanner: @unchecked Sendable {
             return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return ""
+    }
+
+    // MARK: Antigravity
+
+    /// ~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl
+    private func antigravityFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
+        let fm = FileManager.default
+        let brain = home.path.hasSuffix("antigravity")
+            ? home.appendingPathComponent("brain", isDirectory: true)
+            : home.appendingPathComponent("antigravity/brain", isDirectory: true)
+        guard let conversations = try? fm.contentsOfDirectory(at: brain, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        var result: [(url: URL, key: CacheKey)] = []
+        for conv in conversations {
+            let url = conv.appendingPathComponent(".system_generated/logs/transcript.jsonl")
+            if let key = attributes(url), key.modified >= since { result.append((url, key)) }
+        }
+        return result
+    }
+
+    /// Fast lookup of session title and workspace root from ~/.gemini/antigravity/conversation_summaries.db
+    private func readAntigravitySummaries(_ homes: [ProfileHome]) -> [String: (title: String, cwd: String)] {
+        var result: [String: (title: String, cwd: String)] = [:]
+        let fm = FileManager.default
+        for home in homes where home.kind == .antigravity {
+            let dbURL = home.url.path.hasSuffix("antigravity")
+                ? home.url.appendingPathComponent("conversation_summaries.db")
+                : home.url.appendingPathComponent("antigravity/conversation_summaries.db")
+            guard fm.fileExists(atPath: dbURL.path) else { continue }
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(dbURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { continue }
+            var stmt: OpaquePointer?
+            let sql = "SELECT conversation_id, title, workspace_uris FROM conversation_summaries"
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt {
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    guard let cId = sqlite3_column_text(stmt, 0) else { continue }
+                    let id = String(cString: cId)
+                    let title = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+                    let uris = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+                    var cwd = ""
+                    if let data = uris.data(using: .utf8),
+                       let list = (try? JSONSerialization.jsonObject(with: data)) as? [String],
+                       let first = list.first {
+                        if first.hasPrefix("file://") {
+                            cwd = URL(string: first)?.path ?? String(first.dropFirst(7))
+                        } else {
+                            cwd = first
+                        }
+                    }
+                    result[id] = (title: title, cwd: cwd)
+                }
+                sqlite3_finalize(stmt)
+            }
+            sqlite3_close(db)
+        }
+        return result
+    }
+
+    private static let antigravityPlanner = Data(#""PLANNER_RESPONSE""#.utf8)
+    private static let antigravityUser = Data(#""USER_INPUT""#.utf8)
+
+    private func parseAntigravity(_ url: URL, summaries: [String: (title: String, cwd: String)]) -> Parsed {
+        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return Parsed(session: nil, entries: []) }
+        // .../brain/<conversation_id>/.system_generated/logs/transcript.jsonl
+        let sessionID = url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        let summary = summaries[sessionID]
+        var session = PastSession(
+            agent: .antigravity, sessionID: sessionID,
+            title: summary?.title ?? "", cwd: summary?.cwd ?? "", branch: "", model: "",
+            started: .distantFuture, ended: .distantPast,
+            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+        )
+        var entries: [UsageEntry] = []
+
+        forEachLine(data) { line in
+            let isPlanner = line.range(of: Self.antigravityPlanner) != nil
+            let isUser = !isPlanner && line.range(of: Self.antigravityUser) != nil
+            guard isPlanner || isUser, let object = json(line) else { return }
+
+            if let stamp = (object["created_at"] as? String).flatMap({ self.date($0) }) {
+                session.started = min(session.started, stamp)
+                session.ended = max(session.ended, stamp)
+            }
+
+            if isUser {
+                if let content = object["content"] as? String {
+                    let text = AgentTranscript.cleanAntigravityPrompt(content)
+                    guard !text.isEmpty else { return }
+                    session.prompts += 1
+                    session.lastPrompt = text
+                    if session.title.isEmpty { session.title = text }
+                }
+            } else if isPlanner {
+                if let content = object["content"] as? String {
+                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { session.lastReply = trimmed }
+                }
+                if session.cwd.isEmpty, let toolCalls = object["tool_calls"] as? [[String: Any]] {
+                    for tc in toolCalls {
+                        if let args = tc["args"] as? [String: Any] {
+                            let rawCwd = (args["Cwd"] as? String) ?? (args["cwd"] as? String) ?? ""
+                            let clean = rawCwd.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r\t "))
+                            if !clean.isEmpty {
+                                session.cwd = clean
+                                break
+                            }
+                        }
+                    }
+                }
+                let input = Self.int(object["input_tokens"])
+                let output = Self.int(object["output_tokens"])
+                let cacheRead = Self.int(object["cache_read_tokens"])
+                if input > 0 || output > 0 || cacheRead > 0 {
+                    let tally = TokenTally(input: input, output: output, cacheRead: cacheRead, cacheWrite: 0)
+                    session.tokens += tally
+                    let when = (object["created_at"] as? String).flatMap({ self.date($0) }) ?? session.ended
+                    let step = (object["step_index"] as? Int) ?? entries.count
+                    entries.append(UsageEntry(key: "antigravity:\(sessionID):\(step)", date: when, tokens: tally))
+                }
+            }
+        }
+
+        let fallbackDate = attributes(url)?.modified ?? Date()
+        if session.started == .distantFuture { session.started = session.ended > .distantPast ? session.ended : fallbackDate }
+        if session.ended == .distantPast { session.ended = session.started }
+
+        guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
+            return Parsed(session: nil, entries: entries)
+        }
+        session.title = Self.oneLine(session.title, 90)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
+        return Parsed(session: session, entries: entries)
     }
 
     // MARK: Claude Code

@@ -376,6 +376,14 @@ final class AgentHub: ObservableObject {
         record.updated = Date()
         if let id = event["session_id"] as? String, !id.isEmpty { record.sessionID = id }
         if let path = event["transcript_path"] as? String, !path.isEmpty { record.transcriptPath = path }
+        if record.transcriptPath.isEmpty && name == "Antigravity" {
+            let sessionID = !record.sessionID.isEmpty ? record.sessionID : (env["ANTIGRAVITY_CONVERSATION_ID"] as? String) ?? ""
+            if !sessionID.isEmpty {
+                record.sessionID = sessionID
+                let appData = (env["ANTIGRAVITY_APP_DATA_DIR"] as? String) ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity"
+                record.transcriptPath = "\(appData)/brain/\(sessionID)/.system_generated/logs/transcript.jsonl"
+            }
+        }
 
         let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
         let input = (event["tool_input"] as? [String: Any]) ?? (event["toolArgs"] as? [String: Any]) ?? [:]
