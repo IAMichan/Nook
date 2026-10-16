@@ -14,6 +14,8 @@ struct AgentsTab: View {
         case live(AgentSession)
         case past(PastSession)
         case run(UUID)
+        case pullRequests
+        case usage
         case new
     }
 
@@ -27,6 +29,9 @@ struct AgentsTab: View {
             VStack(alignment: .leading, spacing: 8) {
                 listHeader(selection)
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
+                if !app.demoMode {
+                    AgentsFooter(selected: selectedID(selection)) { viewModel.selectedAgentID = $0 }
+                }
             }
             .padding(.trailing, 12)
             .frame(width: 280)
@@ -38,6 +43,8 @@ struct AgentsTab: View {
                 case .live(let session): AgentSessionDetail(selection: .live(session)).id(session.id)
                 case .past(let session): AgentSessionDetail(selection: .past(session)).id("past:" + session.id)
                 case .run(let id): AgentRunPanel(workspace: app.workspace, runID: id)
+                case .pullRequests: PullRequestsPanel()
+                case .usage: AgentsUsagePanel()
                 case .new:
                     if app.demoMode {
                         nothingRunning
@@ -102,6 +109,8 @@ struct AgentsTab: View {
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
         if id == "new" { return .new }
+        if id == AgentsPage.pullRequests && !app.demoMode { return .pullRequests }
+        if id == AgentsPage.usage && !app.demoMode { return .usage }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
@@ -121,6 +130,8 @@ struct AgentsTab: View {
         case .live(let session): return session.id
         case .past(let session): return "past:" + session.id
         case .run(let id): return "run:" + id.uuidString
+        case .pullRequests: return AgentsPage.pullRequests
+        case .usage: return AgentsPage.usage
         case .new: return "new"
         }
     }
