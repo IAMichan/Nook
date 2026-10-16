@@ -144,21 +144,26 @@ struct AgentsTab: View {
         let current = selectedID(selection)
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
         let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
-        // A chat you marked as finished moves down, unless the agent is working in it again.
-        let marked = running.filter { !$0.isBusy && finishedMarks.contains($0.finishKey) }
-        let active = running.filter { item in !marked.contains { $0.id == item.id } }
-        let done = Set(marked.map(\.finishKey))
-        let finished = marked.map { $0.markedFinished() } + past.map { item($0) }.filter { !done.contains($0.finishKey) }
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
 
         return TimelineView(.periodic(from: .now, by: 30)) { context in
+            // Marked as finished by you, or done and quiet for ten minutes: the chat moves down. Not while the agent works.
+            let moved = running.filter { entry in
+                guard !entry.isBusy else { return false }
+                // A process Nook only sees (id "proc-…") is running in a terminal: never finished by itself.
+                let idle = (entry.status == .idle || entry.status == .finished) && !entry.id.hasPrefix("proc-")
+                return finishedMarks.isFinished(key: entry.finishKey, idle: idle, lastActive: entry.started, now: context.date)
+            }
+            let active = running.filter { entry in !moved.contains { $0.id == entry.id } }
+            let movedKeys = Set(moved.map(\.finishKey))
+            let finished = moved.map { $0.markedFinished() } + past.map { item($0) }.filter { !movedKeys.contains($0.finishKey) }
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(active) { entry in
                         AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
                             viewModel.selectedAgentID = entry.id
                         }
-                        .contextMenu { finishMenu(entry, marked: false) }
+                        .contextMenu { finishMenu(entry, finished: false) }
                     }
                     if active.isEmpty && finished.isEmpty {
                         Text(app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow"))
@@ -189,7 +194,7 @@ struct AgentsTab: View {
                                 AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
                                     viewModel.selectedAgentID = entry.id
                                 }
-                                .contextMenu { finishMenu(entry, marked: finishedMarks.contains(entry.finishKey)) }
+                                .contextMenu { finishMenu(entry, finished: true) }
                             }
                         }
                     }
@@ -203,12 +208,15 @@ struct AgentsTab: View {
 
     /// The finish/reopen action of a row, in its context menu.
     @ViewBuilder
-    private func finishMenu(_ entry: AgentListItem, marked: Bool) -> some View {
+    private func finishMenu(_ entry: AgentListItem, finished: Bool) -> some View {
         if entry.isBusy {
             Button(tr("agents.finish.mark")) {}.disabled(true)
-        } else if marked {
-            Button(tr("agents.finish.reopen")) { finishedMarks.reopen(entry.finishKey) }
-        } else if entry.status != .finished {
+        } else if finished {
+            // Earlier sessions from transcripts are finished by nature; only chats that were running can be reopened.
+            if !entry.id.hasPrefix("past:") {
+                Button(tr("agents.finish.reopen")) { finishedMarks.reopenByUser(entry.finishKey) }
+            }
+        } else {
             Button(tr("agents.finish.mark")) { finishedMarks.mark(entry.finishKey) }
         }
     }
@@ -284,7 +292,7 @@ struct AgentsTab: View {
             agent: session.name,
             account: account(app.profile(for: session)),
             status: status,
-            started: session.started ?? known?.started,
+            started: status == .idle ? (session.updated ?? session.started ?? known?.started) : (session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id)
         )
