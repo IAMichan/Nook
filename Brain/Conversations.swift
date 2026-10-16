@@ -105,6 +105,16 @@ final class OpenAIConversation: ModelConversation {
         if !tools.isEmpty {
             body["tools"] = tools.map { ["type": "function", "function": ["name": $0.name, "description": $0.description, "parameters": $0.schema]] }
         }
+
+        // Stream tokens in real time via SSE when onText is provided; fall back to standard POST if a server does not support SSE.
+        if onText != nil {
+            var streamBody = body
+            streamBody["stream"] = true
+            if let turn = try? await streamNext(url: url, body: streamBody, onText: onText) {
+                return turn
+            }
+        }
+
         let object = try await LocalHTTP.post(url, body: body, key: key, provider: provider, model: model)
         guard let choice = (object["choices"] as? [[String: Any]])?.first, let message = choice["message"] as? [String: Any] else {
             throw NookError("Unexpected response from \(provider.title).")
@@ -121,6 +131,102 @@ final class OpenAIConversation: ModelConversation {
                 ?? (function["arguments"] as? [String: Any]) ?? [:]
             return ToolCallRequest(id: (call["id"] as? String) ?? UUID().uuidString, name: (function["name"] as? String) ?? "", input: input)
         }
+        return ModelTurn(text: text, calls: calls)
+    }
+
+    private func streamNext(url: URL, body: [String: Any], onText: ((String) -> Void)?) async throws -> ModelTurn {
+        let lines = try await LocalHTTP.stream(url, body: body, key: key, provider: provider, model: model)
+        var text = ""
+        struct PartialToolCall {
+            var id: String = ""
+            var name: String = ""
+            var arguments: String = ""
+        }
+        var toolAcc: [Int: PartialToolCall] = [:]
+        var received = false
+        var lastEmit = Date.distantPast
+
+        for try await rawLine in lines {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix(":") else { continue }
+            let payload: String
+            if trimmed.hasPrefix("data:") {
+                payload = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("{") {
+                payload = trimmed
+            } else {
+                continue
+            }
+            if payload == "[DONE]" { break }
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any] else { continue }
+            if let err = (object["error"] as? [String: Any])?["message"] as? String {
+                throw NookError("\(provider.title): \(err)")
+            }
+            guard let choice = (object["choices"] as? [[String: Any]])?.first else { continue }
+            received = true
+
+            // Handle both streamed `delta` chunks and non-streamed `message` responses.
+            if let delta = choice["delta"] as? [String: Any] {
+                if let piece = delta["content"] as? String, !piece.isEmpty {
+                    text += piece
+                    if let onText, Date().timeIntervalSince(lastEmit) > 0.04 {
+                        lastEmit = Date()
+                        let visible = EmbeddedModel.visible(text)
+                        if !visible.isEmpty { onText(visible) }
+                    }
+                }
+                if let deltaCalls = delta["tool_calls"] as? [[String: Any]] {
+                    for dc in deltaCalls {
+                        let idx = (dc["index"] as? Int) ?? 0
+                        var entry = toolAcc[idx] ?? PartialToolCall()
+                        if let id = dc["id"] as? String, !id.isEmpty { entry.id = id }
+                        if let fn = dc["function"] as? [String: Any] {
+                            if let name = fn["name"] as? String, !name.isEmpty { entry.name += name }
+                            if let args = fn["arguments"] as? String { entry.arguments += args }
+                        }
+                        toolAcc[idx] = entry
+                    }
+                }
+            } else if let message = choice["message"] as? [String: Any] {
+                text += (message["content"] as? String) ?? ""
+                if let rawCalls = message["tool_calls"] as? [[String: Any]] {
+                    for (idx, rc) in rawCalls.enumerated() {
+                        let fn = (rc["function"] as? [String: Any]) ?? [:]
+                        toolAcc[idx] = PartialToolCall(
+                            id: (rc["id"] as? String) ?? UUID().uuidString,
+                            name: (fn["name"] as? String) ?? "",
+                            arguments: (fn["arguments"] as? String) ?? "{}"
+                        )
+                    }
+                }
+            }
+        }
+
+        guard received else { throw NookError("Empty stream") }
+        let visible = EmbeddedModel.visible(text)
+        if !visible.isEmpty { onText?(visible) }
+
+        let sortedIndices = toolAcc.keys.sorted()
+        guard !sortedIndices.isEmpty else { return ModelTurn(text: text, calls: []) }
+
+        var rawCalls: [[String: Any]] = []
+        var calls: [ToolCallRequest] = []
+        for idx in sortedIndices {
+            guard let item = toolAcc[idx], !item.name.isEmpty else { continue }
+            let callID = item.id.isEmpty ? UUID().uuidString : item.id
+            let argsString = item.arguments.isEmpty ? "{}" : item.arguments
+            rawCalls.append([
+                "id": callID,
+                "type": "function",
+                "function": ["name": item.name, "arguments": argsString]
+            ])
+            let input = (try? JSONSerialization.jsonObject(with: Data(argsString.utf8))) as? [String: Any] ?? [:]
+            calls.append(ToolCallRequest(id: callID, name: item.name, input: input))
+        }
+        guard !calls.isEmpty else { return ModelTurn(text: text, calls: []) }
+        var assistantMsg: [String: Any] = ["role": "assistant", "tool_calls": rawCalls]
+        if !text.isEmpty { assistantMsg["content"] = text }
+        messages.append(assistantMsg)
         return ModelTurn(text: text, calls: calls)
     }
 
@@ -226,9 +332,9 @@ enum LocalHTTP {
         return object
     }
 
-    /// The same request, streamed: the response arrives line by line (Ollama sends one JSON object per line).
-    static func stream(_ url: URL, body: [String: Any], provider: AIProvider, model: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
-        let request = try self.request(url, body: body, key: nil, provider: provider)
+    /// The same request, streamed: the response arrives line by line (Ollama sends one JSON object per line, OpenAI sends SSE `data:` lines).
+    static func stream(_ url: URL, body: [String: Any], key: String? = nil, provider: AIProvider, model: String) async throws -> AsyncLineSequence<URLSession.AsyncBytes> {
+        let request = try self.request(url, body: body, key: key, provider: provider)
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do {

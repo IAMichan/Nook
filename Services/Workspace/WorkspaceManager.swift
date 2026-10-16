@@ -162,11 +162,13 @@ final class WorkspaceManager: ObservableObject {
                                    branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
             guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
             info.repoRoot = root
-            info.currentBranch = git.currentBranch(root)
+            let current = git.currentBranch(root)
+            info.currentBranch = current
             info.hasCommits = git.hasCommits(root)
-            if let branches = try? git.branches(root) { info.branches = branches.local + branches.remote }
-            info.defaultBase = git.defaultBaseBranch(root)
-            info.dirtyFiles = (try? git.status(root))?.files.count ?? 0
+            let branchLists = try? git.branches(root)
+            if let branchLists { info.branches = branchLists.local + branchLists.remote }
+            info.defaultBase = git.defaultBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
+            info.dirtyFiles = git.changedFileCount(root) ?? 0
             if let common = git.commonDirectory(for: root) {
                 info.isWorktree = WorkspacePathPolicy.normalize(URL(fileURLWithPath: common).deletingLastPathComponent().path)
                     != WorkspacePathPolicy.normalize(root)
@@ -447,8 +449,13 @@ final class WorkspaceManager: ObservableObject {
         append(id, RunEvent(kind: .user, text: prompt))
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
-        process.onLine = { [weak self] line in
-            Task { @MainActor in self?.handle(line: line, for: id) }
+        process.onLines = { [weak self] lines in
+            Task { @MainActor in
+                guard let self else { return }
+                for line in lines {
+                    self.handle(line: line, for: id)
+                }
+            }
         }
         process.onExit = { [weak self] status, stderr in
             Task { @MainActor in self?.processExited(id, status: status, stderr: stderr) }
@@ -671,9 +678,16 @@ final class WorkspaceManager: ObservableObject {
         scheduleGitRefresh(id, delay: 0.2)
     }
 
+    private static let ansiEscapeRegex = try? NSRegularExpression(pattern: "\u{1B}\\[[0-9;]*[A-Za-z]")
+
     /// Tail lines of error output, stripped of ANSI escapes. Detects "not logged in" and "limit reached".
     static func cleanError(_ raw: String, status: Int32) -> String {
-        let stripped = raw.replacingOccurrences(of: "\u{1B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
+        let stripped: String
+        if raw.contains("\u{1B}"), let regex = ansiEscapeRegex {
+            stripped = regex.stringByReplacingMatches(in: raw, range: NSRange(raw.startIndex..<raw.endIndex, in: raw), withTemplate: "")
+        } else {
+            stripped = raw
+        }
         let lines = stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let tail = lines.suffix(6).joined(separator: "\n")
         let lower = tail.lowercased()
@@ -907,7 +921,7 @@ final class WorkspaceManager: ObservableObject {
                     if worktree.isMain && linked.isEmpty { continue }
                     var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
                     if FileManager.default.fileExists(atPath: worktree.path) {
-                        row.changedFiles = (try? git.status(worktree.path))?.files.count
+                        row.changedFiles = git.changedFileCount(worktree.path)
                         let base = linked.compactMap(\.baseBranch).first
                         row.baseBranch = base
                         if let base, let divergence = git.divergence(worktree.path, base: base) {
@@ -1027,7 +1041,8 @@ final class WorkspaceManager: ObservableObject {
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled else { return }
-            try? self.store.saveRuns(self.runs)
+            let runsSnapshot = self.runs
+            self.store.saveRunsAsync(runsSnapshot)
         }
     }
 
@@ -1037,8 +1052,12 @@ final class WorkspaceManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard let self else { return }
             self.eventSaves[id] = nil
-            if let list = self.events[id] { try? self.store.saveEvents(id, list) }
-            try? self.store.saveRuns(self.runs)
+            let runsSnapshot = self.runs
+            if let list = self.events[id] {
+                self.store.saveEventsAsync(id, list, runs: runsSnapshot)
+            } else {
+                self.store.saveRunsAsync(runsSnapshot)
+            }
         }
     }
 }

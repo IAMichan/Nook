@@ -24,17 +24,19 @@ final class RunStore: @unchecked Sendable {
         eventsDirectory.appendingPathComponent(id.uuidString + ".json")
     }
 
-    private static var encoder: JSONEncoder {
+    private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }
+    }()
 
-    private static var decoder: JSONDecoder {
+    private static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
-    }
+    }()
+
+    private let ioQueue = DispatchQueue(label: "nook.workspace.runstore.io", qos: .utility)
 
     /// Loads all sessions. Anything still "active" at shutdown has no running process: it becomes "stopped".
     func loadRuns(now: Date = Date()) -> [WorkspaceRun] {
@@ -60,6 +62,12 @@ final class RunStore: @unchecked Sendable {
         try write(Self.encoder.encode(runs), to: runsURL)
     }
 
+    func saveRunsAsync(_ runs: [WorkspaceRun]) {
+        ioQueue.async { [weak self] in
+            try? self?.saveRuns(runs)
+        }
+    }
+
     func loadEvents(_ id: UUID) -> [RunEvent] {
         lock.lock()
         defer { lock.unlock() }
@@ -77,6 +85,14 @@ final class RunStore: @unchecked Sendable {
         defer { lock.unlock() }
         let kept = events.count > Self.eventLimit ? Array(events.suffix(Self.eventLimit)) : events
         try write(Self.encoder.encode(kept), to: eventsURL(id))
+    }
+
+    func saveEventsAsync(_ id: UUID, _ events: [RunEvent], runs: [WorkspaceRun]) {
+        ioQueue.async { [weak self] in
+            guard let self else { return }
+            try? self.saveEvents(id, events)
+            try? self.saveRuns(runs)
+        }
     }
 
     func deleteEvents(_ id: UUID) {

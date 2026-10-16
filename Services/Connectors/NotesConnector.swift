@@ -6,11 +6,20 @@ import AppKit
 /// Toegang tot Apple Notities op je Mac via AppleScript (bliksemsnel en volledig lokaal).
 @MainActor
 final class NotesConnector: ContextSource {
-    struct NoteSummary: Identifiable, Equatable {
+    struct NoteSummary: Identifiable, Equatable, Sendable {
         var id: String
         var name: String
         var date: String
         var folder: String
+    }
+
+    struct CachedNote: Sendable {
+        var id: String
+        var name: String
+        var date: String
+        var folder: String
+        var body: String
+        var cachedAt: Date
     }
 
     let id = "notes"
@@ -20,10 +29,13 @@ final class NotesConnector: ContextSource {
     private(set) var status = ConnectorStatus()
     private var recentNotes: [NoteSummary] = []
     private var totalCount = 0
+    private var loadedAt: Date?
+    private static var bodyCache: [String: CachedNote] = [:]
 
-    var isActive: Bool { ConnectorToggle.isOn(id) && (ScriptText.isRunning("com.apple.Notes") || recentNotes.count > 0) }
+    var isActive: Bool { ConnectorToggle.isOn(id) && (ScriptText.isRunning("com.apple.Notes") || !recentNotes.isEmpty) }
     var canLookUp: Bool { ConnectorToggle.isOn(id) }
     var refreshInterval: TimeInterval { 120 }
+    var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
 
     /// Zorgt dat Notities draait indien nodig voor een zoekactie.
     static func ensureRunning() async throws {
@@ -35,8 +47,8 @@ final class NotesConnector: ContextSource {
         configuration.activates = false
         configuration.hides = true
         _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        for _ in 0..<30 where !ScriptText.isRunning("com.apple.Notes") {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        for _ in 0..<50 where !ScriptText.isRunning("com.apple.Notes") {
+            try? await Task.sleep(nanoseconds: 40_000_000)
         }
     }
 
@@ -50,7 +62,7 @@ final class NotesConnector: ContextSource {
         tell application "Notes"
             set total to count of notes
             set n to total
-            if n > 8 then set n to 8
+            if n > 20 then set n to 20
             set out to (total as string) & linefeed
             repeat with i from 1 to n
                 set notitem to note i
@@ -67,7 +79,7 @@ final class NotesConnector: ContextSource {
         end tell
         """
 
-        let result = await ScriptText.run(script)
+        let result = await ScriptText.run(script, timeout: 5)
         if result.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering."))
             return
@@ -91,6 +103,7 @@ final class NotesConnector: ContextSource {
                 folder: parts.count > 3 ? parts[3] : ""
             )
         }
+        loadedAt = Date()
 
         status = ConnectorStatus(
             state: .ok,
@@ -117,6 +130,20 @@ final class NotesConnector: ContextSource {
         return lines
     }
 
+    private static func formatNoteList(_ summaries: [NoteSummary]) -> String {
+        guard !summaries.isEmpty else { return "Geen notities gevonden in Apple Notities." }
+        var outputLines: [String] = ["Recente notities in Apple Notities:"]
+        var refs: [String] = []
+        for (index, item) in summaries.enumerated() {
+            let folder = item.folder.isEmpty ? "" : " (\(item.folder))"
+            outputLines.append("- \(item.name)\(folder) — gewijzigd \(String(item.date.prefix(10))) [id: \(item.id)]")
+            if index < 10 {
+                refs.append(ReferenceParser.line(title: item.name, url: nil, detail: "\(item.folder.isEmpty ? "Notities" : item.folder) · \(String(item.date.prefix(10)))"))
+            }
+        }
+        return (outputLines + refs).joined(separator: "\n")
+    }
+
     var tools: [ToolSpec] {
         [
             ToolSpec(
@@ -128,9 +155,12 @@ final class NotesConnector: ContextSource {
                 kind: .read,
                 summarize: { _ in "Notities bekijken" },
                 tag: { _ in ("", .neutral) },
-                run: { input in
-                    try await NotesConnector.ensureRunning()
+                run: { [weak self] input in
                     let limit = min(30, max(1, (input["limit"] as? Int) ?? 15))
+                    if let self, self.isFresh, self.recentNotes.count >= min(limit, max(1, self.totalCount)) {
+                        return Self.formatNoteList(Array(self.recentNotes.prefix(limit)))
+                    }
+                    try await NotesConnector.ensureRunning()
                     let script = """
                     tell application "Notes"
                         set total to count of notes
@@ -151,26 +181,19 @@ final class NotesConnector: ContextSource {
                         return out
                     end tell
                     """
-                    let result = await ScriptText.run(script, timeout: 8)
+                    let result = await ScriptText.run(script, timeout: 6)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
                     guard let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                         return "Geen notities gevonden in Apple Notities."
                     }
-                    let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-                    var outputLines: [String] = ["Recente notities in Apple Notities:"]
-                    var refs: [String] = []
-                    for (index, line) in lines.enumerated() {
+                    let summaries = text.components(separatedBy: .newlines).filter { !$0.isEmpty }.compactMap { line -> NoteSummary? in
                         let parts = line.components(separatedBy: "|||")
-                        guard parts.count >= 3 else { continue }
-                        let folder = parts.count > 3 && !parts[3].isEmpty ? " (\(parts[3]))" : ""
-                        outputLines.append("- \(parts[1])\(folder) — gewijzigd \(String(parts[2].prefix(10))) [id: \(parts[0])]")
-                        if index < 10 {
-                            refs.append(ReferenceParser.line(title: parts[1], url: nil, detail: "\(parts.count > 3 ? parts[3] : "Notities") · \(String(parts[2].prefix(10)))"))
-                        }
+                        guard parts.count >= 3 else { return nil }
+                        return NoteSummary(id: parts[0], name: parts[1], date: parts[2], folder: parts.count > 3 ? parts[3] : "")
                     }
-                    return (outputLines + refs).joined(separator: "\n")
+                    return Self.formatNoteList(summaries)
                 }
             ),
             ToolSpec(
@@ -186,38 +209,59 @@ final class NotesConnector: ContextSource {
                     try await NotesConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
-                    // Every word on its own: a note about "de verbouwing van de keuken" is found with "keuken verbouwing".
-                    let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
-                    let anyWord = { (fields: [String]) in
-                        words.flatMap { word in fields.map { "\($0) contains \(ScriptText.quote(word))" } }.joined(separator: " or ")
-                    }
-                    let script = { (filter: String) in """
+                    let allWords = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
+                    // Cap search words in AppleScript filter to the 4 most distinctive terms so Apple Events stay fast.
+                    let scriptWords = Array(allWords.sorted { $0.count > $1.count }.prefix(4))
+                    let nameFilter = scriptWords.map { "name contains \(ScriptText.quote($0))" }.joined(separator: " or ")
+                    let bodyFilter = scriptWords.map { "body contains \(ScriptText.quote($0))" }.joined(separator: " or ")
+                    let plainFilter = scriptWords.map { "plaintext contains \(ScriptText.quote($0))" }.joined(separator: " or ")
+
+                    // Fast two-stage AppleScript:
+                    // 1. Instant indexed title lookup (`whose name contains ...`).
+                    // 2. For full-text search, use `plaintext` when note count <= 200, or indexed `body` column when note count > 200,
+                    //    fetching up to 15,000 chars so `read_note` can be served from memory in 0ms.
+                    let script = """
                     tell application "Notes"
-                        set found to (notes whose \(filter))
+                        set total to count of notes
+                        set found to (notes whose \(nameFilter))
+                        if (count of found) < 15 then
+                            if total <= 200 then
+                                set bodyHits to (notes whose \(plainFilter))
+                            else
+                                set bodyHits to (notes whose \(bodyFilter))
+                            end if
+                            repeat with b in bodyHits
+                                if (count of found) >= 22 then exit repeat
+                                set end of found to contents of b
+                            end repeat
+                        end if
                         set n to count of found
-                        if n > 25 then set n to 25
+                        if n > 22 then set n to 22
+                        set seenIDs to {}
                         set out to ""
                         repeat with i from 1 to n
                             set notitem to item i of found
-                            set nname to name of notitem
                             set nid to id of notitem
-                            set ndate to ((modification date of notitem) as «class isot» as string)
-                            set nfolder to ""
-                            try
-                                set nfolder to name of container of notitem
-                            end try
-                            set nbody to ""
-                            try
-                                set nbody to plaintext of notitem
-                            end try
-                            if (length of nbody) > 800 then set nbody to text 1 thru 800 of nbody
-                            set out to out & "<<<NOTE>>>" & nid & "|||" & nname & "|||" & ndate & "|||" & nfolder & linefeed & nbody & linefeed
+                            if seenIDs does not contain nid then
+                                set end of seenIDs to nid
+                                set nname to name of notitem
+                                set ndate to ((modification date of notitem) as «class isot» as string)
+                                set nfolder to ""
+                                try
+                                    set nfolder to name of container of notitem
+                                end try
+                                set nbody to ""
+                                try
+                                    set nbody to plaintext of notitem
+                                end try
+                                if (length of nbody) > 15000 then set nbody to text 1 thru 15000 of nbody
+                                set out to out & "<<<NOTE>>>" & nid & "|||" & nname & "|||" & ndate & "|||" & nfolder & linefeed & nbody & linefeed
+                            end if
                         end repeat
                         return out
                     end tell
-                    """ }
-                    // Scripts run one after another; searching the text of thousands of notes can take a while.
-                    let result = await ScriptText.run(script(anyWord(["name", "plaintext"])), timeout: 20)
+                    """
+                    let result = await ScriptText.run(script, timeout: 7)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
@@ -227,21 +271,34 @@ final class NotesConnector: ContextSource {
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "Geen notities gevonden voor \"\(query)\"." }
 
-                    struct Found { var header: [String]; var body: String }
+                    struct Found { var header: [String]; var fullBody: String; var snippet: String }
+                    let now = Date()
                     let notes = raw.components(separatedBy: "<<<NOTE>>>").compactMap { chunk -> Found? in
                         let lines = chunk.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
                         let header = String(lines.first ?? "").components(separatedBy: "|||")
                         guard header.count >= 3 else { return nil }
-                        return Found(header: header, body: lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : "")
+                        let fullBody = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                        let cached = CachedNote(
+                            id: header[0],
+                            name: header[1],
+                            date: header[2],
+                            folder: header.count > 3 ? header[3] : "",
+                            body: fullBody,
+                            cachedAt: now
+                        )
+                        NotesConnector.bodyCache[header[0]] = cached
+                        NotesConnector.bodyCache[header[1].lowercased()] = cached
+                        let snippet = fullBody.count > 800 ? String(fullBody.prefix(800)) : fullBody
+                        return Found(header: header, fullBody: fullBody, snippet: snippet)
                     }
-                    let terms = Research.Terms(words: words)
-                    let ranked = Research.best(notes, terms: terms, keep: 10, title: { $0.header[1] }, text: \.body)
+                    let terms = Research.Terms(words: allWords)
+                    let ranked = Research.best(notes, terms: terms, keep: 10, title: { $0.header[1] }, text: \.fullBody)
                     var blocks: [String] = []
                     var refs: [String] = []
                     for note in ranked {
                         let header = note.header
                         let folder = header.count > 3 && !header[3].isEmpty ? " [map: \(header[3])]" : ""
-                        blocks.append("### \(header[1])\(folder) | \(String(header[2].prefix(10))) [id: \(header[0])]\n\(note.body)")
+                        blocks.append("### \(header[1])\(folder) | \(String(header[2].prefix(10))) [id: \(header[0])]\n\(note.snippet)")
                         refs.append(ReferenceParser.line(title: header[1], url: nil, detail: "\(header.count > 3 ? header[3] : "Notities") · \(String(header[2].prefix(10)))"))
                     }
                     return (blocks + refs).joined(separator: "\n\n")
@@ -257,9 +314,19 @@ final class NotesConnector: ContextSource {
                 summarize: { input in "Notitie lezen: \((input["identifier"] as? String) ?? "")" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    try await NotesConnector.ensureRunning()
                     let idOrTitle = ((input["identifier"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !idOrTitle.isEmpty else { throw NookError("Titel of ID van de notitie ontbreekt.") }
+
+                    // Fast path: 0ms in-memory hit if already fetched during search_notes (<120s old).
+                    if let cached = NotesConnector.bodyCache[idOrTitle] ?? NotesConnector.bodyCache[idOrTitle.lowercased()],
+                       Date().timeIntervalSince(cached.cachedAt) < 120 {
+                        var body = cached.body
+                        if body.count > 15_000 { body = String(body.prefix(15_000)) + "\n… (ingekort: de eerste 15.000 tekens)" }
+                        let date = String(cached.date.prefix(10))
+                        return "## Notitie: \(cached.name) (\(date))\n\n\(body)\n\n" + ReferenceParser.line(title: cached.name, url: nil, detail: "Notities · \(date)")
+                    }
+
+                    try await NotesConnector.ensureRunning()
                     let q = ScriptText.quote(idOrTitle)
                     let script = """
                     tell application "Notes"
@@ -276,13 +343,14 @@ final class NotesConnector: ContextSource {
                             if (count of matches) > 0 then set target to item 1 of matches
                         end if
                         if target is missing value then return "NOT_FOUND"
+                        set nid to id of target
                         set nname to name of target
                         set ndate to ((modification date of target) as «class isot» as string)
                         set nbody to plaintext of target
-                        return nname & "|||" & ndate & linefeed & nbody
+                        return nid & "|||" & nname & "|||" & ndate & linefeed & nbody
                     end tell
                     """
-                    let result = await ScriptText.run(script, timeout: 10)
+                    let result = await ScriptText.run(script, timeout: 6)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
@@ -293,8 +361,13 @@ final class NotesConnector: ContextSource {
                     let header = String(lines.first ?? "").components(separatedBy: "|||")
                     var body = lines.count > 1 ? String(lines[1]) : ""
                     if body.count > 15_000 { body = String(body.prefix(15_000)) + "\n… (ingekort: de eerste 15.000 tekens)" }
-                    let title = header.first ?? idOrTitle
-                    let date = header.count > 1 ? String(header[1].prefix(10)) : ""
+                    let nid = header.first ?? idOrTitle
+                    let title = header.count > 1 ? header[1] : idOrTitle
+                    let fullDate = header.count > 2 ? header[2] : ""
+                    let date = String(fullDate.prefix(10))
+                    let cached = CachedNote(id: nid, name: title, date: fullDate, folder: "", body: body, cachedAt: Date())
+                    NotesConnector.bodyCache[nid] = cached
+                    NotesConnector.bodyCache[title.lowercased()] = cached
                     return "## Notitie: \(title) (\(date))\n\n\(body)\n\n" + ReferenceParser.line(title: title, url: nil, detail: "Notities · \(date)")
                 }
             ),
@@ -309,7 +382,7 @@ final class NotesConnector: ContextSource {
                 kind: .action,
                 summarize: { input in "Notitie maken: \((input["title"] as? String) ?? "Nieuwe notitie")" },
                 tag: { _ in ("", .good) },
-                run: { input in
+                run: { [weak self] input in
                     try await NotesConnector.ensureRunning()
                     let title = ((input["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let body = ((input["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -338,6 +411,7 @@ final class NotesConnector: ContextSource {
                     guard result.text == "OK" else {
                         throw NookError("Notitie kon niet worden aangemaakt in Notities.")
                     }
+                    self?.loadedAt = nil
                     return "Notitie \"\(title)\" succesvol aangemaakt in Apple Notities."
                 }
             )

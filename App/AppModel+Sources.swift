@@ -98,34 +98,31 @@ extension AppModel {
         options: [.caseInsensitive]
     )
 
+    private static let commonApps: [String: String] = [
+        "notities": "Notes", "notes": "Notes",
+        "slack": "Slack", "whatsapp": "WhatsApp",
+        "teams": "Teams", "msteams": "MSTeams",
+        "discord": "Discord", "telegram": "Telegram",
+        "safari": "Safari", "chrome": "Google Chrome",
+        "edge": "Microsoft Edge", "arc": "Arc",
+        "spotify": "Spotify", "terminal": "Terminal",
+        "xcode": "Xcode", "cursor": "Cursor",
+        "figma": "Figma", "excel": "Excel", "word": "Word",
+        "notion": "Notion", "things": "Things"
+    ]
+
     /// An app the question names ("wat staat er in Notities", "lees Slack", "kijk in WhatsApp"),
     /// including open apps and well-known Mac apps.
     static func appNamed(in text: String) -> String? {
         let own: Set<String> = ["com.apple.mail", "com.apple.iCal", "com.apple.reminders", "com.apple.finder"]
-        let lower = text.lowercased()
-
-        // Common apps mentioned directly in questions
-        let common = [
-            "notities": "Notes", "notes": "Notes",
-            "slack": "Slack", "whatsapp": "WhatsApp",
-            "teams": "Teams", "msteams": "MSTeams",
-            "discord": "Discord", "telegram": "Telegram",
-            "safari": "Safari", "chrome": "Google Chrome",
-            "edge": "Microsoft Edge", "arc": "Arc",
-            "spotify": "Spotify", "terminal": "Terminal",
-            "xcode": "Xcode", "cursor": "Cursor",
-            "figma": "Figma", "excel": "Excel", "word": "Word",
-            "notion": "Notion", "things": "Things"
-        ]
-        for (keyword, appName) in common {
-            let pattern = #"(?<![\p{L}\d])"# + keyword + #"(?![\p{L}\d])"#
-            if lower.range(of: pattern, options: .regularExpression) != nil {
-                return appName
-            }
+        let words = text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        for word in words {
+            if let appName = commonApps[word] { return appName }
         }
 
         for app in ScreenReader.openApps() where !own.contains(app.bundleIdentifier ?? "") {
             guard let name = app.localizedName, name.count >= 3 else { continue }
+            if words.contains(name.lowercased()) { return name }
             let pattern = #"(?<![\p{L}\d])"# + NSRegularExpression.escapedPattern(for: name) + #"(?![\p{L}\d])"#
             if text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil { return name }
         }
@@ -142,15 +139,25 @@ extension AppModel {
         return tr("app.digest.found") + "\n\n" + String(lines.joined(separator: "\n").prefix(800))
     }
 
+    private static let codeTopicRegex = try? NSRegularExpression(
+        pattern: #"code|json|script|programm\w*|regex|sql|swift|python|javascript|html|css|\bapi\b|terminal|commando"#,
+        options: [.caseInsensitive]
+    )
+    private static let proseCleanRegex = try? NSRegularExpression(pattern: #"```[\s\S]*?```|\[[0-9]+\]|\*\*"#)
+
     /// An answer that is no answer: code or JSON for a question that is not about code, or in another language than asked.
     static func looksBroken(_ answer: String, question: String, expected: NLLanguage?) -> Bool {
         let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        let aboutCode = question.range(of: #"code|json|script|programm\w*|regex|sql|swift|python|javascript|html|css|\bapi\b|terminal|commando"#,
-                                       options: [.regularExpression, .caseInsensitive]) != nil
+        let aboutCode = codeTopicRegex?.firstMatch(in: question, range: NSRange(question.startIndex..., in: question)) != nil
         if !aboutCode, trimmed.contains("```") || trimmed.hasPrefix("{") || trimmed.hasPrefix("[") { return true }
         // Language only on real prose: names, titles and numbers say little.
-        let prose = trimmed.replacingOccurrences(of: #"```[\s\S]*?```|\[[0-9]+\]|\*\*"#, with: "", options: .regularExpression)
+        let prose: String
+        if let rx = proseCleanRegex {
+            prose = rx.stringByReplacingMatches(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed), withTemplate: "")
+        } else {
+            prose = trimmed
+        }
         if let expected, prose.count >= 40, let answered = AppSettings.detectLanguage(prose), answered != expected { return true }
         return false
     }
@@ -221,7 +228,7 @@ extension AppModel {
             let shape: (String, String) -> String = { tool, output in
                 tool == "read_app" ? Research.focus(output, terms: terms, limit: searchLimit) : Research.relevantOnly(output, tool: tool, terms: terms)
             }
-            let results = await Self.runAll(calls, tools: tools, timeout: 22, limit: searchLimit, shape: shape)
+            let results = await Self.runAll(calls, tools: tools, timeout: 8, limit: searchLimit, shape: shape)
             found = results.map(\.output)
 
             // Open the best hits in full: the start of a note or a file name is rarely the answer. A source Nook does
@@ -231,7 +238,7 @@ extension AppModel {
                                        limit: profile.isSmall ? (roomy ? 3 : 2) : 4, openers: Research.openers(available))
             let reads = hits.compactMap { hit in hit.read.map { Prefetch.Call(tool: $0, input: hit.input) } }
             let readLimit = profile.isSmall ? (roomy ? 4_000 : 2_500) : 10_000
-            opened = await Self.runAll(reads, tools: tools, timeout: 15, limit: readLimit) { _, output in
+            opened = await Self.runAll(reads, tools: tools, timeout: 6, limit: readLimit) { _, output in
                 // A long document keeps the parts about the question, so they are not cut off.
                 output.count > readLimit ? Research.focus(output, terms: terms, limit: readLimit) : output
             }.map(\.output)
