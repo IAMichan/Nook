@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 /// Antigravity's quota windows (per model family: 5-hour and weekly), read the way Antigravity itself does.
 ///
@@ -99,6 +100,40 @@ final class AntigravityUsage: ObservableObject {
             )
             let canRefresh = credentials.refresh?.isEmpty == false && credentials.clientID?.isEmpty == false && credentials.secret?.isEmpty == false
             if canRefresh || credentials.access != nil { return credentials }
+        }
+        // The Antigravity app keeps its sign-in in its own storage; it keeps that token fresh while the app runs.
+        if let token = appToken() { return Credentials(access: token) }
+        return nil
+    }
+
+    /// The access token Antigravity (the editor) stores in its global state database, if it is signed in.
+    private nonisolated static func appToken() -> String? {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Antigravity/User/globalStorage/state.vscdb").path
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { sqlite3_close(db); return nil }
+        defer { sqlite3_close(db) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT value FROM ItemTable WHERE key LIKE '%oauthToken%' LIMIT 1", -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else { return nil }
+        return findToken(in: String(cString: raw), depth: 0)
+    }
+
+    /// Looks for a Google access token (`ya29.…`) in a value that may be base64 wrapped, up to two layers deep.
+    private nonisolated static func findToken(in text: String, depth: Int) -> String? {
+        if let match = text.range(of: "ya29\\.[A-Za-z0-9_\\-\\.]+", options: .regularExpression) { return String(text[match]) }
+        guard depth < 2 else { return nil }
+        var normalized = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while normalized.count % 4 != 0 { normalized += "=" }
+        if let data = Data(base64Encoded: normalized) {
+            let decoded = String(decoding: data, as: UTF8.self)
+            if let found = findToken(in: decoded, depth: depth + 1) { return found }
+            // A nested message holds its own base64 string.
+            for run in decoded.split(whereSeparator: { !($0.isLetter || $0.isNumber || "+/=-_".contains($0)) }) where run.count >= 40 {
+                if let found = findToken(in: String(run), depth: depth + 1) { return found }
+            }
         }
         return nil
     }
