@@ -1,5 +1,4 @@
 import XCTest
-@testable import Nook
 
 final class MarkdownBlockTests: XCTestCase {
     func testChartBlockBecomesAChart() {
