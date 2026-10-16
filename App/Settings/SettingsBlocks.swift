@@ -53,30 +53,27 @@ struct ConfigPreview: View {
 
 // MARK: Building Blocks
 
-/// Section header: Nook orb for overview, section symbol elsewhere.
+/// Section header: Nook orb for overview, the section's colored tile elsewhere.
 struct SettingsHeader: View {
     let section: SettingsSection
     let mood: NookMood
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                if section == .general {
-                    NookOrb(mood: mood, size: 30, animated: false)
-                } else {
-                    Image(systemName: section.symbol)
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundStyle(NookTheme.iris)
-                }
+            if section == .general {
+                NookOrb(mood: mood, size: 30, animated: false)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.14)))
+            } else {
+                SettingsTile(section, size: 44)
             }
-            .frame(width: 48, height: 48)
-            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(NookTheme.iris.opacity(0.14)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(section.title).font(.title.weight(.semibold))
                 Text(section.subtitle).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
+        .padding(.bottom, 4)
     }
 }
 
