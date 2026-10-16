@@ -207,14 +207,11 @@ struct AgentSessionDetail: View {
     @ViewBuilder
     private func liveComposer(_ session: AgentSession) -> some View {
         let canSend = app.canTakeOver(session)
-        let kind = AgentKind(agentName: session.name)
-        let running = session.status == .running
-        let takesOver = session.isDetected || session.status == .waiting || (running && kind != .claude)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canSend else { return }
             perform {
-                try await app.continueInNook(session, message: text, endingTerminal: takesOver)
+                try await app.continueInNook(session, message: text)
                 draft = ""
             }
         }
@@ -254,6 +251,11 @@ struct AgentSessionDetail: View {
             }
             .disabled(busy)
             Divider()
+            if app.canEnd(session) && app.canTakeOver(session) {
+                Button(tr("agents.nook.takeOver")) {
+                    perform { try await app.continueInNook(session, endingTerminal: true) }
+                }
+            }
             if app.canEnd(session) {
                 Button(tr("agents.nook.end"), role: .destructive) {
                     perform { try app.endSession(session) }
