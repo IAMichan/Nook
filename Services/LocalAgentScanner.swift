@@ -96,13 +96,17 @@ enum LocalAgentScanner {
     /// Identifies an agent from its command line; excludes .app bundles and search commands.
     private static func identify(_ command: String) -> String? {
         let lower = command.lowercased()
-        if lower.contains(".app/contents") || lower.hasPrefix("grep ") || lower.contains(" grep ") { return nil }
+        if lower.hasPrefix("grep ") || lower.contains(" grep ") { return nil }
 
         let tokens = lower.split(separator: " ").map(String.init)
         guard let first = tokens.first else { return nil }
         // Background daemon services for an editor/app are not user interactive sessions.
         if tokens.contains(where: { backgroundModes.contains($0) }) { return nil }
         let program = URL(fileURLWithPath: first).lastPathComponent
+        // The helpers of an app (Antigravity.app/Contents/…) are no sessions, but an agent's own command line tool
+        // is, even when the app ships it inside its bundle (agy lives in Antigravity.app).
+        let isAgentCommand = kinds.contains { $0.commands.contains(program) }
+        if lower.contains(".app/contents") && !isAgentCommand { return nil }
 
         // The first command token, or for node/python the script argument following it.
         var candidates = [program]

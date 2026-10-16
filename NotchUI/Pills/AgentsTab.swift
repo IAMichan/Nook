@@ -2,11 +2,14 @@ import SwiftUI
 import AppKit
 
 /// Your agents in the notch. On the left the sessions, with a + next to "Sessions" to start one; on the right the
-/// session you picked, or, after +, the place to start a new one. Each row says at a glance whether it is working,
-/// waiting for you or done, in which folder, and with which account.
+/// session you picked, or, after +, the place to start a new one. Two groups only: what is going on now (including
+/// agents that were already running when Nook started) and earlier sessions. A row shows what it is about, the agent
+/// and the folder; only a session that needs you gets a word of its own.
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
+    /// Earlier sessions: a few at first, all of them after "Show more".
+    @State private var showAllPast = false
 
     private enum Selection {
         case live(AgentSession)
@@ -120,24 +123,34 @@ struct AgentsTab: View {
     // MARK: List
 
     private func sessionList(live: [AgentSession], past: [PastSession], selection: Selection) -> some View {
-        let tracked = live.filter { !$0.isDetected }
-        let untracked = live.filter { $0.isDetected }
+        let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
         let current = selectedID(selection)
+        let transcripts = app.demoMode ? [:] : app.detectedTranscripts()
+        // Waiting for you first, then the rest in the order they were found.
+        func needsYou(_ session: AgentSession) -> Bool { session.status == .waiting || session.approvalID != nil }
+        let now = live.filter(needsYou) + live.filter { !needsYou($0) }
+        let shownPast = showAllPast ? past : Array(past.prefix(8))
 
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
-                if !app.demoMode {
-                    WorkspaceRunsSection(workspace: app.workspace, selected: current) { id in
-                        viewModel.selectedAgentID = "run:" + id.uuidString
-                    }
-                }
-                if !tracked.isEmpty {
-                    SectionHeader(title: tr("agents.nowActive"), trailing: "\(tracked.count)")
-                        .padding(.top, 12)
-                    ForEach(tracked) { session in
+                if !runs.isEmpty || !now.isEmpty {
+                    SectionHeader(title: tr("agents.nowActive"), trailing: nil)
+                    ForEach(runs) { run in
                         AgentListRow(
-                            title: session.summary.isEmpty ? session.project : AgentFormat.title(session.summary),
-                            state: .live(session),
+                            title: run.title,
+                            state: .run(run),
+                            folder: run.projectName,
+                            path: run.workingDirectory,
+                            account: accountName(app.profile(for: run)),
+                            agent: run.provider.kind.shortName,
+                            time: nil,
+                            selected: current == "run:" + run.id.uuidString
+                        ) { viewModel.selectedAgentID = "run:" + run.id.uuidString }
+                    }
+                    ForEach(now) { session in
+                        AgentListRow(
+                            title: nowTitle(session, transcript: transcripts[session.id]),
+                            state: session.isDetected ? .untracked : .live(session),
                             folder: session.project,
                             path: session.cwd,
                             account: accountName(app.profile(for: session)),
@@ -147,27 +160,10 @@ struct AgentsTab: View {
                         ) { viewModel.selectedAgentID = session.id }
                     }
                 }
-                if !untracked.isEmpty {
-                    SectionHeader(title: tr("agents.untrackedHeader"), trailing: "\(untracked.count)")
-                        .padding(.top, 12)
-                    ForEach(untracked) { session in
-                        AgentListRow(
-                            title: session.project,
-                            state: .untracked,
-                            folder: session.project,
-                            path: session.cwd,
-                            account: accountName(app.profile(for: session)),
-                            agent: session.name,
-                            time: nil,
-                            selected: current == session.id
-                        ) { viewModel.selectedAgentID = session.id }
-                        .help(tr("agents.live.untrackedHelp"))
-                    }
-                }
-                if !past.isEmpty {
+                if !shownPast.isEmpty {
                     SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
-                        .padding(.top, 12)
-                    ForEach(past) { session in
+                        .padding(.top, runs.isEmpty && now.isEmpty ? 0 : 14)
+                    ForEach(shownPast) { session in
                         AgentListRow(
                             title: AgentFormat.title(session.title),
                             state: .past,
@@ -179,14 +175,36 @@ struct AgentsTab: View {
                             selected: current == "past:" + session.id
                         ) { viewModel.selectedAgentID = "past:" + session.id }
                     }
+                    if past.count > shownPast.count {
+                        Button {
+                            showAllPast = true
+                        } label: {
+                            Text(tr("agents.showMore"))
+                                .font(NookTheme.font(12, .medium))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
     }
 
-    /// The account a session ran with, always shown: "Personal", "Work", or the organization.
+    /// What a running session is about: its summary, else (for one Nook only sees) the first question of its
+    /// conversation, else the folder.
+    private func nowTitle(_ session: AgentSession, transcript: PastSession?) -> String {
+        if !session.summary.isEmpty { return AgentFormat.title(session.summary) }
+        if let transcript, !transcript.title.isEmpty { return AgentFormat.title(transcript.title) }
+        return session.project
+    }
+
+    /// The account a session ran with; only mentioned when the agent has more than one ("Work", the organization…).
     private func accountName(_ profile: AgentProfile?) -> String? {
-        guard !app.demoMode, let profile else { return nil }
+        guard !app.demoMode, let profile, app.profiles.profiles(for: profile.kind).count > 1 else { return nil }
         return AccountLabel.name(profile, app: app)
     }
 
@@ -229,11 +247,10 @@ struct AgentListRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 indicator
                     .frame(width: 16, height: 16)
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(title)
                             .font(NookTheme.font(12.5, .medium))
@@ -252,22 +269,15 @@ struct AgentListRow: View {
                                 .fixedSize()
                         }
                     }
-                    HStack(spacing: 8) {
-                        Label(folder, systemImage: "folder")
-                            .help(AgentPathFormat.tilde(path))
-                        if let account {
-                            Label(account, systemImage: "person")
-                        }
-                        Text(agent)
-                    }
-                    .labelStyle(CompactLabel())
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
+                    Text(subtitle)
+                        .font(NookTheme.font(11))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .help(AgentPathFormat.tilde(path))
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 10).fill(selected ? NookTheme.smoke : (hovering ? NookTheme.graphite : Color.clear)))
             .contentShape(Rectangle())
@@ -277,9 +287,14 @@ struct AgentListRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// "Claude · nook", with the account when there are several.
+    private var subtitle: String {
+        [agent, folder, account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     private var muted: Bool {
         switch state {
-        case .untracked, .past: return true
+        case .past: return true
         default: return false
         }
     }
@@ -307,7 +322,8 @@ struct AgentListRow: View {
                 PulseDot(color: NookTheme.iris, animated: session.status == .running)
             }
         case .untracked:
-            Image(systemName: "eye.slash").font(.system(size: 10, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            // Running in a terminal; Nook does not know more than that, so no state is claimed.
+            PulseDot(color: NookTheme.iris, animated: false)
         case .past:
             Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }
@@ -318,34 +334,17 @@ struct AgentListRow: View {
         switch state {
         case .run(let run):
             switch run.status {
-            case .running, .preparing: return (tr("agents.live.running"), NookTheme.iris)
             case .waitingApproval: return (tr("agents.live.waiting"), NookTheme.amber)
-            case .completed: return (tr("agents.live.done"), NookTheme.mint)
-            case .failed: return (tr("agents.live.failed"), NookTheme.coral)
-            case .stopped: return (run.status.label, NookTheme.textTertiary)
-            }
-        case .live(let session):
-            if session.approvalID != nil || session.status == .waiting { return (tr("agents.live.waiting"), NookTheme.amber) }
-            switch session.status {
-            case .running: return (tr("agents.live.running"), NookTheme.iris)
-            case .done: return (tr("agents.live.done"), NookTheme.mint)
             case .failed: return (tr("agents.live.failed"), NookTheme.coral)
             default: return nil
             }
+        case .live(let session):
+            if session.approvalID != nil || session.status == .waiting { return (tr("agents.live.waiting"), NookTheme.amber) }
+            return session.status == .failed ? (tr("agents.live.failed"), NookTheme.coral) : nil
         case .untracked:
-            return (tr("agents.live.untrackedShort"), NookTheme.textTertiary)
+            return nil
         case .past:
             return nil
-        }
-    }
-}
-
-/// Icon and text close together, small and quiet.
-private struct CompactLabel: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 3) {
-            configuration.icon.font(.system(size: 9.5))
-            configuration.title
         }
     }
 }
@@ -667,15 +666,15 @@ struct StatusPill: View {
     let session: AgentSession
 
     var body: some View {
-        let color = session.isDetected ? NookTheme.amber : session.liveColor
+        let color = session.isDetected ? NookTheme.textSecondary : session.liveColor
         HStack(spacing: 6) {
             if session.isDetected {
-                Image(systemName: "eye.slash").font(.system(size: 10, weight: .bold))
+                Image(systemName: "terminal").font(.system(size: 10, weight: .bold))
             } else {
                 PulseDot(color: color, animated: session.status == .running && session.approvalID == nil)
                     .frame(width: 12, height: 12)
             }
-            Text(session.isDetected ? tr("agents.live.runningUntracked") : session.liveLabel)
+            Text(session.isDetected ? tr("agents.live.inTerminal") : session.liveLabel)
                 .font(NookTheme.font(12, .semibold))
         }
         .foregroundStyle(color)
@@ -716,28 +715,11 @@ struct ShimmerText: View {
 
 /// Sessions Nook runs itself (started here, taken over, or from the workspace): working, waiting, or finished in the
 /// last day, newest first. Selecting one shows it on the right, where you control it completely.
-struct WorkspaceRunsSection: View {
-    @ObservedObject var workspace: WorkspaceManager
-    let selected: String
-    let open: (UUID) -> Void
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        let recent = workspace.runs
+enum WorkspaceRunsSection {
+    static func recent(_ workspace: WorkspaceManager) -> [WorkspaceRun] {
+        let list = workspace.runs
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
-            .prefix(12)
-        ForEach(Array(recent)) { run in
-            AgentListRow(
-                title: run.title,
-                state: .run(run),
-                folder: run.isolation == .worktree ? "\(run.projectName) · \(run.branch ?? "worktree")" : run.projectName,
-                path: run.workingDirectory,
-                account: app.profile(for: run).map { AccountLabel.name($0, app: app) },
-                agent: run.provider.kind.shortName,
-                time: nil,
-                selected: selected == "run:" + run.id.uuidString
-            ) { open(run.id) }
-        }
+        return Array(list.prefix(12))
     }
 }

@@ -80,6 +80,33 @@ extension AppModel {
     /// Earlier sessions from transcripts, without the ones that are also a running session or a session Nook runs
     /// (those are listed there, in more detail).
     var pastSessionsOutsideWorkspace: [PastSession] {
+        let linked = Set(detectedTranscripts().values.map(\.id))
+        return pastNotCovered.filter { !linked.contains($0.id) }
+    }
+
+    /// The transcript behind each process Nook only sees (started before Nook opened, or without hooks), by session id: the
+    /// latest earlier session of the same agent, folder and account. Several processes in one folder take the sessions in
+    /// turn, newest process first. With it such a session shows its conversation straight away.
+    func detectedTranscripts() -> [String: PastSession] {
+        guard !hub.detected.isEmpty else { return [:] }
+        let free = pastNotCovered
+        var result: [String: PastSession] = [:]
+        let groups = Dictionary(grouping: hub.detected) { "\($0.name)|\($0.cwd)|\($0.home)" }
+        for group in groups.values {
+            guard let first = group.first, let kind = AgentKind(agentName: first.name), !first.cwd.isEmpty else { continue }
+            let account = profile(for: first)?.id
+            let candidates = free
+                .filter { $0.agent == kind && $0.cwd == first.cwd && (account == nil || $0.profileID == account) }
+                .sorted { $0.started > $1.started }
+            let processes = group.sorted { (Int($0.id.dropFirst(5)) ?? 0) > (Int($1.id.dropFirst(5)) ?? 0) }
+            for (index, process) in processes.enumerated() where index < candidates.count {
+                result[process.id] = candidates[index]
+            }
+        }
+        return result
+    }
+
+    private var pastNotCovered: [PastSession] {
         let shown = Set(mergedSessions.filter { $0.leading != .transcript }.compactMap(\.conversationKey))
         return history.sessions.filter { past in
             let key = AgentSessionRecord(id: "", sources: [.transcript], agent: past.agent.name,

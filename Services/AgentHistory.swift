@@ -156,6 +156,8 @@ struct PastSession: Identifiable, Equatable {
     var lastReply: String
     /// Which account (`AgentProfile.id`) this session ran with.
     var profileID = ""
+    /// The transcript file the session was read from.
+    var path = ""
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
@@ -359,11 +361,16 @@ private final class HistoryScanner: @unchecked Sendable {
         var files: [(url: URL, agent: AgentKind, profile: String, key: CacheKey)] = []
         var seenFolders = Set<String>()
 
-        for home in homes where home.kind != .gemini {
+        for home in homes {
             // Two accounts with the same directory: read only once.
             guard fm.fileExists(atPath: home.url.path), seenFolders.insert(home.url.standardizedFileURL.path).inserted else { continue }
             installed.insert(home.kind)
-            let found = home.kind == .claude ? claudeFiles(home.url, since: since) : codexFiles(home.url, since: since)
+            let found: [(url: URL, key: CacheKey)]
+            switch home.kind {
+            case .claude: found = claudeFiles(home.url, since: since)
+            case .codex: found = codexFiles(home.url, since: since)
+            case .gemini: found = geminiFiles(home.url, since: since)
+            }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
         files.sort { $0.key.modified > $1.key.modified }
@@ -377,9 +384,14 @@ private final class HistoryScanner: @unchecked Sendable {
             if let hit = cache[path], hit.key == file.key {
                 parsed = hit.parsed
             } else {
-                parsed = file.agent == .claude ? parseClaude(file.url) : parseCodex(file.url)
+                switch file.agent {
+                case .claude: parsed = parseClaude(file.url)
+                case .codex: parsed = parseCodex(file.url)
+                case .gemini: parsed = parseGemini(file.url)
+                }
             }
             parsed.session?.profileID = file.profile
+            parsed.session?.path = file.url.path
             fresh[path] = (file.key, parsed)
             parsedAll.append((file.profile, parsed))
         }
@@ -575,6 +587,74 @@ private final class HistoryScanner: @unchecked Sendable {
             }
         }
         return result
+    }
+
+    // MARK: Gemini CLI
+
+    /// ~/.gemini/tmp/<project>/chats/session-*.json
+    private func geminiFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
+        let fm = FileManager.default
+        let root = home.appendingPathComponent("tmp", isDirectory: true)
+        guard let projects = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }
+        var result: [(url: URL, key: CacheKey)] = []
+        for project in projects {
+            let chats = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent("chats", isDirectory: true)
+            guard let names = try? fm.contentsOfDirectory(atPath: chats.path) else { continue }
+            for name in names where name.hasSuffix(".json") {
+                let url = chats.appendingPathComponent(name)
+                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
+            }
+        }
+        return result
+    }
+
+    private func parseGemini(_ url: URL) -> Parsed {
+        guard let data = try? Data(contentsOf: url),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let messages = root["messages"] as? [[String: Any]] else { return Parsed(session: nil, entries: []) }
+        // The folder is not in the chat file; newer versions keep it next to the chats in `.project_root`.
+        let projectRoot = url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".project_root")
+        let cwd = (try? String(contentsOf: projectRoot, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let modified = attributes(url)?.modified ?? Date()
+        var session = PastSession(
+            agent: .gemini, sessionID: (root["sessionId"] as? String) ?? url.deletingPathExtension().lastPathComponent,
+            title: "", cwd: cwd, branch: "", model: "",
+            started: (root["startTime"] as? String).flatMap { date($0) } ?? modified,
+            ended: (root["lastUpdated"] as? String).flatMap { date($0) } ?? modified,
+            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+        )
+        for message in messages {
+            let text = Self.geminiText(message["content"])
+            switch message["type"] as? String {
+            case "user":
+                guard !text.isEmpty else { continue }
+                session.prompts += 1
+                session.lastPrompt = text
+                if session.title.isEmpty { session.title = text }
+            case "gemini":
+                if !text.isEmpty { session.lastReply = text }
+                if let model = message["model"] as? String, !model.isEmpty { session.model = model }
+                if let tokens = message["tokens"] as? [String: Any] {
+                    session.tokens += TokenTally(input: Self.int(tokens["input"]), output: Self.int(tokens["output"]),
+                                                 cacheRead: Self.int(tokens["cached"]), cacheWrite: 0)
+                }
+            default:
+                continue
+            }
+        }
+        session.title = Self.oneLine(session.title, 90)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
+        return Parsed(session: session, entries: [])
+    }
+
+    /// Message content is a string, or a list of parts with a `text`.
+    private static func geminiText(_ content: Any?) -> String {
+        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let parts = content as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
     }
 
     // MARK: Claude Code

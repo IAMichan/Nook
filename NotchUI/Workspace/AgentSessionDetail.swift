@@ -63,7 +63,11 @@ struct AgentSessionDetail: View {
             }
 
             if session.isDetected && !app.demoMode {
-                untrackedExplanation(session)
+                if let transcript = app.detectedTranscripts()[session.id] {
+                    runningElsewhere(session, transcript: transcript)
+                } else {
+                    untrackedExplanation(session)
+                }
             } else {
                 trackedBody(session)
             }
@@ -97,6 +101,36 @@ struct AgentSessionDetail: View {
         return parts.joined(separator: " · ")
     }
 
+    /// A session that was already running when Nook started: its conversation is read from the transcript the agent keeps,
+    /// so it shows at once. Replying takes it over in Nook; until then it keeps running in its terminal.
+    private func runningElsewhere(_ session: AgentSession, transcript: PastSession) -> some View {
+        var shown = session
+        shown.transcriptPath = transcript.path
+        shown.lastPrompt = transcript.lastPrompt
+        shown.lastReply = transcript.lastReply
+        shown.sessionID = transcript.sessionID
+        let canTakeOver = app.canTakeOver(session)
+        return VStack(alignment: .leading, spacing: 10) {
+            AgentConversation(session: shown)
+            errorLine
+            HStack(spacing: 8) {
+                Text(tr("agents.activeInTerminal", session.name))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if working {
+                    ProgressView().controlSize(.small)
+                } else if canTakeOver {
+                    NookPrimaryButton(title: tr("agents.nook.takeOver")) {
+                        perform { try await app.continueInNook(session, endingTerminal: true) }
+                    }
+                }
+                sessionMenu(session)
+            }
+        }
+    }
+
     /// Nook sees the process but not its conversation. Take it over (the conversation continues in Nook), end it, or link the agent.
     private func untrackedExplanation(_ session: AgentSession) -> some View {
         let kind = AgentKind(agentName: session.name)
@@ -104,9 +138,9 @@ struct AgentSessionDetail: View {
         let canTakeOver = app.canTakeOver(session)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "eye.slash")
+                Image(systemName: "terminal")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(NookTheme.amber)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(session.isLinked ? tr("agents.untracked.startedBefore") : tr("agents.untracked.notLinked", session.name))
@@ -128,8 +162,7 @@ struct AgentSessionDetail: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
 
             Spacer(minLength: 0)
 
