@@ -82,15 +82,16 @@ extension AppModel {
         guard let provider = nookProvider(for: session.agent) else {
             throw NookError(tr("agents.nook.unsupported", session.agent.name))
         }
-        guard FileManager.default.fileExists(atPath: session.cwd) else {
-            throw NookError(tr("agents.nook.folderGone", session.cwd))
+        let folder = session.resumeFolder
+        guard FileManager.default.fileExists(atPath: folder) else {
+            throw NookError(tr("agents.nook.folderGone", folder))
         }
         let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
         var earlier: [(kind: RunEvent.Kind, text: String)] = []
         if !session.lastPrompt.isEmpty { earlier.append((kind: .user, text: session.lastPrompt)) }
         if !session.lastReply.isEmpty { earlier.append((kind: .assistant, text: session.lastReply)) }
         let id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
-                                           directory: session.cwd, title: session.title, history: earlier)
+                                           directory: folder, title: session.title, history: earlier)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }
         viewModel.selectedAgentID = "run:" + id.uuidString
         return id

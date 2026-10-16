@@ -157,6 +157,8 @@ struct PastSession: Identifiable, Equatable {
     var sessionID: String
     var title: String
     var cwd: String
+    /// The folder the session was last working in (after a `cd`); empty when it never left `cwd`.
+    var lastCwd = ""
     var branch: String
     var model: String
     var started: Date
@@ -175,6 +177,15 @@ struct PastSession: Identifiable, Equatable {
     var project: String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
         return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
+    }
+
+    /// Where to continue: the folder the session ended in, unless that is gone or off limits (then the one it started in).
+    /// Nook never runs an agent in the home folder, so a session that began there continues in the project it moved to.
+    var resumeFolder: String {
+        for candidate in [lastCwd, cwd] where !candidate.isEmpty {
+            if WorkspacePathPolicy.verdict(for: candidate) == .ok { return candidate }
+        }
+        return cwd
     }
 
     var duration: TimeInterval { max(0, ended.timeIntervalSince(started)) }
@@ -847,7 +858,10 @@ private final class HistoryScanner: @unchecked Sendable {
                 session.started = min(session.started, stamp)
                 session.ended = max(session.ended, stamp)
             }
-            if session.cwd.isEmpty, let cwd = object["cwd"] as? String { session.cwd = cwd }
+            if let cwd = object["cwd"] as? String, !cwd.isEmpty {
+                if session.cwd.isEmpty { session.cwd = cwd }
+                session.lastCwd = cwd == session.cwd ? "" : cwd
+            }
             if let branch = object["gitBranch"] as? String, !branch.isEmpty, branch != "HEAD" { session.branch = branch }
             let message = (object["message"] as? [String: Any]) ?? [:]
 
