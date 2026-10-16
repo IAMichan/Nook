@@ -14,7 +14,8 @@ final class FolderGitModel: ObservableObject {
     @Published var error: String?
 
     let directory: String
-    private let git = GitService.locate()
+    /// Resolved off the main thread in `refresh()`; creating the model must never spawn a process.
+    private var git: GitService?
 
     nonisolated init(directory: String) {
         self.directory = directory
@@ -32,6 +33,7 @@ final class FolderGitModel: ObservableObject {
     }
 
     func refresh() async {
+        if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
         guard let git, !directory.isEmpty, FileManager.default.fileExists(atPath: directory) else {
             root = nil
             status = nil

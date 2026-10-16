@@ -114,7 +114,7 @@ final class WorkspaceManager: ObservableObject {
         runs = store.loadRuns()
         applyAutoArchive()
         Task.detached(priority: .utility) {
-            let service = GitService.locate()
+            let service = GitService.shared
             await MainActor.run { [weak self] in
                 self?.gitService = service
                 self?.gitAvailable = service != nil
