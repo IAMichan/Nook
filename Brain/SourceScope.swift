@@ -129,7 +129,8 @@ enum SourceCatalog {
         "check_availability": "calendar",
         "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
-        "search_messages": "messages", "read_messages": "messages", "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp",
+        "search_messages": "messages", "read_messages": "messages", "messages_open_chats": "messages",
+        "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp",
         "search_bear": "bear", "read_bear": "bear", "search_things": "things",
         "search_mail": "mail", "read_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
@@ -416,7 +417,7 @@ enum SourceCapabilities {
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
-        "read_whatsapp": "chat lezen", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
+        "read_whatsapp": "chat lezen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen",
@@ -502,8 +503,9 @@ enum Prefetch {
     /// The question asks for the newest or unread items of this source, so its overview helps even next to a search.
     static func prefersListing(_ source: String, _ text: String) -> Bool {
         switch source {
-        case "mail": return matches(unread, text) || matches(reply, text)
+        case "mail": return matches(unread, text) || matches(reply, text) || matches(pending, text)
         case "notes": return matches(#"recent\w*|laatst\w*|nieuwst\w*|latest|newest|neueste?n?|letzte?n?"#, text)
+        case "messages", "whatsapp": return matches(unread, text) || matches(reply, text) || matches(pending, text)
         default: return false
         }
     }
@@ -513,13 +515,17 @@ enum Prefetch {
 
     private static let unread = #"ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read"#
     private static let reply = #"beantwoord\w*|antwoord\w*|reageer|reageren|terugmail\w*|terugschrijv\w*|reply|respond|answer|follow.?up|opvolg\w*"#
+    /// Chats still waiting for something: "openstaan", "open chats", "nog niet gereageerd", "pending", "offen".
+    static let pending = #"open ?staa?n\w*|openstaand\w*|open (chats?|gesprekk?e?n?|berichten|appjes?|conversations?|threads?|messages?)|onbeantwoord\w*|unanswered|pending|outstanding|waiting|wacht\w* (op|nog)|nog (niet )?(gereageerd|geantwoord|beantwoord|teruggeappt|teruggestuurd)|unbeantwortet\w*|offene?n? (chats?|nachrichten)"#
 
     /// Best input for a few tools, by what the question asks.
     private static func hint(_ tool: String, _ text: String) -> (rank: Int, input: [String: Any]) {
         switch tool {
         case "mail_unread": return (matches(unread, text) ? 0 : 9, [:])
         case "inbox_mail":
-            return matches(reply, text) ? (1, ["days": 14, "unanswered_only": true]) : (2, ["days": 7])
+            return matches(reply, text) || matches(pending, text) ? (1, ["days": 14, "unanswered_only": true]) : (2, ["days": 7])
+        case "whatsapp_open_chats", "messages_open_chats":
+            return (matches(unread, text) || matches(reply, text) || matches(pending, text) ? 0 : 2, [:])
         case "list_notes": return (1, ["limit": 8])
         case "list_reminders": return (1, [:])
         case "read_browser_tab": return (1, [:])

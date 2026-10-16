@@ -35,15 +35,32 @@ NookChatView (invoer, bronkiezer, modelchip, bijlage)   — gedeeld door de notc
                         executed_actions)
 ```
 
+### Eerst de vraag begrijpen
+
+Woordenlijsten raden slecht wat een vraag betekent: "heb ik chats openstaan in WhatsApp?" is geen zoekopdracht naar de woorden "chats" en "whatsapp" in je bestanden en code, maar de vraag welke WhatsApp-chats ongelezen zijn of op je antwoord wachten. Daarom leest het gekozen brein de vraag eerst zelf, vóór Nook iets opzoekt (`QueryPlanner`, `Brain/QueryPlan.swift`, aangeroepen vanuit `prepareRun`). Het krijgt de vraag, de laatste beurten en de lijst met bronnen (met wat Nook in elke bron kan: zoeken, nieuwste/ongelezen/open items, of nu niet leesbaar) en geeft één klein plan terug:
+
+* **goal**: wat de gebruiker echt wil weten of gedaan wil hebben, in één zin. Dat gaat mee naar het antwoord ("What the user wants"), zodat het model die vraag beantwoordt en niet iets wat erop lijkt;
+* **kind**: iets specifieks opzoeken, een overzicht van wat nieuw of open is, een actie, algemene kennis, of een groet;
+* **sources**: waar het antwoord echt staat, de genoemde bron eerst; geen bronnen waar het woord toevallig in voorkomt;
+* **queries**: één tot drie korte zoekopdrachten met de woorden die letterlijk in het item staan, synoniemen inbegrepen. Nook probeert ze allemaal.
+
+Met Claude doet Haiku deze kleine stap (snel en goedkoop); het gekozen model antwoordt. Lokale modellen en andere aanbieders doen het zelf. Komt er binnen 8 s (lokaal 12 s) geen bruikbaar plan, dan valt Nook terug op zijn eigen woordonderzoek hieronder. Claude Code slaat de stap over (een hele sessie per vraag is te traag).
+
+Daarnaast denkt het antwoordende model volgens een vaste volgorde: wat wil de gebruiker precies, waar staat dat, gaat het bewijs in de context echt over de vraag (anders zelf verder zoeken), en dan pas antwoorden. Het zegt nooit ja of nee over je gegevens zonder bewijs. Bij het zoeken in bestanden komen documenten vóór broncode en blijft build-uitvoer (`dist/`, `node_modules/`, `.build/`…) weg.
+
 ### Zelf zoeken en lezen
 
 Een klein lokaal model zoekt slecht: het roept één tool aan met de hele vraag als zoekterm, leest alleen de titels van de acht nieuwste notities of het begin van een mail. Daarom doet Nook dat werk zelf, op de Mac, vóór het model antwoordt, voor elk brein en elke bron hetzelfde (`Research`, aangeroepen vanuit `prepareRun`):
 
-1. **Zoektermen.** De woorden die de vraag dragen: "Wat staat er in mijn notitie over de verbouwing?" wordt `verbouwing`. Vulwoorden, vraagwoorden, namen van bronnen, datums en tijden vallen weg (nl/en/de); namen gaan voor, een zin tussen aanhalingstekens blijft heel. Een korte vervolgvraag ("en het budget?") houdt de woorden van de vraag ervoor (`budget verbouwing`) en zoekt in dezelfde bronnen.
+1. **Zoektermen.** De woorden die de vraag dragen: "Wat staat er in mijn notitie over de verbouwing?" wordt `verbouwing`. Vulwoorden, vraagwoorden, namen van bronnen en apps (WhatsApp, chats, Slack…), woorden over de status (open, openstaan, onbeantwoord, pending), datums en tijden vallen weg (nl/en/de); namen gaan voor, een zin tussen aanhalingstekens blijft heel. Een korte vervolgvraag ("en het budget?") houdt de woorden van de vraag ervoor (`budget verbouwing`) en zoekt in dezelfde bronnen.
 2. **Zoeken.** Elke relevante bron wordt met die woorden doorzocht: Notities (titel én inhoud van álle notities), Mail, Bestanden (Spotlight), Notion, GitHub, het web en elke MCP-server of eigen bron met een zoekveld. Noemt de vraag geen bron ("wat weet ik over project Apollo?"), dan zoekt Nook overal waar hij kan zoeken; het web alleen als de vraag erom vraagt, Contacten alleen bij een naam. Zonder zoekwoorden ("welke notities heb ik?") of bij een vraag naar het nieuwste of ongelezen kijkt Nook in het overzicht van de bron.
 3. **Lezen.** De treffers van alle bronnen worden gerangschikt (een woord in de titel telt zwaarder dan in de tekst, hoofdletters en accenten tellen niet) en de beste worden volledig geopend met de lees-tool van die bron: `read_note`, `read_mail`, `read_file`, `notion_read_page`, `github_issue_details`, `read_webpage`. Een treffer die al helemaal zichtbaar was, wordt niet nog eens geopend.
 
 Het model krijgt dit bovenaan de context ("Looked up for this question"): eerst waar Nook zocht en met welke woorden, dan de volledig gelezen documenten, dan de zoekresultaten. Wordt de context te lang, dan wijkt het algemene overzicht, niet de documenten. Het model krijgt daarnaast altijd de lees-tool bij elke zoek-tool, en de opdracht om zelf door te zoeken met andere woorden (een synoniem, een naam, één woord) voordat het zegt dat het iets niet vond. Lokale modellen met een groter venster (16k+) kunnen net als cloudmodellen met `use_source` elke toegestane bron bereiken.
+
+**Je noemt een bron: dan kijkt Nook daar.** Noemt de vraag een bron ("heb ik chats openstaan in WhatsApp?"), dan zoekt Nook nooit "overal" in de plaats daarvan, ook niet als hij die bron nu niet kan lezen. Kan dat niet (geen Volledige schijftoegang, app niet geïnstalleerd, koppeling uit), dan staat de bron als ✗ boven het antwoord met de reden, en zegt het antwoord dat eerlijk en hoe je het oplost, in plaats van ja of nee te gokken uit bestanden of notities waarin toevallig het woord "WhatsApp" staat. Het venster van de app (`read_app`) is dan de enige terugvaloptie. Kan Nook de gegevens van de app wel direct lezen, dan opent hij het venster niet (een gesloten app wordt dus niet voor niets gestart).
+
+**Openstaande chats.** "Heb ik chats openstaan?", "wie wacht er op mijn antwoord?", "ongelezen appjes?": `whatsapp_open_chats` en `messages_open_chats` geven de chats van de laatste 14 dagen met ongelezen berichten (ook handmatig als ongelezen gemarkeerd, WhatsApp) en de één-op-één-chats waarin de ander het laatst schreef, met het nieuwste bericht en een chat-id om de chat te lezen. Groepen tellen alleen mee als ze ongelezen berichten hebben. Zijn er geen, dan zegt de tool dat letterlijk.
 
 **Alleen wat over je vraag gaat.** Uit zoekresultaten haalt Nook de notities, mails, chats en bestanden die niets met de zoekwoorden te maken hebben, voordat het model ze ziet; vindt een bron alleen zulke resultaten, dan staat er "geen resultaten over …". Van een lang document en van het venster van een app (`read_app`) houdt Nook de passages over de vraag (met de titel en de bronnenlijst). Het model mag alleen antwoorden uit een bron die over de vraag gaat, en zegt anders dat het niets vond.
 
@@ -126,8 +143,8 @@ Legenda: ✅ werkt (code nagelopen, logica getest) · ➕ nieuw in deze versie �
 | Browser | Op je Mac en in Nook | ✅ open tabbladen met links (context); ➕ `read_nook_browser` (ingebouwde browser) | ➕ `open_in_nook_browser` |
 | Terminal | In Nook | – | ➕ `run_command`: hele commando in het plan, gevaarlijke commando's geweigerd, draait zichtbaar in de werkruimte |
 | MCP-servers | stdio of HTTP | ➕ lees-tools van de server | ➕ actie-tools van de server, altijd na jouw OK |
-| Berichten (iMessage, sms) | Op je Mac, Volledige schijftoegang | ➕ `search_messages` (hele geschiedenis, op tekst en contactnaam), `read_messages` (gesprek rond de treffers) | – |
-| WhatsApp | Op je Mac, Volledige schijftoegang | ➕ `search_whatsapp`, `read_whatsapp` | – |
+| Berichten (iMessage, sms) | Op je Mac, Volledige schijftoegang | ➕ `search_messages` (hele geschiedenis, op tekst en contactnaam), `read_messages` (gesprek rond de treffers), ➕ `messages_open_chats` (ongelezen en onbeantwoorde gesprekken) | – |
+| WhatsApp | Op je Mac, Volledige schijftoegang | ➕ `search_whatsapp`, `read_whatsapp`, ➕ `whatsapp_open_chats` (ongelezen en onbeantwoorde chats) | – |
 | Bear | Op je Mac | ➕ `search_bear`, `read_bear` | – |
 | Things | Op je Mac | ➕ `search_things` (open en afgerond, met project) | – |
 | Bestanden (Spotlight) | Op je Mac | ✅ `search_files`, `read_file` (pdf, Word, rtf, tekst), ➕ met klikbare verwijzing | – |

@@ -102,6 +102,8 @@ targets:
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ChatIntent.swift
       - path: Brain/Research.swift
+      - path: Brain/QueryPlan.swift
+      - path: Brain/NookDates.swift
       - path: Brain/AppData.swift
       - path: Brain/BrainSelection.swift
       - path: Brain/AIProvider.swift

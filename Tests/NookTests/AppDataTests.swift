@@ -99,4 +99,28 @@ final class AppDataTests: XCTestCase {
         ], terms: Research.Terms(words: ["offerte"]))
         XCTAssertTrue(text.hasPrefix("- Offerte keuken opvragen [to-do, done] (Verbouwing)"), text)
     }
+
+    func testOpenChatsShowUnreadFirstThenWhoWaitsForAReply() {
+        let rows: [[String: Any]] = [
+            ["chat": 1, "chatname": "Lisa", "handle": "", "me": 1, "date": 700_000_400, "text": "Tot morgen!", "unread": 0, "group": 0],
+            ["chat": 2, "chatname": "+31612345678", "handle": "+31612345678", "me": 0, "date": 700_000_300, "text": "Kun je even bellen?", "unread": 0, "group": 0],
+            ["chat": 3, "chatname": "Voetbal", "handle": "+31600000000", "me": 0, "date": 700_000_200, "text": "Training om 8", "unread": 4, "group": 1],
+            ["chat": 4, "chatname": "Buren", "handle": "+31600000001", "me": 0, "date": 700_000_100, "text": "Wie heeft de sleutel?", "unread": 0, "group": 1],
+            ["chat": 5, "chatname": "Tom", "handle": "", "me": 0, "date": 700_000_050, "text": "", "unread": 1, "group": 0]
+        ]
+        let chats = AppData.openChats(rows, names: [AppData.key("0612345678"): "Jan de Vries"])
+        XCTAssertEqual(chats.count, 5, "a chat whose newest message is a photo still counts")
+        let text = AppData.formatOpenChats(chats, app: "WhatsApp", days: 14)
+        XCTAssertTrue(text.contains("Unread: 2 chats"), text)
+        XCTAssertTrue(text.contains("Waiting for the user's reply (the other person wrote last): 1 chats"), text)
+        let order = Research.hits(in: text, tool: "whatsapp_open_chats").map(\.title)
+        XCTAssertEqual(order, ["Voetbal", "Tom", "Jan de Vries"], "unread first; a group where someone else wrote last is not waiting for you; Lisa got the last word")
+        XCTAssertFalse(text.contains("Buren"))
+    }
+
+    func testNoOpenChatsIsSaidPlainly() {
+        let chats = AppData.openChats([["chat": 1, "chatname": "Lisa", "handle": "", "me": 1, "date": 700_000_400, "text": "Top", "unread": 0]])
+        XCTAssertTrue(AppData.formatOpenChats(chats, app: "WhatsApp", days: 14).contains("No unread chats"))
+    }
 }
+

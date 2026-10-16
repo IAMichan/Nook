@@ -333,7 +333,18 @@ final class NotesConnector: ContextSource {
                         set target to missing value
                         try
                             set target to note id \(q)
+                            -- A reference by id is only resolved when it is used: check that the note is really there.
+                            get name of target
+                        on error
+                            set target to missing value
                         end try
+                        if target is missing value then
+                            -- A note in another account or folder is not always found by its reference, but by its id.
+                            try
+                                set matches to (notes whose id is \(q))
+                                if (count of matches) > 0 then set target to item 1 of matches
+                            end try
+                        end if
                         if target is missing value then
                             set matches to (notes whose name is \(q))
                             if (count of matches) > 0 then set target to item 1 of matches

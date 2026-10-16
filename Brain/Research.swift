@@ -55,7 +55,10 @@ enum Research {
         bestand bestanden document documenten file files pdf map mappen agenda kalender afspraak afspraken herinnering herinneringen \
         taak taken todo github notion issue issues pr prs repo internet web online google browser tab tabs tabblad pagina site website \
         scherm venster app apps klembord contact contacten bron bronnen \
+        chat chats chatje chatjes gesprek gesprekken appje appjes geappt appte imessage imessages sms sms'je sms'jes \
+        whatsapp whats-app slack teams discord telegram signal \
         ongelezen gelezen beantwoord beantwoorden antwoord antwoorden reageren reactie \
+        open openstaan openstaand openstaande onbeantwoord onbeantwoorde wacht wachten wachtend wachtende status \
         vandaag morgen gisteren overmorgen eergisteren straks vanavond vanochtend vanmiddag vannacht week weken maand maanden jaar \
         maandag dinsdag woensdag donderdag vrijdag zaterdag zondag weekend ochtend middag avond nacht uur tijd keer \
         laatste laatst nieuwste nieuw nieuwe recent recente vorige volgende eerste eerder later
@@ -70,7 +73,8 @@ enum Research {
         not no yet also just please something anything nothing everything all some any more less very really only other \
         notes note memo mail mails email emails message messages file files document documents folder calendar event events reminder reminders \
         task tasks todo issue issues repo internet web online browser tab tabs page site website screen window clipboard contact contacts source sources \
-        unread read replied reply answer \
+        chat chats conversation conversations thread threads text texts texted whatsapp imessage sms slack teams discord telegram signal \
+        unread read replied reply answer open pending unanswered waiting awaiting outstanding \
         today tomorrow yesterday tonight morning afternoon evening night week weeks month months year \
         monday tuesday wednesday thursday friday saturday sunday weekend hour time last latest newest new recent previous next first earlier
         """
@@ -83,7 +87,7 @@ enum Research {
         zusammenfassung zusammenfassen erkläre erklär \
         nicht kein keine noch schon auch bitte etwas nichts alles viel mehr weniger sehr nur andere \
         notiz notizen dokument dokumente datei dateien ordner kalender termin termine erinnerung erinnerungen aufgabe aufgaben \
-        nachricht nachrichten bildschirm quelle quellen ungelesen gelesen beantwortet antwort \
+        nachricht nachrichten bildschirm quelle quellen ungelesen gelesen beantwortet antwort offen offene unbeantwortet unbeantwortete \
         heute morgen gestern woche monat jahr montag dienstag mittwoch donnerstag freitag samstag sonntag letzte neueste neu vorige nächste
         """
         return Set((dutch + " " + english + " " + german).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
@@ -120,9 +124,11 @@ enum Research {
             .filter { !$0.isEmpty }
         var seen = Set<String>()
         var words: [(word: String, index: Int)] = []
+        // The name of a source says where to look, not what to look for ("heb ik chats openstaan in WhatsApp?").
+        let sourceNames = Set(SourceCatalog.all.map { $0.title.lowercased() }.filter { !$0.contains(" ") })
         for (index, token) in tokens.enumerated() {
             let lower = token.lowercased()
-            guard seen.insert(lower).inserted, !stopwords.contains(lower), !isDateOrTime(lower) else { continue }
+            guard seen.insert(lower).inserted, !stopwords.contains(lower), !sourceNames.contains(lower), !isDateOrTime(lower) else { continue }
             let hasDigit = lower.contains { $0.isNumber }
             let hasLetter = lower.contains { $0.isLetter }
             // A bare number only counts from four digits (a year, an invoice number), not the "14" of "14:30".
@@ -217,15 +223,17 @@ enum Research {
     /// The sources to look in for this question. The router's choice, plus, for a follow-up, what the question before
     /// was about; a lookup that names no source of its own is searched everywhere Nook can search; a name also goes
     /// to Contacts.
+    /// `named` are the sources the question names itself ("in WhatsApp"): then the user said where to look, and Nook never
+    /// falls back to searching everywhere, also not when that source cannot be read right now.
     static func sources(question: String, intent: ChatIntent, terms: Terms, relevant: Set<String>, previous: Set<String> = [],
-                        available: [Prefetch.Available], active: Set<String>) -> Set<String> {
+                        named: Set<String> = [], available: [Prefetch.Available], active: Set<String>) -> Set<String> {
         var sources = relevant
         if terms.inherited { sources.formUnion(previous) }
         let own = sources.subtracting(Prefetch.inContext)
-        if own.isEmpty, intent.kinds.isEmpty, !terms.isEmpty, isLookup(question) {
+        if own.isEmpty, named.isEmpty, intent.kinds.isEmpty, !terms.isEmpty, isLookup(question) {
             sources.formUnion(searchable(available, active: active))
         }
-        if !terms.names.isEmpty, active.contains("contacts"), isLookup(question) || own.contains("contacts") {
+        if !terms.names.isEmpty, active.contains("contacts"), (isLookup(question) && named.isEmpty) || own.contains("contacts") || named.contains("contacts") {
             sources.insert("contacts")
         }
         return sources
@@ -257,6 +265,7 @@ enum Research {
         "github_search": "github_issue_details",
         "search_web": "read_webpage",
         "search_messages": "read_messages", "search_whatsapp": "read_whatsapp",
+        "messages_open_chats": "read_messages", "whatsapp_open_chats": "read_whatsapp",
         "search_bear": "read_bear", "search_things": nil,
         "search_reminders": nil, "search_contacts": nil
     ]
@@ -302,12 +311,12 @@ enum Research {
                 Hit(tool: tool, title: plainTitle(section.heading), text: section.body, read: "read_bear",
                     input: ["id": bracket("id", in: section.heading) ?? ""], complete: section.body.count < 750)
             }.filter { !(($0.input["id"] as? String) ?? "").isEmpty }
-        case "search_messages", "search_whatsapp":
+        case "search_messages", "search_whatsapp", "messages_open_chats", "whatsapp_open_chats":
             // One hit per conversation; reading it shows the passages around the matches.
             hits = headed(output).compactMap { section in
                 guard let chat = bracket("chat", in: section.heading) else { return nil }
                 return Hit(tool: tool, title: plainTitle(section.heading), text: section.body,
-                           read: tool == "search_messages" ? "read_messages" : "read_whatsapp", input: ["chat": chat])
+                           read: tool.contains("whatsapp") ? "read_whatsapp" : "read_messages", input: ["chat": chat])
             }
         case "list_notes":
             hits = lines(output, prefix: "- ").compactMap { line in
@@ -569,6 +578,31 @@ enum Research {
             if size > limit - sources.count { break }
         }
         return "(The parts about \"\(terms.query(limit: 6))\":)\n" + parts.joined(separator: "\n") + sources
+    }
+
+    // MARK: Files worth showing
+
+    /// Build output and installed packages are never what someone asks about ("dist/assets/index-BRcVVYD8.js").
+    static func isBuildOutput(_ path: String) -> Bool {
+        let parts = ["/node_modules/", "/dist/", "/build/", "/.build/", "/DerivedData/", "/Pods/", "/.git/", "/vendor/",
+                     "/.next/", "/.nuxt/", "/target/", "/coverage/", "/.cache/", "/__pycache__/", "/.venv/", "/venv/"]
+        return parts.contains { path.contains($0) } || path.hasSuffix(".map") || path.hasSuffix(".min.js")
+    }
+
+    /// Source code, which matches nearly every word but is rarely the answer to a question about the user's own life.
+    static func isSourceCode(_ path: String) -> Bool {
+        let ext = (path as NSString).pathExtension.lowercased()
+        return ["swift", "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "go", "rs", "java", "kt", "c", "cc", "cpp", "h", "hpp", "m", "mm",
+                "rb", "php", "cs", "css", "scss", "less", "vue", "svelte", "sh", "lock", "plist", "xcconfig", "pbxproj", "gradle"].contains(ext)
+    }
+
+    /// Search hits in the order worth showing: documents first, then source code; build output left out. Keeps the
+    /// order of Spotlight within each group. `codeFirst` when the question is about code.
+    static func rankFiles(_ paths: [String], codeFirst: Bool = false) -> [String] {
+        let kept = paths.filter { !isBuildOutput($0) }
+        let code = kept.filter(isSourceCode)
+        let documents = kept.filter { !isSourceCode($0) }
+        return codeFirst ? code + documents : documents + code
     }
 
     // MARK: Parsing helpers

@@ -15,7 +15,7 @@ struct ModelProfile: Equatable {
     /// Small models get a simpler prompt and fewer tools.
     var isSmall: Bool
 
-    static let cloud = ModelProfile(contextTokens: 120_000, maxOutputTokens: 8_192, maxTools: 64, compactDescriptions: false, rounds: 6, isSmall: false)
+    static let cloud = ModelProfile(contextTokens: 120_000, maxOutputTokens: 8_192, maxTools: 64, compactDescriptions: false, rounds: 10, isSmall: false)
     static let localLarge = ModelProfile(contextTokens: 16_384, maxOutputTokens: 1_200, maxTools: 14, compactDescriptions: true, rounds: 4, isSmall: true)
     static let localSmall = ModelProfile(contextTokens: 8_192, maxOutputTokens: 800, maxTools: 8, compactDescriptions: true, rounds: 3, isSmall: true)
     /// A compact model that is good with tools (Qwen 3, 4B): a few more tools and rounds, the same small window.
