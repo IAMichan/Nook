@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.accessory)
         model.start()
         installStatusItem()
+        AppIconRenderer.start(settings: model.settings)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
