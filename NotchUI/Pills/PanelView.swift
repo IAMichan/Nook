@@ -100,7 +100,6 @@ struct PanelView: View {
         switch tab {
         case .nook, .chat, .connect, .shelf: NookChatTab(viewModel: viewModel)
         case .agents: AgentsTab(viewModel: viewModel)
-        case .workspace: NotchWorkspaceTab()
         case .music: MusicTab()
         }
     }

@@ -9,6 +9,8 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     let id = UUID()
     @Published var title: String
     @Published private(set) var directory: String
+    /// The folder it was opened in, so it stays with that session even after a `cd` elsewhere.
+    let origin: String
     @Published private(set) var exitCode: Int32?
     @Published private(set) var running = true
     let created = Date()
@@ -17,6 +19,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     init(title: String, directory: String, command: String?) {
         self.title = title
         self.directory = directory
+        origin = directory
         view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         super.init()
         view.processDelegate = self
@@ -74,6 +77,20 @@ final class TerminalStore: ObservableObject {
         sessions.append(session)
         selected = session.id
         return session
+    }
+
+    /// The terminals opened in `folder` or below it: the ones that belong to the session working there.
+    func sessions(in folder: String) -> [TerminalSession] {
+        let root = Self.normalized(folder)
+        return sessions.filter {
+            let origin = Self.normalized($0.origin)
+            return origin == root || origin.hasPrefix(root + "/")
+        }
+    }
+
+    private static func normalized(_ path: String) -> String {
+        let standard = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+        return standard.count > 1 && standard.hasSuffix("/") ? String(standard.dropLast()) : standard
     }
 
     func close(_ id: UUID) {
@@ -157,7 +174,7 @@ private struct TerminalHost: NSViewRepresentable {
     }
 }
 
-/// Workspace › Terminals: tabs for open sessions, a new terminal in any folder, and the session itself.
+/// Agents › Terminals: tabs for every open terminal, a new terminal in any folder, and the terminal itself.
 struct TerminalsView: View {
     @ObservedObject private var store = TerminalStore.shared
 
@@ -212,6 +229,59 @@ struct TerminalsView: View {
         panel.allowsMultipleSelection = false
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         store.open(in: url.path)
+    }
+}
+
+/// The terminals of one agent session, in its folder (or worktree): tabs when there are several, another one with +.
+/// Opening it the first time starts a terminal there, so it is ready to type in.
+struct SessionTerminalsView: View {
+    let directory: String
+    @ObservedObject private var store = TerminalStore.shared
+
+    var body: some View {
+        let mine = store.sessions(in: directory)
+        let shown = mine.first { $0.id == store.selected } ?? mine.last
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(mine) { session in
+                            TerminalTab(session: session, selected: shown?.id == session.id) {
+                                store.selected = session.id
+                            } close: {
+                                store.close(session.id)
+                            }
+                        }
+                    }
+                }
+                Button {
+                    store.open(in: directory)
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help(tr("workbench.terminal.new"))
+                .accessibilityLabel(tr("workbench.terminal.new"))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            Divider()
+            if let shown {
+                TerminalHost(session: shown)
+                    .id(shown.id)
+                    .background(Color.black)
+            } else {
+                WSEmptyState(
+                    symbol: "terminal",
+                    title: tr("agents.tool.noTerminal"),
+                    message: AgentPathFormat.tilde(directory),
+                    action: (tr("workbench.terminal.new"), { store.open(in: directory) })
+                )
+            }
+        }
+        .onAppear {
+            if store.sessions(in: directory).isEmpty { store.open(in: directory) }
+        }
     }
 }
 

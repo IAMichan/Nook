@@ -55,7 +55,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         [
             ToolSpec(
                 name: "read_nook_browser",
-                description: "Reads the text of the page open in Nook's own browser (Workspace › Browser), with its title and address.",
+                description: "Reads the text of the page open in Nook's own browser (Agents › Browser), with its title and address.",
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
                 kind: .read,
                 summarize: { _ in "Read Nook's browser" },
@@ -78,7 +78,11 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
                         throw NookError("Only https addresses can be opened.")
                     }
                     self?.webView.load(URLRequest(url: url))
-                    AppModel.shared.openMainWindow(.workspace, tool: .browser)
+                    if WorkspaceWindowController.shared.isKey {
+                        AppModel.shared.openMainWindow(.sessions, tool: .browser)
+                    } else {
+                        AppModel.shared.showWorkbench(.browser)
+                    }
                     return "Opened \(url.absoluteString) in Nook's browser"
                 }
             )
@@ -136,7 +140,7 @@ private struct WebViewHost: NSViewRepresentable {
     }
 }
 
-/// Workspace › Browser.
+/// Agents › Browser.
 struct BrowserView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = BrowserStore.shared
@@ -191,43 +195,16 @@ struct BrowserView: View {
     }
 }
 
-/// Workspace: the tools that work alongside chats and agents.
-struct WorkbenchView: View {
-    enum Tool: String, CaseIterable, Identifiable {
-        case terminals, browser, worktrees
-        var id: String { rawValue }
-        var title: String { tr("workbench." + rawValue) }
-        var symbol: String {
-            switch self {
-            case .terminals: return "terminal"
-            case .browser: return "safari"
-            case .worktrees: return "arrow.triangle.branch"
-            }
-        }
-    }
-
-    @AppStorage("workbench.tool") private var tool: Tool = .terminals
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $tool) {
-                ForEach(Tool.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
-            .padding(.top, 10)
-            Group {
-                switch tool {
-                case .terminals: TerminalsView()
-                case .browser: BrowserView()
-                case .worktrees: WorktreesView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nookWorkbenchTool)) { note in
-            if let raw = note.object as? String, let target = Tool(rawValue: raw) { tool = target }
+/// The tools that work alongside the agents: terminals, the browser and worktrees.
+enum WorkbenchTool: String, CaseIterable, Identifiable {
+    case terminals, browser, worktrees
+    var id: String { rawValue }
+    var title: String { tr("workbench." + rawValue) }
+    var symbol: String {
+        switch self {
+        case .terminals: return "terminal"
+        case .browser: return "safari"
+        case .worktrees: return "arrow.triangle.branch"
         }
     }
 }

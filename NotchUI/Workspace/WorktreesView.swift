@@ -2,6 +2,7 @@ import SwiftUI
 
 /// All repository worktrees: associated session, modified files, and available actions.
 struct WorktreesView: View {
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var confirm: WorktreeRow?
     @State private var error: String?
@@ -84,7 +85,10 @@ struct WorktreesView: View {
     @ViewBuilder
     private func sessionCell(_ row: WorktreeRow) -> some View {
         if let run = row.runIDs.compactMap({ workspace.run($0) }).first {
-            Button { workspace.selectedRunID = run.id } label: {
+            Button {
+                workspace.selectedRunID = run.id
+                app.viewModel.selectedAgentID = "run:" + run.id.uuidString
+            } label: {
                 HStack(spacing: 6) {
                     StatusBadge(status: run.status, compact: true)
                     VStack(alignment: .leading, spacing: 1) {
