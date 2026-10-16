@@ -7,6 +7,16 @@ struct AgentLogo: View {
     let agent: String
     var size: CGFloat = 16
 
+    init(agent: String, size: CGFloat = 16) {
+        self.agent = agent
+        self.size = size
+    }
+
+    init(_ kind: AgentKind, size: CGFloat = 16) {
+        self.agent = kind.name
+        self.size = size
+    }
+
     private enum Style {
         case claude, codex, gemini, antigravity
         case letter(String, Color)
