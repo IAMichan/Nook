@@ -32,6 +32,8 @@ enum NotchSheet: Equatable {
     case changes(UUID, file: String?)
     case commit(UUID)
     case pullRequest(UUID)
+    /// The changes in the folder of a session Nook does not run itself.
+    case folderChanges(String)
 
     var title: String {
         switch self {
@@ -39,6 +41,7 @@ enum NotchSheet: Equatable {
         case .changes: return tr("ws.changes.title")
         case .commit: return tr("ws.commit.title")
         case .pullRequest: return tr("ws.pr.title")
+        case .folderChanges: return tr("ws.changes.title")
         }
     }
 }

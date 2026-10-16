@@ -361,6 +361,12 @@ struct GitService: Sendable {
         return try run(["rev-parse", "--short", "HEAD"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Switches the working copy to an existing local branch. Git itself refuses when uncommitted changes would be lost.
+    func checkout(_ directory: String, branch: String) throws {
+        guard !branch.isEmpty, !branch.hasPrefix("-") else { throw GitError("Invalid branch name.") }
+        try run(["checkout", branch], in: directory, timeout: 60)
+    }
+
     /// Pushes the current branch to `remote` and sets upstream. Never force.
     func push(_ directory: String, remote: String, branch: String) throws {
         guard remotes(directory).contains(remote) else { throw GitError("Remote '\(remote)' does not exist.") }

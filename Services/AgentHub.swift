@@ -84,6 +84,8 @@ final class AgentHub: ObservableObject {
         var sessionID: String = ""
         var transcriptPath: String = ""
         var lastPrompt: String = ""
+        /// When Nook first heard of this session.
+        var started = Date()
     }
 
     private enum PendingKind {
@@ -693,7 +695,8 @@ final class AgentHub: ObservableObject {
                     sessionID: record.sessionID,
                     transcriptPath: record.transcriptPath,
                     lastPrompt: record.lastPrompt,
-                    lastReply: record.lastMessage
+                    lastReply: record.lastMessage,
+                    started: record.started
                 )
             }
     }

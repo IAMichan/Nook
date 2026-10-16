@@ -338,18 +338,8 @@ struct EventRow: View {
     var body: some View {
         switch event.kind {
         case .user:
-            VStack(alignment: .leading, spacing: 4) {
-                Text(tr("agents.you")).font(NookTheme.font(11, .semibold)).foregroundStyle(WS.tertiary)
-                Text(event.text)
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(WS.text)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(WS.raised))
-            .padding(.top, 6)
+            ChatBubble(fromUser: true, text: event.text)
+                .padding(.top, 6)
 
         case .assistant:
             MarkdownView(text: event.text, size: 13.5)
