@@ -100,6 +100,7 @@ targets:
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
       - path: Brain/ModelAdvisor.swift
+      - path: Brain/ModelDownload.swift
       - path: Brain/ChatIntent.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
@@ -112,6 +113,7 @@ targets:
       - path: Services/AgentSessionRegistry.swift
       - path: Services/FinishedSessions.swift
       - path: Core/NookError.swift
+      - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift

@@ -115,8 +115,21 @@ final class EmbeddedModel: ObservableObject {
 
     private nonisolated static func fetch(_ id: String, progress: @escaping @Sendable (Double) -> Void) async throws -> ModelContainer {
         do {
+            // Nook downloads the files itself, so the progress follows every byte (see ModelDownload). A model installed by
+            // an older version stays in the Hugging Face cache and loads from there. Only when the Hub's file list cannot
+            // be read does the library download it.
+            var configuration = ModelConfiguration(id: id)
+            if let local = ModelDownload.completedDirectory(for: id) {
+                configuration = ModelConfiguration(directory: local)
+            } else if !ModelDownload.isInHubCache(id) {
+                do {
+                    configuration = ModelConfiguration(directory: try await ModelDownload.fetch(id, progress: progress))
+                } catch let error as ModelDownload.ListingUnavailable {
+                    Log.brain.error("own model download unavailable (\(error.reason, privacy: .public)), using the library")
+                }
+            }
             return try await #huggingFaceLoadModelContainer(
-                configuration: ModelConfiguration(id: id),
+                configuration: configuration,
                 progressHandler: { p in progress(p.fractionCompleted) }
             )
         } catch let error as URLError {
