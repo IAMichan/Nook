@@ -301,7 +301,11 @@ struct AgentsUsagePanel: View {
                     }
                 }
             }
-            if let usage {
+            if usage == nil {
+                Text(tr("agents.usage.none"))
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textTertiary)
+            } else if let usage {
                 HStack(spacing: 16) {
                     stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
                     stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
