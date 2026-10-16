@@ -4,6 +4,11 @@ import XCTest
 final class FinishedSessionsTests: XCTestCase {
     private let key = "Test Agent|finished-sessions-test"
 
+    override func setUp() {
+        super.setUp()
+        FinishedSessions.shared.reopen(key)
+    }
+
     override func tearDown() {
         FinishedSessions.shared.reopen(key)
         super.tearDown()

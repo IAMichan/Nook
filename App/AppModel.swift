@@ -273,6 +273,7 @@ final class AppModel: ObservableObject {
                 if playing, case .idle = vm.state {
                     vm.show(.music)
                 } else if !playing, vm.state.kind == "music" || vm.state.kind == "track" {
+                    self.notch.cancelAnnouncement()
                     vm.show(.idle)
                 }
             }
@@ -297,7 +298,7 @@ final class AppModel: ObservableObject {
             .removeDuplicates { $0.title == $1.title && $0.artist == $1.artist && $0.app == $1.app }
             .filter(\.isPlaying)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] info in self?.viewModel.announce(info) }
+            .sink { [weak self] info in self?.notch.announce(info) }
             .store(in: &bag)
 
         hotKeys = [
