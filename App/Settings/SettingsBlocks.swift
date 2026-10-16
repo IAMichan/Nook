@@ -104,14 +104,28 @@ struct StatusRow<Trailing: View>: View {
     let title: String
     let detail: String
     let state: StatusState
+    /// Shows this agent's logo, with the status as a small badge on it, instead of the status icon alone.
+    var agent: String? = nil
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: state.symbol)
-                .font(.system(size: 17))
-                .foregroundStyle(state.color)
-                .frame(width: 22)
+            if let agent {
+                AgentLogo(agent: agent, size: 22)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: state.symbol)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(state.color)
+                            .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
+                            .offset(x: 4, y: 4)
+                    }
+                    .frame(width: 22)
+            } else {
+                Image(systemName: state.symbol)
+                    .font(.system(size: 17))
+                    .foregroundStyle(state.color)
+                    .frame(width: 22)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(detail)
@@ -180,7 +194,9 @@ struct WorkspaceSettingsSection: View {
     var body: some View {
         Section {
             Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
-                ForEach(RunProvider.allCases) { Text($0.displayName).tag($0) }
+                ForEach(RunProvider.allCases) { provider in
+                    Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
+                }
             }
             ForEach(RunProvider.allCases) { provider in
                 Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
