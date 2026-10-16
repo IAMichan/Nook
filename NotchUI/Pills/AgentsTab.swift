@@ -799,6 +799,7 @@ struct ShimmerText: View {
 
 /// Sessions Nook runs itself (started here, taken over, or from the workspace): working, waiting, or finished in the
 /// last day, newest first. Selecting one shows it on the right, where you control it completely.
+@MainActor
 enum WorkspaceRunsSection {
     static func recent(_ workspace: WorkspaceManager) -> [WorkspaceRun] {
         let list = workspace.runs
