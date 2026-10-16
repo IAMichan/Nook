@@ -248,8 +248,9 @@ struct AgentSessionDetail: View {
         let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
         return Menu {
-            Button(finishedMarks.contains(finishKey) ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
-                finishedMarks.toggle(finishKey)
+            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
+            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+                if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
             .disabled(busy)
             Divider()
