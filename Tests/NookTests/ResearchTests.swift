@@ -217,3 +217,61 @@ final class ResearchTests: XCTestCase {
         XCTAssertEqual(ChatIntent.detect("Maak een notitie: boodschappen melk en eieren").primaryAction, "create_note")
     }
 }
+
+/// Seeing only what is about the question, and opening hits of sources Nook does not know (MCP servers).
+final class ResearchGroundingTests: XCTestCase {
+    func testUnrelatedResultsAreLeftOut() {
+        let output = """
+        ### Verbouwing keuken | 2026-10-01 [id: n1]
+        Offerte van Jansen.
+
+        ### Recept appeltaart | 2026-09-01 [id: n2]
+        - appels
+        - kaneel
+
+        Sources in this result (cite using the bracketed number, e.g. [1]):
+        [1] Verbouwing keuken
+        """
+        let kept = Research.relevantOnly(output, tool: "search_notes", terms: Research.Terms(words: ["verbouwing"]))
+        XCTAssertTrue(kept.contains("Verbouwing keuken"))
+        XCTAssertFalse(kept.contains("appeltaart"))
+        XCTAssertFalse(kept.contains("kaneel"), "the list inside a dropped note goes with it")
+        XCTAssertTrue(kept.contains("[1] Verbouwing keuken"), "the numbered sources stay")
+        let none = Research.relevantOnly(output, tool: "search_notes", terms: Research.Terms(words: ["vakantie"]))
+        XCTAssertTrue(none.hasPrefix("(2 results, none of them about"), none)
+    }
+
+    func testAppTextKeepsThePartsAboutTheQuestion() {
+        let window = (0..<200).map { "regel \($0)" }.joined(separator: "\n") + "\nJan: de offerte is goedgekeurd\n" + (0..<200).map { "rest \($0)" }.joined(separator: "\n")
+        let focused = Research.focus(window, terms: Research.Terms(words: ["offerte"]), limit: 600)
+        XCTAssertTrue(focused.contains("Jan: de offerte is goedgekeurd"))
+        XCTAssertTrue(focused.contains("regel 0"), "the first line names the window")
+        XCTAssertFalse(focused.contains("regel 100"))
+    }
+
+    func testMCPHitsAreOpenedWithTheServersReadTool() {
+        let available: [Prefetch.Available] = [
+            .init(name: "mcp_linear_search_issues", source: "mcp.linear", required: ["query"], query: "query"),
+            .init(name: "mcp_linear_get_issue", source: "mcp.linear", required: ["id"])
+        ]
+        let openers = Research.openers(available)
+        XCTAssertEqual(openers["mcp_linear_search_issues"], Research.Opener(tool: "mcp_linear_get_issue", field: "id"))
+
+        let json = #"{"issues": [{"id": "ENG-12", "title": "Offerte module", "state": "open"}, {"id": "ENG-13", "title": "Login bug"}]}"#
+        let open = Research.toOpen([("mcp_linear_search_issues", json)], terms: Research.Terms(words: ["offerte"]), wantsContent: false,
+                                   available: ["mcp_linear_get_issue"], limit: 3, openers: openers)
+        XCTAssertEqual(open.map { $0.input["id"] as? String }, ["ENG-12"])
+
+        let lines = "- Offerte module (id: ENG-12)\n- Login bug (id: ENG-13)"
+        let fromText = Research.genericHits(in: lines, tool: "mcp_linear_search_issues", opener: Research.Opener(tool: "mcp_linear_get_issue", field: "id"))
+        XCTAssertEqual(fromText.map { $0.input["id"] as? String }, ["ENG-12", "ENG-13"])
+    }
+
+    func testChatsAreOpenedAtThePassageAboutTheQuestion() {
+        let output = "### Jan | 2026-10-01 [chat: 7]\n- 2026-10-01 10:00 · Jan: de offerte komt morgen"
+        let open = Research.toOpen([("search_messages", output)], terms: Research.Terms(words: ["offerte"]), wantsContent: false,
+                                   available: ["read_messages"], limit: 2)
+        XCTAssertEqual(open.first?.input["chat"] as? String, "7")
+        XCTAssertEqual(open.first?.input["query"] as? String, "offerte")
+    }
+}

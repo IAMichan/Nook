@@ -191,7 +191,7 @@ enum Research {
             text = name
         case "search_reminders", "notion_search":
             text = terms.query(limit: 1)
-        case "search_notes", "search_mail":
+        case "search_notes", "search_mail", "search_messages", "search_whatsapp", "search_bear", "search_things":
             // These tools match any of the words and rank by how many match.
             text = terms.query(limit: 6)
         default:
@@ -256,6 +256,8 @@ enum Research {
         "notion_search": "notion_read_page",
         "github_search": "github_issue_details",
         "search_web": "read_webpage",
+        "search_messages": "read_messages", "search_whatsapp": "read_whatsapp",
+        "search_bear": "read_bear", "search_things": nil,
         "search_reminders": nil, "search_contacts": nil
     ]
 
@@ -294,6 +296,18 @@ enum Research {
                 // The search shows at most the first 800 characters of a note.
                 return Hit(tool: tool, title: plainTitle(section.heading), text: section.body, read: "read_note",
                            input: ["identifier": id ?? plainTitle(section.heading)], complete: section.body.count < 750)
+            }
+        case "search_bear":
+            hits = headed(output).map { section in
+                Hit(tool: tool, title: plainTitle(section.heading), text: section.body, read: "read_bear",
+                    input: ["id": bracket("id", in: section.heading) ?? ""], complete: section.body.count < 750)
+            }.filter { !(($0.input["id"] as? String) ?? "").isEmpty }
+        case "search_messages", "search_whatsapp":
+            // One hit per conversation; reading it shows the passages around the matches.
+            hits = headed(output).compactMap { section in
+                guard let chat = bracket("chat", in: section.heading) else { return nil }
+                return Hit(tool: tool, title: plainTitle(section.heading), text: section.body,
+                           read: tool == "search_messages" ? "read_messages" : "read_whatsapp", input: ["chat": chat])
             }
         case "list_notes":
             hits = lines(output, prefix: "- ").compactMap { line in
@@ -360,11 +374,14 @@ enum Research {
     /// The hits worth opening, best first, across all sources: only hits that match the terms (or, without terms, the
     /// newest item when the question asks for the content), at most `perSource` per source and `limit` in total.
     static func toOpen(_ results: [(tool: String, output: String)], terms: Terms, wantsContent: Bool,
-                       available: Set<String>, limit: Int, perSource: Int = 2) -> [Hit] {
+                       available: Set<String>, limit: Int, perSource: Int = 2, openers: [String: Opener] = [:]) -> [Hit] {
         guard limit > 0 else { return [] }
         var candidates: [(hit: Hit, score: Int, order: Int)] = []
         for (order, result) in results.enumerated() {
-            for hit in hits(in: result.output, tool: result.tool) {
+            var found = hits(in: result.output, tool: result.tool)
+            if found.isEmpty, let opener = openers[result.tool] { found = genericHits(in: result.output, tool: result.tool, opener: opener) }
+            for var hit in found {
+                if hit.read == "read_messages" || hit.read == "read_whatsapp", !terms.isEmpty { hit.input["query"] = terms.query(limit: 6) }
                 guard let read = hit.read, available.contains(read), !hit.complete else { continue }
                 if terms.isEmpty {
                     if wantsContent, hit.position == 0 { candidates.append((hit, 1, order)) }
@@ -407,6 +424,151 @@ enum Research {
             ? query.lowercased().split(separator: " ").map(String.init).filter { $0.count >= 2 }
             : quoted.all
         return Array(words.prefix(6))
+    }
+
+    // MARK: Any search with a read tool (MCP servers)
+
+    /// How to open a hit of a search that Nook does not know: the source's read tool and the one field it needs.
+    struct Opener: Equatable {
+        var tool: String
+        var field: String
+    }
+
+    /// For every search of a source Nook does not know, the tool of the same source that opens one item: a read tool
+    /// named like get/read/fetch/show/open/view/details that needs exactly one field.
+    static func openers(_ available: [Prefetch.Available]) -> [String: Opener] {
+        var result: [String: Opener] = [:]
+        for search in available where searchTools[search.name] == nil && isSearch(search) {
+            let reader = available.first { tool in
+                tool.name != search.name && tool.source == search.source && tool.required.count == 1 && tool.query == nil
+                    && tool.name.range(of: #"(get|read|fetch|retrieve|show|open|view|detail|lookup|page|document|item)"#,
+                                       options: [.regularExpression, .caseInsensitive]) != nil
+            }
+            if let reader, let field = reader.required.first { result[search.name] = Opener(tool: reader.name, field: field) }
+        }
+        return result
+    }
+
+    /// Hits in the output of an unknown search: the objects of a JSON answer (with an id, key or url and a title or
+    /// name), or else every line that names an id ("id: ABC-12", "(id 123)").
+    static func genericHits(in output: String, tool: String, opener: Opener) -> [Hit] {
+        let idKeys = [opener.field, "id", "key", "identifier", "uuid", "slug", "number", "url", "uri", "path"]
+        let titleKeys = ["title", "name", "subject", "summary", "displayName", "label", "text"]
+        var hits: [Hit] = []
+        if let objects = jsonObjects(in: output) {
+            for object in objects {
+                guard let id = idKeys.lazy.compactMap({ value(object[$0]) }).first else { continue }
+                let title = titleKeys.lazy.compactMap { value(object[$0]) }.first ?? id
+                let text = object.compactMap { key, raw in value(raw).map { "\(key): \($0)" } }.sorted().joined(separator: "\n")
+                hits.append(Hit(tool: tool, title: title, text: text, read: opener.tool, input: [opener.field: id], position: hits.count))
+            }
+            return hits
+        }
+        let pattern = try? NSRegularExpression(pattern: #"(?i)\b(?:id|key)\s*[:=]?\s*["'`]?([A-Za-z0-9][A-Za-z0-9_\-:./]{1,80})"#)
+        for line in output.components(separatedBy: "\n") where !line.hasPrefix("Sources in this result") && !line.hasPrefix("[") {
+            guard let pattern, let match = pattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(match.range(at: 1), in: line) else { continue }
+            let id = String(line[range]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'`.,;)"))
+            hits.append(Hit(tool: tool, title: line.trimmingCharacters(in: CharacterSet(charactersIn: "-*• ")), text: line,
+                            read: opener.tool, input: [opener.field: id], position: hits.count))
+        }
+        return hits
+    }
+
+    private static func value(_ raw: Any?) -> String? {
+        if let text = raw as? String, !text.isEmpty { return text }
+        if let number = raw as? NSNumber { return number.stringValue }
+        return nil
+    }
+
+    /// The list of objects in a JSON answer: the top-level array, or the first array of objects inside the top-level
+    /// object (results, items, data, issues…), one level deep.
+    private static func jsonObjects(in output: String) -> [[String: Any]]? {
+        guard let start = output.firstIndex(where: { $0 == "[" || $0 == "{" }) else { return nil }
+        let closing: Character = output[start] == "[" ? "]" : "}"
+        guard let end = output.lastIndex(of: closing), end > start,
+              let data = String(output[start...end]).data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        if let list = json as? [[String: Any]] { return list }
+        guard let object = json as? [String: Any] else { return nil }
+        for key in object.keys.sorted() {
+            if let list = object[key] as? [[String: Any]], !list.isEmpty { return list }
+            if let inner = object[key] as? [String: Any] {
+                for innerKey in inner.keys.sorted() {
+                    if let list = inner[innerKey] as? [[String: Any]], !list.isEmpty { return list }
+                }
+            }
+        }
+        return [object]
+    }
+
+    // MARK: Only what is about the question
+
+    /// Search tools whose results Nook can split into separate items.
+    private static let itemized: Set<String> = [
+        "search_notes", "search_mail", "search_bear", "search_messages", "search_whatsapp", "search_files",
+        "github_search", "notion_search", "search_things", "search_reminders"
+    ]
+
+    /// A search result without the items that have nothing to do with the question, so the model never answers from
+    /// an unrelated note or mail that happened to match one common word. When nothing is about the question, says so.
+    static func relevantOnly(_ output: String, tool: String, terms: Terms) -> String {
+        guard !terms.isEmpty, itemized.contains(tool) else { return output }
+        // Notes, mail and chats are sections under a heading (their text may hold lists); the others are one line each.
+        let headed: Set<String> = ["search_notes", "search_mail", "search_bear", "search_messages", "search_whatsapp"]
+        let starts: (String) -> Bool = headed.contains(tool)
+            ? { $0.hasPrefix("### ") }
+            : { $0.hasPrefix("- ") || $0.hasPrefix("~/") || $0.hasPrefix("/") }
+        var head: [String] = []
+        var items: [[String]] = []
+        var tail: [String] = []
+        for line in output.components(separatedBy: "\n") {
+            if !tail.isEmpty || line.hasPrefix("Sources in this result") {
+                tail.append(line)
+            } else if starts(line) {
+                items.append([line])
+            } else if items.isEmpty {
+                head.append(line)
+            } else {
+                items[items.count - 1].append(line)
+            }
+        }
+        guard !items.isEmpty else { return output }
+        let kept = items.filter { item in score(title: item[0], text: item.dropFirst().joined(separator: "\n"), terms: terms) > 0 }
+        if kept.isEmpty { return "(\(items.count) results, none of them about \"\(terms.query(limit: 6))\".)" }
+        guard kept.count < items.count else { return output }
+        let note = "(\(items.count - kept.count) results that are not about \"\(terms.query(limit: 6))\" left out.)"
+        return (head + kept.flatMap { $0 } + [note] + tail).joined(separator: "\n")
+    }
+
+    /// The parts of a long text (an app's window, a page) that are about the question: every line that matches, with
+    /// two lines before and after, in order. Without a match, the start of the text.
+    static func focus(_ text: String, terms: Terms, limit: Int) -> String {
+        guard !terms.isEmpty, text.count > limit / 2 else { return String(text.prefix(limit)) }
+        // The numbered sources at the end stay, so the answer can still cite them.
+        var body = text
+        var sources = ""
+        if let range = text.range(of: "\n\nSources in this result") {
+            body = String(text[..<range.lowerBound])
+            sources = String(text[range.lowerBound...])
+        }
+        let lines = body.components(separatedBy: "\n")
+        let matches = lines.indices.filter { score(title: "", text: lines[$0], terms: terms) > 0 }
+        guard !matches.isEmpty else { return String(body.prefix(max(0, limit - sources.count))) + sources }
+        // The first line names the document.
+        var keep: Set<Int> = [0]
+        for index in matches { keep.formUnion(max(0, index - 2)...min(lines.count - 1, index + 2)) }
+        var parts: [String] = []
+        var previous: Int?
+        var size = 0
+        for index in keep.sorted() {
+            if let previous, index > previous + 1 { parts.append("…") }
+            parts.append(lines[index])
+            size += lines[index].count + 1
+            previous = index
+            if size > limit - sources.count { break }
+        }
+        return "(The parts about \"\(terms.query(limit: 6))\":)\n" + parts.joined(separator: "\n") + sources
     }
 
     // MARK: Parsing helpers

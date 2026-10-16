@@ -211,19 +211,30 @@ extension AppModel {
             let previous = history.last(where: \.fromUser).map { SourceRouter.relevant(to: $0.text, scope: scope, active: activeIDs) } ?? []
             let sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
                                            available: available, active: activeIDs.filter { scope.allows($0) })
-            var calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 7 : 5)
+            var calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
             if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
                 calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
             }
-            let results = await Self.runAll(calls, tools: tools, timeout: 22, limit: profile.isSmall ? (roomy ? 2_500 : 1_800) : 5_000)
+            // Only what is about the question reaches the model: unrelated items that matched one common word are left
+            // out, and of an app's whole window only the passages about the question are kept.
+            let searchLimit = profile.isSmall ? (roomy ? 2_500 : 1_800) : 5_000
+            let shape: (String, String) -> String = { tool, output in
+                tool == "read_app" ? Research.focus(output, terms: terms, limit: searchLimit) : Research.relevantOnly(output, tool: tool, terms: terms)
+            }
+            let results = await Self.runAll(calls, tools: tools, timeout: 22, limit: searchLimit, shape: shape)
             found = results.map(\.output)
 
-            // Open the best hits in full: the start of a note or a file name is rarely the answer.
+            // Open the best hits in full: the start of a note or a file name is rarely the answer. A source Nook does
+            // not know (an MCP server) is opened with its own read tool.
             let readers = Set(tools.map(\.name))
             let hits = Research.toOpen(results, terms: terms, wantsContent: Research.wantsContent(text), available: readers,
-                                       limit: profile.isSmall ? (roomy ? 3 : 2) : 4)
+                                       limit: profile.isSmall ? (roomy ? 3 : 2) : 4, openers: Research.openers(available))
             let reads = hits.compactMap { hit in hit.read.map { Prefetch.Call(tool: $0, input: hit.input) } }
-            opened = await Self.runAll(reads, tools: tools, timeout: 15, limit: profile.isSmall ? (roomy ? 4_000 : 2_500) : 10_000).map(\.output)
+            let readLimit = profile.isSmall ? (roomy ? 4_000 : 2_500) : 10_000
+            opened = await Self.runAll(reads, tools: tools, timeout: 15, limit: readLimit) { _, output in
+                // A long document keeps the parts about the question, so they are not cut off.
+                output.count > readLimit ? Research.focus(output, terms: terms, limit: readLimit) : output
+            }.map(\.output)
 
             if !ledger.steps.isEmpty {
                 let words = terms.query(limit: 6)
@@ -263,7 +274,8 @@ extension AppModel {
     }
 
     /// Runs lookups at once, each with a time limit; returns the ones that answered, in the order asked.
-    private static func runAll(_ calls: [Prefetch.Call], tools: [ToolSpec], timeout: Double, limit: Int) async -> [(tool: String, output: String)] {
+    private static func runAll(_ calls: [Prefetch.Call], tools: [ToolSpec], timeout: Double, limit: Int,
+                               shape: @escaping (String, String) -> String = { $1 }) async -> [(tool: String, output: String)] {
         let runnable = calls.compactMap { call in tools.first(where: { $0.name == call.tool }).map { (call, $0) } }
         guard !runnable.isEmpty else { return [] }
         return await withTaskGroup(of: (Int, String, String?).self) { group in
@@ -275,7 +287,8 @@ extension AppModel {
             }
             var results: [(Int, String, String)] = []
             for await (index, tool, output) in group {
-                guard let output, !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                guard let raw = output, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                let output = shape(tool, raw)
                 var text = String(output.prefix(limit))
                 if output.count > limit { text += "\n… (shortened)" }
                 results.append((index, tool, text))
