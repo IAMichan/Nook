@@ -331,7 +331,7 @@ struct MarkdownView: View {
                 }
             }
         case .code(let language, let code):
-            CodeBlock(language: language, code: code, size: size)
+            MarkdownCodeBlock(language: language, code: code, size: size)
         case .chart(let chart):
             ChatChartView(chart: chart)
         case .question(let text, let options):
@@ -458,7 +458,7 @@ private struct CalloutBlock: View {
 
 // MARK: Code
 
-private struct CodeBlock: View {
+private struct MarkdownCodeBlock: View {
     let language: String
     let code: String
     let size: CGFloat
