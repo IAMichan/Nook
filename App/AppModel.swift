@@ -266,6 +266,19 @@ final class AppModel: ObservableObject {
             }
             .store(in: &bag)
 
+        // Equalizer: listen to the player's real output while it plays, and stop as soon as it doesn't.
+        nowPlaying.$current
+            .map { info -> String? in
+                guard let info, info.isPlaying else { return nil }
+                return info.app == "Spotify" ? "com.spotify.client" : "com.apple.Music"
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { bundleID in
+                if let bundleID { AudioLevelMonitor.shared.start(bundleID: bundleID) } else { AudioLevelMonitor.shared.stop() }
+            }
+            .store(in: &bag)
+
         // Track change: notch temporarily shows currently playing track.
         nowPlaying.$current
             .compactMap { $0 }

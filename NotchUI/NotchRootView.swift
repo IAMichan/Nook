@@ -228,28 +228,14 @@ struct NotchRootView: View {
         .frame(height: nh)
     }
 
-    /// Right of the notch: which track is now playing.
+    /// Right of the notch: which track just started.
     private func trackLabel(title: String, artist: String) -> some View {
-        HStack(spacing: 8) {
-            EqualizerBars(color: NookTheme.music, height: 12)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(NookTheme.font(11.5, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                if !artist.isEmpty {
-                    Text(artist)
-                        .font(NookTheme.font(10))
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            .lineLimit(1)
-            .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 14)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
+        TrackAnnouncement(
+            title: title,
+            artist: artist,
+            artworkURL: app.nowPlaying.current?.artworkURL,
+            isPlaying: app.nowPlaying.current?.isPlaying ?? true
+        )
     }
 
     // MARK: Recent action
@@ -386,5 +372,58 @@ private extension View {
                 .onChanged { _ in if viewModel.geometry.isFloating { viewModel.onDragMoved?() } }
                 .onEnded { _ in if viewModel.geometry.isFloating { viewModel.onDragEnded?() } }
         )
+    }
+}
+
+/// The "new track" strip: the bar grows wider and the song sits in it. Only a quiet fade, no big movements.
+private struct TrackAnnouncement: View {
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+    let isPlaying: Bool
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            cover
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                if !artist.isEmpty {
+                    Text(artist)
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+            Spacer(minLength: 0)
+            EqualizerBars(color: NookTheme.music, height: 12, isPlaying: isPlaying)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .opacity(shown ? 1 : 0)
+        .animation(.easeOut(duration: 0.3).delay(0.12), value: shown)
+        .onAppear { shown = true }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
+    }
+
+    private var cover: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5).fill(NookTheme.music)
+            if let artworkURL {
+                AsyncImage(url: artworkURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.clear
+                }
+            } else {
+                Image(systemName: "music.note").font(.system(size: 10, weight: .bold)).foregroundStyle(NookTheme.ink)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 }
