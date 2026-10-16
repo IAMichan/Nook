@@ -228,7 +228,7 @@ struct NotchRootView: View {
         .frame(height: nh)
     }
 
-    /// Right of the notch: which track just started. Artwork pops in, the text slides up, the bars follow the sound.
+    /// Right of the notch: which track just started.
     private func trackLabel(title: String, artist: String) -> some View {
         TrackAnnouncement(
             title: title,
@@ -375,7 +375,7 @@ private extension View {
     }
 }
 
-/// The "new track" strip. Each part enters on its own beat so the change reads as a moment, not a text swap.
+/// The "new track" strip: the bar grows wider and the song sits in it. Only a quiet fade, no big movements.
 private struct TrackAnnouncement: View {
     let title: String
     let artist: String
@@ -386,34 +386,25 @@ private struct TrackAnnouncement: View {
     var body: some View {
         HStack(spacing: 9) {
             cover
-                .scaleEffect(shown ? 1 : 0.4)
-                .opacity(shown ? 1 : 0)
-                .animation(.spring(response: 0.42, dampingFraction: 0.62), value: shown)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(NookTheme.font(11.5, .semibold))
                     .foregroundStyle(NookTheme.paper)
-                    .offset(y: shown ? 0 : 7)
-                    .opacity(shown ? 1 : 0)
-                    .animation(.spring(response: 0.45, dampingFraction: 0.8).delay(0.07), value: shown)
                 if !artist.isEmpty {
                     Text(artist)
                         .font(NookTheme.font(10))
                         .foregroundStyle(NookTheme.textSecondary)
-                        .offset(y: shown ? 0 : 7)
-                        .opacity(shown ? 1 : 0)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.8).delay(0.14), value: shown)
                 }
             }
             .lineLimit(1)
             .truncationMode(.tail)
             Spacer(minLength: 0)
             EqualizerBars(color: NookTheme.music, height: 12, isPlaying: isPlaying)
-                .opacity(shown ? 1 : 0)
-                .animation(.easeOut(duration: 0.3).delay(0.2), value: shown)
         }
         .padding(.leading, 12)
         .padding(.trailing, 14)
+        .opacity(shown ? 1 : 0)
+        .animation(.easeOut(duration: 0.3).delay(0.12), value: shown)
         .onAppear { shown = true }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
