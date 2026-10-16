@@ -22,6 +22,63 @@ struct SessionComposer<Controls: View>: View {
 
     @FocusState private var ownFocus: Bool
 
+    init(
+        text: Binding<String>,
+        prompt: String,
+        minHeight: CGFloat = 20,
+        lines: ClosedRange<Int> = 1...6,
+        canSend: Bool = true,
+        sending: Bool = false,
+        busy: Bool = false,
+        onStop: (() -> Void)? = nil,
+        sendLabel: String? = nil,
+        focus: FocusState<Bool>.Binding? = nil,
+        onSend: @escaping () -> Void,
+        @ViewBuilder controls: @escaping () -> Controls
+    ) {
+        self._text = text
+        self.prompt = prompt
+        self.minHeight = minHeight
+        self.lines = lines
+        self.canSend = canSend
+        self.sending = sending
+        self.busy = busy
+        self.onStop = onStop
+        self.sendLabel = sendLabel
+        self.focus = focus
+        self.onSend = onSend
+        self.controls = controls
+    }
+
+    /// Convenience initializer where `focus` precedes `busy`, preventing argument-order compiler errors.
+    init(
+        text: Binding<String>,
+        prompt: String,
+        minHeight: CGFloat = 20,
+        lines: ClosedRange<Int> = 1...6,
+        canSend: Bool = true,
+        sending: Bool = false,
+        focus: FocusState<Bool>.Binding?,
+        busy: Bool = false,
+        onStop: (() -> Void)? = nil,
+        sendLabel: String? = nil,
+        onSend: @escaping () -> Void,
+        @ViewBuilder controls: @escaping () -> Controls
+    ) {
+        self._text = text
+        self.prompt = prompt
+        self.minHeight = minHeight
+        self.lines = lines
+        self.canSend = canSend
+        self.sending = sending
+        self.busy = busy
+        self.onStop = onStop
+        self.sendLabel = sendLabel
+        self.focus = focus
+        self.onSend = onSend
+        self.controls = controls
+    }
+
     static var surface: Color { Color(hex: 0x121214) }
     static var accent: Color { Color(hex: 0x3D58D6) }
 
