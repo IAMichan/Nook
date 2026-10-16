@@ -37,6 +37,17 @@ enum LocalAgentScanner {
     private static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3"]
     private static let backgroundModes: Set<String> = ["app-server", "mcp-server", "mcp", "proto"]
 
+    private struct CachedProcess {
+        let command: String
+        var cwd: String
+        var cwdUpdatedAt: Date
+        let envLine: String
+    }
+
+    private static let cacheLock = NSLock()
+    private static var processCache: [Int32: CachedProcess] = [:]
+    private static let cwdTTL: TimeInterval = 30
+
     static func scan() async -> [DetectedAgent] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -49,28 +60,78 @@ enum LocalAgentScanner {
         guard let list = run("/bin/ps", ["-axo", "pid=,ppid=,command="]) else { return [] }
         let me = ProcessInfo.processInfo.processIdentifier
 
-        var found: [(pid: Int32, name: String)] = []
+        var found: [(pid: Int32, name: String, command: String)] = []
         for line in list.split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
             guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]),
                   pid != me, parent != me else { continue }   // Ignore Nook's own helper processes (codex app-server, claude -p)
             let command = String(fields[2])
-            if let name = identify(command) { found.append((pid, name)) }
+            if let name = identify(command) { found.append((pid, name, command)) }
         }
-        guard !found.isEmpty else { return [] }
+        guard !found.isEmpty else {
+            cacheLock.lock()
+            processCache.removeAll()
+            cacheLock.unlock()
+            return []
+        }
 
-        // Working directory per process, in batch.
+        let now = Date()
+        let activePIDs = Set(found.map(\.pid))
+        var needLsof: [Int32] = []
+        var needEnv: [Int32] = []
         var folders: [Int32: String] = [:]
-        let pids = found.map { String($0.pid) }.joined(separator: ",")
-        if let out = run("/usr/sbin/lsof", ["-a", "-p", pids, "-d", "cwd", "-Fpn"]) {
-            var current: Int32?
-            for line in out.split(separator: "\n") {
-                if line.hasPrefix("p") { current = Int32(line.dropFirst()) }
-                else if line.hasPrefix("n"), let pid = current { folders[pid] = String(line.dropFirst()) }
+        var environments: [Int32: String] = [:]
+
+        cacheLock.lock()
+        processCache = processCache.filter { activePIDs.contains($0.key) }
+        for item in found {
+            if let cached = processCache[item.pid], cached.command == item.command {
+                environments[item.pid] = cached.envLine
+                if !cached.cwd.isEmpty, now.timeIntervalSince(cached.cwdUpdatedAt) < cwdTTL {
+                    folders[item.pid] = cached.cwd
+                } else {
+                    needLsof.append(item.pid)
+                }
+            } else {
+                needLsof.append(item.pid)
+                needEnv.append(item.pid)
             }
         }
-        // The environment of each process: which account it runs under, and whether Nook started it itself.
-        let environments = environmentLines(pids)
+        cacheLock.unlock()
+
+        // Working directory per process, in batch (with -b -w so lsof never blocks on network/FUSE mounts).
+        if !needLsof.isEmpty {
+            let lsofPIDs = needLsof.map(String.init).joined(separator: ",")
+            if let out = run("/usr/sbin/lsof", ["-b", "-w", "-a", "-p", lsofPIDs, "-d", "cwd", "-Fpn"]) {
+                var current: Int32?
+                for line in out.split(separator: "\n") {
+                    if line.hasPrefix("p") { current = Int32(line.dropFirst()) }
+                    else if line.hasPrefix("n"), let pid = current { folders[pid] = String(line.dropFirst()) }
+                }
+            }
+        }
+
+        // The environment of each new process: which account it runs under, and whether Nook started it itself.
+        if !needEnv.isEmpty {
+            let envPIDs = needEnv.map(String.init).joined(separator: ",")
+            let fetched = environmentLines(envPIDs)
+            for pid in needEnv {
+                environments[pid] = fetched[pid] ?? ""
+            }
+        }
+
+        cacheLock.lock()
+        for item in found {
+            let previous = processCache[item.pid]
+            let cwd = folders[item.pid] ?? previous?.cwd ?? ""
+            let envLine = environments[item.pid] ?? previous?.envLine ?? ""
+            let cwdUpdated = needLsof.contains(item.pid) ? now : (previous?.cwdUpdatedAt ?? now)
+            processCache[item.pid] = CachedProcess(command: item.command, cwd: cwd, cwdUpdatedAt: cwdUpdated, envLine: envLine)
+            folders[item.pid] = cwd
+            environments[item.pid] = envLine
+        }
+        cacheLock.unlock()
+
         return found.compactMap { item in
             let line = environments[item.pid] ?? ""
             guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
@@ -120,7 +181,7 @@ enum LocalAgentScanner {
         return nil
     }
 
-    private static func run(_ path: String, _ arguments: [String]) -> String? {
+    private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval = 3.0) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
@@ -128,8 +189,25 @@ enum LocalAgentScanner {
         process.standardOutput = output
         process.standardError = Pipe()
         do { try process.run() } catch { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+
+        let readGroup = DispatchGroup()
+        var outData = Data()
+        readGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outData = output.fileHandleForReading.readDataToEndOfFile()
+            readGroup.leave()
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if process.isRunning {
+            process.terminate()
+            return nil
+        }
         process.waitUntilExit()
-        return String(data: data, encoding: .utf8)
+        _ = readGroup.wait(timeout: .now() + 0.5)
+        return String(data: outData, encoding: .utf8)
     }
 }

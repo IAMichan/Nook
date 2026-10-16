@@ -309,7 +309,7 @@ struct AgentsTab: View {
             status: .finished,
             started: session.ended,
             path: session.cwd,
-            finishKey: FinishedSessions.key(past: session)
+            finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id)
         )
     }
 
@@ -440,7 +440,7 @@ enum GitHead {
 
     static func branch(for path: String) -> String? {
         guard !path.isEmpty else { return nil }
-        if let hit = cache[path], Date().timeIntervalSince(hit.read) < 10 { return hit.branch }
+        if let hit = cache[path], Date().timeIntervalSince(hit.read) < 30 { return hit.branch }
         let branch = read(path)
         cache[path] = (branch, Date())
         return branch
@@ -477,25 +477,39 @@ enum GitHead {
 // MARK: Formatting
 
 enum AgentFormat {
-    private static var time: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: I18n.shared.language.rawValue)
-        formatter.dateFormat = "HH:mm"
-        return formatter
+    private static let formatterLock = NSLock()
+    private static var cachedLanguage: String = ""
+    private static var cachedTimeFormatter = DateFormatter()
+    private static var cachedDayFormatter = DateFormatter()
+    private static var cachedWeekdayFormatter = DateFormatter()
+    private static let tagStripperRegex = try? NSRegularExpression(pattern: "<[^>]*>?")
+    private static let titleTrimSet = CharacterSet(charactersIn: "#*-:· ")
+
+    private static func updateFormattersIfNeeded() {
+        let lang = I18n.shared.language.rawValue
+        guard cachedLanguage != lang else { return }
+        cachedLanguage = lang
+        let locale = Locale(identifier: lang)
+        cachedTimeFormatter.locale = locale
+        cachedTimeFormatter.dateFormat = "HH:mm"
+        cachedDayFormatter.locale = locale
+        cachedDayFormatter.dateFormat = "EEE d MMM"
+        cachedWeekdayFormatter.locale = locale
+        cachedWeekdayFormatter.dateFormat = "EEEEEE"
     }
 
-    private static var day: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: I18n.shared.language.rawValue)
-        formatter.dateFormat = "EEE d MMM"
-        return formatter
+    private static func formatTime(_ date: Date) -> String {
+        formatterLock.lock()
+        defer { formatterLock.unlock() }
+        updateFormattersIfNeeded()
+        return cachedTimeFormatter.string(from: date)
     }
 
-    private static var weekday: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: I18n.shared.language.rawValue)
-        formatter.dateFormat = "EEEEEE"
-        return formatter
+    private static func formatDay(_ date: Date) -> String {
+        formatterLock.lock()
+        defer { formatterLock.unlock() }
+        updateFormattersIfNeeded()
+        return cachedDayFormatter.string(from: date)
     }
 
     /// "< 1 min", "12 min", "1h 20m", "3 days".
@@ -521,20 +535,26 @@ enum AgentFormat {
     /// "resets at 15:40" or "resets Thu Oct 16".
     static func reset(_ date: Date?) -> String? {
         guard let date, date > Date() else { return nil }
-        if date.timeIntervalSinceNow < 20 * 3600 { return tr("agents.resetAt", time.string(from: date)) }
-        return tr("agents.resetOn", day.string(from: date))
+        if date.timeIntervalSinceNow < 20 * 3600 { return tr("agents.resetAt", formatTime(date)) }
+        return tr("agents.resetOn", formatDay(date))
     }
 
-    static func weekdayLetter(_ date: Date) -> String { weekday.string(from: date) }
+    static func weekdayLetter(_ date: Date) -> String {
+        formatterLock.lock()
+        defer { formatterLock.unlock() }
+        updateFormattersIfNeeded()
+        return cachedWeekdayFormatter.string(from: date)
+    }
 
     /// A session title stripped of tags Claude Code sometimes prefixes ("<pasted_content …>").
     static func title(_ raw: String) -> String {
         var text = raw
-        if text.contains("<") {
-            text = text.replacingOccurrences(of: "<[^>]*>?", with: " ", options: .regularExpression)
+        if text.contains("<"), let regex = tagStripperRegex {
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            text = regex.stringByReplacingMatches(in: text, range: range, withTemplate: " ")
         }
         text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "#*-:· "))
+            .trimmingCharacters(in: titleTrimSet)
         if text.isEmpty { return raw.contains("pasted") ? tr("agents.pastedText") : tr("agents.untitledSession") }
         return text
     }

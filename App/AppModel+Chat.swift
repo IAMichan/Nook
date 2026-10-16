@@ -125,30 +125,22 @@ extension AppModel {
         var snapshot: ScreenSnapshot?
         var attachedName: String?
         let screenAllowed = scope.allows(SourceCatalog.screen)
+        let explicitScreen = Self.refersToScreen(text)
+        let shouldCaptureScreen: Bool
         if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = tr("app.status.reading", file.name) }
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
-        } else if screenAllowed, Self.refersToScreen(text) || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
+            shouldCaptureScreen = false
+        } else if screenAllowed, explicitScreen || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
-            do {
-                snapshot = try await screenSnapshot()
-            } catch {
-                // Missing screen recording permission: reply without screen content unless explicitly requested.
-                if Self.refersToScreen(text) {
-                    finishReply(id, error: error.localizedDescription, conversation: conversation)
-                    return
-                }
-            }
+            shouldCaptureScreen = true
+        } else {
+            shouldCaptureScreen = false
         }
         guard !Task.isCancelled else { return }
-
-        var sources: [String] = []
-        if let attachedName { sources.append(attachedName) } else if let snapshot {
-            sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
-        }
 
         // If asking for a chart, Nook renders it natively; raw code/JSON should not appear in chat.
         let wantsChart = ChartRescue.wantsChart(text)
@@ -165,15 +157,50 @@ extension AppModel {
                 }
             }
         }
+
+        // Run screen snapshot and source prefetching in parallel so neither waits on the other.
+        async let capturedScreen: Result<ScreenSnapshot?, Error> = {
+            guard shouldCaptureScreen else { return .success(nil) }
+            do {
+                return .success(try await self.screenSnapshot())
+            } catch {
+                return .failure(error)
+            }
+        }()
+
+        let initialSources = attachedName.map { [$0] } ?? []
         let prepared = await prepareRun(text: text, scope: scope, snapshotText: snapshot?.text, ledger: ledger, history: history) { [weak self] summary in
             self?.chat.update(id) {
-                $0.sources = sources
+                if !initialSources.isEmpty { $0.sources = initialSources }
                 $0.contextSources = summary.titles
                 $0.scopeLabel = scope.isRestricted ? scope.label() : ""
                 $0.status = retry ? (wantsChart ? tr("app.status.drawing") : tr("app.status.searching")) : tr("app.status.thinking")
             }
         }
+
+        if shouldCaptureScreen {
+            switch await capturedScreen {
+            case .success(let snap):
+                snapshot = snap
+                if let snap { web.note(snap.text) }
+            case .failure(let error):
+                // Missing screen recording permission: reply without screen content unless explicitly requested.
+                if explicitScreen {
+                    finishReply(id, error: error.localizedDescription, conversation: conversation)
+                    return
+                }
+            }
+        }
         guard !Task.isCancelled else { return }
+
+        var sources: [String] = []
+        if let attachedName { sources.append(attachedName) } else if let snapshot {
+            sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle)
+        }
+        if !sources.isEmpty {
+            chat.update(id) { $0.sources = sources }
+        }
+
         let tools = prepared.tools
         let relevant = prepared.relevant
         let fetched = prepared.fetched
@@ -187,6 +214,7 @@ extension AppModel {
         }
 
         do {
+            var lastCleanedText = ""
             let plan = try await brain.run(
                 userText: request,
                 followUp: !history.isEmpty,
@@ -199,8 +227,11 @@ extension AppModel {
                     guard let self, self.replies[conversation] == id else { return }
                     var visible = FollowUps.streamingBody(partial)
                     if wantsChart { visible = ChartRescue.hidingChartCode(visible) }
+                    let cleaned = Self.cleanReply(visible)
+                    guard cleaned != lastCleanedText else { return }
+                    lastCleanedText = cleaned
                     self.chat.update(id) { message in
-                        message.text = Self.cleanReply(visible)
+                        message.text = cleaned
                         message.status = ""
                     }
                 }
@@ -343,12 +374,19 @@ extension AppModel {
         viewModel.present(card)
     }
 
+    private static let thinkBlockRegex = try? NSRegularExpression(pattern: #"<think>[\s\S]*?</think>"#)
+    private static let rawToolCallRegex = try? NSRegularExpression(pattern: #"(?m)^\s*\{\s*"(name|tool)"\s*:.*\}\s*$"#)
+
     /// Cleans residual raw tool call tags and stray backslashes from model output.
     static func cleanReply(_ text: String) -> String {
         var cleaned = text
         // Reasoning blocks or tool syntax as raw text should not appear in chat.
-        cleaned = cleaned.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: #"(?m)^\s*\{\s*"(name|tool)"\s*:.*\}\s*$"#, with: "", options: .regularExpression)
+        if cleaned.contains("<think"), let rx = thinkBlockRegex {
+            cleaned = rx.stringByReplacingMatches(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: "")
+        }
+        if cleaned.contains("{"), let rx = rawToolCallRegex {
+            cleaned = rx.stringByReplacingMatches(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: "")
+        }
         return MarkdownBlock.clean(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -11,10 +11,31 @@ enum MarkdownBlock {
     case table(header: [String], rows: [[String]])
     case rule
 
+    private static let brRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
+    private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
+    private static let ruleRegex = try? NSRegularExpression(pattern: #"^([-*_]\s*){3,}$"#)
+    private static let tableDividerRegex = try? NSRegularExpression(pattern: #"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$"#)
+    private static let bulletRegex = try? NSRegularExpression(pattern: #"^\s*[-*•+]\s+"#)
+    private static let numberRegex = try? NSRegularExpression(pattern: #"^\s*\d{1,3}[.)]\s+"#)
+
+    private static func matches(_ text: String, _ rx: NSRegularExpression?) -> Bool {
+        guard let rx else { return false }
+        return rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    private static func stripPrefix(_ text: String, _ rx: NSRegularExpression?) -> String {
+        guard let rx else { return text }
+        return rx.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+    }
+
     /// Cleans up artifacts models sometimes output: trailing backslashes (hard breaks), `<br>`, and Windows line endings.
     static func clean(_ text: String) -> String {
-        text.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: #"<br\s*/?>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
+        var normalized = text.contains("\r") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
+        if normalized.contains("<"), let rx = brRegex {
+            normalized = rx.stringByReplacingMatches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized), withTemplate: "\n")
+        }
+        guard normalized.contains("\\") else { return normalized }
+        return normalized
             .components(separatedBy: "\n")
             .map { line -> String in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -37,19 +58,12 @@ enum MarkdownBlock {
             paragraph.removeAll()
         }
 
-        func match(_ line: String, _ pattern: String) -> Bool {
-            line.range(of: pattern, options: .regularExpression) != nil
-        }
-
         func cells(_ line: String) -> [String] {
             var trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("|") { trimmed.removeFirst() }
             if trimmed.hasSuffix("|") { trimmed.removeLast() }
             return trimmed.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
         }
-
-        let bullet = #"^\s*[-*•+]\s+"#
-        let number = #"^\s*\d{1,3}[.)]\s+"#
 
         while index < lines.count {
             let line = lines[index]
@@ -74,7 +88,7 @@ enum MarkdownBlock {
                 continue
             }
             // Heading
-            if match(trimmed, #"^#{1,6}\s"#) {
+            if matches(trimmed, headingRegex) {
                 flush()
                 let level = trimmed.prefix { $0 == "#" }.count
                 blocks.append(.heading(level: level, text: trimmed.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)))
@@ -82,7 +96,7 @@ enum MarkdownBlock {
                 continue
             }
             // Horizontal rule
-            if match(trimmed, #"^([-*_]\s*){3,}$"#) {
+            if matches(trimmed, ruleRegex) {
                 flush()
                 blocks.append(.rule)
                 index += 1
@@ -90,7 +104,7 @@ enum MarkdownBlock {
             }
             // Table: a header row with | followed by a divider row.
             if trimmed.contains("|"), index + 1 < lines.count,
-               match(lines[index + 1].trimmingCharacters(in: .whitespaces), #"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$"#) {
+               matches(lines[index + 1].trimmingCharacters(in: .whitespaces), tableDividerRegex) {
                 flush()
                 let header = cells(trimmed)
                 var rows: [[String]] = []
@@ -105,14 +119,14 @@ enum MarkdownBlock {
                 continue
             }
             // Bulleted list
-            if match(line, bullet) {
+            if matches(line, bulletRegex) {
                 flush()
                 var items: [String] = []
                 while index < lines.count {
                     let current = lines[index]
-                    if match(current, bullet) {
+                    if matches(current, bulletRegex) {
                         let indent = current.prefix { $0 == " " || $0 == "\t" }.count
-                        let text = current.replacingOccurrences(of: bullet, with: "", options: .regularExpression)
+                        let text = stripPrefix(current, bulletRegex)
                         items.append((indent >= 2 ? "◦ " : "") + text)
                     } else if !current.trimmingCharacters(in: .whitespaces).isEmpty, current.hasPrefix("  "), !items.isEmpty {
                         items[items.count - 1] += " " + current.trimmingCharacters(in: .whitespaces)
@@ -125,17 +139,17 @@ enum MarkdownBlock {
                 continue
             }
             // Numbered list
-            if match(line, number) {
+            if matches(line, numberRegex) {
                 flush()
                 var items: [(number: String, text: String)] = []
-                while index < lines.count, match(lines[index], number) {
+                while index < lines.count, matches(lines[index], numberRegex) {
                     let current = lines[index].trimmingCharacters(in: .whitespaces)
                     let digits = String(current.prefix { $0.isNumber })
-                    let text = current.replacingOccurrences(of: number, with: "", options: .regularExpression)
+                    let text = stripPrefix(current, numberRegex)
                     items.append((digits + ".", text))
                     index += 1
                     // Blank lines between list items are treated as part of the list.
-                    if index + 1 < lines.count, lines[index].trimmingCharacters(in: .whitespaces).isEmpty, match(lines[index + 1], number) {
+                    if index + 1 < lines.count, lines[index].trimmingCharacters(in: .whitespaces).isEmpty, matches(lines[index + 1], numberRegex) {
                         index += 1
                     }
                 }

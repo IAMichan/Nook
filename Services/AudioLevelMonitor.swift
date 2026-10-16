@@ -18,7 +18,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
 
     private let lock = NSLock()
     private var levels = [Float](repeating: 0, count: AudioLevelMonitor.bandCount)
-    private var lastSignal = Date.distantPast
+    private var lastSignalTime: CFAbsoluteTime = 0
 
     private var bundlePrefix: String?
     private var tapID = AudioObjectID(kAudioObjectUnknown)
@@ -32,8 +32,18 @@ final class AudioLevelMonitor: @unchecked Sendable {
     func level(_ band: Int) -> Double {
         lock.lock()
         defer { lock.unlock() }
-        guard band >= 0, band < levels.count, Date().timeIntervalSince(lastSignal) < 0.5 else { return 0 }
+        guard band >= 0, band < levels.count, CFAbsoluteTimeGetCurrent() - lastSignalTime < 0.5 else { return 0 }
         return Double(levels[band])
+    }
+
+    /// Reads all frequency bands in a single lock acquisition for 30–40 FPS equalizer rendering.
+    func snapshot() -> [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        guard CFAbsoluteTimeGetCurrent() - lastSignalTime < 0.5 else {
+            return [Double](repeating: 0, count: Self.bandCount)
+        }
+        return levels.map { Double($0) }
     }
 
     // MARK: Start and stop
@@ -126,7 +136,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
         tapID = AudioObjectID(kAudioObjectUnknown)
         lock.lock()
         levels = [Float](repeating: 0, count: Self.bandCount)
-        lastSignal = .distantPast
+        lastSignalTime = 0
         lock.unlock()
     }
 
@@ -159,6 +169,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
         // Time-based release so the bars fall the same speed whatever the buffer size.
         let dt = Float(Double(frames) / sampleRate)
         let release = expf(-dt / 0.14)
+        let now = CFAbsoluteTimeGetCurrent()
         lock.lock()
         for b in 0..<Self.bandCount {
             let rms = sqrtf(energy[b] / Float(frames))
@@ -167,7 +178,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
             let target = min(1, max(0, (db + 52) / 42))
             levels[b] = target > levels[b] ? levels[b] + (target - levels[b]) * 0.6 : max(target, levels[b] * release)
         }
-        if energy.contains(where: { $0 > 1e-10 }) { lastSignal = Date() }
+        if energy.contains(where: { $0 > 1e-10 }) { lastSignalTime = now }
         lock.unlock()
     }
 

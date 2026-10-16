@@ -14,8 +14,33 @@ enum AgentTranscript {
     private static let tailBytes: UInt64 = 600_000
     private static let maxMessageLength = 6_000
 
+    private struct CacheEntry {
+        let size: UInt64
+        let modified: Date
+        let limit: Int
+        let messages: [AgentChatMessage]
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cache: [String: CacheEntry] = [:]
+
     static func recent(path: String, limit: Int = 10) -> [AgentChatMessage] {
-        guard path.hasSuffix(".jsonl"), let handle = FileHandle(forReadingAtPath: path) else { return [] }
+        guard path.hasSuffix(".jsonl") else { return [] }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        let attrSize = (attrs?[.size] as? NSNumber)?.uint64Value
+        let attrMod = attrs?[.modificationDate] as? Date
+
+        if let attrSize, let attrMod {
+            cacheLock.lock()
+            if let hit = cache[path], hit.size == attrSize, hit.modified == attrMod, hit.limit >= limit {
+                let result = Array(hit.messages.suffix(limit))
+                cacheLock.unlock()
+                return result
+            }
+            cacheLock.unlock()
+        }
+
+        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return [] }
         let start = size > tailBytes ? size - tailBytes : 0
@@ -44,7 +69,14 @@ enum AgentTranscript {
                 messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
             }
         }
-        return Array(messages.suffix(limit))
+        let result = Array(messages.suffix(limit))
+        if let attrMod {
+            cacheLock.lock()
+            if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
+            cache[path] = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
+            cacheLock.unlock()
+        }
+        return result
     }
 
     private static func text(_ content: Any?) -> String {

@@ -152,10 +152,11 @@ struct NookChatView: View {
         }
     }
 
-    /// Updates as streamed responses arrive, keeping the chat scrolled to bottom.
+    /// Updates as streamed responses arrive, keeping the chat scrolled to bottom without layout thrashing on every token.
     private var scrollKey: String {
         guard let last = chat.messages.last else { return "" }
-        return "\(last.id)-\(last.text.count)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)-\(last.retrieval.count)-\(last.references.count)"
+        let textStep = last.streaming ? (last.text.count / 24) : last.text.count
+        return "\(last.id)-\(last.streaming)-\(textStep)-\(last.charts.count)-\(last.mails.count)-\(last.actions.count)-\(last.status)-\(last.retrieval.count)-\(last.references.count)"
     }
 
     // MARK: Input
