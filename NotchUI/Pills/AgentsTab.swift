@@ -9,11 +9,14 @@ struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
     @State private var showFinished = false
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     private enum Selection {
         case live(AgentSession)
         case past(PastSession)
         case run(UUID)
+        case pullRequests
+        case usage
         case new
     }
 
@@ -27,6 +30,9 @@ struct AgentsTab: View {
             VStack(alignment: .leading, spacing: 8) {
                 listHeader(selection)
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
+                if !app.demoMode {
+                    AgentsFooter(selected: selectedID(selection)) { viewModel.selectedAgentID = $0 }
+                }
             }
             .padding(.trailing, 12)
             .frame(width: 280)
@@ -38,6 +44,8 @@ struct AgentsTab: View {
                 case .live(let session): AgentSessionDetail(selection: .live(session)).id(session.id)
                 case .past(let session): AgentSessionDetail(selection: .past(session)).id("past:" + session.id)
                 case .run(let id): AgentRunPanel(workspace: app.workspace, runID: id)
+                case .pullRequests: PullRequestsPanel()
+                case .usage: AgentsUsagePanel()
                 case .new:
                     if app.demoMode {
                         nothingRunning
@@ -102,6 +110,8 @@ struct AgentsTab: View {
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
         if id == "new" { return .new }
+        if id == AgentsPage.pullRequests && !app.demoMode { return .pullRequests }
+        if id == AgentsPage.usage && !app.demoMode { return .usage }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
@@ -121,6 +131,8 @@ struct AgentsTab: View {
         case .live(let session): return session.id
         case .past(let session): return "past:" + session.id
         case .run(let id): return "run:" + id.uuidString
+        case .pullRequests: return AgentsPage.pullRequests
+        case .usage: return AgentsPage.usage
         case .new: return "new"
         }
     }
@@ -131,8 +143,13 @@ struct AgentsTab: View {
                              selection: Selection) -> some View {
         let current = selectedID(selection)
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
-        let active = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
-        let finished = past.map { item($0) }
+        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
+        // A chat you marked as finished moves down, unless the agent is working in it again.
+        let marked = running.filter { !$0.isBusy && finishedMarks.contains($0.finishKey) }
+        let active = running.filter { item in !marked.contains { $0.id == item.id } }
+        let done = Set(marked.map(\.finishKey))
+        let finished = marked.map { $0.markedFinished() } + past.map { item($0) }.filter { !done.contains($0.finishKey) }
+        let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
 
         return TimelineView(.periodic(from: .now, by: 30)) { context in
             ScrollView(showsIndicators: false) {
@@ -141,6 +158,7 @@ struct AgentsTab: View {
                         AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
                             viewModel.selectedAgentID = entry.id
                         }
+                        .contextMenu { finishMenu(entry, marked: false) }
                     }
                     if active.isEmpty && finished.isEmpty {
                         Text(app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow"))
@@ -171,11 +189,27 @@ struct AgentsTab: View {
                                 AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
                                     viewModel.selectedAgentID = entry.id
                                 }
+                                .contextMenu { finishMenu(entry, marked: finishedMarks.contains(entry.finishKey)) }
                             }
                         }
                     }
                 }
             }
+        }
+        // The agent works in a chat you had marked as finished: it is not finished after all.
+        .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
+        .onAppear { finishedMarks.reopenAll(busyKeys) }
+    }
+
+    /// The finish/reopen action of a row, in its context menu.
+    @ViewBuilder
+    private func finishMenu(_ entry: AgentListItem, marked: Bool) -> some View {
+        if entry.isBusy {
+            Button(tr("agents.finish.mark")) {}.disabled(true)
+        } else if marked {
+            Button(tr("agents.finish.reopen")) { finishedMarks.reopen(entry.finishKey) }
+        } else if entry.status != .finished {
+            Button(tr("agents.finish.mark")) { finishedMarks.mark(entry.finishKey) }
         }
     }
 
@@ -220,7 +254,8 @@ struct AgentsTab: View {
             account: account(app.profile(for: run)),
             status: status,
             started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
-            path: run.workingDirectory
+            path: run.workingDirectory,
+            finishKey: FinishedSessions.key(run: run)
         )
     }
 
@@ -250,7 +285,8 @@ struct AgentsTab: View {
             account: account(app.profile(for: session)),
             status: status,
             started: session.started ?? known?.started,
-            path: session.cwd
+            path: session.cwd,
+            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id)
         )
     }
 
@@ -264,7 +300,8 @@ struct AgentsTab: View {
             account: account(app.profile(for: session)),
             status: .finished,
             started: session.ended,
-            path: session.cwd
+            path: session.cwd,
+            finishKey: FinishedSessions.key(past: session)
         )
     }
 
@@ -300,6 +337,16 @@ struct AgentListItem: Identifiable {
     /// Working or waiting: when it started. Otherwise: when it was last active.
     let started: Date?
     let path: String
+    /// Identifies the conversation for "mark as finished", the same for a running and an earlier session of it.
+    let finishKey: String
+
+    /// Busy or waiting for you: it cannot be marked as finished yet.
+    var isBusy: Bool { status == .working || status == .waiting }
+
+    func markedFinished() -> AgentListItem {
+        AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
+                      started: started, path: path, finishKey: finishKey)
+    }
 }
 
 /// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath.

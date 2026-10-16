@@ -24,6 +24,7 @@ struct AgentSessionDetail: View {
     @State private var questionStep = 0
     @State private var questionAnswers: [[String]] = []
     @State private var questionPicks: Set<String> = []
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     var body: some View {
         Group {
@@ -244,7 +245,14 @@ struct AgentSessionDetail: View {
 
     /// End the session, or open its folder or a terminal there.
     private func sessionMenu(_ session: AgentSession) -> some View {
-        Menu {
+        let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
+        let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
+        return Menu {
+            Button(finishedMarks.contains(finishKey) ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+                finishedMarks.toggle(finishKey)
+            }
+            .disabled(busy)
+            Divider()
             if app.canEnd(session) {
                 Button(tr("agents.nook.end"), role: .destructive) {
                     perform { try app.endSession(session) }

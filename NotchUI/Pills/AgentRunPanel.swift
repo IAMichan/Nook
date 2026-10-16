@@ -14,6 +14,7 @@ struct AgentRunPanel: View {
     @State private var renaming = false
     @State private var titleDraft = ""
     @FocusState private var focused: Bool
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -112,6 +113,11 @@ struct AgentRunPanel: View {
             } else if run.status == .failed || run.status == .stopped {
                 Button(tr("ws.action.retry")) { workspace.retry(runID) }
             }
+            let finishKey = FinishedSessions.key(run: run)
+            Button(finishedMarks.contains(finishKey) ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+                finishedMarks.toggle(finishKey)
+            }
+            .disabled(run.status.isActive)
             Button(tr("agents.run.rename")) {
                 titleDraft = run.title
                 renaming = true

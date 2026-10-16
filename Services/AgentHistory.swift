@@ -403,7 +403,7 @@ private final class HistoryScanner: @unchecked Sendable {
             .sorted { $0.ended > $1.ended }
 
         var usage: [String: AgentUsageSummary] = [:]
-        for home in homes where fm.fileExists(atPath: home.url.path) && home.kind != .gemini {
+        for home in homes where fm.fileExists(atPath: home.url.path) {
             usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
         }
         let accounts = readAccounts(homes)
@@ -623,6 +623,7 @@ private final class HistoryScanner: @unchecked Sendable {
             ended: (root["lastUpdated"] as? String).flatMap { date($0) } ?? modified,
             prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
         )
+        var entries: [UsageEntry] = []
         for message in messages {
             let text = Self.geminiText(message["content"])
             switch message["type"] as? String {
@@ -634,9 +635,16 @@ private final class HistoryScanner: @unchecked Sendable {
             case "gemini":
                 if !text.isEmpty { session.lastReply = text }
                 if let model = message["model"] as? String, !model.isEmpty { session.model = model }
-                if let tokens = message["tokens"] as? [String: Any] {
-                    session.tokens += TokenTally(input: Self.int(tokens["input"]), output: Self.int(tokens["output"]),
-                                                 cacheRead: Self.int(tokens["cached"]), cacheWrite: 0)
+                if let raw = message["tokens"] as? [String: Any] {
+                    // Gemini counts cached tokens inside its input; keep them apart like the other agents do.
+                    let cached = Self.int(raw["cached"])
+                    let tally = TokenTally(input: max(0, Self.int(raw["input"]) - cached),
+                                           output: Self.int(raw["output"]) + Self.int(raw["thoughts"]),
+                                           cacheRead: cached, cacheWrite: 0)
+                    session.tokens += tally
+                    let when = (message["timestamp"] as? String).flatMap { date($0) } ?? session.ended
+                    let id = (message["id"] as? String) ?? "\(entries.count)"
+                    entries.append(UsageEntry(key: "gemini:\(session.sessionID):\(id)", date: when, tokens: tally))
                 }
             default:
                 continue
@@ -645,7 +653,7 @@ private final class HistoryScanner: @unchecked Sendable {
         session.title = Self.oneLine(session.title, 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
-        return Parsed(session: session, entries: [])
+        return Parsed(session: session, entries: entries)
     }
 
     /// Message content is a string, or a list of parts with a `text`.
