@@ -97,6 +97,11 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         var paths = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin",
                      "\(home)/.volta/bin", "\(home)/.bun/bin", "\(home)/Library/pnpm"]
         if self == .claude { paths.insert("\(home)/.claude/local", at: 0) }
+        if self == .antigravity {
+            paths.insert("\(home)/.gemini/antigravity/bin", at: 0)
+            paths.insert("\(home)/.antigravity/antigravity/bin", at: 0)
+            paths.insert("/Applications/Antigravity.app/Contents/Resources/app/bin", at: 0)
+        }
         let nvm = "\(home)/.nvm/versions/node"
         if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvm) {
             paths += versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { "\(nvm)/\($0)/bin" }
@@ -785,6 +790,9 @@ private final class HistoryScanner: @unchecked Sendable {
             } else if isPlanner {
                 if let content = object["content"] as? String {
                     let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { session.lastReply = trimmed }
+                } else if session.lastReply.isEmpty, let thinking = object["thinking"] as? String {
+                    let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { session.lastReply = trimmed }
                 }
                 if session.cwd.isEmpty, let toolCalls = object["tool_calls"] as? [[String: Any]] {

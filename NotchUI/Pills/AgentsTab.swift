@@ -764,10 +764,15 @@ struct AgentConversation: View {
         }
     }
 
+    @ViewBuilder
     private func bubble(_ message: AgentChatMessage) -> some View {
-        let open = !message.fromUser && message.id == shown.last?.id && session.status != .running
-        return ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor,
-                                   onChoose: open ? onReply : nil)
+        if message.isThinking {
+            ThinkingBubble(text: message.text)
+        } else {
+            let open = !message.fromUser && message.id == shown.last?.id && session.status != .running
+            ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor,
+                               onChoose: open ? onReply : nil)
+        }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -803,6 +808,59 @@ private extension AgentSession {
     }
 }
 
+/// A collapsible bubble displaying internal model reasoning / thoughts.
+struct ThinkingBubble: View {
+    let text: String
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NookTheme.iris)
+                    Text(tr("ws.event.thinking"))
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Text(text)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(hex: 0x141416))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 /// A dot that gently pulses while the agent is running.
 struct PulseDot: View {
     let color: Color

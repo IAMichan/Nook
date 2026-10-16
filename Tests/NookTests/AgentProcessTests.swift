@@ -254,7 +254,50 @@ final class AgentTranscriptTests: XCTestCase {
         XCTAssertTrue(messages[0].fromUser)
         XCTAssertEqual(messages[0].text, "Toon transcript")
         XCTAssertFalse(messages[1].fromUser)
+        XCTAssertFalse(messages[1].isThinking)
         XCTAssertEqual(messages[1].text, "Ik heb het gevonden.")
     }
+
+    func testAntigravityTranscriptThinking() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let file = tempDir.appendingPathComponent("transcript.jsonl")
+        let lines = [
+            #"{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-10-16T13:35:32Z","content":"Zoek de bug"}"#,
+            #"{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","thinking":"Eerst controleren we de status van git.","tool_calls":[{"name":"run_command"}]}"#,
+            #"{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","thinking":"Nu inspecteren we de code in AgentTranscript.swift.","tool_calls":[{"name":"view_file"}]}"#,
+            #"{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"Ik heb de oorzaak ontdekt en opgelost."}"#
+        ].joined(separator: "\n")
+        try lines.write(to: file, atomically: true, encoding: .utf8)
+
+        let messages = AgentTranscript.recent(path: file.path)
+        XCTAssertEqual(messages.count, 3)
+        XCTAssertTrue(messages[0].fromUser)
+        XCTAssertEqual(messages[0].text, "Zoek de bug")
+
+        XCTAssertFalse(messages[1].fromUser)
+        XCTAssertTrue(messages[1].isThinking)
+        XCTAssertEqual(messages[1].kind, .thinking)
+        XCTAssertEqual(messages[1].text, "Eerst controleren we de status van git.\n\nNu inspecteren we de code in AgentTranscript.swift.")
+
+        XCTAssertFalse(messages[2].fromUser)
+        XCTAssertFalse(messages[2].isThinking)
+        XCTAssertEqual(messages[2].kind, .assistant)
+        XCTAssertEqual(messages[2].text, "Ik heb de oorzaak ontdekt en opgelost.")
+    }
 }
+
+final class AntigravityClientTests: XCTestCase {
+    func testCommandDetection() {
+        if AntigravityClient.isAvailable {
+            let cmd = AntigravityClient.command()
+            XCTAssertNotNil(cmd)
+            XCTAssertFalse(cmd!.executable.isEmpty)
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cmd!.executable))
+        }
+    }
+}
+
 

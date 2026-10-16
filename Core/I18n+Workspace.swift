@@ -905,6 +905,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.composer.placeholder": "Folgeauftrag für den Agent…",
         "ws.composer.hint": "⌘↩ zum Senden",
         "ws.composer.hintBusy": "⌘. zum Stoppen",
+        "ws.event.thinking": "Denkschritte",
         "ws.approval.title": "%@ möchte %@ verwenden",
         "ws.approval.open": "Arbeitsbereich öffnen",
         "ws.inspector.changes": "Änderungen",
