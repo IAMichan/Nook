@@ -27,6 +27,14 @@ final class AppModel: ObservableObject {
     /// Calendar, mail, browser, GitHub, Stripe, etc.: context sources for Nook.
     let connectors = ConnectorHub()
     let codex = CodexUsage()
+    /// Claude's subscription limits, read from Anthropic for every Claude account.
+    private(set) lazy var claudeUsage = ClaudeUsage(hub: hub) { [weak self] in self?.profiles.profiles(for: .claude) ?? [] }
+
+    /// Reads the limits of all linked accounts right away (Claude and Codex).
+    func refreshQuotas() {
+        codex.refreshNow()
+        claudeUsage.refreshNow()
+    }
     /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.
     let history = AgentHistory()
     /// Configured accounts per agent (personal, work, etc.) and active defaults.
@@ -324,6 +332,7 @@ final class AppModel: ObservableObject {
             return self.profiles.profiles(for: .codex).map { $0.homeURL }
         }
         codex.start()
+        claudeUsage.start()
 
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }

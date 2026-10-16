@@ -170,7 +170,7 @@ extension AppModel {
             for _ in 0..<60 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 self?.history.refresh(minimumInterval: 0)
-                self?.codex.refreshNow()
+                self?.refreshQuotas()
             }
         }
     }
@@ -226,7 +226,7 @@ extension AppModel {
             return
         }
         history.refresh(minimumInterval: 0)
-        codex.refreshNow()
+        refreshQuotas()
     }
 
     /// Adds an account authenticating via API key. If saving the key fails, the account is removed.
