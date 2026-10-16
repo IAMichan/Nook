@@ -1,14 +1,19 @@
 import SwiftUI
 import AppKit
 
-/// What the two buttons at the bottom of the Agents list open on the right: your pull requests, or the usage of every
-/// account.
+/// What the buttons at the bottom of the Agents list open on the right: your pull requests, the usage of every account,
+/// and the tools that are not tied to one session: every terminal, the browser, every worktree.
 enum AgentsPage {
     static let pullRequests = "pulls"
     static let usage = "usage"
+    static let terminals = "terminals"
+    static let browser = "browser"
+    static let worktrees = "worktrees"
+    /// The pages that are a tool you work in: the panel widens for them and stays open.
+    static let tools: Set<String> = [terminals, browser, worktrees]
 }
 
-/// Pull requests and usage as quiet icons under the list.
+/// Pull requests and usage as quiet icons under the list, then the tools.
 struct AgentsFooter: View {
     let selected: String
     let open: (String) -> Void
@@ -19,6 +24,13 @@ struct AgentsFooter: View {
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
+            Rectangle().fill(NookTheme.line2).frame(width: 1, height: 16).padding(.horizontal, 4)
+            FooterIcon(label: tr("agents.footer.terminals"), active: selected == AgentsPage.terminals,
+                       action: { open(AgentsPage.terminals) }) { ToolGlyph(symbol: "terminal") }
+            FooterIcon(label: tr("agents.footer.browser"), active: selected == AgentsPage.browser,
+                       action: { open(AgentsPage.browser) }) { ToolGlyph(symbol: "safari") }
+            FooterIcon(label: tr("agents.footer.worktrees"), active: selected == AgentsPage.worktrees,
+                       action: { open(AgentsPage.worktrees) }) { ToolGlyph(symbol: "arrow.triangle.branch") }
             Spacer(minLength: 0)
         }
         .padding(.leading, 4)
@@ -68,6 +80,17 @@ private struct PullRequestGlyph: View {
             }
         }
         .frame(width: 16, height: 16)
+    }
+}
+
+/// A tool's symbol at the size of the drawn glyphs beside it.
+private struct ToolGlyph: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 13, weight: .regular))
+            .frame(width: 16, height: 16)
     }
 }
 

@@ -7,7 +7,31 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
     @Published private(set) var pointerInside = false
-    @Published var selectedAgentID: String = "cc"
+    @Published var selectedAgentID: String = "cc" {
+        didSet {
+            guard selectedAgentID != oldValue else { return }
+            // Another session starts on its conversation; the terminal or browser was for the one you left.
+            sessionTool = .conversation
+            resizeForWorkbench()
+        }
+    }
+
+    /// What the selected session shows in the Agents tab: its conversation, or a terminal or the browser next to it.
+    @Published var sessionTool: SessionTool = .conversation {
+        didSet { if sessionTool != oldValue { resizeForWorkbench() } }
+    }
+
+    /// A terminal or the browser is open in the Agents tab: the panel gets the room the old Workspace tab had, and
+    /// does not close by itself while you work in it.
+    var workbenchOpen: Bool {
+        sessionTool != .conversation || AgentsPage.tools.contains(selectedAgentID)
+    }
+
+    private func resizeForWorkbench() {
+        guard case .panel(.agents) = state, sheet == nil else { return }
+        withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
+        scheduleAutoClose()
+    }
     @Published private(set) var doneButtonTitle = tr("button.close")
     private var doneButtonAction: (() -> Void)?
 
@@ -88,7 +112,7 @@ final class NotchViewModel: ObservableObject {
         if case .panel = target, state.kind != "panel" { app?.warmUp() }
         if case .panel(let tab) = target {
             switch tab {
-            case .chat, .agents, .workspace: lastTab = tab
+            case .chat, .agents: lastTab = tab
             default: break
             }
             // Tasks belong to Agents; another tab means you moved on.
@@ -110,7 +134,7 @@ final class NotchViewModel: ObservableObject {
     /// Automatically collapses the panel after one minute without mouse activity.
     private func scheduleAutoClose() {
         autoCloseTask?.cancel()
-        guard case .panel(let openTab) = state, !pointerInside, sheet == nil, openTab != .workspace else { return }
+        guard case .panel(let openTab) = state, !pointerInside, sheet == nil, !(openTab == .agents && workbenchOpen) else { return }
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             guard !Task.isCancelled, let self, !self.pointerInside, self.sheet == nil, case .panel(let tab) = self.state else { return }
@@ -373,8 +397,9 @@ final class NotchViewModel: ObservableObject {
             switch tab {
             case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
             case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
+            case .agents where workbenchOpen:
+                return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
             case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
-            case .workspace: return CGSize(width: big ? 1180 : 940, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
             case .music: return CGSize(width: 640, height: chrome + 196)
             case .shelf: return CGSize(width: 640, height: chrome + 180)
             case .connect: return CGSize(width: 820, height: chrome + 330)
@@ -413,7 +438,7 @@ final class NotchViewModel: ObservableObject {
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
         case .nook, .chat: return (app?.chat.anyBusy ?? false) ? .think : .rest
-        case .music, .shelf, .workspace: return .rest
+        case .music, .shelf: return .rest
         }
     }
 }

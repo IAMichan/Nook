@@ -14,6 +14,8 @@ enum AgentSessionSelection {
 struct AgentSessionDetail: View {
     @EnvironmentObject private var app: AppModel
     let selection: AgentSessionSelection
+    /// In the notch: the terminal and browser icons, next to the branch button.
+    var headerAccessory: AnyView? = nil
     @State private var draft = ""
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
@@ -61,6 +63,7 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if !app.demoMode, let headerAccessory { headerAccessory }
             if !app.demoMode, !directory.isEmpty {
                 FolderGitButton(directory: directory, agentWorking: agentWorking) {
                     app.viewModel.open(.folderChanges(directory))

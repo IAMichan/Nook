@@ -297,22 +297,42 @@ extension AppModel {
         if let tool { NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue) }
     }
 
-    /// A terminal in Nook, in `folder`, optionally running `command` first. Opens in the notch's Workspace tab, or in the
-    /// window if you are working there.
+    /// A terminal in Nook, in `folder`, optionally running `command` first. In the notch it opens with the agent session
+    /// working in that folder, or under Agents › Terminals when no session is; in the window if you are working there.
     func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
         TerminalStore.shared.open(in: folder, command: command, title: title)
         if WorkspaceWindowController.shared.isKey {
             openMainWindow(.workspace, tool: .terminals)
-        } else {
-            showWorkbench(.terminals)
+            return
         }
+        if let session = sessionID(workingIn: folder) {
+            viewModel.selectedAgentID = session
+            viewModel.sessionTool = .terminal
+        } else {
+            viewModel.selectedAgentID = AgentsPage.terminals
+        }
+        viewModel.show(.panel(.agents))
     }
 
-    /// The notch's Workspace tab, on one of its tools.
+    /// The Agents tab on one of the tools that belong to no single session.
     func showWorkbench(_ tool: WorkbenchView.Tool) {
-        UserDefaults.standard.set(tool.rawValue, forKey: "workbench.tool")
-        NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue)
-        viewModel.show(.panel(.workspace))
+        switch tool {
+        case .terminals: viewModel.selectedAgentID = AgentsPage.terminals
+        case .browser: viewModel.selectedAgentID = AgentsPage.browser
+        case .worktrees: viewModel.selectedAgentID = AgentsPage.worktrees
+        }
+        viewModel.show(.panel(.agents))
+    }
+
+    /// The session in the Agents list whose folder (or worktree) is `folder`: one Nook runs first, then one it sees.
+    private func sessionID(workingIn folder: String) -> String? {
+        let target = URL(fileURLWithPath: folder).standardizedFileURL.path
+        func same(_ path: String) -> Bool { !path.isEmpty && URL(fileURLWithPath: path).standardizedFileURL.path == target }
+        if let run = workspace.activeRuns.first(where: { !$0.archived && same($0.workingDirectory) })
+            ?? workspace.runs.first(where: { !$0.archived && same($0.workingDirectory) }) {
+            return "run:" + run.id.uuidString
+        }
+        return agentSessions.first { same($0.cwd) }?.id
     }
 
     /// Runs a command for the user where they can see it: the built-in terminal, or the terminal app they chose.

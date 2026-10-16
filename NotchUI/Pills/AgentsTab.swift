@@ -17,6 +17,9 @@ struct AgentsTab: View {
         case run(UUID)
         case pullRequests
         case usage
+        case terminals
+        case browser
+        case worktrees
         case new
     }
 
@@ -41,11 +44,26 @@ struct AgentsTab: View {
 
             Group {
                 switch selection {
-                case .live(let session): AgentSessionDetail(selection: .live(session)).id(session.id)
-                case .past(let session): AgentSessionDetail(selection: .past(session)).id("past:" + session.id)
-                case .run(let id): AgentRunPanel(workspace: app.workspace, runID: id)
+                case .live(let session):
+                    SessionWorkbench(viewModel: viewModel, title: liveTitle(session), directory: session.cwd) { tools in
+                        AgentSessionDetail(selection: .live(session), headerAccessory: tools)
+                    }
+                    .id(session.id)
+                case .past(let session):
+                    SessionWorkbench(viewModel: viewModel, title: AgentFormat.title(session.title), directory: session.cwd) { tools in
+                        AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                    }
+                    .id("past:" + session.id)
+                case .run(let id):
+                    let run = app.workspace.run(id)
+                    SessionWorkbench(viewModel: viewModel, title: run?.title ?? "", directory: run?.workingDirectory ?? "") { tools in
+                        AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
+                    }
                 case .pullRequests: PullRequestsPanel()
                 case .usage: AgentsUsagePanel()
+                case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
+                case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
+                case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
                 case .new:
                     if app.demoMode {
                         nothingRunning
@@ -112,6 +130,9 @@ struct AgentsTab: View {
         if id == "new" { return .new }
         if id == AgentsPage.pullRequests && !app.demoMode { return .pullRequests }
         if id == AgentsPage.usage && !app.demoMode { return .usage }
+        if id == AgentsPage.terminals && !app.demoMode { return .terminals }
+        if id == AgentsPage.browser && !app.demoMode { return .browser }
+        if id == AgentsPage.worktrees && !app.demoMode { return .worktrees }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
@@ -133,8 +154,16 @@ struct AgentsTab: View {
         case .run(let id): return "run:" + id.uuidString
         case .pullRequests: return AgentsPage.pullRequests
         case .usage: return AgentsPage.usage
+        case .terminals: return AgentsPage.terminals
+        case .browser: return AgentsPage.browser
+        case .worktrees: return AgentsPage.worktrees
         case .new: return "new"
         }
+    }
+
+    /// The name a live session goes by in its tools' header.
+    private func liveTitle(_ session: AgentSession) -> String {
+        session.summary.isEmpty ? session.name : AgentFormat.title(session.summary)
     }
 
     // MARK: List

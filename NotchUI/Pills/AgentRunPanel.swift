@@ -8,6 +8,8 @@ struct AgentRunPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var workspace: WorkspaceManager
     let runID: UUID
+    /// The terminal and browser icons, next to the branch button.
+    var headerAccessory: AnyView? = nil
     @State private var draft = ""
     @State private var expanded: Set<UUID> = []
     @State private var confirmDelete = false
@@ -90,6 +92,7 @@ struct AgentRunPanel: View {
                     .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
                     .help(tr("ws.header.contextHelp"))
             }
+            if let headerAccessory { headerAccessory }
             FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
                 workspace.markReviewed(runID)
                 app.viewModel.open(.changes(runID, file: nil))
