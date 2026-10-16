@@ -439,10 +439,10 @@ struct AgentSessionDetail: View {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 14) {
                     if !session.lastPrompt.isEmpty {
-                        ChatBubble(fromUser: true, text: session.lastPrompt)
+                        ConversationMessage(fromUser: true, text: session.lastPrompt)
                     }
                     if !session.lastReply.isEmpty {
-                        ChatBubble(fromUser: false, text: session.lastReply)
+                        ConversationMessage(fromUser: false, text: session.lastReply, author: session.agent.name, accent: session.agent.color)
                     }
                     if session.lastPrompt.isEmpty && session.lastReply.isEmpty {
                         Text(tr("agents.noMessagesInTranscript"))

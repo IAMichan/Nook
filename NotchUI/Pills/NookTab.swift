@@ -212,17 +212,7 @@ private struct ChatMessageView: View {
     }
 
     private var user: some View {
-        HStack {
-            Spacer(minLength: 80)
-            Text(message.text)
-                .font(NookTheme.font(14))
-                .foregroundStyle(NookTheme.paper)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
-        }
+        ConversationMessage(fromUser: true, text: message.text, size: 14)
     }
 
     private var nook: some View {
@@ -244,7 +234,7 @@ private struct ChatMessageView: View {
                     }
                 }
             } else if !message.text.isEmpty {
-                MarkdownView(text: message.text)
+                ConversationMessage(fromUser: false, text: message.text, size: 14)
             } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
                 TypingIndicator(status: message.status)
             }

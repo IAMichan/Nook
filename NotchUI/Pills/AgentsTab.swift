@@ -763,7 +763,7 @@ struct AgentConversation: View {
     }
 
     private func bubble(_ message: AgentChatMessage) -> some View {
-        ChatBubble(fromUser: message.fromUser, text: message.text)
+        ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor)
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -795,32 +795,6 @@ private extension AgentSession {
         case .failed: return tr("agents.live.failed")
         case .done: return tr("agents.live.done")
         case .detected: return tr("agents.live.notTracked")
-        }
-    }
-}
-
-/// One message in a conversation: what you wrote in a soft box on the right, the agent's answer as plain text.
-struct ChatBubble: View {
-    let fromUser: Bool
-    let text: String
-
-    var body: some View {
-        if fromUser {
-            HStack(spacing: 0) {
-                Spacer(minLength: 48)
-                Text(text)
-                    .font(NookTheme.font(13.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x19191B)))
-            }
-        } else {
-            MarkdownView(text: text, size: 13.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
