@@ -228,28 +228,14 @@ struct NotchRootView: View {
         .frame(height: nh)
     }
 
-    /// Right of the notch: which track is now playing.
+    /// Right of the notch: which track just started. Artwork pops in, the text slides up, the bars follow the sound.
     private func trackLabel(title: String, artist: String) -> some View {
-        HStack(spacing: 8) {
-            EqualizerBars(color: NookTheme.music, height: 12)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(NookTheme.font(11.5, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                if !artist.isEmpty {
-                    Text(artist)
-                        .font(NookTheme.font(10))
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            .lineLimit(1)
-            .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 14)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
+        TrackAnnouncement(
+            title: title,
+            artist: artist,
+            artworkURL: app.nowPlaying.current?.artworkURL,
+            isPlaying: app.nowPlaying.current?.isPlaying ?? true
+        )
     }
 
     // MARK: Recent action
@@ -386,5 +372,67 @@ private extension View {
                 .onChanged { _ in if viewModel.geometry.isFloating { viewModel.onDragMoved?() } }
                 .onEnded { _ in if viewModel.geometry.isFloating { viewModel.onDragEnded?() } }
         )
+    }
+}
+
+/// The "new track" strip. Each part enters on its own beat so the change reads as a moment, not a text swap.
+private struct TrackAnnouncement: View {
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+    let isPlaying: Bool
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            cover
+                .scaleEffect(shown ? 1 : 0.4)
+                .opacity(shown ? 1 : 0)
+                .animation(.spring(response: 0.42, dampingFraction: 0.62), value: shown)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .offset(y: shown ? 0 : 7)
+                    .opacity(shown ? 1 : 0)
+                    .animation(.spring(response: 0.45, dampingFraction: 0.8).delay(0.07), value: shown)
+                if !artist.isEmpty {
+                    Text(artist)
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .offset(y: shown ? 0 : 7)
+                        .opacity(shown ? 1 : 0)
+                        .animation(.spring(response: 0.45, dampingFraction: 0.8).delay(0.14), value: shown)
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+            Spacer(minLength: 0)
+            EqualizerBars(color: NookTheme.music, height: 12, isPlaying: isPlaying)
+                .opacity(shown ? 1 : 0)
+                .animation(.easeOut(duration: 0.3).delay(0.2), value: shown)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .onAppear { shown = true }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
+    }
+
+    private var cover: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5).fill(NookTheme.music)
+            if let artworkURL {
+                AsyncImage(url: artworkURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.clear
+                }
+            } else {
+                Image(systemName: "music.note").font(.system(size: 10, weight: .bold)).foregroundStyle(NookTheme.ink)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 }

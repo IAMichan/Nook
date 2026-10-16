@@ -48,6 +48,8 @@ final class NowPlayingService: ObservableObject {
     @Published private(set) var permissionDenied = false
 
     private var timer: Timer?
+    private var observers: [NSObjectProtocol] = []
+    private var lastPoll = Date.distantPast
     private let queue = DispatchQueue(label: "nl.imdigital.nook.nowplaying")
     /// Increments on local changes (seek, shuffle, volume) so stale inflight polls don't overwrite them.
     private var localGeneration = 0
@@ -57,7 +59,16 @@ final class NowPlayingService: ObservableObject {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        // Players announce every track and play/pause change; react to that at once. The timer is only a safety net.
+        if observers.isEmpty {
+            let center = DistributedNotificationCenter.default()
+            for name in ["com.spotify.client.PlaybackStateChanged", "com.apple.Music.playerInfo", "com.apple.iTunes.playerInfo"] {
+                observers.append(center.addObserver(forName: NSNotification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in self?.pollSoon() }
+                })
+            }
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
         poll()
@@ -151,7 +162,19 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
+    /// A player just said something changed. Polls right away, a second time shortly after because the
+    /// player's scripting state can lag the notification.
+    private func pollSoon() {
+        poll()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            Task { @MainActor in self?.poll() }
+        }
+    }
+
     private func poll() {
+        // Several notifications can arrive together; one Apple Event round trip is enough.
+        guard Date().timeIntervalSince(lastPoll) > 0.1 else { return }
+        lastPoll = Date()
         let generation = localGeneration
         queue.async { [weak self] in
             let (info, denied) = NowPlayingService.query()
