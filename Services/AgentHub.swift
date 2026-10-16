@@ -696,7 +696,8 @@ final class AgentHub: ObservableObject {
                     transcriptPath: record.transcriptPath,
                     lastPrompt: record.lastPrompt,
                     lastReply: record.lastMessage,
-                    started: record.started
+                    started: record.started,
+                    updated: record.updated
                 )
             }
     }
