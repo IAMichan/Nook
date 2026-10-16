@@ -9,6 +9,8 @@ import Foundation
 final class AntigravityUsage: ObservableObject {
     /// The windows of the account, as far as Google reports them.
     @Published private(set) var limits: [QuotaLimit] = []
+    /// No sign-in file was found, so no limits can be read: the app shows a hint instead of "not available".
+    @Published private(set) var noLogin = false
 
     /// The account directory to read, set by the app. Defaults to Antigravity's own (`~/.gemini`).
     var home: () -> URL = { AgentKind.antigravity.defaultHome }
@@ -37,17 +39,20 @@ final class AntigravityUsage: ObservableObject {
         lastFetch = Date()
         let directory = home()
         Task.detached(priority: .utility) { [weak self] in
-            let windows = AntigravityUsage.read(home: directory)
+            let hasLogin = AntigravityUsage.credentials(home: directory) != nil
+            let windows = hasLogin ? AntigravityUsage.read(home: directory) : nil
             await MainActor.run {
                 guard let self else { return }
                 self.busy = false
                 if let windows, !windows.isEmpty {
                     if windows != self.limits { self.limits = windows }
+                    self.noLogin = false
                 } else {
                     // Not signed in yet, or offline: try again at the next opportunity. Old values stay until then.
                     self.lastFetch = .distantPast
-                    if !FileManager.default.fileExists(atPath: directory.appendingPathComponent("antigravity-acp/acp_token.json").path) {
+                    if !hasLogin {
                         self.limits = []
+                        self.noLogin = true
                     }
                 }
             }
@@ -61,20 +66,55 @@ final class AntigravityUsage: ObservableObject {
         "https://cloudcode-pa.googleapis.com",
     ]
 
-    private nonisolated static func read(home: URL) -> [QuotaLimit]? {
-        let tokenURL = home.appendingPathComponent("antigravity-acp/acp_token.json")
-        guard let data = try? Data(contentsOf: tokenURL),
-              let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let clientID = file["client_id"] as? String, !clientID.isEmpty,
-              let secret = file["client_secret"] as? String, !secret.isEmpty,
-              let refresh = file["refresh_token"] as? String, !refresh.isEmpty else { return nil }
-        let project = file["project_id"] as? String
+    /// What Antigravity's sign-in file holds. Only the refresh token is required to get a fresh access token.
+    private struct Credentials {
+        var clientID: String?
+        var secret: String?
+        var refresh: String?
+        var access: String?
+        var project: String?
+    }
 
-        var token = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-        token.httpMethod = "POST"
-        token.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        token.httpBody = form(["client_id": clientID, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"])
-        guard let refreshed = send(token) as? [String: Any], let access = refreshed["access_token"] as? String else { return nil }
+    /// Antigravity's own sign-in file, or any token file next to it (`~/.gemini` and a few folders deep).
+    private nonisolated static func credentials(home: URL) -> Credentials? {
+        let fm = FileManager.default
+        var urls = [home.appendingPathComponent("antigravity-acp/acp_token.json")]
+        for folder in ["antigravity-acp", "antigravity", "antigravity-cli", "config"] {
+            let directory = home.appendingPathComponent(folder, isDirectory: true)
+            for name in ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).sorted() where name.hasSuffix(".json") {
+                urls.append(directory.appendingPathComponent(name))
+            }
+        }
+        urls.append(home.appendingPathComponent("oauth_creds.json"))
+        for url in urls {
+            guard let data = try? Data(contentsOf: url),
+                  let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
+            let credentials = Credentials(
+                clientID: file["client_id"] as? String,
+                secret: file["client_secret"] as? String,
+                refresh: file["refresh_token"] as? String,
+                access: (file["expiry_date"] as? NSNumber).map { $0.doubleValue / 1000 > Date().timeIntervalSince1970 + 60 } == true
+                    ? file["access_token"] as? String : nil,
+                project: file["project_id"] as? String
+            )
+            let canRefresh = credentials.refresh?.isEmpty == false && credentials.clientID?.isEmpty == false && credentials.secret?.isEmpty == false
+            if canRefresh || credentials.access != nil { return credentials }
+        }
+        return nil
+    }
+
+    private nonisolated static func read(home: URL) -> [QuotaLimit]? {
+        guard let credentials = credentials(home: home) else { return nil }
+        let project = credentials.project
+        var access = credentials.access
+        if access == nil, let clientID = credentials.clientID, let secret = credentials.secret, let refresh = credentials.refresh {
+            var token = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+            token.httpMethod = "POST"
+            token.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            token.httpBody = form(["client_id": clientID, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"])
+            access = ((send(token) as? [String: Any])?["access_token"]) as? String
+        }
+        guard let access else { return nil }
 
         #if arch(arm64)
         let architecture = "arm64"

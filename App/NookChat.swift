@@ -211,13 +211,15 @@ struct Conversation: Identifiable, ConversationListItem {
         return unread ? .unread : .idle
     }
 
+    private static let markdownStripSet = CharacterSet(charactersIn: "#*_`>|")
+
     /// Single-line preview: last message from Nook.
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
-        let flat = last.text.replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: #"[#*_`>|]"#, with: "", options: .regularExpression)
+        let sample = String(last.text.prefix(240)).replacingOccurrences(of: "\n", with: " ")
+        let cleaned = String(sample.unicodeScalars.filter { !Self.markdownStripSet.contains($0) })
             .trimmingCharacters(in: .whitespaces)
-        return String(flat.prefix(80))
+        return String(cleaned.prefix(80))
     }
 
     /// Extracts a concise title from the initial user prompt.
@@ -239,6 +241,7 @@ final class NookChat: ObservableObject {
     @Published private(set) var activeID: UUID?
     private(set) var lastActivity = Date.distantPast
     private var saveTask: Task<Void, Never>?
+    private static let saveQueue = DispatchQueue(label: "nl.imdigital.nook.chatsave", qos: .utility)
 
     private let maxMessages = 80
 
@@ -444,7 +447,7 @@ final class NookChat: ObservableObject {
 
     // MARK: Persistence
 
-    private static var fileURL: URL { NookPaths.supportDirectory.appendingPathComponent("nooks.json") }
+    private nonisolated static var fileURL: URL { NookPaths.supportDirectory.appendingPathComponent("nooks.json") }
 
     /// Debounces saves so bursts of edits coalesce into a single disk write.
     private func scheduleSave() {
@@ -461,8 +464,11 @@ final class NookChat: ObservableObject {
             active: activeID,
             conversations: conversations.filter { !$0.isEmpty }.map { StoredConversation($0) }
         )
-        guard let data = try? JSONEncoder().encode(stored) else { return }
-        try? SafeStorage.write(data, to: Self.fileURL)
+        let url = Self.fileURL
+        Self.saveQueue.async {
+            guard let data = try? JSONEncoder().encode(stored) else { return }
+            try? SafeStorage.write(data, to: url)
+        }
     }
 
     private func load() {
@@ -477,7 +483,7 @@ final class NookChat: ObservableObject {
 // MARK: Disk Storage
 
 /// Persisted conversation representation. Pending actions are serialized as text lines rather than executable actions.
-private struct StoredChats: Codable {
+private struct StoredChats: Codable, Sendable {
     /// Format version, written since version 2. Files without it are version 1 and read the same way.
     var version: Int? = 2
     var active: UUID?
@@ -509,7 +515,7 @@ private struct StoredChats: Codable {
     }
 }
 
-private struct StoredConversation: Codable {
+private struct StoredConversation: Codable, Sendable {
     var id: UUID
     var title: String
     var created: Date

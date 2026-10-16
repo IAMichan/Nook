@@ -135,6 +135,8 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Every complete line from stdout.
     var onLine: (@Sendable (String) -> Void)?
+    /// Batch of complete lines from a single stdout read chunk.
+    var onLines: (@Sendable ([String]) -> Void)?
     /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
@@ -247,11 +249,18 @@ final class AgentProcess: @unchecked Sendable {
 
     private func consume(_ data: Data) {
         buffer.append(data)
+        var batch: [String] = []
         while let newline = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<newline]
             buffer.removeSubrange(buffer.startIndex...newline)
             let line = String(decoding: lineData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !line.isEmpty { onLine?(line) }
+            if !line.isEmpty { batch.append(line) }
+        }
+        guard !batch.isEmpty else { return }
+        if let onLines {
+            onLines(batch)
+        } else if let onLine {
+            for line in batch { onLine(line) }
         }
     }
 
@@ -259,6 +268,11 @@ final class AgentProcess: @unchecked Sendable {
         guard !buffer.isEmpty else { return }
         let line = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         buffer.removeAll()
-        if !line.isEmpty { onLine?(line) }
+        guard !line.isEmpty else { return }
+        if let onLines {
+            onLines([line])
+        } else {
+            onLine?(line)
+        }
     }
 }

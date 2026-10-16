@@ -64,6 +64,7 @@ final class ConnectorHub: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        Task { _ = await ContactDirectory.entries() }
         tick()
     }
 

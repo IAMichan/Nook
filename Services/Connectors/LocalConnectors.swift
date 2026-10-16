@@ -217,9 +217,19 @@ final class MailConnector: ContextSource {
     let accent = Color(hex: 0x4DA3FF)
     private(set) var status = ConnectorStatus()
     private var unreadCount = 0
+    struct CachedMail: Sendable {
+        var subject: String
+        var sender: String
+        var recipients: String
+        var date: String
+        var body: String
+        var cachedAt: Date
+    }
+
     private var recent: [MailStats.InboxRow] = []
     /// Bodies already read, by message key, so each refresh only reads new mail.
     private var bodies: [String: String] = [:]
+    private static var messageCache: [String: CachedMail] = [:]
     private var loadedAt: Date?
     private var loading: Task<Void, Never>?
 
@@ -237,12 +247,12 @@ final class MailConnector: ContextSource {
         configuration.activates = false
         configuration.hides = true
         _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        for _ in 0..<40 where !ScriptText.isRunning("com.apple.mail") {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+        for _ in 0..<60 where !ScriptText.isRunning("com.apple.mail") {
+            try? await Task.sleep(nanoseconds: 50_000_000)
         }
         guard ScriptText.isRunning("com.apple.mail") else { throw NookError("Mail failed to launch.") }
-        // Give the inbox a moment to load.
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        // Brief pause for Mail's scripting bridge to initialize.
+        try? await Task.sleep(nanoseconds: 300_000_000)
     }
     var refreshInterval: TimeInterval { 60 }
 
@@ -393,46 +403,119 @@ final class MailConnector: ContextSource {
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
                     // Every word on its own ("lisa offerte" finds Lisa's mail about the offerte), ranked by how many match.
                     let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
-                    let box = sent ? "sent mailbox" : "inbox"
-                    let filter = words.map { word -> String in
+                    let scriptWords = Array(words.sorted { $0.count > $1.count }.prefix(4))
+                    let filter = scriptWords.map { word -> String in
                         let q = ScriptText.quote(word)
                         return sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
                     }.joined(separator: " or ")
-                    let script = """
-                    tell application "Mail"
-                        set found to (messages of \(box) whose \(filter))
-                        set n to count of found
-                        if n > 20 then set n to 20
-                        set out to ""
-                        repeat with i from 1 to n
-                            set m to item i of found
-                            set body to ""
-                            try
-                                set body to content of m
-                            end try
-                            if (length of body) > 700 then set body to text 1 thru 700 of body
-                            set mid to ""
-                            try
-                                set mid to message id of m
-                            end try
-                            set rcpt to ""
-                            try
-                                set rcpt to address of item 1 of to recipients of m
-                            end try
-                            set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                        end repeat
-                        return out
-                    end tell
-                    """
-                    let result = await ScriptText.run(script, timeout: 20)
+
+                    // Searching the unified `inbox` with `whose` on large accounts can take >20s in Apple Mail.
+                    // Searching each account's INBOX mailbox directly (bounded to recent 600 messages per mailbox) is ~10x faster.
+                    let script: String
+                    if sent {
+                        script = """
+                        tell application "Mail"
+                            set total to count of messages of sent mailbox
+                            if total is 0 then return ""
+                            if total > 600 then
+                                set found to (messages 1 thru 600 of sent mailbox whose \(filter))
+                            else
+                                set found to (messages of sent mailbox whose \(filter))
+                            end if
+                            set n to count of found
+                            if n > 18 then set n to 18
+                            set out to ""
+                            repeat with i from 1 to n
+                                set m to item i of found
+                                set body to ""
+                                try
+                                    set body to content of m
+                                end try
+                                if (length of body) > 12000 then set body to text 1 thru 12000 of body
+                                set mid to ""
+                                try
+                                    set mid to message id of m
+                                end try
+                                set rcpt to ""
+                                try
+                                    set rcpt to address of item 1 of to recipients of m
+                                end try
+                                set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
+                            end repeat
+                            return out
+                        end tell
+                        """
+                    } else {
+                        script = """
+                        tell application "Mail"
+                            set found to {}
+                            repeat with acc in accounts
+                                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                                    set total to count of messages of box
+                                    if total > 0 then
+                                        if total > 600 then
+                                            set hits to (messages 1 thru 600 of box whose \(filter))
+                                        else
+                                            set hits to (messages of box whose \(filter))
+                                        end if
+                                        repeat with h in hits
+                                            if (count of found) >= 20 then exit repeat
+                                            set end of found to contents of h
+                                        end repeat
+                                    end if
+                                end repeat
+                            end repeat
+                            set n to count of found
+                            if n > 18 then set n to 18
+                            set out to ""
+                            repeat with i from 1 to n
+                                set m to item i of found
+                                set body to ""
+                                try
+                                    set body to content of m
+                                end try
+                                if (length of body) > 12000 then set body to text 1 thru 12000 of body
+                                set mid to ""
+                                try
+                                    set mid to message id of m
+                                end try
+                                set rcpt to ""
+                                try
+                                    set rcpt to address of item 1 of to recipients of m
+                                end try
+                                set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
+                            end repeat
+                            return out
+                        end tell
+                        """
+                    }
+                    let result = await ScriptText.run(script, timeout: 8)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
                     if result.errorNumber == -1712 { throw NookError("Searching Mail took too long. Try a more specific keyword.") }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
-                    let chunks = raw.components(separatedBy: "<<<MSG>>>").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    let ranked = Research.best(chunks, terms: Research.Terms(words: words), keep: 8,
+                    let now = Date()
+                    var snippetChunks: [String] = []
+                    for chunk in raw.components(separatedBy: "<<<MSG>>>") where !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let lines = chunk.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                        let headerLine = String(lines.first ?? "")
+                        let header = headerLine.components(separatedBy: "|||")
+                        let fullBody = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                        if header.count >= 5 {
+                            let mid = header[4].trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
+                            if !mid.isEmpty {
+                                MailConnector.messageCache[mid] = CachedMail(
+                                    subject: header[0], sender: header[1], recipients: header[2],
+                                    date: header[3], body: fullBody, cachedAt: now
+                                )
+                            }
+                        }
+                        let shortBody = fullBody.count > 700 ? String(fullBody.prefix(700)) : fullBody
+                        snippetChunks.append(headerLine + "\n" + shortBody + "\n")
+                    }
+                    let ranked = Research.best(snippetChunks, terms: Research.Terms(words: words), keep: 8,
                                                title: { chunk in String(chunk.prefix { $0 != "\n" }) }, text: { $0 })
                     return MailConnector.format(ranked.map { "<<<MSG>>>" + $0 }.joined(), sent: sent)
                 }
@@ -447,16 +530,38 @@ final class MailConnector: ContextSource {
                 summarize: { _ in "Read mail" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    try await MailConnector.ensureRunning()
                     let id = ((input["id"] as? String) ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
                     guard !id.isEmpty else { throw NookError("The message id is missing.") }
+
+                    // Fast path: 0ms in-memory hit if already fetched during search_mail (<120s old).
+                    if let cached = MailConnector.messageCache[id], Date().timeIntervalSince(cached.cachedAt) < 120 {
+                        var body = cached.body
+                        if body.count > 12_000 { body = String(body.prefix(12_000)) + "\n… (truncated: the first 12,000 characters)" }
+                        let to = cached.recipients.trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+                        return "## \(cached.subject)\nFrom: \(cached.sender)\nTo: \(to)\nDate: \(cached.date)\n\n\(body)\n"
+                            + ReferenceParser.line(title: cached.subject.isEmpty ? "(no subject)" : cached.subject, url: MailConnector.messageLink(id),
+                                                   detail: "\(MailConnector.name(cached.sender)) · \(String(cached.date.prefix(10)))")
+                    }
+
+                    try await MailConnector.ensureRunning()
                     let q = ScriptText.quote(id)
                     let script = """
                     tell application "Mail"
                         set m to missing value
-                        try
-                            set m to first message of inbox whose message id is \(q)
-                        end try
+                        repeat with acc in accounts
+                            repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                                try
+                                    set m to first message of box whose message id is \(q)
+                                    if m is not missing value then exit repeat
+                                end try
+                            end repeat
+                            if m is not missing value then exit repeat
+                        end repeat
+                        if m is missing value then
+                            try
+                                set m to first message of inbox whose message id is \(q)
+                            end try
+                        end if
                         if m is missing value then
                             try
                                 set m to first message of sent mailbox whose message id is \(q)
@@ -476,7 +581,7 @@ final class MailConnector: ContextSource {
                         return (subject of m) & "|||" & (sender of m) & "|||" & rcpts & "|||" & ((date received of m) as «class isot» as string) & linefeed & body
                     end tell
                     """
-                    let result = await ScriptText.run(script, timeout: 15)
+                    let result = await ScriptText.run(script, timeout: 8)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
@@ -487,6 +592,9 @@ final class MailConnector: ContextSource {
                     var body = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
                     if body.count > 12_000 { body = String(body.prefix(12_000)) + "\n… (truncated: the first 12,000 characters)" }
                     let to = header[2].trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+                    MailConnector.messageCache[id] = CachedMail(
+                        subject: header[0], sender: header[1], recipients: to, date: header[3], body: body, cachedAt: Date()
+                    )
                     return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n\n\(body)\n"
                         + ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: MailConnector.messageLink(id),
                                                detail: "\(MailConnector.name(header[1])) · \(String(header[3].prefix(10)))")
@@ -529,7 +637,7 @@ final class MailConnector: ContextSource {
 /// Open tabs in Safari and Chromium browsers (Chrome, Arc, Brave, Edge). Only browsers that are already running.
 @MainActor
 final class BrowserConnector: ContextSource {
-    struct Tab: Equatable {
+    struct Tab: Equatable, Sendable {
         var browser: String
         var title: String
         var url: String
@@ -555,43 +663,60 @@ final class BrowserConnector: ContextSource {
     var refreshInterval: TimeInterval { 45 }
 
     func refresh() async {
-        var collected: [Tab] = []
-        var denied = false
-        for browser in Self.browsers where ScriptText.isRunning(browser.bundle) {
-            let titleKey = browser.safari ? "name" : "title"
-            let activeKey = browser.safari ? "current tab" : "active tab"
-            let script = """
-            tell application "\(browser.name)"
-                set out to ""
-                set wi to 0
-                repeat with w in windows
-                    set wi to wi + 1
-                    if wi > 4 then exit repeat
-                    set act to ""
-                    try
-                        set act to URL of \(activeKey) of w
-                    end try
-                    set ti to 0
-                    repeat with t in tabs of w
-                        set ti to ti + 1
-                        if ti > 15 then exit repeat
-                        set u to URL of t
-                        set mark to "0"
-                        if u is act then set mark to "1"
-                        set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
-                    end repeat
-                end repeat
-                return out
-            end tell
-            """
-            let result = await ScriptText.run(script)
-            if result.errorNumber == -1743 { denied = true }
-            for line in (result.text ?? "").components(separatedBy: .newlines) {
-                let parts = line.components(separatedBy: "|||")
-                guard parts.count >= 3, parts[2].hasPrefix("http") else { continue }
-                collected.append(Tab(browser: browser.name, title: parts[1], url: parts[2], active: parts[0] == "1"))
-            }
+        let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }
+        guard !runningBrowsers.isEmpty else {
+            tabs = []
+            return
         }
+
+        let results = await withTaskGroup(of: (Int, [Tab], Bool).self) { group in
+            for (index, browser) in runningBrowsers.enumerated() {
+                let titleKey = browser.safari ? "name" : "title"
+                let activeKey = browser.safari ? "current tab" : "active tab"
+                let script = """
+                tell application "\(browser.name)"
+                    set out to ""
+                    set wi to 0
+                    repeat with w in windows
+                        set wi to wi + 1
+                        if wi > 4 then exit repeat
+                        set act to ""
+                        try
+                            set act to URL of \(activeKey) of w
+                        end try
+                        set ti to 0
+                        repeat with t in tabs of w
+                            set ti to ti + 1
+                            if ti > 15 then exit repeat
+                            set u to URL of t
+                            set mark to "0"
+                            if u is act then set mark to "1"
+                            set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
+                        end repeat
+                    end repeat
+                    return out
+                end tell
+                """
+                let browserName = browser.name
+                group.addTask {
+                    let result = await ScriptText.run(script, timeout: 3.0)
+                    let isDenied = result.errorNumber == -1743
+                    var found: [Tab] = []
+                    for line in (result.text ?? "").components(separatedBy: .newlines) {
+                        let parts = line.components(separatedBy: "|||")
+                        guard parts.count >= 3, parts[2].hasPrefix("http") else { continue }
+                        found.append(Tab(browser: browserName, title: parts[1], url: parts[2], active: parts[0] == "1"))
+                    }
+                    return (index, found, isDenied)
+                }
+            }
+            var gathered: [(Int, [Tab], Bool)] = []
+            for await item in group { gathered.append(item) }
+            return gathered.sorted { $0.0 < $1.0 }
+        }
+
+        let collected = results.flatMap(\.1)
+        let denied = results.contains { $0.2 }
         tabs = collected
         if collected.isEmpty && denied {
             status = ConnectorStatus(state: .error("Grant Nook permission for your browser: System Settings › Privacy & Security › Automation."))
@@ -634,11 +759,12 @@ final class BrowserConnector: ContextSource {
                 tag: { _ in ("", .neutral) },
                 run: { input in
                     let targetBrowser = (input["browser"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    var scripts: [(String, String)] = []
+                    let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    var scripts: [(name: String, bundle: String, script: String)] = []
 
                     if targetBrowser == nil || targetBrowser?.lowercased().contains("safari") == true {
                         if ScriptText.isRunning("com.apple.Safari") {
-                            scripts.append(("Safari", """
+                            scripts.append(("Safari", "com.apple.Safari", """
                             tell application "Safari"
                                 if (count of documents) > 0 then
                                     set doc to front document
@@ -654,7 +780,7 @@ final class BrowserConnector: ContextSource {
                     }
                     if targetBrowser == nil || targetBrowser?.lowercased().contains("chrome") == true {
                         if ScriptText.isRunning("com.google.Chrome") {
-                            scripts.append(("Google Chrome", """
+                            scripts.append(("Google Chrome", "com.google.Chrome", """
                             tell application "Google Chrome"
                                 if (count of windows) > 0 then
                                     set tab to active tab of front window
@@ -670,8 +796,24 @@ final class BrowserConnector: ContextSource {
                     }
                     if targetBrowser == nil || targetBrowser?.lowercased().contains("edge") == true {
                         if ScriptText.isRunning("com.microsoft.edgemac") {
-                            scripts.append(("Microsoft Edge", """
+                            scripts.append(("Microsoft Edge", "com.microsoft.edgemac", """
                             tell application "Microsoft Edge"
+                                if (count of windows) > 0 then
+                                    set tab to active tab of front window
+                                    set docTitle to title of tab
+                                    set docURL to URL of tab
+                                    set docText to execute front window's active tab javascript "document.body.innerText"
+                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
+                                    return docTitle & "|||" & docURL & linefeed & docText
+                                end if
+                            end tell
+                            """))
+                        }
+                    }
+                    if targetBrowser == nil || targetBrowser?.lowercased().contains("brave") == true {
+                        if ScriptText.isRunning("com.brave.Browser") {
+                            scripts.append(("Brave Browser", "com.brave.Browser", """
+                            tell application "Brave Browser"
                                 if (count of windows) > 0 then
                                     set tab to active tab of front window
                                     set docTitle to title of tab
@@ -686,7 +828,7 @@ final class BrowserConnector: ContextSource {
                     }
                     if targetBrowser == nil || targetBrowser?.lowercased().contains("arc") == true {
                         if ScriptText.isRunning("company.thebrowser.Browser") {
-                            scripts.append(("Arc", """
+                            scripts.append(("Arc", "company.thebrowser.Browser", """
                             tell application "Arc"
                                 if (count of windows) > 0 then
                                     set tab to active tab of front window
@@ -699,8 +841,14 @@ final class BrowserConnector: ContextSource {
                         }
                     }
 
-                    for (browserName, script) in scripts {
-                        let result = await ScriptText.run(script, timeout: 3.5)
+                    // Prioritize the frontmost browser if one is currently active on screen.
+                    if let frontBundle, let idx = scripts.firstIndex(where: { $0.bundle == frontBundle }), idx > 0 {
+                        let front = scripts.remove(at: idx)
+                        scripts.insert(front, at: 0)
+                    }
+
+                    for (browserName, _, script) in scripts {
+                        let result = await ScriptText.run(script, timeout: 3.0)
                         if let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
                             let header = String(lines.first ?? "").components(separatedBy: "|||")
@@ -793,12 +941,17 @@ final class FilesConnector: ContextSource {
     var isActive: Bool { ConnectorToggle.isOn(id) }
     var refreshInterval: TimeInterval { 600 }
 
-    private nonisolated static func spotlight(_ arguments: [String]) async -> [URL] {
+    private nonisolated static func spotlight(_ arguments: [String], maxLines: Int = 350) async -> [URL] {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global(qos: .userInitiated).async {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
-                let output = (try? SystemControl.runProcess("/usr/bin/mdfind", ["-onlyin", home] + arguments)) ?? ""
-                let urls = output.components(separatedBy: .newlines).filter { !$0.isEmpty }.map { URL(fileURLWithPath: $0) }
+                let output = (try? SystemControl.runProcess("/usr/bin/mdfind", ["-onlyin", home] + arguments, timeout: 5.0)) ?? ""
+                var urls: [URL] = []
+                urls.reserveCapacity(min(maxLines, 64))
+                for line in output.split(whereSeparator: \.isNewline) {
+                    urls.append(URL(fileURLWithPath: String(line)))
+                    if urls.count >= maxLines { break }
+                }
                 continuation.resume(returning: urls)
             }
         }
@@ -842,18 +995,31 @@ final class FilesConnector: ContextSource {
                 run: { input in
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Search query is missing.") }
-                    let byName = await FilesConnector.spotlight(["-name", query])
-                    let byContent = await FilesConnector.spotlight([query])
+                    async let byNameTask = FilesConnector.spotlight(["-name", query], maxLines: 120)
+                    async let byContentTask = FilesConnector.spotlight([query], maxLines: 120)
+                    let (byName, byContent) = await (byNameTask, byContentTask)
                     var seen = Set<String>()
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
                     var hits = Array((byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20))
-                    // Spotlight wants every word; when that finds nothing, look per word and keep the files most words hit.
+                    // Spotlight wants every word; when that finds nothing, look per word in parallel and keep the files most words hit.
                     let words = Research.words(of: query)
                     if hits.isEmpty, words.count > 1 {
+                        let wordList = Array(words.prefix(4))
+                        let perWordResults = await withTaskGroup(of: (Int, [URL]).self) { group in
+                            for (idx, word) in wordList.enumerated() {
+                                group.addTask {
+                                    let urls = await FilesConnector.spotlight([word], maxLines: 100)
+                                    return (idx, urls)
+                                }
+                            }
+                            var collected: [(Int, [URL])] = []
+                            for await res in group { collected.append(res) }
+                            return collected.sorted { $0.0 < $1.0 }
+                        }
                         var counts: [String: (url: URL, count: Int, first: Int)] = [:]
                         var order = 0
-                        for word in words.prefix(4) {
-                            for url in await FilesConnector.spotlight([word]).prefix(60) where FileText.isAllowed(url) {
+                        for (_, urls) in perWordResults {
+                            for url in urls.prefix(60) where FileText.isAllowed(url) {
                                 order += 1
                                 let entry = counts[url.path] ?? (url, 0, order)
                                 counts[url.path] = (entry.url, entry.count + 1, entry.first)

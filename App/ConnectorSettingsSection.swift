@@ -2,179 +2,401 @@ import SwiftUI
 import Security
 import AppKit
 
-/// Rows for online connectors (GitHub, Stripe, etc.) in settings. Place in a Section within a Form.
-struct CloudConnectorSettings: View {
-    let connectors: [ContextSource]
-    /// One-line description of how the connector works and its capabilities, per id.
-    var capabilities: (String) -> String = { _ in "" }
-    let onChange: () -> Void
+// MARK: - Building the views
 
-    var body: some View {
-        ForEach(connectors.indices, id: \.self) { index in
-            CloudConnectorSettings.row(for: connectors[index], capabilities: capabilities(connectors[index].id), onChange: onChange)
-        }
-    }
-
-    /// Opens the existential so the row can observe the connector.
-    private static func row(for connector: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        guard let config = connector as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
+/// Online services (GitHub, Stripe, …) in Settings. Opens the existential so each view can observe its connector.
+@MainActor
+enum CloudConnectorViews {
+    /// A connected service: one calm row with its state and an on/off switch. Clicking opens the manage sheet.
+    static func row(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
         return makeRow(config, capabilities: capabilities, onChange: onChange)
     }
 
+    /// A service that is not connected yet: a card in the gallery. Clicking opens the step-by-step setup.
+    static func card(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
+        return makeCard(config, capabilities: capabilities, onChange: onChange)
+    }
+
     private static func makeRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        AnyView(CloudConnectorRow(connector: connector, capabilities: capabilities, onChange: onChange))
+        AnyView(ServiceRow(connector: connector, capabilities: capabilities, onChange: onChange))
+    }
+
+    private static func makeCard<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        AnyView(ServiceCard(connector: connector, capabilities: capabilities, onChange: onChange))
     }
 }
 
-/// A single connector: icon, title, status, toggle, and (expanded) credential fields.
-private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
+/// How a service is doing, in one of a handful of plain states.
+@MainActor
+enum ServiceState {
+    static func health(of connector: some ContextSource, configured: Bool, isOn: Bool) -> ConnectionHealth {
+        guard configured else { return .notLinked }
+        guard isOn else { return .off }
+        switch connector.status.state {
+        case .off, .loading: return .busy
+        case .ok: return connector.status.needsAttention ? .needsYou : .working
+        case .error: return (connector.status.errorKind ?? .other).needsReconnect ? .needsYou : .broken
+        }
+    }
+
+    /// One short line under the name: what Nook sees, or what went wrong.
+    static func summary(of connector: some ContextSource, health: ConnectionHealth) -> String {
+        switch health {
+        case .notLinked: return tagline(connector.id)
+        case .off: return tr("settings2.service.offDetail")
+        case .busy: return tr("settings2.service.busyDetail")
+        case .working, .needsYou, .broken:
+            if case .error(let message) = connector.status.state {
+                return health == .needsYou ? tr("settings2.service.relinkDetail") : message
+            }
+            let headline = connector.status.headline
+            let base = headline.isEmpty ? tr("connect.status.connected") : headline
+            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? "")
+        }
+    }
+
+    /// What a service is for, in a few words: "Je pull requests en reviews".
+    static func tagline(_ id: String) -> String {
+        let key = "settings2.tagline.\(id)"
+        let text = tr(key)
+        return text == key ? tr("settings2.tagline.default") : text
+    }
+}
+
+// MARK: - Row (connected)
+
+private struct ServiceRow<C: CloudConnectorConfig>: View {
     @ObservedObject var connector: C
-    var capabilities: String = ""
+    let capabilities: String
     let onChange: () -> Void
 
-    @State private var expanded = false
+    @State private var showSetup = false
+    @State private var isOn = true
+
+    private var health: ConnectionHealth { ServiceState.health(of: connector, configured: true, isOn: isOn) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button { showSetup = true } label: {
+                HStack(spacing: 12) {
+                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(connector.title)
+                        Text(ServiceState.summary(of: connector, health: health))
+                            .font(.caption)
+                            .foregroundStyle(health == .broken ? health.color : Color.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    if health == .broken || health == .needsYou {
+                        Text(tr("settings2.fix"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(health.color))
+                    } else {
+                        HealthPill(health: health)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("settings2.service.manageHelp", connector.title))
+            Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help(tr("settings2.service.toggleHelp"))
+        }
+        .padding(.vertical, 3)
+        .onAppear { isOn = ConnectorToggle.isOn(connector.id) }
+        .sheet(isPresented: $showSetup, onDismiss: {
+            isOn = ConnectorToggle.isOn(connector.id)
+            onChange()
+        }) {
+            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
+        }
+    }
+
+    private func setOn(_ on: Bool) {
+        isOn = on
+        ConnectorToggle.set(connector.id, on)
+        let target = connector
+        let done = onChange
+        Task { @MainActor in
+            await target.refresh()
+            done()
+        }
+    }
+}
+
+// MARK: - Card (not connected yet)
+
+private struct ServiceCard<C: CloudConnectorConfig>: View {
+    @ObservedObject var connector: C
+    let capabilities: String
+    let onChange: () -> Void
+    @State private var showSetup = false
+
+    var body: some View {
+        GalleryCard(title: connector.title, detail: ServiceState.tagline(connector.id)) {
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34)
+        } accessory: {
+            Text(tr("connector.link"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NookTheme.iris)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
+        } action: {
+            showSetup = true
+        }
+        .sheet(isPresented: $showSetup, onDismiss: onChange) {
+            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
+        }
+    }
+}
+
+// MARK: - Setup and manage sheet
+
+/// Everything about one service in one place. Not connected yet: three numbered steps (get a key, paste it, done).
+/// Connected: how it's doing, the on/off switch, replacing the key, extra accounts, and disconnecting.
+private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
+    @ObservedObject var connector: C
+    let capabilities: String
+    let onChange: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+
+    /// Whether the sheet opened on an already connected service: then it's the manage view, otherwise the steps stay
+    /// visible until the sheet closes, so the user sees step 3 turn green.
+    @State private var startedConnected: Bool?
     @State private var isOn = true
     @State private var configured = false
     @State private var drafts: [String: String] = [:]
     /// Which secret fields already have a value stored in the Keychain.
     @State private var stored: Set<String> = []
     @State private var note = ""
-    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+    @State private var replacing = false
+    @State private var confirmDisconnect = false
+    @State private var showKeySteps = false
+
+    private var health: ConnectionHealth { ServiceState.health(of: connector, configured: configured, isOn: isOn) }
+    private var isGitHub: Bool { connector.id == "github" }
+    private var managing: Bool { startedConnected ?? false }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                if connector.id == "github" && GitHubSignIn.isAvailable {
-                    gitHubSignInButton
-                    Text(tr("connector.orPasteToken"))
+        SetupSheet(
+            title: connector.title,
+            subtitle: managing ? ServiceState.summary(of: connector, health: health) : tr("settings2.service.connectSubtitle", connector.title)
+        ) {
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48)
+        } content: {
+            if managing { manageContent } else { connectContent }
+            capabilityNote
+        } footer: {
+            if configured {
+                if confirmDisconnect {
+                    Text(tr("settings2.service.disconnectConfirm"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                ForEach(connector.configFields, id: \.account) { field in
-                    fieldRow(field)
-                }
-                if connector.id == "github" {
-                    ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
-                }
-                Text(connector.helpText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !capabilities.isEmpty {
-                    Text(capabilities)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack {
-                    if let url = connector.signupURL {
-                        Link(tr("connector.createKey"), destination: url)
-                            .font(.callout)
-                    }
-                    Spacer()
-                    if !connector.configFields.isEmpty {
-                        Button(tr("button.pasteClipboard")) { pasteFromClipboard() }
-                    }
-                    if configured {
-                        Button(tr("button.clear")) { clear() }
-                    }
-                    Button(tr("button.save")) { save() }
-                        .disabled(!hasDraft)
-                }
-                if !note.isEmpty {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Button(tr("button.cancel")) { confirmDisconnect = false }
+                    Button(tr("settings2.disconnect"), role: .destructive) { clear() }
+                } else {
+                    Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
                 }
             }
-            .padding(.vertical, 4)
-        } label: {
-            HStack(spacing: 10) {
-                // Expanding the entire row, not just the chevron: makes tapping a service more intuitive.
-                HStack(spacing: 10) {
-                    SiteIcon(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 20)
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(connector.title)
-                        Text(stateText)
-                            .font(.caption)
-                            .foregroundStyle(stateColor)
-                            .lineLimit(2)
-                    }
-                    Spacer()
-                    recoveryButton
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation { expanded.toggle() } }
-                if configured {
-                    Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                } else if !expanded {
-                    // Not connected yet: one clear button instead of a switch that cannot be used.
-                    Button(tr("connector.link")) { withAnimation { expanded = true } }
-                        .controlSize(.small)
-                }
-            }
+            Spacer()
+            Button(health == .working ? tr("settings2.done") : tr("button.close")) { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         }
-        .onAppear { load() }
+        .onAppear {
+            load()
+            if startedConnected == nil { startedConnected = configured }
+            if case .error = connector.status.state, (connector.status.errorKind ?? .other).needsReconnect { replacing = true }
+        }
         .onChange(of: gitHubSignIn.phase) { _, phase in
-            guard connector.id == "github", phase == .done else { return }
+            guard isGitHub, phase == .done else { return }
             load()
             refreshNow()
         }
     }
 
-    // MARK: - Recovery
+    // MARK: Connect (three steps)
 
-    /// What fixes the last failure: rejected credentials open the key fields, a network problem just retries.
     @ViewBuilder
-    private var recoveryButton: some View {
-        if configured, isOn, case .error = connector.status.state {
-            let kind = connector.status.errorKind ?? .other
-            if kind.needsReconnect {
-                Button(tr("connector.reconnect")) { withAnimation { expanded = true } }
-                    .controlSize(.small)
-            } else {
+    private var connectContent: some View {
+        if isGitHub && GitHubSignIn.isAvailable {
+            VStack(alignment: .leading, spacing: 10) {
+                gitHubSignInButton
+                Text(tr("settings2.github.easy"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            DisclosureGroup(isExpanded: $showKeySteps) {
+                VStack(alignment: .leading, spacing: 20) { keySteps }
+                    .padding(.top, 12)
+            } label: {
+                Text(tr("settings2.github.useToken")).font(.callout)
+            }
+            if configured { resultStep(number: 1) }
+        } else {
+            keySteps
+        }
+    }
+
+    @ViewBuilder
+    private var keySteps: some View {
+        SetupStep(number: 1, title: connector.signupURL != nil ? tr("settings2.step.getKey", connector.title) : tr("settings2.step.findInfo"),
+                  done: configured) {
+            Text(connector.helpText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let url = connector.signupURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
+                }
+                .controlSize(.large)
+            }
+        }
+        SetupStep(number: 2, title: tr("settings2.step.paste"), done: configured) {
+            fieldsAndPaste
+        }
+        resultStep(number: 3)
+    }
+
+    private func resultStep(number: Int) -> some View {
+        SetupStep(number: number, title: tr("settings2.step.check"), done: health == .working) {
+            resultView
+        }
+    }
+
+    @ViewBuilder
+    private var resultView: some View {
+        switch health {
+        case .notLinked:
+            Text(tr("settings2.step.checkWaiting"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        case .busy:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(tr("settings2.step.checkBusy")).font(.callout)
+            }
+        case .working, .needsYou:
+            Label(tr("settings2.step.checkOK", connector.title), systemImage: "checkmark.seal.fill")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(ConnectionHealth.working.color)
+        case .broken, .off:
+            VStack(alignment: .leading, spacing: 6) {
+                Label(ServiceState.summary(of: connector, health: health), systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(ConnectionHealth.broken.color)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(tr("connector.retry")) { refreshNow() }
-                    .controlSize(.small)
             }
         }
     }
 
-    // MARK: - One-Click GitHub
+    // MARK: Manage
 
     @ViewBuilder
-    private var gitHubSignInButton: some View {
-        switch gitHubSignIn.phase {
-        case .waiting(let code, let uri):
-            VStack(alignment: .leading, spacing: 6) {
-                Text(tr("connector.githubCodeHint"))
-                    .font(.callout)
-                Text(code)
-                    .font(.system(.title2, design: .monospaced).weight(.semibold))
-                    .textSelection(.enabled)
-                HStack {
-                    Button(tr("connector.reopenGitHub")) { NSWorkspace.shared.open(uri) }
-                    Spacer()
-                    Button(tr("button.cancel")) { gitHubSignIn.cancel() }
+    private var manageContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                HealthPill(health: health)
+                Spacer()
+                if health == .broken {
+                    Button(tr("connector.retry")) { refreshNow() }
                 }
             }
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 6) {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Button(tr("button.tryAgain")) { gitHubSignIn.start() }
+            Toggle(isOn: Binding(get: { isOn }, set: { setOn($0) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("settings2.service.useToggle"))
+                    Text(tr("settings2.service.useToggleDetail"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-        case .idle, .done:
-            Button(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub")) { gitHubSignIn.start() }
-                .buttonStyle(.borderedProminent)
+            .toggleStyle(.switch)
+        }
+
+        Divider()
+
+        VStack(alignment: .leading, spacing: 10) {
+            Text(tr("settings2.service.keyTitle")).font(.headline)
+            if replacing || connector.configFields.contains(where: { !$0.secret }) {
+                if isGitHub && GitHubSignIn.isAvailable { gitHubSignInButton }
+                fieldsAndPaste
+            } else {
+                HStack {
+                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
+                }
+            }
+        }
+
+        if isGitHub {
+            ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
         }
     }
 
-    // MARK: - Fields
+    @ViewBuilder
+    private var capabilityNote: some View {
+        if !capabilities.isEmpty {
+            DisclosureGroup {
+                Text(capabilities)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            } label: {
+                Label(tr("settings2.service.whatCanNook"), systemImage: "questionmark.circle")
+                    .font(.callout)
+            }
+        }
+    }
+
+    // MARK: Fields
+
+    @ViewBuilder
+    private var fieldsAndPaste: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(connector.configFields, id: \.account) { field in
+                VStack(alignment: .leading, spacing: 4) {
+                    if connector.configFields.count > 1 {
+                        Text(field.label).font(.caption).foregroundStyle(.secondary)
+                    }
+                    fieldRow(field)
+                }
+            }
+            HStack {
+                if connector.configFields.contains(where: \.secret) {
+                    Button { pasteFromClipboard() } label: {
+                        Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Button(tr("button.save")) { save() }
+                    .disabled(!hasDraft)
+                Spacer()
+            }
+            if !note.isEmpty {
+                Text(note).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
 
     @ViewBuilder
     private func fieldRow(_ field: ConnectorField) -> some View {
@@ -190,12 +412,55 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
         if field.secret {
             SecureField(field.label, text: binding,
                         prompt: Text(stored.contains(field.account) ? tr("connector.savedInKeychain") : field.placeholder))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
                 .onSubmit { save() }
         } else {
             TextField(field.label, text: binding, prompt: Text(field.placeholder))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
                 .onSubmit { save() }
         }
     }
+
+    // MARK: One-Click GitHub
+
+    @ViewBuilder
+    private var gitHubSignInButton: some View {
+        switch gitHubSignIn.phase {
+        case .waiting(let code, let uri):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("connector.githubCodeHint"))
+                    .font(.callout)
+                Text(code)
+                    .font(.system(.title, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                HStack {
+                    Button(tr("connector.reopenGitHub")) { NSWorkspace.shared.open(uri) }
+                    Button(tr("button.cancel")) { gitHubSignIn.cancel() }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.iris.opacity(0.1)))
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Button(tr("button.tryAgain")) { gitHubSignIn.start() }
+            }
+        case .idle, .done:
+            Button { gitHubSignIn.start() } label: {
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
+    // MARK: Actions
 
     /// Takes text from the clipboard and saves it directly into the first secret field.
     private func pasteFromClipboard() {
@@ -216,35 +481,6 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             return draft != (CloudHelp.secret(field.account) ?? "")
         }
     }
-
-    // MARK: - Status
-
-    private var stateText: String {
-        if !configured { return tr("connector.notConfigured") }
-        if !isOn { return tr("connect.status.off") }
-        switch connector.status.state {
-        case .off: return tr("connector.notYetFetched")
-        case .loading: return tr("chat.plan.running")
-        case .ok:
-            let headline = connector.status.headline
-            let base = headline.isEmpty ? tr("connect.status.connected") : headline
-            // When it was last successful, providing a health indicator for the connection.
-            return base + (connector.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? "")
-        case .error(let message):
-            return message + (connector.status.updated.map { " · " + tr("settings.connections.lastOK", NookDates.ago($0)) } ?? "")
-        }
-    }
-
-    private var stateColor: Color {
-        guard configured, isOn else { return .secondary }
-        switch connector.status.state {
-        case .error: return .red
-        case .ok: return connector.status.needsAttention ? .orange : .secondary
-        default: return .secondary
-        }
-    }
-
-    // MARK: - Actions
 
     private func load() {
         isOn = ConnectorToggle.isOn(connector.id)
@@ -272,8 +508,11 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             if field.secret && cleaned.isEmpty { continue }
             if Keychain.write(cleaned, account: field.account) != errSecSuccess { failed = true }
         }
+        // A fresh key means the user wants to use it: switch the service on.
+        if !failed && !isOn { ConnectorToggle.set(connector.id, true) }
         load()
         note = failed ? tr("connector.keychainDenied") : tr("connector.savedFetching")
+        if !failed { replacing = false }
         refreshNow()
     }
 
@@ -282,8 +521,10 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
             Keychain.write("", account: field.account)
         }
         load()
+        confirmDisconnect = false
         note = tr("connector.keysCleared")
         refreshNow()
+        dismiss()
     }
 
     private func setOn(_ on: Bool) {
@@ -302,6 +543,8 @@ private struct CloudConnectorRow<C: CloudConnectorConfig>: View {
     }
 }
 
+// MARK: - Extra accounts
+
 /// More accounts of the same service ("GitHub · Werk"): each with its own name and key. The first account is the one
 /// configured above; these come on top of it.
 struct ExtraAccountsView: View {
@@ -318,9 +561,10 @@ struct ExtraAccountsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text(tr("accounts.title")).font(.callout.weight(.medium))
+            Text(tr("accounts.title")).font(.headline)
             HStack {
                 TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
                 if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
                     Text(identity).font(.caption).foregroundStyle(.secondary)
@@ -332,8 +576,9 @@ struct ExtraAccountsView: View {
                         Text(account.label)
                         if let identity = account.identity { Text(identity).font(.caption).foregroundStyle(.secondary) }
                     }
-                    .frame(width: 140, alignment: .leading)
+                    .frame(width: 120, alignment: .leading)
                     SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))
+                        .textFieldStyle(.roundedBorder)
                         .onSubmit { save(account) }
                     Button(tr("button.save")) { save(account) }
                         .disabled((drafts[account.id] ?? "").isEmpty)
@@ -343,6 +588,7 @@ struct ExtraAccountsView: View {
             }
             HStack {
                 TextField(tr("accounts.newName"), text: $newLabel, prompt: Text(tr("accounts.newPlaceholder")))
+                    .textFieldStyle(.roundedBorder)
                 Button(tr("accounts.add")) {
                     AccountRegistry.shared.add(service: service, label: newLabel)
                     newLabel = ""

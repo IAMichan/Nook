@@ -81,10 +81,11 @@ final class NotchController {
 
         // Size changed? Re-evaluate whether pointer is still hovering over shape.
         viewModel.$size
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.positionPanel()
-                self?.pointerMoved()
+                self?.pointerMoved(force: true)
             }
             .store(in: &cancellables)
 
@@ -272,35 +273,42 @@ final class NotchController {
 
     // MARK: Mouse
 
+    private var lastCheckedMouseLocation = NSPoint(x: -10_000, y: -10_000)
+
     private func installMonitors() {
         let moveMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
         if let m = NSEvent.addGlobalMonitorForEvents(matching: moveMask, handler: { [weak self] _ in
-            Task { @MainActor in self?.pointerMoved() }
+            MainActor.assumeIsolated { self?.pointerMoved() }
         }) { monitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: moveMask, handler: { [weak self] event in
-            Task { @MainActor in self?.pointerMoved() }
+            MainActor.assumeIsolated { self?.pointerMoved() }
             return event
         }) { monitors.append(m) }
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            Task { @MainActor in self?.viewModel.clickedOutside() }
+            MainActor.assumeIsolated { self?.viewModel.clickedOutside() }
         }) { monitors.append(m) }
         // A click in another Nook window (Settings) is not treated as a global click by macOS.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             let window = event.windowNumber
-            // A click in a folder picker opened from the notch is part of what you are doing there.
-            let modal = MainActor.assumeIsolated { NSApp.modalWindow != nil }
-            Task { @MainActor in
-                guard let self, !modal, window != self.panel?.windowNumber else { return }
+            MainActor.assumeIsolated {
+                guard let self, NSApp.modalWindow == nil, window != self.panel?.windowNumber else { return }
                 self.viewModel.clickedOutside()
             }
             return event
         }) { monitors.append(m) }
     }
 
-    private func pointerMoved() {
+    private func pointerMoved(force: Bool = false) {
         guard let panel else { return }
+        let mouse = NSEvent.mouseLocation
+        if !force, dragStart == nil {
+            let dx = mouse.x - lastCheckedMouseLocation.x
+            let dy = mouse.y - lastCheckedMouseLocation.y
+            if dx * dx + dy * dy < 2.25 { return }
+        }
+        lastCheckedMouseLocation = mouse
         followMouseIfNeeded()
-        let inside = surfaceRect().insetBy(dx: -4, dy: -4).contains(NSEvent.mouseLocation)
+        let inside = surfaceRect().insetBy(dx: -4, dy: -4).contains(mouse)
         if panel.ignoresMouseEvents == inside {
             panel.ignoresMouseEvents = !inside
         }

@@ -197,16 +197,17 @@ struct GitService: Sendable {
     }
 
     /// Default remote base branch (origin/main), otherwise current branch.
-    func defaultBaseBranch(_ repo: String) -> String? {
+    func defaultBaseBranch(_ repo: String, localBranches: [String]? = nil, fallbackBranch: String? = nil) -> String? {
         if let text = try? run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], in: repo) {
             let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !name.isEmpty {
                 let short = name.hasPrefix("origin/") ? String(name.dropFirst(7)) : name
-                if (try? branches(repo).local.contains(short)) == true { return short }
+                let locals = localBranches ?? (try? branches(repo).local) ?? []
+                if locals.contains(short) { return short }
                 return name
             }
         }
-        return currentBranch(repo)
+        return fallbackBranch ?? currentBranch(repo)
     }
 
     func refExists(_ ref: String, in repo: String) -> Bool {
@@ -234,9 +235,16 @@ struct GitService: Sendable {
 
     // MARK: Status and changes
 
+    /// Fast count of dirty/untracked files without running `git diff --numstat` or reading untracked file contents.
+    func changedFileCount(_ directory: String) -> Int? {
+        guard let text = try? run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], in: directory) else { return nil }
+        return Self.parseStatus(text).files.count
+    }
+
     func status(_ directory: String) throws -> GitStatus {
         let text = try run(["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"], in: directory)
         var status = Self.parseStatus(text)
+        guard !status.files.isEmpty else { return status }
         // Lines added/removed: from diff for tracked files, from the file itself for untracked.
         if let numstat = try? run(["diff", "--numstat", "-z", "HEAD"], in: directory) {
             let counts = Self.parseNumstat(numstat)

@@ -14,11 +14,12 @@ struct EqualizerBars: View {
     var body: some View {
         TimelineView(.animation(paused: !isPlaying)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
+            let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { i in
                     Capsule()
                         .fill(color)
-                        .frame(width: 3, height: 4 + (height - 4) * CGFloat(level(i, t: t)))
+                        .frame(width: 3, height: 4 + (height - 4) * CGFloat(level(i, t: t, realBands: realBands)))
                 }
             }
             .frame(height: height, alignment: .bottom)
@@ -28,13 +29,10 @@ struct EqualizerBars: View {
     }
 
     /// Height between 0 and 1: the measured or synthesized level of this band.
-    private func level(_ i: Int, t: Double) -> Double {
+    private func level(_ i: Int, t: Double, realBands: [Double]) -> Double {
         guard isPlaying else { return 0.12 }
-        if AudioLevelMonitor.shared.hasSignal {
-            let real = AudioLevelMonitor.shared.level(i)
-            if real > 0.05 {
-                return max(0.12, min(1.0, real))
-            }
+        if i < realBands.count && realBands[i] > 0.05 {
+            return max(0.12, min(1.0, realBands[i]))
         }
         return synthLevel(band: i, t: t)
     }

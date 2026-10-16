@@ -94,8 +94,4 @@ final class FinishedSessions: ObservableObject {
     static func key(run: WorkspaceRun) -> String {
         key(agent: run.provider.displayName, conversation: run.providerSessionID, fallback: "run:" + run.id.uuidString)
     }
-
-    static func key(past: PastSession) -> String {
-        key(agent: past.agent.name, conversation: past.sessionID, fallback: "past:" + past.id)
-    }
 }

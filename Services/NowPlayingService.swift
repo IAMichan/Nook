@@ -68,7 +68,7 @@ final class NowPlayingService: ObservableObject {
                 })
             }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
         poll()
@@ -87,9 +87,9 @@ final class NowPlayingService: ObservableObject {
         queue.async { [weak self] in
             let target = appName ?? NowPlayingService.runningPlayerName()
             if let target {
-                _ = SystemControl.appleScript("tell application \"\(target)\" to \(command.rawValue)")
+                _ = NowPlayingService.runPlayerScript("with timeout of 3 seconds\ntell application \"\(target)\" to \(command.rawValue)\nend timeout")
             }
-            Thread.sleep(forTimeInterval: 0.4)
+            Thread.sleep(forTimeInterval: 0.35)
             Task { @MainActor in self?.poll() }
         }
     }
@@ -142,8 +142,8 @@ final class NowPlayingService: ObservableObject {
         pendingVolume = nil
         volumeInFlight = true
         queue.async { [weak self] in
-            _ = SystemControl.appleScript("tell application \"\(target)\" to set sound volume to \(volume)")
-            Thread.sleep(forTimeInterval: 0.08)
+            _ = NowPlayingService.runPlayerScript("with timeout of 2 seconds\ntell application \"\(target)\" to set sound volume to \(volume)\nend timeout")
+            Thread.sleep(forTimeInterval: 0.06)
             Task { @MainActor in
                 guard let self else { return }
                 self.volumeInFlight = false
@@ -155,9 +155,9 @@ final class NowPlayingService: ObservableObject {
     /// Dispatches command to player asynchronously. With `refresh`, polls shortly after.
     private func send(_ verb: String, to app: String, refresh: Bool) {
         queue.async { [weak self] in
-            _ = SystemControl.appleScript("tell application \"\(app)\" to \(verb)")
+            _ = NowPlayingService.runPlayerScript("with timeout of 3 seconds\ntell application \"\(app)\" to \(verb)\nend timeout")
             guard refresh else { return }
-            Thread.sleep(forTimeInterval: 0.4)
+            Thread.sleep(forTimeInterval: 0.35)
             Task { @MainActor in self?.poll() }
         }
     }
@@ -183,12 +183,57 @@ final class NowPlayingService: ObservableObject {
                 if self.permissionDenied != denied { self.permissionDenied = denied }
                 // Changed in the meantime? Discard stale poll; next poll will be accurate.
                 guard generation == self.localGeneration else { return }
-                if self.current != info { self.current = info }
+                if self.shouldPublish(newInfo: info) {
+                    self.current = info
+                }
             }
         }
     }
 
+    /// Avoids firing @Published every poll when the same track is playing and `estimatedPosition(at:)` already
+    /// interpolates within 1.8 seconds of the polled position.
+    private func shouldPublish(newInfo: NowPlayingInfo?) -> Bool {
+        guard let old = current, let new = newInfo else {
+            return current != newInfo
+        }
+        guard old.isPlaying, new.isPlaying,
+              old.title == new.title, old.artist == new.artist, old.app == new.app,
+              old.duration == new.duration, old.artworkURL == new.artworkURL,
+              old.shuffle == new.shuffle, old.repeating == new.repeating, old.volume == new.volume else {
+            return old != new
+        }
+        let interpolated = old.estimatedPosition(at: new.capturedAt)
+        return abs(Double(new.position) - interpolated) > 1.8
+    }
+
     // MARK: Background Processing
+
+    /// Compiled NSAppleScript cache accessed exclusively on `NowPlayingService.queue` so polling never
+    /// contends with `SystemControl.scriptQueue` or recompiles AppleScript source every poll.
+    private nonisolated(unsafe) static var compiledPlayerScripts: [String: NSAppleScript] = [:]
+
+    private nonisolated static func runPlayerScript(_ source: String, cacheKey: String? = nil) -> (text: String?, errorNumber: Int?) {
+        let script: NSAppleScript?
+        if let cacheKey {
+            if let existing = compiledPlayerScripts[cacheKey] {
+                script = existing
+            } else if let created = NSAppleScript(source: source) {
+                compiledPlayerScripts[cacheKey] = created
+                script = created
+            } else {
+                script = nil
+            }
+        } else {
+            script = NSAppleScript(source: source)
+        }
+        guard let script else { return (nil, nil) }
+        var error: NSDictionary?
+        let output = script.executeAndReturnError(&error)
+        if let error {
+            return (nil, error[NSAppleScript.errorNumber] as? Int)
+        }
+        return (output.stringValue, nil)
+    }
 
     private nonisolated static func runningPlayerName() -> String? {
         if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty { return "Spotify" }
@@ -200,7 +245,8 @@ final class NowPlayingService: ObservableObject {
         var denied = false
         var candidates: [NowPlayingInfo] = []
         for player in players where !NSRunningApplication.runningApplications(withBundleIdentifier: player.bundleID).isEmpty {
-            let result = SystemControl.appleScriptResult(player.script)
+            let timedScript = "with timeout of 3 seconds\n\(player.script)\nend timeout"
+            let result = runPlayerScript(timedScript, cacheKey: player.bundleID)
             if result.errorNumber == -1743 { denied = true }
             if let raw = result.text, let info = parse(raw, app: player.name, durationInMilliseconds: player.durationInMilliseconds) {
                 candidates.append(info)

@@ -1,87 +1,123 @@
 import SwiftUI
 
 /// Agent accounts in Settings: sign-in method, re-login, API key, default, remove, and adding a new account.
-/// The notch only shows status and usage; everything about logging in lives here.
+/// Designed to be crystal clear, intuitive, and child-simple.
 struct AccountsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var adding: AgentKind?
-    @State private var expanded: Set<String> = []
+    @State private var editingProfile: AgentProfile?
 
     var body: some View {
         ForEach(AgentKind.allCases) { kind in
             Section {
-                ForEach(app.profiles.profiles(for: kind)) { profile in
-                    AccountSettingsRow(profile: profile, isExpanded: binding(profile))
+                let profiles = app.profiles.profiles(for: kind)
+                ForEach(profiles) { profile in
+                    AgentAccountCardRow(profile: profile) {
+                        editingProfile = profile
+                    }
                 }
+
                 if kind == .gemini || kind == .antigravity {
                     Text(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if kind.supportsProfiles {
-                    Button(tr("accounts.add")) { adding = kind }
+                    Button {
+                        adding = kind
+                    } label: {
+                        Label(tr("accounts.add"), systemImage: "plus")
+                    }
                 }
             } header: {
-                Text(kind.name)
+                HStack(spacing: 8) {
+                    AgentLogo(kind, size: 16)
+                    Text(kind.name)
+                }
             }
         }
         .sheet(item: $adding) { kind in
             AddAccountSheet(kind: kind)
         }
-    }
-
-    private func binding(_ profile: AgentProfile) -> Binding<Bool> {
-        Binding(
-            get: { expanded.contains(profile.id) },
-            set: { if $0 { expanded.insert(profile.id) } else { expanded.remove(profile.id) } }
-        )
+        .sheet(item: $editingProfile) { profile in
+            ManageAccountSheet(profile: profile) {
+                editingProfile = nil
+            }
+        }
     }
 }
 
-private struct AccountSettingsRow: View {
+/// Clean row representing an agent profile / account
+private struct AgentAccountCardRow: View {
     @EnvironmentObject private var app: AppModel
     let profile: AgentProfile
-    @Binding var isExpanded: Bool
-    @State private var name = ""
-    @State private var key = ""
-    @State private var saving = false
-    @State private var error: String?
-    @State private var confirmRemove = false
+    let onManage: () -> Void
 
     private var account: AgentAccount? { app.history.profileAccounts[profile.id] }
     private var several: Bool { app.profiles.profiles(for: profile.kind).count > 1 }
+
     private var title: String {
         let label = profile.label.isEmpty ? (account?.organization.isEmpty == false ? account!.organization : tr("agents.personal")) : profile.label
         return several || !profile.isDefault ? label : profile.kind.name
     }
 
-    var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            content
-        } label: {
-            label
-        }
+    private var health: ConnectionHealth {
+        if let progress = app.agentConnect[profile.id], progress.isBusy { return .busy }
+        if account != nil { return .working }
+        if app.history.executables[profile.kind] == nil { return .notLinked }
+        return .needsYou
     }
 
-    private var label: some View {
-        HStack(spacing: 10) {
-            Image(systemName: account == nil ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(account == nil ? Color.orange : Color.green)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                    if several && app.profiles.isPreferred(profile) {
-                        Text(tr("agents.default"))
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(NookTheme.iris.opacity(0.18)))
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onManage) {
+                HStack(spacing: 12) {
+                    AgentLogo(profile.kind, size: 28)
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(title)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+
+                            if several && app.profiles.isPreferred(profile) {
+                                Text(tr("agents.default"))
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1.5)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(health == .needsYou ? Color.orange : Color.secondary)
+                            .lineLimit(1)
                     }
+
+                    Spacer(minLength: 8)
+
+                    HealthPill(health: health, text: healthText)
                 }
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button(account == nil ? tr("button.login") : tr("settings2.manage")) {
+                onManage()
+            }
+            .controlSize(.small)
         }
+        .padding(.vertical, 3)
+    }
+
+    private var healthText: String? {
+        if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
+        if account != nil { return tr("connect.status.connected") }
+        if app.history.executables[profile.kind] == nil { return tr("agents.notInstalled") }
+        return tr("agents.notLoggedIn")
     }
 
     private var subtitle: String {
@@ -94,74 +130,147 @@ private struct AccountSettingsRow: View {
         if !profile.isDefault { parts.append(profile.displayHome) }
         return parts.joined(separator: " · ")
     }
+}
 
-    @ViewBuilder
-    private var content: some View {
-        TextField(tr("agents.name"), text: $name, prompt: Text(profile.isDefault ? tr("agents.personal") : tr("agents.name")))
-            .onSubmit { app.profiles.rename(profile.id, to: name) }
-            .onAppear { name = profile.label }
+/// Manage sheet for an agent profile: child-simple actions
+private struct ManageAccountSheet: View {
+    @EnvironmentObject private var app: AppModel
+    let profile: AgentProfile
+    let done: () -> Void
 
-        if profile.kind != .gemini && profile.kind != .antigravity {
-            Picker(tr("accounts.method"), selection: Binding(
-                get: { profile.auth ?? .cli },
-                set: { method in
-                    if method == .cli { app.useCLILogin(profile) } else { app.profiles.setAuth(profile.id, .apiKey) }
+    @State private var name = ""
+    @State private var key = ""
+    @State private var saving = false
+    @State private var error: String?
+    @State private var confirmRemove = false
+
+    private var account: AgentAccount? { app.history.profileAccounts[profile.id] }
+    private var several: Bool { app.profiles.profiles(for: profile.kind).count > 1 }
+
+    var body: some View {
+        SetupSheet(
+            title: profile.kind.name,
+            subtitle: subtitle
+        ) {
+            AgentLogo(profile.kind, size: 44)
+        } content: {
+            VStack(alignment: .leading, spacing: 18) {
+                // Name
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("agents.name")).font(.headline)
+                    HStack {
+                        TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
+                            .textFieldStyle(.roundedBorder)
+                        Button(tr("button.save")) {
+                            app.profiles.rename(profile.id, to: name)
+                        }
+                        .disabled(name == profile.label || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
-            )) {
-                Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
-            }
-            .pickerStyle(.segmented)
 
-            if profile.usesAPIKey {
-                keyRow
-            } else {
-                HStack {
-                    Button(tr("accounts.reauth")) { app.reauthenticate(profile) }
-                        .help(tr("accounts.reauthHelp"))
-                    if account != nil {
-                        Button(tr("accounts.logout")) { app.logout(profile) }
-                            .help(tr("accounts.logoutHelp"))
+                if profile.kind != .gemini && profile.kind != .antigravity {
+                    Divider()
+
+                    // Method: subscription or API key
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(tr("accounts.method")).font(.headline)
+                        Picker("", selection: Binding(
+                            get: { profile.auth ?? .cli },
+                            set: { method in
+                                if method == .cli { app.useCLILogin(profile) } else { app.profiles.setAuth(profile.id, .apiKey) }
+                            }
+                        )) {
+                            Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
+                            Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        if profile.usesAPIKey {
+                            apiKeyView
+                        } else {
+                            cliAuthView
+                        }
+
+                        Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                if several && !app.profiles.isPreferred(profile) {
+                    Divider()
+                    Button {
+                        app.makeDefault(profile)
+                    } label: {
+                        Label(tr("agents.makeDefault"), systemImage: "star")
                     }
                 }
             }
-            Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-
-        if let error {
-            Text(error).font(.caption).foregroundStyle(.red)
-        }
-
-        if several && !app.profiles.isPreferred(profile) {
-            Button(tr("agents.makeDefault")) { app.makeDefault(profile) }
-                .help(tr(profile.kind == .claude ? "agents.defaultHelpClaude" : "agents.defaultHelp"))
-        }
-
-        if !profile.isDefault {
-            if confirmRemove {
-                HStack {
+        } footer: {
+            if !profile.isDefault {
+                if confirmRemove {
                     Text(tr("agents.removeConfirm", profile.displayHome))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Spacer()
                     Button(tr("button.cancel")) { confirmRemove = false }
-                    Button(tr("agents.remove"), role: .destructive) { app.removeAccount(profile) }
+                    Button(tr("agents.remove"), role: .destructive) {
+                        app.removeAccount(profile)
+                        done()
+                    }
+                } else {
+                    Button(tr("agents.removeAccount"), role: .destructive) { confirmRemove = true }
                 }
-            } else {
-                Button(tr("agents.removeAccount"), role: .destructive) { confirmRemove = true }
+            }
+            Spacer()
+            Button(tr("settings2.done"), action: done)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        }
+        .onAppear {
+            name = profile.label
+        }
+    }
+
+    private var subtitle: String {
+        if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
+        guard let account else {
+            return app.history.executables[profile.kind] == nil ? tr("agents.notInstalled") : tr("agents.notLoggedIn")
+        }
+        return account.name.isEmpty ? tr("connect.status.connected") : account.name
+    }
+
+    @ViewBuilder
+    private var cliAuthView: some View {
+        HStack(spacing: 12) {
+            Button {
+                app.reauthenticate(profile)
+            } label: {
+                Label(account == nil ? tr("button.login") : tr("accounts.reauth"), systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(.borderedProminent)
+
+            if account != nil {
+                Button(tr("accounts.logout")) {
+                    app.logout(profile)
+                }
             }
         }
     }
 
     @ViewBuilder
-    private var keyRow: some View {
+    private var apiKeyView: some View {
         let stored = profile.kind == .claude ? app.profiles.hasAPIKey(profile) : account != nil
         if stored && key.isEmpty {
             HStack {
                 Label(tr("accounts.keyStored"), systemImage: "key.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.green)
                 Spacer()
                 if profile.kind == .claude {
                     Button(tr("accounts.removeKey")) {
@@ -172,21 +281,25 @@ private struct AccountSettingsRow: View {
                     Button(tr("accounts.logout")) { app.logout(profile) }
                 }
             }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
         } else {
             HStack {
                 SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                    .onSubmit(save)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(saveKey)
                 if saving {
                     ProgressView().controlSize(.small)
                 } else {
-                    Button(tr("accounts.saveKey"), action: save)
+                    Button(tr("accounts.saveKey"), action: saveKey)
+                        .buttonStyle(.borderedProminent)
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
     }
 
-    private func save() {
+    private func saveKey() {
         let value = key
         guard !value.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         saving = true
@@ -203,7 +316,7 @@ private struct AccountSettingsRow: View {
     }
 }
 
-/// Add an account: pick the name and how it signs in. Subscription opens Terminal to log in; an API key is stored right away.
+/// Add an account sheet: simple and guided
 private struct AddAccountSheet: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -218,61 +331,72 @@ private struct AddAccountSheet: View {
     private var canAdd: Bool { method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        Form {
-            Section {
-                TextField(tr("agents.name"), text: $name, prompt: Text(tr("agents.addNamePrompt")))
-                Picker(tr("accounts.method"), selection: $method) {
-                    Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                    Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+        SetupSheet(
+            title: tr("agents.addTitle", kind.shortName),
+            subtitle: tr(method == .cli ? (kind == .claude ? "agents.addHintClaude" : "agents.addHint") : "accounts.method.help.\(kind == .claude ? "claude" : "codex")")
+        ) {
+            AgentLogo(kind, size: 44)
+        } content: {
+            VStack(alignment: .leading, spacing: 18) {
+                SetupStep(number: 1, title: tr("agents.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
+                    TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")))
+                        .textFieldStyle(.roundedBorder)
                 }
-                .pickerStyle(.segmented)
-                if method == .apiKey {
-                    SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                }
-            } header: {
-                Text(tr("agents.addTitle", kind.shortName))
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(tr(method == .cli ? (kind == .claude ? "agents.addHintClaude" : "agents.addHint") : "accounts.method.help.\(kind == .claude ? "claude" : "codex")"))
-                    if let error { Text(error).foregroundStyle(.red) }
-                }
-            }
 
-            if !found.isEmpty {
-                Section(tr("agents.foundOnMac")) {
+                SetupStep(number: 2, title: tr("accounts.method"), done: true) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("", selection: $method) {
+                            Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
+                            Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        if method == .apiKey {
+                            SecureField(tr("accounts.keyPlaceholder"), text: $key)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                }
+
+                if !found.isEmpty {
+                    Divider()
+                    Text(tr("agents.foundOnMac")).font(.headline)
                     ForEach(found, id: \.url) { item in
                         HStack {
-                            Text(AgentProfile.tildePath(item.url.path)).font(.system(.body, design: .monospaced))
+                            Text(AgentProfile.tildePath(item.url.path))
+                                .font(.system(.body, design: .monospaced))
                             Spacer()
                             Button(tr("agents.add")) {
                                 app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
                                 dismiss()
                             }
                         }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
                     }
+                }
+
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
-
-            Section {
-                HStack {
-                    Spacer()
-                    Button(tr("button.cancel")) { dismiss() }
-                        .keyboardShortcut(.cancelAction)
-                    if saving {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button(method == .cli
-                               ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
-                               : tr("agents.add")) { add() }
-                            .keyboardShortcut(.defaultAction)
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!canAdd)
-                    }
-                }
+        } footer: {
+            Button(tr("button.cancel")) { dismiss() }
+            Spacer()
+            if saving {
+                ProgressView().controlSize(.small)
+            } else {
+                Button(method == .cli
+                       ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
+                       : tr("agents.add")) { add() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!canAdd)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 460, height: found.isEmpty ? 330 : 440)
     }
 
     private func add() {

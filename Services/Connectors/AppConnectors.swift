@@ -14,7 +14,7 @@ enum AppDatabase {
         let output: Result<String, Error> = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    continuation.resume(returning: .success(try SystemControl.runProcess("/usr/bin/sqlite3", ["-readonly", "-json", path, sql])))
+                    continuation.resume(returning: .success(try SystemControl.runProcess("/usr/bin/sqlite3", ["-readonly", "-json", path, sql], timeout: 8.0)))
                 } catch {
                     continuation.resume(returning: .failure(error))
                 }
@@ -48,40 +48,55 @@ enum ContactDirectory {
         var handles: [String]
     }
 
-    private static var cache: (date: Date, entries: [Entry])?
+    private static var cache: (date: Date, entries: [Entry], names: [String: String])?
+    private static var loadingTask: Task<([Entry], [String: String]), Never>?
 
-    static func entries() async -> [Entry] {
-        if let cache, Date().timeIntervalSince(cache.date) < 600 { return cache.entries }
-        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return [] }
-        let entries = await Task.detached(priority: .userInitiated) { () -> [Entry] in
+    private static func loadIfNeeded() async -> (entries: [Entry], names: [String: String]) {
+        if let cache, Date().timeIntervalSince(cache.date) < 600 {
+            return (cache.entries, cache.names)
+        }
+        guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else {
+            return ([], [:])
+        }
+        if let existing = loadingTask {
+            return await existing.value
+        }
+        let task = Task.detached(priority: .userInitiated) { () -> ([Entry], [String: String]) in
             let keys: [CNKeyDescriptor] = [
                 CNContactGivenNameKey as CNKeyDescriptor, CNContactFamilyNameKey as CNKeyDescriptor,
                 CNContactOrganizationNameKey as CNKeyDescriptor, CNContactNicknameKey as CNKeyDescriptor,
                 CNContactPhoneNumbersKey as CNKeyDescriptor, CNContactEmailAddressesKey as CNKeyDescriptor
             ]
             var result: [Entry] = []
+            var namesMap: [String: String] = [:]
             try? CNContactStore().enumerateContacts(with: CNContactFetchRequest(keysToFetch: keys)) { contact, _ in
                 var name = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
                 if name.isEmpty { name = contact.nickname.isEmpty ? contact.organizationName : contact.nickname }
                 let handles = contact.phoneNumbers.map { $0.value.stringValue } + contact.emailAddresses.map { $0.value as String }
-                if !name.isEmpty, !handles.isEmpty { result.append(Entry(name: name, handles: handles)) }
+                if !name.isEmpty, !handles.isEmpty {
+                    result.append(Entry(name: name, handles: handles))
+                    for handle in handles {
+                        let key = AppData.key(handle)
+                        if !key.isEmpty, namesMap[key] == nil { namesMap[key] = name }
+                    }
+                }
             }
-            return result
-        }.value
-        cache = (Date(), entries)
-        return entries
+            return (result, namesMap)
+        }
+        loadingTask = task
+        let loaded = await task.value
+        loadingTask = nil
+        cache = (Date(), loaded.0, loaded.1)
+        return loaded
     }
 
-    /// Contact name per handle key (`AppData.key`).
+    static func entries() async -> [Entry] {
+        (await loadIfNeeded()).entries
+    }
+
+    /// Contact name per handle key (`AppData.key`). Cached for 10 minutes alongside `entries`.
     static func names() async -> [String: String] {
-        var names: [String: String] = [:]
-        for entry in await entries() {
-            for handle in entry.handles {
-                let key = AppData.key(handle)
-                if !key.isEmpty, names[key] == nil { names[key] = entry.name }
-            }
-        }
-        return names
+        (await loadIfNeeded()).names
     }
 
     /// Handle keys of contacts whose name contains one of the words (at most 20).
@@ -202,9 +217,15 @@ final class MessagesConnector: AppDatabaseConnector {
                     guard !query.isEmpty else { throw NookError("Zoekterm ontbreekt.") }
                     let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
                     let handles = await ContactDirectory.handles(matching: words)
-                    let filter = AppData.anyLike(["m.text", "CAST(m.attributedBody AS TEXT)", "c.display_name", "h.id"], words)
-                        + (handles.isEmpty ? "" : " OR " + AppData.anyLike(["h.id", "c.chat_identifier"], handles))
-                    let rows = try await self.run(Self.select + " WHERE \(filter) ORDER BY m.date DESC LIMIT 300")
+                    let filter = "(" + AppData.anyLike(["m.text", "CAST(m.attributedBody AS TEXT)", "c.display_name", "h.id"], words)
+                        + (handles.isEmpty ? "" : " OR " + AppData.anyLike(["h.id", "c.chat_identifier"], handles)) + ")"
+                    // Fast path: scan the newest 35,000 messages first using the ROWID primary key index (~15ms).
+                    // Only scan older archive history if fewer than 8 matches are found in recent messages.
+                    var rows = try await self.run(Self.select + " WHERE m.ROWID > (SELECT COALESCE(MAX(ROWID), 0) - 35000 FROM message) AND \(filter) ORDER BY m.date DESC LIMIT 300")
+                    if rows.count < 8 {
+                        let older = try await self.run(Self.select + " WHERE m.ROWID <= (SELECT COALESCE(MAX(ROWID), 0) - 35000 FROM message) AND \(filter) ORDER BY m.date DESC LIMIT 200")
+                        rows.append(contentsOf: older)
+                    }
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     let text = AppData.formatSearch(messages, terms: Research.Terms(words: words), app: "Berichten")
                     return text.isEmpty ? "Geen berichten gevonden voor \"\(query)\"." : text

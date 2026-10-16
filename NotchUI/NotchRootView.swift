@@ -342,9 +342,10 @@ private struct AgentDots: View {
 
     var body: some View {
         let shown = Array(sessions.prefix(4))
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+        let anyWaiting = shown.contains { $0.status == .waiting || $0.approvalID != nil }
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !anyWaiting)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
-            let pulse = 0.55 + 0.45 * abs(sin(t * 2.4))
+            let pulse = anyWaiting ? (0.55 + 0.45 * abs(sin(t * 2.4))) : 1.0
             HStack(spacing: 5) {
                 ForEach(shown) { session in
                     let waiting = session.status == .waiting || session.approvalID != nil

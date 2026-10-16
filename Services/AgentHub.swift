@@ -147,6 +147,8 @@ final class AgentHub: ObservableObject {
         }
     }
 
+    private var linkedStateCache: [String: (linked: Bool, checkedAt: Date)] = [:]
+
     /// Discovers running agents. Ones already reporting via hooks are not duplicated.
     func refreshDetected() {
         Task {
@@ -156,7 +158,8 @@ final class AgentHub: ObservableObject {
             // the same folder stay two rows.
             var covered: [String: Int] = [:]
             for record in records.values { covered["\(record.agent)|\(record.cwd)", default: 0] += 1 }
-            detected = found.sorted { $0.pid < $1.pid }.compactMap { agent in
+            let now = Date()
+            let newDetected: [AgentSession] = found.sorted { $0.pid < $1.pid }.compactMap { agent in
                 let key = "\(agent.name)|\(agent.cwd)"
                 if let count = covered[key], count > 0 {
                     covered[key] = count - 1
@@ -168,8 +171,16 @@ final class AgentHub: ObservableObject {
                 let accountHome = kind.flatMap { kind in
                     kind.homeVariable.map { Self.accountHome([$0: agent.home], agentID: kind == .codex ? "codex" : "claude-code") }
                 } ?? ""
-                let linked = AgentConfigInstaller.Target.forAgent(named: agent.name)
-                    .map { AgentConfigInstaller.state(of: $0, home: accountHome.isEmpty ? nil : home) == .installed } ?? false
+                let cacheKey = "\(agent.name)|\(accountHome)"
+                let linked: Bool
+                if let cached = linkedStateCache[cacheKey], now.timeIntervalSince(cached.checkedAt) < 20 {
+                    linked = cached.linked
+                } else {
+                    let computed = AgentConfigInstaller.Target.forAgent(named: agent.name)
+                        .map { AgentConfigInstaller.state(of: $0, home: accountHome.isEmpty ? nil : home) == .installed } ?? false
+                    linkedStateCache[cacheKey] = (computed, now)
+                    linked = computed
+                }
                 let steps: [AgentStep] = linked ? [
                     AgentStep(mark: .blocked, text: "Started before integration: Nook cannot monitor"),
                     AgentStep(mark: .todo, text: "Quit and restart \(agent.name)")
@@ -190,6 +201,9 @@ final class AgentHub: ObservableObject {
                     home: accountHome,
                     isLinked: linked
                 )
+            }
+            if detected != newDetected {
+                detected = newDetected
             }
         }
     }
@@ -661,7 +675,7 @@ final class AgentHub: ObservableObject {
 
     private func rebuild() {
         let order: [AgentStatus: Int] = [.waiting: 0, .failed: 1, .running: 2, .done: 3]
-        sessions = records
+        let newSessions = records
             .sorted { lhs, rhs in
                 let l = order[lhs.value.status] ?? 9
                 let r = order[rhs.value.status] ?? 9
@@ -705,6 +719,9 @@ final class AgentHub: ObservableObject {
                     updated: record.updated
                 )
             }
+        if sessions != newSessions {
+            sessions = newSessions
+        }
     }
 
     // MARK: Helper Functions
@@ -781,8 +798,12 @@ final class AgentHub: ObservableObject {
         return parts.suffix(2).joined(separator: "/")
     }
 
+    private static let markdownPrefixRegex = try? NSRegularExpression(pattern: #"^(#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s*)"#)
+    private static let markdownLinkRegex = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\([^)]*\)"#)
+
     /// Extracts the first useful paragraph of a Markdown reply as a plain sentence.
     static func oneLine(_ markdown: String, limit: Int = 220) -> String {
+        guard !markdown.isEmpty else { return "" }
         var inCode = false
         var paragraph: [String] = []
         for raw in markdown.components(separatedBy: "\n") {
@@ -796,8 +817,13 @@ final class AgentHub: ObservableObject {
                 if !paragraph.isEmpty { break }
                 continue
             }
-            var clean = line.replacingOccurrences(of: #"^(#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s*)"#, with: "", options: .regularExpression)
-            clean = clean.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+            var clean = line
+            if let regex = markdownPrefixRegex {
+                clean = regex.stringByReplacingMatches(in: clean, range: NSRange(clean.startIndex..<clean.endIndex, in: clean), withTemplate: "")
+            }
+            if clean.contains("]("), let regex = markdownLinkRegex {
+                clean = regex.stringByReplacingMatches(in: clean, range: NSRange(clean.startIndex..<clean.endIndex, in: clean), withTemplate: "$1")
+            }
             clean = clean.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
             if !clean.isEmpty { paragraph.append(clean) }
         }

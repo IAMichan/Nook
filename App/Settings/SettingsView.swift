@@ -6,7 +6,7 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, display, brain, assistant, connections, agents, privacy
+    case general, display, brain, assistant, connections, mcp, agents, privacy
 
     /// The sidebar groups: what belongs together sits together.
     enum Group: String, CaseIterable, Identifiable {
@@ -20,7 +20,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             switch self {
             case .nook: return [.general, .display]
             case .intelligence: return [.brain, .assistant]
-            case .connect: return [.connections, .agents]
+            case .connect: return [.connections, .mcp, .agents]
             case .security: return [.privacy]
             }
         }
@@ -32,17 +32,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var subtitle: String { tr("settings.section.\(rawValue).sub") }
 
-    var symbol: String {
-        switch self {
-        case .general: return "checklist"
-        case .display: return "display"
-        case .brain: return "brain"
-        case .assistant: return "sparkles"
-        case .connections: return "link"
-        case .agents: return "terminal"
-        case .privacy: return "lock.shield"
-        }
-    }
+    var symbol: String { tileSymbol }
 }
 
 /// Settings: sidebar navigation with sections. A one-sentence summary is displayed at the top of each view.
@@ -75,14 +65,18 @@ struct SettingsView: View {
                 ForEach(SettingsSection.Group.allCases) { group in
                     Section(group.title) {
                         ForEach(group.sections) { section in
-                            Label(section.title, systemImage: section.symbol)
-                                .badge(badge(for: section))
-                                .tag(section)
+                            Label {
+                                Text(section.title)
+                            } icon: {
+                                SettingsTile(section, size: 20)
+                            }
+                            .badge(badge(for: section))
+                            .tag(section)
                         }
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 240)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
         } detail: {
             Form {
                 Section {
@@ -131,9 +125,11 @@ struct SettingsView: View {
 
     /// Sidebar badge count indicating pending actions.
     func badge(for section: SettingsSection) -> Int {
+        let broken = app.connectors.sources.filter { if case .error = $0.status.state { return $0.isActive }; return false }
         switch section {
         case .general: return checklist.filter { !$0.done }.count
-        case .connections: return app.connectors.sources.filter { if case .error = $0.status.state { return true }; return false }.count
+        case .connections: return broken.filter { !($0 is MCPConnector) }.count
+        case .mcp: return broken.filter { $0 is MCPConnector }.count
         default: return 0
         }
     }
@@ -151,6 +147,7 @@ struct SettingsView: View {
         case .brain: brainSection
         case .assistant: assistantSection
         case .connections: connectionsSection
+        case .mcp: MCPSettingsSection()
         case .agents: agentsSection
         case .privacy: privacySection
         }

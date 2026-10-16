@@ -6,7 +6,7 @@ extension SettingsView {
     // MARK: Connectors
 
     /// Calm and in the order you need it: what is connected, what is on your Mac, and below that what you can add.
-    /// Adding a service is one click on Connect; agent accounts live under Agents.
+    /// Adding a service is one click on its card; agent accounts live under Agents, MCP servers under MCP.
     var connectionsSection: some View {
         // Collected once per redraw: every capability line below is derived from it.
         let tools: [(name: String, isAction: Bool)] = app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }
@@ -14,47 +14,81 @@ extension SettingsView {
         let services = app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0, capabilityLine) }
         let connected = services.filter(isConnected)
         let available = services.filter { !isConnected($0) }
+        let refresh = { app.connectors.refreshAll() }
         return Group {
             Section {
-                TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
-            }
-            if !connected.isEmpty {
-                Section(tr("settings.connections.connected")) {
-                    CloudConnectorSettings(connectors: connected, capabilities: capabilityLine) {
-                        app.connectors.refreshAll()
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
+                        .textFieldStyle(.plain)
+                    if !connectionSearch.isEmpty {
+                        Button { connectionSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                            .buttonStyle(.plain)
                     }
                 }
             }
-            Section {
-                let sources = localSources(capabilityLine)
-                ForEach(sources.indices, id: \.self) { index in
-                    localRow(sources[index], capabilityLine)
+            if !connected.isEmpty {
+                Section {
+                    ForEach(connected.indices, id: \.self) { index in
+                        CloudConnectorViews.row(connected[index], capabilities: capabilityLine(connected[index].id), onChange: refresh)
+                    }
+                } header: {
+                    Text(tr("settings2.connections.connected", connected.count))
+                } footer: {
+                    Text(tr("settings2.connections.connectedFooter"))
                 }
-            } header: {
-                Text(tr("settings.connections.onYourMac"))
-            } footer: {
-                Text(tr("settings.connections.footer"))
+            }
+            let sources = localSources(capabilityLine)
+            if !sources.isEmpty {
+                Section {
+                    ForEach(sources.indices, id: \.self) { index in
+                        localRow(sources[index], capabilityLine)
+                    }
+                } header: {
+                    Text(tr("settings.connections.onYourMac"))
+                } footer: {
+                    Text(tr("settings.connections.footer"))
+                }
             }
             if !available.isEmpty {
                 Section {
-                    CloudConnectorSettings(connectors: available, capabilities: capabilityLine) {
-                        app.connectors.refreshAll()
+                    GalleryGrid {
+                        ForEach(available.indices, id: \.self) { index in
+                            CloudConnectorViews.card(available[index], capabilities: capabilityLine(available[index].id), onChange: refresh)
+                        }
                     }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
                 } header: {
-                    Text(tr("settings.connections.addService"))
+                    Text(tr("settings2.connections.add"))
                 } footer: {
-                    Text(tr("settings.connections.legend"))
+                    Text(tr("settings2.connections.addFooter"))
                 }
             }
-            MCPSettingsSection()
             if matchesSearch(title: app.portfolio.title) {
                 Section(tr("settings.connections.crypto")) {
                     PortfolioSettings(portfolio: app.portfolio)
                 }
             }
-            let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
-            if !others.isEmpty {
-                Section {
+            Section {
+                Button { app.settingsSection = .mcp } label: {
+                    HStack(spacing: 12) {
+                        SettingsTile(.mcp, size: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tr("settings2.connections.missing")).foregroundStyle(.primary)
+                            Text(tr("settings2.connections.missingDetail"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
+                if !others.isEmpty {
                     DisclosureGroup(tr("settings.connections.moreApps")) {
                         ForEach(others, id: \.name) { item in
                             VStack(alignment: .leading, spacing: 2) {
@@ -64,8 +98,6 @@ extension SettingsView {
                             .padding(.vertical, 2)
                         }
                     }
-                } footer: {
-                    Text(tr("settings.connections.notBuiltInFooter"))
                 }
             }
         }
