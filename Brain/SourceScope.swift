@@ -125,7 +125,7 @@ enum SourceCatalog {
         "check_availability": "calendar",
         "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
-        "search_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
+        "search_mail": "mail", "read_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
         "read_browser_tab": "browser", "read_nook_browser": "browser", "open_in_nook_browser": "browser",
         "run_command": "terminal",
@@ -403,7 +403,7 @@ enum SourceCapabilities {
         "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
-        "search_mail": "mail zoeken (inbox en verzonden)", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
+        "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen",
         "read_screen": "scherm lezen", "read_app": "een geopende of gesloten app lezen",
@@ -472,6 +472,26 @@ enum Prefetch {
         let name: String
         let source: String
         let required: [String]
+        /// The text field a search goes in ("query", "q"…), when the tool has one.
+        var query: String? = nil
+
+        /// The field of a schema that takes a search text: a string property named like a query.
+        static func queryField(_ schema: [String: Any]) -> String? {
+            guard let properties = schema["properties"] as? [String: Any] else { return nil }
+            for name in ["query", "q", "search", "term", "keyword", "keywords", "text"] {
+                if let field = properties[name] as? [String: Any], (field["type"] as? String) == "string" { return name }
+            }
+            return nil
+        }
+    }
+
+    /// The question asks for the newest or unread items of this source, so its overview helps even next to a search.
+    static func prefersListing(_ source: String, _ text: String) -> Bool {
+        switch source {
+        case "mail": return matches(unread, text) || matches(reply, text)
+        case "notes": return matches(#"recent\w*|laatst\w*|nieuwst\w*|latest|newest|neueste?n?|letzte?n?"#, text)
+        default: return false
+        }
     }
 
     /// Sources whose data is always in the context in full already.

@@ -378,9 +378,9 @@ final class MailConnector: ContextSource {
             ),
             ToolSpec(
                 name: "search_mail",
-                description: "Searches the Mail app by subject or sender (inbox) or by subject or recipient (sent) and returns the newest matches with the start of the text and a link to the message. Use this for questions like 'what did Lisa write about the proposal'. Use mailbox sent to find what the user wrote or promised.",
+                description: "Searches the Mail app by subject or sender (inbox) or by subject or recipient (sent) and returns the best matches with the start of the text, an id and a link to the message. Give one or more separate keywords (a name, a topic), not a sentence: messages matching the most keywords come first. Use this for questions like 'what did Lisa write about the proposal'. Use mailbox sent to find what the user wrote or promised. To read a whole message, call read_mail with its id.",
                 schema: ["type": "object", "properties": [
-                    "query": ["type": "string", "description": "Keyword in the subject, or (part of) the sender or recipient."],
+                    "query": ["type": "string", "description": "One or more keywords, separated by spaces: words in the subject, or (part of) the sender or recipient."],
                     "mailbox": ["type": "string", "enum": ["inbox", "sent"], "description": "inbox (default) or sent."] as [String: Any]
                 ], "required": ["query"]],
                 kind: .read,
@@ -391,14 +391,18 @@ final class MailConnector: ContextSource {
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
-                    let q = ScriptText.quote(query)
+                    // Every word on its own ("lisa offerte" finds Lisa's mail about the offerte), ranked by how many match.
+                    let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
                     let box = sent ? "sent mailbox" : "inbox"
-                    let filter = sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
+                    let filter = words.map { word -> String in
+                        let q = ScriptText.quote(word)
+                        return sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
+                    }.joined(separator: " or ")
                     let script = """
                     tell application "Mail"
                         set found to (messages of \(box) whose \(filter))
                         set n to count of found
-                        if n > 8 then set n to 8
+                        if n > 20 then set n to 20
                         set out to ""
                         repeat with i from 1 to n
                             set m to item i of found
@@ -420,13 +424,72 @@ final class MailConnector: ContextSource {
                         return out
                     end tell
                     """
-                    let result = await ScriptText.run(script)
+                    let result = await ScriptText.run(script, timeout: 20)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
+                    if result.errorNumber == -1712 { throw NookError("Searching Mail took too long. Try a more specific keyword.") }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
-                    return MailConnector.format(raw, sent: sent)
+                    let chunks = raw.components(separatedBy: "<<<MSG>>>").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    let ranked = Research.best(chunks, terms: Research.Terms(words: words), keep: 8,
+                                               title: { chunk in String(chunk.prefix { $0 != "\n" }) }, text: { $0 })
+                    return MailConnector.format(ranked.map { "<<<MSG>>>" + $0 }.joined(), sent: sent)
+                }
+            ),
+            ToolSpec(
+                name: "read_mail",
+                description: "Reads one whole message from the Mail app (inbox or sent): subject, sender, recipients, date and the full text. Give the id from search_mail. Use this when the start of a message is not enough to answer.",
+                schema: ["type": "object", "properties": [
+                    "id": ["type": "string", "description": "The message id from search_mail (the part after \"id:\")."]
+                ], "required": ["id"]],
+                kind: .read,
+                summarize: { _ in "Read mail" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    try await MailConnector.ensureRunning()
+                    let id = ((input["id"] as? String) ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
+                    guard !id.isEmpty else { throw NookError("The message id is missing.") }
+                    let q = ScriptText.quote(id)
+                    let script = """
+                    tell application "Mail"
+                        set m to missing value
+                        try
+                            set m to first message of inbox whose message id is \(q)
+                        end try
+                        if m is missing value then
+                            try
+                                set m to first message of sent mailbox whose message id is \(q)
+                            end try
+                        end if
+                        if m is missing value then return "NOT_FOUND"
+                        set rcpts to ""
+                        try
+                            repeat with r in to recipients of m
+                                set rcpts to rcpts & (address of r) & ", "
+                            end repeat
+                        end try
+                        set body to ""
+                        try
+                            set body to content of m
+                        end try
+                        return (subject of m) & "|||" & (sender of m) & "|||" & rcpts & "|||" & ((date received of m) as «class isot» as string) & linefeed & body
+                    end tell
+                    """
+                    let result = await ScriptText.run(script, timeout: 15)
+                    if result.errorNumber == -1743 {
+                        throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
+                    }
+                    guard let raw = result.text, raw != "NOT_FOUND" else { throw NookError("Message not found in Mail.") }
+                    let parts = raw.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                    let header = String(parts.first ?? "").components(separatedBy: "|||")
+                    guard header.count >= 4 else { throw NookError("Mail gave no readable message.") }
+                    var body = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                    if body.count > 12_000 { body = String(body.prefix(12_000)) + "\n… (truncated: the first 12,000 characters)" }
+                    let to = header[2].trimmingCharacters(in: CharacterSet(charactersIn: ", "))
+                    return "## \(header[0])\nFrom: \(header[1])\nTo: \(to)\nDate: \(header[3])\n\n\(body)\n"
+                        + ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: MailConnector.messageLink(id),
+                                               detail: "\(MailConnector.name(header[1])) · \(String(header[3].prefix(10)))")
                 }
             )
         ]
@@ -444,7 +507,8 @@ final class MailConnector: ContextSource {
             let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let who = sent ? "to \(header[2])" : "from \(header[1])"
             let state = status && !header[2].isEmpty ? " | \(header[2])" : ""
-            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\n\(body)")
+            let id = header[4].trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
+            blocks.append("### \(header[0]) | \(who) | \(header[3])\(state)\(id.isEmpty ? "" : " [id: \(id)]")\n\(body)")
             refs.append(ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: messageLink(header[4]),
                                              detail: "\(sent ? header[2] : name(header[1])) · \(String(header[3].prefix(10)))"))
         }
@@ -782,7 +846,21 @@ final class FilesConnector: ContextSource {
                     let byContent = await FilesConnector.spotlight([query])
                     var seen = Set<String>()
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
-                    let hits = (byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20)
+                    var hits = Array((byName + byContent).filter { FileText.isAllowed($0) && seen.insert($0.path).inserted }.prefix(20))
+                    // Spotlight wants every word; when that finds nothing, look per word and keep the files most words hit.
+                    let words = Research.words(of: query)
+                    if hits.isEmpty, words.count > 1 {
+                        var counts: [String: (url: URL, count: Int, first: Int)] = [:]
+                        var order = 0
+                        for word in words.prefix(4) {
+                            for url in await FilesConnector.spotlight([word]).prefix(60) where FileText.isAllowed(url) {
+                                order += 1
+                                let entry = counts[url.path] ?? (url, 0, order)
+                                counts[url.path] = (entry.url, entry.count + 1, entry.first)
+                            }
+                        }
+                        hits = counts.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.first < $1.first }.prefix(15).map(\.url)
+                    }
                     if hits.isEmpty { return "Nothing found for \"\(query)\"." }
                     let paths = hits.map { $0.path.replacingOccurrences(of: home, with: "~") }
                     let refs = hits.prefix(8).map {
