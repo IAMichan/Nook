@@ -2,7 +2,12 @@ import XCTest
 
 @MainActor
 final class FinishedSessionsTests: XCTestCase {
-    private let key = "Test Agent|finished-sessions-test"
+    private var key = "Test Agent|finished-sessions-test"
+
+    override func setUp() {
+        super.setUp()
+        key = "Test Agent|finished-sessions-test-\(UUID().uuidString)"
+    }
 
     override func tearDown() {
         FinishedSessions.shared.reopen(key)

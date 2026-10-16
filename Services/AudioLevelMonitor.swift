@@ -13,7 +13,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
     static let bandCount = 4
 
     /// Centre frequencies (Hz) of the bands: bass, low-mid, mid, treble.
-    private static let centres: [Double] = [90, 420, 1800, 7000]
+    private static let centres: [Double] = [80, 350, 1500, 6000]
     private static let queue = DispatchQueue(label: "nl.imdigital.nook.audiolevels", qos: .userInteractive)
 
     private let lock = NSLock()
@@ -27,6 +27,13 @@ final class AudioLevelMonitor: @unchecked Sendable {
     private var filters: [Biquad] = []
 
     // MARK: Reading
+
+    /// True when real audio buffers have been processed recently with measurable energy.
+    var hasSignal: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return (CFAbsoluteTimeGetCurrent() - lastSignalTime) < 0.35 && levels.contains(where: { $0 > 0.05 })
+    }
 
     /// Smoothed level of one band, 0…1. Falls to 0 when no audio arrived recently.
     func level(_ band: Int) -> Double {
@@ -166,17 +173,19 @@ final class AudioLevelMonitor: @unchecked Sendable {
         }
         guard frames > 0 else { return }
 
-        // Time-based release so the bars fall the same speed whatever the buffer size.
+        // Normalized band weighting to compensate for differing filter bandwidths.
+        // Bass filter (80Hz) has narrow physical bandwidth, so needs higher gain.
+        // Treble filter (6kHz) has wide bandwidth, so needs lower gain.
+        let weights: [Float] = [2.8, 1.8, 1.2, 0.8]
         let dt = Float(Double(frames) / sampleRate)
-        let release = expf(-dt / 0.14)
+        let release = expf(-dt / 0.12)
         let now = CFAbsoluteTimeGetCurrent()
         lock.lock()
         for b in 0..<Self.bandCount {
-            let rms = sqrtf(energy[b] / Float(frames))
-            // −52…−10 dB onto 0…1. Higher bands carry less energy in music, so lift them a little.
-            let db = 20 * log10f(rms + 1e-7) + Float(b) * 3
-            let target = min(1, max(0, (db + 52) / 42))
-            levels[b] = target > levels[b] ? levels[b] + (target - levels[b]) * 0.6 : max(target, levels[b] * release)
+            let rms = sqrtf(energy[b] / Float(frames)) * weights[b]
+            let db = 20 * log10f(rms + 1e-6)
+            let target = min(1.0, max(0.0, (db + 44) / 36))
+            levels[b] = target > levels[b] ? levels[b] + (target - levels[b]) * 0.85 : max(target, levels[b] * release)
         }
         if energy.contains(where: { $0 > 1e-10 }) { lastSignalTime = now }
         lock.unlock()
@@ -195,12 +204,14 @@ final class AudioLevelMonitor: @unchecked Sendable {
         return objects.filter { object in
             var idAddress = AudioObjectPropertyAddress(
                 mSelector: kAudioProcessPropertyBundleID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            var name: CFString = "" as CFString
-            var nameSize = UInt32(MemoryLayout<CFString>.size)
-            let status = withUnsafeMutablePointer(to: &name) {
+            var nameRef: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            let status = withUnsafeMutablePointer(to: &nameRef) {
                 AudioObjectGetPropertyData(object, &idAddress, 0, nil, &nameSize, $0)
             }
-            return status == noErr && (name as String).hasPrefix(bundlePrefix)
+            guard status == noErr, let nameRef else { return false }
+            let name = nameRef.takeRetainedValue() as String
+            return name.hasPrefix(bundlePrefix)
         }
     }
 
@@ -212,12 +223,13 @@ final class AudioLevelMonitor: @unchecked Sendable {
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
         var uidAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var uid: CFString = "" as CFString
-        var uidSize = UInt32(MemoryLayout<CFString>.size)
-        let status = withUnsafeMutablePointer(to: &uid) {
+        var uidRef: Unmanaged<CFString>?
+        var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &uidRef) {
             AudioObjectGetPropertyData(device, &uidAddress, 0, nil, &uidSize, $0)
         }
-        return status == noErr ? uid as String : nil
+        guard status == noErr, let uidRef else { return nil }
+        return uidRef.takeRetainedValue() as String
     }
 }
 
