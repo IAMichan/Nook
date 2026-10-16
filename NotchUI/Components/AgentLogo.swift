@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The mark of a coding agent, drawn in code so every agent has one without image assets: Claude's spark, Codex's
-/// prompt, Gemini's star, Antigravity's arch, and a letter for the rest.
+/// The mark of a coding agent, drawn in code so every agent has one without image assets: the real brand marks where we
+/// have them (Claude, OpenAI for Codex, Gemini, …), Antigravity's arch, and a letter for the rest.
 struct AgentLogo: View {
     /// The agent's display name, as the rest of the app uses it ("Claude Code", "Codex", "Antigravity").
     let agent: String
@@ -18,16 +18,15 @@ struct AgentLogo: View {
     }
 
     private enum Style {
-        case claude, codex, gemini, antigravity
+        case brand(BrandLogo)
+        case antigravity
         case letter(String, Color)
     }
 
     private var style: Style {
         let name = agent.lowercased()
-        if name.contains("claude") { return .claude }
-        if name.contains("codex") { return .codex }
         if name.contains("antigravity") { return .antigravity }
-        if name.contains("gemini") { return .gemini }
+        if let brand = BrandLogo.forName(name) { return .brand(brand) }
         let palette = [NookTheme.iris, NookTheme.mint, NookTheme.amber, NookTheme.coral, Color(hex: 0x8AB4F8)]
         let index = abs(agent.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }) % palette.count
         return .letter(String(agent.prefix(1)).uppercased(), palette[index])
@@ -43,21 +42,8 @@ struct AgentLogo: View {
     private var logo: some View {
         let corner = size * 0.28
         switch style {
-        case .claude:
-            ClaudeSpark()
-                .stroke(Color(hex: 0xD97757), style: StrokeStyle(lineWidth: max(1.4, size * 0.12), lineCap: .round))
-                .padding(size * 0.06)
-        case .codex:
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0x8FA8FF), Color(hex: 0x3B46C8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(
-                    PromptGlyph()
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: max(1, size * 0.08), lineCap: .round, lineJoin: .round))
-                        .padding(size * 0.27)
-                )
-        case .gemini:
-            GeminiStar()
-                .fill(LinearGradient(colors: [Color(hex: 0x4F8BF7), Color(hex: 0x9B72F2)], startPoint: .bottomLeading, endPoint: .topTrailing))
+        case .brand(let logo):
+            BrandMark(logo: logo, size: size)
         case .antigravity:
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(Color(hex: 0x17171B))
@@ -78,52 +64,6 @@ struct AgentLogo: View {
                         .foregroundStyle(color)
                 )
         }
-    }
-}
-
-/// Eight rays from the center.
-private struct ClaudeSpark: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        for step in 0..<4 {
-            let angle = Double(step) * .pi / 4
-            let reach = step % 2 == 0 ? radius : radius * 0.82
-            let dx = CGFloat(cos(angle)) * reach
-            let dy = CGFloat(sin(angle)) * reach
-            path.move(to: CGPoint(x: center.x - dx, y: center.y - dy))
-            path.addLine(to: CGPoint(x: center.x + dx, y: center.y + dy))
-        }
-        return path
-    }
-}
-
-/// ">_"
-private struct PromptGlyph: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.12))
-        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.42, y: rect.midY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - rect.height * 0.12))
-        path.move(to: CGPoint(x: rect.minX + rect.width * 0.58, y: rect.maxY - rect.height * 0.05))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - rect.height * 0.05))
-        return path
-    }
-}
-
-/// A four-pointed star with curved sides.
-private struct GeminiStar: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.midY), control: center)
-        path.addQuadCurve(to: CGPoint(x: rect.midX, y: rect.maxY), control: center)
-        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.midY), control: center)
-        path.addQuadCurve(to: CGPoint(x: rect.midX, y: rect.minY), control: center)
-        path.closeSubpath()
-        return path
     }
 }
 

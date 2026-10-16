@@ -179,8 +179,9 @@ struct NookChatView: View {
                 ComposerMoreMenu(chat: chat)
                 BrainChip()
                 ScopeMenu(chat: chat)
-                Spacer(minLength: 4)
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 26) { viewModel.startListening() }
+            }
+            .trailing {
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
             }
         }
     }
