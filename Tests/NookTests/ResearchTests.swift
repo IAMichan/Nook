@@ -81,6 +81,13 @@ final class ResearchTests: XCTestCase {
         XCTAssertTrue(sources.contains("notes"))
     }
 
+    func testANamedSourceIsNeverReplacedBySearchingEverywhere() {
+        let question = "Wat staat er in Bear over Apollo?"
+        let sources = Research.sources(question: question, intent: ChatIntent.detect(question), terms: Research.terms(in: question),
+                                       relevant: ["calendar"], named: ["bear"], available: available, active: active)
+        XCTAssertEqual(sources, ["calendar"], "Bear cannot be read: no searching notes, mail and files for the word instead")
+    }
+
     func testLookupsSearchWithTheTermsInsteadOfListingTheNewest() {
         let question = "Wat zei Lisa over de offerte?"
         let calls = Research.lookups(question: question, terms: Research.terms(in: question), sources: ["calendar", "notes", "mail"], available: available)
@@ -297,13 +304,6 @@ final class ResearchGroundingTests: XCTestCase {
         let lisa = "Wat appte Lisa over de offerte?"
         XCTAssertEqual(Research.lookups(question: lisa, terms: Research.terms(in: lisa), sources: ["whatsapp"], available: chatTools).map(\.tool),
                        ["search_whatsapp"])
-    }
-
-    func testANamedSourceIsNeverReplacedBySearchingEverywhere() {
-        let question = "Wat staat er in Bear over Apollo?"
-        let sources = Research.sources(question: question, intent: ChatIntent.detect(question), terms: Research.terms(in: question),
-                                       relevant: ["calendar"], named: ["bear"], available: available, active: active)
-        XCTAssertEqual(sources, ["calendar"], "Bear cannot be read: no searching notes, mail and files for the word instead")
     }
 
     func testOpenChatsOpenTheChatWhenAskedForItsContent() {

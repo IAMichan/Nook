@@ -786,6 +786,9 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let content = object["content"] as? String {
                     let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { session.lastReply = trimmed }
+                } else if session.lastReply.isEmpty, let thinking = object["thinking"] as? String {
+                    let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { session.lastReply = trimmed }
                 }
                 if session.cwd.isEmpty, let toolCalls = object["tool_calls"] as? [[String: Any]] {
                     for tc in toolCalls {

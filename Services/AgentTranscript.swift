@@ -2,13 +2,34 @@ import Foundation
 
 /// A single message from an active session's conversation.
 struct AgentChatMessage: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case user
+        case assistant
+        case thinking
+    }
+
     let id: String
-    let fromUser: Bool
+    let kind: Kind
     let text: String
+
+    var fromUser: Bool { kind == .user }
+    var isThinking: Bool { kind == .thinking }
+
+    init(id: String, fromUser: Bool, text: String) {
+        self.id = id
+        self.kind = fromUser ? .user : .assistant
+        self.text = text
+    }
+
+    init(id: String, kind: Kind, text: String) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+    }
 }
 
-/// Reads the tail of a Claude Code JSONL transcript and returns recent messages:
-/// user prompts and agent responses. Tool invocations and system prompts are excluded.
+/// Reads the tail of a Claude Code, Antigravity, or Codex JSONL transcript and returns recent messages:
+/// user prompts, agent responses, and thinking/reasoning blocks. Tool invocations and system prompts are excluded.
 enum AgentTranscript {
     /// Number of bytes to read from file tail; sufficient for recent turns.
     private static let tailBytes: UInt64 = 600_000
@@ -24,7 +45,7 @@ enum AgentTranscript {
     private static let cacheLock = NSLock()
     private static var cache: [String: CacheEntry] = [:]
 
-    static func recent(path: String, limit: Int = 10) -> [AgentChatMessage] {
+    static func recent(path: String, limit: Int = 40) -> [AgentChatMessage] {
         guard path.hasSuffix(".jsonl") else { return [] }
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let attrSize = (attrs?[.size] as? NSNumber)?.uint64Value
@@ -59,16 +80,30 @@ enum AgentTranscript {
             if type == "user" || type == "assistant" {
                 guard (object["isMeta"] as? Bool) != true, (object["isSidechain"] as? Bool) != true,
                       let message = object["message"] as? [String: Any] else { continue }
-                let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
 
                 if type == "user" {
-                    guard isTypedPrompt(text) else { continue }
-                    messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
-                } else if let last = messages.last, !last.fromUser {
-                    messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
+                    let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty, isTypedPrompt(text) else { continue }
+                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
                 } else {
-                    messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                    let thinking = thinkingText(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    if !thinking.isEmpty {
+                        if let last = messages.last, last.isThinking {
+                            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
+                        } else {
+                            messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
+                        }
+                    }
+
+                    if !text.isEmpty {
+                        if let last = messages.last, !last.fromUser && !last.isThinking {
+                            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
+                        } else {
+                            messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
+                        }
+                    }
                 }
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
@@ -76,15 +111,25 @@ enum AgentTranscript {
                 guard let raw = object["content"] as? String else { continue }
                 let text = cleanAntigravityPrompt(raw)
                 guard !text.isEmpty else { continue }
-                messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
+                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
             } else if type == "PLANNER_RESPONSE" {
-                guard let content = object["content"] as? String else { continue }
-                let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
-                if let last = messages.last, !last.fromUser {
-                    messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
-                } else {
-                    messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                let thinking = (object["thinking"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let content = (object["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                if !thinking.isEmpty {
+                    if let last = messages.last, last.isThinking {
+                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
+                    } else {
+                        messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
+                    }
+                }
+
+                if !content.isEmpty {
+                    if let last = messages.last, !last.fromUser && !last.isThinking {
+                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + content))
+                    } else {
+                        messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(content)))
+                    }
                 }
             }
             // Codex (event_msg)
@@ -93,12 +138,12 @@ enum AgentTranscript {
                 let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 if ptype == "user_message" {
-                    messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
+                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
                 } else if ptype == "agent_message" {
-                    if let last = messages.last, !last.fromUser {
-                        messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
+                    if let last = messages.last, !last.fromUser && !last.isThinking {
+                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
                     } else {
-                        messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                        messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
                     }
                 }
             }
@@ -133,6 +178,11 @@ enum AgentTranscript {
         if let string = content as? String { return string }
         guard let blocks = content as? [[String: Any]] else { return "" }
         return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+    }
+
+    private static func thinkingText(_ content: Any?) -> String {
+        guard let blocks = content as? [[String: Any]] else { return "" }
+        return blocks.compactMap { $0["type"] as? String == "thinking" ? $0["thinking"] as? String : nil }.joined(separator: "\n")
     }
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.
