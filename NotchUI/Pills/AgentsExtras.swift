@@ -232,7 +232,7 @@ private struct PullRequestRow: View {
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
-    private var profiles: [AgentProfile] { app.profiles.all.filter { $0.kind != .gemini } }
+    private var profiles: [AgentProfile] { app.profiles.all }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -282,7 +282,7 @@ struct AgentsUsagePanel: View {
                 Spacer(minLength: 0)
             }
             if limits.isEmpty {
-                Text(tr("ws.usage.quotaUnavailable"))
+                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits") : tr("ws.usage.quotaUnavailable"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
             } else {
