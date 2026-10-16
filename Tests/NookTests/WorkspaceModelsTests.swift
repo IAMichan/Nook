@@ -71,6 +71,21 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertTrue(WorktreeNaming.title(from: String(repeating: "woord ", count: 30)).hasSuffix("…"))
     }
 
+    /// A question with a question mark or other punctuation still gives a branch name Git accepts.
+    func testBranchNameFromPunctuatedTask() {
+        for task in ["Is de ci gefaald?", "Fix: login [urgent] *nu*", "~weg^ @{x} \\"] {
+            let name = WorktreeNaming.branchName(task: task, id: UUID())
+            XCTAssertTrue(WorktreeNaming.isPlausibleBranchName(name), name)
+        }
+        var config = NewRunConfig()
+        config.task = "Is de ci gefaald?"
+        config.projectPath = "/tmp/project"
+        config.isolation = .worktree
+        config.baseBranch = "main"
+        config.branchName = WorktreeNaming.branchName(task: config.task, id: UUID())
+        XCTAssertNil(config.problem)
+    }
+
     func testBranchNameIsUniqueAndValid() {
         let id = UUID(uuidString: "3FA2C1D0-0000-0000-0000-000000000000")!
         let name = WorktreeNaming.branchName(task: "Add archive button", id: id)
