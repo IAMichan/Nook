@@ -277,6 +277,21 @@ final class ResearchGroundingTests: XCTestCase {
 
     // MARK: Asking about one app
 
+    private let available: [Prefetch.Available] = [
+        .init(name: "search_notes", source: "notes", required: ["query"], query: "query"),
+        .init(name: "list_notes", source: "notes", required: []),
+        .init(name: "read_note", source: "notes", required: ["identifier"]),
+        .init(name: "search_mail", source: "mail", required: ["query"], query: "query"),
+        .init(name: "inbox_mail", source: "mail", required: []),
+        .init(name: "read_mail", source: "mail", required: ["id"]),
+        .init(name: "search_files", source: "files", required: ["query"], query: "query"),
+        .init(name: "read_file", source: "files", required: ["path"]),
+        .init(name: "search_web", source: "web", required: ["query"], query: "query"),
+        .init(name: "search_contacts", source: "contacts", required: ["query"], query: "query"),
+        .init(name: "list_events", source: "calendar", required: ["from", "to"])
+    ]
+    private let active: Set<String> = ["calendar", "reminders", "loops", "notes", "mail", "files", "web", "contacts"]
+
     private let chatTools: [Prefetch.Available] = [
         .init(name: "search_whatsapp", source: "whatsapp", required: ["query"], query: "query"),
         .init(name: "whatsapp_open_chats", source: "whatsapp", required: []),
