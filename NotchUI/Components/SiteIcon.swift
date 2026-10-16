@@ -64,16 +64,28 @@ final class FaviconStore: ObservableObject {
     }
 }
 
-/// The service icon, or a system symbol fallback while loading.
+/// The service icon, or a system symbol fallback while loading. With `source`, the icon of the Mac app that source
+/// reads (Calendar, Mail, WhatsApp…) comes first, then the service's own website.
 struct SiteIcon: View {
     let domain: String?
     let fallback: String
     var tint: Color = .secondary
     var size: CGFloat = 16
+    var source: String? = nil
     @ObservedObject private var store = FaviconStore.shared
 
+    private var resolvedDomain: String? { domain ?? source.flatMap(SourceBrand.domain(for:)) }
+
     var body: some View {
-        if let domain, let image = store.image(for: domain) {
+        if let source, let app = SourceBrand.appIcon(for: source) {
+            // App icons carry their own shape and a little margin: draw them a touch larger than a favicon.
+            Image(nsImage: app)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size * 1.15, height: size * 1.15)
+                .frame(width: size, height: size)
+        } else if let domain = resolvedDomain, let image = store.image(for: domain) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

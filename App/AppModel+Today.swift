@@ -42,7 +42,8 @@ extension AppModel {
                 subtitle: session.project,
                 action: tr("button.view"),
                 color: session.status.color,
-                target: .agent(session.id)
+                target: .agent(session.id),
+                logo: .agent(session.name)
             ))
         }
 
@@ -57,7 +58,8 @@ extension AppModel {
                 color: NookTheme.iris,
                 target: .action { [weak self] in
                     self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": what do I need to know and what on my screen is relevant?")
-                }
+                },
+                logo: .source("calendar")
             ))
         }
 
@@ -68,7 +70,8 @@ extension AppModel {
                 subtitle: source.status.detail.isEmpty ? (source.status.items.first?.title ?? "") : source.status.detail,
                 action: tr("button.view"),
                 color: NookTheme.amber,
-                target: .action { [weak self] in self?.openSettings(section: .connections) }
+                target: .action { [weak self] in self?.openSettings(section: .connections) },
+                logo: .source(source.id)
             ))
         }
 

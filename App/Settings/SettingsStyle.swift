@@ -77,8 +77,23 @@ struct ServiceTile: View {
     let fallback: String
     var tint: Color = .secondary
     var size: CGFloat = 28
+    /// The source id: a source backed by a Mac app shows that app's own icon instead of a tile.
+    var source: String? = nil
 
     var body: some View {
+        if let source, let app = SourceBrand.appIcon(for: source) {
+            Image(nsImage: app)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size * 1.15, height: size * 1.15)
+                .frame(width: size, height: size)
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor))
             .overlay(
@@ -86,7 +101,7 @@ struct ServiceTile: View {
                     .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
             )
             .overlay(
-                SiteIcon(domain: domain, fallback: fallback, tint: tint, size: size * 0.62)
+                SiteIcon(domain: domain, fallback: fallback, tint: tint, size: size * 0.62, source: source)
             )
             .frame(width: size, height: size)
             .shadow(color: .black.opacity(0.06), radius: 1, y: 0.5)

@@ -81,7 +81,7 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         HStack(spacing: 12) {
             Button { showSetup = true } label: {
                 HStack(spacing: 12) {
-                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30)
+                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30, source: connector.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
                         Text(ServiceState.summary(of: connector, health: health))
@@ -143,7 +143,7 @@ private struct ServiceCard<C: CloudConnectorConfig>: View {
 
     var body: some View {
         GalleryCard(title: connector.title, detail: ServiceState.tagline(connector.id)) {
-            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34)
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34, source: connector.id)
         } accessory: {
             Text(tr("connector.link"))
                 .font(.caption.weight(.semibold))
@@ -194,7 +194,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             title: connector.title,
             subtitle: managing ? ServiceState.summary(of: connector, health: health) : tr("settings2.service.connectSubtitle", connector.title)
         ) {
-            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48)
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48, source: connector.id)
         } content: {
             if managing { manageContent } else { connectContent }
             capabilityNote

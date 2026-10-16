@@ -140,7 +140,7 @@ extension SettingsView {
             }
         )) {
             HStack(spacing: 10) {
-                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20)
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
