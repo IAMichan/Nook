@@ -100,6 +100,8 @@ struct AgentSession: Identifiable, Equatable {
     var lastPrompt: String = ""
     /// The agent's last reply, in full.
     var lastReply: String = ""
+    /// When the session started, as far as Nook knows.
+    var started: Date? = nil
     /// Derived from a running process rather than hooks.
     var isDetected: Bool { status == .detected }
 }

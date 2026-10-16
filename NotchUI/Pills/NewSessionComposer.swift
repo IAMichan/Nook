@@ -94,54 +94,25 @@ struct NewSessionComposer: View {
 
     // MARK: The box
 
+    /// The same composer a running session answers in, with the choices for the new session inside it.
     private var box: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("", text: $config.task, prompt: Text(tr("compose.prompt")).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(14))
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(3...8)
-                .focused($focused)
-                .onSubmit(start)
-                .frame(minHeight: 56, alignment: .topLeading)
-            HStack(spacing: 6) {
-                agentMenu
-                divider
-                modeMenu
-                divider
-                permissionMenu
-                Spacer(minLength: 8)
-                sendButton
-            }
+        SessionComposer(
+            text: $config.task,
+            prompt: tr("compose.prompt"),
+            minHeight: 56,
+            lines: 3...8,
+            canSend: canStart,
+            sending: starting,
+            sendLabel: blockingReason ?? tr("ws.new.start"),
+            focus: $focused,
+            onSend: start
+        ) {
+            agentMenu
+            ComposerDivider()
+            modeMenu
+            ComposerDivider()
+            permissionMenu
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.graphite))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(focused ? NookTheme.line2 : NookTheme.line, lineWidth: 1))
-    }
-
-    private var divider: some View {
-        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 14)
-    }
-
-    private var sendButton: some View {
-        Button(action: start) {
-            Group {
-                if starting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.up").font(.system(size: 13, weight: .bold))
-                }
-            }
-            .foregroundStyle(canStart ? NookTheme.ink : NookTheme.textTertiary)
-            .frame(width: 30, height: 30)
-            .background(Circle().fill(canStart ? NookTheme.paper : NookTheme.smoke))
-        }
-        .buttonStyle(.plain)
-        .disabled(!canStart)
-        .help(blockingReason ?? tr("ws.new.start"))
-        .accessibilityLabel(tr("ws.new.start"))
     }
 
     // MARK: Choices in the box
@@ -178,11 +149,11 @@ struct NewSessionComposer: View {
                 }
             }
         } label: {
-            Pill(symbol: nil, dot: config.provider.color,
-                 text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                    + (config.model.isEmpty ? "" : " · " + config.model))
+            ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
+                         text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
+                            + (config.model.isEmpty ? "" : " · " + config.model))
         }
-        .compactMenu()
+        .composerMenu()
         .help(tr("ws.new.accountPinned"))
     }
 
@@ -196,9 +167,9 @@ struct NewSessionComposer: View {
                 }
             }
         } label: {
-            Pill(symbol: config.mode == .plan ? "list.bullet.clipboard" : "sparkles", dot: nil, text: config.mode.label)
+            ComposerPill(symbol: config.mode == .plan ? "list.bullet.clipboard" : "sparkles", dot: nil, text: config.mode.label)
         }
-        .compactMenu()
+        .composerMenu()
         .help(config.mode.help)
     }
 
@@ -212,12 +183,12 @@ struct NewSessionComposer: View {
                 }
             }
         } label: {
-            Pill(symbol: config.permission == .bypass ? "lock.open" : "lock",
+            ComposerPill(symbol: config.permission == .bypass ? "lock.open" : "lock",
                  dot: nil,
                  text: config.mode == .plan ? tr("compose.readOnly") : config.permission.label,
                  tint: config.permission == .bypass && config.mode != .plan ? NookTheme.coralSoft : nil)
         }
-        .compactMenu()
+        .composerMenu()
         .disabled(config.mode == .plan)
         .help(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
     }
@@ -239,10 +210,10 @@ struct NewSessionComposer: View {
                 }
                 .disabled(!worktreeAllowed)
             } label: {
-                Pill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
+                ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
                      text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
             }
-            .compactMenu()
+            .composerMenu()
             .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : worktreeBlockedReason)
 
             Spacer(minLength: 8)
@@ -257,11 +228,11 @@ struct NewSessionComposer: View {
                         }
                     }
                 } label: {
-                    Pill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
+                    ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
                 }
-                .compactMenu()
+                .composerMenu()
             } else if let branch = project?.currentBranch {
-                Pill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
+                ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
             }
         }
         .padding(.horizontal, 6)
@@ -461,46 +432,5 @@ struct NewSessionComposer: View {
                 starting = false
             }
         }
-    }
-}
-
-/// A quiet choice: an optional symbol or colored dot, and a short text. Used for the menus in and under the box.
-private struct Pill: View {
-    let symbol: String?
-    let dot: Color?
-    let text: String
-    var tint: Color? = nil
-    var showsChevron = true
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let dot {
-                Circle().fill(dot).frame(width: 7, height: 7)
-            } else if let symbol {
-                Image(systemName: symbol).font(.system(size: 11, weight: .medium))
-            }
-            Text(text).lineLimit(1)
-            if showsChevron {
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
-            }
-        }
-        .font(NookTheme.font(12.5, .medium))
-        .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-    }
-}
-
-private extension View {
-    /// A menu that looks like its label only: no button chrome, no arrow.
-    func compactMenu() -> some View {
-        self.menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
     }
 }

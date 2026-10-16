@@ -1,15 +1,14 @@
 import SwiftUI
 import AppKit
 
-/// Your agents in the notch. On the left the sessions, with a + next to "Sessions" to start one; on the right the
-/// session you picked, or, after +, the place to start a new one. Two groups only: what is going on now (including
-/// agents that were already running when Nook started) and earlier sessions. A row shows what it is about, the agent
-/// and the folder; only a session that needs you gets a word of its own.
+/// Your agents in the notch. On the left every session, from whichever agent, started here or in a terminal; on the
+/// right the session you picked, or, after the new-session button, the place to start one. A row shows the folder and
+/// how long the session has been going, its name, and its branch with the agent's logo; the badge on the logo says
+/// whether it runs under a personal or a work account. Finished sessions wait folded away at the bottom.
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    /// Earlier sessions: a few at first, all of them after "Show more".
-    @State private var showAllPast = false
+    @State private var showFinished = false
 
     private enum Selection {
         case live(AgentSession)
@@ -19,17 +18,20 @@ struct AgentsTab: View {
     }
 
     var body: some View {
-        let live = app.agentSessions
-        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace.prefix(40))
+        let transcripts = app.demoMode ? [:] : app.detectedTranscripts()
+        // A process Nook only sees is shown when its conversation can be read; agents are linked in Settings › Agents.
+        let live = app.agentSessions.filter { app.demoMode || !$0.isDetected || transcripts[$0.id] != nil }
+        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace.prefix(60))
         let selection = resolve(live: live, past: past)
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
                 listHeader(selection)
-                sessionList(live: live, past: past, selection: selection)
+                sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
             }
-            .frame(width: 256)
+            .padding(.trailing, 12)
+            .frame(width: 280)
 
-            Rectangle().fill(NookTheme.line).frame(width: 1)
+            Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1)
 
             Group {
                 switch selection {
@@ -44,6 +46,7 @@ struct AgentsTab: View {
                     }
                 }
             }
+            .padding(.leading, 18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onAppear {
@@ -63,31 +66,33 @@ struct AgentsTab: View {
 
     // MARK: List header
 
-    /// "Sessions" with a + right next to it: the one way to start something new.
+    /// "Agents" with the button that starts a new session.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return HStack(spacing: 8) {
-            Text(tr("agents.mode.sessions"))
-                .font(NookTheme.font(13.5, .semibold))
+            Text(tr("tab.agents"))
+                .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(NookTheme.paper)
             Spacer(minLength: 4)
             if !app.demoMode {
                 Button {
                     viewModel.selectedAgentID = "new"
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isNew ? NookTheme.ink : NookTheme.paper)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(isNew ? NookTheme.paper : NookTheme.smoke))
-                        .contentShape(Circle())
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isNew ? NookTheme.paper : NookTheme.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(isNew ? NookTheme.smoke : Color.clear))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(tr("agents.newSession"))
                 .accessibilityLabel(tr("agents.newSession"))
             }
         }
-        .padding(.leading, 10)
+        .padding(.leading, 12)
+        .padding(.trailing, 2)
+        .padding(.bottom, 4)
     }
 
     // MARK: Selection
@@ -106,7 +111,7 @@ struct AgentsTab: View {
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
         if !app.demoMode, let run = app.workspace.activeRuns.first(where: { !$0.archived }) { return .run(run.id) }
-        if let first = live.first(where: { !$0.isDetected }) { return .live(first) }
+        if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil || $0.status == .running }) { return .live(first) }
         if app.demoMode, let first = live.first { return .live(first) }
         return .new
     }
@@ -122,90 +127,145 @@ struct AgentsTab: View {
 
     // MARK: List
 
-    private func sessionList(live: [AgentSession], past: [PastSession], selection: Selection) -> some View {
-        let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
+    private func sessionList(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession],
+                             selection: Selection) -> some View {
         let current = selectedID(selection)
-        let transcripts = app.demoMode ? [:] : app.detectedTranscripts()
-        // Waiting for you first, then the rest in the order they were found.
-        func needsYou(_ session: AgentSession) -> Bool { session.status == .waiting || session.approvalID != nil }
-        let now = live.filter(needsYou) + live.filter { !needsYou($0) }
-        let shownPast = showAllPast ? past : Array(past.prefix(8))
+        let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
+        let active = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
+        let finished = past.map { item($0) }
 
-        return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 2) {
-                if !runs.isEmpty || !now.isEmpty {
-                    SectionHeader(title: tr("agents.nowActive"), trailing: nil)
-                    ForEach(runs) { run in
-                        AgentListRow(
-                            title: run.title,
-                            state: .run(run),
-                            folder: run.projectName,
-                            path: run.workingDirectory,
-                            account: accountName(app.profile(for: run)),
-                            agent: run.provider.kind.shortName,
-                            time: nil,
-                            selected: current == "run:" + run.id.uuidString
-                        ) { viewModel.selectedAgentID = "run:" + run.id.uuidString }
+        return TimelineView(.periodic(from: .now, by: 30)) { context in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(active) { entry in
+                        AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
+                            viewModel.selectedAgentID = entry.id
+                        }
                     }
-                    ForEach(now) { session in
-                        AgentListRow(
-                            title: nowTitle(session, transcript: transcripts[session.id]),
-                            state: session.isDetected ? .untracked : .live(session),
-                            folder: session.project,
-                            path: session.cwd,
-                            account: accountName(app.profile(for: session)),
-                            agent: session.name,
-                            time: nil,
-                            selected: current == session.id
-                        ) { viewModel.selectedAgentID = session.id }
+                    if active.isEmpty && finished.isEmpty {
+                        Text(app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow"))
+                            .font(NookTheme.font(12.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(12)
                     }
-                }
-                if !shownPast.isEmpty {
-                    SectionHeader(title: tr("agents.recent"), trailing: app.history.loading ? tr("agents.checking") : nil)
-                        .padding(.top, runs.isEmpty && now.isEmpty ? 0 : 14)
-                    ForEach(shownPast) { session in
-                        AgentListRow(
-                            title: AgentFormat.title(session.title),
-                            state: .past,
-                            folder: session.project,
-                            path: session.cwd,
-                            account: accountName(app.profile(for: session)),
-                            agent: session.agent.shortName,
-                            time: NookDates.ago(session.ended),
-                            selected: current == "past:" + session.id
-                        ) { viewModel.selectedAgentID = "past:" + session.id }
-                    }
-                    if past.count > shownPast.count {
+                    if !finished.isEmpty {
                         Button {
-                            showAllPast = true
+                            withAnimation(.easeInOut(duration: 0.18)) { showFinished.toggle() }
                         } label: {
-                            Text(tr("agents.showMore"))
-                                .font(NookTheme.font(12, .medium))
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
+                            HStack(spacing: 6) {
+                                Text(tr("agents.finishedCount", finished.count))
+                                Image(systemName: showFinished ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                Spacer(minLength: 0)
+                            }
+                            .font(NookTheme.font(12, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .padding(.top, active.isEmpty ? 0 : 6)
+                        if showFinished {
+                            ForEach(finished) { entry in
+                                AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
+                                    viewModel.selectedAgentID = entry.id
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    /// What a running session is about: its summary, else (for one Nook only sees) the first question of its
-    /// conversation, else the folder.
-    private func nowTitle(_ session: AgentSession, transcript: PastSession?) -> String {
-        if !session.summary.isEmpty { return AgentFormat.title(session.summary) }
-        if let transcript, !transcript.title.isEmpty { return AgentFormat.title(transcript.title) }
-        return session.project
+    /// Waiting for you first, then working, then the rest; newest first within each.
+    private func sorted(_ items: [AgentListItem]) -> [AgentListItem] {
+        func rank(_ status: AgentListItem.Status) -> Int {
+            switch status {
+            case .waiting: return 0
+            case .failed: return 1
+            case .working: return 2
+            case .idle: return 3
+            case .finished: return 4
+            }
+        }
+        return items.enumerated().sorted { a, b in
+            let (ra, rb) = (rank(a.element.status), rank(b.element.status))
+            if ra != rb { return ra < rb }
+            return a.offset < b.offset
+        }.map(\.element)
     }
 
-    /// The account a session ran with; only mentioned when the agent has more than one ("Work", the organization…).
-    private func accountName(_ profile: AgentProfile?) -> String? {
-        guard !app.demoMode, let profile, app.profiles.profiles(for: profile.kind).count > 1 else { return nil }
-        return AccountLabel.name(profile, app: app)
+    private func account(_ profile: AgentProfile?) -> AccountKind? {
+        guard !app.demoMode, let profile else { return nil }
+        return AccountKind.of(profile, app: app)
+    }
+
+    private func item(_ run: WorkspaceRun) -> AgentListItem {
+        let status: AgentListItem.Status
+        switch run.status {
+        case .preparing, .running: status = .working
+        case .waitingApproval: status = .waiting
+        case .failed: status = .failed
+        case .completed: status = .idle
+        case .stopped: status = .finished
+        }
+        return AgentListItem(
+            id: "run:" + run.id.uuidString,
+            folder: run.projectName,
+            title: run.title,
+            branch: run.branch ?? GitHead.branch(for: run.workingDirectory),
+            agent: run.provider.displayName,
+            account: account(app.profile(for: run)),
+            status: status,
+            started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
+            path: run.workingDirectory
+        )
+    }
+
+    private func item(_ session: AgentSession, transcript: PastSession?) -> AgentListItem {
+        let status: AgentListItem.Status
+        if session.approvalID != nil || session.status == .waiting {
+            status = .waiting
+        } else {
+            switch session.status {
+            case .running: status = .working
+            case .failed: status = .failed
+            default: status = .idle
+            }
+        }
+        let conversation = app.conversationID(for: session)
+        let known = transcript ?? conversation.flatMap { id in app.history.sessions.first { $0.sessionID == id } }
+        var title = session.project
+        if !session.summary.isEmpty { title = AgentFormat.title(session.summary) }
+        else if let known, !known.title.isEmpty { title = AgentFormat.title(known.title) }
+        let branch = known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd)
+        return AgentListItem(
+            id: session.id,
+            folder: session.project,
+            title: title,
+            branch: branch,
+            agent: session.name,
+            account: account(app.profile(for: session)),
+            status: status,
+            started: session.started ?? known?.started,
+            path: session.cwd
+        )
+    }
+
+    private func item(_ session: PastSession) -> AgentListItem {
+        AgentListItem(
+            id: "past:" + session.id,
+            folder: session.project,
+            title: AgentFormat.title(session.title),
+            branch: session.branch.isEmpty ? nil : session.branch,
+            agent: session.agent.name,
+            account: account(app.profile(for: session)),
+            status: .finished,
+            started: session.ended,
+            path: session.cwd
+        )
     }
 
     /// Sample data only: nothing to start.
@@ -224,62 +284,67 @@ struct AgentsTab: View {
 
 // MARK: Session row
 
-/// One session in the list, the same for every kind: what it is about, its state on the right (working, waits for
-/// you, done…), and underneath in which folder, with which account and which agent.
-struct AgentListRow: View {
-    enum Kind {
-        case run(WorkspaceRun)
-        case live(AgentSession)
-        case untracked
-        case past
-    }
+/// One session in the list, the same for every kind of session.
+struct AgentListItem: Identifiable {
+    enum Status { case working, waiting, failed, idle, finished }
 
-    let title: String
-    let state: Kind
+    /// The selection id: a hub session id, "run:<uuid>" or "past:<id>".
+    let id: String
     let folder: String
-    let path: String
-    let account: String?
+    let title: String
+    let branch: String?
+    /// The agent's display name, for its logo.
     let agent: String
-    let time: String?
+    let account: AccountKind?
+    let status: Status
+    /// Working or waiting: when it started. Otherwise: when it was last active.
+    let started: Date?
+    let path: String
+}
+
+/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath.
+struct AgentListRow: View {
+    let item: AgentListItem
+    let now: Date
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
 
+    private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
+    private var dimmed: Bool { item.status == .finished }
+
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: 10) {
-                indicator
-                    .frame(width: 16, height: 16)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(NookTheme.font(12.5, .medium))
-                            .foregroundStyle(muted ? NookTheme.textSecondary : NookTheme.paper)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        if let label {
-                            Text(label.text)
-                                .font(NookTheme.font(11, .semibold))
-                                .foregroundStyle(label.color)
-                                .fixedSize()
-                        } else if let time {
-                            Text(time)
-                                .font(NookTheme.font(11))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .fixedSize()
-                        }
-                    }
-                    Text(subtitle)
-                        .font(NookTheme.font(11))
-                        .foregroundStyle(NookTheme.textTertiary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(item.folder)
                         .lineLimit(1)
-                        .help(AgentPathFormat.tilde(path))
+                        .help(AgentPathFormat.tilde(item.path))
+                    Spacer(minLength: 6)
+                    time
                 }
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textSecondary)
+
+                Text(item.title)
+                    .font(NookTheme.font(14.5, .medium))
+                    .foregroundStyle(dimmed ? NookTheme.textSecondary : NookTheme.paper)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                    Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 6)
+                    AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
+                        .padding(.trailing, item.account == nil ? 0 : 3)
+                }
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textTertiary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(selected ? NookTheme.smoke : (hovering ? NookTheme.graphite : Color.clear)))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -287,65 +352,70 @@ struct AgentListRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// "Claude · nook", with the account when there are several.
-    private var subtitle: String {
-        [agent, folder, account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    private var muted: Bool {
-        switch state {
-        case .past: return true
-        default: return false
-        }
-    }
-
-    /// Working: a pulsing violet dot. Waits for you: amber. Done: a mint check. Failed: coral. Earlier: a quiet circle.
+    /// "bezig 12 min" while it works, "wacht op jou" when it waits, otherwise how long ago.
     @ViewBuilder
-    private var indicator: some View {
-        switch state {
-        case .run(let run):
-            switch run.status {
-            case .running, .preparing: PulseDot(color: NookTheme.iris, animated: true)
-            case .waitingApproval: PulseDot(color: NookTheme.amber, animated: false)
-            case .completed: Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.mint)
-            case .failed: Image(systemName: "exclamationmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.coral)
-            case .stopped: Image(systemName: "stop.circle").font(.system(size: 13)).foregroundStyle(NookTheme.textTertiary)
+    private var time: some View {
+        switch item.status {
+        case .working:
+            Text(item.started.map { tr("agents.time.busy", AgentFormat.short(now.timeIntervalSince($0))) } ?? tr("agents.live.running"))
+                .foregroundStyle(Color(hex: 0x8CA2FF))
+                .fixedSize()
+        case .waiting:
+            Text(tr("agents.live.waiting"))
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize()
+        case .failed:
+            Text(tr("agents.live.failed"))
+                .foregroundStyle(NookTheme.coral)
+                .fixedSize()
+        case .idle, .finished:
+            if let started = item.started {
+                Text(AgentFormat.short(now.timeIntervalSince(started)))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize()
             }
-        case .live(let session):
-            if session.approvalID != nil || session.status == .waiting {
-                PulseDot(color: NookTheme.amber, animated: false)
-            } else if session.status == .done {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.mint)
-            } else if session.status == .failed {
-                Image(systemName: "exclamationmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.coral)
-            } else {
-                PulseDot(color: NookTheme.iris, animated: session.status == .running)
-            }
-        case .untracked:
-            // Running in a terminal; Nook does not know more than that, so no state is claimed.
-            PulseDot(color: NookTheme.iris, animated: false)
-        case .past:
-            Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }
     }
+}
 
-    /// The state in words, for sessions that are not just history.
-    private var label: (text: String, color: Color)? {
-        switch state {
-        case .run(let run):
-            switch run.status {
-            case .waitingApproval: return (tr("agents.live.waiting"), NookTheme.amber)
-            case .failed: return (tr("agents.live.failed"), NookTheme.coral)
-            default: return nil
+/// The branch a folder is on, read straight from `.git/HEAD` (no git process), so every row can show it cheaply.
+@MainActor
+enum GitHead {
+    private static var cache: [String: (branch: String?, read: Date)] = [:]
+
+    static func branch(for path: String) -> String? {
+        guard !path.isEmpty else { return nil }
+        if let hit = cache[path], Date().timeIntervalSince(hit.read) < 10 { return hit.branch }
+        let branch = read(path)
+        cache[path] = (branch, Date())
+        return branch
+    }
+
+    private static func read(_ path: String) -> String? {
+        let fm = FileManager.default
+        var folder = URL(fileURLWithPath: path, isDirectory: true)
+        for _ in 0..<12 {
+            let dotGit = folder.appendingPathComponent(".git")
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) {
+                var gitDir = dotGit
+                if !isDirectory.boolValue {
+                    // A worktree: ".git" is a file pointing at the real git directory.
+                    guard let text = try? String(contentsOf: dotGit, encoding: .utf8),
+                          let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else { return nil }
+                    let target = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+                    gitDir = target.hasPrefix("/") ? URL(fileURLWithPath: target) : folder.appendingPathComponent(target)
+                }
+                guard let head = try? String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8) else { return nil }
+                let trimmed = head.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("ref: refs/heads/") { return String(trimmed.dropFirst("ref: refs/heads/".count)) }
+                return trimmed.isEmpty ? nil : String(trimmed.prefix(7))
             }
-        case .live(let session):
-            if session.approvalID != nil || session.status == .waiting { return (tr("agents.live.waiting"), NookTheme.amber) }
-            return session.status == .failed ? (tr("agents.live.failed"), NookTheme.coral) : nil
-        case .untracked:
-            return nil
-        case .past:
-            return nil
+            let parent = folder.deletingLastPathComponent()
+            if parent.path == folder.path { break }
+            folder = parent
         }
+        return nil
     }
 }
 
@@ -381,6 +451,16 @@ enum AgentFormat {
         let hours = minutes / 60
         if hours < 48 { return minutes % 60 == 0 ? "\(hours)u" : "\(hours)u \(minutes % 60)m" }
         return "\(hours / 24) d"
+    }
+
+    /// Short, for lists: "now", "12 min", "3 h", "2 d".
+    static func short(_ interval: TimeInterval) -> String {
+        let minutes = Int(max(0, interval) / 60)
+        if minutes < 1 { return tr("agents.time.now") }
+        if minutes < 60 { return tr("agents.time.minutes", minutes) }
+        let hours = minutes / 60
+        if hours < 24 { return tr("agents.time.hours", hours) }
+        return tr("agents.time.days", hours / 24)
     }
 
     /// "resets at 15:40" or "resets Thu Oct 16".
@@ -539,7 +619,7 @@ struct AgentConversation: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
                     if shown.isEmpty {
                         Text(tr("agents.noMessagesInTranscript"))
                             .font(NookTheme.font(12.5))
@@ -559,11 +639,9 @@ struct AgentConversation: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.vertical, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
             .onChange(of: shown) { _ in scrollToEnd(proxy) }
             .onAppear { scrollToEnd(proxy) }
         }
@@ -580,28 +658,8 @@ struct AgentConversation: View {
         }
     }
 
-    @ViewBuilder
     private func bubble(_ message: AgentChatMessage) -> some View {
-        if message.fromUser {
-            HStack(spacing: 0) {
-                Spacer(minLength: 36)
-                Text(message.text)
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.iris.opacity(0.22)))
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(session.name)
-                    .font(NookTheme.font(11, .semibold))
-                    .foregroundStyle(agentColor)
-                MarkdownView(text: message.text, size: 13)
-            }
-        }
+        ChatBubble(fromUser: message.fromUser, text: message.text)
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -633,6 +691,32 @@ private extension AgentSession {
         case .failed: return tr("agents.live.failed")
         case .done: return tr("agents.live.done")
         case .detected: return tr("agents.live.notTracked")
+        }
+    }
+}
+
+/// One message in a conversation: what you wrote in a soft box on the right, the agent's answer as plain text.
+struct ChatBubble: View {
+    let fromUser: Bool
+    let text: String
+
+    var body: some View {
+        if fromUser {
+            HStack(spacing: 0) {
+                Spacer(minLength: 48)
+                Text(text)
+                    .font(NookTheme.font(13.5))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x19191B)))
+            }
+        } else {
+            MarkdownView(text: text, size: 13.5)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

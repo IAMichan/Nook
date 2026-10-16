@@ -52,37 +52,19 @@ struct AgentRunPanel: View {
 
     // MARK: Header
 
+    /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 8) {
-                StatusBadge(status: run.status)
-                if run.status.isActive, let started = run.turnStartedAt {
-                    HStack(spacing: 3) {
-                        Image(systemName: "timer").font(.system(size: 9.5))
-                        ElapsedText(since: started)
-                    }
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.textTertiary)
-                }
-                Spacer(minLength: 6)
-                if let total = run.usage.totalTokens {
-                    Text(TokenTally.format(total) + " tokens")
-                        .font(NookTheme.mono(11, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                if let fraction = run.usage.contextFraction {
-                    Text("ctx \(Int((fraction * 100).rounded()))%")
-                        .font(NookTheme.mono(11, .medium))
-                        .foregroundStyle(fraction > 0.85 ? NookTheme.coral : (fraction > 0.6 ? NookTheme.amber : NookTheme.textTertiary))
-                        .help(tr("ws.header.contextHelp"))
-                }
-                changesChip(run)
-                actionsMenu(run)
-            }
+        HStack(spacing: 8) {
+            Text(run.projectName)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
+                .help(AgentPathFormat.tilde(run.workingDirectory))
+            Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
                 TextField(tr("ws.title.placeholder"), text: $titleDraft)
                     .textFieldStyle(.plain)
-                    .font(NookTheme.font(17, .semibold))
+                    .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .onSubmit {
                         workspace.rename(runID, to: titleDraft)
@@ -91,7 +73,7 @@ struct AgentRunPanel: View {
                     .onExitCommand { renaming = false }
             } else {
                 Text(run.title)
-                    .font(NookTheme.font(17, .semibold))
+                    .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .onTapGesture(count: 2) {
@@ -100,52 +82,23 @@ struct AgentRunPanel: View {
                     }
                     .help(tr("ws.title.renameHelp"))
             }
-            HStack(spacing: 5) {
-                Text(run.provider.displayName).foregroundStyle(run.provider.color)
-                if let profile = app.profile(for: run), app.profiles.profiles(for: profile.kind).count > 1 {
-                    Text("·")
-                    Text(AccountLabel.name(profile, app: app))
-                }
-                Text("·")
-                Text(run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model))
-                Text("·")
-                Text(run.mode == .plan ? run.mode.label : run.permission.label)
-                    .foregroundStyle(run.permission == .bypass && run.mode != .plan ? NookTheme.coral : NookTheme.textTertiary)
-                Text("·")
-                Text(run.branch.map { "\(run.projectName) · \($0)" } ?? run.projectName)
-                    .help(AgentPathFormat.tilde(run.workingDirectory))
+            Spacer(minLength: 8)
+            if let fraction = run.usage.contextFraction, fraction > 0.6 {
+                Text("ctx \(Int((fraction * 100).rounded()))%")
+                    .font(NookTheme.mono(11, .medium))
+                    .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
+                    .help(tr("ws.header.contextHelp"))
             }
-            .font(NookTheme.font(12, .medium))
-            .foregroundStyle(NookTheme.textTertiary)
-            .lineLimit(1)
-        }
-    }
-
-    /// "+12 −3 · 4 files": what the agent changed, one click away. Hidden while nothing changed.
-    @ViewBuilder
-    private func changesChip(_ run: WorkspaceRun) -> some View {
-        let files = workspace.git[runID]?.status?.files ?? []
-        if run.repoRoot != nil, !files.isEmpty {
-            let added = files.compactMap(\.added).reduce(0, +)
-            let removed = files.compactMap(\.removed).reduce(0, +)
-            Button {
+            FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
                 workspace.markReviewed(runID)
                 app.viewModel.open(.changes(runID, file: nil))
-            } label: {
-                HStack(spacing: 6) {
-                    Text("+\(added)").foregroundStyle(NookTheme.mint)
-                    Text("−\(removed)").foregroundStyle(NookTheme.coral)
-                    Text(tr("ws.inspector.filesChanged", files.count)).foregroundStyle(NookTheme.textSecondary)
-                }
-                .font(NookTheme.mono(11, .medium))
-                .padding(.horizontal, 9)
-                .frame(height: 24)
-                .background(Capsule().fill(NookTheme.field))
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .help(tr("agents.run.changes"))
+            }, onChange: {
+                workspace.refreshGit(runID)
+            })
+            .id(run.workingDirectory)
         }
+        .font(NookTheme.font(13.5))
+        .frame(height: 30)
     }
 
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
@@ -181,13 +134,9 @@ struct AgentRunPanel: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(NookTheme.field))
-                .contentShape(Circle())
+                .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .composerMenu()
         .help(tr("agents.run.actions"))
     }
 
@@ -197,7 +146,7 @@ struct AgentRunPanel: View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
         return ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 9) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
                         Text(tr("agents.run.empty"))
                             .font(NookTheme.font(12.5))
@@ -230,10 +179,8 @@ struct AgentRunPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: events.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -302,6 +249,8 @@ struct AgentRunPanel: View {
 
     // MARK: Composer
 
+    /// The same composer a new session starts with: the agent and its model, mode and permissions for the next turn,
+    /// everything else under ⋯, and send (or stop while it works).
     private func composer(_ run: WorkspaceRun) -> some View {
         let active = run.status.isActive
         let send = {
@@ -311,19 +260,88 @@ struct AgentRunPanel: View {
             workspace.send(runID, text: text)
         }
         return VStack(alignment: .leading, spacing: 5) {
-            NookInputBar(
+            SessionComposer(
                 text: $draft,
                 prompt: active ? tr("agents.run.busyPrompt", run.provider.kind.shortName) : tr("agents.run.prompt"),
-                focus: $focused,
+                canSend: !active,
                 busy: active,
                 onStop: { workspace.stop(runID) },
+                focus: $focused,
                 onSend: send
-            )
+            ) {
+                modelMenu(run)
+                ComposerDivider()
+                modeMenu(run)
+                ComposerDivider()
+                permissionMenu(run)
+                actionsMenu(run)
+            }
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))
                     .foregroundStyle(NookTheme.textTertiary)
             }
         }
+    }
+
+    /// The agent with its account, and the model for the next turn.
+    private func modelMenu(_ run: WorkspaceRun) -> some View {
+        let profile = app.profile(for: run)
+        let account = profile.map { AccountLabel.name($0, app: app) }
+        let model = run.model.isEmpty ? nil : run.model
+        return Menu {
+            Section(tr("ws.new.model")) {
+                ForEach(run.provider.suggestedModels, id: \.self) { option in
+                    Button {
+                        workspace.configure(runID, model: option)
+                    } label: {
+                        let title = option.isEmpty ? tr("ws.model.default") : option
+                        if run.model == option { Label(title, systemImage: "checkmark") } else { Text(title) }
+                    }
+                }
+            }
+        } label: {
+            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
+                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+        }
+        .composerMenu()
+        .disabled(run.status.isActive)
+        .help(run.resolvedModel ?? tr("ws.new.model"))
+    }
+
+    private func modeMenu(_ run: WorkspaceRun) -> some View {
+        Menu {
+            ForEach(ExecutionMode.allCases) { mode in
+                Button {
+                    workspace.configure(runID, mode: mode)
+                } label: {
+                    if run.mode == mode { Label(mode.label, systemImage: "checkmark") } else { Text(mode.label) }
+                }
+            }
+        } label: {
+            ComposerPill(symbol: run.mode == .plan ? "list.bullet.clipboard" : "sparkles", text: run.mode.label)
+        }
+        .composerMenu()
+        .disabled(run.status.isActive)
+        .help(run.mode.help)
+    }
+
+    private func permissionMenu(_ run: WorkspaceRun) -> some View {
+        Menu {
+            ForEach(run.provider.capabilities.policies) { policy in
+                Button {
+                    workspace.configure(runID, permission: policy)
+                } label: {
+                    if run.permission == policy { Label(policy.label, systemImage: "checkmark") } else { Text(policy.label) }
+                }
+            }
+        } label: {
+            ComposerPill(symbol: run.permission == .bypass ? "lock.open" : "lock",
+                         text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
+                         tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
+        }
+        .composerMenu()
+        .disabled(run.status.isActive || run.mode == .plan)
+        .help(run.permission.help(for: run.provider))
     }
 }
