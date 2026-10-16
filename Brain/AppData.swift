@@ -216,6 +216,64 @@ enum AppData {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: Open chats (Messages and WhatsApp)
+
+    /// One conversation with its newest message, as the "open chats" queries return it: `chat`, `chatname`, `handle`,
+    /// `me` (the newest message is mine), `date`, `text`, `body` (hex, Messages only), `unread`, `group`.
+    struct OpenChat {
+        var chat: String
+        var name: String
+        var group: Bool
+        /// Unread messages; -1 when the chat is marked as unread by hand (WhatsApp).
+        var unread: Int
+        var lastFromMe: Bool
+        var lastSender: String
+        var date: Date
+        var text: String
+
+        /// Someone else wrote last in a one-on-one chat: they are probably waiting for an answer.
+        var awaitsReply: Bool { !lastFromMe && !group }
+    }
+
+    static func openChats(_ rows: [[String: Any]], names: [String: String] = [:]) -> [OpenChat] {
+        rows.compactMap { raw -> OpenChat? in
+            var row = raw
+            // A chat whose newest message has no text (a photo, a sticker) still counts.
+            let text = string(raw["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            row["text"] = text.isEmpty ? (attributedText(hex: string(raw["body"])) ?? "(attachment)") : text
+            row["body"] = ""
+            if string(row["text"]).replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { row["text"] = "(attachment)" }
+            guard let message = messages([row], names: names).first else { return nil }
+            let group = (number(raw["group"]) ?? 0) != 0 || string(raw["chatname"]).hasSuffix("@g.us")
+            return OpenChat(chat: message.chat, name: message.chatName, group: group, unread: Int(number(raw["unread"]) ?? 0),
+                            lastFromMe: message.fromMe, lastSender: message.sender, date: message.date, text: message.text)
+        }
+    }
+
+    /// The conversations that are still open: unread ones first, then one-on-one chats where the other person wrote
+    /// last. Says so plainly when there are none, so the model never has to guess.
+    static func formatOpenChats(_ chats: [OpenChat], app: String, days: Int, keep: Int = 12) -> String {
+        let unread = chats.filter { $0.unread != 0 }
+        let waiting = chats.filter { $0.unread == 0 && $0.awaitsReply }
+        var lines = ["## \(app): open chats (last \(days) days, \(chats.count) chats checked)"]
+        guard !unread.isEmpty || !waiting.isEmpty else {
+            lines.append("No unread chats and no one-on-one chat waiting for the user's reply.")
+            return lines.joined(separator: "\n")
+        }
+        lines.append("Unread: \(unread.count) chats. Waiting for the user's reply (the other person wrote last): \(waiting.count) chats.")
+        var refs: [String] = []
+        for chat in (unread + waiting).prefix(keep) {
+            let state: String
+            if chat.unread > 0 { state = "\(chat.unread) unread" } else if chat.unread < 0 { state = "marked unread" } else { state = "waiting for your reply" }
+            lines.append("### \(chat.name)\(chat.group ? " (group)" : "") | \(stamp(chat.date, time: false)) [chat: \(chat.chat)]")
+            lines.append("- \(state) · newest message \(stamp(chat.date)) from \(chat.lastSender): \(String(chat.text.prefix(200)))")
+            refs.append(ReferenceParser.line(title: "\(app): \(chat.name)", url: nil, detail: "\(state) · \(stamp(chat.date, time: false))"))
+        }
+        let more = unread.count + waiting.count - keep
+        if more > 0 { lines.append("(\(more) more open chats not shown)") }
+        return (lines + [""] + refs).joined(separator: "\n")
+    }
+
     // MARK: Notes (Bear) and tasks (Things)
 
     /// Bear notes: `id`, `title`, `date`, `text`. The same layout as Apple Notes, so the same research opens them.

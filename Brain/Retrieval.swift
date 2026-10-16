@@ -134,6 +134,14 @@ final class RetrievalLedger {
         return output
     }
 
+    /// A source the question asks for that Nook cannot read right now (no access, not installed): shown and reported
+    /// like a failed search, so the user sees why and the answer never pretends it looked there.
+    func noteUnavailable(source: String, tool: String, reason: String) {
+        guard !steps.contains(where: { $0.sourceID == source }) else { return }
+        steps.append(RetrievalStep(tool: tool, sourceID: source, outcome: .failed(reason)))
+        onChange?()
+    }
+
     /// Failed retrievals, displayed as a disclaimer under the response.
     var failures: [RetrievalStep] {
         steps.filter { if case .failed = $0.outcome { return true }; return false }

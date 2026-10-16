@@ -232,6 +232,39 @@ final class MessagesConnector: AppDatabaseConnector {
                 }
             ),
             ToolSpec(
+                name: "messages_open_chats",
+                description: "Lists the iMessage and sms conversations that are still open: unread ones, and one-on-one conversations where the other person wrote last (waiting for the user's reply), with the newest message and a chat id. Use for \"do I have unread messages\", \"who is waiting for my reply\", \"heb ik nog berichten openstaan\".",
+                schema: ["type": "object", "properties": [
+                    "days": ["type": "integer", "description": "How many days back to look (default 14)."]
+                ]],
+                kind: .read,
+                summarize: { _ in "Open gesprekken in Berichten" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self else { throw NookError("Berichten is niet beschikbaar.") }
+                    let days = min(max(Int(AppData.number(input["days"]) ?? 14), 1), 90)
+                    // Messages counts dates in nanoseconds since 2001.
+                    let since = Int64((Date().timeIntervalSinceReferenceDate - Double(days) * 86_400) * 1_000_000_000)
+                    let rows = try await self.run("""
+                    SELECT g.chat AS chat, g.unread AS unread, CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS \"group\",
+                           COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, '') AS chatname, COALESCE(h.id, '') AS handle,
+                           m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body
+                    FROM (SELECT cmj.chat_id AS chat, MAX(m.ROWID) AS last,
+                                 SUM(CASE WHEN m.is_from_me = 0 AND m.is_read = 0 THEN 1 ELSE 0 END) AS unread
+                          FROM message m JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+                          WHERE m.ROWID > (SELECT COALESCE(MAX(ROWID), 0) - 20000 FROM message) AND m.date > \(since)
+                                AND COALESCE(m.associated_message_type, 0) = 0
+                          GROUP BY cmj.chat_id) g
+                    JOIN message m ON m.ROWID = g.last
+                    JOIN chat c ON c.ROWID = g.chat
+                    LEFT JOIN handle h ON h.ROWID = m.handle_id
+                    ORDER BY m.date DESC LIMIT 60
+                    """)
+                    let chats = AppData.openChats(rows, names: await ContactDirectory.names())
+                    return AppData.formatOpenChats(chats, app: "Berichten", days: days)
+                }
+            ),
+            ToolSpec(
                 name: "read_messages",
                 description: "Reads one conversation from the Messages app: the messages around those that match the keywords, plus the most recent ones, in time order. Give the chat id from search_messages.",
                 schema: ["type": "object", "properties": [
@@ -298,6 +331,35 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     let text = AppData.formatSearch(messages, terms: Research.Terms(words: words), app: "WhatsApp")
                     return text.isEmpty ? "Geen WhatsApp-berichten gevonden voor \"\(query)\"." : text
+                }
+            ),
+            ToolSpec(
+                name: "whatsapp_open_chats",
+                description: "Lists the WhatsApp chats that are still open: unread ones (also chats marked as unread), and one-on-one chats where the other person wrote last (waiting for the user's reply), with the newest message and a chat id. Use for \"do I have open/unread WhatsApp chats\", \"who is waiting for my reply\", \"heb ik chats openstaan in WhatsApp\".",
+                schema: ["type": "object", "properties": [
+                    "days": ["type": "integer", "description": "How many days back to look (default 14)."]
+                ]],
+                kind: .read,
+                summarize: { _ in "Open chats in WhatsApp" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self else { throw NookError("WhatsApp is niet beschikbaar.") }
+                    let days = min(max(Int(AppData.number(input["days"]) ?? 14), 1), 90)
+                    // WhatsApp counts dates in seconds since 2001.
+                    let since = Int(Date().timeIntervalSinceReferenceDate) - days * 86_400
+                    let rows = try await self.run("""
+                    SELECT s.Z_PK AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname, COALESCE(s.ZUNREADCOUNT, 0) AS unread,
+                           CASE WHEN s.ZSESSIONTYPE = 1 OR s.ZCONTACTJID LIKE '%@g.us' THEN 1 ELSE 0 END AS \"group\",
+                           COALESCE(m.ZFROMJID, '') AS handle, COALESCE(m.ZISFROMME, 0) AS me,
+                           COALESCE(m.ZMESSAGEDATE, s.ZLASTMESSAGEDATE) AS date, COALESCE(m.ZTEXT, '') AS text, '' AS body
+                    FROM ZWACHATSESSION s
+                    LEFT JOIN ZWAMESSAGE m ON m.Z_PK = (SELECT x.Z_PK FROM ZWAMESSAGE x WHERE x.ZCHATSESSION = s.Z_PK ORDER BY x.ZMESSAGEDATE DESC LIMIT 1)
+                    WHERE s.ZLASTMESSAGEDATE > \(since) AND COALESCE(s.ZARCHIVED, 0) = 0
+                          AND COALESCE(s.ZCONTACTJID, '') NOT LIKE '%broadcast%'
+                    ORDER BY s.ZLASTMESSAGEDATE DESC LIMIT 60
+                    """)
+                    let chats = AppData.openChats(rows, names: await ContactDirectory.names())
+                    return AppData.formatOpenChats(chats, app: "WhatsApp", days: days)
                 }
             ),
             ToolSpec(

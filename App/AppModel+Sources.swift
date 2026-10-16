@@ -111,6 +111,23 @@ extension AppModel {
         "notion": "Notion", "things": "Things"
     ]
 
+    /// Apps whose data Nook reads directly through a source of their own.
+    static let appSources: [String: String] = ["WhatsApp": "whatsapp", "Notes": "notes", "Things": "things", "Notion": "notion"]
+
+    /// Why a source the question asks for cannot be read right now, in words for the user.
+    static func unreachableReason(_ source: ContextSource) -> String {
+        switch source.status.state {
+        case .error(let message):
+            return message
+        case .off where !source.status.detail.isEmpty:
+            return source.status.detail
+        case .loading:
+            return "\(source.title) wordt nog geladen."
+        default:
+            return "\(source.title) is niet verbonden of staat uit (Instellingen › Accounts & koppelingen)."
+        }
+    }
+
     /// An app the question names ("wat staat er in Notities", "lees Slack", "kijk in WhatsApp"),
     /// including open apps and well-known Mac apps.
     static func appNamed(in text: String) -> String? {
@@ -205,6 +222,7 @@ extension AppModel {
         var found: [String] = []
         var opened: [String] = []
         var searched = ""
+        var blocked: [String] = []
         let intent = ChatIntent.detect(text)
         if prefetch, !intent.isSmallTalk {
             let profile = settings.brainProfile
@@ -216,10 +234,25 @@ extension AppModel {
             }
             let terms = Research.terms(in: text, history: history)
             let previous = history.last(where: \.fromUser).map { SourceRouter.relevant(to: $0.text, scope: scope, active: activeIDs) } ?? []
+            // The sources the question names itself ("in WhatsApp"): the user said where to look, so Nook never searches
+            // everywhere else instead, and says so plainly when it cannot read that source right now.
+            let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids }).filter { scope.allows($0) }
+            let unreachable = connectors.sources.filter { named.contains($0.id) && !activeIDs.contains($0.id) }
+            for source in unreachable {
+                let reason = Self.unreachableReason(source)
+                blocked.append("\(source.title) (\(reason))")
+                // Shown as a failed source when the user has it but Nook may not read it, not for a service never set up.
+                var failed = source is AppDatabaseConnector
+                if case .error = source.status.state { failed = true }
+                if failed { ledger.noteUnavailable(source: source.id, tool: source.tools.first?.name ?? source.id, reason: reason) }
+            }
             let sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
-                                           available: available, active: activeIDs.filter { scope.allows($0) })
+                                           named: named, available: available, active: activeIDs.filter { scope.allows($0) })
             var calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
-            if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text) {
+            // An app the question names is read from its window, unless Nook already reads its data directly (a closed
+            // app would otherwise be launched for nothing). Without that access, its window is the next best thing.
+            if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text),
+               !(Self.appSources[app].map { sources.contains($0) && activeIDs.contains($0) } ?? false) {
                 calls.insert(Prefetch.Call(tool: "read_app", input: ["app": app]), at: 0)
             }
             // Only what is about the question reaches the model: unrelated items that matched one common word are left
@@ -261,6 +294,10 @@ extension AppModel {
         // the documents that answer the question.
         let overview = summary.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         var context = overview.first.map(String.init) ?? ""
+        if !blocked.isEmpty {
+            context += "\n\nThe user asks about a source Nook cannot read right now: " + blocked.joined(separator: "; ")
+                + ". Say this plainly at the start of the answer, with how to fix it. Never guess what is in that source and never answer yes or no about it from other sources. Only if its app window was read (read_app) below, answer from that and say so."
+        }
         if !found.isEmpty || !opened.isEmpty || !searched.isEmpty {
             context += "\n\nLooked up for this question (answer from this first):\n" + searched
             if !opened.isEmpty {

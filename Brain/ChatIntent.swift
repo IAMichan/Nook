@@ -8,7 +8,7 @@ import Foundation
 struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
-        case chart, screen, browser, files, github, notion, clipboard, web
+        case chart, screen, browser, files, github, notion, clipboard, web, chats
     }
 
     /// Recognized kinds, strongest first.
@@ -62,6 +62,7 @@ struct ChatIntent: Equatable {
         if has(#"notitie|noteer|\bnotes?\b|aantekening|\bmemo|notiz|schrijf (dit|het|dat) op|write (this|it|that) down"#) { kinds.append(.note) }
         if has(#"\btaak\b|\btaken\b|\btodos?\b|to-do|open punt|actiepunt|nog (te )?doen|moet ik (vandaag|nog)|\btasks?\b|\baufgabe"#) { kinds.append(.todo) }
         if !writesMail, has(#"\bmails?\b|e-?mails?\b|inbox|ongelezen|unread|postvak|\bpost\b"#) { kinds.append(.mailRead) }
+        if !writesMail, has(#"whats-?app|imessage|\bsms|\bchats?\b|\bchatje|\bappjes?\b|ge-?appt|\bappte|\bberichten\b(?!-?app)|\bmessages?\b|\btexts?\b|\btexted|\bnachrichten"#) { kinds.append(.chats) }
         if has(#"telefoonnummer|nummer van|mailadres|e-?mailadres|adres van|\bcontact|phone number|email address|telefonnummer"#) { kinds.append(.contacts) }
         if has(#"muziek|liedje|\bnummer\b(?! van)|\bspeel|afspelen|spotify|pauzeer|\bmusic\b|\bsong|\bplay\b|\bmusik"#) { kinds.append(.music) }
         if has(#"volume|\bgeluid|harder|zachter|louder|quieter|lautstärke|leiser|lauter"#) { kinds.append(.volume) }
@@ -119,13 +120,14 @@ struct ChatIntent: Equatable {
         .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
         .notion: ["notion_search", "notion_read_page"],
         .clipboard: ["read_clipboard"],
-        .web: ["search_web", "read_webpage"]
+        .web: ["search_web", "read_webpage"],
+        .chats: ["search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
         .chart, .mailWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .openApp, .shortcut,
-        .contacts, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
+        .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.

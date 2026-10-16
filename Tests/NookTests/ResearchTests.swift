@@ -274,4 +274,49 @@ final class ResearchGroundingTests: XCTestCase {
         XCTAssertEqual(open.first?.input["chat"] as? String, "7")
         XCTAssertEqual(open.first?.input["query"] as? String, "offerte")
     }
+
+    // MARK: Asking about one app
+
+    private let chatTools: [Prefetch.Available] = [
+        .init(name: "search_whatsapp", source: "whatsapp", required: ["query"], query: "query"),
+        .init(name: "whatsapp_open_chats", source: "whatsapp", required: []),
+        .init(name: "read_whatsapp", source: "whatsapp", required: ["chat"])
+    ]
+
+    func testSourceNamesAndStatusWordsAreNoSearchTerms() {
+        XCTAssertTrue(Research.terms(in: "Heb ik chats openstaan in whatsapp").isEmpty, "the question says where to look, not what to look for")
+        XCTAssertTrue(Research.terms(in: "Do I have unanswered WhatsApp chats?").isEmpty)
+        XCTAssertEqual(Research.terms(in: "Wat appte Lisa in WhatsApp over de offerte?").words, ["lisa", "offerte"])
+    }
+
+    func testOpenChatsAreListedNotSearched() {
+        let question = "Heb ik chats openstaan in whatsapp"
+        let calls = Research.lookups(question: question, terms: Research.terms(in: question), sources: ["whatsapp"], available: chatTools)
+        XCTAssertEqual(calls.map(\.tool), ["whatsapp_open_chats"])
+        // A question about a person in WhatsApp still searches.
+        let lisa = "Wat appte Lisa over de offerte?"
+        XCTAssertEqual(Research.lookups(question: lisa, terms: Research.terms(in: lisa), sources: ["whatsapp"], available: chatTools).map(\.tool),
+                       ["search_whatsapp"])
+    }
+
+    func testANamedSourceIsNeverReplacedBySearchingEverywhere() {
+        let question = "Wat staat er in Bear over Apollo?"
+        let sources = Research.sources(question: question, intent: ChatIntent.detect(question), terms: Research.terms(in: question),
+                                       relevant: ["calendar"], named: ["bear"], available: available, active: active)
+        XCTAssertEqual(sources, ["calendar"], "Bear cannot be read: no searching notes, mail and files for the word instead")
+    }
+
+    func testOpenChatsOpenTheChatWhenAskedForItsContent() {
+        let output = "## WhatsApp: open chats (last 14 days, 5 chats checked)\n### Jan | 2026-10-15 [chat: 12]\n- 2 unread · newest message 2026-10-15 09:00 from Jan: kom je morgen?"
+        let open = Research.toOpen([("whatsapp_open_chats", output)], terms: Research.Terms(), wantsContent: true, available: ["read_whatsapp"], limit: 2)
+        XCTAssertEqual(open.first?.read, "read_whatsapp")
+        XCTAssertEqual(open.first?.input["chat"] as? String, "12")
+    }
+
+    func testOpenChatsComeFirstForAQuestionAboutWhatIsOpen() {
+        XCTAssertTrue(Prefetch.prefersListing("whatsapp", "heb ik nog chats openstaan"))
+        XCTAssertTrue(Prefetch.prefersListing("messages", "who is waiting for my reply?"))
+        XCTAssertFalse(Prefetch.prefersListing("whatsapp", "wat appte Lisa over de offerte"))
+        XCTAssertTrue(ChatIntent.detect("Heb ik chats openstaan in whatsapp").tools.contains("whatsapp_open_chats"))
+    }
 }
