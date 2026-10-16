@@ -7,27 +7,8 @@ extension SettingsView {
 
     /// All usage in one place: plan limits per account, tokens and reported costs of agent sessions.
     var usageSection: some View {
-        Group {
-            Section(tr("settings.agents.subscriptions")) {
-                ForEach(app.linkedProfiles.filter { $0.kind != .gemini }) { profile in
-                    LabeledContent("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))") {
-                        Text(app.quota.summary(for: profile)
-                             ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : (profile.kind == .antigravity ? "ws.usage.quotaUnavailable" : "settings.usage.codexMissing")))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                LabeledContent(tr("settings.usage.brain")) {
-                    Text(settings.isLocalBrain ? tr("settings.usage.brainLocal") : tr("settings.usage.brainExternal", settings.provider.title))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section {
-                UsageView()
-                    .environmentObject(app.workspace)
-                    .frame(minHeight: 520)
-                    .listRowInsets(EdgeInsets())
-            }
-        }
+        UsageView()
+            .environmentObject(app.workspace)
     }
 
     func agentRow(_ target: AgentConfigInstaller.Target) -> some View {

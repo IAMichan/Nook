@@ -1,11 +1,11 @@
 import SwiftUI
 import Charts
 
-/// Workspace usage: token counts and reported costs per agent and model over time.
-/// Reflects only metrics reported directly by agents. Unreported metrics display as "not available".
+/// Settings › Agents › Usage: subscription limits, tokens, costs, activity chart, and model breakdown.
 struct UsageView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
+    @ObservedObject private var settings = AppSettings.shared
     @AppStorage("ws.usage.range") private var range: UsageRange = .week
     @State private var provider: RunProvider?
     @State private var project: String?
@@ -16,101 +16,181 @@ struct UsageView: View {
 
     var body: some View {
         let report = report
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                totals(report)
-                chart(report)
-                table(report)
-                running
-                accountQuotas
-                notes
-            }
-            .padding(20)
-            .frame(maxWidth: 1000, alignment: .leading)
-            .frame(maxWidth: .infinity)
+        Group {
+            subscriptionsSection
+            activitySection(report)
+            chartSection(report)
+            byModelSection(report)
+            runningSection
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("ws.usage.title")).font(NookTheme.font(17, .semibold))
-                Text(tr("ws.usage.subtitle")).font(NookTheme.font(12)).foregroundStyle(WS.secondary)
-            }
-            Spacer()
-            Picker(tr("ws.usage.range"), selection: $range) {
-                ForEach(UsageRange.allCases) { Text(tr("ws.usage.range." + $0.rawValue)).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 280)
-            Picker(tr("ws.usage.provider"), selection: $provider) {
-                Text(tr("ws.usage.allProviders")).tag(RunProvider?.none)
-                ForEach(RunProvider.allCases) { Text($0.displayName).tag(RunProvider?.some($0)) }
-            }
-            .frame(width: 170)
-            Picker(tr("ws.usage.project"), selection: $project) {
-                Text(tr("ws.sidebar.allProjects")).tag(String?.none)
-                ForEach(Array(Set(workspace.runs.map(\.projectPath))).sorted(), id: \.self) { path in
-                    Text(URL(fileURLWithPath: path).lastPathComponent).tag(String?.some(path))
+    // MARK: - Subscriptions
+
+    private var subscriptionsSection: some View {
+        Section {
+            ForEach(app.linkedProfiles.filter { $0.kind != .gemini }) { profile in
+                LabeledContent {
+                    Text(app.quota.summary(for: profile)
+                         ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : (profile.kind == .antigravity ? "ws.usage.quotaUnavailable" : "settings.usage.codexMissing")))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .layoutPriority(1)
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(profile.kind.color).frame(width: 8, height: 8)
+                        Text("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))")
+                    }
                 }
             }
-            .frame(width: 170)
-        }
-        .labelsHidden()
-    }
-
-    private func totals(_ report: UsageReport) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 4) {
-            GridRow {
-                metricLabel(tr("ws.usage.sessions"))
-                metricLabel(tr("ws.usage.input"))
-                metricLabel(tr("ws.usage.output"))
-                metricLabel(tr("ws.usage.cacheRead"))
-                metricLabel(tr("ws.usage.cost"))
-                metricLabel(tr("ws.usage.perSession"))
-            }
-            GridRow {
-                metric("\(report.sessions)", detail: tr("ws.usage.sessionsDetail", report.completed, report.failed, report.running))
-                metric(TokenTally.format(report.inputTokens), detail: nil)
-                metric(TokenTally.format(report.outputTokens), detail: nil)
-                metric(TokenTally.format(report.cacheReadTokens), detail: report.cacheWriteTokens > 0 ? tr("ws.usage.cacheWriteDetail", TokenTally.format(report.cacheWriteTokens)) : nil)
-                if workspace.settings.showCost, let cost = report.reportedCostUSD {
-                    metric(AgentPathFormat.cost(cost), detail: tr("ws.usage.costCoverage", report.sessionsWithCost, report.sessions))
-                } else {
-                    metric(tr("ws.unavailable"), detail: workspace.settings.showCost ? tr("ws.usage.noCostReported") : tr("ws.usage.costHidden"), muted: true)
+            LabeledContent {
+                Text(settings.isLocalBrain ? tr("settings.usage.brainLocal") : tr("settings.usage.brainExternal", settings.provider.title))
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(1)
+            } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(NookTheme.iris).frame(width: 8, height: 8)
+                    Text(tr("settings.usage.brain"))
                 }
-                metric(report.averageTokensPerSession.map { TokenTally.format($0) } ?? tr("ws.unavailable"),
-                       detail: tr("ws.usage.tokensCoverage", report.sessionsWithTokens, report.sessions),
-                       muted: report.averageTokensPerSession == nil)
+            }
+        } header: {
+            Text(tr("settings.agents.subscriptions"))
+        } footer: {
+            Text(tr("ws.usage.quotaNote"))
+        }
+    }
+
+    // MARK: - Activity & Totals
+
+    private func activitySection(_ report: UsageReport) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                // Period range selector
+                Picker(tr("ws.usage.range"), selection: $range) {
+                    ForEach(UsageRange.allCases) { Text(tr("ws.usage.range." + $0.rawValue)).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                // Filter pickers
+                HStack(spacing: 12) {
+                    Picker(selection: $provider) {
+                        Text(tr("ws.usage.allProviders")).tag(RunProvider?.none)
+                        ForEach(RunProvider.allCases) { Text($0.displayName).tag(RunProvider?.some($0)) }
+                    } label: {
+                        Text(tr("ws.usage.provider"))
+                    }
+                    .pickerStyle(.menu)
+
+                    Picker(selection: $project) {
+                        Text(tr("ws.sidebar.allProjects")).tag(String?.none)
+                        ForEach(Array(Set(workspace.runs.map(\.projectPath))).sorted(), id: \.self) { path in
+                            Text(URL(fileURLWithPath: path).lastPathComponent).tag(String?.some(path))
+                        }
+                    } label: {
+                        Text(tr("ws.usage.project"))
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Divider()
+
+                // 3x2 metric cards
+                totalsGrid(report)
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text(tr("ws.usage.title"))
+        }
+    }
+
+    private func totalsGrid(_ report: UsageReport) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
+            GridRow {
+                metricCell(
+                    title: tr("ws.usage.sessions"),
+                    value: "\(report.sessions)",
+                    detail: tr("ws.usage.sessionsDetail", report.completed, report.failed, report.running)
+                )
+                metricCell(
+                    title: tr("ws.usage.input"),
+                    value: TokenTally.format(report.inputTokens),
+                    detail: nil
+                )
+                metricCell(
+                    title: tr("ws.usage.output"),
+                    value: TokenTally.format(report.outputTokens),
+                    detail: nil
+                )
+            }
+            GridRow {
+                metricCell(
+                    title: tr("ws.usage.cacheRead"),
+                    value: TokenTally.format(report.cacheReadTokens),
+                    detail: report.cacheWriteTokens > 0 ? tr("ws.usage.cacheWriteDetail", TokenTally.format(report.cacheWriteTokens)) : nil
+                )
+                metricCell(
+                    title: tr("ws.usage.cost"),
+                    value: workspace.settings.showCost && report.reportedCostUSD != nil ? AgentPathFormat.cost(report.reportedCostUSD!) : tr("ws.unavailable"),
+                    detail: workspace.settings.showCost
+                        ? (report.reportedCostUSD != nil ? tr("ws.usage.costCoverage", report.sessionsWithCost, report.sessions) : tr("ws.usage.noCostReported"))
+                        : tr("ws.usage.costHidden"),
+                    muted: !workspace.settings.showCost || report.reportedCostUSD == nil
+                )
+                metricCell(
+                    title: tr("ws.usage.perSession"),
+                    value: report.averageTokensPerSession.map { TokenTally.format($0) } ?? tr("ws.unavailable"),
+                    detail: tr("ws.usage.tokensCoverage", report.sessionsWithTokens, report.sessions),
+                    muted: report.averageTokensPerSession == nil
+                )
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(WS.surface))
     }
 
-    private func metricLabel(_ text: String) -> some View {
-        Text(text).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
-    }
-
-    private func metric(_ value: String, detail: String?, muted: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    private func metricCell(title: String, value: String, detail: String?, muted: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             Text(value)
-                .font(NookTheme.font(16, .semibold))
+                .font(.system(.title3, design: .rounded, weight: .semibold))
                 .monospacedDigit()
-                .foregroundStyle(muted ? WS.tertiary : WS.text)
-            Text(detail ?? " ").font(NookTheme.font(10.5)).foregroundStyle(WS.tertiary).lineLimit(1)
+                .foregroundStyle(muted ? .secondary : .primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            } else {
+                Text(" ")
+                    .font(.system(size: 10))
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
     }
 
-    @ViewBuilder
-    private func chart(_ report: UsageReport) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            WSSectionTitle(title: tr("ws.usage.overTime"))
+    // MARK: - Chart
+
+    private func chartSection(_ report: UsageReport) -> some View {
+        Section {
             if report.days.isEmpty {
-                Text(tr("ws.usage.noData")).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
-                    .frame(maxWidth: .infinity, minHeight: 120)
+                Text(tr("ws.usage.noData"))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
             } else {
                 Chart(report.days) { day in
                     BarMark(
@@ -126,48 +206,76 @@ struct UsageView: View {
                 ])
                 .chartYAxis {
                     AxisMarks { value in
-                        AxisGridLine().foregroundStyle(WS.border)
+                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                         AxisValueLabel {
                             if let tokens = value.as(Int.self) { Text(TokenTally.format(tokens)) }
                         }
                     }
                 }
-                .frame(height: 180)
+                .frame(height: 160)
+                .padding(.vertical, 4)
                 .accessibilityLabel(tr("ws.usage.overTime"))
             }
+        } header: {
+            Text(tr("ws.usage.overTime"))
         }
     }
 
-    private func table(_ report: UsageReport) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            WSSectionTitle(title: tr("ws.usage.byModel"))
+    // MARK: - By Model
+
+    private func byModelSection(_ report: UsageReport) -> some View {
+        Section {
             if report.rows.isEmpty {
-                Text(tr("ws.usage.noData")).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
+                Text(tr("ws.usage.noData"))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 16)
             } else {
-                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 6) {
-                    GridRow {
-                        ForEach([tr("ws.usage.provider"), tr("ws.inspector.model"), tr("ws.usage.sessions"), tr("ws.usage.input"),
-                                 tr("ws.usage.output"), tr("ws.usage.cacheRead"), tr("ws.usage.cost")], id: \.self) { metricLabel($0) }
-                    }
-                    Divider().gridCellColumns(7)
-                    ForEach(report.rows) { row in
-                        GridRow {
-                            HStack(spacing: 5) {
-                                Circle().fill(row.provider.color).frame(width: 6, height: 6)
+                ForEach(report.rows) { row in
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Circle().fill(row.provider.color).frame(width: 7, height: 7)
                                 Text(row.provider.displayName)
+                                    .font(.subheadline.weight(.medium))
+                                Text(row.model == "default" ? tr("ws.model.default") : row.model)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
                             }
-                            Text(row.model == "default" ? tr("ws.model.default") : row.model).font(NookTheme.mono(11.5))
-                            Text("\(row.sessions)" + (row.sessionsWithoutTokens > 0 ? " (\(tr("ws.usage.withoutTokens", row.sessionsWithoutTokens)))" : ""))
-                            Text(TokenTally.format(row.inputTokens)).monospacedDigit()
-                            Text(TokenTally.format(row.outputTokens)).monospacedDigit()
-                            Text(row.provider.capabilities.reportsCacheTokens ? TokenTally.format(row.cacheReadTokens) : tr("ws.unavailable")).monospacedDigit()
-                            Text(costText(row)).foregroundStyle(row.reportedCostUSD == nil ? WS.tertiary : WS.text)
+                            Text("\(row.sessions) \(tr("ws.usage.sessions").lowercased())" + (row.sessionsWithoutTokens > 0 ? " (\(tr("ws.usage.withoutTokens", row.sessionsWithoutTokens)))" : ""))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
-                        .font(NookTheme.font(12))
+                        Spacer(minLength: 8)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text("\(TokenTally.format(row.inputTokens)) in · \(TokenTally.format(row.outputTokens)) uit")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                if workspace.settings.showCost {
+                                    Text(costText(row))
+                                        .font(.subheadline.weight(.medium).monospacedDigit())
+                                        .foregroundStyle(row.reportedCostUSD == nil ? Color.secondary : Color.primary)
+                                }
+                            }
+                            if row.provider.capabilities.reportsCacheTokens && row.cacheReadTokens > 0 {
+                                Text("Cache: \(TokenTally.format(row.cacheReadTokens))")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
+                    .padding(.vertical, 3)
                 }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 10).fill(WS.surface))
+            }
+        } header: {
+            Text(tr("ws.usage.byModel"))
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("ws.usage.note.claude"))
+                Text(tr("ws.usage.note.codex"))
+                Text(tr("ws.usage.note.scope"))
             }
         }
     }
@@ -178,62 +286,33 @@ struct UsageView: View {
         return row.provider.capabilities.reportsCost ? tr("ws.unavailable") : tr("ws.usage.notReported")
     }
 
+    // MARK: - Running Now
+
     @ViewBuilder
-    private var running: some View {
+    private var runningSection: some View {
         let active = workspace.activeRuns
         if !active.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                WSSectionTitle(title: tr("ws.usage.runningNow"))
+            Section {
                 ForEach(active) { run in
-                    Button { workspace.selectedRunID = run.id } label: {
+                    Button {
+                        workspace.selectedRunID = run.id
+                    } label: {
                         HStack(spacing: 8) {
                             StatusBadge(status: run.status, compact: true)
                             Text(run.title).lineLimit(1)
                             Spacer()
                             Text(run.usage.totalTokens.map { TokenTally.format($0) + " tokens" } ?? tr("ws.usage.firstTurnPending"))
-                                .foregroundStyle(WS.secondary)
+                                .foregroundStyle(.secondary)
                         }
-                        .font(NookTheme.font(12))
+                        .font(.callout)
                     }
                     .buttonStyle(.plain)
                 }
-                Text(tr("ws.usage.runningNote")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+            } header: {
+                Text(tr("ws.usage.runningNow"))
+            } footer: {
+                Text(tr("ws.usage.runningNote"))
             }
         }
-    }
-
-    /// Account quotas (not session-specific): only what Claude Code reports via status line or Codex reports directly.
-    private var accountQuotas: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            WSSectionTitle(title: tr("ws.usage.accountQuotas"))
-            ForEach(app.linkedProfiles.filter { $0.kind != .gemini }) { profile in
-                HStack(spacing: 8) {
-                    Circle().fill(profile.kind.color).frame(width: 6, height: 6)
-                    Text("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))").font(NookTheme.font(12, .medium))
-                    Spacer()
-                    Text(quota(profile) ?? tr("ws.usage.quotaUnavailable"))
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(quota(profile) == nil ? WS.tertiary : WS.secondary)
-                }
-            }
-            Text(tr("ws.usage.quotaNote")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 10).fill(WS.surface))
-    }
-
-    private func quota(_ profile: AgentProfile) -> String? {
-        app.quota.summary(for: profile)
-    }
-
-    private var notes: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(tr("ws.usage.note.claude")).fixedSize(horizontal: false, vertical: true)
-            Text(tr("ws.usage.note.codex")).fixedSize(horizontal: false, vertical: true)
-            Text(tr("ws.usage.note.scope")).fixedSize(horizontal: false, vertical: true)
-        }
-        .font(NookTheme.font(11))
-        .foregroundStyle(WS.tertiary)
     }
 }
