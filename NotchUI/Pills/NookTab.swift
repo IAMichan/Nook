@@ -221,7 +221,7 @@ private struct ChatMessageView: View {
                 ChatErrorCard(message: message, canRetry: isLast)
             } else if !message.text.isEmpty {
                 ConversationMessage(fromUser: false, text: message.text, size: 14,
-                                    onChoose: !message.streaming && message.id == app.messages.last?.id ? { app.handleUserText($0) } : nil)
+                                    onChoose: !message.streaming && message.id == app.chat.messages.last?.id ? { app.handleUserText($0) } : nil)
             } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
                 TypingIndicator(status: message.status)
             }

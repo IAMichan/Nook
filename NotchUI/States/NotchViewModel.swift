@@ -380,9 +380,9 @@ final class NotchViewModel: ObservableObject {
         case .music:
             return CGSize(width: nw + 130, height: nh)
         case .track(let title, let artist):
-            // Only as wide as the song needs: the bar grows sideways, nothing else moves.
-            let text = max(CGFloat(title.count) * 6.8, CGFloat(artist.count) * 5.8)
-            let wing = min(310, max(150, text + 92))
+            // Compact, balanced expansion: Nook & artwork on left, title & equalizer on right.
+            let textLen = max(CGFloat(title.count) * 6.2, CGFloat(artist.count) * 5.4)
+            let wing = min(175, max(115, textLen + 46))
             return CGSize(width: nw + 2 * wing, height: nh)
         case .done:
             return CGSize(width: max(440, nw + 240), height: nh + 40)
