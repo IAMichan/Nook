@@ -6,45 +6,40 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, connections, brain, agents, assistant, voice, privacy, usage
+    case general, display, brain, assistant, connections, agents, privacy
+
+    /// The sidebar groups: what belongs together sits together.
+    enum Group: String, CaseIterable, Identifiable {
+        case nook, intelligence, connect, security
+
+        var id: String { rawValue }
+
+        var title: String { tr("settings.group.\(rawValue)") }
+
+        var sections: [SettingsSection] {
+            switch self {
+            case .nook: return [.general, .display]
+            case .intelligence: return [.brain, .assistant]
+            case .connect: return [.connections, .agents]
+            case .security: return [.privacy]
+            }
+        }
+    }
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .general: return tr("settings.section.general")
-        case .brain: return tr("settings.section.brain")
-        case .assistant: return tr("settings.section.assistant")
-        case .connections: return tr("settings.section.connections")
-        case .agents: return tr("settings.section.agents")
-        case .usage: return tr("settings.section.usage")
-        case .voice: return tr("settings.section.voice")
-        case .privacy: return tr("settings.section.privacy")
-        }
-    }
+    var title: String { tr("settings.section.\(rawValue)") }
 
-    var subtitle: String {
-        switch self {
-        case .general: return tr("settings.section.general.sub")
-        case .brain: return tr("settings.section.brain.sub")
-        case .assistant: return tr("settings.section.assistant.sub")
-        case .connections: return tr("settings.section.connections.sub")
-        case .agents: return tr("settings.section.agents.sub")
-        case .usage: return tr("settings.section.usage.sub")
-        case .voice: return tr("settings.section.voice.sub")
-        case .privacy: return tr("settings.section.privacy.sub")
-        }
-    }
+    var subtitle: String { tr("settings.section.\(rawValue).sub") }
 
     var symbol: String {
         switch self {
         case .general: return "checklist"
+        case .display: return "display"
         case .brain: return "brain"
         case .assistant: return "sparkles"
         case .connections: return "link"
         case .agents: return "terminal"
-        case .usage: return "chart.bar.xaxis"
-        case .voice: return "waveform"
         case .privacy: return "lock.shield"
         }
     }
@@ -65,6 +60,7 @@ struct SettingsView: View {
     @State var testing = false
     @State var testResult: (ok: Bool, message: String)?
     @State var pendingChange: AgentConfigInstaller.Change?
+    @State var agentTab: AgentSettingsTab = .link
     @State var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
     @State var fetchedModels: [String] = []
     @State var fetchingModels = false
@@ -72,13 +68,19 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsSection.allCases, selection: Binding(
+            List(selection: Binding(
                 get: { Optional(app.settingsSection) },
                 set: { if let value = $0 { app.settingsSection = value } }
-            )) { section in
-                Label(section.title, systemImage: section.symbol)
-                    .badge(badge(for: section))
-                    .tag(section)
+            )) {
+                ForEach(SettingsSection.Group.allCases) { group in
+                    Section(group.title) {
+                        ForEach(group.sections) { section in
+                            Label(section.title, systemImage: section.symbol)
+                                .badge(badge(for: section))
+                                .tag(section)
+                        }
+                    }
+                }
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 240)
         } detail: {
@@ -145,12 +147,11 @@ struct SettingsView: View {
     func detail(for section: SettingsSection) -> some View {
         switch section {
         case .general: overviewSection
+        case .display: displaySection
         case .brain: brainSection
         case .assistant: assistantSection
         case .connections: connectionsSection
         case .agents: agentsSection
-        case .usage: usageSection
-        case .voice: voiceSection
         case .privacy: privacySection
         }
     }
