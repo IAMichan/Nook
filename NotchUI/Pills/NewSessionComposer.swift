@@ -304,7 +304,7 @@ struct NewSessionComposer: View {
     }
 
     private var blockingReason: String? {
-        if let problem = config.problem { return tr("ws.error.config." + problem.rawValue) }
+        if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
         if app.history.executables[config.provider.kind] == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if config.isolation == .folder, !allowShared, !sharing.isEmpty { return tr("ws.new.sharedBlocked") }
@@ -312,6 +312,14 @@ struct NewSessionComposer: View {
     }
 
     private var canStart: Bool { !starting && blockingReason == nil }
+
+    /// The configuration as it will start: with the branch name derived from the task, which only gets filled in at the
+    /// moment of starting. Checking `config` itself would see an empty branch name and refuse every new worktree.
+    private var checkedConfig: NewRunConfig {
+        var copy = config
+        copy.branchName = WorktreeNaming.branchName(task: config.task, id: pendingID)
+        return copy
+    }
 
     /// The default branch first ("origin/main"), then the rest alphabetically.
     private func sortedBranches(_ branches: [String]) -> [String] {
@@ -409,8 +417,7 @@ struct NewSessionComposer: View {
         guard canStart else { return }
         starting = true
         error = nil
-        var request = config
-        request.branchName = WorktreeNaming.branchName(task: config.task, id: pendingID)
+        var request = checkedConfig
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
         let finalConfig = request
