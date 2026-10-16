@@ -49,7 +49,7 @@ Voor je agents: klik bij **Instellingen › Agents** op **Koppel…** naast Clau
   - **Agents**: links je sessies, rechts de gekozen sessie. Elke rij laat zien of hij bezig is, op je wacht of klaar is, in welke map en met welk account. Met de **+** naast Sessies start je er een: "Wat zullen we bouwen in *map*?", één veld voor de opdracht, en daaronder kleine keuzes voor agent en account, Agent- of Plan-modus, rechten, huidige map of nieuwe worktree, en de branch waar hij vanaf begint. Return start de sessie, die meteen links in de lijst staat. Wijzigingen, commit, push en pull request openen ín de notch; met **Terug** (of Esc) ga je terug.
   - **Werkruimte**: terminals, de browser en worktrees.
 
-  De notch opent op de tab die je het laatst gebruikte, behalve als een agent op je wacht: dan opent hij bij die agent. Een stipje naast een tab betekent: hier wacht iets op je (amber) of hier wordt gewerkt (paars).
+  De notch opent op de tab die je het laatst gebruikte, behalve als een agent op je wacht: dan opent hij bij die agent. Een stipje naast een tab betekent: hier wacht iets op je (amber) of hier wordt gewerkt (wit).
 - **Instellingen** (⌘, of het tandwiel in de notch) is de enige plek voor configuratie en koppelen: Algemeen, Accounts & koppelingen (bovenaan wat al gekoppeld is, daaronder **Koppel** bij elke dienst), Brein, Agents (agents koppelen en hun accounts), Assistent, Stem & geluid, Privacy & beveiliging en Gebruik.
 - Liever een groot venster? Kies **Open in venster** in het menubalk-menu (⌥⌘W).
 

@@ -151,7 +151,7 @@ struct WorkspaceSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(selected ? Color.accentColor.opacity(0.25) : Color.clear)
+        .listRowBackground(selected ? NookTheme.iris.opacity(0.25) : Color.clear)
     }
 
     private var controls: some View {

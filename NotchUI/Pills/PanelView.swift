@@ -80,7 +80,7 @@ struct PanelView: View {
         }
     }
 
-    /// A small, quiet dot next to a tab: amber when something there waits for you, violet while it is working.
+    /// A small, quiet dot next to a tab: amber when something there waits for you, white while it is working.
     private func dot(for tab: PanelTab) -> Color? {
         switch tab {
         case .chat, .nook:

@@ -74,7 +74,7 @@ private struct AccountSettingsRow: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                            .background(Capsule().fill(NookTheme.iris.opacity(0.18)))
                     }
                 }
                 Text(subtitle)

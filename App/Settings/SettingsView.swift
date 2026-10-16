@@ -102,7 +102,7 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
-            .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)")
+            .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")
         }
         .tint(NookTheme.iris)
         .frame(minWidth: 720, minHeight: 480)
