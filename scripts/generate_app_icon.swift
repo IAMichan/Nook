@@ -2,7 +2,7 @@
 import AppKit
 
 // Generates App/AppIcon.icns for Nook (macOS app icon).
-// Draws the Nook orb (iris purple glowing circle with eyes) on a subtle lavender squircle.
+// Draws the Nook orb (soft white glowing circle with eyes) on a dark graphite squircle.
 
 func generateIcon(size: Int) -> NSImage {
     let baseSize: CGFloat = 1024
@@ -22,40 +22,40 @@ func generateIcon(size: Int) -> NSImage {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 24, color: CGColor(gray: 0, alpha: 0.22))
     ctx.addPath(squirclePath)
-    ctx.setFillColor(CGColor(red: 0.933, green: 0.918, blue: 1.0, alpha: 1.0))
+    ctx.setFillColor(CGColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1.0))
     ctx.fillPath()
     ctx.restoreGState()
 
-    // Background gradient within the squircle (soft lavender)
+    // Background gradient within the squircle (dark graphite)
     ctx.saveGState()
     ctx.addPath(squirclePath)
     ctx.clip()
 
     let colorSpace = CGColorSpaceCreateDeviceRGB()
     let gradientColors = [
-        CGColor(red: 0.95, green: 0.94, blue: 1.0, alpha: 1.0),
-        CGColor(red: 0.91, green: 0.89, blue: 0.99, alpha: 1.0)
+        CGColor(red: 0.13, green: 0.13, blue: 0.16, alpha: 1.0),
+        CGColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1.0)
     ] as CFArray
     if let gradient = CGGradient(colorsSpace: colorSpace, colors: gradientColors, locations: [0.0, 1.0]) {
         ctx.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
     }
 
     // Subtle inner stroke
-    ctx.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.6))
+    ctx.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.12))
     ctx.setLineWidth(3.0)
     ctx.addPath(squirclePath)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // Nook Orb (iris purple, NookTheme.iris)
+    // Nook Orb (soft white, NookTheme.iris)
     let orbCenter = CGPoint(x: 512, y: 512)
     let orbRadius: CGFloat = 290
     let orbRect = CGRect(x: orbCenter.x - orbRadius, y: orbCenter.y - orbRadius, width: orbRadius * 2, height: orbRadius * 2)
 
     // Glow behind the orb
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 45, color: CGColor(red: 0.545, green: 0.482, blue: 1.0, alpha: 0.60))
-    ctx.setFillColor(CGColor(red: 0.545, green: 0.482, blue: 1.0, alpha: 1.0))
+    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 45, color: CGColor(red: 0.957, green: 0.953, blue: 0.969, alpha: 0.35))
+    ctx.setFillColor(CGColor(red: 0.957, green: 0.953, blue: 0.969, alpha: 1.0))
     ctx.fillEllipse(in: orbRect)
     ctx.restoreGState()
 
@@ -64,8 +64,8 @@ func generateIcon(size: Int) -> NSImage {
     ctx.addEllipse(in: orbRect)
     ctx.clip()
     let orbColors = [
-        CGColor(red: 0.62, green: 0.56, blue: 1.0, alpha: 1.0),
-        CGColor(red: 0.50, green: 0.42, blue: 0.96, alpha: 1.0)
+        CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        CGColor(red: 0.90, green: 0.89, blue: 0.93, alpha: 1.0)
     ] as CFArray
     if let orbGradient = CGGradient(colorsSpace: colorSpace, colors: orbColors, locations: [0.0, 1.0]) {
         ctx.drawLinearGradient(orbGradient, start: CGPoint(x: 512, y: 512 + orbRadius), end: CGPoint(x: 512, y: 512 - orbRadius), options: [])

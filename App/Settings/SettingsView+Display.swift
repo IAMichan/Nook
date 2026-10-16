@@ -14,6 +14,26 @@ extension SettingsView {
                     }
                 }
             }
+            Section(tr("settings.display.color")) {
+                HStack {
+                    ColorPicker(tr("settings.display.accent"), selection: Binding(
+                        get: { Color(hex: settings.accentHex) },
+                        set: { settings.accentHex = NSColor($0).nookHex }
+                    ), supportsOpacity: false)
+                    Button(tr("settings.display.accentReset")) { settings.accentHex = NookTheme.defaultAccentHex }
+                        .disabled(settings.accentHex == NookTheme.defaultAccentHex)
+                }
+                HStack(spacing: 10) {
+                    ForEach([0xF4F3F7, 0x8B7BFF, 0x5AA9FF, 0x46E0A6, 0xFFB84D, 0xFF6B6B, 0xFF7EB6] as [UInt32], id: \.self) { hex in
+                        Button { settings.accentHex = hex } label: {
+                            Circle().fill(Color(hex: hex)).frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(Color.primary.opacity(settings.accentHex == hex ? 0.9 : 0.15), lineWidth: settings.accentHex == hex ? 2 : 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Text(tr("settings.display.accentHint")).font(.caption).foregroundStyle(.secondary)
+            }
             Section(tr("settings.notch.title")) {
                 Picker(tr("settings.notch.placement"), selection: $settings.placement) {
                     Text(tr("settings.notch.placementNotch")).tag("notch")
@@ -48,5 +68,16 @@ extension SettingsView {
                 Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
             }
         }
+    }
+}
+
+extension NSColor {
+    /// 0xRRGGBB in sRGB.
+    var nookHex: UInt32 {
+        let c = usingColorSpace(.sRGB) ?? self
+        let r = UInt32((c.redComponent * 255).rounded())
+        let g = UInt32((c.greenComponent * 255).rounded())
+        let b = UInt32((c.blueComponent * 255).rounded())
+        return (r << 16) | (g << 8) | b
     }
 }

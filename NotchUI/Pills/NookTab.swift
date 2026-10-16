@@ -486,7 +486,7 @@ private struct NookRow: View {
     }
 }
 
-/// Busy (purple, breathing), waiting for you (amber), new response (mint), or idle (gray).
+/// Busy (white, breathing), waiting for you (amber), new response (mint), or idle (gray).
 private struct StatusDot: View {
     let status: Conversation.Status
 

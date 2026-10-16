@@ -154,6 +154,14 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(notchOnAllScreens, forKey: "notchOnAllScreens") }
     }
     /// When idle, only the notch itself: Nook appears when hovered or when activity occurs.
+    /// Accent color of the whole app (Nook's orb, active tabs, chips, buttons), as 0xRRGGBB.
+    @Published var accentHex: UInt32 {
+        didSet {
+            UserDefaults.standard.set(Int(accentHex), forKey: "accentHex")
+            NookTheme.accentHex = accentHex
+        }
+    }
+
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
     }
@@ -314,6 +322,9 @@ final class AppSettings: ObservableObject {
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
+        let storedAccent = (defaults.object(forKey: "accentHex") as? Int).map { UInt32(truncatingIfNeeded: $0) } ?? NookTheme.defaultAccentHex
+        accentHex = storedAccent
+        NookTheme.accentHex = storedAccent
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
