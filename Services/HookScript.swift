@@ -6,11 +6,11 @@ import AppKit
 /// If Nook is not running or takes too long, it exits cleanly and the agent continues uninterrupted.
 enum HookScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 3
+    static let version = 4
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook hook (version 3): delivers an agent event to Nook locally via Unix domain socket.
+    # Nook hook (version 4): delivers an agent event to Nook locally via Unix domain socket.
     # If Nook is not running or times out, this script exits cleanly: the agent proceeds normally.
     #   --agent <name>   identifies sender (claude-code, codex, gemini, cursor, copilot, …)
     #                    Without --agent, "nook_agent" JSON field is used (a-z, 0-9, - and _, max 32 chars).
@@ -69,7 +69,7 @@ enum HookScript {
     $mode = 'permission' if $name eq 'PermissionRequest' || $name eq 'permissionRequest';
 
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
-        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME NOOK_RUN_ID);
+        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME NOOK_RUN_ID ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_APP_DATA_DIR);
 
     # nook_show_step: synthetic tool step (pre then post) for agents that only report completion.
     my @events = ($event);
@@ -161,11 +161,23 @@ enum HookScript {
             }
         }
         if (!defined first_text($e->{session_id})) {
-            my $sid = first_text($e->{conversationId}, $e->{sessionId});
+            my $sid = first_text($e->{conversationId}, $e->{sessionId}, $e->{conversation_id});
+            if (!defined $sid && $agent eq 'antigravity') {
+                $sid = first_text($ENV{ANTIGRAVITY_CONVERSATION_ID});
+            }
             if (!defined $sid && ($agent eq 'gemini' || $agent eq 'antigravity')) {
                 $sid = first_text($ENV{GEMINI_SESSION_ID});
             }
             $e->{session_id} = $sid if defined $sid;
+        }
+        if (!defined first_text($e->{transcript_path})) {
+            if ($agent eq 'antigravity') {
+                my $cid = first_text($e->{session_id}, $e->{conversationId}, $e->{conversation_id}, $ENV{ANTIGRAVITY_CONVERSATION_ID});
+                my $app_data = first_text($ENV{ANTIGRAVITY_APP_DATA_DIR}, "$ENV{HOME}/.gemini/antigravity");
+                if (defined $cid) {
+                    $e->{transcript_path} = "$app_data/brain/$cid/.system_generated/logs/transcript.jsonl";
+                }
+            }
         }
         if (!defined first_text($e->{cwd})) {
             my $cwd = first_text($e->{workdir});

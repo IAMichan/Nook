@@ -51,22 +51,56 @@ enum AgentTranscript {
 
         var messages: [AgentChatMessage] = []
         for (index, line) in data.split(separator: 0x0A).enumerated() {
-            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
-                  let type = object["type"] as? String, type == "user" || type == "assistant",
-                  (object["isMeta"] as? Bool) != true, (object["isSidechain"] as? Bool) != true,
-                  let message = object["message"] as? [String: Any] else { continue }
-            let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-            let id = (object["uuid"] as? String) ?? "\(index)"
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+            let id = (object["uuid"] as? String) ?? (object["id"] as? String) ?? "\(object["step_index"] ?? index)"
+            let type = (object["type"] as? String) ?? ""
 
-            if type == "user" {
-                guard isTypedPrompt(text) else { continue }
+            // Claude Code
+            if type == "user" || type == "assistant" {
+                guard (object["isMeta"] as? Bool) != true, (object["isSidechain"] as? Bool) != true,
+                      let message = object["message"] as? [String: Any] else { continue }
+                let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+
+                if type == "user" {
+                    guard isTypedPrompt(text) else { continue }
+                    messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
+                } else if let last = messages.last, !last.fromUser {
+                    messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
+                } else {
+                    messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                }
+            }
+            // Antigravity (USER_INPUT, PLANNER_RESPONSE)
+            else if type == "USER_INPUT" {
+                guard let raw = object["content"] as? String else { continue }
+                let text = cleanAntigravityPrompt(raw)
+                guard !text.isEmpty else { continue }
                 messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
-            } else if let last = messages.last, !last.fromUser {
-                // Merge consecutive text chunks of an assistant turn across tool invocations.
-                messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
-            } else {
-                messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+            } else if type == "PLANNER_RESPONSE" {
+                guard let content = object["content"] as? String else { continue }
+                let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                if let last = messages.last, !last.fromUser {
+                    messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
+                } else {
+                    messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                }
+            }
+            // Codex (event_msg)
+            else if type == "event_msg", let payload = object["payload"] as? [String: Any],
+                    let ptype = payload["type"] as? String {
+                let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                if ptype == "user_message" {
+                    messages.append(AgentChatMessage(id: id, fromUser: true, text: clip(text)))
+                } else if ptype == "agent_message" {
+                    if let last = messages.last, !last.fromUser {
+                        messages[messages.count - 1] = AgentChatMessage(id: last.id, fromUser: false, text: clip(last.text + "\n\n" + text))
+                    } else {
+                        messages.append(AgentChatMessage(id: id, fromUser: false, text: clip(text)))
+                    }
+                }
             }
         }
         let result = Array(messages.suffix(limit))
@@ -77,6 +111,22 @@ enum AgentTranscript {
             cacheLock.unlock()
         }
         return result
+    }
+
+    /// Extracts the user request text from an Antigravity prompt, removing envelope tags and metadata.
+    static func cleanAntigravityPrompt(_ raw: String) -> String {
+        if let start = raw.range(of: "<USER_REQUEST>", options: .caseInsensitive),
+           let end = raw.range(of: "</USER_REQUEST>", options: .caseInsensitive, range: start.upperBound..<raw.endIndex) {
+            return raw[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var text = raw
+        for tag in ["ADDITIONAL_METADATA", "USER_SETTINGS_CHANGE", "uploaded_files"] {
+            while let start = text.range(of: "<\(tag)>", options: .caseInsensitive),
+                  let end = text.range(of: "</\(tag)>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+                text.removeSubrange(start.lowerBound..<end.upperBound)
+            }
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func text(_ content: Any?) -> String {
