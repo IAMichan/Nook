@@ -1,22 +1,20 @@
 import SwiftUI
 import AppKit
 
-/// What the three buttons at the bottom of the Agents list open on the right: your pull requests, or the usage of every
-/// account. The settings button opens Settings › Agents.
+/// What the two buttons at the bottom of the Agents list open on the right: your pull requests, or the usage of every
+/// account.
 enum AgentsPage {
     static let pullRequests = "pulls"
     static let usage = "usage"
 }
 
-/// Settings, pull requests and usage as quiet icons under the list.
+/// Pull requests and usage as quiet icons under the list.
 struct AgentsFooter: View {
-    @EnvironmentObject private var app: AppModel
     let selected: String
     let open: (String) -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            icon("gearshape", label: tr("agents.footer.settings"), active: false) { app.openSettings(section: .agents) }
             icon("arrow.triangle.pull", label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests) {
                 open(AgentsPage.pullRequests)
             }
