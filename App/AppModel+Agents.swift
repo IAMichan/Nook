@@ -40,10 +40,12 @@ extension AppModel {
         nookProvider(for: session.agent) != nil && !session.cwd.isEmpty
     }
 
-    /// Continues a running session in Nook.
-    /// - `endingTerminal`: ends the original process first, then continues the same conversation here.
-    /// - Otherwise a busy Claude Code session is copied (`--fork-session`), so the original keeps working undisturbed;
-    ///   an idle one continues as is.
+    /// Continues a session that runs in a terminal (or ran there) in Nook.
+    /// - By default the terminal session is left alone. A Claude Code session that still runs, or is busy, is copied
+    ///   (`--fork-session`), so the original keeps working undisturbed and Nook continues in the copy; an idle one that
+    ///   Nook knows only from hooks continues as is.
+    /// - `endingTerminal`: only when asked for explicitly: ends the original process first and continues the same
+    ///   conversation here.
     @discardableResult
     func continueInNook(_ session: AgentSession, message: String? = nil, endingTerminal: Bool = false) async throws -> UUID {
         guard let kind = AgentKind(agentName: session.name), let provider = nookProvider(for: kind) else {
@@ -52,17 +54,13 @@ extension AppModel {
         guard let conversation = conversationID(for: session) else { throw NookError(tr("agents.nook.noConversation")) }
         let busy = !session.isDetected && (session.status == .running || session.status == .waiting)
         var fork = false
-        if endingTerminal || session.isDetected {
-            if hub.processID(for: session) != nil {
-                guard hub.end(session) else { throw NookError(tr("agents.nook.endFailed", session.name)) }
-                // Give the agent a moment to write the last of its conversation before Nook resumes it.
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-            } else if session.isDetected {
-                throw NookError(tr("agents.nook.processUnknown", session.name))
-            } else if busy {
-                fork = provider == .claude
-            }
-        } else if busy {
+        if endingTerminal {
+            guard hub.processID(for: session) != nil else { throw NookError(tr("agents.nook.processUnknown", session.name)) }
+            guard hub.end(session) else { throw NookError(tr("agents.nook.endFailed", session.name)) }
+            // Give the agent a moment to write the last of its conversation before Nook resumes it.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+        } else if busy || session.isDetected {
+            // The agent still runs in its terminal. Two processes must not write one conversation: continue in a copy.
             guard provider == .claude else { throw NookError(tr("agents.nook.codexBusy")) }
             fork = true
         }

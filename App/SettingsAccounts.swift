@@ -17,8 +17,8 @@ struct AccountsSettingsSection: View {
                     }
                 }
 
-                if kind == .gemini {
-                    Text(tr("accounts.geminiSingle"))
+                if kind == .gemini || kind == .antigravity {
+                    Text(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if kind.supportsProfiles {
@@ -168,7 +168,7 @@ private struct ManageAccountSheet: View {
                     }
                 }
 
-                if profile.kind != .gemini {
+                if profile.kind != .gemini && profile.kind != .antigravity {
                     Divider()
 
                     // Method: subscription or API key

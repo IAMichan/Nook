@@ -80,7 +80,7 @@ struct NotchRootView: View {
             }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
-        .id(contentKey)
+        .id("\(contentKey)-\(app.settings.accentHex)")
         .transition(.notchContent)
     }
 

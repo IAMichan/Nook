@@ -8,7 +8,10 @@ extension SettingsView {
     /// Calm and in the order you need it: what is connected, what is on your Mac, and below that what you can add.
     /// Adding a service is one click on its card; agent accounts live under Agents, MCP servers under MCP.
     var connectionsSection: some View {
-        let services = app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0) }
+        // Collected once per redraw: every capability line below is derived from it.
+        let tools: [(name: String, isAction: Bool)] = app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }
+        let capabilityLine: (String) -> String = { SourceCapabilities.line($0, tools: tools) }
+        let services = app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0, capabilityLine) }
         let connected = services.filter(isConnected)
         let available = services.filter { !isConnected($0) }
         let refresh = { app.connectors.refreshAll() }
@@ -35,11 +38,11 @@ extension SettingsView {
                     Text(tr("settings2.connections.connectedFooter"))
                 }
             }
-            let sources = localSources
+            let sources = localSources(capabilityLine)
             if !sources.isEmpty {
                 Section {
                     ForEach(sources.indices, id: \.self) { index in
-                        localRow(sources[index])
+                        localRow(sources[index], capabilityLine)
                     }
                 } header: {
                     Text(tr("settings.connections.onYourMac"))
@@ -105,16 +108,20 @@ extension SettingsView {
         (source as? any CloudConnectorConfig)?.isConfigured ?? false
     }
 
-    var localSources: [ContextSource] {
+    func localSources(_ capabilityLine: (String) -> String) -> [ContextSource] {
         let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "bear", "things"]
         // Apps that are not on this Mac are not worth a row.
         return ids.compactMap { app.connectors.source(id: $0) }
             .filter { ($0 as? AppDatabaseConnector)?.isInstalled ?? true }
-            .filter { matchesSearch($0) }
+            .filter { matchesSearch($0, capabilityLine) }
     }
 
-    func matchesSearch(_ source: ContextSource) -> Bool {
-        matchesSearch(title: source.title + " " + capabilityLine(source.id))
+    func matchesSearch(_ source: ContextSource, _ capabilityLine: (String) -> String) -> Bool {
+        // Without a query everything matches: building the capability line means collecting every tool of every
+        // connector, which made this page crawl on each redraw.
+        let query = connectionSearch.trimmingCharacters(in: .whitespaces)
+        if query.isEmpty { return true }
+        return (source.title + " " + capabilityLine(source.id)).localizedCaseInsensitiveContains(query)
     }
 
     func matchesSearch(title: String) -> Bool {
@@ -122,12 +129,7 @@ extension SettingsView {
         return query.isEmpty || title.localizedCaseInsensitiveContains(query)
     }
 
-    /// How a connector is configured, its read capabilities, and actions requiring approval.
-    func capabilityLine(_ id: String) -> String {
-        SourceCapabilities.line(id, tools: app.knownTools.map { ($0.name, $0.kind == .action) })
-    }
-
-    func localRow(_ source: ContextSource) -> some View {
+    func localRow(_ source: ContextSource, _ capabilityLine: @escaping (String) -> String) -> some View {
         let fallback = source.id != "clipboard"
         return Toggle(isOn: Binding(
             get: { let _ = refreshTick; return ConnectorToggle.isOn(source.id, default: fallback) },

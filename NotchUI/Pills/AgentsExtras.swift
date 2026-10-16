@@ -15,31 +15,26 @@ struct AgentsFooter: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            icon("arrow.triangle.pull", label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests) {
-                open(AgentsPage.pullRequests)
-            }
-            icon("chart.bar", label: tr("agents.footer.usage"), active: selected == AgentsPage.usage) { open(AgentsPage.usage) }
+            FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
+                       action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
+            FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
+                       action: { open(AgentsPage.usage) }) { UsageGlyph() }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 6)
-    }
-
-    private func icon(_ symbol: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        FooterIcon(symbol: symbol, label: label, active: active, action: action)
+        .padding(.leading, 4)
     }
 }
 
-private struct FooterIcon: View {
-    let symbol: String
+private struct FooterIcon<Glyph: View>: View {
     let label: String
     let active: Bool
     let action: () -> Void
+    @ViewBuilder var glyph: () -> Glyph
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .regular))
+            glyph()
                 .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
                 .frame(width: 32, height: 30)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color.clear)))
@@ -49,6 +44,47 @@ private struct FooterIcon: View {
         .onHover { hovering = $0 }
         .help(label)
         .accessibilityLabel(label)
+    }
+}
+
+/// Two nodes joined by a line, and a third one the line bends to: the pull request mark, drawn in the same line weight
+/// as the rest of the list.
+private struct PullRequestGlyph: View {
+    var body: some View {
+        Canvas { context, size in
+            let unit = min(size.width, size.height) / 16
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }
+            let style = StrokeStyle(lineWidth: 1.3 * unit, lineCap: .round, lineJoin: .round)
+            var lines = Path()
+            lines.move(to: point(4, 5.2)); lines.addLine(to: point(4, 10.8))
+            lines.move(to: point(12, 10.8)); lines.addLine(to: point(12, 7))
+            lines.addQuadCurve(to: point(10, 4.8), control: point(12, 4.8))
+            lines.addLine(to: point(8.6, 4.8))
+            lines.move(to: point(10.2, 3.2)); lines.addLine(to: point(8.6, 4.8)); lines.addLine(to: point(10.2, 6.4))
+            context.stroke(lines, with: .foreground, style: style)
+            for center in [point(4, 3.6), point(4, 12.4), point(12, 12.4)] {
+                let node = Path(ellipseIn: CGRect(x: center.x - 1.6 * unit, y: center.y - 1.6 * unit, width: 3.2 * unit, height: 3.2 * unit))
+                context.stroke(node, with: .foreground, style: style)
+            }
+        }
+        .frame(width: 16, height: 16)
+    }
+}
+
+/// Three bars of different height.
+private struct UsageGlyph: View {
+    var body: some View {
+        Canvas { context, size in
+            let unit = min(size.width, size.height) / 16
+            let style = StrokeStyle(lineWidth: 1.6 * unit, lineCap: .round)
+            var bars = Path()
+            for (x, top) in [(3.5, 9.0), (8.0, 3.0), (12.5, 6.0)] as [(CGFloat, CGFloat)] {
+                bars.move(to: CGPoint(x: x * unit, y: 13.5 * unit))
+                bars.addLine(to: CGPoint(x: x * unit, y: top * unit))
+            }
+            context.stroke(bars, with: .foreground, style: style)
+        }
+        .frame(width: 16, height: 16)
     }
 }
 
@@ -230,7 +266,7 @@ private struct PullRequestRow: View {
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
-    private var profiles: [AgentProfile] { app.profiles.all }
+    private var profiles: [AgentProfile] { app.linkedProfiles }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -280,7 +316,9 @@ struct AgentsUsagePanel: View {
                 Spacer(minLength: 0)
             }
             if limits.isEmpty {
-                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits") : tr("ws.usage.quotaUnavailable"))
+                Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits")
+                     : profile.kind == .antigravity && app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken")
+                     : tr("ws.usage.quotaUnavailable"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
             } else {
@@ -290,7 +328,9 @@ struct AgentsUsagePanel: View {
                             Text(limit.label).foregroundStyle(NookTheme.textSecondary)
                             Spacer()
                             Text("\(Int(limit.percent.rounded()))%").foregroundStyle(AgentFormat.color(percent: limit.percent))
-                            if let reset = AgentFormat.reset(limit.resetsAt) {
+                            if let note = limit.note {
+                                Text(note).foregroundStyle(NookTheme.textTertiary)
+                            } else if let reset = AgentFormat.reset(limit.resetsAt) {
                                 Text(reset).foregroundStyle(NookTheme.textTertiary)
                             }
                         }

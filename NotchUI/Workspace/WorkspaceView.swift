@@ -71,6 +71,7 @@ struct WorkspaceView: View {
             }
         }
         .tint(NookTheme.iris)
+        .id(app.settings.accentHex)
         .frame(minWidth: 760, minHeight: 520)
         .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in
             pane = .sessions

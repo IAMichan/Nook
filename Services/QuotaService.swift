@@ -5,6 +5,8 @@ struct QuotaLimit: Identifiable, Equatable {
     var label: String
     var percent: Double
     var resetsAt: Date?
+    /// Shown instead of a reset time, e.g. when the window has not started yet.
+    var note: String? = nil
     var id: String { label }
 }
 
@@ -17,6 +19,7 @@ struct QuotaLimit: Identifiable, Equatable {
 struct QuotaService {
     let hub: AgentHub
     let codex: CodexUsage
+    let antigravity: AntigravityUsage
 
     /// The 5-hour and weekly windows of an account, as far as the agent has reported them.
     func limits(for profile: AgentProfile) -> [QuotaLimit] {
@@ -24,18 +27,28 @@ struct QuotaService {
         case .claude:
             guard let usage = hub.subscriptionUsage(for: profile) else { return [] }
             return [
-                usage.fiveHour.map { QuotaLimit(label: tr("agents.fiveHour"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) },
-                usage.sevenDay.map { QuotaLimit(label: tr("agents.week"), percent: $0.effectivePercent, resetsAt: $0.resetsAt) }
-            ].compactMap { $0 }
+                window(usage.fiveHour.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.fiveHour")),
+                window(usage.sevenDay.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.week"))
+            ]
         case .gemini:
             return []
+        case .antigravity:
+            return antigravity.limits
         case .codex:
             guard let snapshot = codex.snapshot(home: profile.home.map { _ in profile.homeURL }) else { return [] }
             return [
-                snapshot.fiveHour.map { QuotaLimit(label: tr("agents.fiveHour"), percent: Double($0.percent()), resetsAt: $0.resetsAt) },
-                snapshot.weekly.map { QuotaLimit(label: tr("agents.week"), percent: Double($0.percent()), resetsAt: $0.resetsAt) }
-            ].compactMap { $0 }
+                window(snapshot.fiveHour.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.fiveHour")),
+                window(snapshot.weekly.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.week"))
+            ]
         }
+    }
+
+    /// A window as reported, or, when the agent reports none (or it has run out), an idle one: 0% that starts with the next message.
+    private func window(_ reported: (percent: Double, resetsAt: Date?)?, label: String) -> QuotaLimit {
+        if let reported, reported.resetsAt.map({ $0 > Date() }) ?? true {
+            return QuotaLimit(label: label, percent: reported.percent, resetsAt: reported.resetsAt)
+        }
+        return QuotaLimit(label: label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"))
     }
 
     /// "5 hours 34% · week 12%", or nil when nothing is known.

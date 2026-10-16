@@ -24,5 +24,9 @@ enum NookPaths {
 
     static var socketURL: URL { supportDirectory.appendingPathComponent("hub.sock") }
     static var hookScriptURL: URL { supportDirectory.appendingPathComponent("nook-hook.sh") }
+    /// Symlink to the hook script at a path without spaces (~/.nook/nook-hook), for agents that do not parse quoted commands.
+    static var spaceFreeHookURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-hook")
+    }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
 }
