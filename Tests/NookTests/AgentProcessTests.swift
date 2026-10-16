@@ -289,3 +289,15 @@ final class AgentTranscriptTests: XCTestCase {
     }
 }
 
+final class AntigravityClientTests: XCTestCase {
+    func testCommandDetection() {
+        if AntigravityClient.isAvailable {
+            let cmd = AntigravityClient.command()
+            XCTAssertNotNil(cmd)
+            XCTAssertFalse(cmd!.executable.isEmpty)
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cmd!.executable))
+        }
+    }
+}
+
+

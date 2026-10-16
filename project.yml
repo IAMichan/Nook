@@ -123,6 +123,7 @@ targets:
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/AgentTranscript.swift
+      - path: Services/AntigravityClient.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

@@ -13,8 +13,8 @@ extension AppModel {
     /// The agent's own conversation id for a running session: from its hooks, or for a session Nook only sees as a
     /// process, the most recent transcript of that agent in the same folder.
     func conversationID(for session: AgentSession) -> String? {
+        if !session.sessionID.isEmpty { return session.sessionID }
         if !session.isDetected {
-            if !session.sessionID.isEmpty { return session.sessionID }
             // The hub key is "<agent>:<session id>", with the folder as fallback when the agent sent no id.
             if let colon = session.id.firstIndex(of: ":") {
                 let rest = String(session.id[session.id.index(after: colon)...])
@@ -32,12 +32,54 @@ extension AppModel {
         nookProvider(for: AgentKind(agentName: session.name)) != nil && !session.cwd.isEmpty && conversationID(for: session) != nil
     }
 
+    /// Can Nook send a reply or follow-up message to this session (either directly or by adopting it)?
+    func canReply(to session: AgentSession) -> Bool {
+        if canTakeOver(session) { return true }
+        if AgentKind(agentName: session.name) == .antigravity {
+            return AntigravityClient.isAvailable && conversationID(for: session) != nil
+        }
+        return false
+    }
+
     func canEnd(_ session: AgentSession) -> Bool {
         hub.processID(for: session) != nil
     }
 
     func canContinueInNook(_ session: PastSession) -> Bool {
         nookProvider(for: session.agent) != nil && !session.cwd.isEmpty
+    }
+
+    /// Can Nook resume or send a message to this past session?
+    func canReply(to session: PastSession) -> Bool {
+        if canContinueInNook(session) { return true }
+        if session.agent == .antigravity {
+            return AntigravityClient.isAvailable && !session.sessionID.isEmpty
+        }
+        return false
+    }
+
+    /// Sends a reply into an active agent session (or adopts it into Workspace if supported).
+    func reply(to session: AgentSession, message: String) async throws {
+        if AgentKind(agentName: session.name) == .antigravity {
+            guard let convID = conversationID(for: session) else {
+                throw NookError(tr("agents.nook.noConversation"))
+            }
+            try await AntigravityClient.sendMessage(conversationID: convID, message: message)
+            return
+        }
+        try await continueInNook(session, message: message)
+    }
+
+    /// Resumes an earlier session or sends a message to it.
+    func reply(to session: PastSession, message: String) async throws {
+        if session.agent == .antigravity {
+            guard !session.sessionID.isEmpty else {
+                throw NookError(tr("agents.nook.noConversation"))
+            }
+            try await AntigravityClient.sendMessage(conversationID: session.sessionID, message: message)
+            return
+        }
+        try await continueInNook(session, message: message)
     }
 
     /// Continues a session that runs in a terminal (or ran there) in Nook.

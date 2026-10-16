@@ -143,7 +143,7 @@ struct AgentSessionDetail: View {
                 ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
-                liveComposer(session)
+                liveComposer(shown)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -215,12 +215,12 @@ struct AgentSessionDetail: View {
     /// is, a busy Claude Code session as a copy, and one that waits on you, or still runs in a terminal, is taken over.
     @ViewBuilder
     private func liveComposer(_ session: AgentSession) -> some View {
-        let canSend = app.canTakeOver(session)
+        let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canSend else { return }
             perform {
-                try await app.continueInNook(session, message: text)
+                try await app.reply(to: session, message: text)
                 draft = ""
             }
         }
@@ -424,12 +424,12 @@ struct AgentSessionDetail: View {
     // MARK: Earlier session
 
     private func pastDetail(_ session: PastSession) -> some View {
-        let canContinue = app.canContinueInNook(session)
+        let canContinue = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canContinue else { return }
             perform {
-                try await app.continueInNook(session, message: text)
+                try await app.reply(to: session, message: text)
                 draft = ""
             }
         }
