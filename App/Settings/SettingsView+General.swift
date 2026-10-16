@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: language, checklist summary, notch, shortcuts.
+/// Settings › Overview: what still needs doing, and the shortcuts.
 extension SettingsView {
     // MARK: Overview
 
@@ -35,13 +35,6 @@ extension SettingsView {
 
     var overviewSection: some View {
         Group {
-            Section(tr("settings.overview.languageSection")) {
-                Picker(tr("settings.overview.appLanguage"), selection: $settings.appLanguage) {
-                    ForEach(AppLanguage.allCases) { lang in
-                        Text(lang.displayName).tag(lang)
-                    }
-                }
-            }
             Section {
                 StatusRow(title: tr("settings.overview.readyToUse"),
                           detail: tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count),
@@ -50,6 +43,21 @@ extension SettingsView {
                         Button(tr("settings.setup.open")) { app.startOnboarding() }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
+                    }
+                }
+            }
+            Section(tr("settings.overview.steps")) {
+                ForEach(checklist) { step in
+                    StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
+                        Button(step.button) {
+                            if let request = step.request {
+                                app.requestPermission { await request(); refreshTick += 1 }
+                            } else {
+                                app.settingsSection = step.section
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
                     }
                 }
             }
@@ -64,37 +72,6 @@ extension SettingsView {
                 Text(tr("settings.overview.howToUse"))
             } footer: {
                 Text(tr("settings.overview.howToUseFooter"))
-            }
-            Section(tr("settings.notch.title")) {
-                Picker(tr("settings.notch.placement"), selection: $settings.placement) {
-                    Text(tr("settings.notch.placementNotch")).tag("notch")
-                    Text(tr("settings.notch.placementFloating")).tag("floating")
-                }
-                if settings.placement == "floating" {
-                    Text(tr("settings.notch.placementHint")).font(.caption).foregroundStyle(.secondary)
-                } else {
-                    SettingToggle(tr("settings.notch.allScreens"), detail: tr("settings.notch.allScreensDetail"), isOn: $settings.notchOnAllScreens)
-                }
-                Picker(tr("settings.notch.screen"), selection: $settings.screenChoice) {
-                    Text(tr("settings.notch.auto")).tag("auto")
-                    Text(tr("settings.notch.main")).tag("main")
-                    Text(tr("settings.notch.mouse")).tag("mouse")
-                    ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
-                        Text(name).tag(name)
-                    }
-                    // A previously chosen screen that is not connected right now stays selectable.
-                    if !["auto", "main", "mouse"].contains(settings.screenChoice),
-                       !NSScreen.screens.map(\.localizedName).contains(settings.screenChoice) {
-                        Text(settings.screenChoice).tag(settings.screenChoice)
-                    }
-                }
-                .disabled(settings.placement == "notch" && settings.notchOnAllScreens)
-                Toggle(tr("settings.notch.hideWhenIdle"), isOn: $settings.hideWhenIdle)
-                Toggle(tr("settings.notch.openOnHover"), isOn: Binding(
-                    get: { app.viewModel.openOnHover },
-                    set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
-                ))
-                Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
             }
         }
     }

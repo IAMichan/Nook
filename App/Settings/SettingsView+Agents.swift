@@ -1,27 +1,50 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Agents: linking agents, workspace defaults.
+/// The tabs of Settings › Agents.
+enum AgentSettingsTab: String, CaseIterable, Identifiable {
+    case link, accounts, usage, workspace
+
+    var id: String { rawValue }
+    var title: String { tr("settings.agents.tab.\(rawValue)") }
+}
+
+/// Settings › Agents: linking agents, accounts, usage, workspace defaults.
 extension SettingsView {
     // MARK: Agents
 
     var agentsSection: some View {
         Group {
             Section {
-                ForEach(AgentConfigInstaller.Target.allCases) { target in
-                    agentRow(target)
+                Picker("", selection: $agentTab) {
+                    ForEach(AgentSettingsTab.allCases) { Text($0.title).tag($0) }
                 }
-            } header: {
-                Text(tr("settings.agents.linkAgents"))
-            } footer: {
-                Text(tr("settings.agents.linkAgentsFooter"))
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            // Accounts per agent (personal, work…): next to linking the agents themselves.
-            AccountsSettingsSection()
-            Section {} footer: {
-                Text(tr("accounts.isolationNote"))
+            .listRowBackground(Color.clear)
+            switch agentTab {
+            case .link:
+                Section {
+                    ForEach(AgentConfigInstaller.Target.allCases) { target in
+                        agentRow(target)
+                    }
+                } header: {
+                    Text(tr("settings.agents.linkAgents"))
+                } footer: {
+                    Text(tr("settings.agents.linkAgentsFooter"))
+                }
+            case .accounts:
+                // Accounts per agent (personal, work…).
+                AccountsSettingsSection()
+                Section {} footer: {
+                    Text(tr("accounts.isolationNote"))
+                }
+            case .usage:
+                usageSection
+            case .workspace:
+                WorkspaceSettingsSection()
             }
-            WorkspaceSettingsSection()
         }
     }
 }

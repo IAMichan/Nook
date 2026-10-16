@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Assistant: screen reading, thinking along, small things.
+/// Settings › Assistant: screen reading, thinking along, voice and sound.
 extension SettingsView {
     // MARK: Assistant
 
@@ -15,7 +15,8 @@ extension SettingsView {
                         .foregroundStyle(.secondary)
                 }
                 if !CGPreflightScreenCaptureAccess() {
-                    Button(tr("settings.assistant.grantScreenPermission")) { CGRequestScreenCaptureAccess(); refreshTick += 1 }
+                    Button(tr("settings.assistant.managePermissions")) { app.settingsSection = .privacy }
+                        .buttonStyle(.link)
                 }
             }
             Section(tr("settings.assistant.thinkAlong")) {
@@ -34,6 +35,7 @@ extension SettingsView {
                 }
                 SettingToggle(tr("settings.assistant.autoRunSafe"), detail: tr("settings.assistant.autoRunSafeDetail"), isOn: $settings.autoRunSafe)
             }
+            voiceSection
         }
     }
 }
