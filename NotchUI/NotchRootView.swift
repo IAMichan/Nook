@@ -58,8 +58,7 @@ struct NotchRootView: View {
         if viewModel.isBareOrb { return "bare" }
         switch viewModel.state {
         case .idle: return "idle"
-        case .music: return "music"
-        case .track(let title, let artist): return "track-\(title)-\(artist)"
+        case .music, .track: return "music"
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
         case .nudge(_, let card): return "nudge-\(card.id)"
@@ -162,12 +161,7 @@ struct NotchRootView: View {
             .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
             .floatingDrag(viewModel)
         case .track(let title, let artist):
-            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                trackLabel(title: title, artist: artist)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
-            .floatingDrag(viewModel)
+            trackStrip(title: title, artist: artist, nh: nh, nw: nw)
         case .done(let message):
             doneStrip(message: message, nh: nh)
         case .nudge(let line, _):
@@ -228,14 +222,49 @@ struct NotchRootView: View {
         .frame(height: nh)
     }
 
-    /// Right of the notch: which track just started.
-    private func trackLabel(title: String, artist: String) -> some View {
-        TrackAnnouncement(
-            title: title,
-            artist: artist,
-            artworkURL: app.nowPlaying.current?.artworkURL,
-            isPlaying: app.nowPlaying.current?.isPlaying ?? true
-        )
+    /// The "new track" strip: Nook and artwork on the left end, title and equalizer on the right end.
+    private func trackStrip(title: String, artist: String, nh: CGFloat, nw: CGFloat) -> some View {
+        let wing = (viewModel.size.width - nw) / 2
+        let isPlaying = app.nowPlaying.current?.isPlaying ?? true
+        return HStack(spacing: 0) {
+            // Left wing: Nook pinned to the far left, album cover beside it
+            HStack(spacing: 8) {
+                NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true)
+                TrackCover(artworkURL: app.nowPlaying.current?.artworkURL)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 14)
+            .frame(width: wing, height: nh)
+
+            Spacer(minLength: 0)
+
+            // Right wing: track title & artist, equalizer bars pinned to the far right
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 0.5) {
+                    Text(title)
+                        .font(NookTheme.font(11.5, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    if !artist.isEmpty {
+                        Text(artist)
+                            .font(NookTheme.font(10))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .truncationMode(.tail)
+                Spacer(minLength: 6)
+                EqualizerBars(color: NookTheme.music, height: 13, isPlaying: isPlaying)
+            }
+            .padding(.trailing, 14)
+            .frame(width: wing, height: nh)
+        }
+        .frame(height: nh)
+        .contentShape(Rectangle())
+        .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
+        .floatingDrag(viewModel)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
     }
 
     // MARK: Recent action
@@ -377,55 +406,33 @@ private extension View {
     }
 }
 
-/// The "new track" strip: the bar grows wider and the song sits in it. Only a quiet fade, no big movements.
-private struct TrackAnnouncement: View {
-    let title: String
-    let artist: String
+/// Album artwork or playback placeholder in the new-track strip.
+private struct TrackCover: View {
     let artworkURL: URL?
-    let isPlaying: Bool
-    @State private var shown = false
 
     var body: some View {
-        HStack(spacing: 9) {
-            cover
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(NookTheme.font(11.5, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                if !artist.isEmpty {
-                    Text(artist)
-                        .font(NookTheme.font(10))
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            .lineLimit(1)
-            .truncationMode(.tail)
-            Spacer(minLength: 0)
-            EqualizerBars(color: NookTheme.music, height: 12, isPlaying: isPlaying)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 14)
-        .opacity(shown ? 1 : 0)
-        .animation(.easeOut(duration: 0.3).delay(0.12), value: shown)
-        .onAppear { shown = true }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
-    }
-
-    private var cover: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5).fill(NookTheme.music)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Color.clear
+                    Image(systemName: "music.note")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(NookTheme.music.opacity(0.6))
                 }
             } else {
-                Image(systemName: "music.note").font(.system(size: 10, weight: .bold)).foregroundStyle(NookTheme.ink)
+                Image(systemName: "music.note")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(NookTheme.music)
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
     }
 }
