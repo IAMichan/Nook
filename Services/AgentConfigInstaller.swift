@@ -171,7 +171,10 @@ enum AgentConfigInstaller {
             return command.contains(marker) ? .installed : .notInstalled
         case .antigravity:
             guard let block = root[antigravityGroup] else { return .notInstalled }
-            return containsMarker(block) ? .installed : .notInstalled
+            guard containsMarker(block) else { return .notInstalled }
+            // Older versions used a quoted path with a space and a PreToolUse hook: reconnect to repair.
+            let legacy = (block as? [String: Any])?["PreToolUse"] != nil || "\(block)".contains("Application Support")
+            return legacy ? .outdated : .installed
         case .claudeHooks, .codex, .gemini, .cursor, .copilot, .muse:
             let hooks = (root["hooks"] as? [String: Any]) ?? [:]
             let ours = hooks.filter { _, value in containsMarker(value) }
@@ -274,12 +277,12 @@ enum AgentConfigInstaller {
             }
             root.removeValue(forKey: antigravityGroup)
             if install {
+                // No PreToolUse: agy runs it before every tool and blocks on a failing hook, and Nook only shows progress.
+                // The command path has no spaces: agy may not understand quoted paths.
                 var block: [String: Any] = [:]
-                for event in ["PreToolUse", "PostToolUse"] {
-                    block[event] = [group(HookScript.command("--agent antigravity \(event)"), matcher: "*", timeout: 10)]
-                }
+                block["PostToolUse"] = [group(HookScript.spaceFreeCommand("--agent antigravity PostToolUse"), matcher: "*", timeout: 10)]
                 for event in ["PreInvocation", "PostInvocation", "Stop"] {
-                    block[event] = [handler(HookScript.command("--agent antigravity \(event)"), timeout: 10)]
+                    block[event] = [handler(HookScript.spaceFreeCommand("--agent antigravity \(event)"), timeout: 10)]
                 }
                 root[antigravityGroup] = block
             }
