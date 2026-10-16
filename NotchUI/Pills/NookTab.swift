@@ -320,14 +320,15 @@ private struct TypingIndicator: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            TimelineView(.animation) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 HStack(spacing: 4) {
                     ForEach(0..<3, id: \.self) { i in
+                        let wave = (1.0 + sin(t * 3.2 + Double(i) * 0.7)) / 2.0
                         Circle()
                             .fill(NookTheme.iris)
                             .frame(width: 6, height: 6)
-                            .opacity(0.35 + 0.65 * abs(sin(t * 3 + Double(i) * 0.6)))
+                            .opacity(0.35 + 0.65 * wave)
                     }
                 }
             }

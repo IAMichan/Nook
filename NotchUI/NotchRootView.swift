@@ -156,7 +156,7 @@ struct NotchRootView: View {
             }
         case .music:
             wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                EqualizerBars(color: NookTheme.music, height: 14)
+                EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true)
             }
             .contentShape(Rectangle())
             .onTapGesture { viewModel.openPanel() }
