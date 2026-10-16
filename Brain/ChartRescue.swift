@@ -63,7 +63,16 @@ enum ChartRescue {
     /// Converts a Markdown table with numeric data into a bar chart (or line chart for time series).
     static func chartFromTable(_ text: String, title: String) -> ChatChart? {
         for block in MarkdownBlock.parse(text) {
-            guard case .table(let header, let rows) = block, rows.count >= 2, header.count >= 2 else { continue }
+            guard case .table(let header, let rows) = block, let chart = chart(fromTable: header, rows: rows, title: title) else { continue }
+            return chart
+        }
+        return nil
+    }
+
+    /// A table whose first column labels the rows and whose other columns are numbers becomes a chart.
+    static func chart(fromTable header: [String], rows: [[String]], title: String) -> ChatChart? {
+        do {
+            guard rows.count >= 2, header.count >= 2 else { return nil }
             let labels = rows.map { $0.first ?? "" }
             var series: [ChatChart.Series] = []
             for column in 1..<header.count {
@@ -72,16 +81,15 @@ enum ChartRescue {
                 let points = zip(labels, values).map { ChatChart.Point(label: $0, value: $1 ?? 0) }
                 series.append(ChatChart.Series(name: header[column], points: points))
             }
-            guard !series.isEmpty else { continue }
+            guard !series.isEmpty else { return nil }
             let kind: ChatChart.Kind = looksLikeTime(labels) && labels.count > 5 ? .line : .bar
             return ChatChart(title: title, kind: kind, unit: unit(in: rows), series: Array(series.prefix(4)))
         }
-        return nil
     }
 
     // MARK: From code
 
-    private static func chart(fromCode body: String, language: String, title: String) -> ChatChart? {
+    static func chart(fromCode body: String, language: String, title: String) -> ChatChart? {
         if language == "mermaid" || body.hasPrefix("pie") || body.hasPrefix("xychart") {
             return mermaid(body, title: title)
         }

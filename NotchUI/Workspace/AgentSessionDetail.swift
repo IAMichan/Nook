@@ -135,7 +135,9 @@ struct AgentSessionDetail: View {
             if app.demoMode {
                 Spacer(minLength: 0)
             } else {
-                AgentConversation(session: shown)
+                AgentConversation(session: shown, onReply: app.canTakeOver(session) ? { answer in
+                    perform { try await app.continueInNook(session, message: answer) }
+                } : nil)
             }
 
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
@@ -439,10 +441,10 @@ struct AgentSessionDetail: View {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 14) {
                     if !session.lastPrompt.isEmpty {
-                        ChatBubble(fromUser: true, text: session.lastPrompt)
+                        ConversationMessage(fromUser: true, text: session.lastPrompt)
                     }
                     if !session.lastReply.isEmpty {
-                        ChatBubble(fromUser: false, text: session.lastReply)
+                        ConversationMessage(fromUser: false, text: session.lastReply, author: session.agent.name, accent: session.agent.color)
                     }
                     if session.lastPrompt.isEmpty && session.lastReply.isEmpty {
                         Text(tr("agents.noMessagesInTranscript"))
