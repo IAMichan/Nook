@@ -165,9 +165,9 @@ struct NookChatView: View {
         SessionComposer(
             text: $question,
             prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
-            focus: $inputFocused,
             busy: chat.busy,
             onStop: { app.stopChat() },
+            focus: $inputFocused,
             onSend: send
         ) {
             // Brain, allowed sources for this Nook, context payload, and optional file attachment.
