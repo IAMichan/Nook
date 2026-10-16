@@ -135,7 +135,9 @@ struct AgentSessionDetail: View {
             if app.demoMode {
                 Spacer(minLength: 0)
             } else {
-                AgentConversation(session: shown)
+                AgentConversation(session: shown, onReply: app.canTakeOver(session) ? { answer in
+                    perform { try await app.continueInNook(session, message: answer) }
+                } : nil)
             }
 
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {

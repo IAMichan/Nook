@@ -11,6 +11,8 @@ struct ConversationMessage: View {
     var author: String? = nil
     var accent: Color = NookTheme.iris
     var size: CGFloat = 13.5
+    /// Answers a question at the end of the reply when one of its options is tapped; nil when it cannot be answered.
+    var onChoose: ((String) -> Void)? = nil
 
     @State private var hovering = false
     @State private var copied = false
@@ -46,7 +48,7 @@ struct ConversationMessage: View {
                     copyButton
                 }
             }
-            MarkdownView(text: text, size: size)
+            MarkdownView(text: text, size: size, onChoose: onChoose)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onHover { hovering = $0 }

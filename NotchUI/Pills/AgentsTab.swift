@@ -707,6 +707,8 @@ struct Message: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
+    /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
+    var onReply: ((String) -> Void)? = nil
     @State private var messages: [AgentChatMessage] = []
 
     private var agentColor: Color { AgentKind(agentName: session.name)?.color ?? NookTheme.iris }
@@ -763,7 +765,9 @@ struct AgentConversation: View {
     }
 
     private func bubble(_ message: AgentChatMessage) -> some View {
-        ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor)
+        let open = !message.fromUser && message.id == shown.last?.id && session.status != .running
+        return ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor,
+                                   onChoose: open ? onReply : nil)
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
