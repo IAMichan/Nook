@@ -4,7 +4,7 @@ import SwiftUI
 /// Which agent a past session or account belongs to. Nook also reads sessions from Claude Code and Codex;
 /// for Gemini CLI, it only reads which Google account you are logged in with.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, gemini
+    case claude, codex, gemini, antigravity
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
         case .gemini: return "Gemini CLI"
+        case .antigravity: return "Antigravity"
         }
     }
 
@@ -22,6 +23,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return "claude"
         case .codex: return "codex"
         case .gemini: return "gemini"
+        case .antigravity: return "agy"
         }
     }
 
@@ -31,6 +33,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .gemini: return "Gemini"
+        case .antigravity: return "Antigravity"
         }
     }
 
@@ -39,6 +42,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return Color(hex: 0xE08A5E)
         case .codex: return Color(hex: 0x6FCFB3)
         case .gemini: return Color(hex: 0x8AB4F8)
+        case .antigravity: return Color(hex: 0xEA4335)
         }
     }
 
@@ -48,6 +52,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return .claudeHooks
         case .codex: return .codex
         case .gemini: return .gemini
+        case .antigravity: return .antigravity
         }
     }
 
@@ -57,6 +62,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return [.claudeHooks, .claudeStatusLine]
         case .codex: return [.codex]
         case .gemini: return [.gemini]
+        case .antigravity: return [.antigravity]
         }
     }
 
@@ -69,6 +75,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
             return "if command -v npm >/dev/null 2>&1; then npm install -g @openai/codex; else brew install --cask codex; fi"
         case .gemini:
             return "if command -v npm >/dev/null 2>&1; then npm install -g @google/gemini-cli; else brew install gemini-cli; fi"
+        case .antigravity:
+            return "brew install --cask antigravity"
         }
     }
 
@@ -78,6 +86,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return "claude"
         case .codex: return "codex login"
         case .gemini: return "gemini"
+        case .antigravity: return "agy"
         }
     }
 
@@ -99,7 +108,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .claude: return HistoryScanner.claudeHome
         case .codex: return CodexUsage.codexHome
-        case .gemini: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true)
+        case .gemini, .antigravity: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true)
         }
     }
 
@@ -108,6 +117,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case "Claude Code", "Claude (app)": self = .claude
         case "Codex": self = .codex
         case "Gemini CLI": self = .gemini
+        case "Antigravity": self = .antigravity
         default: return nil
         }
     }
@@ -174,6 +184,7 @@ struct PastSession: Identifiable, Equatable {
         case .claude: return ["--resume", sessionID]
         case .codex: return ["resume", sessionID]
         case .gemini: return ["--resume", sessionID]
+        case .antigravity: return []
         }
     }
 }
@@ -370,6 +381,7 @@ private final class HistoryScanner: @unchecked Sendable {
             case .claude: found = claudeFiles(home.url, since: since)
             case .codex: found = codexFiles(home.url, since: since)
             case .gemini: found = geminiFiles(home.url, since: since)
+            case .antigravity: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -388,6 +400,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 case .claude: parsed = parseClaude(file.url)
                 case .codex: parsed = parseCodex(file.url)
                 case .gemini: parsed = parseGemini(file.url)
+                case .antigravity: parsed = Parsed(session: nil, entries: [])
                 }
             }
             parsed.session?.profileID = file.profile
@@ -407,7 +420,7 @@ private final class HistoryScanner: @unchecked Sendable {
             usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
         }
         let accounts = readAccounts(homes)
-        if homes.contains(where: { $0.kind == .gemini && fm.fileExists(atPath: $0.url.path) }) { installed.insert(.gemini) }
+        for kind in [AgentKind.gemini, .antigravity] where homes.contains(where: { $0.kind == kind && fm.fileExists(atPath: $0.url.path) }) { installed.insert(kind) }
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
@@ -430,6 +443,8 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let account = codexAccount(home.url) { accounts[home.id] = account }
             case .gemini:
                 if let account = geminiAccount(home.url) { accounts[home.id] = account }
+            case .antigravity:
+                if let account = antigravityAccount(home.url) { accounts[home.id] = account }
             }
         }
         return accounts
@@ -876,6 +891,17 @@ private final class HistoryScanner: @unchecked Sendable {
     // MARK: Gemini CLI
 
     /// ~/.gemini/google_accounts.json (active Google account) and settings.json (login method).
+    /// Antigravity signs in with a Google account and keeps its hook configuration next to Gemini CLI's files.
+    private func antigravityAccount(_ home: URL) -> AgentAccount? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: home.appendingPathComponent("antigravity").path)
+                || fm.fileExists(atPath: home.appendingPathComponent("config/hooks.json").path) else { return nil }
+        if let google = geminiAccount(home) {
+            return AgentAccount(agent: .antigravity, name: google.name, organization: "", plan: google.plan)
+        }
+        return AgentAccount(agent: .antigravity, name: "Google-account", organization: "", plan: "")
+    }
+
     private func geminiAccount(_ home: URL) -> AgentAccount? {
         let settings = (try? Data(contentsOf: home.appendingPathComponent("settings.json")))
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]

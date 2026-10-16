@@ -125,6 +125,11 @@ final class CodexUsage: ObservableObject {
         return "Codex limit: " + parts.joined(separator: " · ")
     }
 
+    /// Reads every account right away, instead of waiting for the next minute tick: after adding, logging in or changing an account.
+    func refreshNow() {
+        refresh()
+    }
+
     private func refresh() {
         var wanted: [URL] = []
         var seen = Set<String>()

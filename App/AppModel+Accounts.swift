@@ -88,6 +88,7 @@ extension AppModel {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard let self, case .waitingForLogin? = self.agentConnect[profile.id] else { return }
                 self.history.refresh(minimumInterval: 0)
+                self.refreshQuotas()
                 if self.history.executables[profile.kind] != nil, self.history.profileAccounts[profile.id] != nil {
                     self.finishConnect(profile)
                     return
@@ -104,6 +105,8 @@ extension AppModel {
         let running = agentSessions.contains { self.profile(for: $0)?.id == profile.id }
         agentConnect[profile.id] = .done(running ? tr("app.connect.doneRestart") : tr("app.connect.done"))
         history.refresh(minimumInterval: 0)
+        // Show the account's limits straight away.
+        refreshQuotas()
     }
 
     // MARK: Accounts
@@ -112,6 +115,7 @@ extension AppModel {
     @discardableResult
     func addAccount(_ kind: AgentKind, label: String, home: URL? = nil) -> AgentProfile {
         let profile = profiles.add(kind: kind, label: label, home: home)
+        refreshQuotas()
         if history.profileAccounts[profile.id] == nil || !isFullyConnected(profile) { connect(profile) }
         return profile
     }

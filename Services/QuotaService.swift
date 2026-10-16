@@ -17,6 +17,7 @@ struct QuotaLimit: Identifiable, Equatable {
 struct QuotaService {
     let hub: AgentHub
     let codex: CodexUsage
+    let antigravity: AntigravityUsage
 
     /// The 5-hour and weekly windows of an account, as far as the agent has reported them.
     func limits(for profile: AgentProfile) -> [QuotaLimit] {
@@ -29,6 +30,8 @@ struct QuotaService {
             ].compactMap { $0 }
         case .gemini:
             return []
+        case .antigravity:
+            return antigravity.limits
         case .codex:
             guard let snapshot = codex.snapshot(home: profile.home.map { _ in profile.homeURL }) else { return [] }
             return [

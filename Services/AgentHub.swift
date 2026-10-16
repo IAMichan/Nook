@@ -37,6 +37,11 @@ final class AgentHub: ObservableObject {
         return profilePlanUsage[AgentProfile.normalize(home)]
     }
 
+    /// Limits fetched from Anthropic directly. Empty home is the default account.
+    func applyFetchedUsage(_ usage: PlanUsage, home: String) {
+        if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
+    }
+
     /// Account directory from hook environment; empty if standard directory.
     private static func accountHome(_ env: [String: Any], agentID: String) -> String {
         let kind: AgentKind = agentID == "codex" ? .codex : .claude

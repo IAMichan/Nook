@@ -12,7 +12,7 @@ extension SettingsView {
                 ForEach(app.profiles.all.filter { $0.kind != .gemini }) { profile in
                     LabeledContent("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))") {
                         Text(app.quota.summary(for: profile)
-                             ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : "settings.usage.codexMissing"))
+                             ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : (profile.kind == .antigravity ? "ws.usage.quotaUnavailable" : "settings.usage.codexMissing")))
                             .foregroundStyle(.secondary)
                     }
                 }
