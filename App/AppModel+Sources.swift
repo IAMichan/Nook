@@ -17,6 +17,21 @@ extension AppModel {
         chat.setScope(scope, conversation: id)
     }
 
+    /// The scope as it applies to the active brain: with an external brain the "only on this Mac" sources are taken
+    /// out, whatever the source picker or the question says. With a brain on this Mac nothing changes.
+    func privacyScope(_ scope: SourceScope) -> SourceScope {
+        scope.keepingLocal(settings.privateSources)
+    }
+
+    /// The "only on this Mac" sources the question asked for by name (or the scope puts first) that an external brain
+    /// therefore did not use, so the answer can say why they are missing.
+    func withheldSources(asked text: String, scope: SourceScope) -> Set<String> {
+        let hidden = settings.privateSources
+        guard !hidden.isEmpty else { return [] }
+        let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids })
+        return hidden.intersection(named.union(scope.focus).union(scope.mode == .only ? scope.included : []))
+    }
+
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
     func openReference(_ reference: SourceReference) {
         guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
@@ -231,6 +246,9 @@ extension AppModel {
         text: String, scope: SourceScope, snapshotText: String?, ledger: RetrievalLedger, prefetch: Bool = true,
         history: [ChatTurn] = [], onSummary: ((_ summary: (text: String, titles: [String])) -> Void)? = nil
     ) async -> PreparedRun {
+        // Every route to the brain (chat, cards, thinking along) passes here: sources kept on this Mac stay out of reach
+        // of an external brain, even for a caller that passes the automatic scope.
+        let scope = privacyScope(scope)
         // Only sources relevant to this query are included in full; others as one-line summaries.
         var activeIDs = Set(connectors.searchable.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)

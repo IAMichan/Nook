@@ -107,7 +107,7 @@ extension AppModel {
             warmUp()
             showChat()
         }
-        let history = chat.history(before: question.id)
+        let history = chat.history(before: question.id, hiding: settings.privateSources)
         let replyID = reply.id
         chatTasks[conversation] = Task { [weak self] in
             await ReplyContext.$messageID.withValue(replyID) {
@@ -119,7 +119,10 @@ extension AppModel {
     func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
         // Scope permitted sources: conversation scope plus query-level constraints ("only my calendar and mail").
         let requested = SourceScope.parse(text)
-        let scope = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
+        let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
+        // An external brain never gets the sources kept on this Mac; a question about one of them says so plainly.
+        let scope = privacyScope(wanted)
+        let withheld = withheldSources(asked: text, scope: wanted)
 
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
@@ -293,6 +296,9 @@ extension AppModel {
                 return ""
             }
             if !ledger.failures.isEmpty { notices.append(tr("chat.notice.incomplete")) }
+            if !withheld.isEmpty {
+                notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
+            }
             let actions = plan.actions.map { action -> PlannedAction in
                 var copy = action
                 if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }

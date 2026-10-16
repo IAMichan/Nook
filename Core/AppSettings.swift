@@ -207,6 +207,11 @@ final class AppSettings: ObservableObject {
     @Published var screenWithEveryQuestion: Bool {
         didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
     }
+    /// Sources only a brain on this Mac may read ("only on this Mac"). An external brain never gets their context,
+    /// tools, earlier answers built from them or screen text.
+    @Published var localOnlySources: Set<String> {
+        didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
+    }
     /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
@@ -227,6 +232,10 @@ final class AppSettings: ObservableObject {
 
     /// Whether the brain runs on this Mac (built-in model, Ollama or LM Studio): no data leaves the Mac, no cost per token.
     var isLocalBrain: Bool { selection.isLocal }
+
+    /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
+    /// when the brain runs on this Mac.
+    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources }
 
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
@@ -336,6 +345,7 @@ final class AppSettings: ObservableObject {
         webSearch = defaults.object(forKey: "webSearch") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
+        localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key

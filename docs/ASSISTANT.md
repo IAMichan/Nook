@@ -80,6 +80,16 @@ De kaarten in de notch (scherm bekijken ⌥⌘N, Meedenken) lopen via dezelfde `
 
 `BrainSelection` is de ene waarde die zegt waar Nook denkt: ingebouwd (MLX), Ollama, LM Studio of extern. Nieuwe installaties zijn lokaal; wie al een externe AI had gekozen, houdt die. Het modelprofiel (`ModelProfile`) bepaalt contextgrootte, aantal tools en rondes, voor alle runtimes gelijk. Nook schakelt nooit zelf naar een andere aanbieder: is het gekozen model niet beschikbaar, dan zie je een duidelijke fout met wat je kunt doen.
 
+### Alleen op deze Mac
+
+`AppSettings.localOnlySources` bevat de bronnen die een externe AI nooit mag zien (Instellingen › Brein). Zolang het brein extern is (`AppSettings.privateSources`), gaan ze uit de bronkeuze via `SourceScope.keepingLocal`: dat gebeurt in `AppModel.privacyScope`, aan het begin van `prepareRun` (dus ook voor kaarten en Meedenken) en in `answer`. Daardoor verdwijnen hun context, tools en zoekopdrachten, en kan een vraag ("zoek in mijn WhatsApp") ze niet terugbrengen. Daarnaast:
+
+* eerdere antwoorden die met zo'n bron gemaakt zijn (opgezocht, geciteerd, of in de context) en de vraag erbij gaan niet mee in de gespreksgeschiedenis (`NookChat.withoutPrivate`);
+* staat het scherm op alleen-lokaal, dan kijken ⌥⌘N en Meedenken niet mee;
+* noemt de vraag zo'n bron bij naam, dan staat onder het antwoord dat hij niet is gebruikt (`chat.notice.private`).
+
+Met een brein op je Mac (ingebouwd, Ollama, LM Studio) verandert er niets.
+
 ### Accounts
 
 Een dienst kan meerdere accounts hebben (`AccountRegistry`, bijvoorbeeld "GitHub · Werk"). Tools van zo'n dienst hebben een optioneel veld `account`. Lezen zonder account doorzoekt alle toegestane accounts en labelt de uitkomst; een actie vraagt een account zodra er meer dan één mogelijk is. De bronkiezer bepaalt per chat welke accounts mogen. Een mislukte koppeling toont **Opnieuw verbinden** (ongeldige gegevens) of **Opnieuw proberen** (netwerk), gebaseerd op `ConnectorErrorKind`.

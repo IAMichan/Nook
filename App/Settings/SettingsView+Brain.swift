@@ -92,6 +92,8 @@ extension SettingsView {
                 }
             }
 
+            privateSourcesSection
+
             Section {
                 Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }

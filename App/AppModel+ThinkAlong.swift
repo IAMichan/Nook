@@ -13,6 +13,11 @@ extension AppModel {
             if manual { presentSetupCard() }
             return
         }
+        // The screen is kept on this Mac: an external brain does not get its text.
+        guard !settings.privateSources.contains(SourceCatalog.screen) else {
+            if manual { viewModel.show(.card(errorCard(tr("app.look.private")))) }
+            return
+        }
         if manual {
             viewModel.show(.card(thinkingCard(context: tr("app.look.context"), title: tr("app.look.title"))))
         }
@@ -43,6 +48,7 @@ extension AppModel {
     /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     func thinkAlongTick() {
         guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode,
+              !settings.privateSources.contains(SourceCatalog.screen),
               CGPreflightScreenCaptureAccess(), viewModel.state.isResting else { return }
         let frontApp = NSWorkspace.shared.frontmostApplication
         let bundle = frontApp?.bundleIdentifier ?? ""
