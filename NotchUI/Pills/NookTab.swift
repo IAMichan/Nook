@@ -160,38 +160,30 @@ struct NookChatView: View {
 
     // MARK: Input
 
+    /// The same composer as the agents: the text on top, quiet choices underneath, a round send button on the right.
     private var inputBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Allowed sources for this Nook, context payload, and optional file attachment.
-            HStack(spacing: 8) {
-                BrainChip()
-                ScopeMenu(chat: chat)
-                if let name = app.attachmentName {
-                    AttachmentChip(name: name) { app.clearAttachment() }
-                }
-                Spacer(minLength: 0)
-                if !chat.busy, let last = chat.messages.last, last.role == .nook, last.isError || !last.notices.isEmpty {
-                    SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
-                }
-                NookIconButton(systemName: "paperclip", label: tr("chat.attach"), size: 26) { app.attachFile() }
-                    .help(tr("chat.attach"))
-                ContextInspector(chat: chat)
-            }
-            .padding(.horizontal, 4)
-            inputField
-        }
-    }
-
-    private var inputField: some View {
-        NookInputBar(
+        SessionComposer(
             text: $question,
             prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
             focus: $inputFocused,
             busy: chat.busy,
-            onMic: { viewModel.startListening() },
             onStop: { app.stopChat() },
             onSend: send
-        )
+        ) {
+            // Brain, allowed sources for this Nook, context payload, and optional file attachment.
+            BrainChip()
+            ScopeMenu(chat: chat)
+            if let name = app.attachmentName {
+                AttachmentChip(name: name) { app.clearAttachment() }
+            }
+            if !chat.busy, let last = chat.messages.last, last.role == .nook, last.isError || !last.notices.isEmpty {
+                SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
+            }
+            NookIconButton(systemName: "paperclip", label: tr("chat.attach"), size: 26) { app.attachFile() }
+                .help(tr("chat.attach"))
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 26) { viewModel.startListening() }
+            ContextInspector(chat: chat)
+        }
     }
 
     private func send() {
@@ -228,20 +220,7 @@ private struct ChatMessageView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(hex: 0x272731), Color(hex: 0x1E1E26)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(NookTheme.line2.opacity(0.8), lineWidth: 1)
-                )
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
         }
     }
 
@@ -299,18 +278,13 @@ private struct ChatMessageView: View {
                 HStack(spacing: 6) {
                     ForEach(message.offers, id: \.self) { offer in
                         Button { app.handleUserText(offer) } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(NookTheme.iris)
-                                Text(offer)
-                                    .font(NookTheme.font(12, .medium))
-                                    .foregroundStyle(NookTheme.paper)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(NookTheme.smoke))
+                            Text(offer)
+                                .font(NookTheme.font(12, .medium))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 5)
+                                .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Nook: \(offer)")
@@ -375,7 +349,6 @@ private struct TypingIndicator: View {
 private struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
-    @State private var query = ""
     @State private var showArchived = false
     @State private var renaming: UUID?
     @State private var nameDraft = ""
@@ -384,22 +357,11 @@ private struct NookList: View {
         VStack(alignment: .leading, spacing: 6) {
             NewNookButton { app.newChat() }
 
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10.5)).foregroundStyle(NookTheme.textTertiary)
-                TextField("", text: $query, prompt: Text(tr("nooks.search")).foregroundStyle(NookTheme.textTertiary))
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.paper)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
-
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
-                    let items = chat.list(query: query, showArchived: showArchived)
+                    let items = chat.list(query: "", showArchived: showArchived)
                     if items.isEmpty {
-                        Text(tr(query.isEmpty ? "nooks.none" : "nooks.noMatches"))
+                        Text(tr("nooks.none"))
                             .font(NookTheme.font(11.5))
                             .foregroundStyle(NookTheme.textTertiary)
                             .padding(.horizontal, 8)
