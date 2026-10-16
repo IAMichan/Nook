@@ -111,6 +111,30 @@ extension AppModel {
         "notion": "Notion", "things": "Things"
     ]
 
+    /// Whether the brain reads the question before the research: not for a greeting, nor for a plain command
+    /// ("zet de muziek zachter") that looks nothing up.
+    static func shouldPlan(_ text: String, intent: ChatIntent) -> Bool {
+        guard !intent.isSmallTalk else { return false }
+        if intent.wantsAction, !Research.isLookup(text) { return false }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 6
+    }
+
+    /// The sources the planner may choose from: every source this chat allows, with what Nook can do in it. A source
+    /// Nook cannot read right now is listed too, so a question about it is not sent elsewhere.
+    func plannerSources(available: [Prefetch.Available], scope: SourceScope, active: Set<String>) -> [QueryPlanner.Source] {
+        var ids = Set(available.map(\.source))
+        ids.formUnion(connectors.sources.map(\.id))
+        let order = SourceCatalog.all.map(\.id)
+        return ids.filter { scope.allows($0) && !Prefetch.inContext.contains($0) }
+            .sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }
+            .map { id in
+                let tools = available.filter { $0.source == id }
+                let title = SourceCatalog.title(id) + (active.contains(id) ? "" : " (cannot be read right now)")
+                return QueryPlanner.Source(id: id, title: title, canSearch: tools.contains(where: Research.isSearch),
+                                           canList: tools.contains { $0.required.isEmpty })
+            }
+    }
+
     /// Apps whose data Nook reads directly through a source of their own.
     static let appSources: [String: String] = ["WhatsApp": "whatsapp", "Notes": "notes", "Things": "things", "Notion": "notion"]
 
@@ -223,6 +247,7 @@ extension AppModel {
         var opened: [String] = []
         var searched = ""
         var blocked: [String] = []
+        var goal = ""
         let intent = ChatIntent.detect(text)
         if prefetch, !intent.isSmallTalk {
             let profile = settings.brainProfile
@@ -232,11 +257,20 @@ extension AppModel {
                 return Prefetch.Available(name: spec.name, source: source, required: (spec.schema["required"] as? [String]) ?? [],
                                           query: Prefetch.Available.queryField(spec.schema))
             }
-            let terms = Research.terms(in: text, history: history)
+            // First the brain reads the question itself: what the user wants, where that lives and what to search for.
+            // Keyword lists alone take "heb ik chats openstaan in WhatsApp?" for a search for "chats whatsapp" in files.
+            var plan: QueryPlan?
+            if Self.shouldPlan(text, intent: intent) {
+                plan = await brain.plan(question: text, history: history, sources: plannerSources(available: available, scope: scope, active: activeIDs))
+            }
+            goal = plan?.goal ?? ""
+            let regexTerms = Research.terms(in: text, history: history)
+            let terms: Research.Terms
+            if let plan, !plan.queries.isEmpty { terms = plan.terms } else if plan?.kind == .listing { terms = Research.Terms() } else { terms = regexTerms }
             let previous = history.last(where: \.fromUser).map { SourceRouter.relevant(to: $0.text, scope: scope, active: activeIDs) } ?? []
-            // The sources the question names itself ("in WhatsApp"): the user said where to look, so Nook never searches
-            // everywhere else instead, and says so plainly when it cannot read that source right now.
-            let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids }).filter { scope.allows($0) }
+            // The sources the question names itself ("in WhatsApp"), or the plan picked: the user said where to look, so
+            // Nook never searches everywhere else instead, and says so plainly when it cannot read that source right now.
+            let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids } + (plan?.sources ?? [])).filter { scope.allows($0) }
             let unreachable = connectors.sources.filter { named.contains($0.id) && !activeIDs.contains($0.id) }
             for source in unreachable {
                 let reason = Self.unreachableReason(source)
@@ -246,9 +280,19 @@ extension AppModel {
                 if case .error = source.status.state { failed = true }
                 if failed { ledger.noteUnavailable(source: source.id, tool: source.tools.first?.name ?? source.id, reason: reason) }
             }
-            let sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
+            let sources: Set<String>
+            var calls: [Prefetch.Call]
+            if let plan, !plan.sources.isEmpty || plan.kind == .general || plan.kind == .chat {
+                // The plan says where to look and with which words (several searches, synonyms included).
+                var usable = plan
+                usable.sources = plan.sources.filter { activeIDs.contains($0) && scope.allows($0) }
+                sources = Set(usable.sources).union(Prefetch.inContext.intersection(relevant))
+                calls = QueryPlanner.lookups(usable, question: text, available: available, limit: roomy ? 12 : 9)
+            } else {
+                sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
                                            named: named, available: available, active: activeIDs.filter { scope.allows($0) })
-            var calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
+                calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
+            }
             // An app the question names is read from its window, unless Nook already reads its data directly (a closed
             // app would otherwise be launched for nothing). Without that access, its window is the next best thing.
             if scope.allows(SourceCatalog.screen), let app = Self.appNamed(in: text),
@@ -294,12 +338,15 @@ extension AppModel {
         // the documents that answer the question.
         let overview = summary.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         var context = overview.first.map(String.init) ?? ""
+        if !goal.isEmpty {
+            context += "\n\nWhat the user wants (Nook's reading of the question): " + goal
+        }
         if !blocked.isEmpty {
             context += "\n\nThe user asks about a source Nook cannot read right now: " + blocked.joined(separator: "; ")
                 + ". Say this plainly at the start of the answer, with how to fix it. Never guess what is in that source and never answer yes or no about it from other sources. Only if its app window was read (read_app) below, answer from that and say so."
         }
         if !found.isEmpty || !opened.isEmpty || !searched.isEmpty {
-            context += "\n\nLooked up for this question (answer from this first):\n" + searched
+            context += "\n\nLooked up for this question (use what is really about the question; ignore the rest):\n" + searched
             if !opened.isEmpty {
                 context += "\n\nRead in full (the best matches):\n" + opened.joined(separator: "\n\n")
             }

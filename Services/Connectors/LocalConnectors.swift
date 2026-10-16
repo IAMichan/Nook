@@ -1027,6 +1027,11 @@ final class FilesConnector: ContextSource {
                         }
                         hits = counts.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.first < $1.first }.prefix(15).map(\.url)
                     }
+                    // Documents first, code after them, build output never: a word in a bundled script is no answer.
+                    let codeQuery = query.range(of: #"\b(code|func\w*|class|script|swift|python|javascript|typescript|api|bug|repo)\b"#,
+                                                options: [.regularExpression, .caseInsensitive]) != nil
+                    let order = Research.rankFiles(hits.map(\.path), codeFirst: codeQuery)
+                    hits = order.compactMap { path in hits.first { $0.path == path } }
                     if hits.isEmpty { return "Nothing found for \"\(query)\"." }
                     let paths = hits.map { $0.path.replacingOccurrences(of: home, with: "~") }
                     let refs = hits.prefix(8).map {

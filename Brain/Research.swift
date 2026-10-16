@@ -580,6 +580,31 @@ enum Research {
         return "(The parts about \"\(terms.query(limit: 6))\":)\n" + parts.joined(separator: "\n") + sources
     }
 
+    // MARK: Files worth showing
+
+    /// Build output and installed packages are never what someone asks about ("dist/assets/index-BRcVVYD8.js").
+    static func isBuildOutput(_ path: String) -> Bool {
+        let parts = ["/node_modules/", "/dist/", "/build/", "/.build/", "/DerivedData/", "/Pods/", "/.git/", "/vendor/",
+                     "/.next/", "/.nuxt/", "/target/", "/coverage/", "/.cache/", "/__pycache__/", "/.venv/", "/venv/"]
+        return parts.contains { path.contains($0) } || path.hasSuffix(".map") || path.hasSuffix(".min.js")
+    }
+
+    /// Source code, which matches nearly every word but is rarely the answer to a question about the user's own life.
+    static func isSourceCode(_ path: String) -> Bool {
+        let ext = (path as NSString).pathExtension.lowercased()
+        return ["swift", "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "go", "rs", "java", "kt", "c", "cc", "cpp", "h", "hpp", "m", "mm",
+                "rb", "php", "cs", "css", "scss", "less", "vue", "svelte", "sh", "lock", "plist", "xcconfig", "pbxproj", "gradle"].contains(ext)
+    }
+
+    /// Search hits in the order worth showing: documents first, then source code; build output left out. Keeps the
+    /// order of Spotlight within each group. `codeFirst` when the question is about code.
+    static func rankFiles(_ paths: [String], codeFirst: Bool = false) -> [String] {
+        let kept = paths.filter { !isBuildOutput($0) }
+        let code = kept.filter(isSourceCode)
+        let documents = kept.filter { !isSourceCode($0) }
+        return codeFirst ? code + documents : documents + code
+    }
+
     // MARK: Parsing helpers
 
     private static func headed(_ output: String) -> [(heading: String, body: String)] {

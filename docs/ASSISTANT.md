@@ -35,6 +35,19 @@ NookChatView (invoer, bronkiezer, modelchip, bijlage)   — gedeeld door de notc
                         executed_actions)
 ```
 
+### Eerst de vraag begrijpen
+
+Woordenlijsten raden slecht wat een vraag betekent: "heb ik chats openstaan in WhatsApp?" is geen zoekopdracht naar de woorden "chats" en "whatsapp" in je bestanden en code, maar de vraag welke WhatsApp-chats ongelezen zijn of op je antwoord wachten. Daarom leest het gekozen brein de vraag eerst zelf, vóór Nook iets opzoekt (`QueryPlanner`, `Brain/QueryPlan.swift`, aangeroepen vanuit `prepareRun`). Het krijgt de vraag, de laatste beurten en de lijst met bronnen (met wat Nook in elke bron kan: zoeken, nieuwste/ongelezen/open items, of nu niet leesbaar) en geeft één klein plan terug:
+
+* **goal**: wat de gebruiker echt wil weten of gedaan wil hebben, in één zin. Dat gaat mee naar het antwoord ("What the user wants"), zodat het model die vraag beantwoordt en niet iets wat erop lijkt;
+* **kind**: iets specifieks opzoeken, een overzicht van wat nieuw of open is, een actie, algemene kennis, of een groet;
+* **sources**: waar het antwoord echt staat, de genoemde bron eerst; geen bronnen waar het woord toevallig in voorkomt;
+* **queries**: één tot drie korte zoekopdrachten met de woorden die letterlijk in het item staan, synoniemen inbegrepen. Nook probeert ze allemaal.
+
+Met Claude doet Haiku deze kleine stap (snel en goedkoop); het gekozen model antwoordt. Lokale modellen en andere aanbieders doen het zelf. Komt er binnen 8 s (lokaal 12 s) geen bruikbaar plan, dan valt Nook terug op zijn eigen woordonderzoek hieronder. Claude Code slaat de stap over (een hele sessie per vraag is te traag).
+
+Daarnaast denkt het antwoordende model volgens een vaste volgorde: wat wil de gebruiker precies, waar staat dat, gaat het bewijs in de context echt over de vraag (anders zelf verder zoeken), en dan pas antwoorden. Het zegt nooit ja of nee over je gegevens zonder bewijs. Bij het zoeken in bestanden komen documenten vóór broncode en blijft build-uitvoer (`dist/`, `node_modules/`, `.build/`…) weg.
+
 ### Zelf zoeken en lezen
 
 Een klein lokaal model zoekt slecht: het roept één tool aan met de hele vraag als zoekterm, leest alleen de titels van de acht nieuwste notities of het begin van een mail. Daarom doet Nook dat werk zelf, op de Mac, vóór het model antwoordt, voor elk brein en elke bron hetzelfde (`Research`, aangeroepen vanuit `prepareRun`):
