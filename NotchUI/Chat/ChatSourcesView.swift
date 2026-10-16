@@ -4,29 +4,33 @@ import AppKit
 // What Nook used for an answer: where it looked (and whether that succeeded), which sources the answer cites,
 // and what you need to know if something could not be read. Plus the source picker and summary of included context.
 
-/// The strip above an answer: which sources were allowed, what context was included, and where Nook looked, with outcomes.
-struct RetrievalStrip: View {
+/// One quiet line under an answer ("Used 3 sources"). Opens to show where Nook looked and what came out of it, with the
+/// numbered references the answer cites. It opens by itself when a source could not be read.
+struct SourcesDisclosure: View {
     let message: ChatMessage
-    @State private var showDetails = false
+    /// Retry the answer; only given for the latest answer.
+    var onRetry: (() -> Void)? = nil
+    @EnvironmentObject private var app: AppModel
+    @State private var expanded = false
 
-    private struct Chip: Identifiable {
+    private enum Status { case found, empty, failed(String), running, context }
+
+    private struct SourceGroup: Identifiable {
         let id: String
-        let label: String
-        let symbol: String
-        let color: Color
-        let help: String
+        let title: String
+        var status: Status
+        var queries: [String] = []
+        var references: [SourceReference] = []
     }
 
-    private var chips: [Chip] {
-        var result: [Chip] = []
-        if !message.scopeLabel.isEmpty {
-            result.append(Chip(id: "scope", label: message.scopeLabel, symbol: "line.3.horizontal.decrease", color: NookTheme.iris,
-                               help: tr("chat.sources.scopeHelp")))
+    private var groups: [SourceGroup] {
+        var result: [SourceGroup] = []
+        func index(_ title: String) -> Int {
+            if let i = result.firstIndex(where: { $0.title == title }) { return i }
+            result.append(SourceGroup(id: title, title: title, status: .context))
+            return result.count - 1
         }
-        for source in message.sources {
-            result.append(Chip(id: "ctx-" + source, label: source, symbol: "eye", color: NookTheme.textTertiary, help: tr("chat.sources.contextHelp")))
-        }
-        // One chip per source, even if Nook inspected it multiple times.
+        // One group per source, even if Nook inspected it more than once.
         var order: [String] = []
         var grouped: [String: [RetrievalStep]] = [:]
         for step in message.retrieval {
@@ -35,100 +39,150 @@ struct RetrievalStrip: View {
         }
         for title in order {
             let steps = grouped[title] ?? []
-            let refs = steps.reduce(0) { $0 + $1.references.count }
-            let queries = steps.map(\.query).filter { !$0.isEmpty }
-            let queryHelp = queries.isEmpty ? "" : " · " + queries.map { "\"\($0)\"" }.joined(separator: ", ")
+            let i = index(title)
+            result[i].queries = steps.map(\.query).filter { !$0.isEmpty }
             if steps.contains(where: { $0.outcome == .running }) {
-                result.append(Chip(id: title, label: title, symbol: "magnifyingglass", color: NookTheme.iris, help: tr("chat.sources.searching") + queryHelp))
-            } else if let failed = steps.compactMap({ step -> String? in if case .failed(let error) = step.outcome { return error }; return nil }).first,
-                      !steps.contains(where: { if case .found = $0.outcome { return true }; return false }) {
-                result.append(Chip(id: title, label: title, symbol: "xmark", color: NookTheme.coralSoft, help: failed))
+                result[i].status = .running
+            } else if !steps.contains(where: { if case .found = $0.outcome { return true }; return false }),
+                      let failed = steps.compactMap({ step -> String? in if case .failed(let error) = step.outcome { return error }; return nil }).first {
+                result[i].status = .failed(failed)
             } else if steps.allSatisfy({ $0.outcome == .empty }) {
-                result.append(Chip(id: title, label: title + " · " + tr("chat.sources.nothing"), symbol: "circle", color: NookTheme.textTertiary,
-                                   help: tr("chat.sources.emptyHelp") + queryHelp))
+                result[i].status = .empty
             } else {
-                let cached = steps.allSatisfy(\.cached)
-                result.append(Chip(id: title, label: refs > 0 ? "\(title) · \(refs)" : title, symbol: "checkmark", color: NookTheme.mint,
-                                   help: (cached ? tr("chat.sources.cached") : tr("chat.sources.searched")) + queryHelp))
+                result[i].status = .found
             }
         }
+        for reference in message.references {
+            let i = index(SourceCatalog.title(reference.sourceID))
+            result[i].references.append(reference)
+            if case .context = result[i].status { result[i].status = .found }
+        }
+        for source in message.sources + message.contextSources { _ = index(source) }
         return result
     }
 
+    private var failedCount: Int {
+        groups.filter { if case .failed = $0.status { return true }; return false }.count
+    }
+
     var body: some View {
-        let list = chips
-        if !list.isEmpty || !message.contextSources.isEmpty {
-            HStack(spacing: 5) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
-                        ForEach(list) { chip in
-                            HStack(spacing: 4) {
-                                Image(systemName: chip.symbol)
-                                    .font(.system(size: 8.5, weight: .bold))
-                                    .foregroundStyle(chip.color)
-                                Text(chip.label)
-                                    .font(NookTheme.font(10.5, .medium))
-                                    .foregroundStyle(NookTheme.textSecondary)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(NookTheme.graphite))
-                            .help(chip.help)
-                        }
+        let list = groups
+        if !list.isEmpty {
+            let used = list.filter { if case .found = $0.status { return true }; if case .context = $0.status { return true }; return false }.count
+            let failed = failedCount
+            let running = list.contains { if case .running = $0.status { return true }; return false }
+            VStack(alignment: .leading, spacing: 6) {
+                Button { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Text(summary(used: used, failed: failed, running: running))
+                            .font(NookTheme.font(12, .medium))
+                            .foregroundStyle(failed > 0 ? NookTheme.amber : NookTheme.textSecondary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
-                }
-                Button { showDetails.toggle() } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(tr("chat.sources.detailsHelp"))
-                .popover(isPresented: $showDetails, arrowEdge: .bottom) { details }
+                .help(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
+                .accessibilityLabel(summary(used: used, failed: failed, running: running))
+
+                if expanded {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(list) { group in groupView(group) }
+                    }
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
+                    .transition(.opacity)
+                }
             }
+            .onAppear { if failed > 0 { expanded = true } }
+            .onChange(of: failedCount) { _, count in if count > 0 { expanded = true } }
         }
     }
 
-    /// Exact breakdown of events: included context and each retrieval step with query and outcome.
-    private var details: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(tr("chat.sources.detailsTitle")).font(.headline)
-            if !message.scopeLabel.isEmpty {
-                Text(tr("chat.sources.scope", message.scopeLabel)).font(.callout)
-            }
-            if !message.contextSources.isEmpty || !message.sources.isEmpty {
-                Text(tr("chat.sources.sentAsContext", (message.sources + message.contextSources).joined(separator: ", ")))
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if message.retrieval.isEmpty {
-                Text(tr("chat.sources.noTools")).font(.callout).foregroundStyle(.secondary)
-            }
-            ForEach(message.retrieval) { step in
-                HStack(alignment: .top, spacing: 6) {
-                    Text(step.sourceTitle).font(.callout.weight(.semibold))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.tool + (step.query.isEmpty ? "" : " · \"\(step.query)\"")).font(.caption.monospaced())
-                        Text(outcomeText(step)).font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+    private func summary(used: Int, failed: Int, running: Bool) -> String {
+        if running && message.streaming { return tr("chat.sources.searchingShort") }
+        var text = used == 1 ? tr("chat.sources.usedOne") : tr("chat.sources.used", used)
+        if used == 0 && failed == 0 { text = tr("chat.sources.nothing").capitalizedFirst }
+        if failed > 0 { text += tr("chat.sources.unread", failed) }
+        return text
+    }
+
+    private func groupView(_ group: SourceGroup) -> some View {
+        let cited = Citations.used(in: message.text)
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 7) {
+                Circle().fill(color(group.status)).frame(width: 6, height: 6)
+                Text(group.title)
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer(minLength: 6)
+                Text(statusText(group.status))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(failedColor(group.status))
+                    .lineLimit(1)
+                if case .failed = group.status, let onRetry {
+                    Button(action: onRetry) {
+                        Text(tr("chat.retry"))
+                            .font(NookTheme.font(11, .semibold))
+                            .foregroundStyle(NookTheme.paper)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(NookTheme.smoke))
                     }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .help(helpText(group))
+            if !message.streaming {
+                ForEach(group.references) { reference in
+                    ReferenceRow(reference: reference, cited: cited.contains(reference.number)) { app.openReference(reference) }
                 }
             }
         }
-        .padding(14)
-        .frame(width: 340, alignment: .leading)
+        .padding(.vertical, 3)
     }
 
-    private func outcomeText(_ step: RetrievalStep) -> String {
-        let suffix = step.cached ? " · " + tr("chat.sources.cached") : ""
-        switch step.outcome {
-        case .running: return tr("chat.sources.searching")
-        case .found(let count): return tr("chat.sources.found", count) + (step.references.isEmpty ? "" : " · " + step.references.map { "[\($0)]" }.joined(separator: " ")) + suffix
-        case .empty: return tr("chat.sources.nothing") + suffix
-        case .failed(let error): return tr("chat.sources.failed", error)
+    private func color(_ status: Status) -> Color {
+        switch status {
+        case .found, .context: return NookTheme.mint
+        case .empty: return NookTheme.textTertiary
+        case .failed: return NookTheme.coralSoft
+        case .running: return NookTheme.iris
         }
     }
+
+    private func failedColor(_ status: Status) -> Color {
+        if case .failed = status { return NookTheme.coralSoft }
+        return NookTheme.textTertiary
+    }
+
+    private func statusText(_ status: Status) -> String {
+        switch status {
+        case .found: return ""
+        case .context: return tr("chat.sources.context")
+        case .empty: return tr("chat.sources.nothing")
+        case .failed: return tr("chat.sources.notRead")
+        case .running: return tr("chat.sources.searching")
+        }
+    }
+
+    /// The exact queries and, for a failed source, the error as a tooltip.
+    private func helpText(_ group: SourceGroup) -> String {
+        var parts: [String] = []
+        if case .failed(let error) = group.status { parts.append(error) }
+        if !group.queries.isEmpty { parts.append(group.queries.map { "\"\($0)\"" }.joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
 /// Warnings for an answer, such as a source that could not be read.
@@ -150,35 +204,6 @@ struct NoticeList: View {
                 }
             }
         }
-    }
-}
-
-/// The sources backing the answer, numbered as cited in the text. Clicking opens the original.
-struct ReferenceList: View {
-    let references: [SourceReference]
-    let cited: Set<Int>
-    @EnvironmentObject private var app: AppModel
-    @State private var showAll = false
-
-    var body: some View {
-        let visible = showAll ? references : Array(references.prefix(4))
-        VStack(alignment: .leading, spacing: 3) {
-            Text(tr("chat.references.title"))
-                .font(NookTheme.font(10.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-            ForEach(visible) { reference in
-                ReferenceRow(reference: reference, cited: cited.contains(reference.number)) { app.openReference(reference) }
-            }
-            if references.count > visible.count {
-                Button(tr("chat.references.more", references.count - visible.count)) { showAll = true }
-                    .buttonStyle(.plain)
-                    .font(NookTheme.font(11.5, .medium))
-                    .foregroundStyle(NookTheme.iris)
-            }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.line2, lineWidth: 1))
     }
 }
 
@@ -318,19 +343,38 @@ struct ScopeMenu: View {
                 Toggle(SourceCatalog.title("clipboard"), isOn: neverBinding("clipboard"))
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: current.isRestricted ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(current.isRestricted ? current.label() : tr("scope.automaticShort"))
-                    .font(NookTheme.font(11.5, .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(current.isRestricted ? NookTheme.iris : NookTheme.textSecondary)
+            ComposerPill(symbol: "line.3.horizontal.decrease",
+                         text: current.isRestricted ? current.label() : tr("scope.automaticShort"),
+                         tint: current.isRestricted ? NookTheme.iris : nil)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .composerMenu()
         .help(tr("scope.help"))
+    }
+}
+
+/// The plus menu in the chat input: everything you add to a question or want to check, in one place.
+struct ComposerMoreMenu: View {
+    @ObservedObject var chat: NookChat
+    @EnvironmentObject private var app: AppModel
+    @State private var showContext = false
+
+    var body: some View {
+        Menu {
+            Button { app.attachFile() } label: { Label(tr("chat.attachShort"), systemImage: "paperclip") }
+            Divider()
+            Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(NookTheme.smoke))
+                .contentShape(Circle())
+        }
+        .composerMenu()
+        .help(tr("chat.more"))
+        .accessibilityLabel(tr("chat.more"))
+        .popover(isPresented: $showContext, arrowEdge: .top) { ContextInspector(chat: chat) }
     }
 }
 
@@ -338,13 +382,8 @@ struct ScopeMenu: View {
 struct ContextInspector: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
-    @State private var shown = false
 
-    var body: some View {
-        NookIconButton(systemName: "eye", label: tr("context.title"), size: 26) { shown.toggle() }
-            .help(tr("context.title"))
-            .popover(isPresented: $shown, arrowEdge: .top) { content }
-    }
+    var body: some View { content }
 
     private var destination: String {
         let settings = app.settings

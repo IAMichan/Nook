@@ -116,7 +116,7 @@ struct NookChatView: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(chat.messages) { message in
-                            ChatMessageView(message: message)
+                            ChatMessageView(message: message, isLast: message.id == chat.messages.last?.id && !chat.busy)
                                 .id(message.id)
                         }
                         Color.clear.frame(height: 1).id("bottom")
@@ -161,29 +161,27 @@ struct NookChatView: View {
 
     // MARK: Input
 
-    /// The same composer as the agents: the text on top, quiet choices underneath, a round send button on the right.
+    /// The same composer as the agents: the text on top, a plus menu and two quiet choices underneath, a round send button
+    /// on the right. A file you attach shows above the box, only while there is one.
     private var inputBar: some View {
-        SessionComposer(
-            text: $question,
-            prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
-            busy: chat.busy,
-            onStop: { app.stopChat() },
-            focus: $inputFocused,
-            onSend: send
-        ) {
-            // Brain, allowed sources for this Nook, context payload, and optional file attachment.
-            BrainChip()
-            ScopeMenu(chat: chat)
+        VStack(alignment: .leading, spacing: 8) {
             if let name = app.attachmentName {
                 AttachmentChip(name: name) { app.clearAttachment() }
             }
-            if !chat.busy, let last = chat.messages.last, last.role == .nook, last.isError || !last.notices.isEmpty {
-                SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
+            SessionComposer(
+                text: $question,
+                prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
+                busy: chat.busy,
+                onStop: { app.stopChat() },
+                focus: $inputFocused,
+                onSend: send
+            ) {
+                ComposerMoreMenu(chat: chat)
+                BrainChip()
+                ScopeMenu(chat: chat)
+                Spacer(minLength: 4)
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 26) { viewModel.startListening() }
             }
-            NookIconButton(systemName: "paperclip", label: tr("chat.attach"), size: 26) { app.attachFile() }
-                .help(tr("chat.attach"))
-            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 26) { viewModel.startListening() }
-            ContextInspector(chat: chat)
         }
     }
 
@@ -200,6 +198,8 @@ struct NookChatView: View {
 
 private struct ChatMessageView: View {
     let message: ChatMessage
+    /// The latest finished answer: the only one you can retry.
+    var isLast = false
     @EnvironmentObject private var app: AppModel
     @State private var hovering = false
     @State private var copied = false
@@ -227,22 +227,8 @@ private struct ChatMessageView: View {
 
     private var nook: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Where Nook looked and the outcome: searched, empty, or failed.
-            RetrievalStrip(message: message)
-
             if message.isError {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(message.text)
-                        .font(NookTheme.font(13.5))
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                    HStack(spacing: 4) {
-                        SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
-                        let recovery = ChatRecoveryAction.forError(message.text, selection: app.settings.selection)
-                        SmallGhostButton(title: app.recoveryTitle(recovery)) { app.performRecovery(recovery) }
-                    }
-                }
+                ChatErrorCard(message: message, canRetry: isLast)
             } else if !message.text.isEmpty {
                 MarkdownView(text: message.text)
             } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
@@ -266,8 +252,9 @@ private struct ChatMessageView: View {
                 NoticeList(notices: message.notices)
             }
 
-            if !message.references.isEmpty && !message.streaming {
-                ReferenceList(references: message.references, cited: Citations.used(in: message.text))
+            // Where Nook looked, folded away until you want to see it; a source that failed opens it.
+            if !message.isError {
+                SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
             }
 
             if !message.actions.isEmpty {
@@ -312,6 +299,91 @@ private struct ChatMessageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+}
+
+/// A calm card for an answer that could not be made: what happened in plain words, the action that fixes it, retry as the
+/// second choice, and the raw message behind Details.
+private struct ChatErrorCard: View {
+    let message: ChatMessage
+    let canRetry: Bool
+    @EnvironmentObject private var app: AppModel
+    @State private var showDetails = false
+
+    private var recovery: ChatRecoveryAction { ChatRecoveryAction.forError(message.text, selection: app.settings.selection) }
+
+    private var explanation: String {
+        switch recovery {
+        case .chooseModel: return tr("chat.error.chooseModel")
+        case .openLocalServer(let runtime): return tr("chat.error.server", runtime == .ollama ? "Ollama" : "LM Studio")
+        case .reconnectBrain, .reconnectConnection: return tr("chat.error.credentials")
+        case .openSettings: return tr("chat.error.generic")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(NookTheme.coral.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("chat.error.title"))
+                        .font(NookTheme.font(13.5, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                    Text(explanation)
+                        .font(NookTheme.font(12.5))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: 6) {
+                Button { app.performRecovery(recovery) } label: {
+                    Text(app.recoveryTitle(recovery))
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(NookTheme.ink)
+                        .padding(.horizontal, 13)
+                        .frame(height: 28)
+                        .background(Capsule().fill(NookTheme.paper))
+                }
+                .buttonStyle(.plain)
+                if canRetry {
+                    Button { app.retryLast() } label: {
+                        Text(tr("chat.retry"))
+                            .font(NookTheme.font(12, .semibold))
+                            .foregroundStyle(NookTheme.paper)
+                            .padding(.horizontal, 13)
+                            .frame(height: 28)
+                            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 32)
+            Button { withAnimation(.easeOut(duration: 0.16)) { showDetails.toggle() } } label: {
+                Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
+                    .font(NookTheme.font(11.5, .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 32)
+            if showDetails {
+                Text(message.text)
+                    .font(NookTheme.mono(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    .padding(.leading, 32)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NookTheme.coral.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.coral.opacity(0.22), lineWidth: 1))
     }
 }
 

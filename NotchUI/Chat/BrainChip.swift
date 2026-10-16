@@ -33,18 +33,10 @@ struct BrainChip: View {
             Divider()
             Button(tr("brain.chip.settings")) { app.openSettings(section: .brain) }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: settings.isLocalBrain ? "cpu" : "cloud")
-                    .font(.system(size: 11, weight: .semibold))
-                Text((settings.isLocalBrain ? tr("brain.chip.local") : tr("brain.chip.external")) + " · " + settings.brainLabel)
-                    .font(NookTheme.font(11.5, .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(settings.isLocalBrain ? NookTheme.mint : NookTheme.amber)
+            ComposerPill(dot: settings.isLocalBrain ? NookTheme.mint : NookTheme.amber,
+                         text: (settings.isLocalBrain ? "" : tr("brain.chip.external") + " · ") + settings.brainLabel)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .composerMenu()
         .help(tr("brain.chip.help"))
         .task { servers = await app.localServerModels() }
     }
