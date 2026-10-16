@@ -103,7 +103,7 @@ struct NotchRootView: View {
             .frame(width: side, height: side)
             .overlay(alignment: .topTrailing) { bareBadge }
             .contentShape(Circle())
-            .onTapGesture { viewModel.openPanel() }
+            .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
             .floatingDrag(viewModel)
             .accessibilityElement()
             .accessibilityLabel("Nook")
@@ -134,7 +134,7 @@ struct NotchRootView: View {
                     AgentDots(sessions: active)
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
+                .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
                 .floatingDrag(viewModel)
             } else if app.chat.anyBusy {
                 // A Nook is working on something in the background: visibly thinking along.
@@ -142,7 +142,7 @@ struct NotchRootView: View {
                     idleBadge
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
+                .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
                 .floatingDrag(viewModel)
             } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
@@ -151,7 +151,7 @@ struct NotchRootView: View {
                     idleBadge
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { viewModel.openPanel() }
+                .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
                 .floatingDrag(viewModel)
             }
         case .music:
@@ -159,14 +159,14 @@ struct NotchRootView: View {
                 EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true)
             }
             .contentShape(Rectangle())
-            .onTapGesture { viewModel.openPanel() }
+            .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
             .floatingDrag(viewModel)
         case .track(let title, let artist):
             wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
                 trackLabel(title: title, artist: artist)
             }
             .contentShape(Rectangle())
-            .onTapGesture { viewModel.openPanel() }
+            .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
             .floatingDrag(viewModel)
         case .done(let message):
             doneStrip(message: message, nh: nh)
@@ -273,7 +273,7 @@ struct NotchRootView: View {
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .seen, size: 24, animated: true)
+                NookOrb(mood: .seen, size: 24, animated: true, curious: true)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -313,6 +313,7 @@ struct NotchRootView: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 20) {
             Button {
+                NookPresence.shared.poke()
                 viewModel.show(.panel(.nook))
             } label: {
                 NookOrb(mood: mood, size: 46)

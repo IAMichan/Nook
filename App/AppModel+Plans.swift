@@ -50,10 +50,19 @@ extension AppModel {
             let states = await runner.run(steps, states: message.actionStates, include: message.actionIncluded, force: force)
             reloadLoops()
             await refreshUpcoming()
+            let outcome = Self.planOutcome(states)
             chat.update(id) { message in
                 message.actionStates = states
-                message.planState = Self.planOutcome(states)
+                message.planState = outcome
             }
+            // A plan of several steps that all went through: a small celebration.
+            let succeeded = states.filter { state in
+                switch state {
+                case .done, .verified: return true
+                default: return false
+                }
+            }
+            if case .done = outcome, succeeded.count > 1 { NookPresence.shared.celebrate() }
         }
     }
 
