@@ -16,7 +16,7 @@ final class FolderGitModel: ObservableObject {
     let directory: String
     private let git = GitService.locate()
 
-    init(directory: String) {
+    nonisolated init(directory: String) {
         self.directory = directory
     }
 
