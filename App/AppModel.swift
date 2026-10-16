@@ -238,6 +238,17 @@ final class AppModel: ObservableObject {
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()
 
+        // Load agents, accounts and past sessions up front and keep them fresh in the background, so the Agents tab is
+        // already filled the moment the notch opens instead of loading only then.
+        history.refresh(minimumInterval: 0)
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.adoptAccounts()
+                self.history.refresh()
+            }
+        }
+
         // Agent start/stop events update the idle notch indicator.
         hub.$sessions
             .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" } }
