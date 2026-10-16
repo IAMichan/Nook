@@ -102,7 +102,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
             self?.process(input, sampleRate: rate)
         }
         guard status == noErr, let proc, AudioDeviceStart(device, proc) == noErr else {
-            if let proc { AudioDeviceDestroyIOProc(device, proc) }
+            if let proc { AudioDeviceDestroyIOProcID(device, proc) }
             AudioHardwareDestroyAggregateDevice(device)
             AudioHardwareDestroyProcessTap(tap)
             return
@@ -116,7 +116,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
         if aggregateID != kAudioObjectUnknown {
             if let procID {
                 AudioDeviceStop(aggregateID, procID)
-                AudioDeviceDestroyIOProc(aggregateID, procID)
+                AudioDeviceDestroyIOProcID(aggregateID, procID)
             }
             AudioHardwareDestroyAggregateDevice(aggregateID)
         }
