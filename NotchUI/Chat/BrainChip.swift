@@ -8,6 +8,14 @@ struct BrainChip: View {
     @ObservedObject private var local = EmbeddedModel.shared
     @State private var servers: [ServerModel] = []
 
+    /// The maker's mark for the model in use: from the model's own name first ("claude-haiku", "Qwen 3"), else its provider.
+    private var logo: BrandLogo? {
+        if settings.useLocal {
+            return BrandLogo.forName(settings.brainLabel)
+        }
+        return BrandLogo.forName(settings.activeProviderModel) ?? BrandLogo.forProvider(settings.provider)
+    }
+
     var body: some View {
         Menu {
             Section(tr("brain.chip.installed")) {
@@ -33,8 +41,7 @@ struct BrainChip: View {
             Divider()
             Button(tr("brain.chip.settings")) { app.openSettings(section: .brain) }
         } label: {
-            ComposerPill(dot: settings.isLocalBrain ? NookTheme.mint : NookTheme.amber,
-                         text: (settings.isLocalBrain ? "" : tr("brain.chip.external") + " · ") + settings.brainLabel)
+            ComposerPill(symbol: logo == nil ? (settings.isLocalBrain ? "cpu" : "cloud") : nil, brand: logo, text: settings.brainLabel)
         }
         .composerMenu()
         .help(tr("brain.chip.help"))

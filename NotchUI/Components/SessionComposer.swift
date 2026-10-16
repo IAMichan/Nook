@@ -20,7 +20,17 @@ struct SessionComposer<Controls: View>: View {
     let onSend: () -> Void
     @ViewBuilder var controls: () -> Controls
 
+    /// An extra round button next to send (the microphone), kept on the right instead of among the choices.
+    private var trailingAccessory: AnyView?
+
     @FocusState private var ownFocus: Bool
+
+    /// The same composer with a small view placed right before the send button.
+    func trailing<Accessory: View>(@ViewBuilder _ accessory: () -> Accessory) -> Self {
+        var copy = self
+        copy.trailingAccessory = AnyView(accessory())
+        return copy
+    }
 
     init(
         text: Binding<String>,
@@ -99,6 +109,7 @@ struct SessionComposer<Controls: View>: View {
             HStack(spacing: 6) {
                 controls()
                 Spacer(minLength: 8)
+                if let trailingAccessory { trailingAccessory }
                 if busy, let onStop {
                     roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
                 } else {
@@ -146,6 +157,8 @@ struct ComposerPill: View {
     /// Shows this agent's logo (with the account badge) in front of the text.
     var agent: String? = nil
     var account: AccountKind? = nil
+    /// Shows this brand's mark in front of the text (a model's maker).
+    var brand: BrandLogo? = nil
     let text: String
     var tint: Color? = nil
     var showsChevron = true
@@ -156,6 +169,8 @@ struct ComposerPill: View {
             if let agent {
                 AgentMark(agent: agent, account: account, size: 15, ring: SessionComposer<EmptyView>.surface)
                     .padding(.trailing, account == nil ? 0 : 3)
+            } else if let brand {
+                BrandMark(logo: brand, size: 14)
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
