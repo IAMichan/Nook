@@ -14,7 +14,7 @@ Bij **Instellingen › Agents** koppel je deze agents met één klik. Nook laat 
 | Claude (app) | zelfde hooks | herkend aan `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | voortgang, toestemming, vragen |
 | Codex | `~/.codex/hooks.json` | hooks, `--agent codex` | voortgang, toestemming |
 | Gemini CLI | `~/.gemini/settings.json` | hooks, `--agent gemini` | voortgang |
-| Antigravity (`agy`) | `~/.gemini/config/hooks.json` | eigen groep `nook`, `--agent antigravity` | voortgang |
+| Antigravity (`agy`) | `~/.gemini/config/hooks.json` | eigen groep `nook`, `--agent antigravity`, pad zonder spaties via `~/.nook/nook-hook`, geen `PreToolUse` | voortgang |
 | Cursor | `~/.cursor/hooks.json` | hooks, `--agent cursor` | voortgang |
 | Copilot CLI | `~/.copilot/hooks/nook.json` | eigen bestand, `--agent copilot` | voortgang |
 | Muse Code | `~/.config/muse/settings.json` | hooks, `--agent muse` | voortgang |

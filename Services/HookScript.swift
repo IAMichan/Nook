@@ -236,15 +236,32 @@ enum HookScript {
     static func install() throws -> URL {
         let url = NookPaths.hookScriptURL
         if let existing = try? String(contentsOf: url, encoding: .utf8), existing == contents {
+            linkSpaceFree(to: url)
             return url
         }
         try contents.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        linkSpaceFree(to: url)
         return url
+    }
+
+    /// Keeps ~/.nook/nook-hook pointing at the script, so commands can avoid the space in "Application Support".
+    private static func linkSpaceFree(to target: URL) {
+        let fm = FileManager.default
+        let link = NookPaths.spaceFreeHookURL
+        if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == target.path { return }
+        try? fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fm.removeItem(at: link)
+        try? fm.createSymbolicLink(at: link, withDestinationURL: target)
     }
 
     /// Command string for configuration files (quoted to accommodate spaces in path).
     static func command(_ arguments: String) -> String {
         "\"\(NookPaths.hookScriptURL.path)\" \(arguments)"
+    }
+
+    /// Command without quotes or spaces in the path, for agents that may split the command line themselves (Antigravity).
+    static func spaceFreeCommand(_ arguments: String) -> String {
+        "\(NookPaths.spaceFreeHookURL.path) \(arguments)"
     }
 }
