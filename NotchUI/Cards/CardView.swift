@@ -103,6 +103,7 @@ struct CardView: View {
             .font(NookTheme.font(14))
             .foregroundStyle(NookTheme.paper)
             .focused($replyFocused)
+            .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
             .onSubmit {
                 let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }

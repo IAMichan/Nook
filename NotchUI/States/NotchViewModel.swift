@@ -88,6 +88,7 @@ final class NotchViewModel: ObservableObject {
 
     func show(_ new: NotchState) {
         doneTask?.cancel()
+        NookPresence.shared.noteActivity()
         var target = new
         // The notch has one Nook tab (home and chat in one), Agents, and Music while something plays. Older routes
         // still work: home and shelf land on Nook; connections are managed in Settings.
@@ -309,6 +310,7 @@ final class NotchViewModel: ObservableObject {
         guard inside != pointerInside else { return }
         pointerInside = inside
         hoverTask?.cancel()
+        if inside, state.isResting { NookPresence.shared.pointerEntered() } else { NookPresence.shared.noteActivity() }
         scheduleAutoClose()
         // Nook made an offer: hovering reveals the full proposal even if hover-to-open is disabled.
         if inside, case .nudge = state {

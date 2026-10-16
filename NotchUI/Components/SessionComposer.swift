@@ -95,6 +95,7 @@ struct SessionComposer<Controls: View>: View {
                 .lineLimit(lines)
                 .focused(focused)
                 .onSubmit { if enabled { onSend() } }
+                .onChange(of: text) { _, new in NookPresence.shared.typed(count: new.count) }
                 .frame(minHeight: minHeight, alignment: .topLeading)
             HStack(spacing: 6) {
                 controls()
