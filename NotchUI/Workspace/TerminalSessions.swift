@@ -275,6 +275,8 @@ struct TerminalsView: View {
 struct SessionTerminalsView: View {
     let directory: String
     @ObservedObject private var store = TerminalStore.shared
+    /// The project's scripts (nook.json), one click each.
+    @State private var scripts: [ProjectScript] = []
 
     var body: some View {
         let mine = store.sessions(in: directory)
@@ -291,6 +293,21 @@ struct SessionTerminalsView: View {
                             }
                         }
                     }
+                }
+                if !scripts.isEmpty {
+                    Menu {
+                        ForEach(scripts) { script in
+                            Button(script.name) { run(script) }
+                                .help(script.command)
+                        }
+                    } label: {
+                        Image(systemName: "play").font(.system(size: 11, weight: .semibold))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help(tr("workbench.scripts"))
+                    .accessibilityLabel(tr("workbench.scripts"))
                 }
                 Button {
                     store.open(in: directory)
@@ -319,6 +336,20 @@ struct SessionTerminalsView: View {
         }
         .onAppear {
             if store.sessions(in: directory).isEmpty { store.open(in: directory) }
+        }
+        .task(id: directory) {
+            let folder = directory
+            scripts = await Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
+        }
+    }
+
+    /// Runs a script in its own terminal tab; a script that serves a page opens it in Nook's browser once it had a moment.
+    private func run(_ script: ProjectScript) {
+        store.open(in: directory, command: script.command, title: script.name)
+        guard script.autoOpenPreview, let url = script.previewURL else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            BrowserStore.shared.go(url.absoluteString)
         }
     }
 }

@@ -101,6 +101,8 @@ extension AppModel {
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
+        // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
+        workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         startWorkspaceBridge()
     }
 

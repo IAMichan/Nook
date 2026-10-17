@@ -6,6 +6,8 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "workbench.scripts": "Scripts van dit project (nook.json of legacy-scripts.json)",
+        "ws.event.setupScript": "Setup-script gestart in een terminal: %@",
         "agents.servers.help": "Servers die deze sessie in zijn map draait. Tik om te openen.",
         "agents.time.doneUnseen": "klaar",
         "ws.fold.worked": "Gewerkt %@",
@@ -452,6 +454,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "workbench.scripts": "This project's scripts (nook.json)",
+        "ws.event.setupScript": "Setup script started in a terminal: %@",
         "agents.servers.help": "Servers this session runs in its folder. Tap to open.",
         "agents.time.doneUnseen": "done",
         "ws.fold.worked": "Worked for %@",
@@ -898,6 +902,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "workbench.scripts": "Skripte dieses Projekts (nook.json oder legacy-scripts.json)",
+        "ws.event.setupScript": "Setup-Skript in einem Terminal gestartet: %@",
         "agents.servers.help": "Server, die diese Sitzung in ihrem Ordner betreibt. Zum Öffnen tippen.",
         "agents.time.doneUnseen": "fertig",
         "ws.fold.worked": "%@ gearbeitet",

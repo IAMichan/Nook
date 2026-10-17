@@ -82,6 +82,8 @@ final class WorkspaceManager: ObservableObject {
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
+    var runScript: ((String, String, String) -> Void)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
     var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
@@ -299,6 +301,12 @@ final class WorkspaceManager: ObservableObject {
         selectedRunID = id
         if let worktreePath {
             append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
+            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
+            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: worktreePath) }.value
+            for script in setup where script.runOnWorktreeCreate {
+                runScript?(worktreePath, script.command, script.name)
+                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            }
         }
         launchTurn(id, prompt: config.task, executable: executable)
         return id

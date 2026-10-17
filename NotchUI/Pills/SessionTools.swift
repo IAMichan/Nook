@@ -179,7 +179,16 @@ struct DevServerStrip: View {
         .task(id: directory) {
             let folder = WorkspacePathPolicy.normalize(directory)
             while !Task.isCancelled {
-                let found = await Task.detached(priority: .utility) { DevServerScanner.scan(folder: folder) }.value
+                let found = await Task.detached(priority: .utility) { () -> [DevServer] in
+                    var servers = DevServerScanner.scan(folder: folder)
+                    // Pages the project names (nook.json previewUrl) on localhost, when they are not already found.
+                    for script in ProjectScripts.load(folder: folder) {
+                        guard let url = script.previewURL, let port = url.port, BridgeURLPolicy.isLoopback(url.host ?? ""),
+                              !servers.contains(where: { $0.port == port }) else { continue }
+                        servers.append(DevServer(pid: 0, command: script.name, port: port))
+                    }
+                    return servers.sorted { $0.port < $1.port }
+                }.value
                 if found != servers { withAnimation(.easeOut(duration: 0.15)) { servers = found } }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }

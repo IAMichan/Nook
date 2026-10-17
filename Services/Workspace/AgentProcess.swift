@@ -80,6 +80,8 @@ enum AgentCommand {
                              "--sandbox", codexSandbox(mode: input.mode, permission: input.permission),
                              "--cd", input.workingDirectory]
             if !input.model.isEmpty { arguments += ["--model", input.model] }
+            // Detailed reasoning summaries asks for them: the timeline shows how Codex thinks, not only what it did.
+            arguments += ["-c", "model_reasoning_summary=\"detailed\""]
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
             var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)

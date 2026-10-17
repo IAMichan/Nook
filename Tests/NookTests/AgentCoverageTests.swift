@@ -110,6 +110,22 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertFalse(RunProvider.gemini.capabilities.policies.contains(.ask), "headless Gemini cannot ask for approval")
     }
 
+    func testCodexAsksForDetailedReasoning() {
+        let input = AgentCommand.Input(provider: .codex, executable: "/bin/codex", prompt: "hoi", model: "", mode: .agent,
+                                       permission: .acceptEdits, instructions: "", workingDirectory: "/tmp/w",
+                                       resumeSessionID: nil, accountEnvironment: [:], runID: UUID())
+        let args = AgentCommand.spec(input).arguments
+        XCTAssertEqual(value(after: "-c", in: args), "model_reasoning_summary=\"detailed\"")
+    }
+
+    func testCheckedOutElsewhereReadsClearly() {
+        let raw = GitError("fatal: 'main' is already used by worktree at '/Users/x/app'")
+        XCTAssertEqual(GitService.friendlyWorktreeError(raw, base: "main").localizedDescription,
+                       "'main' is already checked out in another worktree (/Users/x/app). Start from another branch, or remove that worktree first.")
+        let other = GitError("fatal: invalid reference")
+        XCTAssertEqual(GitService.friendlyWorktreeError(other, base: "main") as? GitError, other)
+    }
+
     private func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]

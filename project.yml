@@ -121,6 +121,7 @@ targets:
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift
+      - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
