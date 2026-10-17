@@ -92,6 +92,8 @@ extension SettingsView {
                 }
             }
 
+            if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
+
             privateSourcesSection
 
             Section {

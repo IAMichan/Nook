@@ -212,6 +212,16 @@ final class AppSettings: ObservableObject {
     @Published var localOnlySources: Set<String> {
         didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
     }
+    /// Local quality: a narrow first step copies the evidence out of each document, and the answer is written from those
+    /// quotes (slower, more accurate). Only for small brains.
+    @Published var evidenceFirst: Bool {
+        didSet { UserDefaults.standard.set(evidenceFirst, forKey: "evidenceFirst") }
+    }
+    /// Local quality: Nook checks the numbers, times, addresses and links in an answer against its sources and has a small
+    /// brain write the answer again when one is in none of them.
+    @Published var checkAnswers: Bool {
+        didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
+    }
     /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
@@ -239,8 +249,9 @@ final class AppSettings: ObservableObject {
 
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
-        if useLocal { return ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall }
-        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel) }
+        let memory = ModelAdvisor.Hardware.current.memoryGB
+        if useLocal { return (ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall).roomier(memoryGB: memory) }
+        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel).roomier(memoryGB: memory) }
         return .cloud
     }
 
@@ -346,6 +357,8 @@ final class AppSettings: ObservableObject {
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
+        evidenceFirst = defaults.bool(forKey: "evidenceFirst")
+        checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key

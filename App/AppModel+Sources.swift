@@ -264,6 +264,7 @@ extension AppModel {
         var found: [String] = []
         var opened: [String] = []
         var searched = ""
+        var evidence = ""
         var blocked: [String] = []
         var goal = ""
         let intent = ChatIntent.detect(text)
@@ -338,6 +339,11 @@ extension AppModel {
                 output.count > readLimit ? Research.focus(output, terms: terms, limit: readLimit) : output
             }.map(\.output)
 
+            // A small brain reads and answers badly in one go: a narrow step first copies out what matters, word for word.
+            if settings.evidenceFirst, profile.isSmall, !opened.isEmpty {
+                evidence = Evidence.section(await brain.extractEvidence(question: text, goal: goal, documents: opened))
+            }
+
             if !ledger.steps.isEmpty {
                 let words = terms.query(limit: 6)
                 let outcomes = ledger.steps.map { step -> String in
@@ -365,6 +371,9 @@ extension AppModel {
         }
         if !found.isEmpty || !opened.isEmpty || !searched.isEmpty {
             context += "\n\nLooked up for this question (use what is really about the question; ignore the rest):\n" + searched
+            if !evidence.isEmpty {
+                context += "\n\n" + evidence
+            }
             if !opened.isEmpty {
                 context += "\n\nRead in full (the best matches):\n" + opened.joined(separator: "\n\n")
             }

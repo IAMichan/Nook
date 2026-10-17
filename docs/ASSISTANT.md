@@ -90,6 +90,28 @@ De kaarten in de notch (scherm bekijken ⌥⌘N, Meedenken) lopen via dezelfde `
 
 Met een brein op je Mac (ingebouwd, Ollama, LM Studio) verandert er niets.
 
+### Een klein lokaal brein goed laten antwoorden
+
+Een model van 4–8 miljard parameters leest en antwoordt slecht in één keer. Nook neemt daarom werk uit zijn handen
+(`Brain/LocalQuality.swift`, alles Foundation en getest in `LocalQualityTests`):
+
+* **Meer ruimte** (`ModelProfile.roomier`): op een Mac met 16 GB of meer krijgt een model met een venster van 8k een venster van
+  16k, zodat de volledig gelezen documenten erin passen. Kost ongeveer 1,2 GB geheugen extra voor een model van 3–4B.
+* **Bewijs eerst** (Instellingen › Brein, standaard uit): per gevonden document één smalle stap die de zinnen kopieert die
+  over de vraag gaan (`BrainService.extractEvidence`, `Evidence`). Een citaat dat niet letterlijk in het document staat, wordt
+  weggegooid, dus het model kan geen bewijs verzinnen. Het antwoord komt uit die citaten (de context heet dan "Evidence").
+* **Antwoorden controleren** (standaard aan, alleen voor kleine breinen): `Grounding.ungrounded` zoekt in het antwoord naar
+  getallen van drie cijfers of meer, tijden, e-mailadressen en links die in geen enkele bron staan (context, vraag,
+  tool-uitkomsten, gesprek). Zo'n detail geeft één keer een nieuw antwoord met die details bij naam genoemd. 8.450,00 en
+  8450, of 14:30 en 14.30, tellen als hetzelfde. Een vraag die om rekenen vraagt ("in totaal") wordt niet gecontroleerd.
+* **Meten**: Instellingen › Brein › *Meet dit brein* stelt 20 vragen met bekende antwoorden (`LocalEval`: feiten, een afleider
+  ernaast, antwoord ontbreekt, verkeerde persoon, update wint, geïnjecteerde opdracht…) met de instellingen zoals ze staan.
+  Score en tijd komen in een lijst, zodat je modellen en schakelaars met cijfers vergelijkt.
+* **Trainen**: `scripts/finetune/` maakt verzonnen trainingsdata en traint er een LoRA mee (zie de README daar).
+
+Nieuwere modelfamilies (Gemma 4, gpt-oss, Qwen 3.5/3.6) krijgen bij Ollama en LM Studio dezelfde voorkeur als Gemma 3 en Llama 3.
+Ze staan niet in de ingebouwde lijst voordat een meting laat zien dat ze op jouw Mac beter scoren.
+
 ### Accounts
 
 Een dienst kan meerdere accounts hebben (`AccountRegistry`, bijvoorbeeld "GitHub · Werk"). Tools van zo'n dienst hebben een optioneel veld `account`. Lezen zonder account doorzoekt alle toegestane accounts en labelt de uitkomst; een actie vraagt een account zodra er meer dan één mogelijk is. De bronkiezer bepaalt per chat welke accounts mogen. Een mislukte koppeling toont **Opnieuw verbinden** (ongeldige gegevens) of **Opnieuw proberen** (netwerk), gebaseerd op `ConnectorErrorKind`.

@@ -90,6 +90,10 @@ Wil je Nook eerst bekijken met voorbeeldgegevens? Zet **Voorbeelddata** aan bij 
 | Stem | Optioneel leest Nook antwoorden voor, en luistert hij naar "Hé Nook" (alleen als je Mac spraak zelf herkent). |
 | Besturen | Apps openen, links openen, volume, muziek, Opdrachten (Shortcuts), conceptmail in Mail. |
 
+## Een lokaal brein dat goed antwoordt
+
+Instellingen › Brein heeft een blok *Kwaliteit van het lokale brein*: **Bewijs eerst** (eerst de relevante zinnen uit elk gevonden document kopiëren, dan pas antwoorden), **Antwoorden controleren** (een getal, tijd of adres dat nergens in de bronnen staat, geeft een nieuw antwoord) en **Meet dit brein** (20 vragen met bekende antwoorden, met score en tijd). Zo vergelijk je modellen en instellingen met cijfers. Zie [docs/ASSISTANT.md](docs/ASSISTANT.md) en [scripts/finetune](scripts/finetune/README.md) om een model op Nooks taak te trainen.
+
 ## Privacy en veiligheid
 
 - Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Alleen als je **Kleine dingen meteen doen** aanzet, doet Nook muziek, volume, apps openen, herinneringen en open punten waar jij om vroeg meteen; voorstellen die Nook zelf bedenkt (Meedenken) vragen altijd eerst. Nook verstuurt zelf nooit mail of berichten: ook een bericht via Slack of een webhook gaat pas na jouw Uitvoeren.

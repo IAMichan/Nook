@@ -116,7 +116,7 @@ extension AppModel {
         }
     }
 
-    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false) async {
+    func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil) async {
         // Scope permitted sources: conversation scope plus query-level constraints ("only my calendar and mail").
         let requested = SourceScope.parse(text)
         let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: requested)
@@ -210,7 +210,9 @@ extension AppModel {
         let brainContext = prepared.context
 
         var request = text
-        if retry {
+        if let correction {
+            request += "\n\n(\(correction) \(settings.languageInstruction(for: text)))"
+        } else if retry {
             request += wantsChart
                 ? "\n\n(Render the chart now using the show_chart tool with real numbers from context, tools, or web. Do not write code, JSON, or a table as a substitute.)"
                 : "\n\n(Your previous answer was empty, or contained code/JSON or was in the wrong language. Answer the question itself, in plain sentences, \(settings.languageInstruction(for: text)) Use the context and what was looked up; if something is missing, fetch it with the matching tool (a connected source, an app with read_app, the screen, a file or the web). If it really is not possible, briefly say where you looked and what was missing.)"
@@ -243,6 +245,20 @@ extension AppModel {
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
             let split = FollowUps.split(plan.text)
             var rawBody = split.body
+
+            // A small brain sometimes invents a number, time or address. Nook compares those with everything it was given
+            // and tool results, and has the answer written again when one is found nowhere.
+            if settings.checkAnswers, settings.brainProfile.isSmall, !retry, !wantsChart, plan.actions.isEmpty, rawBody.count >= 20,
+               !Grounding.mayCompute(text) {
+                let given = [brainContext, text, snapshot?.text ?? "", ledger.retrievedText, history.map(\.text).joined(separator: "\n")]
+                let loose = Grounding.ungrounded(answer: rawBody, sources: given.joined(separator: "\n"))
+                if !loose.isEmpty {
+                    Log.brain.info("ungrounded details: \(loose.count, privacy: .public)")
+                    chat.update(id) { $0.text = ""; $0.status = tr("app.status.checking") }
+                    await answer(text, history: history, replyID: id, conversation: conversation, retry: true, correction: Grounding.correction(for: loose))
+                    return
+                }
+            }
 
             // Did the model write chart code, JSON, or a table? Parse and rescue into native chart.
             var rescued: [ChatChart] = []
