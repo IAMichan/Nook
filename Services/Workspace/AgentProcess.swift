@@ -41,6 +41,8 @@ enum AgentCommand {
         /// CLAUDE_CONFIG_DIR or CODEX_HOME for the chosen account; empty for the primary account.
         var accountEnvironment: [String: String]
         var runID: UUID
+        /// Nook's workspace bridge (terminal, browser, pull requests) as an MCP server; nil leaves the agent as it is.
+        var bridge: BridgeLaunch? = nil
     }
 
     static func spec(_ input: Input) -> LaunchSpec {
@@ -63,7 +65,11 @@ enum AgentCommand {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }
             }
-            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bridge = input.bridge {
+                arguments += bridge.claudeArguments(runID: input.runID)
+                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            }
             if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory,
@@ -74,8 +80,12 @@ enum AgentCommand {
                              "--sandbox", codexSandbox(mode: input.mode, permission: input.permission),
                              "--cd", input.workingDirectory]
             if !input.model.isEmpty { arguments += ["--model", input.model] }
+            if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
-            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            if input.bridge != nil {
+                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            }
             // Codex exec has no separate system prompt: instructions prepend the first prompt.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
             if input.mode == .plan, input.resumeSessionID == nil {

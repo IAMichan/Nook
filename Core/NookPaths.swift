@@ -28,5 +28,12 @@ enum NookPaths {
     static var spaceFreeHookURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-hook")
     }
+    /// The workspace bridge: the socket agents' MCP server talks to, and the server script itself (see WorkspaceBridgeScript).
+    static var bridgeSocketURL: URL { supportDirectory.appendingPathComponent("bridge.sock") }
+    static var bridgeScriptURL: URL { supportDirectory.appendingPathComponent("nook-mcp") }
+    /// Symlink to the bridge script without spaces (~/.nook/nook-mcp), for commands typed in a shell.
+    static var spaceFreeBridgeURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-mcp")
+    }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
 }

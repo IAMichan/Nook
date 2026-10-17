@@ -12,13 +12,49 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
+    /// The agent that opened the current page through the workspace bridge; nil once you browse yourself.
+    @Published private(set) var openedBy: String?
+    /// Why the last page did not load, if it did not.
+    @Published private(set) var lastError: String?
     let webView: WKWebView
+
+    /// Collects console errors and warnings (and uncaught errors) of each page, so an agent checking its dev server can
+    /// see what went wrong. The list lives in the page itself and starts empty on every load.
+    private static let consoleCapture = """
+    (function () {
+      if (window.__nookConsole) { return; }
+      var log = [];
+      window.__nookConsole = log;
+      function keep(level, parts) {
+        try {
+          var text = Array.prototype.map.call(parts, function (p) {
+            if (p instanceof Error) { return p.stack || String(p); }
+            if (typeof p === 'object') { try { return JSON.stringify(p); } catch (e) { return String(p); } }
+            return String(p);
+          }).join(' ');
+          log.push(level + ': ' + text.slice(0, 2000));
+          if (log.length > 100) { log.shift(); }
+        } catch (e) {}
+      }
+      ['error', 'warn'].forEach(function (level) {
+        var original = console[level];
+        console[level] = function () { keep(level, arguments); return original.apply(console, arguments); };
+      });
+      window.addEventListener('error', function (e) {
+        keep('error', [e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')]);
+      });
+      window.addEventListener('unhandledrejection', function (e) { keep('error', ['Unhandled rejection: ' + e.reason]); });
+    })();
+    """
 
     override init() {
         let configuration = WKWebViewConfiguration()
         // Nothing persists between launches: no cookies or storage on disk.
         configuration.websiteDataStore = .nonPersistent()
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
         super.init()
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -37,7 +73,53 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
             url = components?.url
         }
         guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        openedBy = nil
         webView.load(URLRequest(url: url))
+    }
+
+    /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
+    func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
+        openedBy = agent
+        lastError = nil
+        webView.load(URLRequest(url: url))
+        // didStartProvisionalNavigation sets `loading`; wait for it to start, then for it to end.
+        let deadline = Date().addingTimeInterval(timeout)
+        var started = false
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if loading { started = true } else if started || webView.url != nil && !webView.isLoading { break }
+        }
+        if loading { return "Still loading after \(Int(timeout)) seconds." }
+        return lastError
+    }
+
+    /// Console errors and warnings the open page logged since it loaded.
+    func consoleMessages() async -> [String] {
+        guard webView.url != nil,
+              let result = try? await webView.evaluateJavaScript("JSON.stringify(window.__nookConsole || [])"),
+              let text = result as? String, let data = text.data(using: .utf8),
+              let list = try? JSONSerialization.jsonObject(with: data) as? [String] else { return [] }
+        return list
+    }
+
+    /// The visible part of the page as JPEG, at most `maxWidth` pixels wide.
+    func screenshot(maxWidth: Int = 1280) async throws -> Data {
+        guard webView.url != nil else { throw NookError(tr("workbench.browser.nothingOpen")) }
+        let configuration = WKSnapshotConfiguration()
+        let width = max(320, min(maxWidth, 2560))
+        if webView.bounds.width > CGFloat(width) { configuration.snapshotWidth = NSNumber(value: width) }
+        let image: NSImage = try await withCheckedThrowingContinuation { continuation in
+            webView.takeSnapshot(with: configuration) { image, error in
+                if let image { continuation.resume(returning: image) } else {
+                    continuation.resume(throwing: error ?? NookError("The browser could not take a screenshot."))
+                }
+            }
+        }
+        guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+              let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
+            throw NookError("The browser could not take a screenshot.")
+        }
+        return jpeg
     }
 
     /// The visible text of the open page (for Nook to read), with its address.
@@ -93,8 +175,14 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { refresh(loading: true) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { refresh(loading: false) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { refresh(loading: false) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { refresh(loading: false) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        lastError = error.localizedDescription
+        refresh(loading: false)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        lastError = error.localizedDescription
+        refresh(loading: false)
+    }
 
     /// Only web pages open inside; mail, phone and app links go to the system, other schemes are refused.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
@@ -144,6 +232,7 @@ private struct WebViewHost: NSViewRepresentable {
 struct BrowserView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = BrowserStore.shared
+    @ObservedObject private var bridge = WorkspaceBridge.shared
     @State private var asking = false
 
     var body: some View {
@@ -170,6 +259,17 @@ struct BrowserView: View {
             }
             .buttonStyle(.borderless)
             .padding(10)
+            if let agent = store.openedBy {
+                HStack(spacing: 6) {
+                    AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
+                    Text(tr("bridge.browserBy", agent))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+            }
             Divider()
             if store.webView.url == nil && !store.loading {
                 WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)
@@ -177,6 +277,9 @@ struct BrowserView: View {
             WebViewHost(webView: store.webView)
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
         }
+        // In view: whatever an agent opens here is seen, also while you watch.
+        .onAppear { bridge.markBrowserSeen() }
+        .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
     }
 
     /// Hands the open page to the chat as an attachment, like dropping a file.

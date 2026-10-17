@@ -17,6 +17,7 @@ struct AgentRunPanel: View {
     @State private var titleDraft = ""
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -25,6 +26,10 @@ struct AgentRunPanel: View {
                 timeline(run)
                 if let pending = workspace.approvals[runID], let first = pending.first {
                     approval(run, first, more: pending.count - 1)
+                } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+                    // A command or pull request the agent asks for through Nook's workspace.
+                    let approval = ApprovalCenter.make(request)
+                    ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
                 }
                 if confirmDelete {
                     deleteConfirmation(run)

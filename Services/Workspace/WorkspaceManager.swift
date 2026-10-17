@@ -80,6 +80,8 @@ final class WorkspaceManager: ObservableObject {
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
+    var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
     var onApproval: ((WorkspaceRun, PendingPermission) -> Void)?
     var onApprovalGone: ((String) -> Void)?
@@ -443,7 +445,8 @@ final class WorkspaceManager: ObservableObject {
             resumeSessionID: run.providerSessionID,
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
-            runID: id
+            runID: id,
+            bridge: bridgeLaunch()
         )
         let spec = AgentCommand.spec(input)
         append(id, RunEvent(kind: .user, text: prompt))

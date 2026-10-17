@@ -7,6 +7,8 @@ struct AgentApproval: Identifiable {
     enum Origin: Equatable {
         case hook(requestID: String)
         case run(runID: UUID, requestID: String)
+        /// A command or pull request an agent asks for through Nook's workspace bridge.
+        case bridge(requestID: String)
     }
 
     let origin: Origin
@@ -29,6 +31,7 @@ struct AgentApproval: Identifiable {
         switch origin {
         case .hook(let request): return "hook-" + request
         case .run(_, let request): return "run-" + request
+        case .bridge(let request): return "bridge-" + request
         }
     }
 
@@ -37,6 +40,7 @@ struct AgentApproval: Identifiable {
         switch origin {
         case .hook(let request): return "approval-" + request
         case .run(_, let request): return "wsapproval-" + request
+        case .bridge(let request): return "bridge-" + request
         }
     }
 }
@@ -46,10 +50,12 @@ struct AgentApproval: Identifiable {
 final class ApprovalCenter {
     private unowned let hub: AgentHub
     private unowned let workspace: WorkspaceManager
+    private unowned let bridge: WorkspaceBridge
 
-    init(hub: AgentHub, workspace: WorkspaceManager) {
+    init(hub: AgentHub, workspace: WorkspaceManager, bridge: WorkspaceBridge) {
         self.hub = hub
         self.workspace = workspace
+        self.bridge = bridge
     }
 
     static func make(_ request: ApprovalRequest) -> AgentApproval {
@@ -74,12 +80,22 @@ final class ApprovalCenter {
         )
     }
 
+    static func make(_ request: BridgeRequest) -> AgentApproval {
+        AgentApproval(
+            origin: .bridge(requestID: request.id), agentName: request.caller.agent,
+            project: URL(fileURLWithPath: request.caller.directory).lastPathComponent, tool: request.tool.rawValue,
+            title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
+            canAlways: false, canTerminal: false, created: request.created
+        )
+    }
+
     /// Everything waiting for a decision, oldest first.
     var pending: [AgentApproval] {
         var all = hub.approvals.map(Self.make)
         for run in workspace.runs {
             for request in workspace.approvals[run.id] ?? [] { all.append(Self.make(request, run: run)) }
         }
+        all += bridge.pending.map(Self.make)
         return all.sorted { $0.created < $1.created }
     }
 
@@ -93,6 +109,8 @@ final class ApprovalCenter {
             case .always: workspace.decide(runID, requestID: request, .always)
             case .deny, .terminal: workspace.decide(runID, requestID: request, .deny)
             }
+        case .bridge(let request):
+            bridge.decide(request, allow: decision == .allow || decision == .always)
         }
     }
 }

@@ -41,6 +41,10 @@ Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-o
 
 Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code en Codex; andere agents kun je vanuit Nook volgen en beëindigen. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
 
+## De werkruimte van Nook voor je agents
+
+Agents kunnen ook zelf Nooks werkruimte gebruiken: een commando starten in een zichtbare terminal van Nook (zoals een dev-server), een pagina openen en controleren in Nooks browser (tekst, console-fouten, screenshot) en een pull request voorstellen dat jij in de notch goedkeurt. Dat gaat via een kleine MCP-server, `~/.nook/nook-mcp`. Sessies die Nook start (Claude Code en Codex) krijgen hem vanzelf; een agent die je zelf start koppel je bij **Instellingen › Agents › Werkruimte**. Lezen gaat direct, een commando dat niet duidelijk onschuldig is en elk pull request vragen eerst jouw OK, gevaarlijke commando's weigert Nook altijd. Zie [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
+
 ## Zelf een agent koppelen
 
 ### Via het hook-script (aanrader)

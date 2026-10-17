@@ -303,8 +303,13 @@ enum CodexStreamParser {
             }
             return changes.isEmpty ? [] : [.fileChanges(id: id, changes: changes)]
         case "mcp_tool_call", "web_search":
-            let name = (item["tool"] as? String) ?? (kind == "web_search" ? "web_search" : "mcp")
-            let detail = (item["query"] as? String) ?? (item["server"] as? String) ?? ""
+            var name = (item["tool"] as? String) ?? (kind == "web_search" ? "web_search" : "mcp")
+            var detail = (item["query"] as? String) ?? (item["server"] as? String) ?? ""
+            // Nook's own workspace tools read as what they do: "Nook terminal · npm run dev".
+            if (item["server"] as? String) == BridgeTool.serverName, let tool = BridgeTool.named(name) {
+                name = tool.label
+                detail = ((item["arguments"] as? [String: Any]).flatMap(BridgeTool.detail)).map { ToolSummary.oneLine($0, 120) } ?? ""
+            }
             let failed = (item["status"] as? String) == "failed"
             return [.toolCall(id: id, name: name, detail: detail, finished: finished, failed: failed)]
         case "error":

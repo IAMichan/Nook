@@ -2,11 +2,25 @@ import SwiftUI
 import AppKit
 import SwiftTerm
 
+/// The agent that started a terminal through the workspace bridge (`terminal_run`).
+struct TerminalOwner: Equatable {
+    /// Display name: "Claude Code".
+    let agent: String
+    /// `BridgeCaller.key`: only this caller may stop the terminal.
+    let key: String
+}
+
 /// One terminal in Nook's window: a real shell in a pseudo-terminal, started in a folder, optionally with a command.
 /// Sessions stay alive while you switch tabs; closing one ends its shell.
 @MainActor
 final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProcessTerminalViewDelegate {
     let id = UUID()
+    /// Short id agents use to refer to it: "t3".
+    let shortID: String
+    /// Set when an agent started it; nil for terminals you opened.
+    let owner: TerminalOwner?
+    /// The command it was started with, if any.
+    let command: String?
     @Published var title: String
     @Published private(set) var directory: String
     /// The folder it was opened in, so it stays with that session even after a `cd` elsewhere.
@@ -16,9 +30,12 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     let created = Date()
     let view: LocalProcessTerminalView
 
-    init(title: String, directory: String, command: String?) {
+    init(title: String, directory: String, command: String?, shortID: String = "", owner: TerminalOwner? = nil) {
         self.title = title
         self.directory = directory
+        self.shortID = shortID
+        self.owner = owner
+        self.command = command
         origin = directory
         view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         super.init()
@@ -39,6 +56,18 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     func close() {
         if running { view.terminate() }
         running = false
+    }
+
+    /// The last `lines` lines on screen and in the scrollback, for an agent to read.
+    func output(lines: Int) -> String {
+        let data = view.getTerminal().getBufferAsData()
+        return TerminalText.tail(String(decoding: data, as: UTF8.self), lines: lines)
+    }
+
+    /// Ctrl-C to whatever runs in the shell; the shell itself stays open so the output remains readable.
+    func interrupt() {
+        guard running else { return }
+        view.send(txt: "\u{03}")
     }
 
     // MARK: LocalProcessTerminalViewDelegate
@@ -69,11 +98,14 @@ final class TerminalStore: ObservableObject {
     static let shared = TerminalStore()
     @Published private(set) var sessions: [TerminalSession] = []
     @Published var selected: UUID?
+    private var opened = 0
 
     @discardableResult
-    func open(in directory: String, command: String? = nil, title: String? = nil) -> TerminalSession {
+    func open(in directory: String, command: String? = nil, title: String? = nil, owner: TerminalOwner? = nil) -> TerminalSession {
         let name = title ?? URL(fileURLWithPath: directory).lastPathComponent
-        let session = TerminalSession(title: name.isEmpty ? "Terminal" : name, directory: directory, command: command)
+        opened += 1
+        let session = TerminalSession(title: name.isEmpty ? "Terminal" : name, directory: directory, command: command,
+                                      shortID: "t\(opened)", owner: owner)
         sessions.append(session)
         selected = session.id
         return session
@@ -86,6 +118,12 @@ final class TerminalStore: ObservableObject {
             let origin = Self.normalized($0.origin)
             return origin == root || origin.hasPrefix(root + "/")
         }
+    }
+
+    /// A terminal by its short id ("t3") or its full id.
+    func session(_ reference: String) -> TerminalSession? {
+        let key = reference.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return sessions.first { $0.shortID == key || $0.id.uuidString.lowercased() == key }
     }
 
     private static func normalized(_ path: String) -> String {
@@ -296,6 +334,12 @@ private struct TerminalTab: View {
             Circle()
                 .fill(session.running ? NookTheme.mint : (session.exitCode == 0 ? NookTheme.textTertiary : NookTheme.coral))
                 .frame(width: 6, height: 6)
+            if let owner = session.owner {
+                // Started by an agent: its mark, so you can tell its processes from your own shells.
+                AgentMark(agent: owner.agent, account: nil, size: 12, dimmed: !session.running, ring: .clear)
+                    .help(tr("bridge.terminalBy", owner.agent))
+                    .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
+            }
             Text(session.title).lineLimit(1).font(.callout)
             if !session.running, let code = session.exitCode, code != 0 {
                 Text(tr("workbench.terminal.exit", code)).font(.caption2).foregroundStyle(NookTheme.coral)
@@ -308,6 +352,6 @@ private struct TerminalTab: View {
         .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.white.opacity(0.12) : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
-        .help(session.directory)
+        .help(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
     }
 }

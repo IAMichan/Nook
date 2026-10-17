@@ -416,6 +416,10 @@ enum WorkspacePathPolicy {
 /// Concise, language-neutral summary of a tool call: "Bash · npm test", "Edit · Login.swift".
 enum ToolSummary {
     static func describe(tool: String, input: [String: Any]) -> String {
+        // Nook's own workspace tools (`mcp__nook__terminal_run`): their label, and the command, address or title.
+        if tool.hasPrefix(BridgeTool.toolPrefix), let bridge = BridgeTool.named(tool) {
+            return BridgeTool.detail(input).map { "\(bridge.label) · \(oneLine($0, 120))" } ?? bridge.label
+        }
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
         if let path = path(input) { return "\(tool) · \(URL(fileURLWithPath: path).lastPathComponent)" }
         for key in ["pattern", "query", "url", "description", "prompt"] {

@@ -99,6 +99,35 @@ extension AppModel {
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
+        startWorkspaceBridge()
+    }
+
+    /// Nook's terminal, browser and pull requests for the agents (see WorkspaceBridge): requests that need you appear as
+    /// the same approval card as any other agent request, and sessions Nook starts get the bridge on their command line.
+    private func startWorkspaceBridge() {
+        let bridge = WorkspaceBridge.shared
+        bridge.app = self
+        bridge.onApproval = { [weak self] request in self?.presentBridgeApproval(request) }
+        bridge.onApprovalGone = { [weak self] id in self?.viewModel.dismissCard(id: "bridge-" + id) }
+        bridge.start()
+        workspace.bridgeLaunch = { WorkspaceBridge.shared.launch }
+    }
+
+    private func presentBridgeApproval(_ request: BridgeRequest) {
+        var open: (label: String, action: () -> Void)?
+        switch request.caller.kind {
+        case .run(let runID):
+            // Already looking at this session: the request is shown there, no card on top of it.
+            if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == runID { return }
+            if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString { return }
+            open = (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) })
+        case .external:
+            open = nil
+        }
+        let folder = URL(fileURLWithPath: request.caller.directory).lastPathComponent
+        let context = request.caller.title.isEmpty ? "\(request.caller.agent) · \(folder)"
+            : "\(request.caller.agent) · \(AgentFormat.title(request.caller.title))"
+        presentApprovalCard(ApprovalCenter.make(request), context: context, open: open)
     }
 
     /// Opens your agents in the notch, optionally on one session or straight into a new one. Everything you do with

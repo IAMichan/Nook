@@ -27,6 +27,7 @@ struct AgentSessionDetail: View {
     @State private var questionAnswers: [[String]] = []
     @State private var questionPicks: Set<String> = []
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         Group {
@@ -143,12 +144,23 @@ struct AgentSessionDetail: View {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
+            } else if !app.demoMode, let request = bridgeRequest(for: session) {
+                // A command or pull request this agent asks for through Nook's workspace.
+                let approval = ApprovalCenter.make(request)
+                ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
                 liveComposer(shown)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// A workspace request from an agent running in a terminal in this session's folder.
+    private func bridgeRequest(for session: AgentSession) -> BridgeRequest? {
+        guard !session.cwd.isEmpty, !bridge.pending.isEmpty else { return nil }
+        let folder = WorkspacePathPolicy.normalize(session.cwd)
+        return bridge.pending.first { $0.caller.kind == .external && $0.caller.directory == folder }
     }
 
     /// The last few steps, for agents whose conversation Nook cannot read (it only hears their progress).

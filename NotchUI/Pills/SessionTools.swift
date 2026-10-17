@@ -7,21 +7,25 @@ enum SessionTool: String {
 }
 
 /// The terminal and the browser as two quiet icons in a session's header. The active one takes you back to the
-/// conversation.
+/// conversation. When the agent started a process or opened a page there that you have not looked at yet, the icon
+/// carries a small dot.
 struct SessionToolSwitch: View {
     @ObservedObject var viewModel: NotchViewModel
-    /// No folder, no terminal: a session without one only gets the browser.
-    let hasFolder: Bool
+    /// The session's folder; empty means no terminal, only the browser.
+    let directory: String
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         HStack(spacing: 2) {
-            if hasFolder { icon(.terminal, symbol: "terminal", label: tr("agents.tool.terminal")) }
+            if !directory.isEmpty { icon(.terminal, symbol: "terminal", label: tr("agents.tool.terminal")) }
             icon(.browser, symbol: "safari", label: tr("agents.tool.browser"))
         }
     }
 
     private func icon(_ tool: SessionTool, symbol: String, label: String) -> some View {
         let active = viewModel.sessionTool == tool
+        let fresh = !active && bridge.hasUnseen(directory, tool.rawValue)
+        let help = fresh ? label + " · " + tr("bridge.tool.unseen") : label
         return Button {
             viewModel.sessionTool = active ? .conversation : tool
         } label: {
@@ -30,11 +34,18 @@ struct SessionToolSwitch: View {
                 .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
+                .overlay(alignment: .topTrailing) {
+                    if fresh {
+                        Circle().fill(NookTheme.iris).frame(width: 6, height: 6).padding(5)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+        .animation(.easeOut(duration: 0.18), value: fresh)
+        .help(help)
+        .accessibilityLabel(help)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
@@ -46,11 +57,12 @@ struct SessionWorkbench<Conversation: View>: View {
     let title: String
     let directory: String
     @ViewBuilder var conversation: (AnyView) -> Conversation
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         let tool = directory.isEmpty && viewModel.sessionTool == .terminal ? .conversation : viewModel.sessionTool
         if tool == .conversation {
-            conversation(AnyView(SessionToolSwitch(viewModel: viewModel, hasFolder: !directory.isEmpty)))
+            conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 header(tool)
@@ -62,6 +74,9 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // What the agent opened here is in view now, also when it opens more while you look.
+            .onAppear { bridge.markSeen(directory, tool.rawValue) }
+            .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
         }
     }
 
@@ -88,7 +103,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
-            SessionToolSwitch(viewModel: viewModel, hasFolder: !directory.isEmpty)
+            SessionToolSwitch(viewModel: viewModel, directory: directory)
         }
         .frame(height: 30)
     }
