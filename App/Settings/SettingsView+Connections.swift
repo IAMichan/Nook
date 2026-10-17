@@ -65,11 +65,6 @@ extension SettingsView {
                     Text(tr("settings2.connections.addFooter"))
                 }
             }
-            if matchesSearch(title: app.portfolio.title) {
-                Section(tr("settings.connections.crypto")) {
-                    PortfolioSettings(portfolio: app.portfolio)
-                }
-            }
             Section {
                 Button { app.settingsSection = .mcp } label: {
                     HStack(spacing: 12) {
