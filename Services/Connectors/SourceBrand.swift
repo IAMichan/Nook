@@ -38,6 +38,48 @@ enum SourceBrand {
         }
     }
 
+    /// Well-known MCP servers by a word in their name or command (specific enough not to match by accident), with the website whose icon stands for them.
+    private static let mcpServices: [(String, String)] = [
+        ("github", "github.com"), ("gitlab", "gitlab.com"), ("slack", "slack.com"), ("notion", "notion.so"),
+        ("linear", "linear.app"), ("atlassian", "atlassian.com"), ("jira", "atlassian.com"), ("confluence", "atlassian.com"),
+        ("brave", "brave.com"), ("postgres", "postgresql.org"), ("sqlite", "sqlite.org"), ("mysql", "mysql.com"),
+        ("mongo", "mongodb.com"), ("redis", "redis.io"), ("supabase", "supabase.com"), ("puppeteer", "pptr.dev"),
+        ("playwright", "playwright.dev"), ("stripe", "stripe.com"), ("sentry", "sentry.io"), ("figma", "figma.com"),
+        ("vercel", "vercel.com"), ("cloudflare", "cloudflare.com"), ("todoist", "todoist.com"), ("discord", "discord.com"),
+        ("telegram", "telegram.org"), ("airtable", "airtable.com"), ("hubspot", "hubspot.com"), ("shopify", "shopify.com"),
+        ("obsidian", "obsidian.md"), ("spotify", "spotify.com"), ("gdrive", "drive.google.com"), ("google-drive", "drive.google.com"),
+        ("gmail", "mail.google.com"), ("google-maps", "maps.google.com"), ("asana", "asana.com"), ("trello", "trello.com"),
+        ("zapier", "zapier.com"), ("docker", "docker.com"), ("kubernetes", "kubernetes.io"), ("aws", "aws.amazon.com"),
+        ("azure", "azure.microsoft.com"), ("dropbox", "dropbox.com"), ("box-mcp", "box.com"), ("hugging", "huggingface.co"),
+        ("exa-mcp", "exa.ai"), ("tavily", "tavily.com"), ("perplexity", "perplexity.ai"), ("firecrawl", "firecrawl.dev"),
+        ("context7", "context7.com"), ("n8n", "n8n.io"), ("resend", "resend.com"), ("calcom", "cal.com"),
+        ("memory", "modelcontextprotocol.io"), ("sequential-thinking", "modelcontextprotocol.io"),
+        ("everything", "modelcontextprotocol.io"), ("fetch", "modelcontextprotocol.io")
+    ]
+
+    /// The website for an MCP server: its own host for a remote server (mcp.notion.com → notion.com), otherwise a
+    /// known service named in its command or name ("npx -y @modelcontextprotocol/server-github" → github.com).
+    static func mcpDomain(name: String, transport: MCPServerConfig.Transport) -> String? {
+        var text = name.lowercased()
+        switch transport {
+        case .http(let address):
+            if let url = URL(string: address), url.host != nil { return KnownService.iconDomain(for: url) }
+        case .stdio(let command, let arguments):
+            text += " " + ([command] + arguments).joined(separator: " ").lowercased()
+        }
+        return mcpServices.first { text.contains($0.0) }?.1
+    }
+
+    /// A local MCP server that works with the Mac's own files or apps shows that app ("server-filesystem" → Finder).
+    static func mcpAppSource(name: String, transport: MCPServerConfig.Transport) -> String? {
+        guard case .stdio(let command, let arguments) = transport else { return nil }
+        let text = (name + " " + ([command] + arguments).joined(separator: " ")).lowercased()
+        let apps: [(String, String)] = [("filesystem", "files"), ("apple-notes", "notes"), ("apple-mail", "mail"),
+                                        ("imessage", "messages"), ("apple-calendar", "calendar"), ("reminders", "reminders"),
+                                        ("whatsapp", "whatsapp"), ("things", "things"), ("bear-", "bear"), ("contacts", "contacts")]
+        return apps.first { text.contains($0.0) }?.1
+    }
+
     @MainActor private static var appIcons: [String: NSImage?] = [:]
 
     /// The icon of the app behind a source, if that app is on this Mac. The browser source shows your default browser.
