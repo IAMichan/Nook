@@ -306,7 +306,7 @@ struct AgentRunPanel: View {
         let model = run.model.isEmpty ? nil : run.model
         return Menu {
             Section(tr("ws.new.model")) {
-                ForEach(run.provider.suggestedModels, id: \.self) { option in
+                ForEach(app.models(for: run.provider), id: \.self) { option in
                     Button {
                         workspace.configure(runID, model: option)
                     } label: {
