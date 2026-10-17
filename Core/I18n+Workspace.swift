@@ -6,6 +6,7 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.servers.help": "Servers die deze sessie in zijn map draait. Tik om te openen.",
         "agents.time.doneUnseen": "klaar",
         "ws.fold.worked": "Gewerkt %@",
         "ws.group.command.one": "1 commando uitgevoerd",
@@ -451,6 +452,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "agents.servers.help": "Servers this session runs in its folder. Tap to open.",
         "agents.time.doneUnseen": "done",
         "ws.fold.worked": "Worked for %@",
         "ws.group.command.one": "Ran 1 command",
@@ -896,6 +898,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "agents.servers.help": "Server, die diese Sitzung in ihrem Ordner betreibt. Zum Öffnen tippen.",
         "agents.time.doneUnseen": "fertig",
         "ws.fold.worked": "%@ gearbeitet",
         "ws.group.command.one": "1 Befehl ausgeführt",

@@ -66,6 +66,7 @@ struct SessionWorkbench<Conversation: View>: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 header(tool)
+                if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
                 ToolSurface {
                     switch tool {
                     case .terminal: SessionTerminalsView(directory: directory).id(directory)
@@ -136,5 +137,52 @@ struct AgentsToolPage<Content: View>: View {
             ToolSurface(content: content)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The local servers this session's folder runs (found, see DevServerScanner), as small buttons
+/// above the browser: one tap opens it. Checked every few seconds while the browser is open.
+struct DevServerStrip: View {
+    let directory: String
+    @State private var servers: [DevServer] = []
+    @ObservedObject private var browser = BrowserStore.shared
+
+    var body: some View {
+        // A VStack, not a Group: it exists while still empty, so the scan below starts.
+        VStack(alignment: .leading, spacing: 0) {
+            if !servers.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .help(tr("agents.servers.help"))
+                        ForEach(servers) { server in
+                            let open = browser.webView.url?.port == server.port
+                            Button {
+                                browser.go(server.url.absoluteString)
+                            } label: {
+                                Text("\(server.command) — :\(server.port)")
+                                    .font(NookTheme.font(11.5, .medium))
+                                    .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
+                                    .padding(.horizontal, 9)
+                                    .frame(height: 22)
+                                    .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                            }
+                            .buttonStyle(.plain)
+                            .help(server.url.absoluteString)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: directory) {
+            let folder = WorkspacePathPolicy.normalize(directory)
+            while !Task.isCancelled {
+                let found = await Task.detached(priority: .utility) { DevServerScanner.scan(folder: folder) }.value
+                if found != servers { withAnimation(.easeOut(duration: 0.15)) { servers = found } }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
     }
 }

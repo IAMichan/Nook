@@ -259,6 +259,12 @@ final class WorkspaceBridge: ObservableObject {
         if terminals.isEmpty { lines.append("- none") }
         for terminal in terminals { lines.append("- " + describe(terminal, caller)) }
 
+        let servers = await Task.detached(priority: .utility) { DevServerScanner.scan(folder: WorkspacePathPolicy.normalize(directory)) }.value
+        lines.append("")
+        lines.append("## Local servers in this folder")
+        if servers.isEmpty { lines.append("- none listening") }
+        for server in servers { lines.append("- \(server.command) (pid \(server.pid)) · \(server.url.absoluteString) — open it with browser_open") }
+
         lines.append("")
         lines.append("## Browser")
         let browser = BrowserStore.shared
