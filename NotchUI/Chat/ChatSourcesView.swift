@@ -344,35 +344,31 @@ struct ScopeMenu: View {
     var body: some View {
         let current = scope
         Menu {
-            Button(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic")) { app.setScope(.automatic) }
+            Button { app.setScope(.automatic) } label: {
+                Label(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic"), systemImage: "sparkles")
+            }
             Section(tr("scope.onlyThese")) {
                 ForEach(app.connectors.active.map { $0.id }, id: \.self) { id in
-                    Toggle(isOn: onlyBinding(id)) {
-                        let source = app.connectors.source(id: id)
-                        let title = source?.title ?? SourceCatalog.title(id)
-                        if let image = SourceBrand.menuImage(for: id, domain: source?.iconDomain) {
-                            Label { Text(title) } icon: { Image(nsImage: image) }
-                        } else {
-                            Text(title)
-                        }
-                    }
+                    Toggle(isOn: onlyBinding(id)) { sourceLabel(id) }
                 }
-                Toggle(SourceCatalog.title(SourceCatalog.web), isOn: onlyBinding(SourceCatalog.web))
+                Toggle(isOn: onlyBinding(SourceCatalog.web)) { sourceLabel(SourceCatalog.web) }
             }
             let multi = accountServices
             if !multi.isEmpty {
                 Section(tr("scope.accounts")) {
                     ForEach(multi, id: \.self) { service in
                         ForEach(AccountRegistry.shared.accounts(for: service)) { account in
-                            Toggle(account.title(service: SourceCatalog.title(service)), isOn: accountBinding(account.id))
+                            Toggle(isOn: accountBinding(account.id)) {
+                                sourceLabel(service, title: account.title(service: SourceCatalog.title(service)))
+                            }
                         }
                     }
                 }
             }
             Section(tr("scope.never")) {
-                Toggle(SourceCatalog.title(SourceCatalog.screen), isOn: neverBinding(SourceCatalog.screen))
-                Toggle(SourceCatalog.title(SourceCatalog.web), isOn: neverBinding(SourceCatalog.web))
-                Toggle(SourceCatalog.title("clipboard"), isOn: neverBinding("clipboard"))
+                Toggle(isOn: neverBinding(SourceCatalog.screen)) { sourceLabel(SourceCatalog.screen) }
+                Toggle(isOn: neverBinding(SourceCatalog.web)) { sourceLabel(SourceCatalog.web) }
+                Toggle(isOn: neverBinding("clipboard")) { sourceLabel("clipboard") }
             }
         } label: {
             ComposerPill(symbol: "line.3.horizontal.decrease",
@@ -381,6 +377,19 @@ struct ScopeMenu: View {
         }
         .composerMenu()
         .help(tr("scope.help"))
+    }
+
+    /// A source in the menu with its real icon: the app or the service's logo, else its own symbol (screen, web…).
+    private func sourceLabel(_ id: String, title: String? = nil) -> some View {
+        let source = app.connectors.source(id: id)
+        let text = title ?? source?.title ?? SourceCatalog.title(id)
+        let image = SourceBrand.menuImage(for: id, domain: source?.iconDomain)
+            ?? NSImage(systemSymbolName: source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
+        return Label {
+            Text(text)
+        } icon: {
+            if let image { Image(nsImage: image) }
+        }
     }
 }
 
