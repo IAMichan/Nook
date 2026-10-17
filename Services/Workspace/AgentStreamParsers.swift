@@ -319,3 +319,64 @@ enum CodexStreamParser {
         }
     }
 }
+
+// MARK: Gemini CLI
+
+/// What Nook extracts from one line of Gemini CLI's `--output-format stream-json`.
+enum GeminiStreamEvent: Equatable, Sendable {
+    case initialized(sessionID: String, model: String?)
+    /// An answer chunk (`delta: true`) or a whole answer.
+    case text(String, delta: Bool)
+    case toolUse(id: String, name: String, input: JSONBox)
+    case toolResult(id: String, output: String, isError: Bool)
+    case warning(String)
+    case failed(String)
+    case result(isError: Bool, message: String?, usage: TurnUsage)
+}
+
+enum GeminiStreamParser {
+    static func parse(_ line: String) -> [GeminiStreamEvent] {
+        guard let data = line.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let type = object["type"] as? String else { return [] }
+        switch type {
+        case "init":
+            guard let session = object["session_id"] as? String, !session.isEmpty else { return [] }
+            return [.initialized(sessionID: session, model: object["model"] as? String)]
+        case "message":
+            // The prompt is echoed as a user message; only the answer matters.
+            guard (object["role"] as? String) == "assistant", let content = object["content"] as? String, !content.isEmpty else { return [] }
+            return [.text(content, delta: (object["delta"] as? Bool) ?? false)]
+        case "tool_use":
+            let id = (object["tool_id"] as? String) ?? UUID().uuidString
+            let name = (object["tool_name"] as? String) ?? "tool"
+            return [.toolUse(id: id, name: name, input: JSONBox((object["parameters"] as? [String: Any]) ?? [:]))]
+        case "tool_result":
+            let id = (object["tool_id"] as? String) ?? ""
+            let failed = (object["status"] as? String) == "error"
+            let error = (object["error"] as? [String: Any])?["message"] as? String
+            return [.toolResult(id: id, output: (object["output"] as? String) ?? error ?? "", isError: failed)]
+        case "error":
+            let message = (object["message"] as? String) ?? "Gemini CLI reported an error."
+            return [(object["severity"] as? String) == "warning" ? .warning(message) : .failed(message)]
+        case "result":
+            var usage = TurnUsage()
+            if let stats = object["stats"] as? [String: Any] {
+                // `input_tokens` includes the cached part; keep them apart like the other agents.
+                let cached = ClaudeStreamParser.number(stats["cached"]).map { Int($0) }
+                let input = ClaudeStreamParser.number(stats["input"]).map { Int($0) }
+                    ?? ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) - (cached ?? 0) }
+                usage.inputTokens = input
+                usage.cacheReadTokens = cached
+                usage.outputTokens = ClaudeStreamParser.number(stats["output_tokens"]).map { Int($0) }
+                usage.contextTokens = ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) }
+                usage.durationSeconds = ClaudeStreamParser.number(stats["duration_ms"]).map { $0 / 1000 }
+            }
+            let isError = (object["status"] as? String) == "error"
+            let message = (object["error"] as? [String: Any])?["message"] as? String
+            return [.result(isError: isError, message: message, usage: usage)]
+        default:
+            return []
+        }
+    }
+}

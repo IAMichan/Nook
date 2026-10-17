@@ -29,10 +29,10 @@ struct UsageView: View {
 
     private var subscriptionsSection: some View {
         Section {
-            ForEach(app.linkedProfiles.filter { $0.kind != .gemini }) { profile in
+            // Every connected account, Gemini CLI included (it reports no limits: its tokens instead).
+            ForEach(app.connectedProfiles) { profile in
                 LabeledContent {
-                    Text(app.quota.summary(for: profile)
-                         ?? tr(profile.kind == .claude ? "settings.usage.claudeMissing" : (profile.kind == .antigravity ? "ws.usage.quotaUnavailable" : "settings.usage.codexMissing")))
+                    Text(app.quota.summary(for: profile) ?? fallbackSummary(profile))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .layoutPriority(1)
@@ -57,6 +57,19 @@ struct UsageView: View {
             Text(tr("settings.agents.subscriptions"))
         } footer: {
             Text(tr("ws.usage.quotaNote"))
+        }
+    }
+
+    /// Without limits: today's and this week's tokens from the agent's conversations, or why nothing is known.
+    private func fallbackSummary(_ profile: AgentProfile) -> String {
+        if profile.kind == .gemini, let usage = app.history.profileUsage[profile.id] {
+            return tr("settings.usage.tokens", TokenTally.format(usage.today.total), TokenTally.format(usage.week.total))
+        }
+        switch profile.kind {
+        case .claude: return tr("settings.usage.claudeMissing")
+        case .codex: return tr("settings.usage.codexMissing")
+        case .gemini: return tr("agents.usage.geminiNoLimits")
+        case .antigravity: return tr("ws.usage.quotaUnavailable")
         }
     }
 
@@ -202,7 +215,8 @@ struct UsageView: View {
                 }
                 .chartForegroundStyleScale([
                     RunProvider.claude.displayName: RunProvider.claude.color,
-                    RunProvider.codex.displayName: RunProvider.codex.color
+                    RunProvider.codex.displayName: RunProvider.codex.color,
+                    RunProvider.gemini.displayName: RunProvider.gemini.color
                 ])
                 .chartYAxis {
                     AxisMarks { value in

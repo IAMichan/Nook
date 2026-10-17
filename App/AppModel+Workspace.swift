@@ -6,6 +6,7 @@ extension RunProvider {
         switch self {
         case .claude: return .claude
         case .codex: return .codex
+        case .gemini: return .gemini
         }
     }
 
@@ -15,7 +16,8 @@ extension RunProvider {
         switch kind {
         case .claude: self = .claude
         case .codex: self = .codex
-        case .gemini, .antigravity: return nil
+        case .gemini: self = .gemini
+        case .antigravity: return nil
         }
     }
 }

@@ -493,6 +493,73 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             let parsed = CodexStreamParser.parse(line)
             for event in parsed { handleCodex(event, id: id) }
+        case .gemini:
+            let parsed = GeminiStreamParser.parse(line)
+            for event in parsed { handleGemini(event, id: id) }
+        }
+    }
+
+    private func handleGemini(_ event: GeminiStreamEvent, id: UUID) {
+        switch event {
+        case .initialized(let session, let model):
+            update(id) {
+                $0.providerSessionID = session
+                if let model, !model.isEmpty { $0.resolvedModel = model }
+            }
+        case .text(let text, let delta):
+            if let live = turns[id]?.liveTextID {
+                mutateEvent(id, live) { $0.text = delta ? $0.text + text : text }
+            } else {
+                let event = RunEvent(kind: .assistant, text: text, state: .running)
+                turns[id]?.liveTextID = event.id
+                append(id, event)
+            }
+            if !delta { finishLiveText(id) }
+        case .toolUse(let callID, let name, let input):
+            finishLiveText(id)
+            let event = RunEvent(kind: .tool, text: ToolSummary.describe(tool: name, input: input.dictionary), tool: name,
+                                 callID: callID, detail: ToolSummary.json(input.object), state: .running)
+            turns[id]?.toolEvents[callID] = event.id
+            turns[id]?.toolNames[callID] = name
+            turns[id]?.toolInputs[callID] = input
+            recap?.toolUse(name)
+            append(id, event)
+        case .toolResult(let callID, let output, let isError):
+            if let eventID = turns[id]?.toolEvents[callID] {
+                mutateEvent(id, eventID) {
+                    $0.output = RunEvent.clip(output)
+                    $0.state = isError ? .failed : .done
+                }
+            }
+            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
+                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
+                    recordFileChange(id, path: change.path, kind: change.kind)
+                }
+            }
+        case .warning(let message):
+            append(id, RunEvent(kind: .system, text: message))
+        case .failed(let message):
+            turns[id]?.lastError = message
+            append(id, RunEvent(kind: .error, text: message))
+        case .result(let isError, let message, var usage):
+            finishLiveText(id)
+            if usage.durationSeconds == nil, let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
+            turns[id]?.finished = true
+            let stopping = turns[id]?.stopping ?? false
+            update(id) { run in
+                run.usage.add(usage)
+                if stopping {
+                    run.move(to: .stopped)
+                } else if isError {
+                    run.move(to: .failed, detail: message)
+                } else {
+                    run.move(to: .completed)
+                }
+            }
+            if isError && !stopping { append(id, RunEvent(kind: .error, text: message ?? tr("ws.event.failed", "error"))) }
+            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: isError && !stopping ? .failed : .done))
+            if let run = run(id) { onTurnFinished?(run) }
+            scheduleGitRefresh(id, delay: 0.5)
         }
     }
 

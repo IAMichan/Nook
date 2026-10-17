@@ -122,9 +122,13 @@ struct NewSessionComposer: View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
         return Menu {
-            ForEach(RunProvider.allCases) { provider in
+            // Only agents and accounts you connected; the rest would only clutter the choice.
+            if app.connectedProviders.isEmpty {
+                Text(tr("agents.noneConnected"))
+            }
+            ForEach(app.connectedProviders) { provider in
                 Section(provider.displayName) {
-                    ForEach(app.profiles.profiles(for: provider.kind)) { account in
+                    ForEach(app.connectedProfiles(for: provider)) { account in
                         Button {
                             choose(provider, account: account.id)
                         } label: {
@@ -139,7 +143,7 @@ struct NewSessionComposer: View {
             }
             Divider()
             Section(tr("ws.new.model")) {
-                ForEach(config.provider.suggestedModels, id: \.self) { model in
+                ForEach(app.models(for: config.provider), id: \.self) { model in
                     Button {
                         config.model = model
                     } label: {
@@ -334,11 +338,14 @@ struct NewSessionComposer: View {
     // MARK: Actions
 
     private func prepare() {
-        config.provider = settings.defaultProvider
-        config.profileID = app.profiles.preferredProfile(settings.defaultProvider.kind).id
-        config.model = settings.model(for: settings.defaultProvider)
+        // Your default agent, unless it is not connected: then the first one that is.
+        let connected = app.connectedProviders
+        let provider = connected.contains(settings.defaultProvider) ? settings.defaultProvider : (connected.first ?? settings.defaultProvider)
+        config.provider = provider
+        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        config.model = settings.model(for: provider)
         config.mode = settings.defaultMode
-        config.permission = settings.permission(for: settings.defaultProvider)
+        config.permission = settings.permission(for: provider)
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }

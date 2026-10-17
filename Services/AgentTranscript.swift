@@ -28,12 +28,15 @@ struct AgentChatMessage: Identifiable, Equatable {
     }
 }
 
-/// Reads the tail of a Claude Code, Antigravity, or Codex JSONL transcript and returns recent messages:
-/// user prompts, agent responses, and thinking/reasoning blocks. Tool invocations and system prompts are excluded.
+/// Reads a session's conversation from the agent's own transcript: user prompts, agent responses, and thinking/reasoning
+/// blocks. Tool invocations and system prompts are excluded. Understands Claude Code, Codex and Antigravity (JSONL) and
+/// Gemini CLI (one JSON file per chat).
 enum AgentTranscript {
-    /// Number of bytes to read from file tail; sufficient for recent turns.
-    private static let tailBytes: UInt64 = 600_000
-    private static let maxMessageLength = 6_000
+    /// Number of bytes to read from the end of a JSONL file: enough for the whole conversation of nearly every session.
+    private static let tailBytes: UInt64 = 8_000_000
+    private static let maxMessageLength = 24_000
+    /// The whole conversation by default; a cap only guards against pathological files.
+    static let fullLimit = 1_000
 
     private struct CacheEntry {
         let size: UInt64
@@ -45,8 +48,9 @@ enum AgentTranscript {
     private static let cacheLock = NSLock()
     private static var cache: [String: CacheEntry] = [:]
 
-    static func recent(path: String, limit: Int = 40) -> [AgentChatMessage] {
-        guard path.hasSuffix(".jsonl") else { return [] }
+    static func recent(path: String, limit: Int = fullLimit) -> [AgentChatMessage] {
+        let isGemini = path.hasSuffix(".json")
+        guard path.hasSuffix(".jsonl") || isGemini else { return [] }
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let attrSize = (attrs?[.size] as? NSNumber)?.uint64Value
         let attrMod = attrs?[.modificationDate] as? Date
@@ -61,15 +65,36 @@ enum AgentTranscript {
             cacheLock.unlock()
         }
 
-        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
-        defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return [] }
-        let start = size > tailBytes ? size - tailBytes : 0
-        try? handle.seek(toOffset: start)
-        guard var data = try? handle.readToEnd() else { return [] }
-        // If reading started mid-line, skip the initial partial line.
-        if start > 0, let newline = data.firstIndex(of: 0x0A) { data = data[data.index(after: newline)...] }
+        var messages: [AgentChatMessage]
+        var size: UInt64 = attrSize ?? 0
+        if isGemini {
+            guard let data = FileManager.default.contents(atPath: path) else { return [] }
+            size = UInt64(data.count)
+            messages = gemini(data)
+        } else {
+            guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
+            defer { try? handle.close() }
+            guard let end = try? handle.seekToEnd() else { return [] }
+            size = end
+            let start = end > tailBytes ? end - tailBytes : 0
+            try? handle.seek(toOffset: start)
+            guard var data = try? handle.readToEnd() else { return [] }
+            // If reading started mid-line, skip the initial partial line.
+            if start > 0, let newline = data.firstIndex(of: 0x0A) { data = data[data.index(after: newline)...] }
+            messages = jsonl(data)
+        }
+        let result = Array(messages.suffix(limit))
+        if let attrMod {
+            cacheLock.lock()
+            if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
+            cache[path] = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
+            cacheLock.unlock()
+        }
+        return result
+    }
 
+    /// Claude Code, Antigravity and Codex: one JSON object per line.
+    static func jsonl(_ data: Data) -> [AgentChatMessage] {
         var messages: [AgentChatMessage] = []
         for (index, line) in data.split(separator: 0x0A).enumerated() {
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
@@ -86,24 +111,8 @@ enum AgentTranscript {
                     guard !text.isEmpty, isTypedPrompt(text) else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
                 } else {
-                    let thinking = thinkingText(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    if !thinking.isEmpty {
-                        if let last = messages.last, last.isThinking {
-                            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
-                        } else {
-                            messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
-                        }
-                    }
-
-                    if !text.isEmpty {
-                        if let last = messages.last, !last.fromUser && !last.isThinking {
-                            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
-                        } else {
-                            messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
-                        }
-                    }
+                    append(thinking: thinkingText(message["content"]), id: id, to: &messages)
+                    append(reply: text(message["content"]), id: id, to: &messages)
                 }
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
@@ -113,49 +122,85 @@ enum AgentTranscript {
                 guard !text.isEmpty else { continue }
                 messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
             } else if type == "PLANNER_RESPONSE" {
-                let thinking = (object["thinking"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let content = (object["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                if !thinking.isEmpty {
-                    if let last = messages.last, last.isThinking {
-                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
-                    } else {
-                        messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
-                    }
-                }
-
-                if !content.isEmpty {
-                    if let last = messages.last, !last.fromUser && !last.isThinking {
-                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + content))
-                    } else {
-                        messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(content)))
-                    }
-                }
+                append(thinking: (object["thinking"] as? String) ?? "", id: id, to: &messages)
+                append(reply: (object["content"] as? String) ?? "", id: id, to: &messages)
             }
-            // Codex (event_msg)
+            // Codex (event_msg): prompts, answers and the reasoning summaries it shows while it thinks.
             else if type == "event_msg", let payload = object["payload"] as? [String: Any],
                     let ptype = payload["type"] as? String {
-                let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
-                if ptype == "user_message" {
+                switch ptype {
+                case "user_message":
+                    let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
-                } else if ptype == "agent_message" {
-                    if let last = messages.last, !last.fromUser && !last.isThinking {
-                        messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
-                    } else {
-                        messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
-                    }
+                case "agent_message":
+                    append(reply: (payload["message"] as? String) ?? "", id: id, to: &messages)
+                case "agent_reasoning":
+                    append(thinking: (payload["text"] as? String) ?? "", id: id, to: &messages)
+                default:
+                    continue
                 }
             }
         }
-        let result = Array(messages.suffix(limit))
-        if let attrMod {
-            cacheLock.lock()
-            if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
-            cache[path] = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
-            cacheLock.unlock()
+        return messages
+    }
+
+    /// Gemini CLI: `{"messages": [{"type": "user" | "gemini", "content": …, "thoughts": [{"subject", "description"}]}]}`.
+    static func gemini(_ data: Data) -> [AgentChatMessage] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let list = root["messages"] as? [[String: Any]] else { return [] }
+        var messages: [AgentChatMessage] = []
+        for (index, message) in list.enumerated() {
+            let id = (message["id"] as? String) ?? "gemini-\(index)"
+            let content = geminiText(message["content"])
+            switch message["type"] as? String {
+            case "user":
+                guard !content.isEmpty else { continue }
+                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(content)))
+            case "gemini":
+                let thoughts = ((message["thoughts"] as? [[String: Any]]) ?? []).compactMap { thought -> String? in
+                    let subject = ((thought["subject"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let description = ((thought["description"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if subject.isEmpty { return description.isEmpty ? nil : description }
+                    return description.isEmpty ? "**\(subject)**" : "**\(subject)**\n\(description)"
+                }
+                append(thinking: thoughts.joined(separator: "\n\n"), id: id, to: &messages)
+                append(reply: content, id: id, to: &messages)
+            default:
+                continue
+            }
         }
-        return result
+        return messages
+    }
+
+    /// Thinking right after thinking joins one bubble.
+    private static func append(thinking raw: String, id: String, to messages: inout [AgentChatMessage]) {
+        let thinking = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !thinking.isEmpty else { return }
+        if let last = messages.last, last.isThinking {
+            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
+        } else {
+            messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
+        }
+    }
+
+    /// Answer text right after answer text joins one bubble.
+    private static func append(reply raw: String, id: String, to messages: inout [AgentChatMessage]) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if let last = messages.last, !last.fromUser && !last.isThinking {
+            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
+        } else {
+            messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
+        }
+    }
+
+    private static func geminiText(_ content: Any?) -> String {
+        if let string = content as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let parts = content as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
     }
 
     /// Extracts the user request text from an Antigravity prompt, removing envelope tags and metadata.

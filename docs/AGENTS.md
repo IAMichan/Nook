@@ -39,7 +39,11 @@ Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-o
 - **Open terminal hier** opent de ingebouwde terminal in de map van de sessie.
 - **Limieten** per account (5 uur en week) staan bij Instellingen › Gebruik (`QuotaService`); Codex wordt per accountmap gelezen.
 
-Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code en Codex; andere agents kun je vanuit Nook volgen en beëindigen. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
+Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex en Gemini CLI (`gemini --output-format stream-json`, hervatten met `--resume`); Antigravity beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen.
+
+**Het hele gesprek.** Bij elke sessie, lopend of eerder, zie je het volledige gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen: Claude Code, Codex (de redeneersamenvattingen), Gemini CLI (`thoughts`) en Antigravity. Neem je een sessie over, dan neemt Nook dat hele gesprek mee.
+
+**Alleen wat gekoppeld is.** Bij een nieuwe sessie, in de lijst met eerdere sessies en bij Gebruik zie je alleen agents en accounts die ingelogd zijn op een geïnstalleerde agent. De modellen zijn de bekende plus de modellen die je recent met die agent gebruikte. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
 
 ## De werkruimte van Nook voor je agents
 

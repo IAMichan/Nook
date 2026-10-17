@@ -5,7 +5,7 @@ import Foundation
 
 /// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex
+    case claude, codex, gemini
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
+        case .gemini: return "Gemini CLI"
         }
     }
 
@@ -27,6 +28,11 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: false, interrupt: true, streamingText: false, planMode: true,
                                         reportsCost: false, reportsContextWindow: false, reportsCacheTokens: true,
                                         policies: [.acceptEdits, .bypass])
+        case .gemini:
+            // Headless Gemini CLI cannot ask: edits are allowed (auto_edit) or everything is (yolo).
+            return ProviderCapabilities(approvals: false, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: false, reportsContextWindow: false, reportsCacheTokens: true,
+                                        policies: [.acceptEdits, .bypass])
         }
     }
 
@@ -35,6 +41,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return ["", "sonnet", "opus", "haiku"]
         case .codex: return ["", "gpt-5-codex", "gpt-5"]
+        case .gemini: return ["", "gemini-2.5-pro", "gemini-2.5-flash"]
         }
     }
 }
@@ -453,8 +460,11 @@ enum ToolSummary {
         switch tool {
         case "Edit", "MultiEdit", "NotebookEdit":
             return path(input).map { [($0, "modified")] } ?? []
-        case "Write":
+        case "Write", "write_file":
             return path(input).map { [($0, "written")] } ?? []
+        case "replace":
+            // Gemini CLI's edit tool.
+            return path(input).map { [($0, "modified")] } ?? []
         default:
             return []
         }

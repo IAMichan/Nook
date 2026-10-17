@@ -129,6 +129,7 @@ enum WorkspaceBridgeScript {
         switch provider {
         case .claude: return "claude mcp add --scope user \(BridgeTool.serverName) -- \(script) --agent claude-code"
         case .codex: return "codex mcp add \(BridgeTool.serverName) -- \(script) --agent codex"
+        case .gemini: return "gemini mcp add --scope user \(BridgeTool.serverName) \(script) --agent gemini"
         }
     }
 }

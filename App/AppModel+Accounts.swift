@@ -23,6 +23,43 @@ extension AppModel {
         profiles.all.filter { history.profileAccounts[$0.id] != nil }
     }
 
+    /// Linked and usable on this Mac: signed in, and the agent is installed (Antigravity: a working Google sign-in or its
+    /// agent API). Only these accounts appear when you start or answer a session and in the usage overviews, so the lists
+    /// never offer an agent or a model of a service you did not connect.
+    var connectedProfiles: [AgentProfile] {
+        linkedProfiles.filter(isConnected)
+    }
+
+    func isConnected(_ profile: AgentProfile) -> Bool {
+        guard history.profileAccounts[profile.id] != nil else { return false }
+        switch profile.kind {
+        case .antigravity: return !antigravityUsage.noLogin || AntigravityClient.isAvailable
+        default: return history.executables[profile.kind] != nil
+        }
+    }
+
+    /// The agents Nook can start, limited to the connected ones.
+    var connectedProviders: [RunProvider] {
+        let kinds = Set(connectedProfiles.map(\.kind))
+        return RunProvider.allCases.filter { kinds.contains($0.kind) }
+    }
+
+    /// The connected accounts of one agent, the preferred one first.
+    func connectedProfiles(for provider: RunProvider) -> [AgentProfile] {
+        let preferred = profiles.preferredProfile(provider.kind).id
+        return connectedProfiles.filter { $0.kind == provider.kind }.sorted { a, _ in a.id == preferred }
+    }
+
+    /// Models to offer for an agent: its default, the well-known ones, and every model you used with it recently.
+    func models(for provider: RunProvider) -> [String] {
+        var list = provider.suggestedModels
+        for session in history.sessions where session.agent == provider.kind && !session.model.isEmpty {
+            if !list.contains(session.model) { list.append(session.model) }
+            if list.count >= provider.suggestedModels.count + 6 { break }
+        }
+        return list
+    }
+
     /// Resolves account profile for a running session, or nil if unknown.
     func profile(for session: AgentSession) -> AgentProfile? {
         guard let kind = AgentKind(agentName: session.name) else { return nil }

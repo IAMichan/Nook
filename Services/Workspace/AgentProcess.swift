@@ -96,6 +96,29 @@ enum AgentCommand {
             arguments += ["--", prompt]
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+
+        case .gemini:
+            var arguments = ["--output-format", "stream-json",
+                             "--approval-mode", geminiApprovalMode(mode: input.mode, permission: input.permission)]
+            if !input.model.isEmpty { arguments += ["--model", input.model] }
+            if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--resume", resume] }
+            var prompt = input.prompt
+            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            // No separate system prompt in headless mode: instructions go before the first prompt, like Codex.
+            if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
+            // One argument with "=", so a prompt starting with a dash is never parsed as a flag.
+            arguments.append("--prompt=" + prompt)
+            return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                              workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+        }
+    }
+
+    static func geminiApprovalMode(mode: ExecutionMode, permission: PermissionPolicy) -> String {
+        if mode == .plan { return "plan" }
+        switch permission {
+        case .ask: return "default"
+        case .acceptEdits: return "auto_edit"
+        case .bypass: return "yolo"
         }
     }
 

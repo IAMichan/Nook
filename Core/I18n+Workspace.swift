@@ -6,6 +6,10 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.noneConnected": "Nog geen agent gekoppeld. Koppel er een bij Instellingen › Agents.",
+        "agents.nook.busyElsewhere": "%@ draait nog in een terminal. Kies ⋯ › Neem over in Nook (dat sluit de terminal af), of wacht tot hij klaar is.",
+        "agents.usage.inNook": "In Nook deze week: %ld beurten · %@ tokens",
+        "settings.usage.tokens": "vandaag %@ · week %@ tokens",
         "bridge.terminalBy": "Gestart door %@",
         "bridge.browserBy": "Geopend door %@",
         "bridge.tool.unseen": "de agent heeft hier iets geopend",
@@ -345,7 +349,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.new.agent": "Agent",
         "ws.new.provider": "Agent",
         "ws.new.notInstalled": "%@ staat niet op deze Mac. Koppel hem in de Agents-tab (Accounts).",
-        "ws.new.geminiNote": "Gemini CLI en andere agents volg je via de terminal; Nook kan ze hier (nog) niet zelf starten.",
+        "ws.new.geminiNote": "Je ziet alleen agents en accounts die je gekoppeld hebt. Copilot CLI, Cursor en andere agents volg je via de terminal.",
         "ws.new.account": "Account",
         "ws.new.accountPinned": "Deze sessie houdt dit account, ook als je later het standaardaccount wisselt.",
         "ws.new.accountNotLoggedIn": "Dit account is niet ingelogd.",
@@ -430,6 +434,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "agents.noneConnected": "No agent connected yet. Connect one in Settings › Agents.",
+        "agents.nook.busyElsewhere": "%@ is still running in a terminal. Choose ⋯ › Take over in Nook (this closes the terminal), or wait until it's done.",
+        "agents.usage.inNook": "In Nook this week: %ld turns · %@ tokens",
+        "settings.usage.tokens": "today %@ · week %@ tokens",
         "bridge.terminalBy": "Started by %@",
         "bridge.browserBy": "Opened by %@",
         "bridge.tool.unseen": "the agent opened something here",
@@ -769,7 +777,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.new.agent": "Agent",
         "ws.new.provider": "Agent",
         "ws.new.notInstalled": "%@ isn't on this Mac. Connect it in the Agents tab (Accounts).",
-        "ws.new.geminiNote": "Gemini CLI and other agents are followed via the terminal; Nook can't start them here (yet).",
+        "ws.new.geminiNote": "Only agents and accounts you connected are shown. Copilot CLI, Cursor and other agents are followed via the terminal.",
         "ws.new.account": "Account",
         "ws.new.accountPinned": "This session keeps this account, even if you switch the default account later.",
         "ws.new.accountNotLoggedIn": "This account isn't logged in.",
@@ -854,6 +862,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "agents.noneConnected": "Noch kein Agent verbunden. Verbinde einen unter Einstellungen › Agents.",
+        "agents.nook.busyElsewhere": "%@ läuft noch in einem Terminal. Wähle ⋯ › In Nook übernehmen (das schließt das Terminal), oder warte, bis er fertig ist.",
+        "agents.usage.inNook": "In Nook diese Woche: %ld Durchgänge · %@ Tokens",
+        "settings.usage.tokens": "heute %@ · Woche %@ Tokens",
         "bridge.terminalBy": "Gestartet von %@",
         "bridge.browserBy": "Geöffnet von %@",
         "bridge.tool.unseen": "der Agent hat hier etwas geöffnet",

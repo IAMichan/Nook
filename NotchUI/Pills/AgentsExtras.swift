@@ -284,12 +284,13 @@ private struct PullRequestRow: View {
 
 // MARK: Usage
 
-/// The usage of every account at once: the limits that agents report (5 hours and the week) and what was used in
-/// tokens today and this week, per agent and account.
+/// The usage of every connected account at once: the limits that agents report (5 hours and the week), what was used
+/// in tokens today and this week with a small chart of the last seven days, and what Nook itself ran with the account.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
-    private var profiles: [AgentProfile] { app.linkedProfiles }
+    /// Only accounts that are signed in on an installed agent: no cards for services you did not connect.
+    private var profiles: [AgentProfile] { app.connectedProfiles }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -303,6 +304,11 @@ struct AgentsUsagePanel: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 10) {
+                    if profiles.isEmpty {
+                        Text(tr("agents.noneConnected"))
+                            .font(NookTheme.font(12.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
                     ForEach(profiles) { profile in
                         card(profile)
                     }
@@ -367,12 +373,25 @@ struct AgentsUsagePanel: View {
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
             } else if let usage {
-                HStack(spacing: 16) {
+                HStack(alignment: .bottom, spacing: 16) {
                     stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
                     stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
                     stat(tr("agents.usage.sessions"), "\(usage.sessionsWeek)")
                     Spacer(minLength: 0)
+                    WeekBars(days: usage.perDay, color: profile.kind.color)
                 }
+            }
+            let nook = nookUsage(profile)
+            if nook.turns > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold))
+                    Text(tr("agents.usage.inNook", nook.turns, TokenTally.format(nook.tokens)))
+                    if let cost = nook.cost, cost > 0, WorkspaceSettings.shared.showCost {
+                        Text("· " + AgentPathFormat.cost(cost))
+                    }
+                }
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
             }
         }
         .padding(14)
@@ -380,10 +399,43 @@ struct AgentsUsagePanel: View {
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x121214)))
     }
 
+    /// What sessions Nook ran with this account did in the last seven days: turns, tokens and the cost the agent reported.
+    private func nookUsage(_ profile: AgentProfile) -> (turns: Int, tokens: Int, cost: Double?) {
+        let since = Date().addingTimeInterval(-7 * 24 * 3600)
+        var turns = 0, tokens = 0
+        var cost: Double?
+        for run in app.workspace.runs where run.profileID == profile.id && run.provider.kind == profile.kind && run.updatedAt > since {
+            turns += run.usage.turns
+            tokens += run.usage.totalTokens ?? 0
+            if let reported = run.usage.reportedCostUSD { cost = (cost ?? 0) + reported }
+        }
+        return (turns, tokens, cost)
+    }
+
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
             Text(value).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper)
         }
+    }
+}
+
+/// Seven thin bars, one per day, today on the right: how busy an account was this week at a glance.
+struct WeekBars: View {
+    let days: [(day: Date, tokens: Int)]
+    let color: Color
+
+    var body: some View {
+        let peak = max(1, days.map(\.tokens).max() ?? 1)
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(days.suffix(7).enumerated()), id: \.offset) { _, day in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(day.tokens > 0 ? color.opacity(0.85) : NookTheme.line2)
+                    .frame(width: 6, height: max(3, 26 * CGFloat(day.tokens) / CGFloat(peak)))
+                    .help(AgentFormat.weekdayLetter(day.day) + " · " + TokenTally.format(day.tokens))
+            }
+        }
+        .frame(height: 26, alignment: .bottom)
+        .accessibilityHidden(true)
     }
 }
