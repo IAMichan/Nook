@@ -10,6 +10,7 @@ struct AgentsTab: View {
     @EnvironmentObject private var app: AppModel
     @State private var showFinished = false
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var visits = SessionVisits.shared
 
     private enum Selection {
         case live(AgentSession)
@@ -234,7 +235,12 @@ struct AgentsTab: View {
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
-        .onAppear { finishedMarks.reopenAll(busyKeys) }
+        .onAppear {
+            finishedMarks.reopenAll(busyKeys)
+            visits.visit(current)
+        }
+        // Looking at a session counts as having seen what it finished.
+        .onChange(of: current) { _, id in visits.visit(id) }
     }
 
     /// The finish/reopen action of a row, in its context menu.
@@ -294,7 +300,8 @@ struct AgentsTab: View {
             status: status,
             started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
             path: run.workingDirectory,
-            finishKey: FinishedSessions.key(run: run)
+            finishKey: FinishedSessions.key(run: run),
+            unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt)
         )
     }
 
@@ -325,7 +332,8 @@ struct AgentsTab: View {
             status: status,
             started: status == .idle ? (session.updated ?? session.started ?? known?.started) : (session.started ?? known?.started),
             path: session.cwd,
-            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id)
+            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
+            unseen: session.status == .done && unseen(session.id, session.updated)
         )
     }
 
@@ -342,6 +350,12 @@ struct AgentsTab: View {
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id)
         )
+    }
+
+    /// Finished after you last looked, and not the session you are looking at now.
+    private func unseen(_ id: String, _ finished: Date?) -> Bool {
+        guard !app.demoMode, let finished, id != viewModel.selectedAgentID else { return false }
+        return visits.isUnseen(id, finished: finished)
     }
 
     /// Sample data only: nothing to start.
@@ -378,6 +392,8 @@ struct AgentListItem: Identifiable {
     let path: String
     /// Identifies the conversation for "mark as finished", the same for a running and an earlier session of it.
     let finishKey: String
+    /// Finished after you last looked at it: "done" in green until you open it.
+    var unseen = false
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting }
@@ -454,6 +470,13 @@ struct AgentListRow: View {
             Text(tr("agents.live.failed"))
                 .foregroundStyle(NookTheme.coral)
                 .fixedSize()
+        case .idle where item.unseen:
+            HStack(spacing: 4) {
+                Circle().fill(NookTheme.mint).frame(width: 6, height: 6)
+                Text(tr("agents.time.doneUnseen"))
+            }
+            .foregroundStyle(NookTheme.mint)
+            .fixedSize()
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))

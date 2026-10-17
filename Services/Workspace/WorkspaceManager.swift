@@ -67,6 +67,8 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var runs: [WorkspaceRun] = []
     @Published private(set) var events: [UUID: [RunEvent]] = [:]
     @Published private(set) var approvals: [UUID: [PendingPermission]] = [:]
+    /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
+    @Published private(set) var queued: [UUID: [String]] = [:]
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
     @Published private(set) var worktreeRows: [WorktreeRow] = []
     @Published private(set) var worktreesLoading = false
@@ -398,6 +400,28 @@ final class WorkspaceManager: ObservableObject {
         }
         loadTimeline(id)
         launchTurn(id, prompt: clean, executable: executable)
+    }
+
+    /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
+    func enqueue(_ id: UUID, text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, run(id) != nil else { return }
+        queued[id, default: []].append(clean)
+    }
+
+    func removeQueued(_ id: UUID, at index: Int) {
+        guard var list = queued[id], list.indices.contains(index) else { return }
+        list.remove(at: index)
+        queued[id] = list.isEmpty ? nil : list
+    }
+
+    /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
+    /// waits for you, so nothing goes out on top of a problem.
+    private func sendQueued(_ id: UUID) {
+        guard processes[id] == nil, let run = run(id), run.status == .completed, var list = queued[id], !list.isEmpty else { return }
+        let next = list.removeFirst()
+        queued[id] = list.isEmpty ? nil : list
+        send(id, text: next)
     }
 
     /// Retries the previous task (after an error or when stopped).
@@ -734,6 +758,7 @@ final class WorkspaceManager: ObservableObject {
         }
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
+            sendQueued(id)
             return
         }
         if state.stopping {
@@ -857,6 +882,7 @@ final class WorkspaceManager: ObservableObject {
         runs.removeAll { $0.id == id }
         events[id] = nil
         approvals[id] = nil
+        queued[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }

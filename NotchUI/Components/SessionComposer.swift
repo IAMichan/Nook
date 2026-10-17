@@ -22,8 +22,17 @@ struct SessionComposer<Controls: View>: View {
 
     /// An extra round button next to send (the microphone), kept on the right instead of among the choices.
     private var trailingAccessory: AnyView?
+    /// While busy: puts the text in line for after the current turn instead of sending it.
+    private var queueAction: (() -> Void)?
 
     @FocusState private var ownFocus: Bool
+
+    /// The same composer that, while busy, queues what you type (Return or the queue button) for after the turn.
+    func queueing(_ action: (() -> Void)?) -> Self {
+        var copy = self
+        copy.queueAction = action
+        return copy
+    }
 
     /// The same composer with a small view placed right before the send button.
     func trailing<Accessory: View>(@ViewBuilder _ accessory: () -> Accessory) -> Self {
@@ -104,7 +113,9 @@ struct SessionComposer<Controls: View>: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(lines)
                 .focused(focused)
-                .onSubmit { if enabled { onSend() } }
+                .onSubmit {
+                    if busy, let queueAction, !isEmpty { queueAction() } else if enabled { onSend() }
+                }
                 .onChange(of: text) { _, new in NookPresence.shared.typed(count: new.count) }
                 .frame(minHeight: minHeight, alignment: .topLeading)
             HStack(spacing: 6) {
@@ -112,6 +123,9 @@ struct SessionComposer<Controls: View>: View {
                 Spacer(minLength: 8)
                 if let trailingAccessory { trailingAccessory }
                 if busy, let onStop {
+                    if let queueAction, !isEmpty {
+                        roundButton(symbol: "text.append", label: tr("compose.queue"), active: true, action: queueAction)
+                    }
                     roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
                 } else {
                     roundButton(symbol: "arrow.up", label: sendLabel ?? tr("button.send"), active: enabled, action: onSend)

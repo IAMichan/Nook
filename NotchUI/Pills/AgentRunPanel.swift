@@ -12,6 +12,8 @@ struct AgentRunPanel: View {
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
     @State private var expanded: Set<UUID> = []
+    /// Opened groups and folded turns ("group:<id>", "fold:<id>").
+    @State private var openBlocks: Set<String> = []
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
@@ -167,25 +169,16 @@ struct AgentRunPanel: View {
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
-                    ForEach(events) { event in
-                        EventRow(
-                            event: event,
-                            expanded: expanded.contains(event.id),
-                            toggle: { toggle(event.id) },
-                            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
-                            decide: { decision in
-                                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
-                            }
-                        )
-                        .id(event.id)
+                    // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
+                    ForEach(TimelinePresentation.blocks(events, active: run.status.isActive)) { block in
+                        TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
+                            AnyView(eventRow(event))
+                        }
+                        .id(block.id)
                     }
                     if run.status.isActive {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text(run.status == .waitingApproval ? tr("ws.timeline.waiting") : tr("ws.timeline.working"))
-                                .font(NookTheme.font(12))
-                                .foregroundStyle(NookTheme.textSecondary)
-                        }
+                        LiveActivityRow(live: TimelinePresentation.live(events), since: run.turnStartedAt,
+                                        waiting: run.status == .waitingApproval, accent: run.provider.color)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run)
@@ -224,6 +217,24 @@ struct AgentRunPanel: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 9).fill(run.status.color.opacity(0.07)))
+    }
+
+    private func eventRow(_ event: RunEvent) -> some View {
+        EventRow(
+            event: event,
+            expanded: expanded.contains(event.id),
+            toggle: { toggle(event.id) },
+            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
+            decide: { decision in
+                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
+            }
+        )
+    }
+
+    private func toggleBlock(_ key: String) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
+        }
     }
 
     private func toggle(_ id: UUID) {
@@ -274,7 +285,16 @@ struct AgentRunPanel: View {
             draft = ""
             workspace.send(runID, text: text)
         }
+        let queue = {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            draft = ""
+            workspace.enqueue(runID, text: text)
+        }
         return VStack(alignment: .leading, spacing: 5) {
+            if let waiting = workspace.queued[runID], !waiting.isEmpty {
+                QueuedMessagesStrip(messages: waiting) { workspace.removeQueued(runID, at: $0) }
+            }
             SessionComposer(
                 text: $draft,
                 prompt: active ? tr("agents.run.busyPrompt", run.provider.kind.shortName) : tr("agents.run.prompt"),
@@ -291,6 +311,8 @@ struct AgentRunPanel: View {
                 permissionMenu(run)
                 actionsMenu(run)
             }
+            // While it works, what you type waits in line and goes out when the turn is done.
+            .queueing(active ? queue : nil)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))

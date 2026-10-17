@@ -1,0 +1,193 @@
+import Foundation
+
+// How a session's timeline reads in the narrow notch work log: a finished turn folds into "Worked for
+// 2m 13s" between your message and the agent's answer, consecutive tool calls become one line that says what they did
+// ("Ran 3 commands and changed 2 files"), and while the agent works one live line shows what it is doing and thinking.
+// Everything in this file depends only on Foundation so tests can use it independently.
+
+/// What a tool call does, for the one-line summary of a group.
+enum ToolCategory: Int, Comparable, Sendable {
+    // Order is priority in the summary: what changed something comes first.
+    case command, edit, read, search, other
+
+    static func < (lhs: ToolCategory, rhs: ToolCategory) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// Claude Code, Codex, Gemini CLI and Nook's own tools by name.
+    static func of(tool: String) -> ToolCategory {
+        let name = tool.lowercased()
+        if name.hasPrefix(BridgeTool.toolPrefix) {
+            return BridgeTool.named(tool) == .terminalRun ? .command : .other
+        }
+        switch name {
+        case "bash", "shell", "run_shell_command", "nook terminal", "killshell", "bashoutput":
+            return .command
+        case "edit", "multiedit", "write", "notebookedit", "write_file", "replace", "apply_patch":
+            return .edit
+        case "read", "read_file", "read_many_files", "ls", "list_directory", "notebookread":
+            return .read
+        case "grep", "glob", "search_file_content", "websearch", "webfetch", "web_search", "web_fetch", "google_web_search":
+            return .search
+        default:
+            return .other
+        }
+    }
+}
+
+/// What a group of tool calls did, counted per category. Edits count files, not calls.
+struct ToolTally: Equatable, Sendable {
+    var counts: [ToolCategory: Int] = [:]
+    var failed = false
+
+    init(_ events: [RunEvent]) {
+        var editedFiles: Set<String> = []
+        var edits = 0
+        for event in events {
+            if event.state == .failed { failed = true }
+            switch event.kind {
+            case .fileChange:
+                // A file change carries its path in `detail` (or the text).
+                editedFiles.insert(event.detail ?? event.text)
+            case .tool:
+                let category = ToolCategory.of(tool: event.tool ?? "")
+                if category == .edit {
+                    if let path = Self.path(event.detail) { editedFiles.insert(path) } else { edits += 1 }
+                } else {
+                    counts[category, default: 0] += 1
+                }
+            default:
+                continue
+            }
+        }
+        let editCount = max(editedFiles.count, edits)
+        if editCount > 0 { counts[.edit] = editCount }
+    }
+
+    /// The categories with a count, in summary order.
+    var parts: [(category: ToolCategory, count: Int)] {
+        counts.filter { $0.value > 0 }.sorted { $0.key < $1.key }.map { (category: $0.key, count: $0.value) }
+    }
+
+    /// The file path in a tool's JSON input, if it has one.
+    private static func path(_ json: String?) -> String? {
+        guard let json, let data = json.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return ToolSummary.path(object)
+    }
+}
+
+/// One block of the timeline as the notch shows it.
+enum TimelineBlock: Identifiable, Equatable {
+    case event(RunEvent)
+    /// Two or more tool calls (and file changes) in a row.
+    case tools(id: UUID, events: [RunEvent], tally: ToolTally)
+    /// A finished turn's work between your message and the answer, and the `seconds` it took.
+    case fold(id: UUID, seconds: Double, blocks: [TimelineBlock])
+
+    var id: UUID {
+        switch self {
+        case .event(let event): return event.id
+        case .tools(let id, _, _): return id
+        case .fold(let id, _, _): return id
+        }
+    }
+}
+
+/// What the agent is doing right now: the running (or last) tool and the headline of its latest thinking.
+struct LiveActivity: Equatable, Sendable {
+    var tool: String?
+    var thought: String?
+}
+
+enum TimelinePresentation {
+    /// Groups the events of a session into blocks. `active`: the last turn is still running and never folds.
+    static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
+        let turns = split(events)
+        var blocks: [TimelineBlock] = []
+        for (index, turn) in turns.enumerated() {
+            let isLast = index == turns.count - 1
+            blocks += present(turn, open: isLast && active)
+        }
+        return blocks
+    }
+
+    /// The live line for the running turn: the tool that runs (or ran last) and what the agent last thought about.
+    static func live(_ events: [RunEvent]) -> LiveActivity {
+        let turn = split(events).last ?? []
+        let tool = turn.last { $0.kind == .tool && $0.state == .running } ?? turn.last { $0.kind == .tool }
+        let thought = turn.last { $0.kind == .thinking }.map { headline($0.text) }
+        return LiveActivity(tool: tool?.text, thought: thought.flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    /// The first bold heading of a thought ("**Checking the tests**"), or its first sentence.
+    static func headline(_ text: String, limit: Int = 110) -> String {
+        if let start = text.range(of: "**"), let end = text.range(of: "**", range: start.upperBound..<text.endIndex) {
+            let bold = text[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !bold.isEmpty { return ToolSummary.oneLine(bold, limit) }
+        }
+        let flat = ToolSummary.oneLine(text, 400)
+        if let stop = flat.firstIndex(where: { ".!?".contains($0) }) {
+            let sentence = String(flat[...stop])
+            if sentence.count >= 12 { return ToolSummary.oneLine(sentence, limit) }
+        }
+        return ToolSummary.oneLine(flat, limit)
+    }
+
+    // MARK: Turns
+
+    /// A turn starts at each message of yours; anything before the first one is a turn of its own.
+    static func split(_ events: [RunEvent]) -> [[RunEvent]] {
+        var turns: [[RunEvent]] = []
+        for event in events {
+            if event.kind == .user || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
+        }
+        return turns
+    }
+
+    private static func present(_ turn: [RunEvent], open: Bool) -> [TimelineBlock] {
+        guard let first = turn.first else { return [] }
+        let finished = turn.last { $0.kind == .result }
+        let troubled = turn.contains { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
+            || finished?.state == .failed
+        // Fold only a turn that ended well: its answer stays, the work in between folds away.
+        guard !open, first.kind == .user, let finished, !troubled,
+              let answer = turn.lastIndex(where: { $0.kind == .assistant }) else {
+            return group(turn)
+        }
+        let work = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
+        guard work.contains(where: { $0.kind != .assistant }) else { return group(turn) }
+        let seconds = max(0, finished.date.timeIntervalSince(first.date))
+        // The fold takes the id of the first work it hides: never the same as a block shown next to it.
+        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work)),
+                .event(turn[answer]), .event(finished)]
+    }
+
+    /// Two or more tool calls in a row become one block; thinking between them stays inside it. Everything else stands
+    /// on its own: errors and approvals are never hidden inside a group.
+    static func group(_ events: [RunEvent]) -> [TimelineBlock] {
+        var blocks: [TimelineBlock] = []
+        var run: [RunEvent] = []
+        func isWork(_ event: RunEvent) -> Bool { event.kind == .tool || event.kind == .fileChange }
+        func flush() {
+            // Thinking after the last tool belongs to what comes next, not to the group.
+            var trailing: [RunEvent] = []
+            while let last = run.last, !isWork(last) { trailing.insert(run.removeLast(), at: 0) }
+            if run.filter(isWork).count >= 2 {
+                blocks.append(.tools(id: run[0].id, events: run, tally: ToolTally(run)))
+            } else {
+                blocks += run.map { TimelineBlock.event($0) }
+            }
+            blocks += trailing.map { TimelineBlock.event($0) }
+            run = []
+        }
+        for event in events {
+            if isWork(event) || (event.kind == .thinking && !run.isEmpty) {
+                run.append(event)
+            } else {
+                flush()
+                blocks.append(.event(event))
+            }
+        }
+        flush()
+        return blocks
+    }
+}
