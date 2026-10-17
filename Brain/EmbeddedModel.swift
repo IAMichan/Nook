@@ -118,12 +118,15 @@ final class EmbeddedModel: ObservableObject {
             // Nook downloads the files itself, so the progress follows every byte (see ModelDownload). A model installed by
             // an older version stays in the Hugging Face cache and loads from there. Only when the Hub's file list cannot
             // be read does the library download it.
-            var configuration = ModelConfiguration(id: id)
+            // A model loaded from a folder misses the end-of-turn markers the library only knows by repository name:
+            // without them a model can run on past its answer.
+            let stops = ModelAdvisor.catalog.first { $0.id == id }?.family.stopTokens ?? []
+            var configuration = ModelConfiguration(id: id, extraEOSTokens: stops)
             if let local = ModelDownload.completedDirectory(for: id) {
-                configuration = ModelConfiguration(directory: local)
+                configuration = ModelConfiguration(directory: local, extraEOSTokens: stops)
             } else if !ModelDownload.isInHubCache(id) {
                 do {
-                    configuration = ModelConfiguration(directory: try await ModelDownload.fetch(id, progress: progress))
+                    configuration = ModelConfiguration(directory: try await ModelDownload.fetch(id, progress: progress), extraEOSTokens: stops)
                 } catch let error as ModelDownload.ListingUnavailable {
                     Log.brain.error("own model download unavailable (\(error.reason, privacy: .public)), using the library")
                 }
@@ -150,7 +153,9 @@ final class EmbeddedModel: ObservableObject {
     func test(model id: String) async throws -> String {
         try await exclusive {
             let container = try await load(id)
-            let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, maxKVSize: 512, temperature: 0.1))
+            // No reasoning for a one-word check: a hybrid model would otherwise spend its 20 tokens thinking.
+            let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: 20, maxKVSize: 512, temperature: 0.1),
+                                      additionalContext: ["enable_thinking": false])
             let text = try await session.respond(to: "Reply with only the word: ready")
             return Self.stripThinking(text).trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -159,14 +164,20 @@ final class EmbeddedModel: ObservableObject {
     /// A single query with Nook's tools, through the shared tool loop: read tools run immediately, action tools are
     /// collected for the plan, invalid input is sent back for repair, and limits stop a model that keeps calling tools.
     /// `onText` receives the visible answer so far, so it appears while it is being written.
-    func run(model id: String, system: String, prompt: String, profile: ModelProfile, runner: ToolRunner,
+    /// `thinking`: let a model that can reason do so first (hard questions only, see `ThinkingPolicy`).
+    func run(model id: String, system: String, prompt: String, profile: ModelProfile, runner: ToolRunner, thinking: Bool = false,
              onText: ((String) -> Void)? = nil) async throws -> BrainPlan {
-        try await exclusive { try await runExclusive(model: id, system: system, prompt: prompt, profile: profile, runner: runner, onText: onText) }
+        try await exclusive {
+            try await runExclusive(model: id, system: system, prompt: prompt, profile: profile, runner: runner, thinking: thinking, onText: onText)
+        }
     }
 
     private func runExclusive(model id: String, system: String, prompt: String, profile: ModelProfile, runner: ToolRunner,
-                              onText: ((String) -> Void)?) async throws -> BrainPlan {
+                              thinking requested: Bool, onText: ((String) -> Void)?) async throws -> BrainPlan {
         let container = try await load(id)
+        let option = Self.options.first { $0.id == id }
+        let thinking = requested && (option?.canThink ?? false)
+        let sampling = option?.sampling(thinking: thinking) ?? ModelFamily.other.sampling(thinking: false)
         let tools = runner.tools
         let specs: [MLXLMCommon.ToolSpec] = tools.map { tool in
             [
@@ -182,15 +193,22 @@ final class EmbeddedModel: ObservableObject {
         let session = ChatSession(
             container,
             instructions: system,
-            generateParameters: GenerateParameters(maxTokens: profile.maxOutputTokens, maxKVSize: profile.contextTokens, temperature: 0.2),
-            // Hybrid models (Qwen 3) think out loud by default: slow on a laptop and never shown, so it is switched off.
-            additionalContext: ["enable_thinking": false],
+            generateParameters: GenerateParameters(
+                maxTokens: thinking ? profile.thinkingOutputTokens : profile.maxOutputTokens,
+                maxKVSize: profile.contextTokens,
+                temperature: sampling.temperature,
+                topP: sampling.topP,
+                topK: sampling.topK
+            ),
+            // Hybrid models (Qwen 3, 3.5, 3.6) reason out loud by default. That makes hard questions much better and
+            // easy ones slow, so Nook only allows it when the question calls for it. The reasoning is never shown.
+            additionalContext: ["enable_thinking": thinking],
             tools: specs.isEmpty ? nil : specs,
             toolDispatch: specs.isEmpty ? nil : { call in
                 await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
             }
         )
-        var text = Self.stripThinking(try await stream(session, prompt, onText: onText))
+        var text = ThinkingPolicy.answer(from: try await stream(session, prompt, thinking: thinking, onText: onText), thinking: false)
 
         // Small models sometimes write tool calls as JSON in their answer instead of calling them: run those too, and ask
         // for a natural-language answer.
@@ -202,10 +220,10 @@ final class EmbeddedModel: ObservableObject {
             for call in found.calls {
                 results.append("\(call.name): \(await runner.handle(name: call.name, input: call.input).output)")
             }
-            text = Self.stripThinking(try await stream(
+            text = ThinkingPolicy.answer(from: try await stream(
                 session, "Tool results:\n\(results.joined(separator: "\n"))\n\nNow answer my request in natural language. Do not output JSON.",
-                onText: onText
-            ))
+                thinking: thinking, onText: onText
+            ), thinking: false)
         }
         // If any tool call JSON remains in the text, strip it so it never appears in the output.
         text = ToolRunner.extractToolCalls(from: text, knownTools: known).text
@@ -215,7 +233,7 @@ final class EmbeddedModel: ObservableObject {
 
     /// Generates one answer and hands the visible part to `onText` while it grows (at most ~20 times a second).
     /// Reasoning in <think> and tool calls written as JSON are never shown.
-    private func stream(_ session: ChatSession, _ prompt: String, onText: ((String) -> Void)?) async throws -> String {
+    private func stream(_ session: ChatSession, _ prompt: String, thinking: Bool = false, onText: ((String) -> Void)?) async throws -> String {
         var output = ""
         var lastEmit = Date.distantPast
         for try await chunk in session.streamResponse(to: prompt, role: .user, images: [], videos: [], audios: []) {
@@ -223,11 +241,11 @@ final class EmbeddedModel: ObservableObject {
             output += chunk
             guard let onText, Date().timeIntervalSince(lastEmit) > 0.05 else { continue }
             lastEmit = Date()
-            let visible = Self.visible(output)
+            let visible = Self.visible(output, thinking: thinking)
             if !visible.isEmpty { onText(visible) }
         }
         if let onText {
-            let visible = Self.visible(output)
+            let visible = Self.visible(output, thinking: thinking)
             if !visible.isEmpty { onText(visible) }
         }
         return output
@@ -235,9 +253,8 @@ final class EmbeddedModel: ObservableObject {
 
     /// The part of a partial answer that may be shown: without reasoning (also while it is still open) and without
     /// a tool call that is being written as JSON.
-    nonisolated static func visible(_ partial: String) -> String {
-        var text = stripThinking(partial)
-        if let open = text.range(of: "<think>") { text = String(text[..<open.lowerBound]) }
+    nonisolated static func visible(_ partial: String, thinking: Bool = false) -> String {
+        var text = ThinkingPolicy.answer(from: partial, thinking: thinking)
         if let call = text.range(of: #"(```(json)?\s*)?\{\s*"(name|tool)"\s*:"#, options: .regularExpression) {
             text = String(text[..<call.lowerBound])
         }

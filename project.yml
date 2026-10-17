@@ -117,6 +117,7 @@ targets:
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
+      - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift

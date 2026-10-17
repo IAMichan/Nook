@@ -19,6 +19,26 @@ enum CloudConnectorViews {
         return makeCard(config, capabilities: capabilities, onChange: onChange)
     }
 
+    /// A service that is not connected yet, as a calm row with a Connect button (opens the step-by-step setup).
+    static func linkRow(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
+        return makeLinkRow(config, capabilities: capabilities, onChange: onChange)
+    }
+
+    /// The setup sheet on its own, for a row elsewhere that offers "Use a key instead".
+    static func setupSheet(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
+        return makeSheet(config, capabilities: capabilities, onChange: onChange)
+    }
+
+    private static func makeLinkRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        AnyView(ServiceLinkRow(connector: connector, capabilities: capabilities, onChange: onChange))
+    }
+
+    private static func makeSheet<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
+        AnyView(ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange))
+    }
+
     private static func makeRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
         AnyView(ServiceRow(connector: connector, capabilities: capabilities, onChange: onChange))
     }
@@ -129,6 +149,28 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         Task { @MainActor in
             await target.refresh()
             done()
+        }
+    }
+}
+
+// MARK: - Link row (not connected yet)
+
+private struct ServiceLinkRow<C: CloudConnectorConfig>: View {
+    @ObservedObject var connector: C
+    let capabilities: String
+    let onChange: () -> Void
+    @State private var showSetup = false
+
+    var body: some View {
+        ServiceRowLayout(domain: connector.iconDomain, symbol: connector.symbol, tint: connector.accent, title: connector.title,
+                         detail: ServiceState.tagline(connector.id) + " · " + tr("connect.method.key"),
+                         status: .notLinked) {
+            Button(tr("connect.connect")) { showSetup = true }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        }
+        .sheet(isPresented: $showSetup, onDismiss: onChange) {
+            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
         }
     }
 }
