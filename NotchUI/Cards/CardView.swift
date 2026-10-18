@@ -244,24 +244,31 @@ private struct CommandDetail: View {
 /// Your voice as it comes in: every bar is the loudness a moment ago, so new sound appears on the right and
 /// scrolls left. Silence leaves the bars flat instead of showing made-up movement.
 private struct WaveformDetail: View {
-    private static let barCount = 28
+    private static let barWidth: CGFloat = 3
+    private static let gap: CGFloat = 4
     private static let step: TimeInterval = 1.0 / 30.0
 
-    @State private var history = VoiceHistory(count: barCount)
+    @State private var history = VoiceHistory(count: 200)
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: Self.step)) { context in
-            let levels = history.sample(at: context.date, step: Self.step)
-            HStack(spacing: 4) {
-                ForEach(0..<levels.count, id: \.self) { i in
-                    Capsule()
-                        .fill(NookTheme.mint)
-                        .opacity(0.45 + 0.55 * levels[i])
-                        .frame(width: 3, height: 4 + 24 * CGFloat(levels[i]))
+        GeometryReader { proxy in
+            // As many bars as fit: the wave runs the full width of the card.
+            let count = max(1, Int((proxy.size.width + Self.gap) / (Self.barWidth + Self.gap)))
+            TimelineView(.animation(minimumInterval: Self.step)) { context in
+                let levels = history.sample(at: context.date, step: Self.step).suffix(count)
+                HStack(spacing: Self.gap) {
+                    ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                        Capsule()
+                            .fill(NookTheme.mint)
+                            .opacity(0.45 + 0.55 * level)
+                            .frame(width: Self.barWidth, height: 4 + 24 * CGFloat(level))
+                    }
                 }
+                .frame(width: proxy.size.width, height: 28, alignment: .trailing)
             }
-            .frame(height: 28)
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: 28)
         .accessibilityHidden(true)
     }
 }
