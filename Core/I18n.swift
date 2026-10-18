@@ -109,6 +109,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Instellingen…",
         "menu.quit": "Nook afsluiten",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Open Nook",
+        "menu.now": "nu",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d agents bezig",
+        "menu.agentsWaiting": "%d agents bezig, %d wachten op jou",
+        "menu.pause": "Pauzeer",
+        "menu.play": "Speel af",
+        "menu.nextTrack": "Volgend nummer",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
@@ -857,6 +865,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Settings…",
         "menu.quit": "Quit Nook",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Open Nook",
+        "menu.now": "now",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d agents running",
+        "menu.agentsWaiting": "%d agents running, %d waiting for you",
+        "menu.pause": "Pause",
+        "menu.play": "Play",
+        "menu.nextTrack": "Next track",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
@@ -1605,6 +1621,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Einstellungen…",
         "menu.quit": "Nook beenden",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Nook öffnen",
+        "menu.now": "jetzt",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d Agents aktiv",
+        "menu.agentsWaiting": "%d Agents aktiv, %d warten auf dich",
+        "menu.pause": "Pausieren",
+        "menu.play": "Abspielen",
+        "menu.nextTrack": "Nächster Titel",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
