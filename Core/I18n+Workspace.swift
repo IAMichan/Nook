@@ -6,6 +6,12 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.revert.menu": "Bestanden terugzetten naar vóór dit bericht",
+        "ws.revert.confirm": "Bestanden terugzetten?",
+        "ws.revert.detail": "De bestanden in deze worktree gaan terug naar hoe ze waren vóór “%@”. Latere wijzigingen gaan verloren; het gesprek blijft.",
+        "ws.revert.action": "Zet terug",
+        "ws.revert.done": "Bestanden teruggezet naar een eerder punt.",
+        "ws.revert.unavailable": "Terugzetten kan alleen bij een sessie in een eigen worktree die niet bezig is.",
         "ws.acp.noLoad": "%@ kan een eerder gesprek niet laden; dit wordt een nieuw gesprek.",
         "ws.acp.limit": "De agent stopte omdat hij een limiet bereikte.",
         "ws.acp.refused": "De agent weigerde dit verzoek.",
@@ -474,6 +480,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.revert.menu": "Restore files to before this message",
+        "ws.revert.confirm": "Restore files?",
+        "ws.revert.detail": "The files in this worktree go back to how they were before “%@”. Later changes are lost; the conversation stays.",
+        "ws.revert.action": "Restore",
+        "ws.revert.done": "Files restored to an earlier point.",
+        "ws.revert.unavailable": "Restoring only works for an idle session in its own worktree.",
         "ws.acp.noLoad": "%@ cannot load an earlier conversation; this becomes a new one.",
         "ws.acp.limit": "The agent stopped because it hit a limit.",
         "ws.acp.refused": "The agent refused this request.",
@@ -942,6 +954,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.revert.menu": "Dateien auf den Stand vor dieser Nachricht zurücksetzen",
+        "ws.revert.confirm": "Dateien zurücksetzen?",
+        "ws.revert.detail": "Die Dateien in diesem Worktree gehen auf den Stand vor „%@“ zurück. Spätere Änderungen gehen verloren; das Gespräch bleibt.",
+        "ws.revert.action": "Zurücksetzen",
+        "ws.revert.done": "Dateien auf einen früheren Stand zurückgesetzt.",
+        "ws.revert.unavailable": "Zurücksetzen geht nur bei einer untätigen Sitzung in einem eigenen Worktree.",
         "ws.acp.noLoad": "%@ kann ein früheres Gespräch nicht laden; dies wird ein neues.",
         "ws.acp.limit": "Der Agent hat angehalten, weil er ein Limit erreicht hat.",
         "ws.acp.refused": "Der Agent hat diese Anfrage abgelehnt.",

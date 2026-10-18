@@ -50,6 +50,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
     case result(ClaudeTurnResult)
     case notice(String)
+    /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
+    case rateLimits
 }
 
 struct ClaudeTurnResult: Equatable, Sendable {
@@ -130,6 +132,9 @@ enum ClaudeStreamParser {
                 suggestions: request["permission_suggestions"].flatMap { $0 is NSNull ? nil : JSONBox($0) },
                 toolUseID: request["tool_use_id"] as? String
             )]
+
+        case "rate_limit_event":
+            return [.rateLimits]
 
         case "result":
             var usage = TurnUsage()

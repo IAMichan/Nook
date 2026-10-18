@@ -134,7 +134,7 @@ struct GitService: Sendable {
         return nil
     }
 
-    private var environment: [String: String] {
+    var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
         // Never block on password prompt; credential helper (Keychain) continues to work.
         env["GIT_TERMINAL_PROMPT"] = "0"

@@ -39,7 +39,7 @@ Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-o
 - **Open terminal hier** opent de ingebouwde terminal in de map van de sessie.
 - **Limieten** per account (5 uur en week) staan bij Instellingen › Gebruik (`QuotaService`); Codex wordt per accountmap gelezen.
 
-Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex en Gemini CLI (`gemini --output-format stream-json`, hervatten met `--resume`); Antigravity beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen.
+Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex, Gemini CLI, OpenCode, Cursor en Grok, elk met één verbinding per sessie: Codex via `codex app-server`, Claude Code als één proces dat tussen beurten blijft wachten, en Gemini CLI, OpenCode, Cursor en Grok via ACP. Goedkeuringen en vragen beantwoord je in Nook; Codex kun je tijdens een beurt bijsturen; bij een sessie in een eigen worktree kun je de bestanden terugzetten naar vóór een bericht. Antigravity beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen. Zie [AGENTS-PARITY.md](AGENTS-PARITY.md).
 
 **Het hele gesprek.** Bij elke sessie, lopend of eerder, zie je het volledige gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen: Claude Code, Codex (de redeneersamenvattingen), Gemini CLI (`thoughts`) en Antigravity. Neem je een sessie over, dan neemt Nook dat hele gesprek mee.
 

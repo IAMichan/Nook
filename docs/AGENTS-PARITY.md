@@ -21,62 +21,28 @@
 
 Al eerder aanwezig of al gelijk: gebruik van Claude via `api/oauth/usage` met dezelfde headers, tokens uit Claude-transcripts ontdubbeld op bericht en request, een eigen account-map per account (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
 
-## Volgende stap: een langlopend protocol per agent
+## Hoe Nook nu met elke agent praat
 
-Het grootste verschil met zit niet in de weergave maar in hoe Nook met agents praat. Nook start nu per beurt een nieuw proces (`claude -p … --resume`, `codex exec --json … resume`, `gemini --output-format stream-json --resume`). houdt per sessie één verbinding open. Daardoor kan het tijdens een beurt bijsturen, krijgt het denkstappen en limieten live binnen, en hoeft het na een herstart niets uit bestanden te raden.
+Nook start niet langer per beurt een nieuw proces. Per sessie draait één verbinding die tussen beurten blijft bestaan, net als bij. De berichtvormen komen uit de schema's die Codex en ACP zelf genereren.
 
-Dit is bewust nog niet gebouwd: het raakt het hart van elke sessie en moet tegen de echte agents worden getest, wat in deze omgeving (Linux, geen Xcode) niet kan. Hieronder staat per agent precies wat er moet gebeuren.
+| Agent | Route | Wat dat oplevert | Terugval |
+|---|---|---|---|
+| Codex | `codex app-server`, JSON-RPC per regel: `initialize`, `thread/start`/`thread/resume`, `turn/start` (met `summary: "detailed"`), `turn/steer`, `turn/interrupt` | Goedkeuringen (`acceptForSession` = Altijd), vragen (`requestUserInput`), **bijsturen tijdens een beurt**, live antwoord, denkstappen en commando-uitvoer, tokens per beurt en contextvenster, live limieten | `codex exec --json` als deze Codex geen bruikbare app-server heeft |
+| Claude Code | Eén `claude -p --input-format stream-json` per sessie; na `result` blijft het proces wachten op het volgende bericht | Vervolg zonder herstart (cache blijft warm), AskUserQuestion als vraagpaneel (antwoorden als `updatedInput.answers`), ExitPlanMode als plankaart met **Voer plan uit**, live `rate_limit_event` | Nieuw proces met `--resume` bij ander model, andere modus of rechten |
+| Gemini CLI | ACP: `gemini --acp` | Toestemming in Nook, gedachten, tool-aanroepen, context | Headless `--output-format stream-json` bij een oude versie |
+| OpenCode | ACP: `opencode acp` | idem, plus kosten | — |
+| Cursor | ACP: `cursor-agent acp` | idem | — |
+| Grok | ACP: `grok agent stdio` (`--always-approve` bij volledige rechten) | idem | — |
 
-### Claude Code: één proces per sessie
+ACP in Nook: `initialize` (protocolversie 1, geen bestands- of terminaltoegang voor de agent), `session/new` of `session/load` (de herhaling van een geladen gesprek wordt overgeslagen, want Nook bewaart de tijdlijn zelf), `session/set_mode` voor Plan, `session/set_model`, `session/prompt`, `session/cancel`. Toestemmingsverzoeken (`session/request_permission`) gaan naar jou, of worden meteen toegestaan als de rechten van de sessie dat zeggen: lezen altijd, bewerken bij "bewerkingen toestaan", alles bij volledige rechten, en in Plan-modus alleen lezen. De werkruimte-brug gaat mee als MCP-server in `session/new` (ACP), `thread/start.config.mcp_servers` (Codex) en `--mcp-config` (Claude Code).
 
-- Laat stdin open na `result` in plaats van het te sluiten; stuur een vervolg als nieuwe regel `{"type":"user","message":{"role":"user","content":…}}`. Sluit pas na een tijd zonder activiteit.
-- Bijsturen tijdens een beurt: dezelfde regel met `"priority":"now"`.
-- Model en rechten tussen beurten wijzigen zonder herstart: `control_request` met `subtype` `set_model` of `set_permission_mode`; stoppen met `interrupt` (dat laatste doet Nook al).
-- Goedkeuringen (`can_use_tool`) beantwoordt Nook al. Toevoegen: `AskUserQuestion` beantwoorden met `{"behavior":"allow","updatedInput":{"questions":…,"answers":{"<vraag>":"<antwoord>"}}}` en `ExitPlanMode` weigeren met het plan als kaart ("Plan klaar → Uitvoeren").
-- Live limieten uit `rate_limit_event` (`rate_limit_info.rateLimitType` `five_hour`/`seven_day`, `utilization` 0–1, `resetsAt` in seconden).
-- Denkstappen tijdens het streamen: `stream_event` → `content_block_delta` met `thinking_delta`. zet daarbij `--thinking-display summarized`; die vlag vraagt een recente Claude Code (≥ 2.1.x) en moet dus alleen worden meegegeven als de versie het ondersteunt.
+## Terugzetpunten per beurt
 
-### Codex: `codex app-server` in plaats van `codex exec`
+Voor sessies in een eigen worktree maakt Nook vóór de eerste beurt en na elke beurt een momentopname: een tijdelijke index (`read-tree HEAD`, `add -A`, `write-tree`, `commit-tree`, `update-ref refs/nook/checkpoints/<sessie>/<n>`). De branch, HEAD en je staging veranderen niet. Rechtsklik op een eigen bericht › **Bestanden terugzetten naar vóór dit bericht** zet de bestanden terug: gewijzigde en verwijderde bestanden komen terug, bestanden die later zijn toegevoegd verdwijnen, genegeerde bestanden blijven. Het gesprek blijft staan. Dat kan alleen als de sessie stilstaat en niemand anders in die map werkt.
 
-Eén proces per sessie, JSON-RPC per regel over stdin/stdout (Nook gebruikt `app-server` al om limieten te lezen in `CodexUsage`).
+## Nog niet gebouwd
 
-| Doel | Bericht |
-|---|---|
-| Starten | `initialize {clientInfo, capabilities:{experimentalApi:true}}`, daarna de notificatie `initialized` |
-| Gesprek | `thread/start {cwd, model, config}` of `thread/resume {threadId, excludeTurns:true, cwd}` |
-| Beurt | `turn/start {threadId, input:[{type:"text",text}], cwd, model, effort, summary:"detailed", approvalPolicy, sandboxPolicy}` |
-| Bijsturen | `turn/steer {threadId, expectedTurnId, input}` |
-| Stoppen | `turn/interrupt {threadId, turnId}` |
-| Geschiedenis | `thread/read {threadId, includeTurns:true}` (bij `historyMode:"paginated"`: `thread/turns/list`) |
-| Goedkeuren | verzoeken `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` → `{decision:"accept"\|"acceptForSession"\|"decline"\|"cancel"}` |
-| Vragen | `item/tool/requestUserInput` → `{answers:{<id>:{answers:[…]}}}` |
-| Live | `item/agentMessage/delta`, `item/reasoning/summaryTextDelta`, `item/commandExecution/outputDelta`, `turn/completed`, `thread/tokenUsage/updated` (met `modelContextWindow`), `account/rateLimits/updated` |
-| Modellen en account | `model/list`, `account/read`, `account/rateLimits/read` |
-
-Rechten ze vertaalt: vragen = `untrusted` + `readOnly`; bewerkingen toestaan = `on-request` + `workspaceWrite`; alles = `never` + `dangerFullAccess`. Dit geeft Codex in één keer goedkeuringen, vragen, bijsturen, live denkstappen en het contextvenster.
-
-### Gemini CLI, Antigravity en anderen: één ACP-client
-
-ACP (Agent Client Protocol) is JSON-RPC over stdio dat Gemini CLI, Antigravity (`agy_acp_server`), Grok, Copilot en andere agents spreken.
-
-- `initialize {protocolVersion, clientCapabilities}`, eventueel `authenticate {methodId}`.
-- `session/new {cwd, mcpServers}`, of `session/load` (speelt het hele gesprek opnieuw af als `session/update`) en `session/resume`; `session/list` om bestaande gesprekken te tonen.
-- `session/prompt {sessionId, prompt:[…]}`, `session/cancel`, `session/set_mode`, `session/set_model`.
-- `session/update` met `agent_message_chunk`, `agent_thought_chunk` (denkstappen), `tool_call`/`tool_call_update` (met `kind`: read, edit, execute, search, fetch…), `plan`, `usage_update` (context en kosten).
-- Goedkeuren: `session/request_permission` beantwoorden met de `optionId` van soort `allow_once`, `allow_always` of `reject_once`.
-- De werkruimte-brug gaat mee in `session/new.mcpServers`.
-
-Hiermee wordt Antigravity een volwaardige agent (starten, antwoorden met denkstappen, goedkeuren) in plaats van alleen berichten sturen via `agentapi`, en komen Copilot CLI en andere ACP-agents er met weinig extra werk bij.
-
-### Gebruik
-
-- Claude: naast `api/oauth/usage` ook de live `rate_limit_event`s; contextvenster uit een modeltabel.
-- Codex: `account/rateLimits/read` en de live updates; terugval op `GET https://chatgpt.com/backend-api/wham/usage`.
-- ACP: `usage_update {used, size, cost}`.
-
-### Volgorde
-
-1. Codex naar `app-server` (de infrastructuur bestaat al, grootste winst: goedkeuringen en bijsturen).
-2. Claude één proces per sessie met bijsturen en plan-kaart.
-3. ACP-client, eerst voor Gemini CLI en Antigravity.
-4. Terugzetpunten per beurt (verborgen git-refs `refs/nook/checkpoints/<sessie>/<beurt>`) en "Terug naar hier".
+- **Antigravity via ACP.** Daarvoor is Google's `agy_acp_server` nodig (een download van ± 280 MB) met een eigen inlogstroom (`authenticate` met `oauth-personal` en een autorisatie-URL in de uitvoer). Tot dan leest Nook Antigravity uit zijn transcript en stuurt het berichten via `agentapi`.
+- **Bijsturen bij Claude Code** (`"priority": "now"`): niet publiek gedocumenteerd, dus Nook zet berichten voor Claude in de wachtrij tot de beurt klaar is. Codex stuurt Nook wel echt bij.
+- **Modellenlijsten van de agent zelf** (`model/list` bij Codex, `availableModels` bij ACP) in plaats van de bekende plus recent gebruikte modellen.
+- Automatische sessietitels, één slimme git-knop (commit, push en pull request), hervatten zodra een limiet vrij is.

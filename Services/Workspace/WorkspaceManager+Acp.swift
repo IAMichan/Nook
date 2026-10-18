@@ -273,7 +273,7 @@ extension WorkspaceManager {
         if failed { append(id, RunEvent(kind: .error, text: tr("ws.acp.refused"))) }
         append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
         expireApprovals(id)
-        if let run = run(id) { onTurnFinished?(run) }
+        turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
         sendQueued(id)
         acpIdleClose[id]?.cancel()
@@ -327,7 +327,7 @@ extension WorkspaceManager {
             let detail = WorkspaceManager.cleanError(stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
         }
     }
 
@@ -336,6 +336,6 @@ extension WorkspaceManager {
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))
-        if let run = run(id) { onTurnFinished?(run) }
+        turnDidFinish(id)
     }
 }

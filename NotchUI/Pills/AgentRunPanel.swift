@@ -14,6 +14,9 @@ struct AgentRunPanel: View {
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
+    /// "Back to before this message": the message, and why it could not, if it could not.
+    @State private var revertTarget: RunEvent?
+    @State private var revertError: String?
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
@@ -33,7 +36,9 @@ struct AgentRunPanel: View {
                     let approval = ApprovalCenter.make(request)
                     ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
                 }
-                if confirmDelete {
+                if let target = revertTarget {
+                    revertConfirmation(target)
+                } else if confirmDelete {
                     deleteConfirmation(run)
                 } else if let question = workspace.questions[runID]?.first {
                     // The agent asks something: its question takes the composer's place until answered.
@@ -234,9 +239,47 @@ struct AgentRunPanel: View {
                 workspace.configure(runID, mode: .agent)
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }
+        } else if event.kind == .user {
+            eventView(event)
+                .contextMenu {
+                    // "edit from here": the worktree's files go back to how they were before this message.
+                    Button(tr("ws.revert.menu")) {
+                        revertError = nil
+                        revertTarget = event
+                    }
+                    .disabled(!workspace.canRevert(runID))
+                }
         } else {
             eventView(event)
         }
+    }
+
+    private func revertConfirmation(_ target: RunEvent) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("ws.revert.confirm"))
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("button.cancel")) { revertTarget = nil }
+            NookPrimaryButton(title: tr("ws.revert.action")) {
+                Task {
+                    do {
+                        try await workspace.revertFiles(runID, before: target.date)
+                        revertTarget = nil
+                    } catch {
+                        revertError = error.localizedDescription
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.08)))
     }
 
     private func eventView(_ event: RunEvent) -> some View {

@@ -239,6 +239,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
+    /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
+    var checkpoints: [RunCheckpoint]? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

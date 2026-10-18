@@ -126,6 +126,11 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(GitService.friendlyWorktreeError(other, base: "main") as? GitError, other)
     }
 
+    func testClaudeRateLimitEvent() {
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"rate_limit_event","rate_limit_info":{"rateLimitType":"five_hour","utilization":0.4,"resetsAt":1700000000}}"#),
+                       [.rateLimits])
+    }
+
     private func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]

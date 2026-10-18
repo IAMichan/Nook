@@ -350,6 +350,13 @@ final class WorkspaceManager: ObservableObject {
         selectedRunID = id
         if let worktreePath {
             append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
+            // The first snapshot, before the agent does anything: "back to here" on the first message.
+            if let git {
+                let ref = GitService.checkpointRef(session: id, index: 0)
+                if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(worktreePath, ref: ref) }.value) != nil {
+                    update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
+                }
+            }
             // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
             let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: worktreePath) }.value
             for script in setup where script.runOnWorktreeCreate {
@@ -457,6 +464,46 @@ final class WorkspaceManager: ObservableObject {
         }
         loadTimeline(id)
         launchTurn(id, prompt: clean, executable: executable)
+    }
+
+    /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
+    func turnDidFinish(_ id: UUID) {
+        guard let run = run(id) else { return }
+        onTurnFinished?(run)
+        captureCheckpoint(id)
+    }
+
+    /// Only for sessions in their own worktree (as): restoring there can never touch your own checkout.
+    func captureCheckpoint(_ id: UUID) {
+        guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
+        let directory = run.workingDirectory
+        let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
+        Task.detached(priority: .utility) { [weak self] in
+            guard (try? git.checkpoint(directory, ref: ref)) != nil else { return }
+            await self?.recordCheckpoint(id, RunCheckpoint(ref: ref, date: Date()))
+        }
+    }
+
+    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint) {
+        update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] }
+    }
+
+    /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
+    func canRevert(_ id: UUID) -> Bool {
+        guard let run = run(id), run.isolation == .worktree, !run.status.isActive, !(run.checkpoints ?? []).isEmpty else { return false }
+        return activeRuns(sharing: run.workingDirectory, except: id).isEmpty
+    }
+
+    /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). The conversation stays.
+    func revertFiles(_ id: UUID, before date: Date) async throws {
+        guard canRevert(id), let run = run(id), let git = gitService,
+              let checkpoint = run.checkpoints?.last(where: { $0.date <= date }) else {
+            throw StartError.git(tr("ws.revert.unavailable"))
+        }
+        let directory = run.workingDirectory
+        try await Task.detached(priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }.value
+        append(id, RunEvent(kind: .system, text: tr("ws.revert.done")))
+        refreshGit(id)
     }
 
     /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
@@ -655,7 +702,7 @@ final class WorkspaceManager: ObservableObject {
             }
             if isError && !stopping { append(id, RunEvent(kind: .error, text: message ?? tr("ws.event.failed", "error"))) }
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: isError && !stopping ? .failed : .done))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
         }
     }
@@ -775,12 +822,14 @@ final class WorkspaceManager: ObservableObject {
                                 state: result.isError && !stopping ? .failed : .done))
             expireApprovals(id)
             questions[id] = nil
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
             // Turn finished: keep Claude Code waiting for the next message instead of closing it (way).
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
+        case .rateLimits:
+            onRateLimits?()
         }
     }
 
@@ -828,7 +877,7 @@ final class WorkspaceManager: ObservableObject {
                 run.move(to: stopping ? .stopped : .completed)
             }
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: .done))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
         case .failed(let message):
             turns[id]?.lastError = message
@@ -872,7 +921,7 @@ final class WorkspaceManager: ObservableObject {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
         }
         scheduleGitRefresh(id, delay: 0.2)
     }
@@ -985,6 +1034,9 @@ final class WorkspaceManager: ObservableObject {
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     func delete(_ id: UUID) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        if let root = run.repoRoot, let git = gitService, run.checkpoints != nil {
+            Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
+        }
         runs.removeAll { $0.id == id }
         events[id] = nil
         approvals[id] = nil

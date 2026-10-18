@@ -324,7 +324,7 @@ extension WorkspaceManager {
         expireApprovals(id)
         questions[id] = nil
         turns[id] = nil
-        if let run = run(id) { onTurnFinished?(run) }
+        turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
         sendQueued(id)
         scheduleCodexIdleClose(id)
@@ -382,7 +382,7 @@ extension WorkspaceManager {
             let detail = WorkspaceManager.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
         }
         scheduleGitRefresh(id, delay: 0.2)
     }
@@ -392,6 +392,6 @@ extension WorkspaceManager {
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))
-        if let run = run(id) { onTurnFinished?(run) }
+        turnDidFinish(id)
     }
 }
