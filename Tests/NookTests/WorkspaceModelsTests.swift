@@ -45,11 +45,11 @@ final class WorkspaceModelsTests: XCTestCase {
         config.projectPath = "/tmp/project"
         XCTAssertNil(config.problem)
 
-        config.provider = .gemini
         config.permission = .ask
-        XCTAssertEqual(config.problem, .unsupportedPolicy, "headless Gemini CLI cannot ask for confirmation")
-        config.provider = .codex
-        XCTAssertNil(config.problem, "Codex over app-server asks for approval in Nook")
+        for provider in RunProvider.allCases {
+            config.provider = provider
+            XCTAssertNil(config.problem, "\(provider.displayName) asks for approval in Nook (app-server, ACP, stdio)")
+        }
         config.permission = .acceptEdits
 
         config.isolation = .worktree

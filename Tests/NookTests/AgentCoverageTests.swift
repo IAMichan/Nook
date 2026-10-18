@@ -107,7 +107,7 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(ToolSummary.fileChanges(tool: "replace", input: ["file_path": "/a/b.swift"]).map(\.kind), ["modified"])
         XCTAssertEqual(ToolSummary.describe(tool: "run_shell_command", input: ["command": "npm test"]), "run_shell_command · npm test")
         XCTAssertTrue(RunProvider.gemini.capabilities.policies.contains(.acceptEdits))
-        XCTAssertFalse(RunProvider.gemini.capabilities.policies.contains(.ask), "headless Gemini cannot ask for approval")
+        XCTAssertTrue(RunProvider.gemini.capabilities.policies.contains(.ask), "over ACP Gemini asks Nook for permission")
     }
 
     func testCodexAsksForDetailedReasoning() {

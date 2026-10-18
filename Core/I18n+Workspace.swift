@@ -6,6 +6,12 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.acp.noLoad": "%@ kan een eerder gesprek niet laden; dit wordt een nieuw gesprek.",
+        "ws.acp.limit": "De agent stopte omdat hij een limiet bereikte.",
+        "ws.acp.refused": "De agent weigerde dit verzoek.",
+        "ws.acp.fallback": "Deze Gemini CLI spreekt geen ACP; Nook gebruikt zijn headless modus.",
+        "ws.acp.login": "Log in met: %@",
+        "agents.usage.acpNoLimits": "Deze agent meldt geen limieten; context en kosten staan per sessie.",
         "ws.plan.title": "Voorgesteld plan",
         "ws.plan.implement": "Voer plan uit",
         "ws.plan.implementPrompt": "Voer het plan hierboven uit.",
@@ -468,6 +474,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.acp.noLoad": "%@ cannot load an earlier conversation; this becomes a new one.",
+        "ws.acp.limit": "The agent stopped because it hit a limit.",
+        "ws.acp.refused": "The agent refused this request.",
+        "ws.acp.fallback": "This Gemini CLI does not speak ACP; Nook uses its headless mode.",
+        "ws.acp.login": "Sign in with: %@",
+        "agents.usage.acpNoLimits": "This agent reports no limits; context and cost are shown per session.",
         "ws.plan.title": "Proposed plan",
         "ws.plan.implement": "Carry out plan",
         "ws.plan.implementPrompt": "Implement the plan above.",
@@ -930,6 +942,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.acp.noLoad": "%@ kann ein früheres Gespräch nicht laden; dies wird ein neues.",
+        "ws.acp.limit": "Der Agent hat angehalten, weil er ein Limit erreicht hat.",
+        "ws.acp.refused": "Der Agent hat diese Anfrage abgelehnt.",
+        "ws.acp.fallback": "Dieses Gemini CLI spricht kein ACP; Nook verwendet seinen Headless-Modus.",
+        "ws.acp.login": "Anmelden mit: %@",
+        "agents.usage.acpNoLimits": "Dieser Agent meldet keine Limits; Kontext und Kosten stehen pro Sitzung.",
         "ws.plan.title": "Vorgeschlagener Plan",
         "ws.plan.implement": "Plan ausführen",
         "ws.plan.implementPrompt": "Setze den Plan oben um.",

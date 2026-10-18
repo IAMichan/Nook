@@ -69,6 +69,7 @@ struct UsageView: View {
         case .claude: return tr("settings.usage.claudeMissing")
         case .codex: return tr("settings.usage.codexMissing")
         case .gemini: return tr("agents.usage.geminiNoLimits")
+        case .opencode, .cursor, .grok: return tr("agents.usage.acpNoLimits")
         case .antigravity: return tr("ws.usage.quotaUnavailable")
         }
     }
@@ -216,7 +217,10 @@ struct UsageView: View {
                 .chartForegroundStyleScale([
                     RunProvider.claude.displayName: RunProvider.claude.color,
                     RunProvider.codex.displayName: RunProvider.codex.color,
-                    RunProvider.gemini.displayName: RunProvider.gemini.color
+                    RunProvider.gemini.displayName: RunProvider.gemini.color,
+                    RunProvider.opencode.displayName: RunProvider.opencode.color,
+                    RunProvider.cursor.displayName: RunProvider.cursor.color,
+                    RunProvider.grok.displayName: RunProvider.grok.color
                 ])
                 .chartYAxis {
                     AxisMarks { value in

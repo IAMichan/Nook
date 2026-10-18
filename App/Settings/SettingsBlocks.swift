@@ -250,10 +250,10 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.bridge.enabled"), isOn: $ws.agentTools)
             LabeledContent(tr("settings.bridge.outside")) {
                 HStack(spacing: 6) {
-                    ForEach(RunProvider.allCases) { provider in
+                    ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
                         Button(provider.displayName) { link(provider) }
                             .controlSize(.small)
-                            .help(WorkspaceBridgeScript.linkCommand(for: provider))
+                            .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
                     }
                 }
             }
@@ -269,7 +269,8 @@ struct WorkspaceSettingsSection: View {
     private func link(_ provider: RunProvider) {
         try? WorkspaceBridgeScript.install()
         do {
-            try app.runVisibly(WorkspaceBridgeScript.linkCommand(for: provider),
+            guard let command = WorkspaceBridgeScript.linkCommand(for: provider) else { return }
+            try app.runVisibly(command,
                                in: FileManager.default.homeDirectoryForCurrentUser.path,
                                name: "nook-bridge-\(provider.rawValue)", title: tr("settings.bridge.terminalTitle", provider.displayName))
         } catch {

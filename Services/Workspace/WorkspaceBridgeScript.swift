@@ -124,12 +124,14 @@ enum WorkspaceBridgeScript {
     }
 
     /// Registers the bridge with an agent outside Nook (user scope), typed in a visible terminal so you see what happens.
-    static func linkCommand(for provider: RunProvider) -> String {
+    static func linkCommand(for provider: RunProvider) -> String? {
         let script = TerminalLauncher.shellQuote(NookPaths.spaceFreeBridgeURL.path)
         switch provider {
         case .claude: return "claude mcp add --scope user \(BridgeTool.serverName) -- \(script) --agent claude-code"
         case .codex: return "codex mcp add \(BridgeTool.serverName) -- \(script) --agent codex"
         case .gemini: return "gemini mcp add --scope user \(BridgeTool.serverName) \(script) --agent gemini"
+        // Over ACP Nook hands its bridge to every session itself (session/new mcpServers); nothing to register.
+        case .opencode, .cursor, .grok: return nil
         }
     }
 }

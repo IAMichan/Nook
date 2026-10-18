@@ -2,10 +2,10 @@ import Foundation
 import SwiftUI
 import SQLite3
 
-/// Which agent a past session or account belongs to. Nook also reads sessions from Claude Code and Codex;
-/// for Gemini CLI, it only reads which Google account you are logged in with.
+/// Which agent a past session or account belongs to. Nook reads the sessions of Claude Code, Codex, Gemini CLI and
+/// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP (as does) and knows by their login.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, gemini, antigravity
+    case claude, codex, gemini, antigravity, opencode, cursor, grok
 
     var id: String { rawValue }
 
@@ -15,6 +15,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return "Codex"
         case .gemini: return "Gemini CLI"
         case .antigravity: return "Antigravity"
+        case .opencode: return "OpenCode"
+        case .cursor: return "Cursor"
+        case .grok: return "Grok"
         }
     }
 
@@ -25,6 +28,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return "codex"
         case .gemini: return "gemini"
         case .antigravity: return "agy"
+        case .opencode: return "opencode"
+        case .cursor: return "cursor-agent"
+        case .grok: return "grok"
         }
     }
 
@@ -35,6 +41,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return "Codex"
         case .gemini: return "Gemini"
         case .antigravity: return "Antigravity"
+        case .opencode: return "OpenCode"
+        case .cursor: return "Cursor"
+        case .grok: return "Grok"
         }
     }
 
@@ -44,16 +53,22 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return Color(hex: 0x6FCFB3)
         case .gemini: return Color(hex: 0x8AB4F8)
         case .antigravity: return Color(hex: 0xEA4335)
+        case .opencode: return Color(hex: 0xF5A742)
+        case .cursor: return Color(hex: 0x9AA4B2)
+        case .grok: return Color(hex: 0xD9D9DE)
         }
     }
 
-    /// The integration in Settings › Agents that brings progress and permissions to the notch.
-    var hookTarget: AgentConfigInstaller.Target {
+    /// The integration in Settings › Agents that brings progress and permissions to the notch (Grok has none).
+    var hookTarget: AgentConfigInstaller.Target? {
         switch self {
         case .claude: return .claudeHooks
         case .codex: return .codex
         case .gemini: return .gemini
         case .antigravity: return .antigravity
+        case .opencode: return .openCode
+        case .cursor: return .cursor
+        case .grok: return nil
         }
     }
 
@@ -64,6 +79,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return [.codex]
         case .gemini: return [.gemini]
         case .antigravity: return [.antigravity]
+        case .opencode: return [.openCode]
+        case .cursor: return [.cursor]
+        case .grok: return []
         }
     }
 
@@ -78,6 +96,12 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
             return "if command -v npm >/dev/null 2>&1; then npm install -g @google/gemini-cli; else brew install gemini-cli; fi"
         case .antigravity:
             return "brew install --cask antigravity"
+        case .opencode:
+            return "curl -fsSL https://opencode.ai/install | bash"
+        case .cursor:
+            return "curl https://cursor.com/install -fsS | bash"
+        case .grok:
+            return "npm install -g @xai-official/grok"
         }
     }
 
@@ -88,6 +112,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return "codex login"
         case .gemini: return "gemini"
         case .antigravity: return "agy"
+        case .opencode: return "opencode auth login"
+        case .cursor: return "cursor-agent login"
+        case .grok: return "grok"
         }
     }
 
@@ -97,6 +124,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         var paths = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin",
                      "\(home)/.volta/bin", "\(home)/.bun/bin", "\(home)/Library/pnpm"]
         if self == .claude { paths.insert("\(home)/.claude/local", at: 0) }
+        if self == .opencode { paths.insert("\(home)/.opencode/bin", at: 0) }
         if self == .antigravity {
             paths.insert("\(home)/.gemini/antigravity/bin", at: 0)
             paths.insert("\(home)/.antigravity/antigravity/bin", at: 0)
@@ -115,6 +143,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .claude: return HistoryScanner.claudeHome
         case .codex: return CodexUsage.codexHome
         case .gemini, .antigravity: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true)
+        case .opencode: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode", isDirectory: true)
+        case .cursor: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor", isDirectory: true)
+        case .grok: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
         }
     }
 
@@ -124,6 +155,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case "Codex": self = .codex
         case "Gemini CLI": self = .gemini
         case "Antigravity": self = .antigravity
+        case "OpenCode": self = .opencode
+        case "Cursor": self = .cursor
+        case "Grok", "Grok Build": self = .grok
         default: return nil
         }
     }
@@ -202,6 +236,8 @@ struct PastSession: Identifiable, Equatable {
         case .codex: return ["resume", sessionID]
         case .gemini: return ["--resume", sessionID]
         case .antigravity: return ["--resume", sessionID]
+        case .opencode: return ["--session", sessionID]
+        case .cursor, .grok: return ["--resume", sessionID]
         }
     }
 }
@@ -399,6 +435,8 @@ private final class HistoryScanner: @unchecked Sendable {
             case .codex: found = codexFiles(home.url, since: since)
             case .gemini: found = geminiFiles(home.url, since: since)
             case .antigravity: found = antigravityFiles(home.url, since: since)
+            // Run over ACP: their history comes from the agent itself (session/load), not from files.
+            case .opencode, .cursor, .grok: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -419,6 +457,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 case .codex: parsed = parseCodex(file.url)
                 case .gemini: parsed = parseGemini(file.url)
                 case .antigravity: parsed = parseAntigravity(file.url, summaries: antigravitySummaries)
+                case .opencode, .cursor, .grok: parsed = Parsed(session: nil, entries: [])
                 }
             }
             parsed.session?.profileID = file.profile
@@ -463,9 +502,39 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let account = geminiAccount(home.url) { accounts[home.id] = account }
             case .antigravity:
                 if let account = antigravityAccount(home.url) { accounts[home.id] = account }
+            case .opencode, .cursor, .grok:
+                if let account = acpAgentAccount(home.kind, home.url) { accounts[home.id] = account }
             }
         }
         return accounts
+    }
+
+    /// OpenCode, Cursor and Grok: signed in when their login file is there (with the email when it names one).
+    private func acpAgentAccount(_ kind: AgentKind, _ home: URL) -> AgentAccount? {
+        let file: URL
+        switch kind {
+        case .opencode: file = home.appendingPathComponent("auth.json")
+        case .cursor: file = home.appendingPathComponent("cli-config.json")
+        default: file = home.appendingPathComponent("auth.json")
+        }
+        guard let data = try? Data(contentsOf: file) else {
+            // Grok keeps its login elsewhere in its folder: the folder itself means it was set up.
+            return kind == .grok ? AgentAccount(agent: kind, name: kind.name, organization: "", plan: "") : nil
+        }
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        if kind == .cursor {
+            let auth = object["authInfo"] as? [String: Any]
+            guard let auth else { return nil }
+            return AgentAccount(agent: kind, name: (auth["email"] as? String) ?? kind.name, organization: "", plan: "")
+        }
+        if kind == .opencode {
+            // auth.json lists the providers you signed in to ("anthropic", "openai", …).
+            let providers = object.keys.sorted()
+            guard !providers.isEmpty else { return nil }
+            return AgentAccount(agent: kind, name: providers.joined(separator: ", "), organization: "", plan: "")
+        }
+        let email = (object["email"] as? String) ?? ((object["user"] as? [String: Any])?["email"] as? String)
+        return AgentAccount(agent: kind, name: email ?? kind.name, organization: "", plan: "")
     }
 
     /// Fast first pass for the Accounts view: logins and executables at known locations, without reading transcripts

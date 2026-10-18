@@ -100,6 +100,12 @@ final class WorkspaceManager: ObservableObject {
     /// as model, mode and rights are unchanged. With the settings they were started with, and when they close.
     var claudeIdle: [UUID: (process: AgentProcess, key: String)] = [:]
     var claudeIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// ACP sessions (Gemini CLI, OpenCode, Cursor, Grok), kept alive between turns; their permission requests waiting
+    /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
+    var acpClients: [UUID: AcpClient] = [:]
+    var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption])] = [:]
+    var acpFallback: Set<String> = []
+    var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -154,6 +160,8 @@ final class WorkspaceManager: ObservableObject {
         var liveReasoningItem: String?
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
+        /// ACP: the session's cost so far, as the agent reports it.
+        var acpCost: Double?
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -484,6 +492,7 @@ final class WorkspaceManager: ObservableObject {
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         if stopCodexServerTurn(id) { return }
+        if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
             // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
@@ -510,6 +519,11 @@ final class WorkspaceManager: ObservableObject {
         // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
+            return
+        }
+        // Gemini CLI, OpenCode, Cursor and Grok speak ACP (way); Gemini falls back to its headless mode.
+        if run.provider.usesACP, !acpFallback.contains(executable) {
+            launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }
         // Claude Code still running from the previous turn, with the same settings: continue in it.
@@ -577,6 +591,8 @@ final class WorkspaceManager: ObservableObject {
         case .gemini:
             let parsed = GeminiStreamParser.parse(line)
             for event in parsed { handleGemini(event, id: id) }
+        case .opencode, .cursor, .grok:
+            break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }
 
@@ -914,6 +930,7 @@ final class WorkspaceManager: ObservableObject {
 
     func decide(_ runID: UUID, requestID: String, _ decision: Decision) {
         if decideCodex(runID, requestID: requestID, decision) { return }
+        if decideAcp(runID, requestID: requestID, decision) { return }
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }), let process = processes[runID] else {
             expireApproval(runID, requestID: requestID)
             return
@@ -975,6 +992,7 @@ final class WorkspaceManager: ObservableObject {
         questions[id] = nil
         closeCodexServer(id)
         closeClaudeProcess(id)
+        closeAcpClient(id)
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
@@ -1178,6 +1196,7 @@ final class WorkspaceManager: ObservableObject {
     func shutdown() {
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
+        for id in Array(acpClients.keys) { closeAcpClient(id) }
         for (id, process) in processes {
             turns[id]?.stopping = true
             process.closeInput()

@@ -112,7 +112,19 @@ enum AgentCommand {
             arguments.append("--prompt=" + prompt)
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+
+        case .opencode, .cursor, .grok:
+            return acpSpec(input)
         }
+    }
+
+    /// The ACP server command of an agent that only runs over ACP (see AcpAgent).
+    static func acpSpec(_ input: Input) -> LaunchSpec {
+        var environment = input.accountEnvironment
+        environment["NOOK_RUN_ID"] = input.runID.uuidString
+        return LaunchSpec(executable: input.executable, arguments: AcpLaunch.arguments(input.provider, permission: input.permission),
+                          extraEnvironment: environment, workingDirectory: input.workingDirectory, initialInput: [],
+                          keepsInputOpen: true)
     }
 
     static func geminiApprovalMode(mode: ExecutionMode, permission: PermissionPolicy) -> String {
