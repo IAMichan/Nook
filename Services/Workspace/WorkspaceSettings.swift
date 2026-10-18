@@ -55,6 +55,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoTitles: Bool {
         didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
     }
+    /// A session stopped by a usage limit goes on by itself once the limit resets ("Auto-resume"; off by default).
+    @Published var autoResumeLimited: Bool {
+        didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -79,6 +83,7 @@ final class WorkspaceSettings: ObservableObject {
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
+        autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }

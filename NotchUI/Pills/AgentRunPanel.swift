@@ -363,7 +363,7 @@ struct AgentRunPanel: View {
             draft = ""
             workspace.send(runID, text: text)
         }
-        // Codex over app-server takes a new message during the turn (steering); other agents get it after the turn.
+        // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
         let steers = active && workspace.canSteer(runID)
         let queue = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -372,6 +372,7 @@ struct AgentRunPanel: View {
             if !(steers && workspace.steer(runID, text: text)) { workspace.enqueue(runID, text: text) }
         }
         return VStack(alignment: .leading, spacing: 5) {
+            UsageLimitBanner(run: run)
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
                 QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
                                     sendNow: active ? nil : { workspace.sendQueuedNow(runID) })

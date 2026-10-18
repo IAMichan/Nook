@@ -124,6 +124,9 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestLookup: ((_ repo: String, _ branch: String) async -> URL?)?
     var pullRequestCreate: ((_ repo: String, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     var modelsRefreshed: [RunProvider: Date] = [:]
+    /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
+    var limitResumes: [UUID: Task<Void, Never>] = [:]
+    var codexLimitSnapshots: [UUID: JSONBox] = [:]
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
@@ -176,6 +179,10 @@ final class WorkspaceManager: ObservableObject {
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
+        /// Usage limits: Claude Code's blocked windows (with their reset, if known), and whether the turn ended on one.
+        var limitWindows: [String: Date?] = [:]
+        var usageLimited = false
+        var limitResetAt: Date?
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -183,6 +190,8 @@ final class WorkspaceManager: ObservableObject {
         runs = store.loadRuns()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         applyAutoArchive()
+        // Sessions that were waiting for a usage limit to reset go on waiting.
+        for run in runs where run.autoResume == true { armLimitResume(run.id) }
         Task.detached(priority: .utility) {
             let service = GitService.shared
             await MainActor.run { [weak self] in
@@ -489,6 +498,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
     func turnDidFinish(_ id: UUID) {
+        checkUsageLimit(id)
         guard let run = run(id) else { return }
         onTurnFinished?(run)
         captureCheckpoint(id)
@@ -599,7 +609,10 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
-        guard var run = run(id), processes[id] == nil else { return }
+        guard processes[id] == nil else { return }
+        // A new turn ends any wait for a usage limit (yours or the automatic one).
+        clearUsageLimit(id)
+        guard var run = run(id) else { return }
         // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
@@ -834,6 +847,12 @@ final class WorkspaceManager: ObservableObject {
                 return
             }
             turns[id]?.steered = false
+            // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
+            if result.isError, turns[id]?.stopping != true,
+               !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
+                turns[id]?.usageLimited = true
+                turns[id]?.limitResetAt = UsageLimits.latestReset(turns[id]?.limitWindows ?? [:])
+            }
             var usage = result.usage
             let state = turns[id]
             // If turn completion reported no tokens, sum up individual message counts.
@@ -872,8 +891,9 @@ final class WorkspaceManager: ObservableObject {
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
-        case .rateLimits:
+        case .rateLimits(let event):
             onRateLimits?()
+            if let event { noteClaudeLimit(id, event) }
         }
     }
 
@@ -926,6 +946,8 @@ final class WorkspaceManager: ObservableObject {
         case .failed(let message):
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
+        case .usageLimited:
+            turns[id]?.usageLimited = true
         default:
             // Events only `codex app-server` sends: live text, reasoning, output, usage, the end of a turn.
             handleCodexServerEvent(event, id: id)
@@ -1091,6 +1113,8 @@ final class WorkspaceManager: ObservableObject {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        limitResumes.removeValue(forKey: id)?.cancel()
+        codexLimitSnapshots[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }

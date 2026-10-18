@@ -51,7 +51,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case result(ClaudeTurnResult)
     case notice(String)
     /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
-    case rateLimits
+    /// A limit changed; with the details when Claude Code gave them (a blocked window and when it resets).
+    case rateLimits(UsageLimits.ClaudeEvent?)
 }
 
 struct ClaudeTurnResult: Equatable, Sendable {
@@ -63,6 +64,8 @@ struct ClaudeTurnResult: Equatable, Sendable {
     var permissionDenials: Int
     /// Why the turn ended, e.g. `aborted_streaming` or `aborted_tools` when a steering message cut it short.
     var terminalReason: String? = nil
+    /// The HTTP status of a failed API call (429: a usage limit).
+    var apiErrorStatus: Int? = nil
 
     /// The end of a turn segment that a steering message (`priority: "now"`) cut off: the turn goes on.
     var endedBySteer: Bool { terminalReason == "aborted_streaming" || terminalReason == "aborted_tools" }
@@ -139,7 +142,7 @@ enum ClaudeStreamParser {
             )]
 
         case "rate_limit_event":
-            return [.rateLimits]
+            return [.rateLimits((object["rate_limit_info"] as? [String: Any]).flatMap(UsageLimits.claudeEvent))]
 
         case "result":
             var usage = TurnUsage()
@@ -165,7 +168,8 @@ enum ClaudeStreamParser {
                 sessionID: object["session_id"] as? String,
                 usage: usage,
                 permissionDenials: (object["permission_denials"] as? [Any])?.count ?? 0,
-                terminalReason: object["terminal_reason"] as? String
+                terminalReason: object["terminal_reason"] as? String,
+                apiErrorStatus: ClaudeStreamParser.number(object["api_error_status"]).map { Int($0) }
             ))]
 
         default:
@@ -292,6 +296,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case plan(String)
     case notice(String)
     case rateLimits(JSONBox)
+    /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).
+    case usageLimited
 }
 
 struct CodexFileChange: Equatable, Sendable {

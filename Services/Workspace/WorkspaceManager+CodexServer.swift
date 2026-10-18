@@ -214,7 +214,8 @@ extension WorkspaceManager {
                 if let run = run(id) { onQuestion?(run, pending) }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not support this request.")
-            case .rateLimits:
+            case .rateLimits(let limits):
+                codexLimitSnapshots[id] = limits
                 onRateLimits?()
             default:
                 handleCodex(event, id: id)

@@ -239,11 +239,14 @@ enum CodexAppServerMapper {
         case "turn/completed":
             let turn = (params["turn"] as? [String: Any]) ?? [:]
             let error = (turn["error"] as? [String: Any])?["message"] as? String
-            return [.turnFinished(status: (turn["status"] as? String) ?? "completed", error: error,
+            let limited = UsageLimits.isCodexUsageLimit((turn["error"] as? [String: Any])?["codexErrorInfo"])
+            return (limited ? [.usageLimited] : []) + [.turnFinished(status: (turn["status"] as? String) ?? "completed", error: error,
                                   durationSeconds: ClaudeStreamParser.number(turn["durationMs"]).map { $0 / 1000 })]
         case "error":
             let message = ((params["error"] as? [String: Any])?["message"] as? String) ?? "Codex reported an error."
-            return (params["willRetry"] as? Bool) == true ? [.notice(message)] : [.failed(message)]
+            if (params["willRetry"] as? Bool) == true { return [.notice(message)] }
+            let limited = UsageLimits.isCodexUsageLimit((params["error"] as? [String: Any])?["codexErrorInfo"])
+            return (limited ? [.usageLimited] : []) + [.failed(message)]
         case "thread/compacted":
             return [.notice("compact")]
         case "account/rateLimits/updated":

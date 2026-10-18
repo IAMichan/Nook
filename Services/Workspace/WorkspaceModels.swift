@@ -241,6 +241,11 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var changedFiles: Int?
     /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
     var checkpoints: [RunCheckpoint]? = nil
+    /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
+    /// on by itself ("Resume at reset").
+    var limitedAt: Date? = nil
+    var limitResetAt: Date? = nil
+    var autoResume: Bool? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

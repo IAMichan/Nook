@@ -40,6 +40,11 @@ struct RunDetailView: View {
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
                 } else {
+                    if run.limitedAt != nil, !run.status.isActive {
+                        UsageLimitBanner(run: run)
+                            .padding(.horizontal, 18)
+                            .padding(.top, 10)
+                    }
                     if let waiting = workspace.queued[runID], !waiting.isEmpty {
                         QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
                                             sendNow: run.status.isActive ? nil : { workspace.sendQueuedNow(runID) })
@@ -300,7 +305,7 @@ struct RunDetailView: View {
                     .foregroundStyle(WS.tertiary)
                 Spacer()
                 if active {
-                    // While it works: Codex over app-server takes the message now (steer), others after the turn (queue).
+                    // While it works: Codex over app-server and Claude Code take the message now (steer), others after the turn (queue).
                     let steers = workspace.canSteer(runID)
                     Button {
                         queueOrSteer()
