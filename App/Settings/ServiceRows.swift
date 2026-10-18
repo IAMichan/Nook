@@ -33,7 +33,7 @@ enum ServiceCategory: String, CaseIterable, Identifiable {
 enum ServiceStatus: Equatable {
     case notLinked, connecting, connected, expired, unreachable, off
 
-    var label: String { tr("connect.status.\(self)") }
+    var label: String { tr("connect.state.\(self)") }
 
     var color: Color {
         switch self {
@@ -185,7 +185,7 @@ private struct LinkedMCPServiceRow: View {
         case .expired: return tr("connect.expiredDetail", service.name)
         case .unreachable:
             if case .error(let message) = connector.status.state { return message }
-            return tr("connect.status.unreachable")
+            return tr("connect.state.unreachable")
         case .off: return tr("settings2.service.offDetail")
         default:
             if signIn.phase == .done(config.id) { return tr("connect.justConnected", service.name) }
