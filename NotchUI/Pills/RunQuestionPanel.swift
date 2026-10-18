@@ -5,6 +5,8 @@ import SwiftUI
 struct RunQuestionPanel: View {
     let question: PendingQuestion
     let agent: String
+    /// Stops the agent instead of answering (the composer with its Stop button is hidden meanwhile).
+    var onStop: (() -> Void)? = nil
     let onAnswer: ([String: [String]]) -> Void
     @State private var index = 0
     @State private var answers: [String: [String]] = [:]
@@ -29,6 +31,18 @@ struct RunQuestionPanel: View {
                             .font(NookTheme.font(11.5))
                             .foregroundStyle(NookTheme.textTertiary)
                             .monospacedDigit()
+                    }
+                    if let onStop {
+                        Button(action: onStop) {
+                            Label(tr("ws.question.stop"), systemImage: "stop.fill").labelStyle(.iconOnly)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(NookTheme.smoke))
+                        }
+                        .buttonStyle(.plain)
+                        .help(tr("ws.question.stop"))
+                        .accessibilityLabel(tr("ws.question.stop"))
                     }
                 }
                 Text(item.question)
@@ -67,8 +81,8 @@ struct RunQuestionPanel: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.amber.opacity(0.25), lineWidth: 1))
-            .background(digitShortcuts(item))
-            .id(question.id)
+            // Keys 1–9 pick an option, except while you type your own answer.
+            .background { if !ownFocused { digitShortcuts(item) } }
         }
     }
 
@@ -112,7 +126,6 @@ struct RunQuestionPanel: View {
         ZStack {
             ForEach(Array(item.options.prefix(9).enumerated()), id: \.offset) { number, option in
                 Button("") {
-                    guard !ownFocused else { return }
                     if item.multiSelect {
                         if picks.contains(option.label) { picks.remove(option.label) } else { picks.insert(option.label) }
                     } else {

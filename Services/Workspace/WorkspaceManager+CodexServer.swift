@@ -164,6 +164,11 @@ extension WorkspaceManager {
     /// Answers a question: per question id the chosen labels, or your own text.
     func answer(_ runID: UUID, questionID: String, answers: [String: [String]]) {
         guard let question = questions[runID]?.first(where: { $0.id == questionID }) else { return }
+        // Nobody left to answer (the process ended): drop the question instead of pretending the agent works on.
+        if case .claude = question.origin, processes[runID] == nil {
+            questions[runID] = nil
+            return
+        }
         questions[runID]?.removeAll { $0.id == questionID }
         if questions[runID]?.isEmpty == true { questions[runID] = nil }
         switch question.origin {

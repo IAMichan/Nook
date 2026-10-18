@@ -17,6 +17,7 @@ struct AgentRunPanel: View {
     /// "Back to before this message": the message, and why it could not, if it could not.
     @State private var revertTarget: RunEvent?
     @State private var revertError: String?
+    @State private var reverting = false
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
@@ -41,10 +42,12 @@ struct AgentRunPanel: View {
                 } else if confirmDelete {
                     deleteConfirmation(run)
                 } else if let question = workspace.questions[runID]?.first {
-                    // The agent asks something: its question takes the composer's place until answered.
-                    RunQuestionPanel(question: question, agent: run.provider.displayName) { answers in
+                    // The agent asks something: its question takes the composer's place until answered (Stop stays).
+                    RunQuestionPanel(question: question, agent: run.provider.displayName,
+                                     onStop: { workspace.stop(runID) }) { answers in
                         workspace.answer(runID, questionID: question.id, answers: answers)
                     }
+                    .id(question.id)
                 } else {
                     composer(run)
                 }
@@ -61,6 +64,12 @@ struct AgentRunPanel: View {
                 draft = ""
                 renaming = false
                 confirmDelete = false
+                // Nothing of the previous session carries over: above all not a pending "restore files".
+                revertTarget = nil
+                revertError = nil
+                reverting = false
+                openBlocks = []
+                expanded = []
             }
         } else {
             Text(tr("agents.run.gone"))
@@ -188,7 +197,8 @@ struct AgentRunPanel: View {
                     }
                     if run.status.isActive {
                         LiveActivityRow(live: TimelinePresentation.live(events), since: run.turnStartedAt,
-                                        waiting: run.status == .waitingApproval, accent: run.provider.color)
+                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
+                                        accent: run.provider.color)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run)
@@ -233,9 +243,11 @@ struct AgentRunPanel: View {
     private func eventRow(_ event: RunEvent) -> some View {
         if event.kind == .assistant, event.tool == "plan" {
             let idle = !(workspace.run(runID)?.status.isActive ?? false)
-            // Only the latest plan can still be carried out.
-            let latest = workspace.timeline(runID).last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
-            PlanCard(text: event.text, canAct: idle && latest) {
+            // Only the latest plan, and only until you sent something after it.
+            let timeline = workspace.timeline(runID)
+            let latest = timeline.last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
+            let answered = timeline.contains { $0.kind == .user && $0.date > event.date }
+            PlanCard(text: event.text, canAct: idle && latest && !answered) {
                 workspace.configure(runID, mode: .agent)
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }
@@ -247,7 +259,7 @@ struct AgentRunPanel: View {
                         revertError = nil
                         revertTarget = event
                     }
-                    .disabled(!workspace.canRevert(runID))
+                    .disabled(!workspace.canRevert(runID, before: event.date))
                 }
         } else {
             eventView(event)
@@ -267,7 +279,9 @@ struct AgentRunPanel: View {
             }
             Spacer(minLength: 6)
             NookGhostButton(title: tr("button.cancel")) { revertTarget = nil }
-            NookPrimaryButton(title: tr("ws.revert.action")) {
+            NookPrimaryButton(title: reverting ? tr("ws.revert.working") : tr("ws.revert.action")) {
+                guard !reverting else { return }
+                reverting = true
                 Task {
                     do {
                         try await workspace.revertFiles(runID, before: target.date)
@@ -275,6 +289,7 @@ struct AgentRunPanel: View {
                     } catch {
                         revertError = error.localizedDescription
                     }
+                    reverting = false
                 }
             }
         }
@@ -358,7 +373,8 @@ struct AgentRunPanel: View {
         }
         return VStack(alignment: .leading, spacing: 5) {
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                QueuedMessagesStrip(messages: waiting) { workspace.removeQueued(runID, at: $0) }
+                QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
+                                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
             }
             SessionComposer(
                 text: $draft,

@@ -47,7 +47,7 @@ extension AppModel {
     /// The connected accounts of one agent, the preferred one first.
     func connectedProfiles(for provider: RunProvider) -> [AgentProfile] {
         let preferred = profiles.preferredProfile(provider.kind).id
-        return connectedProfiles.filter { $0.kind == provider.kind }.sorted { a, _ in a.id == preferred }
+        return connectedProfiles.filter { $0.kind == provider.kind }.sorted { a, b in a.id == preferred && b.id != preferred }
     }
 
     /// Models to offer for an agent: its default, the well-known ones, and every model you used with it recently.

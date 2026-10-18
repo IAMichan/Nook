@@ -100,6 +100,8 @@ final class WorkspaceManager: ObservableObject {
     /// as model, mode and rights are unchanged. With the settings they were started with, and when they close.
     var claudeIdle: [UUID: (process: AgentProcess, key: String)] = [:]
     var claudeIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose end-of-turn snapshot is still being made (see captureCheckpoint).
+    var checkpointing: Set<UUID> = []
     /// ACP sessions (Gemini CLI, OpenCode, Cursor, Grok), kept alive between turns; their permission requests waiting
     /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
     var acpClients: [UUID: AcpClient] = [:]
@@ -478,25 +480,31 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
         let directory = run.workingDirectory
         let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
+        // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
+        let date = Date()
+        checkpointing.insert(id)
         Task.detached(priority: .utility) { [weak self] in
-            guard (try? git.checkpoint(directory, ref: ref)) != nil else { return }
-            await self?.recordCheckpoint(id, RunCheckpoint(ref: ref, date: Date()))
+            let made = (try? git.checkpoint(directory, ref: ref)) != nil
+            await self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date) : nil)
         }
     }
 
-    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint) {
-        update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] }
+    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
+        checkpointing.remove(id)
+        if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
+        sendQueued(id)
     }
 
     /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
-    func canRevert(_ id: UUID) -> Bool {
-        guard let run = run(id), run.isolation == .worktree, !run.status.isActive, !(run.checkpoints ?? []).isEmpty else { return false }
+    func canRevert(_ id: UUID, before date: Date = .distantFuture) -> Bool {
+        guard let run = run(id), run.isolation == .worktree, !run.status.isActive,
+              (run.checkpoints ?? []).contains(where: { $0.date <= date }) else { return false }
         return activeRuns(sharing: run.workingDirectory, except: id).isEmpty
     }
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). The conversation stays.
     func revertFiles(_ id: UUID, before date: Date) async throws {
-        guard canRevert(id), let run = run(id), let git = gitService,
+        guard canRevert(id, before: date), let run = run(id), let git = gitService,
               let checkpoint = run.checkpoints?.last(where: { $0.date <= date }) else {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
@@ -513,6 +521,14 @@ final class WorkspaceManager: ObservableObject {
         queued[id, default: []].append(clean)
     }
 
+    /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
+    func sendQueuedNow(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive, var list = queued[id], !list.isEmpty else { return }
+        let next = list.removeFirst()
+        queued[id] = list.isEmpty ? nil : list
+        send(id, text: next)
+    }
+
     func removeQueued(_ id: UUID, at index: Int) {
         guard var list = queued[id], list.indices.contains(index) else { return }
         list.remove(at: index)
@@ -522,7 +538,9 @@ final class WorkspaceManager: ObservableObject {
     /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
     /// waits for you, so nothing goes out on top of a problem.
     func sendQueued(_ id: UUID) {
-        guard processes[id] == nil, let run = run(id), run.status == .completed, var list = queued[id], !list.isEmpty else { return }
+        // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
+        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
+              var list = queued[id], !list.isEmpty else { return }
         let next = list.removeFirst()
         queued[id] = list.isEmpty ? nil : list
         send(id, text: next)
@@ -896,6 +914,8 @@ final class WorkspaceManager: ObservableObject {
         }
         if let process, let current = processes[id], current !== process { return }
         processes[id] = nil
+        // A question can no longer be answered once the process is gone.
+        questions[id] = nil
         let state = turns[id]
         turns[id] = nil
         finishLiveText(id)
@@ -998,7 +1018,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-        if approvals[runID]?.isEmpty ?? true { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
     }
 

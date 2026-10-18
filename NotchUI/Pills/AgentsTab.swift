@@ -62,6 +62,8 @@ struct AgentsTab: View {
                     SessionWorkbench(viewModel: viewModel, title: run?.title ?? "", directory: run?.workingDirectory ?? "") { tools in
                         AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
                     }
+                    // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
+                    .id("run:" + id.uuidString)
                 case .pullRequests: PullRequestsPanel()
                 case .usage: AgentsUsagePanel()
                 case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
@@ -240,7 +242,11 @@ struct AgentsTab: View {
             visits.visit(current)
         }
         // Looking at a session counts as having seen what it finished.
-        .onChange(of: current) { _, id in visits.visit(id) }
+        // Leaving a session counts too: what finished while you watched it is not "new".
+        .onChange(of: current) { old, new in
+            visits.visit(old)
+            visits.visit(new)
+        }
     }
 
     /// The finish/reopen action of a row, in its context menu.

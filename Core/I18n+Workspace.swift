@@ -6,6 +6,12 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.question.stop": "Stop de agent in plaats van te antwoorden",
+        "compose.queue.sendNow": "Nu versturen",
+        "ws.timeline.asking": "Wacht op je antwoord…",
+        "ws.revert.working": "Bezig…",
+        "ws.action.steer": "Bijsturen",
+        "ws.action.queue": "In de wachtrij",
         "ws.revert.menu": "Bestanden terugzetten naar vóór dit bericht",
         "ws.revert.confirm": "Bestanden terugzetten?",
         "ws.revert.detail": "De bestanden in deze worktree gaan terug naar hoe ze waren vóór “%@”. Latere wijzigingen gaan verloren; het gesprek blijft.",
@@ -36,7 +42,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.event.setupScript": "Setup-script gestart in een terminal: %@",
         "agents.servers.help": "Servers die deze sessie in zijn map draait. Tik om te openen.",
         "agents.time.doneUnseen": "klaar",
-        "ws.fold.worked": "Gewerkt %@",
+        "ws.fold.worked": "%@ gewerkt",
         "ws.group.command.one": "1 commando uitgevoerd",
         "ws.group.command.many": "%ld commando's uitgevoerd",
         "ws.group.edit.one": "1 bestand gewijzigd",
@@ -480,6 +486,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.question.stop": "Stop the agent instead of answering",
+        "compose.queue.sendNow": "Send now",
+        "ws.timeline.asking": "Waiting for your answer…",
+        "ws.revert.working": "Working…",
+        "ws.action.steer": "Steer",
+        "ws.action.queue": "Queue",
         "ws.revert.menu": "Restore files to before this message",
         "ws.revert.confirm": "Restore files?",
         "ws.revert.detail": "The files in this worktree go back to how they were before “%@”. Later changes are lost; the conversation stays.",
@@ -954,6 +966,12 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.question.stop": "Den Agent stoppen statt zu antworten",
+        "compose.queue.sendNow": "Jetzt senden",
+        "ws.timeline.asking": "Wartet auf deine Antwort…",
+        "ws.revert.working": "Läuft…",
+        "ws.action.steer": "Nachsteuern",
+        "ws.action.queue": "In die Warteschlange",
         "ws.revert.menu": "Dateien auf den Stand vor dieser Nachricht zurücksetzen",
         "ws.revert.confirm": "Dateien zurücksetzen?",
         "ws.revert.detail": "Die Dateien in diesem Worktree gehen auf den Stand vor „%@“ zurück. Spätere Änderungen gehen verloren; das Gespräch bleibt.",

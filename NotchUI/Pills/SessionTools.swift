@@ -158,7 +158,8 @@ struct DevServerStrip: View {
                             .foregroundStyle(NookTheme.textTertiary)
                             .help(tr("agents.servers.help"))
                         ForEach(servers) { server in
-                            let open = browser.webView.url?.port == server.port
+                            // `address` is published, unlike the web view's own URL.
+                            let open = URL(string: browser.address)?.port == server.port
                             Button {
                                 browser.go(server.url.absoluteString)
                             } label: {

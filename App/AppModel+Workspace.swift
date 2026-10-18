@@ -132,7 +132,8 @@ extension AppModel {
         case .run(let runID):
             // Already looking at this session: the request is shown there, no card on top of it.
             if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == runID { return }
-            if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString { return }
+            if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString,
+               viewModel.sessionTool == .conversation { return }
             open = (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) })
         case .external:
             open = nil
@@ -170,7 +171,9 @@ extension AppModel {
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString { return }
+        // Looking at the conversation: the request is right there. With the terminal or browser open it is not, so a card.
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+           viewModel.sessionTool == .conversation { return }
         let runID = run.id
         presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
                             open: (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) }))
@@ -179,7 +182,8 @@ extension AppModel {
     /// The agent asks a question in a session you are not looking at: a short notice that opens it.
     private func workspaceQuestion(_ run: WorkspaceRun) {
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString { return }
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+           viewModel.sessionTool == .conversation { return }
         NookSound.play(.attention)
         let runID = run.id
         viewModel.finish(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in

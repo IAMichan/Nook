@@ -91,6 +91,8 @@ struct LiveActivityRow: View {
     let live: LiveActivity
     let since: Date?
     let waiting: Bool
+    /// Waiting for an answer to a question rather than for an approval.
+    var asking = false
     let accent: Color
 
     var body: some View {
@@ -99,7 +101,7 @@ struct LiveActivityRow: View {
                 .frame(width: 14, height: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(waiting ? tr("ws.timeline.waiting") : (live.tool ?? tr("ws.timeline.working")))
+                    Text(waiting ? tr(asking ? "ws.timeline.asking" : "ws.timeline.waiting") : (live.tool ?? tr("ws.timeline.working")))
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -126,6 +128,8 @@ struct LiveActivityRow: View {
 struct QueuedMessagesStrip: View {
     let messages: [String]
     let remove: (Int) -> Void
+    /// After a stop or a failure the queue waits for you: this sends the first message now.
+    var sendNow: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -147,8 +151,13 @@ struct QueuedMessagesStrip: View {
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
             }
-            Text(tr("compose.queue.note")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
-                .padding(.leading, 4)
+            HStack(spacing: 8) {
+                Text(tr("compose.queue.note")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 6)
+                if let sendNow { SmallGhostButton(title: tr("compose.queue.sendNow"), action: sendNow) }
+            }
+            .padding(.leading, 4)
         }
     }
 }
