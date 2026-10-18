@@ -22,6 +22,14 @@ final class NookPresence: ObservableObject {
     private(set) var typedAt: Date = .distantPast
     private(set) var typedCount = 0
     private(set) var celebratedAt: Date = .distantPast
+    private(set) var heardAt: Date = .distantPast
+    private(set) var noddedAt: Date = .distantPast
+    private(set) var giggledAt: Date = .distantPast
+    private var pokes: [Date] = []
+
+    /// Where something Nook should look at sits, as an angle around him (0 = right, clockwise, y pointing down): a piece of
+    /// the task ring under the pointer. Nil when there is nothing to look at.
+    var lookAngle: Double?
 
     private var lastActivity = Date()
     private var timer: Timer?
@@ -32,9 +40,27 @@ final class NookPresence: ObservableObject {
         }
     }
 
-    /// The orb was clicked: it squishes and springs back.
+    /// The orb was clicked: it squishes and springs back. Three quick clicks tickle: it giggles.
     func poke() {
-        pokedAt = Date()
+        let now = Date()
+        pokedAt = now
+        pokes = pokes.filter { now.timeIntervalSince($0) < 1 } + [now]
+        if pokes.count >= 3 {
+            giggledAt = now
+            pokes = []
+        }
+        noteActivity()
+    }
+
+    /// You sent Nook something: a small hop with wide eyes, as in "got it".
+    func heard() {
+        heardAt = Date()
+        noteActivity()
+    }
+
+    /// Something Nook or an agent worked on is finished: a short, content nod.
+    func nod() {
+        noddedAt = Date()
         noteActivity()
     }
 

@@ -569,6 +569,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         "notch.agentsActive": "%lld agents actief",
         "notch.goToHome": "Ga naar startpagina",
+        "notch.taskRing": "Waar Nook en je agents mee bezig zijn",
         "notch.nudgeProposal": "Nook stelt voor: %@",
 
         "portfolio.configured": "Ingesteld",
@@ -1316,6 +1317,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         "notch.agentsActive": "%lld agents active",
         "notch.goToHome": "Go to home page",
+        "notch.taskRing": "What Nook and your agents are working on",
         "notch.nudgeProposal": "Nook suggests: %@",
 
         "portfolio.configured": "Configured",
@@ -2063,6 +2065,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         "notch.agentsActive": "%lld Agents aktiv",
         "notch.goToHome": "Zur Startseite gehen",
+        "notch.taskRing": "Woran Nook und deine Agents arbeiten",
         "notch.nudgeProposal": "Nook schlägt vor: %@",
 
         "portfolio.configured": "Konfiguriert",
