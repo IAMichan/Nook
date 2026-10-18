@@ -17,6 +17,7 @@ struct AgentSessionDetail: View {
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
     /// An action is in progress (sending, ending a process).
@@ -243,6 +244,7 @@ struct AgentSessionDetail: View {
             SessionComposer(text: $draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
+            .images($images)
         } else {
             SessionComposer(
                 text: $draft,
@@ -254,6 +256,7 @@ struct AgentSessionDetail: View {
                 agentPill(name: session.name, profile: app.profile(for: session))
                 sessionMenu(session)
             }
+            .images($images)
         }
     }
 
@@ -475,6 +478,7 @@ struct AgentSessionDetail: View {
                 // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
                 pastMenu(session, canContinue: app.canContinueInNook(session))
             }
+            .images($images)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

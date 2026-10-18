@@ -76,6 +76,17 @@ final class AnthropicConversation: ModelConversation {
             messages.append(["role": "user", "content": text])
         }
     }
+
+    func attach(_ images: [PromptImage]) {
+        guard !images.isEmpty, var last = messages.last, (last["role"] as? String) == "user" else { return }
+        var blocks: [[String: Any]] = images.map {
+            ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.base64]]
+        }
+        if let text = last["content"] as? String { blocks.append(["type": "text", "text": text]) }
+        else if let existing = last["content"] as? [[String: Any]] { blocks += existing }
+        last["content"] = blocks
+        messages[messages.count - 1] = last
+    }
 }
 
 /// Every provider with an OpenAI-compatible `/chat/completions` endpoint (OpenAI, Gemini, Grok, Mistral, LM Studio…).
@@ -239,6 +250,14 @@ final class OpenAIConversation: ModelConversation {
     func addInstruction(_ text: String) {
         messages.append(["role": "user", "content": text])
     }
+
+    func attach(_ images: [PromptImage]) {
+        guard !images.isEmpty, var last = messages.last, (last["role"] as? String) == "user", let text = last["content"] as? String else { return }
+        var parts: [[String: Any]] = [["type": "text", "text": text]]
+        parts += images.map { ["type": "image_url", "image_url": ["url": "data:\($0.mediaType);base64,\($0.base64)"]] }
+        last["content"] = parts
+        messages[messages.count - 1] = last
+    }
 }
 
 /// Ollama through its own `/api/chat`, so the context window can be set (`num_ctx`): its default is small and would
@@ -312,6 +331,12 @@ final class OllamaConversation: ModelConversation {
 
     func addInstruction(_ text: String) {
         messages.append(["role": "user", "content": text])
+    }
+
+    func attach(_ images: [PromptImage]) {
+        guard !images.isEmpty, var last = messages.last, (last["role"] as? String) == "user" else { return }
+        last["images"] = images.map(\.base64)
+        messages[messages.count - 1] = last
     }
 }
 
