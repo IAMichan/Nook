@@ -36,6 +36,16 @@ struct ModelProfile: Equatable {
     /// Room for the answer when the model first reasons it out: reasoning takes tokens of its own.
     var thinkingOutputTokens: Int { min(max(maxOutputTokens * 3, 4_096), contextTokens / 2) }
 
+    /// A small window on a Mac with memory to spare wastes what Nook reads: documents opened in full need room. The key-value
+    /// cache of a 3–4B model costs about 150 KB per token, so going from 8k to 16k tokens takes roughly 1.2 GB more. Larger
+    /// windows and Macs with less than 16 GB keep what they have.
+    func roomier(memoryGB: Int) -> ModelProfile {
+        guard isSmall, contextTokens <= 8_192, memoryGB >= 16 else { return self }
+        var copy = self
+        copy.contextTokens = 16_384
+        return copy
+    }
+
     /// Rough token count (no tokenizer needed): about 3.5 characters per token for mixed Dutch/English text and JSON.
     static func estimateTokens(_ text: String) -> Int { (text.count * 2 + 6) / 7 }
 
@@ -283,6 +293,8 @@ enum ModelAdvisor {
         var score = 1
         if lower.contains("qwen") { score += 3 }
         if lower.contains("llama3") || lower.contains("llama-3") || lower.contains("mistral") || lower.contains("gemma3") || lower.contains("gemma-3") { score += 2 }
+        // Newer families, known for tool calling: ranked with Gemma 3 and Llama 3.
+        if lower.contains("gemma4") || lower.contains("gemma-4") || lower.contains("gpt-oss") || lower.contains("qwen3.5") || lower.contains("qwen3.6") { score += 2 }
         if lower.contains("instruct") || lower.contains("chat") || !lower.contains("base") { score += 1 }
         score += min(size, 14) / 4
         return score

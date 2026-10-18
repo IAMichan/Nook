@@ -207,6 +207,21 @@ final class AppSettings: ObservableObject {
     @Published var screenWithEveryQuestion: Bool {
         didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
     }
+    /// Sources only a brain on this Mac may read ("only on this Mac"). An external brain never gets their context,
+    /// tools, earlier answers built from them or screen text.
+    @Published var localOnlySources: Set<String> {
+        didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
+    }
+    /// Local quality: a narrow first step copies the evidence out of each document, and the answer is written from those
+    /// quotes (slower, more accurate). Only for small brains.
+    @Published var evidenceFirst: Bool {
+        didSet { UserDefaults.standard.set(evidenceFirst, forKey: "evidenceFirst") }
+    }
+    /// Local quality: Nook checks the numbers, times, addresses and links in an answer against its sources and has a small
+    /// brain write the answer again when one is in none of them.
+    @Published var checkAnswers: Bool {
+        didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
+    }
     /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
@@ -228,10 +243,15 @@ final class AppSettings: ObservableObject {
     /// Whether the brain runs on this Mac (built-in model, Ollama or LM Studio): no data leaves the Mac, no cost per token.
     var isLocalBrain: Bool { selection.isLocal }
 
+    /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
+    /// when the brain runs on this Mac.
+    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources }
+
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
-        if useLocal { return ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall }
-        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel) }
+        let memory = ModelAdvisor.Hardware.current.memoryGB
+        if useLocal { return (ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall).roomier(memoryGB: memory) }
+        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel).roomier(memoryGB: memory) }
         return .cloud
     }
 
@@ -336,6 +356,9 @@ final class AppSettings: ObservableObject {
         webSearch = defaults.object(forKey: "webSearch") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
+        localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
+        evidenceFirst = defaults.bool(forKey: "evidenceFirst")
+        checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key

@@ -91,7 +91,9 @@ final class BrainService {
             + hidden.keys.sorted().map { "\($0) — \(SourceCatalog.title($0)) (\(hidden[$0]?.count ?? 0) tools)" }.joined(separator: "; ") + "."
         let offeredWithDiscovery = offered + (useSource.map { [$0] } ?? [])
 
-        let system = (profile.isSmall && !profile.richPrompt ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched) : systemPrompt()) + catalog
+        let system = (profile.isSmall && !profile.richPrompt
+            ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched, evidence: context.contains("\nEvidence ("))
+            : systemPrompt()) + catalog
         let toolsText = offered.reduce(0) { $0 + $1.name.count + (profile.compactDescriptions ? 80 : $1.description.count) + 200 }
         // Bigger local models get a longer memory of the conversation, so follow-ups ("and on friday?") keep working.
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: profile.contextTokens >= 16_000 ? 10 : 6,
@@ -165,6 +167,30 @@ final class BrainService {
         let seconds = CFAbsoluteTimeGetCurrent() - started
         Log.brain.info("plan \(kind, privacy: .public) in \(seconds, format: .fixed(precision: 1)) s")
         return plan
+    }
+
+    /// The evidence step for a small brain: per document one narrow call that copies out the lines that matter for the
+    /// question. Quotes that do not literally occur in the document are dropped. A document that fails or takes too long
+    /// is skipped; the answer then simply relies on the document as it was.
+    func extractEvidence(question: String, goal: String, documents: [String]) async -> [Evidence.Item] {
+        let profile = settings.brainProfile
+        var items: [Evidence.Item] = []
+        let started = CFAbsoluteTimeGetCurrent()
+        for document in documents.prefix(3) {
+            guard !Task.isCancelled else { break }
+            let title = Evidence.title(of: document)
+            let prompt = Evidence.prompt(question: question, goal: goal, title: title, document: String(document.prefix(6_000)))
+            let reply = try? await RetrievalLedger.withTimeout(profile.isSmall ? 25 : 12) { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.complete(system: Evidence.system, prompt: prompt, profile: profile)
+            }
+            guard let reply else { continue }
+            items.append(Evidence.Item(title: title, quotes: Evidence.verified(Evidence.parse(reply), in: document)))
+        }
+        let quoted = items.reduce(0) { $0 + $1.quotes.count }
+        let seconds = CFAbsoluteTimeGetCurrent() - started
+        Log.brain.info("evidence \(quoted, privacy: .public) quotes from \(items.count, privacy: .public) documents in \(seconds, format: .fixed(precision: 1)) s")
+        return items
     }
 
     /// One answer without tools. With Claude, a fast model does this small job; the chosen model still answers.
@@ -393,7 +419,7 @@ final class BrainService {
 
     /// A short prompt for small local models: they follow a few clear rules better than a long manual. Only the tools
     /// that are actually offered are named, so the model is never told about tools it does not have.
-    private func localSystemPrompt(tools: [ToolSpec], intent: ChatIntent, researched: Bool) -> String {
+    private func localSystemPrompt(tools: [ToolSpec], intent: ChatIntent, researched: Bool, evidence: Bool = false) -> String {
         let names = tools.map(\.name)
         var lines = [
             "You are Nook, the assistant living in the notch of the user's Mac. You chat with the user. \(settings.languageInstruction)",
@@ -425,6 +451,9 @@ final class BrainService {
         let searchers = ["search_notes", "search_mail", "search_files", "search_messages", "search_whatsapp", "search_bear", "search_things",
                          "notion_search", "github_search", "search_web"].filter { names.contains($0) }
         if researched { lines.append("Nook already searched the user's sources for this request: what it found is in the context under \"Looked up for this question\", with the best matches read in full. Answer from those documents first, and say which note, mail or file the answer comes from. If nothing there is relevant and the question is general knowledge, simply answer it.") }
+        if evidence {
+            lines.append("The context has a part \"Evidence\": word-for-word quotes from the documents Nook read. Build the answer from those quotes, copy names, dates, times and amounts exactly as quoted, and say which document they come from. Add nothing that is not in the quotes or the documents.")
+        }
         if !readers.isEmpty {
             lines.append("If a search result looks relevant but you only see its start or its title, open it in full first (\(readers.joined(separator: ", "))) with the id, path or link from the result, then answer from its text.")
         }

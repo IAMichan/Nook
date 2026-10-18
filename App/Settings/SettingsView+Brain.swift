@@ -92,6 +92,10 @@ extension SettingsView {
                 }
             }
 
+            if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
+
+            privateSourcesSection
+
             Section {
                 Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
