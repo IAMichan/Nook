@@ -51,6 +51,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
     }
+    /// A new session gets a short title written by a small model (way) in place of the first line of its task.
+    @Published var autoTitles: Bool {
+        didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -74,6 +78,7 @@ final class WorkspaceSettings: ObservableObject {
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }

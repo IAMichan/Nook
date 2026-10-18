@@ -374,6 +374,7 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         launchTurn(id, prompt: config.task, executable: executable)
+        if title.isEmpty { generateTitle(id) }
         return id
     }
 
