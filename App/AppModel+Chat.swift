@@ -11,6 +11,7 @@ extension AppModel {
     func handleUserText(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        NookPresence.shared.heard()
 
         // Short deterministic commands handled locally without querying the brain: instant execution.
         if let intent = LocalIntent.parse(text) {
@@ -348,6 +349,7 @@ extension AppModel {
             replies[conversation] = nil
             chatTasks[conversation] = nil
             chat.setBusy(false, conversation: conversation)
+            NookPresence.shared.nod()
             nookFinished(conversation)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
             if canRunWithoutAsking(plan, request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }

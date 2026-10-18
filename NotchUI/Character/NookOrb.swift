@@ -1,12 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// Nook: a light with two eyes. Breathes, blinks, and adapts its eyes to its mood.
+/// Nook: a round light with two eyes. Breathes, blinks, and adapts its eyes to its mood.
+///
+/// Nook is lit like a ball: a highlight top left, shade towards the edge and a little light bouncing back from below.
+/// When he turns towards something the highlight slides the other way and his eyes narrow a little, so he reads as round.
 ///
 /// While awake (`animated`) Nook also reacts to you: its eyes follow the pointer, it says hello when you come near,
-/// squishes when clicked, reads along while you type, winks when something is done and shakes when something
-/// failed. Each frame is one pose computed from the time and the shared moments in `NookPresence`. With Reduce
-/// Motion on, only breathing and blinking remain.
+/// squishes when clicked and giggles after three quick clicks, blushes when the pointer rests on him, hops when you send
+/// something, nods when something is finished, reads along while you type, winks when something is done and shakes
+/// when something failed. Each frame is one pose computed from the time and the shared moments in `NookPresence`.
+/// With Reduce Motion on, only breathing and blinking remain.
 struct NookOrb: View {
     var mood: NookMood
     var size: CGFloat = 46
@@ -31,13 +35,49 @@ struct NookOrb: View {
     }
 
     private func orb(_ p: Pose) -> some View {
-        ZStack {
+        // The light stays where it is while Nook turns: the highlight moves against his gaze.
+        let light = UnitPoint(x: 0.34 - p.gaze.x * 0.09, y: 0.26 - p.gaze.y * 0.07)
+        let shadeCenter = UnitPoint(x: light.x + 0.08, y: light.y + 0.1)
+        let turn = min(abs(p.gaze.x), 1)
+        return ZStack {
             Circle()
                 .fill(mood.color)
                 .shadow(color: mood.color.opacity(p.glowOpacity), radius: p.glowRadius)
-            HStack(spacing: size * 0.18) {
-                eye(p.eyes[0])
-                eye(p.eyes[1])
+            Circle()
+                .fill(RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .black.opacity(0), location: 0),
+                        .init(color: .black.opacity(0.12), location: 0.42),
+                        .init(color: .black.opacity(0.4), location: 0.78),
+                        .init(color: .black.opacity(0.58), location: 1)
+                    ]),
+                    center: shadeCenter, startRadius: 0, endRadius: size * 0.66
+                ))
+            Circle()
+                .fill(RadialGradient(
+                    colors: [Color.white.opacity(0.26), Color.white.opacity(0)],
+                    center: UnitPoint(x: 0.72, y: 0.86), startRadius: 0, endRadius: size * 0.3
+                ))
+            Circle()
+                .fill(RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .white.opacity(0.95), location: 0),
+                        .init(color: .white.opacity(0.36), location: 0.33),
+                        .init(color: .white.opacity(0), location: 1)
+                    ]),
+                    center: light, startRadius: 0, endRadius: size * 0.24
+                ))
+            HStack(spacing: size * 0.18 * (1 - 0.18 * turn)) {
+                eye(p.eyes[0], turn: turn)
+                eye(p.eyes[1], turn: turn)
+            }
+            if p.cheeks > 0.01 {
+                HStack(spacing: size * 0.44) {
+                    cheek
+                    cheek
+                }
+                .offset(y: size * 0.14)
+                .opacity(p.cheeks)
             }
         }
         .frame(width: size, height: size)
@@ -58,14 +98,34 @@ struct NookOrb: View {
         .animation(.easeInOut(duration: 0.3), value: mood)
     }
 
-    private func eye(_ e: EyePose) -> some View {
-        eyeShape(happy: e.happy, width: e.width)
-            .fill(NookTheme.eyeInk)
+    private func eye(_ e: EyePose, turn: CGFloat) -> some View {
+        // A catchlight on larger eyes, gone when they close or smile.
+        let shine = size >= 30 && !e.happy && e.height > size * 0.12 && e.squash > 0.4
+        return eyeShape(happy: e.happy, width: e.width)
+            .fill(LinearGradient(
+                colors: [Color(hex: 0x1D1D25), NookTheme.eyeInk],
+                startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.7)
+            ))
+            .overlay(alignment: .topLeading) {
+                if shine {
+                    Ellipse()
+                        .fill(Color.white.opacity(0.92))
+                        .frame(width: e.width * 0.38, height: e.height * 0.16)
+                        .offset(x: e.width * 0.2, y: e.height * 0.14)
+                }
+            }
             .frame(width: e.width, height: e.height)
-            .scaleEffect(x: 1, y: e.squash)
+            .scaleEffect(x: 1 - 0.28 * turn, y: e.squash)
             .rotationEffect(.degrees(e.rotation))
             .offset(x: e.dx, y: e.dy)
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
+    }
+
+    private var cheek: some View {
+        Ellipse()
+            .fill(Color(hex: 0xFF8FA3))
+            .frame(width: size * 0.17, height: size * 0.08)
+            .blur(radius: max(1, size * 0.03))
     }
 
     private func eyeShape(happy: Bool, width: CGFloat) -> AnyShape {
@@ -122,6 +182,10 @@ struct NookOrb: View {
         /// Progress of the celebration burst in seconds, nil when there is none.
         var sparks: Double?
         var drowsy = false
+        /// Where the eyes look, -1…1 on both axes; moves the highlight and narrows the eyes.
+        var gaze = CGPoint.zero
+        /// Blush, 0…1.
+        var cheeks: Double = 0
 
         mutating func eachEye(_ change: (inout EyePose) -> Void) {
             for i in eyes.indices { change(&eyes[i]) }
@@ -206,6 +270,42 @@ struct NookOrb: View {
             if poke < 0.28 { p.eachEye { $0.squash *= CGFloat(1 - 0.65 * bump(poke / 0.28)) } }
         }
 
+        // You sent something: squash, hop up with wide eyes, land.
+        let heard = since(presence.heardAt)
+        if heard >= 0, heard < 0.9 {
+            let squash = bump(heard / 0.18)
+            let up = bump((heard - 0.12) / 0.45)
+            p.stretch.width *= CGFloat(1 + 0.08 * squash - 0.04 * up)
+            p.stretch.height *= CGFloat(1 - 0.1 * squash + 0.07 * up)
+            p.offset.height += CGFloat(3 * squash - 12 * up) * u
+            p.eachEye { $0.height *= CGFloat(1 + 0.25 * up) }
+        }
+
+        // Tickled by three quick clicks: squeezed eyes, blush, wobbling from side to side.
+        let giggle = since(presence.giggledAt)
+        if giggle >= 0, giggle < 1.8 {
+            let k = 1 - ease((giggle - 1.4) / 0.4)
+            p.rotation += 10 * sin(giggle * 18) * k
+            p.offset.height -= CGFloat(abs(sin(giggle * 18)) * 4 * k) * u
+            for i in p.eyes.indices {
+                p.eyes[i].width += (size * 0.17 - p.eyes[i].width) * CGFloat(k)
+                p.eyes[i].height += (size * 0.045 - p.eyes[i].height) * CGFloat(k)
+                p.eyes[i].happy = false
+                p.eyes[i].rotation = (i == 0 ? 22 : -22) * k
+                p.eyes[i].squash = 1
+            }
+            p.cheeks = max(p.cheeks, 0.75 * k)
+        }
+
+        // Something finished: a content nod.
+        let nod = since(presence.noddedAt)
+        if nod >= 0, nod < 1.1 {
+            let k = bump(nod / 0.5)
+            p.offset.height += CGFloat(5 * k) * u
+            p.rotation -= 6 * k
+            p.happy(bump(nod / 1.1) * 1.4, size: size)
+        }
+
         let inMood = since(moodSince)
         switch mood {
         case .done where inMood < 1.3:
@@ -278,9 +378,26 @@ struct NookOrb: View {
             p.rotation += Double(reading * progress * 3)
         }
 
-        // Following the pointer when it is near.
+        // Petted: the pointer rests on Nook (the big one in the panel). Blush, happy eyes, leaning into it.
+        let pointer = tracker.pointerOffset()
+        let onOrb = size >= 30 && pointer.map { hypot($0.x, $0.y) < size / 2 } ?? false
+        tracker.notePointer(pointer, at: date.timeIntervalSinceReferenceDate)
+        let petting = onOrb && tracker.stillFor(at: date.timeIntervalSinceReferenceDate) > 0.7 && since(presence.pokedAt) > 0.8 && !drowsy
+        tracker.pet = OrbTracker.approach(tracker.pet, petting ? 1 : 0, rate: 5, dt: dt)
+        let pet = tracker.pet
+        if pet > 0.01 {
+            p.happy(Double(pet), size: size)
+            p.cheeks = max(p.cheeks, 0.7 * Double(pet))
+            p.rotation += sin(t * 2.2) * 6 * Double(pet)
+            p.stretch.width *= 1 + 0.04 * pet
+            p.stretch.height *= 1 - 0.035 * pet
+        }
+
+        // Looking at a piece of the task ring under the pointer, else following the pointer when it is near.
         var target = CGPoint.zero
-        if mood != .think, mood != .done, reading < 0.5, let pointer = tracker.pointerOffset() {
+        if size >= 30, let angle = presence.lookAngle {
+            target = CGPoint(x: cos(angle) * 0.95, y: sin(angle) * 0.95)
+        } else if mood != .think, mood != .done, reading < 0.5, !onOrb, let pointer {
             let distance = hypot(pointer.x, pointer.y)
             if distance > 1, distance < max(260, size * 6) {
                 let reach = min(distance / (size * 1.6), 1)
@@ -296,6 +413,7 @@ struct NookOrb: View {
         }
         p.offset.width += gaze.x * 3 * u
         p.offset.height += gaze.y * 2 * u
+        p.gaze = gaze
 
         // Something bigger finished: a little jump and sparks.
         let party = since(presence.celebratedAt)
@@ -405,7 +523,23 @@ private final class OrbTracker {
     var gaze = CGPoint.zero
     var reading: CGFloat = 0
     var voice: CGFloat = 0
+    var pet: CGFloat = 0
     private var lastTime: TimeInterval = 0
+    private var lastPointer: CGPoint?
+    private var stillSince: TimeInterval = 0
+
+    /// Remembers when the pointer last moved more than a hair, to tell resting from passing by.
+    func notePointer(_ point: CGPoint?, at t: TimeInterval) {
+        guard let point else { lastPointer = nil; return }
+        if let last = lastPointer, hypot(point.x - last.x, point.y - last.y) < 2 { return }
+        lastPointer = point
+        stillSince = t
+    }
+
+    /// Seconds the pointer has rested in the same spot.
+    func stillFor(at t: TimeInterval) -> TimeInterval {
+        lastPointer == nil ? 0 : t - stillSince
+    }
 
     /// Seconds since the previous frame, capped so a paused orb does not jump when it wakes.
     func advance(to t: TimeInterval) -> CGFloat {

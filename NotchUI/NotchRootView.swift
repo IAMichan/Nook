@@ -177,7 +177,7 @@ struct NotchRootView: View {
                 )
             }
         case .panel(let tab):
-            expanded(nh: nh, mood: viewModel.mood(for: tab)) {
+            expanded(nh: nh, mood: viewModel.mood(for: tab), ring: true) {
                 PanelView(viewModel: viewModel, tab: tab)
             }
         }
@@ -335,12 +335,14 @@ struct NotchRootView: View {
 
     // MARK: Expanded: Nook on the left, content on the right
 
+    /// `ring`: the open panel shows Nook's task ring around him; a card does not.
     private func expanded<Inner: View>(
         nh: CGFloat,
         mood: NookMood,
+        ring: Bool = false,
         @ViewBuilder inner: () -> Inner
     ) -> some View {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .top, spacing: ring ? 34 : 20) {
             Button {
                 NookPresence.shared.poke()
                 viewModel.show(.panel(.nook))
@@ -349,10 +351,17 @@ struct NotchRootView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("notch.goToHome"))
+            .background {
+                if ring {
+                    NookTaskRing(items: ringItems, orbSize: 46) { openRingItem($0) }
+                }
+            }
+            .zIndex(1)
             inner()
         }
         .padding(.top, nh + 14)
-        .padding(.horizontal, 28)
+        .padding(.leading, ring ? 32 : 28)
+        .padding(.trailing, 28)
         .padding(.bottom, 22)
         .overlay(alignment: .top) {
             // Floating: drag the top edge to move the panel.
@@ -362,6 +371,56 @@ struct NotchRootView: View {
                     .contentShape(Rectangle())
                     .floatingDrag(viewModel)
             }
+        }
+    }
+}
+
+extension NotchRootView {
+    /// What Nook's ring shows: every agent session that runs, waits or failed (and recently finished), and every Nook
+    /// that works, waits for you or has news.
+    fileprivate var ringItems: [TaskRingItem] {
+        var items: [TaskRingItem] = []
+        let recent = Date().addingTimeInterval(-20 * 60)
+        for session in app.agentSessions where !session.isDetected {
+            let kind: TaskRingItem.Kind
+            if session.status == .waiting || session.approvalID != nil {
+                kind = .waiting
+            } else if session.status == .running {
+                kind = .running
+            } else if session.status == .failed {
+                kind = .failed
+            } else if session.status == .done, app.demoMode || (session.updated ?? .distantPast) > recent {
+                kind = .done
+            } else {
+                continue
+            }
+            let label = kind == .waiting ? AgentStatus.waiting.label : session.status.label
+            let detail = session.project.isEmpty ? label : "\(session.project) · \(label)"
+            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail, state: kind, target: .agent(session.id)))
+        }
+        for conversation in app.chat.list(query: "", showArchived: false) {
+            let kind: TaskRingItem.Kind
+            let detail: String
+            switch conversation.status {
+            case .working: kind = .running; detail = tr("nooks.working")
+            case .waiting: kind = .waiting; detail = tr("nooks.waiting")
+            case .unread: kind = .done; detail = tr("nooks.doneAt", NookDates.ago(conversation.updated))
+            case .idle: continue
+            }
+            items.append(TaskRingItem(id: "nook-\(conversation.id)", title: conversation.title, detail: detail, state: kind, target: .nook(conversation.id)))
+        }
+        return Array(items.prefix(8))
+    }
+
+    /// A piece of the ring was clicked: go to that agent or that Nook.
+    fileprivate func openRingItem(_ item: TaskRingItem) {
+        NookPresence.shared.lookAngle = nil
+        switch item.target {
+        case .agent(let id):
+            viewModel.selectedAgentID = id
+            viewModel.show(.panel(.agents))
+        case .nook(let id):
+            app.openConversation(id)
         }
     }
 }

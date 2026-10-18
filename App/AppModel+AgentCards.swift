@@ -128,7 +128,9 @@ extension AppModel {
     func agentNeedsAttention(_ session: AgentSession) {
         NookSound.play(session.status == .done ? .done : .attention)
         // The last agent finished: a small celebration.
-        if session.status == .done, !activeAgents.contains(where: { $0.id != session.id }) { NookPresence.shared.celebrate() }
+        if session.status == .done {
+            if activeAgents.contains(where: { $0.id != session.id }) { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
+        }
         switch viewModel.state {
         case .idle, .music, .track, .done, .nudge: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
