@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // The real marks of the AI brands Nook talks to (Claude, OpenAI, Gemini, Mistral, Ollama, Grok, Groq, OpenRouter, DeepSeek,
 // Qwen, Kimi, LM Studio, Meta, Gemma), as vector paths so they stay sharp at any size and need no image assets.
@@ -38,7 +39,7 @@ enum BrandLogo: String, CaseIterable {
         }
     }
 
-    /// The brand color of the mark; white-ish for the brands whose mark is black or white.
+    /// The brand color of the mark; light or dark (following the surface) for the brands whose mark is black or white.
     var style: AnyShapeStyle {
         switch self {
         case .claude: return AnyShapeStyle(Color(hex: 0xD97757))
@@ -51,9 +52,18 @@ enum BrandLogo: String, CaseIterable {
         case .qwen: return AnyShapeStyle(Color(hex: 0x7C78F5))
         case .kimi: return AnyShapeStyle(Color(hex: 0x3A9BFF))
         case .meta: return AnyShapeStyle(Color(hex: 0x1D9BF0))
-        case .openai, .ollama, .grok, .lmstudio: return AnyShapeStyle(NookTheme.paper)
+        case .openai, .ollama, .grok, .lmstudio: return AnyShapeStyle(Self.ink)
         }
     }
+
+    /// Whether the mark is one plain color (black or white in the brand's own art), so it can follow the text color.
+    var isMonochrome: Bool { [.openai, .ollama, .grok, .lmstudio].contains(self) }
+
+    /// Light on dark surfaces (the notch, the workspace), dark on light ones (Settings in light mode).
+    private static let ink = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor(white: 0.1, alpha: 1)
+            : NSColor(red: 0xF4 / 255, green: 0xF3 / 255, blue: 0xF7 / 255, alpha: 1)  // NookTheme.paper
+    })
 
     fileprivate func paths(_ point: (CGFloat, CGFloat) -> CGPoint) -> [Path] {
         switch self {
@@ -90,6 +100,35 @@ struct BrandMark: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// Logos as plain images, for the places that can't show a view: menu items and pickers.
+@MainActor
+enum LogoImage {
+    private static var cache: [String: NSImage] = [:]
+
+    static func brand(_ logo: BrandLogo, size: CGFloat = 14) -> Image {
+        render("brand-\(logo.rawValue)-\(size)", template: logo.isMonochrome) { BrandMark(logo: logo, size: size) }
+    }
+
+    static func agent(_ agent: String, size: CGFloat = 14) -> Image {
+        let name = agent.lowercased()
+        let template = !name.contains("antigravity") && BrandLogo.forName(name)?.isMonochrome == true
+        return render("agent-\(agent)-\(size)", template: template) { AgentLogo(agent: agent, size: size) }
+    }
+
+    static func agent(_ kind: AgentKind, size: CGFloat = 14) -> Image { agent(kind.name, size: size) }
+
+    /// One-color marks become template images, so menus draw them in their own text color (dark in light mode).
+    private static func render<Content: View>(_ key: String, template: Bool, _ content: () -> Content) -> Image {
+        if let cached = cache[key] { return Image(nsImage: cached) }
+        let renderer = ImageRenderer(content: content())
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let image = renderer.nsImage else { return Image(systemName: "circle.fill") }
+        image.isTemplate = template
+        cache[key] = image
+        return Image(nsImage: image)
     }
 }
 

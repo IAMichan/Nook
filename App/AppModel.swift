@@ -44,7 +44,6 @@ final class AppModel: ObservableObject {
     let profiles = AgentProfileStore()
     /// Web search and webpage reading, available across all providers.
     let web = WebTools()
-    let portfolio = PortfolioConnector()
     /// Proactive assistance: evaluates screen context and offers assistance when appropriate.
     let thinkAlong = ThinkAlong()
     /// Conversation state and history in chat.
@@ -334,7 +333,7 @@ final class AppModel: ObservableObject {
             ThingsConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
-        connectors.register([portfolio])
+        // The crypto portfolio (PortfolioConnector) is switched off for now: not registered, not in Settings.
         // MCP servers from Settings, kept in line when the user adds or removes one.
         connectors.syncMCP(MCPServerStore.shared.servers)
         MCPServerStore.shared.$servers

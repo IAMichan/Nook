@@ -14,6 +14,9 @@ struct MCPPreset: Identifiable {
     let envPlaceholders: [String: String]
     let helpURL: URL?
 
+    /// A preset that works with something on the Mac shows that app's icon (the filesystem server: Finder).
+    var appSource: String? { id == "filesystem" ? "files" : nil }
+
     static let all: [MCPPreset] = [
         MCPPreset(
             id: "filesystem",
@@ -58,7 +61,7 @@ struct MCPPreset: Identifiable {
             id: "puppeteer",
             name: "Web Browser (Puppeteer)",
             detail: "Laat Nook webpagina's openen, formulieren bekijken en data extraheren.",
-            iconDomain: nil,
+            iconDomain: "pptr.dev",
             fallbackIcon: "safari.fill",
             tint: Color(hex: 0x00D69F),
             defaultCommand: "npx -y @modelcontextprotocol/server-puppeteer",
@@ -71,7 +74,7 @@ struct MCPPreset: Identifiable {
             id: "memory",
             name: "Geheugen & Kennisbank",
             detail: "Onthoudt belangrijke feiten en notities permanent in een lokale graaf.",
-            iconDomain: nil,
+            iconDomain: "modelcontextprotocol.io",
             fallbackIcon: "brain.head.profile",
             tint: Color(hex: 0x9D8FFF),
             defaultCommand: "npx -y @modelcontextprotocol/server-memory",
@@ -139,7 +142,8 @@ struct MCPSettingsSection: View {
                                 domain: preset.iconDomain,
                                 fallback: preset.fallbackIcon,
                                 tint: preset.tint,
-                                size: 32
+                                size: 32,
+                                source: preset.appSource
                             )
                         } accessory: {
                             Image(systemName: "plus.circle.fill")
@@ -223,10 +227,11 @@ private struct MCPServerCardRow: View {
             } label: {
                 HStack(spacing: 12) {
                     ServiceTile(
-                        domain: connector?.iconDomain,
+                        domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
                         fallback: "puzzlepiece.extension.fill",
                         tint: Color(hex: 0x1FA2C6),
-                        size: 32
+                        size: 32,
+                        source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
                     )
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -330,10 +335,11 @@ private struct MCPServerDetailSheet: View {
             subtitle: transportDescription
         ) {
             ServiceTile(
-                domain: connector?.iconDomain,
+                domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
                 fallback: "puzzlepiece.extension.fill",
                 tint: Color(hex: 0x1FA2C6),
-                size: 48
+                size: 48,
+                source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
             )
         } content: {
             VStack(alignment: .leading, spacing: 14) {
@@ -435,7 +441,8 @@ private struct AddMCPServerWizardSheet: View {
                 domain: preset?.iconDomain,
                 fallback: preset?.fallbackIcon ?? "puzzlepiece.extension.fill",
                 tint: preset?.tint ?? Color(hex: 0x1FA2C6),
-                size: 48
+                size: 48,
+                source: preset?.appSource
             )
         } content: {
             VStack(alignment: .leading, spacing: 18) {

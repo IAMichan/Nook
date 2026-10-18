@@ -35,6 +35,28 @@ enum PortfolioNetwork: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The website whose icon stands for this network.
+    var iconDomain: String {
+        switch self {
+        case .bitcoin: return "bitcoin.org"
+        case .ethereum: return "ethereum.org"
+        case .solana: return "solana.com"
+        case .polygon: return "polygon.technology"
+        case .bnb: return "bnbchain.org"
+        case .avalanche: return "avax.network"
+        case .arbitrum: return "arbitrum.io"
+        case .optimism: return "optimism.io"
+        case .base: return "base.org"
+        case .dogecoin: return "dogecoin.com"
+        case .litecoin: return "litecoin.org"
+        case .tron: return "tron.network"
+        case .xrp: return "xrpl.org"
+        case .cardano: return "cardano.org"
+        case .cosmos: return "cosmos.network"
+        case .near: return "near.org"
+        }
+    }
+
     /// The native currency for this network's balance. Ethereum L2s hold ETH.
     var coin: String {
         switch self {
@@ -146,6 +168,17 @@ enum PortfolioExchange: String, CaseIterable, Identifiable, Sendable {
     }
 
     var needsPassphrase: Bool { self == .okx }
+
+    /// The website whose icon stands for this exchange.
+    var iconDomain: String {
+        switch self {
+        case .binance: return "binance.com"
+        case .okx: return "okx.com"
+        case .bybit: return "bybit.com"
+        case .kraken: return "kraken.com"
+        case .coinbase: return "coinbase.com"
+        }
+    }
 
     var keyLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseKeyLabel") : tr("portfolio.exchange.apiKey") }
     var secretLabel: String { self == .coinbase ? tr("portfolio.exchange.coinbaseSecretLabel") : tr("portfolio.exchange.apiSecret") }

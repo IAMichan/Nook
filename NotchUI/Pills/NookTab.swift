@@ -604,11 +604,33 @@ private struct TodayRow: View {
     let item: TodayItem
     let action: () -> Void
     @State private var hovering = false
+    @EnvironmentObject private var app: AppModel
+
+    /// The real icon of what the item is about (the agent, the calendar, the connection) with the item's color as a
+    /// small dot on it; a plain dot for the rest.
+    @ViewBuilder private var marker: some View {
+        switch item.logo {
+        case .agent(let name):
+            AgentLogo(agent: name, size: 18).overlay(alignment: .bottomTrailing) { badge }
+        case .source(let id):
+            let source = app.connectors.source(id: id)
+            SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? "circle.grid.2x2", tint: item.color, size: 18, source: id)
+                .overlay(alignment: .bottomTrailing) { badge }
+        case nil:
+            Circle().fill(item.color).frame(width: 8, height: 8)
+        }
+    }
+
+    private var badge: some View {
+        Circle().fill(item.color).frame(width: 7, height: 7)
+            .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1.2))
+            .offset(x: 2, y: 2)
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Circle().fill(item.color).frame(width: 8, height: 8)
+                marker
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
                         .font(NookTheme.font(14.5, .medium))

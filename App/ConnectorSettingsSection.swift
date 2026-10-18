@@ -81,7 +81,7 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         HStack(spacing: 12) {
             Button { showSetup = true } label: {
                 HStack(spacing: 12) {
-                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30)
+                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30, source: connector.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
                         Text(ServiceState.summary(of: connector, health: health))
@@ -143,7 +143,7 @@ private struct ServiceCard<C: CloudConnectorConfig>: View {
 
     var body: some View {
         GalleryCard(title: connector.title, detail: ServiceState.tagline(connector.id)) {
-            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34)
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34, source: connector.id)
         } accessory: {
             Text(tr("connector.link"))
                 .font(.caption.weight(.semibold))
@@ -194,7 +194,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             title: connector.title,
             subtitle: managing ? ServiceState.summary(of: connector, health: health) : tr("settings2.service.connectSubtitle", connector.title)
         ) {
-            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48)
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48, source: connector.id)
         } content: {
             if managing { manageContent } else { connectContent }
             capabilityNote
@@ -632,16 +632,20 @@ struct ExtraAccountsView: View {
 struct NotYetBuiltIn {
     let name: String
     let how: String
+    /// The websites whose icons stand for the services named, in the same order.
+    let domains: [String]
 
     static var all: [NotYetBuiltIn] {
         [
-            NotYetBuiltIn(name: "Slack", how: tr("notbuilt.slack")),
-            NotYetBuiltIn(name: "Microsoft Teams", how: tr("notbuilt.teams")),
-            NotYetBuiltIn(name: "Gmail · Outlook · Exchange", how: tr("notbuilt.mail")),
-            NotYetBuiltIn(name: "Google Agenda · Outlook-agenda", how: tr("notbuilt.calendar")),
-            NotYetBuiltIn(name: "Google Drive · OneDrive · SharePoint · Dropbox", how: tr("notbuilt.drive")),
-            NotYetBuiltIn(name: "Linear · Jira · Todoist · GitLab", how: tr("notbuilt.tasks")),
-            NotYetBuiltIn(name: "Discord · Telegram", how: tr("notbuilt.chat"))
+            NotYetBuiltIn(name: "Slack", how: tr("notbuilt.slack"), domains: ["slack.com"]),
+            NotYetBuiltIn(name: "Microsoft Teams", how: tr("notbuilt.teams"), domains: ["teams.microsoft.com"]),
+            NotYetBuiltIn(name: "Gmail · Outlook · Exchange", how: tr("notbuilt.mail"), domains: ["mail.google.com", "outlook.com"]),
+            NotYetBuiltIn(name: "Google Agenda · Outlook-agenda", how: tr("notbuilt.calendar"), domains: ["calendar.google.com", "outlook.com"]),
+            NotYetBuiltIn(name: "Google Drive · OneDrive · SharePoint · Dropbox", how: tr("notbuilt.drive"),
+                          domains: ["drive.google.com", "onedrive.live.com", "sharepoint.com", "dropbox.com"]),
+            NotYetBuiltIn(name: "Linear · Jira · Todoist · GitLab", how: tr("notbuilt.tasks"),
+                          domains: ["linear.app", "atlassian.com", "todoist.com", "gitlab.com"]),
+            NotYetBuiltIn(name: "Discord · Telegram", how: tr("notbuilt.chat"), domains: ["discord.com", "telegram.org"])
         ]
     }
 }

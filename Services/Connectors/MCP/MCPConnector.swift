@@ -94,10 +94,7 @@ final class MCPConnector: ContextSource, ObservableObject {
 
     var id: String { config.sourceID }
     var title: String { config.name }
-    var iconDomain: String? {
-        if case .http(let address) = config.transport, let host = URL(string: address)?.host { return host }
-        return nil
-    }
+    var iconDomain: String? { SourceBrand.mcpDomain(name: config.name, transport: config.transport) }
     var isActive: Bool { config.enabled && ConnectorToggle.isOn(id) }
     var refreshInterval: TimeInterval { 900 }
     var toolCount: Int { serverTools.count }

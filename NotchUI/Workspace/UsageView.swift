@@ -38,7 +38,7 @@ struct UsageView: View {
                         .layoutPriority(1)
                 } label: {
                     HStack(spacing: 8) {
-                        Circle().fill(profile.kind.color).frame(width: 8, height: 8)
+                        AgentLogo(profile.kind, size: 14)
                         Text("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))")
                     }
                 }
@@ -76,7 +76,10 @@ struct UsageView: View {
                 HStack(spacing: 12) {
                     Picker(selection: $provider) {
                         Text(tr("ws.usage.allProviders")).tag(RunProvider?.none)
-                        ForEach(RunProvider.allCases) { Text($0.displayName).tag(RunProvider?.some($0)) }
+                        ForEach(RunProvider.allCases) { provider in
+                            Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }
+                                .tag(RunProvider?.some(provider))
+                        }
                     } label: {
                         Text(tr("ws.usage.provider"))
                     }
@@ -236,7 +239,7 @@ struct UsageView: View {
                     HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
-                                Circle().fill(row.provider.color).frame(width: 7, height: 7)
+                                AgentLogo(row.provider.kind, size: 14)
                                 Text(row.provider.displayName)
                                     .font(.subheadline.weight(.medium))
                                 Text(row.model == "default" ? tr("ws.model.default") : row.model)

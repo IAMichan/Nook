@@ -9,6 +9,10 @@ struct TodayItem: Identifiable {
     var action: String
     var color: Color
     var target: Target
+    /// What the item is about, shown as its real icon instead of the colored dot.
+    var logo: Logo? = nil
+
+    enum Logo { case source(String), agent(String) }
 }
 
 enum Greeting {

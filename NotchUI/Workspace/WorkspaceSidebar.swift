@@ -347,7 +347,7 @@ struct SessionRow: View {
                 .foregroundStyle(WS.tertiary)
                 .lineLimit(1)
                 HStack(spacing: 5) {
-                    Circle().fill(run.provider.color).frame(width: 5, height: 5)
+                    AgentLogo(run.provider.kind, size: 11)
                     Text(subtitle)
                         .lineLimit(1)
                     Spacer(minLength: 2)

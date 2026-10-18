@@ -65,11 +65,6 @@ extension SettingsView {
                     Text(tr("settings2.connections.addFooter"))
                 }
             }
-            if matchesSearch(title: app.portfolio.title) {
-                Section(tr("settings.connections.crypto")) {
-                    PortfolioSettings(portfolio: app.portfolio)
-                }
-            }
             Section {
                 Button { app.settingsSection = .mcp } label: {
                     HStack(spacing: 12) {
@@ -91,9 +86,16 @@ extension SettingsView {
                 if !others.isEmpty {
                     DisclosureGroup(tr("settings.connections.moreApps")) {
                         ForEach(others, id: \.name) { item in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name)
-                                Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            HStack(alignment: .top, spacing: 10) {
+                                HStack(spacing: -4) {
+                                    ForEach(item.domains, id: \.self) { domain in
+                                        ServiceTile(domain: domain, fallback: "app.dashed", size: 22)
+                                    }
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name)
+                                    Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                             .padding(.vertical, 2)
                         }
@@ -140,7 +142,7 @@ extension SettingsView {
             }
         )) {
             HStack(spacing: 10) {
-                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20)
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
