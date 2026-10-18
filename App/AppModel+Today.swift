@@ -114,6 +114,9 @@ extension AppModel {
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.titlebarAppearsTransparent = true
             window.toolbarStyle = .unified
+            // Nook is dark everywhere: the same near-black as the panel, not whatever the Mac's appearance and wallpaper give.
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(red: 0x0B / 255, green: 0x0B / 255, blue: 0x0E / 255, alpha: 1)
             window.setContentSize(NSSize(width: 820, height: 600))
             window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false

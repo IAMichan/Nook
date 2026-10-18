@@ -3,9 +3,9 @@ import AppKit
 
 // MARK: - Visual language of Settings
 //
-// One look everywhere: colored rounded-square tiles with a white symbol (like macOS System Settings), soft status
-// pills, and numbered steps for anything that needs to be set up. Colors come from the Nook palette, so the
-// settings feel like the same app as the notch.
+// One look everywhere: quiet graphite tiles with a light symbol, soft status pills, and numbered steps for anything that
+// needs to be set up. Everything comes from the Nook palette (near-black, soft white, a little mint, amber and coral for
+// state), so the settings feel like the same app as the notch.
 
 extension SettingsSection {
     /// Filled symbol on the sidebar tile.
@@ -53,18 +53,18 @@ struct SettingsTile: View {
         self.init(symbol: section.tileSymbol, colors: section.tileColors, size: size)
     }
 
+    /// `colors` is kept for the callers that still pass one: every tile has the same quiet look now.
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-            .fill(LinearGradient(colors: [colors.0, colors.1], startPoint: .top, endPoint: .bottom))
+            .fill(LinearGradient(colors: [NookTheme.smoke, NookTheme.graphite], startPoint: .top, endPoint: .bottom))
             .overlay(
                 RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    .strokeBorder(NookTheme.line2, lineWidth: 0.5)
             )
             .overlay(
                 Image(systemName: symbol)
-                    .font(.system(size: size * 0.52, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.15), radius: 0.5, y: 0.5)
+                    .font(.system(size: size * 0.5, weight: .medium))
+                    .foregroundStyle(NookTheme.paper.opacity(0.92))
             )
             .frame(width: size, height: size)
     }
@@ -114,11 +114,11 @@ enum ConnectionHealth: Equatable {
 
     var color: Color {
         switch self {
-        case .working: return Color(hex: 0x1DB67F)
+        case .working: return NookTheme.mint
         case .busy: return NookTheme.iris
         case .off: return .secondary
-        case .needsYou: return Color(hex: 0xF59E2E)
-        case .broken: return Color(hex: 0xE5505E)
+        case .needsYou: return NookTheme.amber
+        case .broken: return NookTheme.coral
         case .notLinked: return .secondary
         }
     }
@@ -175,7 +175,7 @@ struct SetupStep<Content: View>: View {
                     Text("\(number)").font(.system(size: 12, weight: .bold, design: .rounded))
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(done ? NookTheme.ink : NookTheme.onIris)
             .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline)
