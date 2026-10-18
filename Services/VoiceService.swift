@@ -55,6 +55,41 @@ final class VoiceService: ObservableObject {
         return made
     }
 
+    /// "Taal van mijn vraag": Nook listens in your languages at once (up to three, on-device) and keeps the one it was
+    /// surest of, like Coucou's dictation. Otherwise one recognizer in the chosen language.
+    private var multi: MultiDictation?
+    private var multiPoll: Task<Void, Never>?
+
+    func startMultilingual(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) {
+        guard !isListening else { return }
+        let dictation = MultiDictation()
+        dictation.onLevel = { VoiceLevel.shared.set($0) }
+        multi = dictation
+        self.onPartial = onPartial
+        self.onFinish = onFinish
+        transcript = ""
+        isListening = true
+        multiPoll = Task { @MainActor [weak self] in
+            await dictation.start(from: "")
+            guard let self, self.multi === dictation else { return }
+            guard dictation.isRecording else { self.cancel(); return }
+            var lastChange = Date()
+            var heard = ""
+            while !Task.isCancelled, self.multi === dictation {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                let now = dictation.transcript
+                if now != heard {
+                    heard = now
+                    lastChange = Date()
+                    self.transcript = now
+                    self.onPartial?(now)
+                }
+                // Silence: 6 s to start speaking, then 1.8 s after the last word.
+                if Date().timeIntervalSince(lastChange) > (heard.isEmpty ? 6 : 1.8) { self.finishNow(); return }
+            }
+        }
+    }
+
     func start(locale: Locale = Locale(identifier: "nl-NL"), onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
         guard !isListening else { return }
         guard let recognizer = self.recognizer(for: locale), recognizer.isAvailable else {
@@ -128,6 +163,21 @@ final class VoiceService: ObservableObject {
     /// Stops listening and delivers the recognized transcript.
     func finishNow() {
         guard isListening else { return }
+        if let dictation = multi {
+            let callback = onFinish
+            multi = nil
+            multiPoll?.cancel()
+            multiPoll = nil
+            isListening = false
+            onPartial = nil
+            onFinish = nil
+            Task { @MainActor in
+                let text = await dictation.finish()
+                VoiceLevel.shared.reset()
+                callback?(text)
+            }
+            return
+        }
         let text = transcript
         let callback = onFinish
         teardown()
@@ -137,6 +187,17 @@ final class VoiceService: ObservableObject {
     /// Stops listening without delivering anything.
     func cancel() {
         guard isListening else { return }
+        if let dictation = multi {
+            multi = nil
+            multiPoll?.cancel()
+            multiPoll = nil
+            dictation.stop()
+            isListening = false
+            onPartial = nil
+            onFinish = nil
+            VoiceLevel.shared.reset()
+            return
+        }
         teardown()
     }
 
@@ -193,6 +254,12 @@ final class VoiceLevel: @unchecked Sendable {
         let value = min(max((decibels + 50) / 40, 0), 1)
         lock.lock()
         level = value
+        lock.unlock()
+    }
+
+    func set(_ value: Double) {
+        lock.lock()
+        level = Float(value)
         lock.unlock()
     }
 

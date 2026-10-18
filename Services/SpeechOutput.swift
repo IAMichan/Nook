@@ -11,7 +11,17 @@ final class SpeechOutput {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         stop()
-        let utterance = AVSpeechUtterance(string: String(clean.prefix(600)))
+        let utterance = AVSpeechUtterance(string: String(SpokenText.plain(clean).prefix(1_200)))
+        utterance.voice = Self.bestVoice(for: Self.voiceLanguage(for: language, text: clean))
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        synthesizer.speak(utterance)
+    }
+
+    /// Adds a sentence after what is being said (the answer read while it is written).
+    func enqueue(_ text: String, language: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let utterance = AVSpeechUtterance(string: String(clean.prefix(1_200)))
         utterance.voice = Self.bestVoice(for: Self.voiceLanguage(for: language, text: clean))
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
         synthesizer.speak(utterance)

@@ -146,6 +146,7 @@ targets:
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/Flow/FlowLogic.swift
       - path: Services/Notes/NoteModels.swift
+      - path: Brain/SpokenText.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

@@ -222,6 +222,12 @@ extension AppModel {
                 : "\n\n(Your previous answer was empty, or contained code/JSON or was in the wrong language. Answer the question itself, in plain sentences, \(settings.languageInstruction(for: text)) Use the context and what was looked up; if something is missing, fetch it with the matching tool (a connected source, an app with read_app, the screen, a file or the web). If it really is not possible, briefly say where you looked and what was missing.)"
         }
 
+        // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
+        // answer may still be checked and written again: then it is read once it is final.
+        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil
+            && !(settings.checkAnswers && settings.brainProfile.isSmall)
+        var spokenQueue = SpokenText.Queue()
+        if speaksLive { speech.stop() }
         do {
             var lastCleanedText = ""
             let plan = try await brain.run(
@@ -243,6 +249,9 @@ extension AppModel {
                     self.chat.update(id) { message in
                         message.text = cleaned
                         message.status = ""
+                    }
+                    if speaksLive {
+                        for sentence in spokenQueue.feed(cleaned) { self.speech.enqueue(sentence, language: self.settings.language) }
                     }
                 }
             )
@@ -348,7 +357,14 @@ extension AppModel {
             if let message = chat.message(id) {
                 let spoken = !message.text.isEmpty ? message.text
                     : (!message.mails.isEmpty ? tr("app.spoken.mail") : (!message.charts.isEmpty ? tr("app.spoken.chart") : tr("app.plan.ready")))
-                speakIfAsked(spoken)
+                if speaksLive {
+                    for sentence in spokenQueue.finish(message.text.isEmpty ? spoken : message.text) {
+                        speech.enqueue(sentence, language: settings.language)
+                    }
+                    spokenRequest = false
+                } else {
+                    speakIfAsked(spoken)
+                }
             }
             replies[conversation] = nil
             chatTasks[conversation] = nil
