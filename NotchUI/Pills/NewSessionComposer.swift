@@ -38,7 +38,7 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: prepare)
+        .onAppear { prepare(); app.refreshAgentModels() }
     }
 
     // MARK: Heading
@@ -147,7 +147,7 @@ struct NewSessionComposer: View {
                     Button {
                         config.model = model
                     } label: {
-                        let title = model.isEmpty ? tr("ws.model.default") : model
+                        let title = app.modelName(model, for: config.provider)
                         if config.model == model { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
@@ -155,7 +155,7 @@ struct NewSessionComposer: View {
         } label: {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + config.model))
+                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)))
         }
         .composerMenu()
         .help(tr("ws.new.accountPinned"))

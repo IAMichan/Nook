@@ -100,8 +100,14 @@ extension WorkspaceManager {
         if run.mode == .plan, let plan = modes.first(where: { (($0["id"] as? String) ?? "").lowercased().contains("plan") })?["id"] as? String {
             client.request("session/set_mode", ["sessionId": session, "modeId": plan]) { _ in }
         }
+        learnModels(run.provider, AgentModelCatalog.acp(response))
         if !run.model.isEmpty {
-            client.request("session/set_model", ["sessionId": session, "modelId": run.model]) { _ in }
+            // A model config option is set as one (way for newer agents); otherwise `session/set_model`.
+            if let option = AgentModelCatalog.acpModelOptionID(response) {
+                client.request("session/set_config_option", ["sessionId": session, "configId": option, "value": run.model]) { _ in }
+            } else {
+                client.request("session/set_model", ["sessionId": session, "modelId": run.model]) { _ in }
+            }
         }
     }
 

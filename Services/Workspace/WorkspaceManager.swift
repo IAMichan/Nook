@@ -115,6 +115,9 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var worktreesLoading = false
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
+    /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
+    @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    var modelsRefreshed: [RunProvider: Date] = [:]
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
@@ -172,6 +175,7 @@ final class WorkspaceManager: ObservableObject {
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
         runs = store.loadRuns()
+        agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         applyAutoArchive()
         Task.detached(priority: .utility) {
             let service = GitService.shared

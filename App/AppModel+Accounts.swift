@@ -50,14 +50,30 @@ extension AppModel {
         return connectedProfiles.filter { $0.kind == provider.kind }.sorted { a, b in a.id == preferred && b.id != preferred }
     }
 
-    /// Models to offer for an agent: its default, the well-known ones, and every model you used with it recently.
+    /// Models to offer for an agent: its default, the models the agent itself offers (or the well-known ones until it
+    /// has told Nook), and every model you used with it recently.
     func models(for provider: RunProvider) -> [String] {
-        var list = provider.suggestedModels
+        let offered = workspace.agentModels[provider]?.map(\.id) ?? []
+        var list = offered.isEmpty ? provider.suggestedModels : [""] + offered
+        let base = list.count
         for session in history.sessions where session.agent == provider.kind && !session.model.isEmpty {
             if !list.contains(session.model) { list.append(session.model) }
-            if list.count >= provider.suggestedModels.count + 6 { break }
+            if list.count >= base + 6 { break }
         }
         return list
+    }
+
+    /// How a model reads in a menu: the agent's own name for it ("GPT-5.1-Codex"), "Default" for none.
+    func modelName(_ model: String, for provider: RunProvider) -> String {
+        if model.isEmpty { return tr("ws.model.default") }
+        return workspace.agentModels[provider]?.first { $0.id == model }?.name ?? model
+    }
+
+    /// Asks the connected agents which models they offer (at most every five minutes each).
+    func refreshAgentModels() {
+        workspace.refreshAgentModels(connectedProviders.compactMap { provider in
+            connectedProfiles(for: provider).first.map { (provider: provider, profileID: $0.id) }
+        })
     }
 
     /// Resolves account profile for a running session, or nil if unknown.

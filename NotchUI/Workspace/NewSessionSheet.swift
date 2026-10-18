@@ -57,7 +57,7 @@ struct NewSessionSheet: View {
         .frame(width: embedded ? nil : 660, height: embedded ? nil : 720)
         .frame(maxWidth: embedded ? CGFloat.infinity : nil, maxHeight: embedded ? CGFloat.infinity : nil, alignment: .topLeading)
         .background(embedded ? Color.clear : WS.background)
-        .onAppear(perform: prepare)
+        .onAppear { prepare(); app.refreshAgentModels() }
         .onChange(of: config.provider) { _, provider in providerChanged(provider) }
         .onChange(of: config.task) { _, task in
             if !branchEdited { config.branchName = WorktreeNaming.branchName(task: task.isEmpty ? "sessie" : task, id: pendingID) }
@@ -255,7 +255,7 @@ struct NewSessionSheet: View {
                         } else {
                             Picker("", selection: $config.model) {
                                 ForEach(app.models(for: config.provider), id: \.self) { model in
-                                    Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                                    Text(app.modelName(model, for: config.provider)).tag(model)
                                 }
                             }
                             .labelsHidden()

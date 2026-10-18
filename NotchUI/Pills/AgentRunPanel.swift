@@ -408,14 +408,14 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : run.model
+        let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
         return Menu {
             Section(tr("ws.new.model")) {
                 ForEach(app.models(for: run.provider), id: \.self) { option in
                     Button {
                         workspace.configure(runID, model: option)
                     } label: {
-                        let title = option.isEmpty ? tr("ws.model.default") : option
+                        let title = app.modelName(option, for: run.provider)
                         if run.model == option { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
