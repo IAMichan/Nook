@@ -168,6 +168,7 @@ struct SourcesDisclosure: View {
         case SourceCatalog.screen: return "macwindow"
         case SourceCatalog.web: return "globe"
         case SourceCatalog.loops: return "checklist"
+        case SourceCatalog.memory: return "brain.head.profile"
         default: return "circle.grid.2x2"
         }
     }

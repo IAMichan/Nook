@@ -222,6 +222,15 @@ final class AppSettings: ObservableObject {
     @Published var checkAnswers: Bool {
         didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
     }
+    /// Memory: what Nook learned about the user goes along with every question (Settings › Memory).
+    @Published var useMemory: Bool {
+        didSet { UserDefaults.standard.set(useMemory, forKey: "useMemory") }
+    }
+    /// Memory: Nook learns by itself from corrections, conversations and how plans are changed and run. Without it, Nook
+    /// only remembers what the user asks it to.
+    @Published var learnFromChats: Bool {
+        didSet { UserDefaults.standard.set(learnFromChats, forKey: "learnFromChats") }
+    }
     /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
@@ -359,6 +368,8 @@ final class AppSettings: ObservableObject {
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")
         checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
+        useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
+        learnFromChats = defaults.object(forKey: "learnFromChats") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key

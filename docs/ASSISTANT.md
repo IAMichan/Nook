@@ -72,6 +72,29 @@ Het model krijgt dit bovenaan de context ("Looked up for this question"): eerst 
 
 Notities en Mail zoeken op elk woord apart en zetten de berichten met de meeste treffers bovenaan, met een id om ze daarna volledig te lezen. Spotlight vraagt alle woorden tegelijk; vindt dat niets, dan zoekt Nook per woord en houdt hij de bestanden die de meeste woorden raken.
 
+### Geheugen: Nook onthoudt en leert
+
+Geheugen zit in Nook zelf: geen MCP-server, geen Node of `npx`, niets te installeren. Alles staat in `nook.sqlite` (tabel `memories`) op je Mac. Je beheert het bij **Instellingen › Geheugen**: zoeken, aanpassen, vastzetten, per herinnering "alleen op deze Mac", vergeten of alles vergeten.
+
+**Hoe Nook leert** (`Brain/Memory.swift`, `Services/NookMemory.swift`, `App/AppModel+Memory.swift`):
+
+* **Jij vertelt het.** "Onthoud dat Lisa mijn vrouw is", "voortaan korte antwoorden" of "vergeet mijn oude adres". Het brein stelt `remember` of `forget` voor. Vroeg je er zelf om en staat de tekst echt in je eigen woorden, dan gebeurt het meteen; anders zie je het als stap in het plan. Een correctie ("nee, ze heet Lies") vervangt de oude herinnering via `replaces`. "Onthoud dat ik morgen moet bellen" blijft een taak of herinnering.
+* **Zelf geleerd.** Na een correctie, iets wat je over jezelf vertelt, of elke vier vragen kijkt het brein op de achtergrond naar wat jij in het gesprek schreef en noemt het wat het onthouden waard is (`Reflection`). Alleen wat in je eigen woorden staat, wordt bewaard. Onder het antwoord zie je "Onthouden: …".
+* **Gezien.** Pas je in een plan steeds hetzelfde veld aan (agenda "Werk", lijst "Boodschappen"), dan wordt dat na twee keer een gewoonte: Nook vult het voortaan zelf in als het brein het leeg liet, en zegt dat onder het antwoord. Een actie die mislukt, wordt een les die het brein meekrijgt als het die tool weer kan gebruiken; lukt de tool daarna wel, dan weegt de les minder.
+* **Welke bron antwoordt.** Verwijst een antwoord naar een mail over "factuur", dan leert Nook dat zulke vragen in Mail beantwoord worden en zoekt hij daar voortaan ook, ook als de vraag Mail niet noemt. Een bron die steeds niets vindt voor een woord, verliest dat.
+* **Overnemen.** Gebruikte je de MCP-geheugenserver (`@modelcontextprotocol/server-memory`), dan vindt Nook die kennisgraaf in de npx-cache en neem je hem met één klik over. Daarna kun je die koppeling weghalen.
+
+**Terughalen.** `prepareRun` zet per vraag alleen de herinneringen die erbij horen in de context, onder "What Nook remembers", met een kort id (`m:…`) waar het brein naar kan verwijzen. Een naam in de vraag, gedeelde woorden of de tools van deze vraag maken een herinnering relevant; algemene voorkeuren gaan altijd mee. Een klein lokaal model krijgt er minder (5 tot 8) dan een groot (14). Met `recall_memory` zoekt het brein verder.
+
+**Vervagen.** Wat jij vertelde of vastzette, blijft. Wat Nook zelf leerde, halveert na 90 dagen zonder gebruik (lessen na 45) en verdwijnt als het bijna niets meer weegt. Er passen 400 herinneringen in; de zwakste geleerde gaan eerst.
+
+**Veiligheid en privacy.**
+
+* Wachtwoorden, codes, sleutels, links en alles wat op een opdracht lijkt ("negeer…", "voer uit zonder te vragen", tooltags) worden nooit opgeslagen.
+* Een geleerde herinnering moet in je eigen berichten staan. Tekst van het scherm, uit een mail of van een webpagina kan dus niets in je geheugen zetten. Een `remember` die het brein uit zulke tekst haalt, vraagt altijd eerst om **Uitvoeren**.
+* Geheugen is een bron (`memory`): zet hem bij **Alleen op deze Mac** en een externe AI krijgt er niets van. Per herinnering kan dat ook (het slotje). Wat Nook leerde uit een antwoord met zo'n bron, krijgt vanzelf het slotje.
+* In het geheugen staat tekst over jou, nooit opdrachten: het brein krijgt herinneringen als gegevens, met de regel dat wat je nu zegt altijd voorgaat.
+
 ### Kaarten en Meedenken gebruiken dezelfde route
 
 De kaarten in de notch (scherm bekijken ⌥⌘N, Meedenken) lopen via dezelfde `prepareRun` als de chat: dezelfde bronkeuze, dezelfde tools met het grootboek, dezelfde controle van acties en dezelfde bronverwijzingen. Alleen de presentatie verschilt (een kaart in plaats van een bericht). Bij die kaarten laat Nook de lookups vooraf weg, omdat de vraag over het scherm zelf gaat. Meedenken werkt ook met een lokaal brein.
@@ -209,6 +232,7 @@ Dit staat ook in de app, bij **Instellingen › Accounts & koppelingen › Nog n
 * bronverwijzingen: alleen echte nummers blijven staan, alleen veilige links;
 * prompt-injectie: tekst van derden kan de omlijning niet sluiten;
 * gedeelde tool-loop met een nep-model (tool-aanroep in tekst, schemafout → reparatie, limieten, acties nooit in de loop), brein-keuze, sessieregister, vertaaldekking (nl/en/de), terminal-commando's;
+* geheugen: opslaan en samenvoegen, vervangen, vergeten, terughalen binnen een budget, vervagen, gewoontes uit aangepaste plannen, lessen uit mislukte acties, welke bron wat beantwoordt, reflectie alleen uit eigen woorden, geen geheimen of opdrachten, import van de MCP-kennisgraaf (`MemoryTests`);
 * acties: validatie, normaliseren, velden voor de controle, vaste sleutel, gedeeltelijk mislukken en verder gaan zonder herhaling, uitgezette stappen, dubbel uitvoeren alleen na **Toch**, controle op het moment van uitvoeren.
 
 Alle tools in deze tests zijn nep (mocks). De koppelingen zelf (Mail via AppleScript, EventKit, GitHub, Notion) zijn **niet** automatisch getest tegen echte accounts. Daarvoor is een Mac met toegang en sleutels nodig.

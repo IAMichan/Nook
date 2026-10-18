@@ -34,6 +34,8 @@ enum SourceCatalog {
     static let screen = "screen"
     static let web = "web"
     static let loops = "loops"
+    /// What Nook learned about the user (`MemoryBook`).
+    static let memory = "memory"
 
     /// Sources Nook knows out of the box. Connectors added later (MCP servers, new services) register themselves with
     /// `register(_:tools:aliases:intents:)`, so adding one does not mean editing the tables in this file.
@@ -48,6 +50,7 @@ enum SourceCatalog {
         SourceDescriptor(id: "bear", title: "Bear", kind: .builtIn),
         SourceDescriptor(id: "things", title: "Things", kind: .builtIn),
         SourceDescriptor(id: loops, title: "Open punten", kind: .nook),
+        SourceDescriptor(id: memory, title: "Geheugen", kind: .nook),
         SourceDescriptor(id: "mail", title: "Mail", kind: .builtIn),
         SourceDescriptor(id: "browser", title: "Browser", kind: .builtIn),
         SourceDescriptor(id: "terminal", title: "Terminal", kind: .builtIn),
@@ -117,7 +120,7 @@ enum SourceCatalog {
     /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
     static let personal: Set<String> = [
         "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail",
-        "browser", "files", "contacts", "clipboard", screen
+        "browser", "files", "contacts", "clipboard", screen, memory
     ]
 
     static func descriptor(_ id: String) -> SourceDescriptor? {
@@ -145,6 +148,7 @@ enum SourceCatalog {
         "list_running_apps": screen, "get_active_app": screen,
         "search_contacts": "contacts", "read_clipboard": "clipboard",
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
+        "remember": memory, "forget": memory, "recall_memory": memory,
         "search_web": web, "read_webpage": web, "web_search": web,
         "read_source": "customsources", "send_to_source": "customsources",
         "vercel_deployments": "vercel", "stripe_payments": "stripe", "notion_search": "notion", "notion_read_page": "notion",
@@ -438,6 +442,7 @@ enum SourceCapabilities {
         "list_running_apps": "draaiende apps zien", "get_active_app": "actieve app zien",
         "search_contacts": "contacten zoeken", "read_clipboard": "klembord lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
+        "remember": "iets onthouden", "forget": "iets vergeten", "recall_memory": "geheugen doorzoeken",
         "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",
         "github_overview": "je PR's en reviews", "github_pr_details": "PR met diff lezen", "github_search": "issues en PR's zoeken",
