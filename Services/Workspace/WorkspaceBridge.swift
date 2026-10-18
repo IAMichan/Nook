@@ -210,6 +210,8 @@ final class WorkspaceBridge: ObservableObject {
             case .browserRead: return try await browserRead(caller)
             case .browserScreenshot: return try await browserScreenshot(arguments, caller)
             case .pullRequestCreate: return try await pullRequestCreate(arguments, caller, context)
+            case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskCancel:
+                return try await delegation(tool, arguments, caller, context)
             }
         } catch {
             return .error(error.localizedDescription)
@@ -226,7 +228,7 @@ final class WorkspaceBridge: ObservableObject {
         case .disabled: return "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace)."
         case .planMode: return "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead."
         case .dangerous: return "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed."
-        case .needsReview, .outward: return "The user did not approve this in Nook."
+        case .needsReview, .outward, .delegation: return "The user did not approve this in Nook."
         }
     }
 
@@ -517,5 +519,167 @@ final class WorkspaceBridge: ObservableObject {
         let link = try await GitHubPullRequests.create(repo: repo, title: title, body: body, head: branch, base: base, draft: draft)
         audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", link.absoluteString)
         return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote) and opened the pull request\(draft ? " as draft" : ""): \(link.absoluteString)")
+    }
+
+    // MARK: Delegation
+
+    /// Waiting for a result never takes longer than this, whatever the agent asks: nook-mcp and Codex give a call 900 s.
+    private static let maxWait = 840
+    private static let defaultWait = 45
+
+    private func delegation(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {
+        guard let app, case .run(let parentID) = caller.kind, let parent = app.workspace.run(parentID) else {
+            return .error(DelegationPolicy.Denial.notARun.message)
+        }
+        let workspace = app.workspace
+        switch tool {
+        case .orchestratorCapabilities:
+            return capabilities(parent, workspace)
+        case .delegateTask:
+            return try await delegateTask(arguments, parent, caller, context, app)
+        case .taskStatus:
+            guard let task = workspace.delegatedTask((arguments["task_id"] as? String) ?? "", of: parentID) else {
+                return .error("No such task. Use the task id that delegate_task returned.")
+            }
+            return BridgeRPC.ToolResult(text: DelegatedTask.render(workspace.snapshot(of: task)))
+        case .taskCancel:
+            if case .refuse(let reason) = verdict(.taskCancel, caller) { return .error(Self.refusal(reason)) }
+            guard let task = workspace.delegatedTask((arguments["task_id"] as? String) ?? "", of: parentID) else {
+                return .error("No such task. Use the task id that delegate_task returned.")
+            }
+            let before = DelegatedTask.state(task.status)
+            if before.isTerminal {
+                return BridgeRPC.ToolResult(text: DelegatedTask.render(workspace.snapshot(of: task)))
+            }
+            workspace.cancelDelegated(task.id)
+            audit(.taskCancel, caller, task.title, "gestopt")
+            var snapshot = workspace.snapshot(of: task)
+            snapshot.state = .cancelled
+            return BridgeRPC.ToolResult(text: DelegatedTask.render(snapshot))
+        default:
+            return .error("Not a delegation tool.")
+        }
+    }
+
+    private func capabilities(_ parent: WorkspaceRun, _ workspace: WorkspaceManager) -> BridgeRPC.ToolResult {
+        var lines = ["# Agents Nook can run for you"]
+        lines.append("You: \(parent.provider.displayName), mode \(parent.mode.rawValue), rights \(parent.permission.rawValue)\(parent.model.isEmpty ? "" : ", model \(parent.model)")")
+        let depth = parent.delegation?.depth ?? 0
+        lines.append("Delegation depth: \(depth) of \(DelegationPolicy.maxDepth) · running tasks: \(workspace.activeChildren(of: parent.id).count) of \(DelegationPolicy.maxActiveChildren)")
+        lines.append("")
+        for provider in RunProvider.allCases {
+            let installed = workspace.executable(provider) != nil
+            var line = "- \(provider.rawValue) (\(provider.displayName)): " + (installed ? "available" : "not installed")
+            let models = provider.suggestedModels.filter { !$0.isEmpty }
+            if !models.isEmpty { line += " · models: " + models.joined(separator: ", ") }
+            line += " · rights: " + provider.capabilities.policies.map(\.rawValue).joined(separator: ", ")
+            lines.append(line)
+        }
+        lines.append("")
+        lines.append("A task never has more rights than you. research, review and design tasks run in Plan mode.")
+        return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
+    }
+
+    private func delegateTask(_ arguments: [String: Any], _ parent: WorkspaceRun, _ caller: BridgeCaller, _ context: Context,
+                              _ app: AppModel) async throws -> BridgeRPC.ToolResult {
+        let workspace = app.workspace
+        let task = ((arguments["task"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !task.isEmpty else { return .error("Give the complete brief for the task.") }
+        let wait = (arguments["wait"] as? Bool) ?? false
+        let timeout = min(Self.maxWait, max(1, (arguments["timeout_seconds"] as? Int) ?? Self.defaultWait))
+        let key = ((arguments["client_request_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // A retry of the same call returns the task that is already there.
+        if !key.isEmpty, let existing = workspace.delegatedChild(of: parent.id, key: key) {
+            return await finish(existing.id, wait: wait, timeout: timeout, workspace)
+        }
+        if case .refuse(let reason) = verdict(.delegateTask, caller) { return .error(Self.refusal(reason)) }
+
+        let providerName = ((arguments["agent"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let provider = providerName.isEmpty ? parent.provider
+            : RunProvider.allCases.first { $0.rawValue == providerName || $0.displayName.lowercased() == providerName }
+        guard let provider else {
+            return .error("Unknown agent \"\(providerName)\". Call orchestrator_capabilities for the list.")
+        }
+        guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed on this Mac.") }
+
+        let role = DelegationRole(rawValue: ((arguments["role"] as? String) ?? "general").lowercased()) ?? .general
+        var requestedMode: ExecutionMode?
+        if let plan = arguments["plan"] as? Bool { requestedMode = plan ? .plan : .agent }
+        var requestedPermission: PermissionPolicy?
+        if let raw = arguments["rights"] as? String {
+            guard let policy = PermissionPolicy(rawValue: raw) else { return .error("rights must be ask, acceptEdits or bypass.") }
+            requestedPermission = policy
+        }
+        let rights: DelegationPolicy.Rights
+        switch DelegationPolicy.resolve(parentMode: parent.mode, parentPermission: parent.permission, mode: requestedMode,
+                                        permission: requestedPermission, role: role, offered: provider.capabilities.policies) {
+        case .failure(let denial): return .error(denial.message)
+        case .success(let value): rights = value
+        }
+        let depth = parent.delegation?.depth ?? 0
+        if let denial = DelegationPolicy.admit(parentDepth: depth, activeChildren: workspace.activeChildren(of: parent.id).count) {
+            return .error(denial.message)
+        }
+
+        // What you are asked to approve is everything the other agent will be told and allowed.
+        if case .ask = verdict(.delegateTask, caller) {
+            var detail = "\(provider.displayName) · \(rights.mode == .plan ? "plan" : "agent") · \(rights.permission.rawValue)\n\n\(task)"
+            if role != .general { detail += "\n\n" + role.instruction }
+            let allowed = await ask(caller, tool: .delegateTask, title: tr("bridge.approval.delegate", caller.agent), detail: detail,
+                                    note: tr("bridge.approval.delegateNote"), danger: false, connection: context.connection)
+            guard allowed else {
+                audit(.delegateTask, caller, task, "niet toegestaan")
+                return .error(Self.refusal(.delegation))
+            }
+        }
+
+        var config = NewRunConfig()
+        config.title = ((arguments["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        config.task = DelegationPolicy.prompt(task: task, role: role)
+        config.provider = provider
+        config.profileID = provider == parent.provider ? parent.profileID
+            : (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        let model = ((arguments["model"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        config.model = model.isEmpty ? (provider == parent.provider ? parent.model : "") : model
+        config.mode = rights.mode
+        config.permission = rights.permission
+        config.isolation = .folder
+        config.projectPath = parent.workingDirectory
+        config.delegation = DelegationLink(parentID: parent.id, key: key.isEmpty ? UUID().uuidString : key, depth: depth + 1,
+                                           role: role, wake: !wait)
+        let childID: UUID
+        do {
+            // The task works in the same folder as its parent.
+            childID = try await workspace.start(config, allowSharedFolder: true)
+        } catch {
+            audit(.delegateTask, caller, task, "mislukt: \(error.localizedDescription)")
+            return .error("Nook could not start the task: \(error.localizedDescription)")
+        }
+        audit(.delegateTask, caller, "\(provider.displayName) · \(task)", childID.uuidString.lowercased())
+        return await finish(childID, wait: wait, timeout: timeout, workspace)
+    }
+
+    /// The answer for a task: its state now, or after waiting for it. A wait that runs out leaves the task running and
+    /// makes sure the parent is told when it finishes.
+    private func finish(_ id: UUID, wait: Bool, timeout: Int, _ workspace: WorkspaceManager) async -> BridgeRPC.ToolResult {
+        guard wait else {
+            guard let run = workspace.run(id) else { return .error("The task is gone.") }
+            return BridgeRPC.ToolResult(text: DelegatedTask.render(workspace.snapshot(of: run)))
+        }
+        let deadline = Date().addingTimeInterval(TimeInterval(timeout))
+        while true {
+            guard let run = workspace.run(id) else { return .error("The task is gone.") }
+            let snapshot = workspace.snapshot(of: run)
+            // A question ends the wait too: only you or the parent can answer it.
+            if snapshot.state.isTerminal || snapshot.hasPendingQuestion {
+                return BridgeRPC.ToolResult(text: DelegatedTask.render(snapshot))
+            }
+            if Date() >= deadline {
+                workspace.wakeParent(when: id)
+                return BridgeRPC.ToolResult(text: DelegatedTask.render(snapshot, waitTimedOut: true))
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 }

@@ -6,6 +6,9 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "bridge.approval.delegate": "%@ wil een taak aan een andere agent geven",
+        "bridge.approval.delegateNote": "De agent krijgt alleen deze opdracht te zien, nooit je gesprek, en heeft nooit meer rechten dan de sessie die hem start.",
+        "ws.event.delegatedDone": "Taak "%@" is klaar; het resultaat gaat naar deze sessie.",
         "settings.ws.continueAfterRelaunch": "Een sessie die door een herstart van Nook werd onderbroken gaat vanzelf verder",
         "ws.event.continueAfterRelaunch": "Nook is herstart: de sessie gaat verder.",
         "agents.snooze.hour": "Een uur",
@@ -556,6 +559,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "bridge.approval.delegate": "%@ wants to hand a task to another agent",
+        "bridge.approval.delegateNote": "The agent sees only this brief, never your conversation, and never has more rights than the session that starts it.",
+        "ws.event.delegatedDone": "Task "%@" has finished; its result goes to this session.",
         "settings.ws.continueAfterRelaunch": "Continue a session cut off by a restart of Nook automatically",
         "ws.event.continueAfterRelaunch": "Nook restarted: the session continues.",
         "agents.snooze.hour": "One hour",
@@ -1106,6 +1112,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "bridge.approval.delegate": "%@ möchte eine Aufgabe an einen anderen Agenten übergeben",
+        "bridge.approval.delegateNote": "Der Agent sieht nur diesen Auftrag, nie dein Gespräch, und hat nie mehr Rechte als die Sitzung, die ihn startet.",
+        "ws.event.delegatedDone": "Aufgabe "%@" ist fertig; das Ergebnis geht an diese Sitzung.",
         "settings.ws.continueAfterRelaunch": "Eine durch einen Neustart von Nook unterbrochene Sitzung automatisch fortsetzen",
         "ws.event.continueAfterRelaunch": "Nook wurde neu gestartet: Die Sitzung wird fortgesetzt.",
         "agents.snooze.hour": "Eine Stunde",

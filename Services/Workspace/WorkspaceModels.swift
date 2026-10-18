@@ -252,6 +252,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
+    /// Set when another session delegated this one as a task (see `Delegation`).
+    var delegation: DelegationLink? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -340,6 +342,8 @@ struct NewRunConfig: Equatable, Sendable {
     var branchName = ""
     var worktreeRoot = ""
     var instructions = ""
+    /// Set for a task that another session delegated.
+    var delegation: DelegationLink? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {

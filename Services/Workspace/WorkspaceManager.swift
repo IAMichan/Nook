@@ -371,7 +371,8 @@ final class WorkspaceManager: ObservableObject {
             turnStartedAt: nil,
             reviewedAt: nil,
             lastChangeAt: nil,
-            changedFiles: nil
+            changedFiles: nil,
+            delegation: config.delegation
         )
         runs.insert(run, at: 0)
         events[id] = []
@@ -507,6 +508,7 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id) else { return }
         if run.status == .completed { clearContinuations(id) }
         onTurnFinished?(run)
+        deliverDelegatedResult(id)
         captureCheckpoint(id)
     }
 
@@ -591,6 +593,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
+        stopDelegatedChildren(of: id)
         if stopCodexServerTurn(id) { return }
         if stopAcpTurn(id) { return }
         guard let process = processes[id] else {

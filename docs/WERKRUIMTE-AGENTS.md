@@ -74,8 +74,24 @@ Start de agent daarna opnieuw.
 | `browser_read` | Titel, adres, zichtbare tekst en console-fouten en -waarschuwingen sinds het laden. | direct |
 | `browser_screenshot` | Een JPEG van de pagina, om layout te controleren. | direct |
 | `pull_request_create` | Pusht de branch en opent het pull request met jouw GitHub-koppeling (of de pagina op github.com om af te ronden). | altijd jouw OK |
+| `orchestrator_capabilities` | Welke agents Nook als taak kan starten (geïnstalleerd of niet, modellen, rechten), je eigen modus en rechten en de grenzen. | direct |
+| `delegate_task` | Geeft een taak aan een nieuwe sessie van een andere (of dezelfde) agent, zichtbaar naast de jouwe. Die ziet alleen de opdracht en een rol (`research`, `review`, `design`, `test`, `implementation`), nooit het gesprek. Met `wait` wacht de aanroep op het resultaat (standaard 45 s, hooguit 840 s); zonder `wait` meldt Nook het resultaat zodra de taak klaar is. Een herhaalde aanroep met dezelfde `client_request_id` geeft dezelfde taak. | jouw OK, tenzij de sessie alle rechten heeft · nooit in Plan-modus |
+| `task_status` | Stand en resultaat van een taak: `queued`, `running`, `waiting` (op jou), `completed`, `failed`, `cancelled`, met het laatste bericht van de taak. | direct |
+| `task_cancel` | Stopt een taak en alles wat die taak zelf uitbesteedde. | direct (nooit in Plan-modus) |
 
 In **Plan-modus** werken alleen de leestools. Staat **Agents mogen de terminal, browser en pull requests van Nook gebruiken** uit, dan werkt geen enkele tool en krijgen nieuwe sessies de brug niet meer mee.
+
+## Agents die agents starten
+
+`delegate_task` is `delegate_task`, op Nooks manier. De regels staan in `Delegation.swift` (alleen Foundation, getest in `DelegationTests`):
+
+- **Nooit meer rechten dan de ouder.** Modus en rechten worden geërfd of smaller gekozen; vragen om meer wordt geweigerd. Een geërfd recht dat de doelagent niet kent, zakt naar het breedste dat hij wel heeft. Een ouder in Plan-modus kan geen taak in Agent-modus geven. `research`, `review` en `design` draaien in Plan-modus tenzij de aanroep anders kiest.
+- **De taak ziet alleen de opdracht.** Het gesprek van de ouder gaat niet mee.
+- **Begrensd.** Hooguit twee niveaus diep en vier lopende taken per sessie.
+- **Zichtbaar en jouw keuze.** Elke taak is een gewone sessie in de lijst Agents; de kaart laat agent, modus, rechten en de hele opdracht zien.
+- **Het resultaat komt terug** per `task_status`, in de wachtende aanroep, of als bericht aan de ouder zodra de taak klaar is (één keer; een ouder die je stopte krijgt niets). Stop je de ouder, dan stoppen ook zijn taken, en `task_cancel` stopt ook wat die taak zelf startte.
+- **Alleen vanuit sessies die Nook draait**: een agent in een eigen terminal heeft geen sessie om het resultaat naar terug te sturen.
+- De taak werkt in dezelfde map als de ouder. Laat twee taken die schrijven niet tegelijk in één map werken; gebruik daarvoor een sessie in een eigen worktree.
 
 ## Veiligheid
 
