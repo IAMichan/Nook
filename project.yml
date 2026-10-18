@@ -126,7 +126,7 @@ targets:
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
-      - path: Services/Workspace/AgentModels.swift
+      - path: Services/Workspace/AgentModelCatalog.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/GitQuickActions.swift
