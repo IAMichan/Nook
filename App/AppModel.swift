@@ -326,7 +326,8 @@ final class AppModel: ObservableObject {
             HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
             HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
             HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() },
-            HotKey(id: 4, keyCode: kVK_ANSI_4, modifiers: optionKey | cmdKey) { [weak self] in self?.captureScreenPart() }
+            HotKey(id: 4, keyCode: kVK_ANSI_4, modifiers: optionKey | cmdKey) { [weak self] in self?.captureScreenPart() },
+            HotKey(id: 5, keyCode: kVK_ANSI_R, modifiers: optionKey | cmdKey) { NoteTaker.shared.toggle() }
         ].compactMap { $0 }
 
         // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.
@@ -342,7 +343,9 @@ final class AppModel: ObservableObject {
             MessagesConnector(),
             WhatsAppConnector(),
             BearConnector(),
-            ThingsConnector()
+            ThingsConnector(),
+            // Calls the Notetaker recorded.
+            CallNotesConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
         // The crypto portfolio (PortfolioConnector) is switched off for now: not registered, not in Settings.
@@ -356,6 +359,7 @@ final class AppModel: ObservableObject {
         connectors.start()
         startWhatsApp()
         startFlow()
+        startNotes()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }

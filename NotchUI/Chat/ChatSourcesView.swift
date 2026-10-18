@@ -403,6 +403,9 @@ struct ComposerMoreMenu: View {
         Menu {
             Button { app.attachFile() } label: { Label(tr("chat.attachShort"), systemImage: "paperclip") }
             Button { app.captureScreenPart() } label: { Label(tr("chat.capture.menu"), systemImage: "camera.viewfinder") }
+            Button { NoteTaker.shared.toggle() } label: {
+                Label(NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), systemImage: "waveform.badge.mic")
+            }
             Divider()
             Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
         } label: {

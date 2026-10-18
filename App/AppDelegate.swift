@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel.shared
     private var statusItem: NSStatusItem?
     private var talkItem: NSMenuItem?
+    private var recordItem: NSMenuItem?
     private var screenItem: NSMenuItem?
     private var weekRecapItem: NSMenuItem?
     private var workspaceItem: NSMenuItem?
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         talkItem = add(to: menu, title: tr("menu.talk"), action: #selector(talk))
         screenItem = add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen))
+        recordItem = add(to: menu, title: tr("notes.menu.start"), action: #selector(recordCall))
         weekRecapItem = add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap))
         workspaceItem = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
         workspaceItem?.keyEquivalentModifierMask = [.command, .option]
@@ -108,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         talkItem?.title = tr("menu.talk")
+        recordItem?.title = NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start")
         screenItem?.title = tr("menu.screen")
         weekRecapItem?.title = tr("menu.weekRecap")
         workspaceItem?.title = tr("menu.window")
@@ -129,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
+    @objc private func recordCall() { NoteTaker.shared.toggle() }
     @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func openWorkspace() { model.openWindow() }

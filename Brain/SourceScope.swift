@@ -46,6 +46,7 @@ enum SourceCatalog {
         SourceDescriptor(id: "messages", title: "Berichten", kind: .builtIn),
         SourceDescriptor(id: "whatsapp", title: "WhatsApp", kind: .builtIn),
         SourceDescriptor(id: "bear", title: "Bear", kind: .builtIn),
+        SourceDescriptor(id: "callnotes", title: "Gesprekken", kind: .nook),
         SourceDescriptor(id: "things", title: "Things", kind: .builtIn),
         SourceDescriptor(id: loops, title: "Open punten", kind: .nook),
         SourceDescriptor(id: "mail", title: "Mail", kind: .builtIn),
@@ -116,7 +117,7 @@ enum SourceCatalog {
 
     /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
     static let personal: Set<String> = [
-        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail",
+        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail", "callnotes",
         "browser", "files", "contacts", "clipboard", screen
     ]
 
@@ -136,6 +137,7 @@ enum SourceCatalog {
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_messages": "messages", "read_messages": "messages", "messages_open_chats": "messages",
         "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp", "whatsapp_live": "whatsapp", "whatsapp_send": "whatsapp",
+        "search_call_notes": "callnotes", "read_call_note": "callnotes",
         "search_bear": "bear", "read_bear": "bear", "search_things": "things",
         "search_mail": "mail", "read_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
@@ -178,6 +180,7 @@ enum SourceCatalog {
         (#"imessages?|sms'?(je|jes|en)?|berichten-?app|messages app|appje\w*|ge-?appt|appte\w*"#, ["messages", "whatsapp"]),
         (#"whats-?app\w*"#, ["whatsapp"]),
         (#"bear"#, ["bear"]),
+        (#"(opgenomen|mijn) (gesprekk?en|calls|meetings)|gespreksnotities|notulen|transcript\w*|recorded calls?|call notes|meeting notes"#, ["callnotes"]),
         (#"things( ?3| app|-app)"#, ["things"]),
         (#"contact\w*|telefoon\w*|adresboek|address book"#, ["contacts"]),
         (#"open punten|open loops?"#, [loops]),
@@ -391,6 +394,7 @@ enum SourceRouter {
         (#"tabs?|tabblad\w*|pagina|page|website|site|artikel|article|browser|gelezen|las ik"#, ["browser"]),
         (#"terminal|shell|commando|command\b|npm |yarn |pip |brew |git |draai |run |voer .{0,20}uit|installeer|install\b"#, ["terminal"]),
         (#"notitie\w*|notes?|memo'?s?|aantekening\w*"#, ["notes", "bear"]),
+        (#"call\w*|meeting\w*|vergader\w*|overleg\w*|gesprek\w*|besproken|afgesproken|zei .{0,20}in de|notulen|to-?do'?s? uit|besprechung\w*"#, ["callnotes"]),
         (#"taken|takenlijst|to-?do'?s?|tasks?|projecten|projects?"#, ["things"]),
         (#"contact\w*|telefoon\w*|telefoonnummer|e-?mailadres|adresboek|address book"#, ["contacts"]),
         (#"bestand\w*|files?|document\w*|pdf|rapport|report|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
@@ -430,7 +434,8 @@ enum SourceCapabilities {
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
-        "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
+        "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
+        "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen",

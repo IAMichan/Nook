@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// WhatsApp in the notch: a new message shows as a card with the last lines of the chat and a field to answer. What you
 /// type there goes to that chat when you press Return (your own words, your own click); "Let Nook answer" hands the
@@ -85,5 +86,50 @@ extension AppModel {
             await self?.brain.rewrite(system: system, prompt: text, timeout: timeout)
         }
         FlowDictation.shared.refresh()
+    }
+}
+
+/// The Notetaker: the summary is written by Nook's brain, the finished note lands in the chat as a new Nook.
+extension AppModel {
+    func startNotes() {
+        let notes = NoteTaker.shared
+        notes.summarize = { [weak self] system, transcript in
+            await self?.brain.rewrite(system: system, prompt: transcript, timeout: 180)
+        }
+        notes.locale = { [weak self] in
+            guard let self else { return Locale(identifier: "nl-NL") }
+            return VoiceService.locale(answerLanguage: self.settings.language, appLanguage: self.settings.appLanguage.rawValue)
+        }
+        notes.onFinished = { [weak self] note in self?.presentNote(note) }
+        notes.$problem
+            .compactMap { $0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] problem in
+                guard let self else { return }
+                self.viewModel.present(self.errorCard(problem))
+            }
+            .store(in: &bag)
+        notes.$current
+            .map { $0 != nil }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { recording in
+                if recording { RecordingBadge.shared.show() } else { RecordingBadge.shared.hide() }
+            }
+            .store(in: &bag)
+    }
+
+    func presentNote(_ note: Note) {
+        let conversation = chat.startNew()
+        var message: ChatMessage
+        if note.status == .failed {
+            message = ChatMessage(role: .nook, text: note.error ?? tr("notes.problem.empty"))
+        } else {
+            message = ChatMessage(role: .nook, text: NoteTaker.shared.markdown(note))
+            message.sources = [tr("notes.source")]
+            if !note.todos.isEmpty { message.offers = [tr("notes.offer.reminders"), tr("notes.offer.mail")] }
+        }
+        chat.append(message, to: conversation)
+        viewModel.finish(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
     }
 }
