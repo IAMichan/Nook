@@ -400,16 +400,10 @@ struct ComposerMoreMenu: View {
     @State private var showContext = false
 
     var body: some View {
-        Menu {
-            Button { app.attachFile() } label: { Label(tr("chat.attachShort"), systemImage: "paperclip") }
+        ComposerPlusMenu(attach: { app.attachFile() }) {
             Divider()
             Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
-        } label: {
-            ComposerIcon(symbol: "plus")
         }
-        .composerMenu()
-        .help(tr("chat.more"))
-        .accessibilityLabel(tr("chat.more"))
         .popover(isPresented: $showContext, arrowEdge: .top) { ContextInspector(chat: chat) }
     }
 }

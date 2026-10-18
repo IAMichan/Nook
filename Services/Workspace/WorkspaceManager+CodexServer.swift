@@ -111,13 +111,13 @@ extension WorkspaceManager {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
         if let process = processes[id], run(id)?.provider == .claude {
-            append(id, RunEvent(kind: .user, text: clean))
+            append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
             turns[id]?.steered = true
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, RunEvent(kind: .user, text: clean))
+        append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
             Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }

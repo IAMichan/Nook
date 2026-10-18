@@ -74,6 +74,35 @@ Claude Code: een `rate_limit_event` met status `rejected` zonder extra gebruik, 
 
 Nook installeert Google's ACP-server: de vastgepinde release 1.3.0 voor deze Mac van `dl.google.com`, gecontroleerd op grootte en SHA-256 voordat er iets wordt uitgepakt, precies twee bestanden (`agy_acp_server.par` en `localharness_external`) van precies de verwachte grootte, en een proefstart die als `antigravity-acp` met `oauth-personal` moet antwoorden. Pas dan wordt de release actief (`tools/antigravity-acp/<platform>/active.json`). Een sessie krijgt een eigen profielmap per Nook-account (`GEMINI_HOME`, tokens in een bestand), de harness, en geen andere Google-sleutels of -projecten uit je omgeving. Na `initialize` volgt `authenticate` met `oauth-personal`: met een bewaard token meteen, anders opent Google's inlogpagina (gecontroleerd: `accounts.google.com`, één `state`, terug naar een eigen loopback-poort) in je browser. De modus volgt de rechten: `yolo`, `auto_edit`, `default`, of `plan`. Gesprekken uit de Antigravity-app blijven via `agentapi` lopen; die kan de ACP-server niet laden.
 
+## Tweede ronde: de orchestratie (v2)
+
+De nieuwere (`apps/server/src/orchestration-v2`) is opnieuw bestudeerd. Wat Nook daaruit nu heeft, en waar de logica staat. Alles in `Services/Workspace` is alleen Foundation en getest (`AgentAttentionTests`, `DelegationTests`, `ContextHandoffTests`, `ComposerCoreTests`).
+
+| | In Nook | Waar |
+|---|---|---|
+| Eén afgeleide status: goedkeuring > vraag > bezig > wachtend > limiet/mislukt > klaar | De lijst toont ook "wacht op je antwoord" en "gebruikslimiet", en sorteert op urgentie | `AgentAttention` |
+| Snooze, die vanzelf eindigt of zodra er iets van je nodig is | Rechtsklik › Snooze (een uur, vanavond, morgenochtend) | `SnoozePolicy` |
+| Meldingen één keer per run en toestand (`runId:status`) | `AttentionLedger` (de kern; de notch meldt nog via de bestaande kaarten) | `AgentAttention.swift` |
+| "Continue where you left off." na een herstart, hooguit drie keer achter elkaar | Instelling (uit): een door herstart onderbroken sessie gaat één keer verder, alleen als het net gebeurde | `RestartContinuation` |
+| `delegate_task`, `task_status`, `task_cancel`, `orchestrator_capabilities` | Vier nieuwe tools in de werkruimte-brug; nooit meer rechten dan de ouder; Stop op de ouder stopt zijn taken | `Delegation.swift`, `docs/WERKRUIMTE-AGENTS.md` |
+| Fork en wissel van provider met een zichtbare overdracht | Vork maken en Wissel van agent in het menu van een sessie; de samenvatting staat uitklapbaar in de tijdlijn | `ContextHandoff.swift`, `WorkspaceManager+Handoff` |
+| Een invoerveld met `/`, `@` en `#`, typed verwijzingen, queue/steer met een toets om te wisselen, ArrowUp, grote plakteksten als bijlage | Eén `SessionComposer` voor de chat en de agents; zie hieronder | `ComposerCore.swift`, `ComposerRich.swift` |
+| Een andere sessie lezen via een verwijzing | `session_read` in de brug | `WorkspaceBridge` |
+
+### Eén invoerveld
+
+De chat en de agents gebruiken dezelfde `SessionComposer`, nu met gedrag: dezelfde rij (plus-menu, model, daarna modus en rechten of bronnen, microfoon, verzenden), dezelfde lijst onder het veld en dezelfde toetsen. Elk heeft een eigen kleur (`ComposerConfig.tint`): Nooks iris voor de chat, de kleur van de agent voor een sessie.
+
+- `/` opent de commando's (alleen aan het begin van de tekst), `@` bestanden in de map en andere sessies, `#12` een pull request.
+- Een verwijzing staat in de tekst als `[Login.swift](nook-context://v1/file/…)`. De agent krijgt een korte aanduiding in de tekst en één `<nook_context>`-blok met een record per verwijzing. Bestanden, sessies en pull requests worden alleen genoemd (de agent leest ze zelf); een uittreksel draagt zijn tekst mee, ingekort, met `<` en `&` onschadelijk gemaakt, zodat geplakte tekst nooit een record kan namaken. De tijdlijn en de wachtrij tonen alleen wat je schreef.
+- Plakken van 32 KB of meer wordt een verwijzing "Pasted text (45 KB)" in plaats van tekst in het veld.
+- Terwijl de agent werkt stuurt Return bij of zet in de wachtrij (Instellingen › Agents), ⌘Return doet het andere; kan de agent niet bijsturen, dan gaat het altijd naar de wachtrij.
+- ArrowUp en ArrowDown lopen door wat je eerder stuurde, en je concept komt terug aan het eind; een tekst met meerdere regels houdt zijn pijltjes.
+
+Verschillen die bewust blijven: de chat heeft geen modus of rechten (het brein voert niets uit; daar staan de bronnen), en zet geen verwijzingen in de vraag (die gaat als gewone tekst naar het brein). De microfoon van de chat stelt de vraag meteen en leest het antwoord voor; die van een sessie zet de woorden in het veld.
+
+Nog niet: `#` zoekt geen pull requests (je typt het nummer), de inspanning-stapper, `/goal`, "Implement in a new thread" bij een plan en een eigen plek voor het contextvenster.
+
 ## Bewust anders dan 
 
 - **Sessietitels opnieuw laten schrijven** halverwege een gesprek zit er niet in; je kunt een sessie altijd zelf hernoemen.

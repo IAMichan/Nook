@@ -136,7 +136,7 @@ struct QueuedMessagesStrip: View {
             ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                 HStack(spacing: 8) {
                     Image(systemName: "clock").font(.system(size: 10, weight: .semibold))
-                    Text(ToolSummary.oneLine(message, 120)).lineLimit(1)
+                    Text(ToolSummary.oneLine(ContextRefs.visible(message), 120)).lineLimit(1)
                     Spacer(minLength: 6)
                     Button { remove(index) } label: {
                         Image(systemName: "xmark").font(.system(size: 9, weight: .bold))

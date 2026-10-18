@@ -78,6 +78,7 @@ Start de agent daarna opnieuw.
 | `delegate_task` | Geeft een taak aan een nieuwe sessie van een andere (of dezelfde) agent, zichtbaar naast de jouwe. Die ziet alleen de opdracht en een rol (`research`, `review`, `design`, `test`, `implementation`), nooit het gesprek. Met `wait` wacht de aanroep op het resultaat (standaard 45 s, hooguit 840 s); zonder `wait` meldt Nook het resultaat zodra de taak klaar is. Een herhaalde aanroep met dezelfde `client_request_id` geeft dezelfde taak. | jouw OK, tenzij de sessie alle rechten heeft · nooit in Plan-modus |
 | `task_status` | Stand en resultaat van een taak: `queued`, `running`, `waiting` (op jou), `completed`, `failed`, `cancelled`, met het laatste bericht van de taak. | direct |
 | `task_cancel` | Stopt een taak en alles wat die taak zelf uitbesteedde. | direct (nooit in Plan-modus) |
+| `session_read` | Een samenvatting van een andere Nook-sessie (wat gevraagd, geantwoord, uitgevoerd en gewijzigd is), voor een `@`-verwijzing in het invoerveld. | direct |
 
 In **Plan-modus** werken alleen de leestools. Staat **Agents mogen de terminal, browser en pull requests van Nook gebruiken** uit, dan werkt geen enkele tool en krijgen nieuwe sessies de brug niet meer mee.
 

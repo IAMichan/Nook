@@ -21,6 +21,9 @@ struct AgentRunPanel: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The `#` list needs the repository ("owner/repo") of the session's folder.
+    @State private var repository: String?
+    @StateObject private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
@@ -57,6 +60,7 @@ struct AgentRunPanel: View {
                 workspace.loadTimeline(runID)
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
                 focused = true
+                Task { repository = await workspace.githubRepository(runID) }
             }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
@@ -134,7 +138,8 @@ struct AgentRunPanel: View {
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
-        return Menu {
+        return ComposerPlusMenu(attach: { attachFile(run) }) {
+            Divider()
             Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
             Divider()
             if run.status.isActive {
@@ -179,15 +184,41 @@ struct AgentRunPanel: View {
             .disabled(!idle)
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
         }
-        .composerMenu()
-        .help(tr("agents.run.actions"))
+    }
+
+    /// A file you add to the message: it sits in the text as a reference, the agent reads it itself.
+    private func attachFile(_ run: WorkspaceRun) {
+        guard let ref = ComposerFilePicker.pick(startingIn: run.workingDirectory) else { return }
+        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        focused = true
+    }
+
+    /// What this composer offers beyond typing: the commands, files and sessions to point at, and the agent's own color.
+    private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
+        var commands = [ComposerCommand(name: "plan", insertion: "", action: .plan),
+                        ComposerCommand(name: "fork", insertion: "", action: .fork)]
+        if run.provider == .claude || run.provider == .codex {
+            commands.insert(ComposerCommand(name: "compact", insertion: "/compact", action: .insert), at: 0)
+        }
+        var config = ComposerConfig()
+        config.tint = run.provider.color
+        config.fileRoot = run.workingDirectory
+        config.repository = repository
+        config.sessions = { [workspace, runID] in
+            workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
+        }
+        config.commands = commands
+        config.keepsBigPastes = true
+        config.onCommand = { [workspace, app, runID] command in
+            switch command.action {
+            case .plan: workspace.configure(runID, mode: .plan)
+            case .fork:
+                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            case .insert, .compact, .new: break
+            }
+        }
+        return config
     }
 
     // MARK: Timeline
@@ -374,17 +405,27 @@ struct AgentRunPanel: View {
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !active else { return }
+            let outgoing = composerModel.outgoing(text)
             draft = ""
-            workspace.send(runID, text: text)
+            workspace.send(runID, text: outgoing.send)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
-        let steers = active && workspace.canSteer(runID)
-        let queue = {
-            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            draft = ""
-            if !(steers && workspace.steer(runID, text: text)) { workspace.enqueue(runID, text: text) }
+        // Return does what you chose in Settings, Cmd+Return the other (queue / steer).
+        let canSteer = active && workspace.canSteer(runID)
+        let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
+        func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
+            {
+                let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                let outgoing = composerModel.outgoing(text)
+                draft = ""
+                if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
+                   workspace.steer(runID, text: outgoing.send) { return }
+                workspace.enqueue(runID, text: outgoing.send)
+            }
         }
+        let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
+        let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
@@ -401,15 +442,19 @@ struct AgentRunPanel: View {
                 focus: $focused,
                 onSend: send
             ) {
+                actionsMenu(run)
                 modelMenu(run)
                 ComposerDivider()
                 modeMenu(run)
                 ComposerDivider()
                 permissionMenu(run)
-                actionsMenu(run)
             }
-            // While it works, what you type waits in line and goes out when the turn is done.
-            .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
+            .rich(composerModel, composerConfig(run))
+            .trailing { ComposerMic(text: $draft) }
+            // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
+            .queueing(active ? deliver(preferred) : nil,
+                      alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
+                      label: steers ? tr("compose.steer") : tr("compose.queue"),
                       symbol: steers ? "arrow.turn.down.right" : "text.append")
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))

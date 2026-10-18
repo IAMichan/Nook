@@ -349,7 +349,7 @@ final class WorkspaceManager: ObservableObject {
         let run = WorkspaceRun(
             id: id,
             title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
-            task: config.task,
+            task: ContextRefs.visible(config.task),
             provider: config.provider,
             profileID: config.profileID,
             model: config.model,
@@ -396,6 +396,8 @@ final class WorkspaceManager: ObservableObject {
                 append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
             }
         }
+        let visibleTask = ContextRefs.visible(config.task)
+        if visibleTask != config.task { displayPrompt[id] = visibleTask }
         launchTurn(id, prompt: config.task, executable: executable)
         if title.isEmpty { generateTitle(id) }
         return id
@@ -502,7 +504,9 @@ final class WorkspaceManager: ObservableObject {
         }
         loadTimeline(id)
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
-        displayPrompt[id] = run.pendingHandoff == nil ? nil : clean
+        // What the timeline shows: your words, without a handoff summary or the context envelope of references.
+        let visible = ContextRefs.visible(clean)
+        displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
         launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable)
     }
 

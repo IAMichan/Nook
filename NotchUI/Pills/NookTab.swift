@@ -20,6 +20,7 @@ struct NookChatView: View {
     @EnvironmentObject private var app: AppModel
     @State private var question = ""
     @State private var dropTargeted = false
+    @StateObject private var composerModel = ComposerModel()
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -186,15 +187,28 @@ struct NookChatView: View {
                 ComposerDivider()
                 ScopeMenu(chat: chat)
             }
+            .rich(composerModel, chatComposerConfig)
             .trailing {
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
             }
         }
     }
 
+    /// The chat gets the same box as the agents: commands under `/`, ArrowUp for earlier questions. References stay off:
+    /// a question goes to the brain as plain text.
+    private var chatComposerConfig: ComposerConfig {
+        var config = ComposerConfig()
+        config.commands = [ComposerCommand(name: "new", insertion: "", action: .new)]
+        config.onCommand = { [app] command in
+            if command.action == .new { app.newChat() }
+        }
+        return config
+    }
+
     private func send() {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        composerModel.history.record(text)
         question = ""
         app.handleUserText(text)
         inputFocused = true

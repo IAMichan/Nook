@@ -157,6 +157,7 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(BridgePolicy.verdict(tool: .taskCancel, caller: caller(.plan, .bypass)), .refuse(.planMode))
         XCTAssertEqual(BridgePolicy.verdict(tool: .taskStatus, caller: caller(.plan)), .allow)
         XCTAssertEqual(BridgePolicy.verdict(tool: .orchestratorCapabilities, caller: caller(.plan)), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .sessionRead, caller: caller(.plan)), .allow, "reading a session changes nothing")
     }
 
     func testSwitchedOffBridgeRefusesDelegation() {

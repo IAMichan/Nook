@@ -23,6 +23,7 @@ struct NewSessionComposer: View {
     @State private var cloneURL = ""
     @State private var cloning = false
     @State private var pendingID = UUID()
+    @StateObject private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -108,12 +109,31 @@ struct NewSessionComposer: View {
             focus: $focused,
             onSend: start
         ) {
+            // The same row as in a running session and in the chat: plus menu, the agent and model, then mode and rights.
+            ComposerPlusMenu(attach: attachFile) {}
             agentMenu
             ComposerDivider()
             modeMenu
             ComposerDivider()
             permissionMenu
         }
+        .rich(composerModel, composerConfig)
+        .trailing { ComposerMic(text: $config.task) }
+    }
+
+    private var composerConfig: ComposerConfig {
+        var rich = ComposerConfig()
+        rich.tint = config.provider.color
+        rich.fileRoot = config.projectPath.isEmpty ? nil : config.projectPath
+        rich.keepsBigPastes = true
+        return rich
+    }
+
+    private func attachFile() {
+        guard !config.projectPath.isEmpty,
+              let ref = ComposerFilePicker.pick(startingIn: config.projectPath) else { return }
+        config.task += (config.task.isEmpty || config.task.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        focused = true
     }
 
     // MARK: Choices in the box
@@ -429,6 +449,8 @@ struct NewSessionComposer: View {
         starting = true
         error = nil
         var request = checkedConfig
+        // References in the text reach the agent as markers plus the context envelope.
+        request.task = composerModel.outgoing(request.task).send
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
         let finalConfig = request

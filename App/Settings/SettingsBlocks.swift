@@ -255,6 +255,7 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         } header: {
             Text(tr("settings.ws.title"))

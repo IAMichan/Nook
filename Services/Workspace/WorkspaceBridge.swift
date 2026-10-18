@@ -212,6 +212,7 @@ final class WorkspaceBridge: ObservableObject {
             case .pullRequestCreate: return try await pullRequestCreate(arguments, caller, context)
             case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskCancel:
                 return try await delegation(tool, arguments, caller, context)
+            case .sessionRead: return sessionRead(arguments)
             }
         } catch {
             return .error(error.localizedDescription)
@@ -681,5 +682,28 @@ final class WorkspaceBridge: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+    }
+
+    // MARK: Session reference
+
+    /// A summary of another session of Nook, for an `@`-mention. The same deterministic summary a handoff uses: what was
+    /// asked, answered, run and changed, bounded, never the raw conversation.
+    private func sessionRead(_ arguments: [String: Any]) -> BridgeRPC.ToolResult {
+        guard let workspace = app?.workspace,
+              let id = UUID(uuidString: ((arguments["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)),
+              let run = workspace.run(id) else {
+            return .error("No such session. Use the id from the reference the user gave you.")
+        }
+        workspace.loadTimeline(id)
+        var lines = ["# Session: \(run.title)", "Agent: \(run.provider.displayName) · status: \(DelegatedTask.state(run.status).rawValue)",
+                     "Folder: \(run.workingDirectory)"]
+        if let branch = run.branch { lines.append("Branch: \(branch)") }
+        lines.append("")
+        if let summary = ContextHandoff.render(events: workspace.timeline(id), source: run.provider.displayName) {
+            lines.append(summary.text)
+        } else {
+            lines.append("Nothing has happened in this session yet.")
+        }
+        return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
     }
 }

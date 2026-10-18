@@ -63,6 +63,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
+    /// A message typed while an agent works steers the turn (Cmd+Return queues it instead); off: it queues (Cmd+Return steers).
+    /// has the same choice.
+    @Published var steerByDefault: Bool {
+        didSet { defaults.set(steerByDefault, forKey: "ws.steerByDefault") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -89,6 +94,7 @@ final class WorkspaceSettings: ObservableObject {
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
+        steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? true
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }

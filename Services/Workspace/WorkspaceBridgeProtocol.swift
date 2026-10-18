@@ -20,6 +20,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case delegateTask = "delegate_task"
     case taskStatus = "task_status"
     case taskCancel = "task_cancel"
+    case sessionRead = "session_read"
 
     /// The MCP server name, in the agent's configuration and in its tool names.
     static let serverName = "nook"
@@ -32,7 +33,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     var effect: Effect {
         switch self {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
-             .orchestratorCapabilities, .taskStatus: return .read
+             .orchestratorCapabilities, .taskStatus, .sessionRead: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel: return .local
         case .pullRequestCreate: return .outward
         }
@@ -63,12 +64,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .delegateTask: return "Delegate task"
         case .taskStatus: return "Task status"
         case .taskCancel: return "Cancel task"
+        case .sessionRead: return "Read session"
         }
     }
 
     /// The most telling argument of a call, for the timeline: the command, the address, the title or the terminal.
     static func detail(_ input: [String: Any]) -> String? {
-        for key in ["command", "url", "title", "terminal_id", "task", "task_id"] {
+        for key in ["command", "url", "title", "terminal_id", "task", "task_id", "session_id"] {
             if let value = input[key] as? String, !value.isEmpty { return value }
         }
         return nil
@@ -102,6 +104,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Reads the state and result of a task you delegated: queued, running, waiting (for the user), completed, failed or cancelled, with the child's last message as summary."
         case .taskCancel:
             return "Stops a task you delegated, and every task that task delegated in turn."
+        case .sessionRead:
+            return "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed. Use it when the user points you at a session with a link like [title](nook-context://v1/session/<id>) or an @-mention; the id is in the <nook_context> record."
         }
     }
 
@@ -154,6 +158,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "timeout_seconds": ["type": "integer", "description": "With wait: how long to wait (default 45, at most 840). The task keeps running after a timeout."],
                 "client_request_id": ["type": "string", "description": "Makes a retry of this call return the same task instead of starting a second one."]
             ], required: ["task"])
+        case .sessionRead:
+            return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."]], required: ["session_id"])
         case .taskStatus:
             return object(["task_id": ["type": "string", "description": "The task id from delegate_task."]], required: ["task_id"])
         case .taskCancel:
