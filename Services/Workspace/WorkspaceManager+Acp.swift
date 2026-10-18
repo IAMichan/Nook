@@ -29,8 +29,21 @@ extension WorkspaceManager {
         let input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt, model: run.model, mode: run.mode,
                                        permission: run.permission, instructions: run.instructions, workingDirectory: run.workingDirectory,
                                        resumeSessionID: run.providerSessionID, accountEnvironment: accountEnvironment(run.profileID), runID: id)
-        let spec = AgentCommand.acpSpec(input)
+        var spec = AgentCommand.acpSpec(input)
+        if run.provider == .antigravity {
+            // Its own profile folder, harness and sign-in helper; your other Google settings stay out (way).
+            guard let environment = prepareAntigravity(profileID: run.profileID, executable: executable) else {
+                failAcpTurn(id, tr("ws.antigravity.notInstalled"))
+                return
+            }
+            spec.extraEnvironment.merge(environment) { $1 }
+            spec.removedEnvironment = AntigravityAcp.removedEnvironment
+        }
         let client = AcpClient(spec: spec)
+        client.onText = { [weak self] line in
+            guard let url = AntigravityAcp.signInURL(inLine: line) else { return }
+            Task { @MainActor in self?.openAntigravitySignIn(id, url) }
+        }
         client.onMessage = { [weak self] message, events in
             Task { @MainActor in self?.handleAcp(id, client, message, events) }
         }
@@ -49,6 +62,7 @@ extension WorkspaceManager {
         let bridge = bridgeLaunch().map { launch in
             (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
         }
+        let provider = run.provider
         client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -58,7 +72,18 @@ extension WorkspaceManager {
                 case .success(let response):
                     let capabilities = (response.dictionary["agentCapabilities"] as? [String: Any]) ?? [:]
                     client.canLoadSessions = (capabilities["loadSession"] as? Bool) ?? false
-                    self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
+                    self.learnModels(provider, AgentModelCatalog.acp(response.dictionary))
+                    guard provider == .antigravity else {
+                        return self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
+                    }
+                    // Antigravity signs in first: at once with a saved token, otherwise through Google in your browser.
+                    client.request("authenticate", ["methodId": AntigravityAcp.authMethod]) { [weak self] result in
+                        Task { @MainActor in
+                            guard let self else { return }
+                            if case .failure(let error) = result { return self.acpFailed(id, client, error, prompt: prompt, executable: executable) }
+                            self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
+                        }
+                    }
                 }
             }
         }
@@ -97,7 +122,10 @@ extension WorkspaceManager {
     private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
         guard let run = run(id), let session = client.sessionID else { return }
         let modes = ((response["modes"] as? [String: Any])?["availableModes"] as? [[String: Any]]) ?? []
-        if run.mode == .plan, let plan = modes.first(where: { (($0["id"] as? String) ?? "").lowercased().contains("plan") })?["id"] as? String {
+        if run.provider == .antigravity {
+            setAcpMode(client, session: session, response: response, modes: modes,
+                       to: AntigravityAcp.mode(run.mode, permission: run.permission))
+        } else if run.mode == .plan, let plan = modes.first(where: { (($0["id"] as? String) ?? "").lowercased().contains("plan") })?["id"] as? String {
             client.request("session/set_mode", ["sessionId": session, "modeId": plan]) { _ in }
         }
         learnModels(run.provider, AgentModelCatalog.acp(response))

@@ -13,7 +13,8 @@ enum AcpLaunch {
         case .opencode, .cursor: return ["acp"]
         // Grok decides on approvals itself with --always-approve; otherwise it asks Nook.
         case .grok: return permission == .bypass ? ["agent", "--always-approve", "stdio"] : ["agent", "stdio"]
-        case .claude, .codex: return []
+        // Antigravity's server takes no arguments on the Mac; its account and harness come from the environment.
+        case .antigravity, .claude, .codex: return []
         }
     }
 }
@@ -315,8 +316,14 @@ final class AcpClient: @unchecked Sendable {
         process.stop(grace: 2)
     }
 
+    /// A line that is not JSON-RPC (Antigravity prints its sign-in link this way).
+    var onText: (@Sendable (String) -> Void)?
+
     private func handle(_ line: String) {
-        guard let message = AcpRPC.parse(line) else { return }
+        guard let message = AcpRPC.parse(line) else {
+            onText?(line)
+            return
+        }
         if case .response(let id, let result, let error) = message {
             let completion = lock.withLock { pending.removeValue(forKey: id) }
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }

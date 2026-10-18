@@ -11,6 +11,8 @@ struct LaunchSpec: Equatable, Sendable {
     var initialInput: [String]
     /// Does stdin stay open (for approvals and interruption)? Otherwise the agent gets /dev/null.
     var keepsInputOpen: Bool
+    /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
+    var removedEnvironment: [String] = []
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
@@ -113,7 +115,7 @@ enum AgentCommand {
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
 
-        case .opencode, .cursor, .grok:
+        case .opencode, .cursor, .grok, .antigravity:
             return acpSpec(input)
         }
     }
@@ -198,7 +200,9 @@ final class AgentProcess: @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: spec.executable)
         process.arguments = spec.arguments
         process.currentDirectoryURL = URL(fileURLWithPath: spec.workingDirectory, isDirectory: true)
-        process.environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
+        var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
+        for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
+        process.environment = environment
 
         let out = Pipe()
         let err = Pipe()

@@ -6,6 +6,7 @@ struct NewSessionSheet: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
+    @ObservedObject private var antigravity = AntigravityInstaller.shared
     let onStarted: (UUID) -> Void
     /// Closes the sheet (it is presented as a native AppKit sheet, see `WorkspaceWindowController.presentSheet`).
     let close: () -> Void
@@ -423,6 +424,8 @@ struct NewSessionSheet: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.coral)
                 Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft)
                     .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            } else if config.provider == .antigravity, antigravity.installed == nil {
+                AntigravitySetupRow()
             } else if let reason = blockingReason {
                 Text(reason).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
             }
@@ -442,7 +445,8 @@ struct NewSessionSheet: View {
     private var blockingReason: String? {
         if let problem = config.problem { return tr("ws.error.config." + problem.rawValue) }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
-        if app.history.executables[config.provider.kind] == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
+        if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
+        if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if let project, config.isolation == .folder, !allowShared, !workspace.activeRuns(sharing: project.repoRoot ?? project.path).isEmpty {
             return tr("ws.new.sharedBlocked")
         }

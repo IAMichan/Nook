@@ -238,6 +238,7 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
+            LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {

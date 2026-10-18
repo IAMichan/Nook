@@ -6,7 +6,9 @@ import AppKit
 extension AppModel {
     /// The headless agent Nook can run for this kind, if it is installed.
     func nookProvider(for kind: AgentKind?) -> RunProvider? {
-        guard let kind, let provider = RunProvider(kind: kind), history.executables[kind] != nil else { return nil }
+        // Antigravity's own conversations live in the Antigravity app (answered through agentapi); Nook's Antigravity
+        // sessions run on the separate ACP server and cannot load them.
+        guard let kind, kind != .antigravity, let provider = RunProvider(kind: kind), history.executables[kind] != nil else { return nil }
         return provider
     }
 

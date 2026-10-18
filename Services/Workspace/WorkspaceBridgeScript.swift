@@ -131,7 +131,7 @@ enum WorkspaceBridgeScript {
         case .codex: return "codex mcp add \(BridgeTool.serverName) -- \(script) --agent codex"
         case .gemini: return "gemini mcp add --scope user \(BridgeTool.serverName) \(script) --agent gemini"
         // Over ACP Nook hands its bridge to every session itself (session/new mcpServers); nothing to register.
-        case .opencode, .cursor, .grok: return nil
+        case .opencode, .cursor, .grok, .antigravity: return nil
         }
     }
 }

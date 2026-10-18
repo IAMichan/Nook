@@ -10,6 +10,7 @@ extension RunProvider {
         case .opencode: return .opencode
         case .cursor: return .cursor
         case .grok: return .grok
+        case .antigravity: return .antigravity
         }
     }
 
@@ -23,7 +24,7 @@ extension RunProvider {
         case .opencode: self = .opencode
         case .cursor: self = .cursor
         case .grok: self = .grok
-        case .antigravity: return nil
+        case .antigravity: self = .antigravity
         }
     }
 }
@@ -97,7 +98,9 @@ extension AppModel {
     /// Connects the workspace to the rest of Nook. Run once at startup.
     func startWorkspace() {
         workspace.executable = { [weak self] provider in
-            self?.history.executables[provider.kind]
+            // Antigravity sessions run on Google's ACP server that Nook installs, not on the Antigravity app.
+            if provider == .antigravity { return AntigravityInstaller.shared.installed?.executable }
+            return self?.history.executables[provider.kind]
         }
         workspace.accountEnvironment = { [weak self] profileID in
             guard let self, let profile = self.profiles.profile(id: profileID) else { return [:] }

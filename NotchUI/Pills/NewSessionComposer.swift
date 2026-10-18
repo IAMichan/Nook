@@ -9,6 +9,7 @@ struct NewSessionComposer: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
+    @ObservedObject private var antigravity = AntigravityInstaller.shared
     /// Called with the new session once it runs.
     let onStarted: (UUID) -> Void
 
@@ -251,6 +252,8 @@ struct NewSessionComposer: View {
                 .foregroundStyle(NookTheme.coralSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
+        } else if config.provider == .antigravity, antigravity.installed == nil {
+            AntigravitySetupRow().padding(.horizontal, 8)
         } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
             HStack(spacing: 8) {
                 Text(tr("ws.new.accountNotLoggedIn")).foregroundStyle(NookTheme.amber)
@@ -310,7 +313,8 @@ struct NewSessionComposer: View {
     private var blockingReason: String? {
         if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
-        if app.history.executables[config.provider.kind] == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
+        if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
+        if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if config.isolation == .folder, !allowShared, !sharing.isEmpty { return tr("ws.new.sharedBlocked") }
         return nil
     }

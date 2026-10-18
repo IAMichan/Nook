@@ -688,7 +688,7 @@ final class WorkspaceManager: ObservableObject {
         case .gemini:
             let parsed = GeminiStreamParser.parse(line)
             for event in parsed { handleGemini(event, id: id) }
-        case .opencode, .cursor, .grok:
+        case .opencode, .cursor, .grok, .antigravity:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }

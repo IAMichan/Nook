@@ -129,6 +129,7 @@ targets:
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/GitQuickActions.swift
       - path: Services/Workspace/UsageLimits.swift
+      - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
