@@ -117,11 +117,17 @@ final class WorkspaceManager: ObservableObject {
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
     @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
+    @Published var openPullRequests: [UUID: URL] = [:]
+    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
+    /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
+    var pullRequestLookup: ((_ repo: String, _ branch: String) async -> URL?)?
+    var pullRequestCreate: ((_ repo: String, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     var modelsRefreshed: [RunProvider: Date] = [:]
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
-    private var gitService: GitService?
+    private(set) var gitService: GitService?
 
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }

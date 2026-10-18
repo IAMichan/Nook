@@ -110,6 +110,12 @@ extension AppModel {
         // Codex reports new limits while it works: show them right away.
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
+        // The git button finds and opens pull requests through the GitHub connector, when it is set up.
+        workspace.pullRequestLookup = { repo, branch in await GitHubPullRequests.openPullRequest(repo: repo, branch: branch) }
+        workspace.pullRequestCreate = { repo, title, body, head, base in
+            guard GitHubPullRequests.isAvailable else { return nil }
+            return try await GitHubPullRequests.create(repo: repo, title: title, body: body, head: head, base: base, draft: false)
+        }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         startWorkspaceBridge()

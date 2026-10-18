@@ -61,7 +61,7 @@ extension GitService {
 
     // MARK: Helpers
 
-    private func withTemporaryIndex<T>(_ directory: String, _ body: ([String: String]) throws -> T) throws -> T {
+    func withTemporaryIndex<T>(_ directory: String, _ body: ([String: String]) throws -> T) throws -> T {
         let index = FileManager.default.temporaryDirectory.appendingPathComponent("nook-index-\(UUID().uuidString)").path
         defer { try? FileManager.default.removeItem(atPath: index) }
         return try body(["GIT_INDEX_FILE": index])
@@ -69,7 +69,7 @@ extension GitService {
 
     /// git with extra environment; a commit identity so `commit-tree` works without a configured user.
     @discardableResult
-    private func git(_ arguments: [String], in directory: String, env extra: [String: String]) throws -> String {
+    func git(_ arguments: [String], in directory: String, env extra: [String: String]) throws -> String {
         var env = environment
         for (key, value) in ["GIT_AUTHOR_NAME": "Nook", "GIT_AUTHOR_EMAIL": "nook@localhost",
                              "GIT_COMMITTER_NAME": "Nook", "GIT_COMMITTER_EMAIL": "nook@localhost"] { env[key] = value }
