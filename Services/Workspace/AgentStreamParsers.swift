@@ -202,7 +202,12 @@ enum ClaudeStreamParser {
     static func number(_ value: Any?) -> Double? {
         if let number = value as? NSNumber {
             // JSON booleans are also NSNumber; they do not count as numbers (0 or 1 do).
+            #if canImport(Darwin)
             return CFGetTypeID(number) == CFBooleanGetTypeID() ? nil : number.doubleValue
+            #else
+            // swift-corelibs-foundation (the tests on Linux): a JSON boolean is an NSNumber of type "c".
+            return String(cString: number.objCType) == "c" ? nil : number.doubleValue
+            #endif
         }
         if let text = value as? String { return Double(text) }
         return nil
