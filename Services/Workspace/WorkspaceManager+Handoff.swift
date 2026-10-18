@@ -17,18 +17,21 @@ extension WorkspaceManager {
     /// only what it missed. Everything the new agent starts from is shown in the timeline.
     @discardableResult
     func switchProvider(_ id: UUID, to provider: RunProvider, profileID: String, model: String = "") -> Bool {
-        guard canTransfer(id), let run = run(id), run.provider != provider, executable(provider) != nil else { return false }
+        guard canTransfer(id), let run = run(id), executable(provider) != nil,
+              ProviderInstance.key(run.provider, run.profileID) != ProviderInstance.key(provider, profileID) else { return false }
         loadTimeline(id)
         let events = timeline(id)
 
         var sessions = run.providerSessions ?? [:]
         var cursors = run.handoffCursors ?? [:]
-        if let session = run.providerSessionID { sessions[run.provider.rawValue] = session }
+        let leaving = ProviderInstance.key(run.provider, run.profileID)
+        let arriving = ProviderInstance.key(provider, profileID)
+        if let session = run.providerSessionID { sessions[leaving] = session }
         // The agent we leave has taken part in everything so far.
-        cursors[run.provider.rawValue] = events.count
+        cursors[leaving] = events.count
 
-        let nativeSession = sessions[provider.rawValue]
-        let strategy = ContextTransfer.forSwitch(hasNativeSession: nativeSession != nil, cursor: cursors[provider.rawValue])
+        let nativeSession = sessions[arriving]
+        let strategy = ContextTransfer.forSwitch(hasNativeSession: nativeSession != nil, cursor: cursors[arriving])
         var handoff: ContextHandoff.Rendered?
         switch strategy {
         case .native: break
@@ -40,6 +43,7 @@ extension WorkspaceManager {
         closeClaudeProcess(id)
         closeAcpClient(id)
         let previous = run.provider
+        let accountOnly = previous == provider
         update(id) {
             $0.provider = provider
             $0.profileID = profileID
@@ -52,7 +56,8 @@ extension WorkspaceManager {
             if !provider.capabilities.policies.contains($0.permission) { $0.permission = settings.permission(for: provider) }
         }
         forkNext.remove(id)
-        append(id, RunEvent(kind: .system, text: tr("ws.event.switched", previous.displayName, provider.displayName)))
+        append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.event.switchedAccount", provider.displayName)
+                                                              : tr("ws.event.switched", previous.displayName, provider.displayName)))
         if let handoff { appendHandoffNote(id, handoff) }
         return true
     }
@@ -120,5 +125,30 @@ extension WorkspaceManager {
         if let handoff { appendHandoffNote(newID, handoff) }
         scheduleSave()
         return newID
+    }
+
+    // MARK: One choice for agent, account and model
+
+    /// What you picked in the agent menu of a session: a model from the next turn on, or another account or agent with a
+    /// summary of what happened. Returns what it came to, so the menu can say why nothing changed.
+    @discardableResult
+    func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String) -> SelectionTransition {
+        guard canTransfer(id), let run = run(id) else { return .reject("busy") }
+        let transition = SelectionTransition.decide(
+            currentProvider: run.provider, currentProfile: run.profileID, currentModel: run.model,
+            targetProvider: provider, targetProfile: profileID, targetModel: model,
+            sameAccountHome: accountHome(run.profileID) == accountHome(profileID), available: executable(provider) != nil)
+        switch transition {
+        case .reuse, .reject: break
+        case .applyOnNextTurn:
+            update(id) {
+                $0.profileID = profileID
+                $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+                if run.model != model { $0.resolvedModel = nil }
+            }
+        case .createWithHandoff:
+            if !switchProvider(id, to: provider, profileID: profileID, model: model) { return .reject("unavailable") }
+        }
+        return transition
     }
 }

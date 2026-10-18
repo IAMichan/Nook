@@ -142,6 +142,8 @@ final class WorkspaceManager: ObservableObject {
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// The folder an account keeps its login in; two accounts with the same folder share conversations.
+    var accountHome: (String) -> String? = { $0 }
     /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
     var runScript: ((String, String, String) -> Void)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.

@@ -106,6 +106,7 @@ extension AppModel {
             guard let self, let profile = self.profiles.profile(id: profileID) else { return [:] }
             return self.profiles.launchEnvironment(profile)
         }
+        workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }

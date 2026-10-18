@@ -138,48 +138,12 @@ struct NewSessionComposer: View {
 
     // MARK: Choices in the box
 
-    /// Agent and account in one menu, the model below them.
+    /// Agent and account in one menu, the model below them: the same menu a running session has.
     private var agentMenu: some View {
-        let profile = app.profiles.profile(id: config.profileID)
-        let name = profile.map { AccountLabel.name($0, app: app) }
-        return Menu {
-            // Only agents and accounts you connected; the rest would only clutter the choice.
-            if app.connectedProviders.isEmpty {
-                Text(tr("agents.noneConnected"))
-            }
-            ForEach(app.connectedProviders) { provider in
-                Section(provider.displayName) {
-                    ForEach(app.connectedProfiles(for: provider)) { account in
-                        Button {
-                            choose(provider, account: account.id)
-                        } label: {
-                            if config.provider == provider && config.profileID == account.id {
-                                Label(AccountLabel.line(account, app: app), systemImage: "checkmark")
-                            } else {
-                                Text(AccountLabel.line(account, app: app))
-                            }
-                        }
-                    }
-                }
-            }
-            Divider()
-            Section(tr("ws.new.model")) {
-                ForEach(app.models(for: config.provider), id: \.self) { model in
-                    Button {
-                        config.model = model
-                    } label: {
-                        let title = app.modelName(model, for: config.provider)
-                        if config.model == model { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            }
-        } label: {
-            ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)))
-        }
-        .composerMenu()
-        .help(tr("ws.new.accountPinned"))
+        AgentPickerMenu(provider: config.provider, profileID: config.profileID, model: config.model,
+                        pickAccount: { provider, account in choose(provider, account: account.id) },
+                        pickModel: { config.model = $0 })
+            .help(tr("ws.new.accountPinned"))
     }
 
     private var modeMenu: some View {

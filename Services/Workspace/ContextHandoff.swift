@@ -115,3 +115,29 @@ struct RunLineage: Codable, Equatable, Sendable {
     /// How much of the parent's timeline the fork starts from.
     var atEvent: Int
 }
+
+/// One agent with one account is one instance: its conversation is its own. routes work by instance for the same
+/// reason: two accounts of one agent never share a session.
+enum ProviderInstance {
+    static func key(_ provider: RunProvider, _ profileID: String) -> String { provider.rawValue + "|" + profileID }
+}
+
+/// What changing the agent, account or model of a running session means (`decideProviderSessionTransition`).
+enum SelectionTransition: Equatable, Sendable {
+    /// Nothing changes.
+    case reuse
+    /// Same conversation; the new model or account label counts from the next turn.
+    case applyOnNextTurn
+    /// Another agent or account has its own conversation: the session moves there with a summary of what happened.
+    case createWithHandoff
+    case reject(String)
+
+    static func decide(currentProvider: RunProvider, currentProfile: String, currentModel: String,
+                       targetProvider: RunProvider, targetProfile: String, targetModel: String,
+                       sameAccountHome: Bool, available: Bool) -> SelectionTransition {
+        guard available else { return .reject("unavailable") }
+        if currentProvider != targetProvider { return .createWithHandoff }
+        if currentProfile != targetProfile { return sameAccountHome ? .applyOnNextTurn : .createWithHandoff }
+        return currentModel == targetModel ? .reuse : .applyOnNextTurn
+    }
+}

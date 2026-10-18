@@ -106,6 +106,44 @@ final class ContextHandoffTests: XCTestCase {
         }
     }
 
+    // MARK: Selection transitions
+
+    private func decide(_ provider: RunProvider = .claude, _ profile: String = "a", _ model: String = "opus",
+                        to target: RunProvider = .claude, _ targetProfile: String = "a", _ targetModel: String = "opus",
+                        sameHome: Bool = false, available: Bool = true) -> SelectionTransition {
+        SelectionTransition.decide(currentProvider: provider, currentProfile: profile, currentModel: model,
+                                   targetProvider: target, targetProfile: targetProfile, targetModel: targetModel,
+                                   sameAccountHome: sameHome, available: available)
+    }
+
+    func testNothingChangesWhenNothingIsPicked() {
+        XCTAssertEqual(decide(), .reuse)
+    }
+
+    func testAnotherModelCountsFromTheNextTurn() {
+        XCTAssertEqual(decide(to: .claude, "a", "sonnet"), .applyOnNextTurn)
+    }
+
+    func testAnotherAgentStartsItsOwnConversationWithAHandoff() {
+        XCTAssertEqual(decide(to: .codex, "codex", "gpt-5"), .createWithHandoff)
+        XCTAssertEqual(decide(to: .codex, "a", "opus", sameHome: true), .createWithHandoff, "never the same conversation across agents")
+    }
+
+    func testAnotherAccountOfTheSameAgentIsItsOwnConversationUnlessItSharesTheLogin() {
+        XCTAssertEqual(decide(to: .claude, "b", "opus"), .createWithHandoff)
+        XCTAssertEqual(decide(to: .claude, "b", "opus", sameHome: true), .applyOnNextTurn)
+    }
+
+    func testAnUnavailableTargetIsRefused() {
+        XCTAssertEqual(decide(to: .codex, "codex", "", available: false), .reject("unavailable"))
+    }
+
+    func testInstancesKeepAccountsApart() {
+        XCTAssertNotEqual(ProviderInstance.key(.claude, "a"), ProviderInstance.key(.claude, "b"))
+        XCTAssertNotEqual(ProviderInstance.key(.claude, "a"), ProviderInstance.key(.codex, "a"))
+        XCTAssertEqual(ProviderInstance.key(.claude, "a"), "claude|a")
+    }
+
     // MARK: Prompt
 
     func testComposeAddsTheSummaryBeforeYourMessage() {

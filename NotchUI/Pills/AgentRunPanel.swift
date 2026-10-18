@@ -162,15 +162,6 @@ struct AgentRunPanel: View {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
-            Menu(tr("agents.switch.menu")) {
-                ForEach(RunProvider.allCases.filter { $0 != run.provider && workspace.executable($0) != nil }) { provider in
-                    Button(provider.displayName) {
-                        let profile = app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)
-                        workspace.switchProvider(runID, to: provider, profileID: profile.id, model: workspace.settings.model(for: provider))
-                    }
-                }
-            }
-            .disabled(!workspace.canTransfer(runID))
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
@@ -464,29 +455,18 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account, and the model for the next turn.
+    /// The agent with its account and the model, as when you start a session. A model counts from the next turn; another
+    /// account or agent moves the session there with a summary of what happened (shown in the timeline).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
-        let profile = app.profile(for: run)
-        let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
-        return Menu {
-            Section(tr("ws.new.model")) {
-                ForEach(app.models(for: run.provider), id: \.self) { option in
-                    Button {
-                        workspace.configure(runID, model: option)
-                    } label: {
-                        let title = app.modelName(option, for: run.provider)
-                        if run.model == option { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            }
-        } label: {
-            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
-        }
-        .composerMenu()
-        .disabled(run.status.isActive)
-        .help(run.resolvedModel ?? tr("ws.new.model"))
+        AgentPickerMenu(provider: run.provider, profileID: run.profileID, model: run.model, resolvedModel: run.resolvedModel,
+                        disabled: !workspace.canTransfer(runID),
+                        pickAccount: { provider, account in
+                            let model = provider == run.provider ? run.model : workspace.settings.model(for: provider)
+                            workspace.applySelection(runID, provider: provider, profileID: account.id, model: model)
+                        },
+                        pickModel: { model in
+                            workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: model)
+                        })
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {

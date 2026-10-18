@@ -6,6 +6,7 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.event.switchedAccount": "Overgestapt naar een ander %@-account.",
         "compose.ref.session": "Sessie",
         "compose.command.plan": "Plan-modus aanzetten",
         "compose.command.compact": "Gesprek samenvatten om ruimte te maken",
@@ -572,6 +573,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.event.switchedAccount": "Switched to another %@ account.",
         "compose.ref.session": "Session",
         "compose.command.plan": "Turn on Plan mode",
         "compose.command.compact": "Summarize the conversation to free up space",
@@ -1138,6 +1140,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.event.switchedAccount": "Zu einem anderen %@-Konto gewechselt.",
         "compose.ref.session": "Sitzung",
         "compose.command.plan": "Plan-Modus einschalten",
         "compose.command.compact": "Gespräch zusammenfassen, um Platz zu schaffen",
