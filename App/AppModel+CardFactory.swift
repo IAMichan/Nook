@@ -18,6 +18,10 @@ extension AppModel {
     }
 
     func askAbout(_ url: URL) {
+        if ChatImage.isImage(url) {
+            askAboutImage(url, name: url.lastPathComponent)
+            return
+        }
         do {
             let text = try FileText.read(url)
             attachment = (url.lastPathComponent, text, Date())
@@ -28,6 +32,68 @@ extension AppModel {
         } catch {
             viewModel.show(.card(errorCard(error.localizedDescription)))
         }
+    }
+
+    /// An image: brains that can see get the picture itself, every brain gets the text Nook reads in it on the Mac.
+    func askAboutImage(_ url: URL, name: String) {
+        guard let loaded = ChatImage.load(url) else {
+            viewModel.show(.card(errorCard(tr("chat.image.unreadable", name))))
+            return
+        }
+        showChat()
+        Task { @MainActor [weak self] in
+            let recognized = (try? await ScreenReader.recognize(loaded.cgImage)) ?? ""
+            guard let self else { return }
+            self.attachment = (name, ChatImage.describe(name: name, recognized: recognized), Date())
+            self.attachmentImages = [loaded.image]
+            var message = ChatMessage(role: .nook, text: tr("chat.image.attached", name))
+            message.sources = [name]
+            self.chat.append(message)
+        }
+    }
+
+    /// ⌥⌘4 or the plus menu: drag over a part of any screen (Space picks a window, Esc cancels) and ask Nook about it.
+    /// The selection is macOS's own; the picture stays in a temporary folder on this Mac until a brain is asked about it.
+    func captureScreenPart() {
+        guard !capturingScreenPart else { return }
+        guard CGPreflightScreenCaptureAccess() else {
+            _ = CGRequestScreenCaptureAccess()
+            viewModel.show(.card(errorCard(tr("chat.capture.permission"))))
+            return
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("NookCaptures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        Self.pruneCaptures(in: folder)
+        let file = folder.appendingPathComponent("Schermdeel \(Int(Date().timeIntervalSince1970)).png")
+        // The notch folds first: it must not be in the picture.
+        viewModel.show(.idle)
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        // -i: macOS's own selection, -x: no shutter sound, -o: no window shadow.
+        task.arguments = ["-i", "-x", "-o", file.path]
+        task.terminationHandler = { _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.capturingScreenPart = false
+                // Esc: no file, nothing happens.
+                guard FileManager.default.fileExists(atPath: file.path) else { return }
+                self.askAboutImage(file, name: tr("chat.capture.name"))
+            }
+        }
+        do {
+            capturingScreenPart = true
+            try task.run()
+        } catch {
+            capturingScreenPart = false
+            viewModel.show(.card(errorCard(error.localizedDescription)))
+        }
+    }
+
+    /// Keeps the ten newest captures.
+    private static func pruneCaptures(in folder: URL) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let dated = files.map { ($0, (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }
+        for (old, _) in dated.sorted(by: { $0.1 > $1.1 }).dropFirst(10) { try? FileManager.default.removeItem(at: old) }
     }
 
     // MARK: Cards

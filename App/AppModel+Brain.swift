@@ -20,7 +20,9 @@ extension AppModel {
               (response as? HTTPURLResponse)?.statusCode == 200,
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
         let list = (object["models"] as? [[String: Any]]) ?? (object["data"] as? [[String: Any]]) ?? []
-        return list.compactMap { ($0["name"] as? String) ?? ($0["id"] as? String) }.map { ServerModel(server: server, name: $0) }
+        return list.compactMap { ($0["name"] as? String) ?? ($0["id"] as? String) }
+            .filter(AIProvider.isChatModel)
+            .map { ServerModel(server: server, name: $0) }
     }
 
     /// Best local choices for this Mac, best first.

@@ -128,6 +128,7 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
         let shouldCaptureScreen: Bool
@@ -137,6 +138,7 @@ extension AppModel {
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
+            images = attachmentImages
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
@@ -228,6 +230,7 @@ extension AppModel {
                 context: brainContext,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
+                images: images,
                 tools: tools,
                 onText: { [weak self] partial in
                     guard let self, self.replies[conversation] == id else { return }

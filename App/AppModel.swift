@@ -183,8 +183,19 @@ final class AppModel: ObservableObject {
     var spokenRequest = false
     /// File from Shelf attached as prompt context.
     var attachment: (name: String, text: String, date: Date)? {
-        didSet { attachmentName = attachment?.name }
+        didSet {
+            attachmentName = attachment?.name
+            // Images belong to the attachment they came with: another file (or none) leaves them behind.
+            if attachment?.name != oldValue?.name { attachmentImages = [] }
+        }
     }
+    /// The picture itself when the attachment is an image (a dropped photo, a part of the screen), for brains that see.
+    var attachmentImages: [ChatImage] = [] {
+        didSet { attachmentIsImage = !attachmentImages.isEmpty }
+    }
+    @Published private(set) var attachmentIsImage = false
+    /// macOS's selection for "ask about a part of the screen" is open.
+    var capturingScreenPart = false
     /// Attachment indicator for the input field: file currently included.
     @Published private(set) var attachmentName: String?
 
@@ -314,7 +325,8 @@ final class AppModel: ObservableObject {
         hotKeys = [
             HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
             HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
-            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
+            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() },
+            HotKey(id: 4, keyCode: kVK_ANSI_4, modifiers: optionKey | cmdKey) { [weak self] in self?.captureScreenPart() }
         ].compactMap { $0 }
 
         // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.

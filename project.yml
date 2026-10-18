@@ -141,6 +141,8 @@ targets:
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
       - path: Brain/ChartRescue.swift
+      - path: Brain/Weather.swift
+      - path: Brain/ChatImage.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

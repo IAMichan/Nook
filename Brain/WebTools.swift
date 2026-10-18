@@ -69,6 +69,22 @@ final class WebTools {
             ))
         }
         list.append(ToolSpec(
+            name: "get_weather",
+            description: "Current weather and the forecast for up to 7 days (temperature, rain chance, wind) from Open-Meteo. Use this for any weather question instead of searching the web. Without a place it uses the user's home town.",
+            schema: ["type": "object", "properties": [
+                "place": ["type": "string", "description": "Town or city, e.g. Utrecht. Leave empty for the user's home town."],
+                "days": ["type": "integer", "description": "Number of days, 1 to 7 (default 3)."]
+            ]],
+            kind: .read,
+            summarize: { _ in "Weather" },
+            tag: { _ in ("", .neutral) },
+            run: { input in
+                let place = (input["place"] as? String) ?? ""
+                let days = (input["days"] as? Int) ?? Int((input["days"] as? String) ?? "") ?? 3
+                return try await Weather.forecast(for: place, days: days)
+            }
+        ))
+        list.append(ToolSpec(
             name: "read_webpage",
             description: "Reads the text of a webpage. Only for URLs that have already appeared: in the request, on screen, in browser tabs, or in search results.",
             schema: ["type": "object", "properties": ["url": ["type": "string", "description": "The full address (https://…)."]], "required": ["url"]],

@@ -50,7 +50,12 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.error.token": "De dienst gaf geen toegang: %@",
         "connect.error.expired": "Je inlog is verlopen. Log opnieuw in.",
         "connect.error.notSignedIn": "Nog niet ingelogd. Klik op Verbinden.",
-        "connect.error.keychain": "De Sleutelhanger weigerde de inloggegevens op te slaan. Probeer het opnieuw."
+        "connect.error.keychain": "De Sleutelhanger weigerde de inloggegevens op te slaan. Probeer het opnieuw.",
+        "chat.image.attached": "Ik heb **%@** bekeken. Wat wil je erover weten? Een brein dat kan zien krijgt de afbeelding zelf; elk brein krijgt de tekst die erin staat.",
+        "chat.image.unreadable": "Ik kan %@ niet openen als afbeelding.",
+        "chat.capture.permission": "Nook mag je scherm nog niet zien. Zet Nook aan bij Systeeminstellingen › Privacy en beveiliging › Schermopname en probeer het opnieuw.",
+        "chat.capture.name": "Schermdeel",
+        "chat.capture.menu": "Vraag over een schermdeel (⌥⌘4)"
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -98,7 +103,12 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.error.token": "The service did not grant access: %@",
         "connect.error.expired": "Your sign-in has expired. Sign in again.",
         "connect.error.notSignedIn": "Not signed in yet. Click Connect.",
-        "connect.error.keychain": "The Keychain refused to store the sign-in. Please try again."
+        "connect.error.keychain": "The Keychain refused to store the sign-in. Please try again.",
+        "chat.image.attached": "I looked at **%@**. What would you like to know? A brain that can see gets the image itself; every brain gets the text in it.",
+        "chat.image.unreadable": "I cannot open %@ as an image.",
+        "chat.capture.permission": "Nook is not allowed to see your screen yet. Turn Nook on in System Settings › Privacy & Security › Screen Recording and try again.",
+        "chat.capture.name": "Screen part",
+        "chat.capture.menu": "Ask about a part of the screen (⌥⌘4)"
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -146,6 +156,11 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.error.token": "Der Dienst hat keinen Zugriff gewährt: %@",
         "connect.error.expired": "Deine Anmeldung ist abgelaufen. Melde dich erneut an.",
         "connect.error.notSignedIn": "Noch nicht angemeldet. Klicke auf Verbinden.",
-        "connect.error.keychain": "Der Schlüsselbund hat die Anmeldedaten nicht gespeichert. Bitte versuche es erneut."
+        "connect.error.keychain": "Der Schlüsselbund hat die Anmeldedaten nicht gespeichert. Bitte versuche es erneut.",
+        "chat.image.attached": "Ich habe mir **%@** angesehen. Was möchtest du wissen? Ein Gehirn, das sehen kann, bekommt das Bild selbst; jedes Gehirn bekommt den Text darin.",
+        "chat.image.unreadable": "Ich kann %@ nicht als Bild öffnen.",
+        "chat.capture.permission": "Nook darf deinen Bildschirm noch nicht sehen. Aktiviere Nook unter Systemeinstellungen › Datenschutz & Sicherheit › Bildschirmaufnahme und versuche es erneut.",
+        "chat.capture.name": "Bildschirmausschnitt",
+        "chat.capture.menu": "Zu einem Bildschirmausschnitt fragen (⌥⌘4)"
     ]
 ]

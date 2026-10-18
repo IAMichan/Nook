@@ -120,7 +120,7 @@ struct ChatIntent: Equatable {
         .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
         .notion: ["notion_search", "notion_read_page"],
         .clipboard: ["read_clipboard"],
-        .web: ["search_web", "read_webpage"],
+        .web: ["get_weather", "search_web", "read_webpage"],
         .chats: ["search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 

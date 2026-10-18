@@ -8,7 +8,8 @@ final class VoiceService: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var transcript = ""
 
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
+    /// One recognizer per language, made when it is first needed.
+    private var recognizers: [String: SFSpeechRecognizer] = [:]
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -33,9 +34,30 @@ final class VoiceService: ObservableObject {
         return micOK && speechOK
     }
 
-    func start(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
+    /// The language to listen in: the language Nook answers in, or with "auto" the language of Nook's interface. The Mac's
+    /// own region wins when it speaks that language (nl-BE, en-GB), so accents are recognized better.
+    static func locale(answerLanguage: String, appLanguage: String, current: Locale = .current) -> Locale {
+        let code = answerLanguage == "auto" ? appLanguage : answerLanguage
+        if current.language.languageCode?.identifier == code, let region = current.region?.identifier {
+            let local = Locale(identifier: "\(code)-\(region)")
+            if SFSpeechRecognizer.supportedLocales().contains(where: { $0.identifier.replacingOccurrences(of: "_", with: "-") == local.identifier }) {
+                return local
+            }
+        }
+        let regions = ["nl": "nl-NL", "en": "en-US", "de": "de-DE", "fr": "fr-FR", "es": "es-ES"]
+        return Locale(identifier: regions[code] ?? "nl-NL")
+    }
+
+    private func recognizer(for locale: Locale) -> SFSpeechRecognizer? {
+        if let known = recognizers[locale.identifier] { return known }
+        let made = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
+        recognizers[locale.identifier] = made
+        return made
+    }
+
+    func start(locale: Locale = Locale(identifier: "nl-NL"), onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
         guard !isListening else { return }
-        guard let recognizer, recognizer.isAvailable else {
+        guard let recognizer = self.recognizer(for: locale), recognizer.isAvailable else {
             throw NookError("Speech recognition is currently unavailable.")
         }
         self.onPartial = onPartial

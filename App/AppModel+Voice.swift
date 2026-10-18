@@ -40,6 +40,7 @@ extension AppModel {
             viewModel.show(.card(listeningCard("")))
             do {
                 try voice.start(
+                    locale: VoiceService.locale(answerLanguage: settings.language, appLanguage: settings.appLanguage.rawValue),
                     onPartial: { [weak self] text in
                         guard let self else { return }
                         self.viewModel.updateCard(self.listeningCard(text))

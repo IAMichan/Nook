@@ -145,7 +145,7 @@ enum SourceCatalog {
         "list_running_apps": screen, "get_active_app": screen,
         "search_contacts": "contacts", "read_clipboard": "clipboard",
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
-        "search_web": web, "read_webpage": web, "web_search": web,
+        "search_web": web, "read_webpage": web, "web_search": web, "get_weather": web,
         "read_source": "customsources", "send_to_source": "customsources",
         "vercel_deployments": "vercel", "stripe_payments": "stripe", "notion_search": "notion", "notion_read_page": "notion",
         "calcom_bookings": "calcom", "n8n_status": "n8n", "resend_overview": "resend"
@@ -438,7 +438,7 @@ enum SourceCapabilities {
         "list_running_apps": "draaiende apps zien", "get_active_app": "actieve app zien",
         "search_contacts": "contacten zoeken", "read_clipboard": "klembord lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
-        "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",
+        "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken", "get_weather": "weer opvragen",
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",
         "github_overview": "je PR's en reviews", "github_pr_details": "PR met diff lezen", "github_search": "issues en PR's zoeken",
         "github_issue_details": "issue lezen", "github_review_pr": "PR beoordelen", "github_comment_pr": "reageren op PR",
