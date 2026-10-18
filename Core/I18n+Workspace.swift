@@ -6,6 +6,9 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.permission.ask.help.acp": "De agent vraagt Nook om toestemming voor bewerkingen en commando's; lezen mag altijd.",
+        "ws.permission.acceptEdits.help.acp": "Bewerkingen worden meteen toegestaan; commando's vragen eerst om je goedkeuring.",
+        "ws.permission.bypass.help.acp": "Alles wordt meteen toegestaan, ook commando's. Een worktree beschermt je code, niet je Mac.",
         "ws.antigravity.needed": "Antigravity draait in Nook op Google's eigen ACP-server. Eenmalig installeren (%@ download).",
         "ws.antigravity.installed": "ACP-server %@ geïnstalleerd",
         "ws.antigravity.install": "Installeren",
@@ -187,7 +190,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.permission.ask.help.claude": "Elke bewerking en elk commando vraagt eerst om je goedkeuring, hier of in de notch.",
         "ws.permission.acceptEdits.help.claude": "Bestanden aanpassen mag; commando's en andere tools vragen eerst om goedkeuring.",
         "ws.permission.bypass.help.claude": "Geen enkele vraag: de agent voert alles uit, ook commando's. Een worktree beschermt je code, niet je Mac.",
-        "ws.permission.ask.help.codex": "Niet beschikbaar: Codex kan in deze modus niets vragen.",
+        "ws.permission.ask.help.codex": "Elk commando en elke bewerking buiten de sandbox vraagt eerst om je goedkeuring, hier of in de notch.",
         "ws.permission.acceptEdits.help.codex": "Codex werkt in zijn sandbox: schrijven alleen in de werkmap, geen netwerk.",
         "ws.permission.bypass.help.codex": "Geen sandbox: Codex mag alles op je Mac, ook buiten de werkmap.",
         "ws.isolation.folder": "In de map zelf",
@@ -544,6 +547,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.permission.ask.help.acp": "The agent asks Nook for permission for edits and commands; reading is always allowed.",
+        "ws.permission.acceptEdits.help.acp": "Edits are allowed right away; commands ask for your approval first.",
+        "ws.permission.bypass.help.acp": "Everything is allowed right away, including commands. A worktree protects your code, not your Mac.",
         "ws.antigravity.needed": "Antigravity runs in Nook on Google's own ACP server. Install it once (%@ download).",
         "ws.antigravity.installed": "ACP server %@ installed",
         "ws.antigravity.install": "Install",
@@ -725,7 +731,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.permission.ask.help.claude": "Every edit and command asks for your approval first, here or in the notch.",
         "ws.permission.acceptEdits.help.claude": "Editing files is allowed; commands and other tools ask for approval first.",
         "ws.permission.bypass.help.claude": "No questions at all: the agent runs everything, including commands. A worktree protects your code, not your Mac.",
-        "ws.permission.ask.help.codex": "Not available: Codex can't ask anything in this mode.",
+        "ws.permission.ask.help.codex": "Every command and every edit outside the sandbox asks for your approval first, here or in the notch.",
         "ws.permission.acceptEdits.help.codex": "Codex runs in its sandbox: writes only in the working folder, no network.",
         "ws.permission.bypass.help.codex": "No sandbox: Codex may do anything on your Mac, also outside the working folder.",
         "ws.isolation.folder": "In the folder itself",
@@ -1082,6 +1088,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.permission.ask.help.acp": "Der Agent fragt Nook um Erlaubnis für Änderungen und Befehle; Lesen ist immer erlaubt.",
+        "ws.permission.acceptEdits.help.acp": "Änderungen werden sofort erlaubt; Befehle fragen zuerst um deine Freigabe.",
+        "ws.permission.bypass.help.acp": "Alles wird sofort erlaubt, auch Befehle. Ein Worktree schützt deinen Code, nicht deinen Mac.",
         "ws.antigravity.needed": "Antigravity läuft in Nook auf Googles eigenem ACP-Server. Einmal installieren (%@ Download).",
         "ws.antigravity.installed": "ACP-Server %@ installiert",
         "ws.antigravity.install": "Installieren",
@@ -1245,7 +1254,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.permission.ask.help.claude": "Jede Änderung und jeder Befehl fragt zuerst um Freigabe, hier oder in der Notch.",
         "ws.permission.acceptEdits.help.claude": "Dateien ändern ist erlaubt; Befehle und andere Tools fragen zuerst.",
         "ws.permission.bypass.help.claude": "Keine Rückfragen: Der Agent führt alles aus, auch Befehle. Ein Worktree schützt deinen Code, nicht deinen Mac.",
-        "ws.permission.ask.help.codex": "Nicht verfügbar: Codex kann in diesem Modus nichts fragen.",
+        "ws.permission.ask.help.codex": "Jeder Befehl und jede Änderung außerhalb der Sandbox fragt zuerst um deine Freigabe, hier oder in der Notch.",
         "ws.permission.acceptEdits.help.codex": "Codex arbeitet in seiner Sandbox: Schreiben nur im Arbeitsordner, kein Netzwerk.",
         "ws.permission.bypass.help.codex": "Keine Sandbox: Codex darf alles auf deinem Mac.",
         "ws.isolation.folder": "Im Ordner selbst",

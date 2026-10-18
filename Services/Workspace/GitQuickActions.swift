@@ -97,6 +97,17 @@ extension GitService {
         return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// The repository's default branch for pull requests: what the remote's HEAD points at, else `main` or `master`
+    /// when one exists. Never the current branch (`defaultBaseBranch` falls back to it), so a feature branch is never
+    /// mistaken for the default one.
+    func defaultBranch(_ directory: String, remote: String) -> String? {
+        if let text = try? run(["symbolic-ref", "--quiet", "--short", "refs/remotes/\(remote)/HEAD"], in: directory) {
+            let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.hasPrefix(remote + "/"), name.count > remote.count + 1 { return String(name.dropFirst(remote.count + 1)) }
+        }
+        return ["main", "master"].first { refExists("refs/heads/\($0)", in: directory) || refExists("refs/remotes/\(remote)/\($0)", in: directory) }
+    }
+
     /// The base to compare against: the remote branch when there is one (`origin/main`), else the local one.
     func comparisonBase(_ directory: String, base: String, remote: String) -> String {
         refExists("refs/remotes/\(remote)/\(base)", in: directory) ? "\(remote)/\(base)" : base

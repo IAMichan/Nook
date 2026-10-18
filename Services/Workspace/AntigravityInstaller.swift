@@ -22,8 +22,12 @@ final class AntigravityInstaller: ObservableObject {
     @Published private(set) var revision = 0
     private var observation: NSKeyValueObservation?
     let paths = AntigravityPaths(support: NookPaths.supportDirectory)
+    /// Read from disk once, and again after an install or removal (views ask often).
+    private(set) var installed: (executable: String, harness: String)?
 
-    var installed: (executable: String, harness: String)? { paths.installed() }
+    private init() {
+        installed = paths.installed()
+    }
 
     var isBusy: Bool {
         switch phase {
@@ -46,6 +50,9 @@ final class AntigravityInstaller: ObservableObject {
             } catch {
                 phase = .failed(error.localizedDescription)
             }
+            observation?.invalidate()
+            observation = nil
+            installed = paths.installed()
             revision += 1
         }
     }
@@ -54,6 +61,7 @@ final class AntigravityInstaller: ObservableObject {
         guard !isBusy else { return }
         try? FileManager.default.removeItem(at: paths.tools)
         phase = .idle
+        installed = nil
         revision += 1
     }
 
@@ -104,7 +112,7 @@ final class AntigravityInstaller: ObservableObject {
                     continuation.resume(throwing: error)
                 }
             }
-            observation = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            observation = task.progress.observe(\.fractionCompleted) { @Sendable [weak self] progress, _ in
                 let fraction = progress.fractionCompleted
                 Task { @MainActor in
                     if case .downloading = self?.phase { self?.phase = .downloading(fraction) }

@@ -32,6 +32,7 @@ extension WorkspaceManager {
     /// The server printed its sign-in link: Google's page opens in your browser and the server's own loopback port
     /// receives the answer. Shown once per session in the timeline.
     func openAntigravitySignIn(_ id: UUID, _ url: URL) {
+        guard antigravitySignIns.insert(id).inserted else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.antigravity.signIn")))
         NSWorkspace.shared.open(url)
     }

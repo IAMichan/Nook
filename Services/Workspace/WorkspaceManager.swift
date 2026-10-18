@@ -127,6 +127,13 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
     var codexLimitSnapshots: [UUID: JSONBox] = [:]
+    /// The turn that just ended stopped on a usage limit, with its reset when known. Kept apart from the turn state,
+    /// which some paths clear before the end of the turn is handled.
+    var limitedTurns: [UUID: Date?] = [:]
+    /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
+    var pullRequestChecked: [String: Date] = [:]
+    /// Sessions whose Antigravity sign-in page already opened.
+    var antigravitySignIns: Set<UUID> = []
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
@@ -179,10 +186,8 @@ final class WorkspaceManager: ObservableObject {
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
-        /// Usage limits: Claude Code's blocked windows (with their reset, if known), and whether the turn ended on one.
+        /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
-        var usageLimited = false
-        var limitResetAt: Date?
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -850,8 +855,7 @@ final class WorkspaceManager: ObservableObject {
             // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
             if result.isError, turns[id]?.stopping != true,
                !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
-                turns[id]?.usageLimited = true
-                turns[id]?.limitResetAt = UsageLimits.latestReset(turns[id]?.limitWindows ?? [:])
+                limitedTurns[id] = .some(UsageLimits.latestReset(turns[id]?.limitWindows ?? [:]))
             }
             var usage = result.usage
             let state = turns[id]
@@ -947,7 +951,7 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
         case .usageLimited:
-            turns[id]?.usageLimited = true
+            limitedTurns[id] = .some(nil)
         default:
             // Events only `codex app-server` sends: live text, reasoning, output, usage, the end of a turn.
             handleCodexServerEvent(event, id: id)
@@ -1115,6 +1119,7 @@ final class WorkspaceManager: ObservableObject {
         closeAcpClient(id)
         limitResumes.removeValue(forKey: id)?.cancel()
         codexLimitSnapshots[id] = nil
+        limitedTurns[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }

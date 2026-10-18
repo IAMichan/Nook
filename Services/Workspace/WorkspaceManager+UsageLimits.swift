@@ -18,8 +18,9 @@ extension WorkspaceManager {
 
     /// After a turn: did a usage limit stop it? Then the session waits for the reset (and goes on then, if set so).
     func checkUsageLimit(_ id: UUID) {
-        guard let state = turns[id], state.usageLimited, let run = run(id), run.status == .failed else { return }
-        let reset = state.limitResetAt ?? codexLimitSnapshots[id].flatMap { UsageLimits.codexReset($0.dictionary) }
+        guard let known = limitedTurns.removeValue(forKey: id) else { return }
+        guard let run = run(id), run.status == .failed else { return }
+        let reset = known ?? codexLimitSnapshots[id].flatMap { UsageLimits.codexReset($0.dictionary) }
         let auto = settings.autoResumeLimited && reset != nil
         update(id) {
             $0.limitedAt = Date()
@@ -38,6 +39,7 @@ extension WorkspaceManager {
 
     func clearUsageLimit(_ id: UUID) {
         limitResumes.removeValue(forKey: id)?.cancel()
+        limitedTurns[id] = nil
         guard run(id)?.limitedAt != nil else { return }
         update(id) {
             $0.limitedAt = nil

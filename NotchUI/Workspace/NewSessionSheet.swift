@@ -196,7 +196,7 @@ struct NewSessionSheet: View {
 
     private var agentSection: some View {
         let caps = config.provider.capabilities
-        let installed = app.history.executables[config.provider.kind] != nil
+        let installed = workspace.executable(config.provider) != nil
         let connected = app.connectedProfiles(for: config.provider)
         let accounts = connected.isEmpty ? app.profiles.profiles(for: config.provider.kind) : connected
         let selected = app.profiles.profile(id: config.profileID)

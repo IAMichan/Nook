@@ -60,6 +60,7 @@ final class GitQuickActionTests: XCTestCase {
         XCTAssertFalse(sha.isEmpty)
         XCTAssertEqual(try git.run(["log", "-1", "--format=%s%n%b"], in: repo.path).trimmingCharacters(in: .whitespacesAndNewlines), "Update a and add b\n- a\n- b")
         XCTAssertEqual(git.commitsAhead(repo.path, of: "main"), 1)
+        XCTAssertEqual(git.defaultBranch(repo.path, remote: "origin"), "main", "on a feature branch without origin/HEAD: main, never the branch itself")
         XCTAssertEqual(git.comparisonBase(repo.path, base: "main", remote: "origin"), "main", "no remote branch: the local one")
         let pr = try git.pullRequestContext(repo.path, base: "main")
         XCTAssertTrue(pr.commits.contains("Update a and add b"))

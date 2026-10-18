@@ -12,13 +12,19 @@ extension WorkspaceManager {
         let facts = await Task.detached(priority: .userInitiated) { () -> (base: String?, remote: Bool, ahead: Int, repo: String?) in
             let remotes = git.remotes(directory)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-            let base = Self.pullRequestBase(sessionBase ?? git.defaultBaseBranch(directory), remote: remote)
+            let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote)
             let ahead = base.flatMap { git.commitsAhead(directory, of: git.comparisonBase(directory, base: $0, remote: remote)) } ?? 0
             return (base, !remotes.isEmpty, ahead, git.remoteURL(directory, remote: remote).flatMap(GitHubRemote.repository(from:)))
         }.value
         let branch = status.detached ? nil : status.branch
         if let repo = facts.repo, let branch, let lookup = pullRequestLookup {
-            openPullRequests[id] = await lookup(repo, branch)
+            let key = repo + " " + branch
+            if let last = pullRequestChecked[key], Date().timeIntervalSince(last) < 60 {
+                // Asked a moment ago: keep that answer.
+            } else {
+                pullRequestChecked[key] = Date()
+                openPullRequests[id] = await lookup(repo, branch)
+            }
         }
         return GitQuickState(hasChanges: !status.isClean, branch: branch, isDefaultBranch: branch != nil && branch == facts.base,
                              hasUpstream: status.upstream != nil, hasRemote: facts.remote, ahead: status.ahead, behind: status.behind,
@@ -71,7 +77,7 @@ extension WorkspaceManager {
         let facts = try await Task.detached(priority: .userInitiated) { () -> (base: String?, commits: String, stat: String, patch: String, template: String?) in
             let remotes = git.remotes(directory)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-            guard let base = Self.pullRequestBase(sessionBase ?? git.defaultBaseBranch(directory), remote: remote) else {
+            guard let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote) else {
                 return (nil, "", "", "", nil)
             }
             let context = try git.pullRequestContext(directory, base: git.comparisonBase(directory, base: base, remote: remote))
@@ -86,10 +92,15 @@ extension WorkspaceManager {
         } ?? ""))
         let body = (answer?["body"] as? String) ?? ""
         progress(tr("ws.quick.creatingPR"))
-        if let create = pullRequestCreate, let link = try await create(repo, title, body, branch, base) {
-            openPullRequests[id] = link
-            append(id, RunEvent(kind: .system, text: tr("ws.event.prOpened", link.absoluteString)))
-            return link
+        do {
+            if let create = pullRequestCreate, let link = try await create(repo, title, body, branch, base) {
+                openPullRequests[id] = link
+                append(id, RunEvent(kind: .system, text: tr("ws.event.prOpened", link.absoluteString)))
+                return link
+            }
+        } catch {
+            // GitHub refused (no access, a pull request that already exists…): its own page still lets you finish it.
+            append(id, RunEvent(kind: .error, text: error.localizedDescription))
         }
         // No GitHub connection: GitHub's own page, with the title and description already filled in.
         guard let compare = Self.compareURL(repo: repo, base: base, head: branch, title: title, body: body) else {
