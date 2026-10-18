@@ -122,6 +122,7 @@ targets:
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentAttention.swift
       - path: Services/Workspace/Delegation.swift
+      - path: Services/Workspace/ContextHandoff.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift

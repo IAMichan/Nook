@@ -42,7 +42,7 @@ extension WorkspaceManager {
         claudeIdle[id] = nil
         processes[id] = idle.process
         turns[id] = TurnState()
-        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
         run.turnStartedAt = Date()

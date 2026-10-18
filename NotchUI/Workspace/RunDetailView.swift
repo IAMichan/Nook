@@ -439,6 +439,25 @@ struct EventRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.coral.opacity(0.08)))
 
+        case .system where event.tool == "handoff":
+            // What the new agent was given: a summary you can read, not a hidden prompt.
+            DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
+                Text(event.detail ?? "")
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(WS.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.swap").font(.system(size: 10))
+                    Text(event.text).font(NookTheme.font(11.5)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+                }
+                .foregroundStyle(WS.tertiary)
+            }
+
         case .system:
             HStack(spacing: 6) {
                 Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(.system(size: 10))

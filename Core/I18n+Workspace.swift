@@ -6,6 +6,13 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.event.switched": "Van %@ naar %@ gewisseld.",
+        "ws.event.handoff": "Context overgedragen: %ld items (%ld oudere weggelaten). Klik om te zien wat de agent meekreeg.",
+        "ws.fork.title": "Vork van %@",
+        "ws.event.forkedNative": "Vork van "%@": de agent gaat verder in een kopie van zijn eigen gesprek.",
+        "ws.event.forkedSummary": "Vork van "%@": de agent start met een samenvatting van wat er gebeurde.",
+        "agents.fork": "Vork maken",
+        "agents.switch.menu": "Wissel van agent",
         "bridge.approval.delegate": "%@ wil een taak aan een andere agent geven",
         "bridge.approval.delegateNote": "De agent krijgt alleen deze opdracht te zien, nooit je gesprek, en heeft nooit meer rechten dan de sessie die hem start.",
         "ws.event.delegatedDone": "Taak "%@" is klaar; het resultaat gaat naar deze sessie.",
@@ -559,6 +566,13 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.event.switched": "Switched from %@ to %@.",
+        "ws.event.handoff": "Context handed over: %ld items (%ld older left out). Click to see what the agent was given.",
+        "ws.fork.title": "Fork of %@",
+        "ws.event.forkedNative": "Fork of "%@": the agent continues in a copy of its own conversation.",
+        "ws.event.forkedSummary": "Fork of "%@": the agent starts from a summary of what happened.",
+        "agents.fork": "Fork",
+        "agents.switch.menu": "Switch agent",
         "bridge.approval.delegate": "%@ wants to hand a task to another agent",
         "bridge.approval.delegateNote": "The agent sees only this brief, never your conversation, and never has more rights than the session that starts it.",
         "ws.event.delegatedDone": "Task "%@" has finished; its result goes to this session.",
@@ -1112,6 +1126,13 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.event.switched": "Von %@ zu %@ gewechselt.",
+        "ws.event.handoff": "Kontext übergeben: %ld Einträge (%ld ältere weggelassen). Klicken, um zu sehen, was der Agent bekam.",
+        "ws.fork.title": "Fork von %@",
+        "ws.event.forkedNative": "Fork von „%@“: Der Agent macht in einer Kopie seines eigenen Gesprächs weiter.",
+        "ws.event.forkedSummary": "Fork von „%@“: Der Agent startet mit einer Zusammenfassung des Bisherigen.",
+        "agents.fork": "Forken",
+        "agents.switch.menu": "Agent wechseln",
         "bridge.approval.delegate": "%@ möchte eine Aufgabe an einen anderen Agenten übergeben",
         "bridge.approval.delegateNote": "Der Agent sieht nur diesen Auftrag, nie dein Gespräch, und hat nie mehr Rechte als die Sitzung, die ihn startet.",
         "ws.event.delegatedDone": "Aufgabe "%@" ist fertig; das Ergebnis geht an diese Sitzung.",

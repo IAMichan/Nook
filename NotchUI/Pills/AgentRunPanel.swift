@@ -152,6 +152,20 @@ struct AgentRunPanel: View {
                 titleDraft = run.title
                 renaming = true
             }
+            // A fork starts from this session; switching moves it to another agent with a summary of what happened.
+            Button(tr("agents.fork")) {
+                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
+            .disabled(!workspace.canTransfer(runID))
+            Menu(tr("agents.switch.menu")) {
+                ForEach(RunProvider.allCases.filter { $0 != run.provider && workspace.executable($0) != nil }) { provider in
+                    Button(provider.displayName) {
+                        let profile = app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)
+                        workspace.switchProvider(runID, to: provider, profileID: profile.id, model: workspace.settings.model(for: provider))
+                    }
+                }
+            }
+            .disabled(!workspace.canTransfer(runID))
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }

@@ -13,7 +13,7 @@ extension WorkspaceManager {
         guard var run = run(id) else { return }
         acpIdleClose[id]?.cancel()
         acpIdleClose[id] = nil
-        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)

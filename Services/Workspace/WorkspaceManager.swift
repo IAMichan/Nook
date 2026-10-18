@@ -162,6 +162,8 @@ final class WorkspaceManager: ObservableObject {
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
+    /// What you typed, for a turn whose prompt starts with a handoff summary (the timeline shows your words only).
+    var displayPrompt: [UUID: String] = [:]
 
     /// State tracked by Nook during a single turn.
     struct TurnState {
@@ -499,14 +501,20 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         loadTimeline(id)
-        launchTurn(id, prompt: clean, executable: executable)
+        // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
+        displayPrompt[id] = run.pendingHandoff == nil ? nil : clean
+        launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable)
     }
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
-        if run.status == .completed { clearContinuations(id) }
+        displayPrompt[id] = nil
+        if run.status == .completed {
+            clearContinuations(id)
+            if run.pendingHandoff != nil { update(id) { $0.pendingHandoff = nil } }
+        }
         onTurnFinished?(run)
         deliverDelegatedResult(id)
         captureCheckpoint(id)
@@ -650,7 +658,7 @@ final class WorkspaceManager: ObservableObject {
             bridge: bridgeLaunch()
         )
         let spec = AgentCommand.spec(input)
-        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
         process.onLines = { [weak self] lines in
@@ -1376,7 +1384,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleEventSave(id)
     }
 
-    private func scheduleSave() {
+    func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
