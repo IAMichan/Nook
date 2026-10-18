@@ -27,6 +27,8 @@ struct AccountPullRequests: Identifiable, Equatable, Sendable {
     var reviews: [PullRequestItem]
     /// Set when this account could not be read (token rejected, no connection).
     var error: String?
+    /// What kind of failure `error` is, so the view can offer the way out (signing in again for `.auth`).
+    var errorKind: ConnectorErrorKind? = nil
 }
 
 /// Reads the open pull requests of every GitHub account that is connected, for the Pull requests view. Read-only.
@@ -51,7 +53,8 @@ enum GitHubPullRequestList {
                 result.append(try await fetch(account: account, name: name, token: token))
             } catch {
                 result.append(AccountPullRequests(id: account.id, name: name, login: account.identity ?? "", mine: [], reviews: [],
-                                                  error: CloudHelp.errorText(error, service: "GitHub")))
+                                                  error: CloudHelp.errorText(error, service: "GitHub"),
+                                                  errorKind: ConnectorErrorKind.classify(error)))
             }
         }
         return result

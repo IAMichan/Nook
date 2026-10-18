@@ -120,6 +120,7 @@ struct PullRequestsPanel: View {
     @State private var accounts: [AccountPullRequests] = []
     @State private var loading = true
     @State private var loadedOnce = false
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -156,6 +157,9 @@ struct PullRequestsPanel: View {
                 await reload()
                 try? await Task.sleep(nanoseconds: 90_000_000_000)
             }
+        }
+        .onChange(of: gitHubSignIn.phase) { _, phase in
+            if phase == .done { Task { await reload() } }
         }
     }
 
@@ -198,10 +202,14 @@ struct PullRequestsPanel: View {
                 .foregroundStyle(NookTheme.textSecondary)
             }
             if let error = account.error {
-                Text(error)
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                if account.errorKind == .auth {
+                    expiredCard
+                } else {
+                    Text(error)
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.coralSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if !account.reviews.isEmpty {
                 group(title: tr("agents.pulls.reviews", account.reviews.count), items: account.reviews, showAuthor: true)
@@ -210,6 +218,34 @@ struct PullRequestsPanel: View {
                 group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, showAuthor: false)
             }
         }
+    }
+
+    /// The token was rejected: say so in plain words and offer the fix right here.
+    private var expiredCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(tr("agents.pulls.expired"), systemImage: "exclamationmark.triangle.fill")
+                .font(NookTheme.font(14, .semibold))
+                .foregroundStyle(NookTheme.paper)
+            Text(tr("agents.pulls.expiredDetail"))
+                .font(NookTheme.font(12.5))
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 4) {
+                NookPrimaryButton(title: tr("agents.pulls.useCLI")) { gitHubSignIn.useGitHubCLI() }
+                    .disabled(gitHubSignIn.phase == .checkingCLI)
+                NookGhostButton(title: tr("agents.pulls.openSettings")) { app.openSettings(section: .connections) }
+            }
+            .padding(.top, 2)
+            if case .failed(let message) = gitHubSignIn.phase {
+                Text(message)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
     }
 
     private func group(title: String, items: [PullRequestItem], showAuthor: Bool) -> some View {
