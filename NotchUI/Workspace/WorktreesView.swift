@@ -93,8 +93,11 @@ struct WorktreesView: View {
                     StatusBadge(status: run.status, compact: true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(run.title).font(NookTheme.font(12)).lineLimit(1)
-                        Text("\(run.provider.kind.shortName) · \(NookDates.ago(run.updatedAt))")
-                            .font(NookTheme.font(10.5)).foregroundStyle(WS.tertiary)
+                        HStack(spacing: 4) {
+                            AgentLogo(run.provider.kind, size: 10)
+                            Text("\(run.provider.kind.shortName) · \(NookDates.ago(run.updatedAt))")
+                        }
+                        .font(NookTheme.font(10.5)).foregroundStyle(WS.tertiary)
                     }
                 }
             }

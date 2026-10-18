@@ -46,8 +46,7 @@ extension SettingsView {
                 let builtIn = cloud.filter { ServiceCategory.of(sourceID: $0.id) == category && matchesSearch($0, capabilityLine) }
                 let remote = MCPRemoteService.all.filter { ServiceCategory.of($0) == category && matchesSearch(title: $0.name + " " + $0.tagline) }
                 let local = category == .mac ? localSources(capabilityLine) : []
-                let showsPortfolio = category == .business && matchesSearch(title: app.portfolio.title)
-                if !builtIn.isEmpty || !remote.isEmpty || !local.isEmpty || showsPortfolio {
+                if !builtIn.isEmpty || !remote.isEmpty || !local.isEmpty {
                     Section {
                         // A built-in service that also has an OAuth server shows once: the key row when a key is set,
                         // otherwise the sign-in row with the key as the alternative.
@@ -66,9 +65,6 @@ extension SettingsView {
                         }
                         ForEach(local.indices, id: \.self) { index in
                             localRow(local[index], capabilityLine)
-                        }
-                        if showsPortfolio {
-                            DisclosureGroup(app.portfolio.title) { PortfolioSettings(portfolio: app.portfolio) }
                         }
                     } header: {
                         Text(category.title)
@@ -99,9 +95,16 @@ extension SettingsView {
                 if !others.isEmpty {
                     DisclosureGroup(tr("settings.connections.moreApps")) {
                         ForEach(others, id: \.name) { item in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name)
-                                Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            HStack(alignment: .top, spacing: 10) {
+                                HStack(spacing: -4) {
+                                    ForEach(item.domains, id: \.self) { domain in
+                                        ServiceTile(domain: domain, fallback: "app.dashed", size: 22)
+                                    }
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name)
+                                    Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                             .padding(.vertical, 2)
                         }
@@ -195,7 +198,7 @@ extension SettingsView {
             }
         )) {
             HStack(spacing: 10) {
-                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20)
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)

@@ -115,7 +115,7 @@ struct SourcesDisclosure: View {
         let cited = Citations.used(in: message.text)
         return VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 7) {
-                Circle().fill(color(group.status)).frame(width: 6, height: 6)
+                sourceIcon(group)
                 Text(group.title)
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
@@ -146,6 +146,30 @@ struct SourcesDisclosure: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    /// The source's own icon, with its status as a small dot on the corner.
+    private func sourceIcon(_ group: SourceGroup) -> some View {
+        let id = SourceCatalog.all.first { $0.title == group.title }?.id
+            ?? app.connectors.sources.first { $0.title == group.title }?.id
+        let source = id.flatMap { app.connectors.source(id: $0) }
+        return SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? Self.symbol(id), tint: NookTheme.textSecondary,
+                        size: 14, source: id)
+            .overlay(alignment: .bottomTrailing) {
+                Circle().fill(color(group.status)).frame(width: 5, height: 5)
+                    .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1))
+                    .offset(x: 2, y: 2)
+            }
+    }
+
+    /// A symbol for the sources that are not a connector (screen, web, open items).
+    static func symbol(_ id: String?) -> String {
+        switch id {
+        case SourceCatalog.screen: return "macwindow"
+        case SourceCatalog.web: return "globe"
+        case SourceCatalog.loops: return "checklist"
+        default: return "circle.grid.2x2"
+        }
     }
 
     private func color(_ status: Status) -> Color {
@@ -320,27 +344,31 @@ struct ScopeMenu: View {
     var body: some View {
         let current = scope
         Menu {
-            Button(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic")) { app.setScope(.automatic) }
+            Button { app.setScope(.automatic) } label: {
+                Label(current == .automatic ? "✓ " + tr("scope.automatic") : tr("scope.automatic"), systemImage: "sparkles")
+            }
             Section(tr("scope.onlyThese")) {
                 ForEach(app.connectors.active.map { $0.id }, id: \.self) { id in
-                    Toggle(app.connectors.source(id: id)?.title ?? SourceCatalog.title(id), isOn: onlyBinding(id))
+                    Toggle(isOn: onlyBinding(id)) { sourceLabel(id) }
                 }
-                Toggle(SourceCatalog.title(SourceCatalog.web), isOn: onlyBinding(SourceCatalog.web))
+                Toggle(isOn: onlyBinding(SourceCatalog.web)) { sourceLabel(SourceCatalog.web) }
             }
             let multi = accountServices
             if !multi.isEmpty {
                 Section(tr("scope.accounts")) {
                     ForEach(multi, id: \.self) { service in
                         ForEach(AccountRegistry.shared.accounts(for: service)) { account in
-                            Toggle(account.title(service: SourceCatalog.title(service)), isOn: accountBinding(account.id))
+                            Toggle(isOn: accountBinding(account.id)) {
+                                sourceLabel(service, title: account.title(service: SourceCatalog.title(service)))
+                            }
                         }
                     }
                 }
             }
             Section(tr("scope.never")) {
-                Toggle(SourceCatalog.title(SourceCatalog.screen), isOn: neverBinding(SourceCatalog.screen))
-                Toggle(SourceCatalog.title(SourceCatalog.web), isOn: neverBinding(SourceCatalog.web))
-                Toggle(SourceCatalog.title("clipboard"), isOn: neverBinding("clipboard"))
+                Toggle(isOn: neverBinding(SourceCatalog.screen)) { sourceLabel(SourceCatalog.screen) }
+                Toggle(isOn: neverBinding(SourceCatalog.web)) { sourceLabel(SourceCatalog.web) }
+                Toggle(isOn: neverBinding("clipboard")) { sourceLabel("clipboard") }
             }
         } label: {
             ComposerPill(symbol: "line.3.horizontal.decrease",
@@ -349,6 +377,19 @@ struct ScopeMenu: View {
         }
         .composerMenu()
         .help(tr("scope.help"))
+    }
+
+    /// A source in the menu with its real icon: the app or the service's logo, else its own symbol (screen, web…).
+    private func sourceLabel(_ id: String, title: String? = nil) -> some View {
+        let source = app.connectors.source(id: id)
+        let text = title ?? source?.title ?? SourceCatalog.title(id)
+        let image = SourceBrand.menuImage(for: id, domain: source?.iconDomain)
+            ?? NSImage(systemSymbolName: source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
+        return Label {
+            Text(text)
+        } icon: {
+            if let image { Image(nsImage: image) }
+        }
     }
 }
 
@@ -402,7 +443,7 @@ struct ContextInspector: View {
             }
             ForEach(app.connectors.sources.map { $0.id }, id: \.self) { id in
                 if let source = app.connectors.source(id: id) {
-                    row(source.title, sourceState(source, scope: scope), ok: source.isActive && scope.allows(source.id))
+                    row(source.title, sourceState(source, scope: scope), ok: source.isActive && scope.allows(source.id), source: source)
                 }
             }
             Divider()
@@ -431,9 +472,13 @@ struct ContextInspector: View {
         return parts.isEmpty ? tr("context.connected") : parts.joined(separator: " · ")
     }
 
-    private func row(_ title: String, _ detail: String, ok: Bool) -> some View {
+    private func row(_ title: String, _ detail: String, ok: Bool, source: ContextSource? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Circle().fill(ok ? Color.green : Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
+            if let source {
+                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 14, source: source.id)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+            }
             Text(title).font(.callout).frame(width: 110, alignment: .leading)
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }

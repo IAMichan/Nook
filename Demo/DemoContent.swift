@@ -80,9 +80,9 @@ enum DemoContent {
     }
 
     static let today: [TodayItem] = [
-        TodayItem(title: "Koffie met Lisa, vrijdag 14:00", subtitle: "Klaar om in je agenda te zetten", action: "Bekijk", color: NookTheme.iris, target: .card(.suggestion)),
-        TodayItem(title: "Rapport naar Tom", subtitle: "Je beloofde het gisteren", action: "Opstellen", color: NookTheme.amber, target: .card(.reminder)),
-        TodayItem(title: "Gemini CLI loopt vast", subtitle: "api · 2 van 48 tests falen", action: "Helpen", color: NookTheme.coral, target: .agent("gm"))
+        TodayItem(title: "Koffie met Lisa, vrijdag 14:00", subtitle: "Klaar om in je agenda te zetten", action: "Bekijk", color: NookTheme.iris, target: .card(.suggestion), logo: .source("calendar")),
+        TodayItem(title: "Rapport naar Tom", subtitle: "Je beloofde het gisteren", action: "Opstellen", color: NookTheme.amber, target: .card(.reminder), logo: .source("reminders")),
+        TodayItem(title: "Gemini CLI loopt vast", subtitle: "api · 2 van 48 tests falen", action: "Helpen", color: NookTheme.coral, target: .agent("gm"), logo: .agent("Gemini CLI"))
     ]
 
     static let agents: [AgentSession] = [

@@ -66,7 +66,7 @@ protocol ContextSource: AnyObject {
     var title: String { get }
     /// SF Symbol name.
     var symbol: String { get }
-    /// Optional: domain of the service for brand icon instead of system symbol.
+    /// Optional: domain of the service for brand icon instead of system symbol (defaults to `SourceBrand`).
     var iconDomain: String? { get }
     var accent: Color { get }
     /// Configured (credentials present / permission granted) and enabled.
@@ -86,7 +86,7 @@ protocol ContextSource: AnyObject {
 
 extension ContextSource {
     var canLookUp: Bool { isActive }
-    var iconDomain: String? { nil }
+    var iconDomain: String? { SourceBrand.domain(for: id) }
     var refreshInterval: TimeInterval { 300 }
     var tools: [ToolSpec] { [] }
 }

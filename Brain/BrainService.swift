@@ -19,7 +19,7 @@ final class BrainService {
     /// and omitting tools makes the prompt many times shorter and therefore much faster.
     static func needsTools(_ text: String) -> Bool {
         // Words indicating intent to ACT, query device apps, read notes, reminders, contacts, browser tabs, or inspect the system.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -470,7 +470,7 @@ final class BrainService {
         - Calendar: use check_availability for free/busy checks across all calendars; list_events to inspect dates; create_event and update_event to manage events.
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
         - Files & System: use search_files and read_file for local documents; media_control for Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
-        - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend, Crypto portfolio; web_search and read_webpage for current online information.
+        - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend; web_search and read_webpage for current online information.
 
         How to think before every answer:
         1. What exactly does the user want? Read "What the user wants" in the context if it is there, and the conversation so far. A question about one app or source ("in WhatsApp", "in my mail") is about that source only.

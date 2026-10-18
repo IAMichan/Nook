@@ -20,18 +20,24 @@ struct BrainChip: View {
         Menu {
             Section(tr("brain.chip.installed")) {
                 ForEach(ModelAdvisor.catalog.filter { local.installed.contains($0.id) }) { option in
-                    Button(mark(settings.useLocal && settings.localModel == option.id) + option.title) {
+                    Button {
                         settings.useLocal = true
                         settings.localModel = option.id
+                    } label: {
+                        item(mark(settings.useLocal && settings.localModel == option.id) + option.title,
+                             logo: BrandLogo.forName(option.title) ?? BrandLogo.forName(option.id))
                     }
                 }
                 ForEach(servers, id: \.name) { model in
                     let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
-                    Button(mark(!settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name)
-                           + tr("brain.advice.server", model.name, provider.title.components(separatedBy: " (").first ?? provider.title)) {
+                    Button {
                         settings.useLocal = false
                         settings.provider = provider
                         settings.setProviderModel(model.name)
+                    } label: {
+                        item(mark(!settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name)
+                             + tr("brain.advice.server", model.name, provider.title.components(separatedBy: " (").first ?? provider.title),
+                             logo: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider))
                     }
                 }
             }
@@ -49,4 +55,14 @@ struct BrainChip: View {
     }
 
     private func mark(_ on: Bool) -> String { on ? "✓ " : "" }
+
+    /// A menu item with the maker's mark in front, when we know it.
+    @ViewBuilder
+    private func item(_ title: String, logo: BrandLogo?) -> some View {
+        if let logo {
+            Label { Text(title) } icon: { LogoImage.brand(logo) }
+        } else {
+            Text(title)
+        }
+    }
 }

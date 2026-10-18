@@ -75,11 +75,13 @@ struct ServiceRowLayout<Actions: View>: View {
     let detail: String
     let status: ServiceStatus
     var detailIsError = false
+    /// The source id, so a source backed by a Mac app shows that app's own icon.
+    var source: String? = nil
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
         HStack(spacing: 12) {
-            ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 30)
+            ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 30, source: source)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(title)
