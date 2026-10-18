@@ -49,6 +49,16 @@ struct ChatMessage: Identifiable {
     /// Follow-up suggestions ("Add to my calendar"), shown as buttons below answer.
     var offers: [String] = []
 
+    /// Whether this answer was built from one of these sources: looked up, cited, in the context it was written from,
+    /// or (for the screen) read from a window.
+    func used(anyOf ids: Set<String>) -> Bool {
+        if retrieval.contains(where: { step in step.sourceID.map { ids.contains($0) } ?? false }) { return true }
+        if references.contains(where: { ids.contains($0.sourceID) }) { return true }
+        let titles = Set(ids.map { SourceCatalog.title($0) })
+        if contextSources.contains(where: { titles.contains($0) }) { return true }
+        return ids.contains(SourceCatalog.screen) && !sources.isEmpty
+    }
+
     /// Representation of this turn for LLM history: text plus actions/outcomes.
     var historyText: String {
         var parts: [String] = []
@@ -353,14 +363,29 @@ final class NookChat: ObservableObject {
     }
 
     /// Chat history turns formatted for model context, excluding current turn.
-    func history(before id: UUID, limit: Int = 16) -> [ChatTurn] {
+    /// `hiding`: sources an external brain may not see; answers built from them are left out, with the question that led to them.
+    func history(before id: UUID, limit: Int = 16, hiding hidden: Set<String> = []) -> [ChatTurn] {
         guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == id } }) else { return [] }
-        let earlier = conversation.messages.prefix { $0.id != id }
+        let earlier = Self.withoutPrivate(Array(conversation.messages.prefix { $0.id != id }), hiding: hidden)
         return earlier.suffix(limit).compactMap { message in
             let text = message.isError ? "" : message.historyText
             guard !text.isEmpty else { return nil }
             return ChatTurn(fromUser: message.role == .user, text: String(text.prefix(4000)))
         }
+    }
+
+    /// Drops the answers that were built from a hidden source and the question right before each of them.
+    nonisolated static func withoutPrivate(_ messages: [ChatMessage], hiding hidden: Set<String>) -> [ChatMessage] {
+        guard !hidden.isEmpty else { return messages }
+        var kept: [ChatMessage] = []
+        for message in messages {
+            if message.role == .nook, message.used(anyOf: hidden) {
+                if kept.last?.role == .user { kept.removeLast() }
+                continue
+            }
+            kept.append(message)
+        }
+        return kept
     }
 
     // MARK: Internal

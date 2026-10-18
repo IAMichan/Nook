@@ -114,6 +114,12 @@ enum SourceCatalog {
         return registry.intents
     }
 
+    /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
+    static let personal: Set<String> = [
+        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail",
+        "browser", "files", "contacts", "clipboard", screen
+    ]
+
     static func descriptor(_ id: String) -> SourceDescriptor? {
         all.first { $0.id == id }
     }
@@ -254,6 +260,17 @@ struct SourceScope: Equatable, Codable {
         }
         result.excluded.formUnion(request.excluded)
         result.focus = request.focus.subtracting(result.excluded)
+        return result
+    }
+
+    /// The same scope without the sources that may only be read by a brain on this Mac. Used while an external brain
+    /// answers: those sources are out of the context, their tools are invisible and a question cannot bring them back.
+    func keepingLocal(_ privateSources: Set<String>) -> SourceScope {
+        guard !privateSources.isEmpty else { return self }
+        var result = self
+        result.excluded.formUnion(privateSources)
+        result.included.subtract(privateSources)
+        result.focus.subtract(privateSources)
         return result
     }
 

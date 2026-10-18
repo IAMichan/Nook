@@ -90,10 +90,15 @@ Wil je Nook eerst bekijken met voorbeeldgegevens? Zet **Voorbeelddata** aan bij 
 | Stem | Optioneel leest Nook antwoorden voor, en luistert hij naar "Hé Nook" (alleen als je Mac spraak zelf herkent). |
 | Besturen | Apps openen, links openen, volume, muziek, Opdrachten (Shortcuts), conceptmail in Mail. |
 
+## Een lokaal brein dat goed antwoordt
+
+Instellingen › Brein heeft een blok *Kwaliteit van het lokale brein*: **Bewijs eerst** (eerst de relevante zinnen uit elk gevonden document kopiëren, dan pas antwoorden), **Antwoorden controleren** (een getal, tijd of adres dat nergens in de bronnen staat, geeft een nieuw antwoord) en **Meet dit brein** (20 vragen met bekende antwoorden, met score en tijd). Zo vergelijk je modellen en instellingen met cijfers. Zie [docs/ASSISTANT.md](docs/ASSISTANT.md) en [scripts/finetune](scripts/finetune/README.md) om een model op Nooks taak te trainen.
+
 ## Privacy en veiligheid
 
 - Niets wordt uitgevoerd zonder dat jij op Uitvoeren/Toestaan drukt. Alleen als je **Kleine dingen meteen doen** aanzet, doet Nook muziek, volume, apps openen, herinneringen en open punten waar jij om vroeg meteen; voorstellen die Nook zelf bedenkt (Meedenken) vragen altijd eerst. Nook verstuurt zelf nooit mail of berichten: ook een bericht via Slack of een webhook gaat pas na jouw Uitvoeren.
 - Wat naar de AI-aanbieder gaat die je kiest: wat je zegt of typt (als tekst), de herkende tekst van je vensters (uit te zetten bij Instellingen › Assistent) en een korte samenvatting uit je koppelingen. Dat gebeurt alleen als je iets vraagt, of af en toe als je **Meedenken** aanzet (standaard uit). Het schermbeeld zelf verlaat je Mac nooit. Met Ollama, LM Studio of het ingebouwde model blijft alles op je Mac. Spraak wordt bij voorkeur op je Mac herkend; ondersteunt jouw Mac dat niet, dan gebruikt macOS de spraakherkenning van Apple.
+- **Alleen op deze Mac** (Instellingen › Brein): per bron kies je dat alleen een brein op je Mac die mag lezen. Antwoordt een externe AI, dan krijgt die van zo'n bron geen context, geen tools, geen schermtekst en geen eerdere antwoorden die ermee gemaakt zijn, ook niet als je er in je vraag om vraagt; Nook zegt dan dat de bron niet is gebruikt. Met een brein op je Mac werkt alles weer.
 - Tekst van je scherm, agenda-titels en tool-uitkomsten gaan als "onbetrouwbare data" naar het brein, met de opdracht daar geen instructies uit te volgen.
 - Wachtwoordmanagers worden nooit gelezen.
 - Je gesprekken met Nook (de Nooks) staan alleen op je Mac, in `~/Library/Application Support/Nook/nooks.json` (alleen leesbaar voor jou). Voorgestelde acties die nog wachtten, worden na een herstart niet meer uitgevoerd.
