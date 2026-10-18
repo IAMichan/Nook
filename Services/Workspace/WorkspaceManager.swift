@@ -456,6 +456,11 @@ final class WorkspaceManager: ObservableObject {
     func send(_ id: UUID, text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
+        // The previous turn's snapshot is still being made: wait for it (a moment), so this turn's edits stay out of it.
+        if checkpointing.contains(id) {
+            enqueue(id, text: clean)
+            return
+        }
         guard let executable = executable(run.provider) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return
@@ -523,7 +528,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
     func sendQueuedNow(_ id: UUID) {
-        guard let run = run(id), !run.status.isActive, var list = queued[id], !list.isEmpty else { return }
+        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var list = queued[id], !list.isEmpty else { return }
         let next = list.removeFirst()
         queued[id] = list.isEmpty ? nil : list
         send(id, text: next)
