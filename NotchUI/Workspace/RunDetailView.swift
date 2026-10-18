@@ -104,7 +104,7 @@ struct RunDetailView: View {
                 usageSummary(run)
             }
             HStack(spacing: 6) {
-                Chip(text: run.provider.displayName, color: run.provider.color)
+                Chip(text: run.provider.displayName, color: run.provider.color, agent: run.provider.kind)
                 if let profile = app.profile(for: run) {
                     Chip(text: AccountLabel.name(profile, app: app), color: WS.secondary, systemImage: "person.crop.circle")
                         .help(tr("ws.header.accountHelp", AccountLabel.line(profile, app: app)))

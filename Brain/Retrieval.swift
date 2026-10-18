@@ -142,6 +142,9 @@ final class RetrievalLedger {
         onChange?()
     }
 
+    /// Everything the tools returned for this answer: what an answer may rightly quote from.
+    var retrievedText: String { local.values.joined(separator: "\n") }
+
     /// Failed retrievals, displayed as a disclaimer under the response.
     var failures: [RetrievalStep] {
         steps.filter { if case .failed = $0.outcome { return true }; return false }

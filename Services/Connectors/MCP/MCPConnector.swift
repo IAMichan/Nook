@@ -18,7 +18,8 @@ final class MCPServerStore: ObservableObject {
 
     /// Adds a server. `secrets` are environment variables (local program) or headers (https), stored in the Keychain.
     @discardableResult
-    func add(name: String, transport: MCPServerConfig.Transport, secrets: [String: String]) -> MCPServerConfig {
+    func add(name: String, transport: MCPServerConfig.Transport, secrets: [String: String],
+             usesOAuth: Bool = false, serviceID: String? = nil) -> MCPServerConfig {
         var id = AccountRegistry.slug(name)
         var counter = 2
         while servers.contains(where: { $0.id == id }) {
@@ -26,6 +27,8 @@ final class MCPServerStore: ObservableObject {
             counter += 1
         }
         var config = MCPServerConfig(id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), transport: transport)
+        config.usesOAuth = usesOAuth ? true : nil
+        config.serviceID = serviceID
         for (secretName, value) in secrets where !secretName.isEmpty {
             Keychain.write(value, account: config.secretKey(secretName))
             config.secretNames.append(secretName)
@@ -44,6 +47,7 @@ final class MCPServerStore: ObservableObject {
     func remove(_ id: String) {
         guard let config = servers.first(where: { $0.id == id }) else { return }
         for name in config.secretNames { Keychain.write("", account: config.secretKey(name)) }
+        MCPOAuthStore.remove(id)
         servers.removeAll { $0.id == id }
         save()
     }
@@ -94,10 +98,7 @@ final class MCPConnector: ContextSource, ObservableObject {
 
     var id: String { config.sourceID }
     var title: String { config.name }
-    var iconDomain: String? {
-        if case .http(let address) = config.transport, let host = URL(string: address)?.host { return host }
-        return nil
-    }
+    var iconDomain: String? { SourceBrand.mcpDomain(name: config.name, transport: config.transport) }
     var isActive: Bool { config.enabled && ConnectorToggle.isOn(id) }
     var refreshInterval: TimeInterval { 900 }
     var toolCount: Int { serverTools.count }
@@ -127,7 +128,7 @@ final class MCPConnector: ContextSource, ObservableObject {
         } catch {
             disconnect()
             status.state = .error(error.localizedDescription)
-            status.errorKind = ConnectorErrorKind.classify(error)
+            status.errorKind = (error as? MCPOAuthError)?.connectorKind ?? ConnectorErrorKind.classify(error)
         }
     }
 
@@ -159,6 +160,12 @@ final class MCPConnector: ContextSource, ObservableObject {
         guard isActive else { throw NookError("\(title) is switched off (Settings › Connections).") }
         do {
             return try await connected().callTool(name, arguments: input)
+        } catch let error as MCPOAuthError {
+            // Signed out or expired: starting again will not help; Settings offers "Sign in again".
+            disconnect()
+            status.state = .error(error.localizedDescription)
+            status.errorKind = error.connectorKind
+            throw error
         } catch {
             // A server that stopped is started again once.
             disconnect()
@@ -175,7 +182,8 @@ final class MCPConnector: ContextSource, ObservableObject {
             transport = try MCPStdioTransport(command: command, arguments: arguments, environment: secrets)
         case .http(let address):
             guard let url = URL(string: address) else { throw NookError("Invalid address: \(address)") }
-            transport = try MCPHTTPTransport(url: url, headers: secrets)
+            transport = try MCPHTTPTransport(url: url, headers: secrets,
+                                             authorizer: config.signsIn ? MCPOAuthAuthorizer(serverID: config.id) as MCPAuthorizer : nil)
         }
         let fresh = MCPClient(transport: transport)
         try await fresh.initialize()

@@ -99,10 +99,14 @@ struct Chip: View {
     let text: String
     var color: Color = WS.secondary
     var systemImage: String?
+    /// Shows this agent's logo in front of the text.
+    var agent: AgentKind?
 
     var body: some View {
         HStack(spacing: 4) {
-            if let systemImage {
+            if let agent {
+                AgentLogo(agent, size: 12)
+            } else if let systemImage {
                 Image(systemName: systemImage).font(.system(size: 9.5, weight: .semibold))
             }
             Text(text).lineLimit(1)

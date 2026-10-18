@@ -61,7 +61,6 @@ enum SourceCatalog {
         SourceDescriptor(id: "notion", title: "Notion", kind: .apiKey),
         SourceDescriptor(id: "n8n", title: "n8n", kind: .apiKey),
         SourceDescriptor(id: "resend", title: "Resend", kind: .apiKey),
-        SourceDescriptor(id: "portfolio", title: "Crypto", kind: .apiKey),
         SourceDescriptor(id: "customsources", title: "Eigen bronnen", kind: .custom),
         SourceDescriptor(id: web, title: "Web", kind: .web)
     ]
@@ -115,6 +114,12 @@ enum SourceCatalog {
         return registry.intents
     }
 
+    /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
+    static let personal: Set<String> = [
+        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail",
+        "browser", "files", "contacts", "clipboard", screen
+    ]
+
     static func descriptor(_ id: String) -> SourceDescriptor? {
         all.first { $0.id == id }
     }
@@ -143,8 +148,7 @@ enum SourceCatalog {
         "search_web": web, "read_webpage": web, "web_search": web,
         "read_source": "customsources", "send_to_source": "customsources",
         "vercel_deployments": "vercel", "stripe_payments": "stripe", "notion_search": "notion", "notion_read_page": "notion",
-        "calcom_bookings": "calcom", "n8n_status": "n8n", "resend_overview": "resend",
-        "portfolio_overview": "portfolio"
+        "calcom_bookings": "calcom", "n8n_status": "n8n", "resend_overview": "resend"
     ]
 
     static func source(forTool name: String) -> String? {
@@ -190,7 +194,6 @@ enum SourceCatalog {
         (#"notion"#, ["notion"]),
         (#"n8n|workflows?"#, ["n8n"]),
         (#"resend"#, ["resend"]),
-        (#"crypto|portfolio|bitcoin"#, ["portfolio"]),
         (#"slack|teams|discord|telegram|eigen bronn?e?n?|custom sources?"#, ["customsources"])
     ]
 
@@ -257,6 +260,17 @@ struct SourceScope: Equatable, Codable {
         }
         result.excluded.formUnion(request.excluded)
         result.focus = request.focus.subtracting(result.excluded)
+        return result
+    }
+
+    /// The same scope without the sources that may only be read by a brain on this Mac. Used while an external brain
+    /// answers: those sources are out of the context, their tools are invisible and a question cannot bring them back.
+    func keepingLocal(_ privateSources: Set<String>) -> SourceScope {
+        guard !privateSources.isEmpty else { return self }
+        var result = self
+        result.excluded.formUnion(privateSources)
+        result.included.subtract(privateSources)
+        result.focus.subtract(privateSources)
         return result
     }
 
@@ -387,7 +401,6 @@ enum SourceRouter {
         (#"boeking\w*|bookings?|cal\.com"#, ["calcom"]),
         (#"workflows?|automatiser\w*|automation|n8n"#, ["n8n"]),
         (#"resend|verzonden mail|deliverability|bounce\w*"#, ["resend"]),
-        (#"crypto|bitcoin|portfolio|koers\w*|wallet"#, ["portfolio"]),
         (#"klembord|clipboard|gekopieerd|copied|plakken"#, ["clipboard"]),
         (#"slack|teams|discord|telegram|kanaal|channel"#, ["customsources"])
     ]
@@ -433,7 +446,7 @@ enum SourceCapabilities {
         "github_comment_issue": "reageren op issue", "github_update_issue": "issue bijwerken",
         "vercel_deployments": "deployments lezen", "stripe_payments": "betalingen lezen", "notion_search": "pagina's zoeken",
         "notion_read_page": "pagina lezen", "calcom_bookings": "boekingen lezen", "n8n_status": "workflows lezen",
-        "resend_overview": "verzonden mail lezen", "portfolio_overview": "portfolio lezen"
+        "resend_overview": "verzonden mail lezen"
     ]
 
     static func kindLabel(_ kind: SourceKind) -> String {

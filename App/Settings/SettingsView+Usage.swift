@@ -21,7 +21,7 @@ extension SettingsView {
             case .notInstalled: return .todo
             }
         }()
-        return StatusRow(title: target.title, detail: stateText(state, target: target), state: rowState) {
+        return StatusRow(title: target.title, detail: stateText(state, target: target), state: rowState, agent: target.title) {
             switch state {
             case .notInstalled:
                 Button(tr("button.linkEllipsis")) { prepare(target, install: true) }

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The box you write to an agent in. Starting a session and answering one look and work the same: the text on top,
-/// underneath the choices for the turn (agent, mode, permissions…) passed in as `controls`, and the send button on
-/// the right, which turns into a stop button while the agent works.
+/// The box you write to an agent or to Nook in. Starting a session, answering one and chatting look and work the same:
+/// the text on top, underneath the choices for the turn (agent, mode, permissions… or model and sources) passed in as
+/// `controls`, and the send button on the right in Nook's own color, which turns into a stop button while work runs.
 struct SessionComposer<Controls: View>: View {
     @Binding var text: String
     let prompt: String
@@ -103,7 +103,6 @@ struct SessionComposer<Controls: View>: View {
     }
 
     static var surface: Color { Color(hex: 0x121214) }
-    static var accent: Color { Color(hex: 0x3D58D6) }
 
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var enabled: Bool { canSend && !sending && !isEmpty }
@@ -158,9 +157,9 @@ struct SessionComposer<Controls: View>: View {
                     Image(systemName: symbol).font(.system(size: 12, weight: .bold))
                 }
             }
-            .foregroundStyle(active ? Color.white : NookTheme.textTertiary)
+            .foregroundStyle(active ? NookTheme.onIris : NookTheme.textTertiary)
             .frame(width: 30, height: 30)
-            .background(Circle().fill(active ? Self.accent : NookTheme.smoke))
+            .background(Circle().fill(active ? NookTheme.iris : NookTheme.smoke))
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -207,6 +206,22 @@ struct ComposerPill: View {
         .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+}
+
+/// A choice in the composer that is only a symbol (the plus menu): the same size and hover as `ComposerPill`.
+struct ComposerIcon: View {
+    let symbol: String
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .frame(width: 26, height: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
     }
 }
 

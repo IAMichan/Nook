@@ -4,7 +4,7 @@ import XCTest
 /// text can never crash or show a wrong value. The tables are read from the source files (Core/I18n*.swift), so the test
 /// needs nothing of the app itself.
 final class I18nCoverageTests: XCTestCase {
-    private static let files = ["I18n.swift", "I18n+Agents.swift", "I18n+Workspace.swift", "I18n+Redesign.swift", "I18n+Complete.swift"]
+    private static let files = ["I18n.swift", "I18n+Agents.swift", "I18n+Workspace.swift", "I18n+Redesign.swift", "I18n+Complete.swift", "I18n+Connect.swift"]
 
     /// language → key → text, merged over all table files.
     private static let tables: [String: [String: String]] = {

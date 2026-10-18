@@ -22,6 +22,12 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
     /// Names of environment variables (stdio) or headers (http) whose values are in the Keychain.
     var secretNames: [String] = []
     var enabled = true
+    /// Signs in with OAuth (an https server that asked for it): the tokens are in the Keychain, refreshed by Nook.
+    var usesOAuth: Bool?
+    /// The built-in service this server was added for ("notion"), so Settings shows it under that service.
+    var serviceID: String?
+
+    var signsIn: Bool { usesOAuth == true }
 
     /// Source id in Nook's catalog: "mcp.linear".
     var sourceID: String { "mcp." + id }
@@ -100,6 +106,11 @@ protocol MCPTransport: AnyObject {
     /// Sends a notification (no response).
     func notify(_ message: [String: Any]) async throws
     func close()
+}
+
+/// Hands out the bearer token for a signed-in server, refreshing it when it is (nearly) expired or was refused.
+protocol MCPAuthorizer: Sendable {
+    func bearerToken(forceRefresh: Bool) async throws -> String
 }
 
 /// The protocol on top of a transport: handshake, listing tools, calling them.
@@ -307,18 +318,31 @@ final class MCPStdioTransport: MCPTransport, @unchecked Sendable {
 final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     private let url: URL
     private let headers: [String: String]
+    private let authorizer: MCPAuthorizer?
     private let lock = NSLock()
     private var sessionID: String?
 
-    init(url: URL, headers: [String: String]) throws {
+    init(url: URL, headers: [String: String], authorizer: MCPAuthorizer? = nil) throws {
         guard url.scheme?.lowercased() == "https" || url.host == "localhost" || url.host == "127.0.0.1" else {
             throw NookError("An MCP server on the internet must use https.")
         }
         self.url = url
         self.headers = headers
+        self.authorizer = authorizer
     }
 
+    /// Sends one message. A signed-in server that refuses the token gets one retry with a refreshed token; refused
+    /// again means the sign-in has expired.
     private func post(_ message: [String: Any]) async throws -> (Data, HTTPURLResponse) {
+        guard let authorizer else { return try await post(message, token: nil) }
+        do {
+            return try await post(message, token: try await authorizer.bearerToken(forceRefresh: false))
+        } catch MCPOAuthError.expired {
+            return try await post(message, token: try await authorizer.bearerToken(forceRefresh: true))
+        }
+    }
+
+    private func post(_ message: [String: Any], token: String?) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
@@ -327,6 +351,7 @@ final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue(MCPClient.protocolVersion, forHTTPHeaderField: "MCP-Protocol-Version")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
         lock.lock()
         let session = sessionID
         lock.unlock()
@@ -340,7 +365,8 @@ final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         }
         guard (200..<300).contains(http.statusCode) else {
             switch http.statusCode {
-            case 401, 403: throw NookError("The MCP server refused access (\(http.statusCode)). Check the key in Settings › Connections.")
+            case 401 where token != nil: throw MCPOAuthError.expired
+            case 401, 403: throw NookError("The MCP server refused access (\(http.statusCode)). Check the key in Settings › Connections.", kind: .auth)
             default: throw NookError("The MCP server returned an error (\(http.statusCode)).")
             }
         }

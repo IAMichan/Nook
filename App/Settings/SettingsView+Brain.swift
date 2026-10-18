@@ -92,6 +92,10 @@ extension SettingsView {
                 }
             }
 
+            if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
+
+            privateSourcesSection
+
             Section {
                 Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
@@ -120,6 +124,8 @@ extension SettingsView {
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(Array(recommendations.prefix(3).enumerated()), id: \.offset) { index, recommendation in
                 HStack(alignment: .firstTextBaseline) {
+                    ModelLogo(name: AppModel.title(of: recommendation))
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(AppModel.title(of: recommendation)).fontWeight(index == 0 ? .semibold : .regular)
@@ -181,7 +187,9 @@ extension SettingsView {
                 .onChange(of: settings.provider) { _, _ in testResult = nil }
             } else {
                 Picker(tr("settings.brain.provider"), selection: $settings.provider) {
-                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { Text($0.title).tag($0) }
+                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
+                        Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
+                    }
                 }
                 .onChange(of: settings.provider) { _, _ in
                     fetchedModels = []
@@ -227,7 +235,9 @@ extension SettingsView {
                 Menu(tr("button.choose")) {
                     let models = fetchedModels.isEmpty ? settings.provider.suggestedModels : fetchedModels
                     ForEach(models, id: \.self) { id in
-                        Button(id) { settings.setProviderModel(id) }
+                        Button { settings.setProviderModel(id) } label: {
+                            Label { Text(id) } icon: { LogoImage.brand(BrandLogo.forName(id) ?? BrandLogo.forProvider(settings.provider)) }
+                        }
                     }
                     Divider()
                     Button(tr("button.fetchModels")) { Task { await fetchModels() } }
@@ -283,6 +293,7 @@ extension SettingsView {
         Group {
             ForEach(EmbeddedModel.options) { option in
                 HStack {
+                    ModelLogo(name: option.title + " " + option.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(option.title)
                         Text(option.detail).font(.caption).foregroundStyle(.secondary)
@@ -366,5 +377,21 @@ extension SettingsView {
         } catch {
             testResult = (false, error.localizedDescription)
         }
+    }
+}
+
+/// The maker's mark of a model in a settings row, or a plain chip when we don't know the maker.
+private struct ModelLogo: View {
+    let name: String
+
+    var body: some View {
+        Group {
+            if let logo = BrandLogo.forName(name) {
+                BrandMark(logo: logo, size: 18)
+            } else {
+                Image(systemName: "cpu").font(.system(size: 14)).foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 22)
     }
 }

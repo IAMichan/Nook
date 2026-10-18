@@ -19,7 +19,7 @@ final class BrainService {
     /// and omitting tools makes the prompt many times shorter and therefore much faster.
     static func needsTools(_ text: String) -> Bool {
         // Words indicating intent to ACT, query device apps, read notes, reminders, contacts, browser tabs, or inspect the system.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|portfolio|crypto|bitcoin|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -50,7 +50,8 @@ final class BrainService {
         let looked = Self.researchTools(in: context).filter { name in allTools.contains { $0.name == name } }
         let wanted = intent.tools + looked.filter { !intent.tools.contains($0) }
         let preferred = wanted + Research.companions(of: wanted)
-        let offered = (!profile.isSmall || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
+        // A strong local model (richPrompt) works like an external one: the full tool set, even for a plain question.
+        let offered = (!profile.isSmall || profile.richPrompt || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
         // Web search by the provider itself (Claude's web_search, Claude Code's WebSearch) follows the same rule as Nook's own
         // web tools: only when the Web source is allowed for this request.
         let webAllowed = settings.webSearch && allTools.contains { SourceCatalog.source(forTool: $0.name) == SourceCatalog.web }
@@ -90,7 +91,9 @@ final class BrainService {
             + hidden.keys.sorted().map { "\($0) — \(SourceCatalog.title($0)) (\(hidden[$0]?.count ?? 0) tools)" }.joined(separator: "; ") + "."
         let offeredWithDiscovery = offered + (useSource.map { [$0] } ?? [])
 
-        let system = (profile.isSmall ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched) : systemPrompt()) + catalog
+        let system = (profile.isSmall && !profile.richPrompt
+            ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched, evidence: context.contains("\nEvidence ("))
+            : systemPrompt()) + catalog
         let toolsText = offered.reduce(0) { $0 + $1.name.count + (profile.compactDescriptions ? 80 : $1.description.count) + 200 }
         // Bigger local models get a longer memory of the conversation, so follow-ups ("and on friday?") keep working.
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: profile.contextTokens >= 16_000 ? 10 : 6,
@@ -125,8 +128,11 @@ final class BrainService {
 
         runnerRef = runner
 
+        // A local model that can reason does so for hard questions only (why, compare, explain, long questions):
+        // much better answers there, no waiting on a greeting or a simple action.
+        let thinking = ThinkingPolicy.wantsThinking(userText) && !intent.isSmallTalk && intent.primaryAction == nil
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: fitted[0], history: history,
-                                     webAllowed: webAllowed, profile: profile, runner: runner, onText: onText)
+                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking, onText: onText)
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out.
@@ -163,6 +169,30 @@ final class BrainService {
         return plan
     }
 
+    /// The evidence step for a small brain: per document one narrow call that copies out the lines that matter for the
+    /// question. Quotes that do not literally occur in the document are dropped. A document that fails or takes too long
+    /// is skipped; the answer then simply relies on the document as it was.
+    func extractEvidence(question: String, goal: String, documents: [String]) async -> [Evidence.Item] {
+        let profile = settings.brainProfile
+        var items: [Evidence.Item] = []
+        let started = CFAbsoluteTimeGetCurrent()
+        for document in documents.prefix(3) {
+            guard !Task.isCancelled else { break }
+            let title = Evidence.title(of: document)
+            let prompt = Evidence.prompt(question: question, goal: goal, title: title, document: String(document.prefix(6_000)))
+            let reply = try? await RetrievalLedger.withTimeout(profile.isSmall ? 25 : 12) { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.complete(system: Evidence.system, prompt: prompt, profile: profile)
+            }
+            guard let reply else { continue }
+            items.append(Evidence.Item(title: title, quotes: Evidence.verified(Evidence.parse(reply), in: document)))
+        }
+        let quoted = items.reduce(0) { $0 + $1.quotes.count }
+        let seconds = CFAbsoluteTimeGetCurrent() - started
+        Log.brain.info("evidence \(quoted, privacy: .public) quotes from \(items.count, privacy: .public) documents in \(seconds, format: .fixed(precision: 1)) s")
+        return items
+    }
+
     /// One answer without tools. With Claude, a fast model does this small job; the chosen model still answers.
     private func complete(system: String, prompt: String, profile: ModelProfile) async throws -> String {
         let selection = settings.selection
@@ -182,12 +212,13 @@ final class BrainService {
 
     /// Runs one conversation on the selected brain, through the shared tool loop.
     private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
-                         profile: ModelProfile, runner: ToolRunner, onText: ((String) -> Void)?) async throws -> BrainPlan {
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false,
+                         onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
         if selection.runtime == .mlx {
             guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
             return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fittedHistory + prompt,
-                                                      profile: profile, runner: runner, onText: onText)
+                                                      profile: profile, runner: runner, thinking: thinking, onText: onText)
         }
         let conversation: ModelConversation
         switch selection.provider {
@@ -388,7 +419,7 @@ final class BrainService {
 
     /// A short prompt for small local models: they follow a few clear rules better than a long manual. Only the tools
     /// that are actually offered are named, so the model is never told about tools it does not have.
-    private func localSystemPrompt(tools: [ToolSpec], intent: ChatIntent, researched: Bool) -> String {
+    private func localSystemPrompt(tools: [ToolSpec], intent: ChatIntent, researched: Bool, evidence: Bool = false) -> String {
         let names = tools.map(\.name)
         var lines = [
             "You are Nook, the assistant living in the notch of the user's Mac. You chat with the user. \(settings.languageInstruction)",
@@ -420,6 +451,9 @@ final class BrainService {
         let searchers = ["search_notes", "search_mail", "search_files", "search_messages", "search_whatsapp", "search_bear", "search_things",
                          "notion_search", "github_search", "search_web"].filter { names.contains($0) }
         if researched { lines.append("Nook already searched the user's sources for this request: what it found is in the context under \"Looked up for this question\", with the best matches read in full. Answer from those documents first, and say which note, mail or file the answer comes from. If nothing there is relevant and the question is general knowledge, simply answer it.") }
+        if evidence {
+            lines.append("The context has a part \"Evidence\": word-for-word quotes from the documents Nook read. Build the answer from those quotes, copy names, dates, times and amounts exactly as quoted, and say which document they come from. Add nothing that is not in the quotes or the documents.")
+        }
         if !readers.isEmpty {
             lines.append("If a search result looks relevant but you only see its start or its title, open it in full first (\(readers.joined(separator: ", "))) with the id, path or link from the result, then answer from its text.")
         }
@@ -465,7 +499,7 @@ final class BrainService {
         - Calendar: use check_availability for free/busy checks across all calendars; list_events to inspect dates; create_event and update_event to manage events.
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
         - Files & System: use search_files and read_file for local documents; media_control for Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
-        - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend, Crypto portfolio; web_search and read_webpage for current online information.
+        - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend; web_search and read_webpage for current online information.
 
         How to think before every answer:
         1. What exactly does the user want? Read "What the user wants" in the context if it is there, and the conversation so far. A question about one app or source ("in WhatsApp", "in my mail") is about that source only.

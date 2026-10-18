@@ -51,6 +51,7 @@ struct PortfolioSettings: View {
     private func walletRow(_ wallet: PortfolioWallet) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
+                SiteIcon(domain: wallet.network.iconDomain, fallback: "bitcoinsign.circle", size: 18)
                 Text(wallet.network.name)
                 Text(wallet.address)
                     .font(.system(.caption, design: .monospaced))
@@ -129,6 +130,7 @@ private struct PortfolioExchangeFields: View {
             }
         } label: {
             HStack {
+                SiteIcon(domain: exchange.iconDomain, fallback: "building.columns", size: 18)
                 Text(exchange.name)
                 Spacer()
                 if portfolio.isConfigured(exchange) {
