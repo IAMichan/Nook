@@ -59,6 +59,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
     }
+    /// A session that a restart of Nook cut off gets "Continue where you left off." once (restart continuation; off by default).
+    @Published var continueAfterRelaunch: Bool {
+        didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -84,6 +88,7 @@ final class WorkspaceSettings: ObservableObject {
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
+        continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }

@@ -505,6 +505,7 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        if run.status == .completed { clearContinuations(id) }
         onTurnFinished?(run)
         captureCheckpoint(id)
     }

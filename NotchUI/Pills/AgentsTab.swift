@@ -184,6 +184,7 @@ struct AgentsTab: View {
             // Marked as finished by you, or done and quiet for ten minutes: the chat moves down. Not while the agent works.
             let moved = running.filter { entry in
                 guard !entry.isBusy else { return false }
+                if entry.snoozed { return true }
                 // A process Nook only sees (id "proc-…") is running in a terminal: never finished by itself.
                 let idle = (entry.status == .idle || entry.status == .finished) && !entry.id.hasPrefix("proc-")
                 return finishedMarks.isFinished(key: entry.finishKey, idle: idle, lastActive: entry.started, now: context.date)
@@ -252,6 +253,7 @@ struct AgentsTab: View {
     /// The finish/reopen action of a row, in its context menu.
     @ViewBuilder
     private func finishMenu(_ entry: AgentListItem, finished: Bool) -> some View {
+        snoozeMenu(entry)
         if entry.isBusy {
             Button(tr("agents.finish.mark")) {}.disabled(true)
         } else if finished {
@@ -264,15 +266,33 @@ struct AgentsTab: View {
         }
     }
 
+    /// Snooze or end a snooze of a session Nook runs (not for sessions it only sees).
+    @ViewBuilder
+    private func snoozeMenu(_ entry: AgentListItem) -> some View {
+        if entry.id.hasPrefix("run:"), let uuid = UUID(uuidString: String(entry.id.dropFirst(4))), let run = app.workspace.run(uuid) {
+            if let until = run.snoozedUntil, until > Date() {
+                Button(tr("agents.snooze.cancel")) { app.workspace.unsnooze(uuid) }
+            } else if !entry.isBusy {
+                Menu(tr("agents.snooze.menu")) {
+                    Button(tr("agents.snooze.hour")) { app.workspace.snooze(uuid, .hour) }
+                    Button(tr("agents.snooze.evening")) { app.workspace.snooze(uuid, .evening) }
+                    Button(tr("agents.snooze.tomorrow")) { app.workspace.snooze(uuid, .tomorrow) }
+                }
+            }
+        }
+    }
+
     /// Waiting for you first, then working, then the rest; newest first within each.
     private func sorted(_ items: [AgentListItem]) -> [AgentListItem] {
         func rank(_ status: AgentListItem.Status) -> Int {
             switch status {
             case .waiting: return 0
-            case .failed: return 1
-            case .working: return 2
-            case .idle: return 3
-            case .finished: return 4
+            case .input: return 1
+            case .failed: return 2
+            case .limited: return 3
+            case .working: return 4
+            case .idle: return 5
+            case .finished: return 6
             }
         }
         return items.enumerated().sorted { a, b in
@@ -288,13 +308,17 @@ struct AgentsTab: View {
     }
 
     private func item(_ run: WorkspaceRun) -> AgentListItem {
+        // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
+        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt))
         let status: AgentListItem.Status
-        switch run.status {
-        case .preparing, .running: status = .working
-        case .waitingApproval: status = .waiting
+        switch attention {
+        case .approval: status = .waiting
+        case .input: status = .input
         case .failed: status = .failed
-        case .completed: status = .idle
-        case .stopped: status = .finished
+        case .limited: status = .limited
+        case .working: status = .working
+        case .ready, .idle: status = .idle
+        case .finished: status = .finished
         }
         return AgentListItem(
             id: "run:" + run.id.uuidString,
@@ -307,7 +331,8 @@ struct AgentsTab: View {
             started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
-            unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt)
+            unseen: attention == .ready,
+            snoozed: run.status != .stopped && attention == .finished && run.snoozedUntil != nil
         )
     }
 
@@ -382,7 +407,7 @@ struct AgentsTab: View {
 
 /// One session in the list, the same for every kind of session.
 struct AgentListItem: Identifiable {
-    enum Status { case working, waiting, failed, idle, finished }
+    enum Status { case working, waiting, input, failed, limited, idle, finished }
 
     /// The selection id: a hub session id, "run:<uuid>" or "past:<id>".
     let id: String
@@ -400,9 +425,11 @@ struct AgentListItem: Identifiable {
     let finishKey: String
     /// Finished after you last looked at it: "done" in green until you open it.
     var unseen = false
+    /// Snoozed by you: out of the way until the snooze ends or the session needs you.
+    var snoozed = false
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
-    var isBusy: Bool { status == .working || status == .waiting }
+    var isBusy: Bool { status == .working || status == .waiting || status == .input }
 
     func markedFinished() -> AgentListItem {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
@@ -472,9 +499,17 @@ struct AgentListRow: View {
             Text(tr("agents.live.waiting"))
                 .foregroundStyle(NookTheme.amber)
                 .fixedSize()
+        case .input:
+            Text(tr("agents.live.input"))
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize()
         case .failed:
             Text(tr("agents.live.failed"))
                 .foregroundStyle(NookTheme.coral)
+                .fixedSize()
+        case .limited:
+            Text(tr("agents.live.limited"))
+                .foregroundStyle(NookTheme.amber)
                 .fixedSize()
         case .idle where item.unseen:
             HStack(spacing: 4) {

@@ -247,6 +247,11 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil
+    /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
+    var continuations: Int? = nil
+    /// Snoozed until this time, and since when (see `SnoozePolicy`).
+    var snoozedUntil: Date? = nil
+    var snoozedAt: Date? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

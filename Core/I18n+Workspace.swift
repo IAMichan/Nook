@@ -6,6 +6,15 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "settings.ws.continueAfterRelaunch": "Een sessie die door een herstart van Nook werd onderbroken gaat vanzelf verder",
+        "ws.event.continueAfterRelaunch": "Nook is herstart: de sessie gaat verder.",
+        "agents.snooze.hour": "Een uur",
+        "agents.snooze.evening": "Vanavond",
+        "agents.snooze.tomorrow": "Morgenochtend",
+        "agents.snooze.menu": "Snooze",
+        "agents.snooze.cancel": "Snooze opheffen",
+        "agents.live.input": "wacht op je antwoord",
+        "agents.live.limited": "gebruikslimiet",
         "ws.permission.ask.help.acp": "De agent vraagt Nook om toestemming voor bewerkingen en commando's; lezen mag altijd.",
         "ws.permission.acceptEdits.help.acp": "Bewerkingen worden meteen toegestaan; commando's vragen eerst om je goedkeuring.",
         "ws.permission.bypass.help.acp": "Alles wordt meteen toegestaan, ook commando's. Een worktree beschermt je code, niet je Mac.",
@@ -547,6 +556,15 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "settings.ws.continueAfterRelaunch": "Continue a session cut off by a restart of Nook automatically",
+        "ws.event.continueAfterRelaunch": "Nook restarted: the session continues.",
+        "agents.snooze.hour": "One hour",
+        "agents.snooze.evening": "This evening",
+        "agents.snooze.tomorrow": "Tomorrow morning",
+        "agents.snooze.menu": "Snooze",
+        "agents.snooze.cancel": "Cancel snooze",
+        "agents.live.input": "waiting for your answer",
+        "agents.live.limited": "usage limit",
         "ws.permission.ask.help.acp": "The agent asks Nook for permission for edits and commands; reading is always allowed.",
         "ws.permission.acceptEdits.help.acp": "Edits are allowed right away; commands ask for your approval first.",
         "ws.permission.bypass.help.acp": "Everything is allowed right away, including commands. A worktree protects your code, not your Mac.",
@@ -1088,6 +1106,15 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "settings.ws.continueAfterRelaunch": "Eine durch einen Neustart von Nook unterbrochene Sitzung automatisch fortsetzen",
+        "ws.event.continueAfterRelaunch": "Nook wurde neu gestartet: Die Sitzung wird fortgesetzt.",
+        "agents.snooze.hour": "Eine Stunde",
+        "agents.snooze.evening": "Heute Abend",
+        "agents.snooze.tomorrow": "Morgen früh",
+        "agents.snooze.menu": "Zurückstellen",
+        "agents.snooze.cancel": "Zurückstellen aufheben",
+        "agents.live.input": "wartet auf deine Antwort",
+        "agents.live.limited": "Nutzungslimit",
         "ws.permission.ask.help.acp": "Der Agent fragt Nook um Erlaubnis für Änderungen und Befehle; Lesen ist immer erlaubt.",
         "ws.permission.acceptEdits.help.acp": "Änderungen werden sofort erlaubt; Befehle fragen zuerst um deine Freigabe.",
         "ws.permission.bypass.help.acp": "Alles wird sofort erlaubt, auch Befehle. Ein Worktree schützt deinen Code, nicht deinen Mac.",

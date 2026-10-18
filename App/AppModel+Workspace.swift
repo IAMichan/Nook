@@ -122,6 +122,11 @@ extension AppModel {
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         startWorkspaceBridge()
+        // Sessions a restart cut off go on, once the agents' executables are known (history loads in the background).
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            self?.workspace.continueInterruptedRuns()
+        }
     }
 
     /// Nook's terminal, browser and pull requests for the agents (see WorkspaceBridge): requests that need you appear as
