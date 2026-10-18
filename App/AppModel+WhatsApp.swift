@@ -133,3 +133,39 @@ extension AppModel {
         viewModel.finish(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
     }
 }
+
+/// Global shortcuts, as set in Settings › Overview.
+extension AppModel {
+    func reloadHotKeys() {
+        // The old keys go first: a new one with the same id would lose its handler when the old one is released.
+        hotKeys = []
+        let set = ShortcutSet.load()
+        hotKeys = ShortcutAction.allCases.compactMap { action in
+            guard let shortcut = set.shortcut(for: action) else { return nil }
+            return HotKey(id: action.hotKeyID, keyCode: Int(shortcut.keyCode), modifiers: Int(shortcut.modifiers)) { [weak self] in
+                self?.perform(action)
+            }
+        }
+    }
+
+    func perform(_ action: ShortcutAction) {
+        switch action {
+        case .talk: toggleVoice()
+        case .ask: openAsk()
+        case .lookAtScreen: lookAtScreen(manual: true)
+        case .screenPart: captureScreenPart()
+        case .recordCall: NoteTaker.shared.toggle()
+        }
+    }
+
+    /// Changes a shortcut. Returns the action that gave it up, if another one had it.
+    @discardableResult
+    func setShortcut(_ shortcut: Shortcut?, for action: ShortcutAction) -> ShortcutAction? {
+        var set = ShortcutSet.load()
+        let displaced = set.set(shortcut, for: action)
+        set.save()
+        reloadHotKeys()
+        objectWillChange.send()
+        return displaced
+    }
+}

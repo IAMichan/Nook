@@ -176,7 +176,15 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "capture.copiedShort": "Gekopieerd",
         "capture.pasteIn": "Plak in %@",
         "capture.question": "Wat wil je met dit schermdeel doen?",
-        "capture.ask": "Vraag Nook"
+        "capture.ask": "Vraag Nook",
+        "shortcut.screenPart": "Vraag over een schermdeel",
+        "shortcut.recordCall": "Gesprek opnemen",
+        "shortcut.record": "Druk op de toetsen…",
+        "shortcut.off": "Uit",
+        "shortcut.reset": "Terug naar standaard",
+        "shortcut.invalid": "Gebruik ⌘, ⌥ of ⌃ erbij, zodat typen hem niet afvuurt.",
+        "shortcut.moved": "%@ heeft nu geen sneltoets meer.",
+        "shortcut.flowHint": "Houd rechter %@ vast (Stem & geluid)"
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -350,7 +358,15 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "capture.copiedShort": "Copied",
         "capture.pasteIn": "Paste in %@",
         "capture.question": "What do you want to do with this part of the screen?",
-        "capture.ask": "Ask Nook"
+        "capture.ask": "Ask Nook",
+        "shortcut.screenPart": "Ask about a part of the screen",
+        "shortcut.recordCall": "Record a call",
+        "shortcut.record": "Press the keys…",
+        "shortcut.off": "Off",
+        "shortcut.reset": "Back to default",
+        "shortcut.invalid": "Add ⌘, ⌥ or ⌃, so typing never fires it.",
+        "shortcut.moved": "%@ no longer has a shortcut.",
+        "shortcut.flowHint": "Hold right %@ (Voice & sound)"
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -524,6 +540,14 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "capture.copiedShort": "Kopiert",
         "capture.pasteIn": "In %@ einfügen",
         "capture.question": "Was möchtest du mit diesem Bildschirmausschnitt tun?",
-        "capture.ask": "Nook fragen"
+        "capture.ask": "Nook fragen",
+        "shortcut.screenPart": "Zu einem Bildschirmausschnitt fragen",
+        "shortcut.recordCall": "Gespräch aufnehmen",
+        "shortcut.record": "Drück die Tasten…",
+        "shortcut.off": "Aus",
+        "shortcut.reset": "Zurück zum Standard",
+        "shortcut.invalid": "Nimm ⌘, ⌥ oder ⌃ dazu, damit Tippen ihn nicht auslöst.",
+        "shortcut.moved": "%@ hat jetzt keinen Kurzbefehl mehr.",
+        "shortcut.flowHint": "Rechts %@ halten (Stimme & Ton)"
     ]
 ]

@@ -62,9 +62,10 @@ extension SettingsView {
                 }
             }
             Section {
-                shortcutRow(tr("settings.overview.askTyping"), keys: ["⌥", "⌘", tr("settings.overview.spaceKey")])
-                shortcutRow(tr("settings.overview.talkNook"), keys: ["⌥", tr("settings.overview.spaceKey")])
-                shortcutRow(tr("settings.overview.lookScreen"), keys: ["⌥", "⌘", "N"])
+                ForEach(ShortcutAction.allCases) { action in ShortcutRecorder(action: action) }
+                LabeledContent(tr("flow.settings.title")) {
+                    Text(tr("shortcut.flowHint", FlowStore.shared.key.symbol)).foregroundStyle(.secondary)
+                }
                 LabeledContent(tr("settings.overview.openPanel")) {
                     Text(tr("settings.overview.pointToNotch")).foregroundStyle(.secondary)
                 }

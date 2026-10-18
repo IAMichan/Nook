@@ -322,13 +322,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] info in self?.notch.announce(info) }
             .store(in: &bag)
 
-        hotKeys = [
-            HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
-            HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
-            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() },
-            HotKey(id: 4, keyCode: kVK_ANSI_4, modifiers: optionKey | cmdKey) { [weak self] in self?.captureScreenPart() },
-            HotKey(id: 5, keyCode: kVK_ANSI_R, modifiers: optionKey | cmdKey) { NoteTaker.shared.toggle() }
-        ].compactMap { $0 }
+        reloadHotKeys()
 
         // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.
         connectors.register([
