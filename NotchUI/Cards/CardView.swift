@@ -241,21 +241,45 @@ private struct CommandDetail: View {
     }
 }
 
+/// Your voice as it comes in: every bar is the loudness a moment ago, so new sound appears on the right and
+/// scrolls left. Silence leaves the bars flat instead of showing made-up movement.
 private struct WaveformDetail: View {
+    private static let barCount = 28
+    private static let step: TimeInterval = 1.0 / 30.0
+
+    @State private var history = VoiceHistory(count: barCount)
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
+        TimelineView(.animation(minimumInterval: Self.step)) { context in
+            let levels = history.sample(at: context.date, step: Self.step)
             HStack(spacing: 4) {
-                ForEach(0..<18, id: \.self) { i in
-                    let wave = abs(sin(t * 5.7 + Double(i) * 0.55))
+                ForEach(0..<levels.count, id: \.self) { i in
                     Capsule()
                         .fill(NookTheme.mint)
-                        .frame(width: 3, height: 5 + 21 * CGFloat(wave))
+                        .opacity(0.45 + 0.55 * levels[i])
+                        .frame(width: 3, height: 4 + 24 * CGFloat(levels[i]))
                 }
             }
             .frame(height: 28)
         }
         .accessibilityHidden(true)
+    }
+}
+
+private final class VoiceHistory {
+    private var levels: [Double]
+    private var last = Date.distantPast
+
+    init(count: Int) { levels = Array(repeating: 0, count: count) }
+
+    func sample(at date: Date, step: TimeInterval) -> [Double] {
+        if date.timeIntervalSince(last) >= step * 0.9 {
+            last = date
+            // Lift soft speech a little so quiet voices still move the bars.
+            levels.removeFirst()
+            levels.append(pow(VoiceLevel.shared.current, 0.7))
+        }
+        return levels
     }
 }
 
