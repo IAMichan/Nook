@@ -144,7 +144,7 @@ final class FlowDictation: ObservableObject {
     // MARK: Listening
 
     /// One listen, from the key press to the paste. Cancelling it drops its words.
-    private final class Listen {
+    @MainActor private final class Listen {
         let dictation = MultiDictation()
         var cancelled = false
         /// The app the words go to, seen when the key went down.

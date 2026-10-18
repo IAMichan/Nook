@@ -117,81 +117,65 @@ Tests: `Tests/NookTests/WhatsAppTests.swift` (gesprekken, webhook-handtekening, 
 snelheidslimiet) en `Tests/NookTests/CoucouLessonsTests.swift` (weer: plaats, voorspelling, tekst; afbeeldingen: JPEG/PNG, de drie
 berichtformaten, herkennen van beeldbestanden; modellijsten).
 
-## Wat nog volgt (op volgorde van waarde voor de chat)
+### 7. Overal dicteren (Flow)
 
-### A. Apple Intelligence als brein (macOS 26)
+Houd rechter ⌥ vast (of ⌘, ⌃, fn: Instellingen › Stem & geluid › Overal dicteren), praat, laat los: de tekst staat waar
+je typt, in elke app, en je klembord krijgt terug wat erop stond. Twee keer tikken is handsfree, Esc annuleert, ⌃⌘V plakt
+de laatste nog eens. Een pilletje onderaan het scherm laat zien dat Nook luistert, met je woorden live.
 
-Coucou gebruikt `FoundationModels` (`LanguageModelSession`) als lokaal brein voor spraak, met tools via `@Generable`.
-Voor Nook is dit het lokale brein dat **niets hoeft te downloaden**: op elke Mac met Apple Intelligence aan.
+* **Beter dan Coucou:** het opschonen (eh's, herhalingen, "om 3 uur, nee 4 uur" → "om 4 uur"), de promptmodus voor agents
+  en vertalen doet **je eigen brein**, dus standaard op je Mac (ingebouwd model, Ollama, LM Studio of Apple
+  Intelligence). Coucou heeft daarvoor een Claude-sleutel nodig. Een antwoord dat geen opschoning is, wordt weggegooid.
+* Luistert in je talen tegelijk (tot drie herkenners on-device; de winnaar van de vorige keer eerst).
+* Woordenboek, vervangingen en snippets in één veld ("cloud code => Claude Code", "handtekening :: Groet,\nMichan").
+* Stijl per app: terminals en editors letterlijk, mail netjes, de rest natuurlijk.
+* Statistieken (woorden, woorden per minuut, tijd bespaard, dagen op rij) en geschiedenis, alleen op deze Mac.
 
-* Nieuwe `BrainRuntime.apple`, met `SystemLanguageModel.default.availability` in Instellingen › Brein (Intel-Mac,
-  Apple Intelligence uit of taal niet ondersteund: zeg het, kies niets stil).
-* Tools: `DynamicGenerationSchema` uit de JSON-schema's van `ToolSpec`, zodat de bestaande `ToolRunner` en `ActionGate`
-  gelijk blijven. Het model heeft een venster van ~4k tokens: `ModelProfile` als het kleinste profiel (weinig tools,
-  `fillIn` voor acties, Research vooraf doet het zoekwerk).
-* `session.prewarm()` bij het openen van de chat (Coucou doet dat bij het wake word); één sessie per Nook zolang hij
-  open is (het KV-cache-idee uit CHAT-PLAN fase 4).
-* Ook geschikt voor de kleine klussen naast elk brein: QueryPlanner, de samenvatting van een lang gesprek, een mail
-  opstellen ("bedank haar voor gisteren"), zoals Coucou's `VoiceBrain.draftMail`.
+### 8. Gesprekken opnemen (Notetaker)
 
-### B. Dicteren in meerdere talen tegelijk
+⌥⌘R, de menubalk of **+** in de chat. Nook neemt je microfoon en het geluid van de Mac op (geen bot in de call), schrijft
+het transcript terwijl je praat, haalt de echo van de anderen uit jouw kant, en maakt daarna een samenvatting, kernpunten
+en to-do's met je eigen brein. De notitie verschijnt als nieuwe Nook in de chat, met "Zet de to-do's in mijn
+Herinneringen" en "Schrijf een mail met deze samenvatting".
 
-Coucou's `MacDictation` luistert met maximaal drie herkenners tegelijk (de talen van macOS, je toetsenborden, Engels) en
-houdt de uitkomst met het hoogste vertrouwen; de winnaar van de vorige keer staat vooraan. De extra talen luisteren
-alleen on-device, zodat audio nooit naar Apple gaat in een taal die je niet sprak. Met een rechtsklik op de microfoon
-kies je een vaste taal. Dit lost het tweetalige gebruik op (Nederlands praten, Engelse termen) dat één herkenner mist.
+* **Beter dan Coucou:** de audio komt **nooit op schijf** (elk stuk wordt meteen op de Mac getranscribeerd en vergeten), en
+  je gesprekken zijn een bron voor de chat: "wat spraken we af met Lisa?", "welke to-do's kwamen uit de call van
+  vanochtend?" (`search_call_notes`, `read_call_note`).
+* Coucou onderscheidt de andere sprekers onderling (Parakeet + diarisatie); Nook nog niet: het is "Ik" en "De anderen".
 
-### C. Parakeet, offline en nauwkeuriger
+### 9. Apple Intelligence als brein
 
-NVIDIA Parakeet via FluidAudio op de Neural Engine: 25 talen, een minuut spraak in een paar honderd milliseconden,
-eenmalig ±650 MB. Coucou houdt de modellen in een eigen map en laadt ze vooraf in zodra dicteren aan staat. Voor Nook:
-als keuze in Instellingen › Stem & geluid naast de herkenning van de Mac, voor de chat, het wake word en (D).
+Op macOS 26 met Apple Intelligence aan: kies het bij Instellingen › Brein of in de modelchip. Niets te downloaden. Een
+eigen klein profiel (4k venster, vijf tools), tools via één JSON-object door de gedeelde controle (ActionGate), het
+antwoord live. Werkt ook voor Flow en gespreksnotities. Coucou gebruikt dit model alleen voor spraakopdrachten.
 
-### D. Overal dicteren (Flow)
+### 10. Schermdeel: plakken en annoteren
 
-Houd een toets vast (rechter ⌥), praat, laat los: de tekst komt waar de cursor staat. Klembord terug na het plakken
-(Coucou bewaart alle soorten van het klembord en zet ze na 1,5 s terug als er niets anders gekopieerd is). Twee keer
-tikken is handsfree, Esc annuleert, ⌃⌘V plakt de laatste nog eens. Daarbovenop wat Nook al heeft: het gekozen brein
-(lokaal!) schoont op ("om 3 uur, nee 4 uur" → "om 4 uur"), met een plausibiliteitscheck: een "opschoning" die veel
-langer of korter is dan wat je zei, wordt weggegooid. En een promptmodus voor agents: wat je zegt wordt een
-gestructureerde opdracht (doel, context, stappen, klaar als). Vraagt Toegankelijkheid.
+Na ⌥⌘4 kies je: **Vraag Nook**, **Plak in** de app waar je was (⌃V in een terminal zodat Claude Code het beeld pakt; daarna
+krijgt je klembord terug wat erop stond), **Kopiëren** of **Annoteren** (pijl, kader, pen, vier kleuren, ⌘Z).
 
-### E. Schermdeel: plakken, annoteren
+### 11. Voorlezen zin voor zin, meertalig inspreken
 
-Het tweede deel van Coucou's schermdeel: **Plak in de app waar je was** (⌘V, of ⌃V in een terminal zodat Claude Code
-het beeld pakt, klembord daarna terug) en **Annoteren** (pijl, kader, pen, vier kleuren, ⌘Z) voordat je het aan Nook of
-een agent geeft. Samen met de Werkruimte: "dit knopje staat scheef, fix het" met het beeld naar de agent.
+Een ingesproken vraag wordt beantwoord terwijl het antwoord geschreven wordt, zin voor zin, zonder opmaak, links of
+bronnummers. Staat de antwoordtaal op "Taal van mijn vraag", dan luistert Nook in je talen tegelijk.
 
-### F. Nook op een venster slepen
+### 12. Instelbare sneltoetsen
 
-Sleep Nook (de bol) op een venster: een halo om dat venster, een screenshot ervan als afbeelding (punt 1) en, bij Safari,
-Chrome, Arc of Brave, de URL van het tabblad. Hetzelfde als schermdeel, maar met één gebaar en zonder kader trekken.
+Instellingen › Overzicht: elke globale toets (praten, chat, scherm, schermdeel, opnemen) aanpasbaar of uit te zetten.
+Eén toets doet één ding.
 
-### G. Voorlezen terwijl het antwoord komt
+## Wat nog volgt
 
-Coucou leest zin voor zin voor zodra een zin af is, in plaats van te wachten op het hele antwoord (en Nook kapt nu af op
-600 tekens). Met een korte, gesproken versie van het antwoord: geen markdown, geen lijsten, geen links.
-
-### H. Gesprekken opnemen (Notetaker)
-
-Microfoon + systeemgeluid (ScreenCaptureKit), geen bot in de call, live transcript, daarna Parakeet + diarisatie (wie
-zegt wat), samenvatting en to-do's door het gekozen brein (lokaal kan), audio gewist zodra het transcript klaar is.
-Correcties die je maakt worden een woordenlijst voor de volgende keer. To-do's worden Nook-open-punten of herinneringen
-via het gewone plan (niets zonder jouw klik). Deze notities worden een bron voor de chat ("wat spraken we af met Lisa?").
-
-### I. Vervolgopdrachten en namen
-
-Coucou's `ConversationContext` begrijpt "en nu voor Stripe" (zelfde actie, ander doel) en "maak ongedaan" (de omgekeerde
-actie), en `EntityResolver` vindt "Viersel" als "Vercel" (aliassen, Levenshtein ≤ 2). Voor Nooks `LocalIntent` en de
-bronkeuze in de vraag ("zoek in Notie") is dat dezelfde winst.
-
-### J. Kleine dingen
-
-* Een zuiniger wake word: Coucou's `EnergyVAD` start de herkenning pas als iemand praat (< 1 % CPU in stilte) en
-  pauzeert bij een vergrendeld scherm en in Energiebesparing.
-* Weet Nook een Claude-model niet (`not_found_error`), noem het model en waar je een ander kiest (Coucou doet dat).
-* Notch-reacties op de Mac zelf (Coucou's `MachineVitals`: een drukke processor, weinig geheugen, lege batterij) als
-  bron voor de chat: "waarom is mijn Mac traag?" → de apps die nu de processor gebruiken.
+* **Parakeet** (NVIDIA, via FluidAudio, offline en nauwkeuriger, 25 talen) als keuze naast de herkenning van de Mac, voor
+  Flow, de chat en gespreksnotities, met **sprekerherkenning** ("Persoon 2", "Persoon 3") in gesprekken. Vraagt een extra
+  pakket en een download van ±650 MB.
+* **Nook op een venster slepen** als context (nu: ⌥⌘4 en dan spatie om een venster te kiezen).
+* **Vervolgopdrachten en namen** zoals Coucou's `ConversationContext` en `EntityResolver` ("en nu voor Stripe", "maak
+  ongedaan", "Viersel" → Vercel).
+* **Zuiniger wake word** met energie-VAD.
+* **Meer talen** voor de interface (Coucou: tien; Nook: drie).
+* **De Mac zelf als bron** ("waarom is mijn Mac traag?"), zoals Coucou's `MachineVitals`.
+* Telefoon-apps (Coucou heeft iPhone en Android): buiten deze repository.
 
 ## Wat Nook niet overneemt
 
