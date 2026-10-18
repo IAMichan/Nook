@@ -131,6 +131,19 @@ final class AgentCoverageTests: XCTestCase {
                        [.rateLimits])
     }
 
+    func testClaudeSteering() throws {
+        let line = ClaudeStreamParser.userMessage("doe eerst de tests", steer: true)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        XCTAssertEqual(object["priority"] as? String, "now")
+        XCTAssertNil((try JSONSerialization.jsonObject(with: Data(ClaudeStreamParser.userMessage("hoi").utf8)) as? [String: Any])?["priority"])
+
+        guard case .result(let cut)? = ClaudeStreamParser.parse(#"{"type":"result","subtype":"success","is_error":false,"result":"","terminal_reason":"aborted_tools"}"#).first,
+              case .result(let done)? = ClaudeStreamParser.parse(#"{"type":"result","subtype":"success","is_error":false,"result":"Klaar"}"#).first
+        else { return XCTFail("no result") }
+        XCTAssertTrue(cut.endedBySteer, "the segment a steer cut off is not the end of the turn")
+        XCTAssertFalse(done.endedBySteer)
+    }
+
     private func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]

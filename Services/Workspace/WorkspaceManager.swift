@@ -164,6 +164,9 @@ final class WorkspaceManager: ObservableObject {
         var contextWindow: Int?
         /// ACP: the session's cost so far, as the agent reports it.
         var acpCost: Double?
+        /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
+        var steered = false
+        var steeredUsage: [TurnUsage] = []
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -814,6 +817,12 @@ final class WorkspaceManager: ObservableObject {
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
             finishLiveText(id)
+            // A steering message cut this segment short: the turn goes on with the new message (rule).
+            if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
+                turns[id]?.steeredUsage.append(result.usage)
+                return
+            }
+            turns[id]?.steered = false
             var usage = result.usage
             let state = turns[id]
             // If turn completion reported no tokens, sum up individual message counts.
@@ -828,6 +837,7 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.finished = true
             let stopping = state?.stopping ?? false
             update(id) { run in
+                for segment in state?.steeredUsage ?? [] { run.usage.add(segment) }
                 run.usage.add(usage)
                 if let session = result.sessionID { run.providerSessionID = session }
                 if stopping {

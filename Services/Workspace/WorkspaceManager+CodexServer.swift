@@ -104,12 +104,19 @@ extension WorkspaceManager {
         }
     }
 
-    /// Steers the running turn with a new message (`turn/steer`). False when the session cannot be steered right now.
+    /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code.
+    /// False when the session cannot be steered right now.
     @discardableResult
     func steer(_ id: UUID, text: String) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let client = codexServers[id], let thread = client.threadID, let turn = client.turnID,
-              run(id)?.status.isActive == true else { return false }
+        guard !clean.isEmpty, canSteer(id) else { return false }
+        if let process = processes[id], run(id)?.provider == .claude {
+            append(id, RunEvent(kind: .user, text: clean))
+            turns[id]?.steered = true
+            process.send(ClaudeStreamParser.userMessage(clean, steer: true))
+            return true
+        }
+        guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
         append(id, RunEvent(kind: .user, text: clean))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
@@ -118,10 +125,15 @@ extension WorkspaceManager {
         return true
     }
 
-    /// A running Codex turn on app-server can take a new message right away.
+    /// A running turn that can take a new message right away: Codex on app-server, or Claude Code on its live process
+    /// (not while it waits for an answer to its question, or once it is being stopped).
     func canSteer(_ id: UUID) -> Bool {
+        guard let run = run(id), run.status.isActive, turns[id]?.stopping != true, turns[id]?.finished != true else { return false }
+        if run.provider == .claude {
+            return processes[id]?.isRunning == true && questions[id] == nil
+        }
         guard let client = codexServers[id] else { return false }
-        return client.turnID != nil && run(id)?.status.isActive == true
+        return client.turnID != nil
     }
 
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.

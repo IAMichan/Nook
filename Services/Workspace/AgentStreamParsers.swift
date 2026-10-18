@@ -61,6 +61,11 @@ struct ClaudeTurnResult: Equatable, Sendable {
     var sessionID: String?
     var usage: TurnUsage
     var permissionDenials: Int
+    /// Why the turn ended, e.g. `aborted_streaming` or `aborted_tools` when a steering message cut it short.
+    var terminalReason: String? = nil
+
+    /// The end of a turn segment that a steering message (`priority: "now"`) cut off: the turn goes on.
+    var endedBySteer: Bool { terminalReason == "aborted_streaming" || terminalReason == "aborted_tools" }
 }
 
 enum ClaudeStreamParser {
@@ -159,7 +164,8 @@ enum ClaudeStreamParser {
                 text: text,
                 sessionID: object["session_id"] as? String,
                 usage: usage,
-                permissionDenials: (object["permission_denials"] as? [Any])?.count ?? 0
+                permissionDenials: (object["permission_denials"] as? [Any])?.count ?? 0,
+                terminalReason: object["terminal_reason"] as? String
             ))]
 
         default:
@@ -200,9 +206,12 @@ enum ClaudeStreamParser {
 
     // MARK: Messages to Claude Code (stdin)
 
-    /// A user message in `--input-format stream-json` format.
-    static func userMessage(_ text: String) -> String {
-        line(["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""])
+    /// A user message in `--input-format stream-json` format. With `steer`, it has `priority: "now"`: Claude Code
+    /// stops what it is doing in the running turn and takes the message in right away (steering).
+    static func userMessage(_ text: String, steer: Bool = false) -> String {
+        var message: [String: Any] = ["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""]
+        if steer { message["priority"] = "now" }
+        return line(message)
     }
 
     /// Response to a permission prompt. On "allow", Claude Code sends back the original input.
