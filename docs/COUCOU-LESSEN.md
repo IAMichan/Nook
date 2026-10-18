@@ -4,8 +4,9 @@
 > by Louis Raillé) with Nook, focused on the chat: attachments and vision, screen reading, integrations, local models
 > and voice. Lists what this change adds (images for brains that can see, ask about a part of the screen, a keyless
 > weather tool, a voice-recognition language that follows the settings, the best installed voice, Ollama keep-alive and
-> model lists without embedding models) and a plan for the rest (Apple Intelligence as a brain, Parakeet, multi-language
-> dictation, dictate anywhere, a notetaker, WhatsApp sending, attach a window).
+> model lists without embedding models, WhatsApp live through a local gateway: new messages in the notch, answering and
+> sending after approval) and a plan for the rest (Apple Intelligence as a brain, Parakeet, multi-language dictation,
+> dictate anywhere, a notetaker, attach a window).
 
 Coucou en Nook lijken op elkaar: allebei een figuurtje in de notch, allebei agents volgen, allebei een chat. Maar ze zijn
 anders gebouwd. Nooks chat is op veel punten al verder (bronnen, bewijs, plannen, lokale modellen die zelf zoeken).
@@ -31,7 +32,7 @@ Alles hieronder is gelezen in de broncode van Coucou (`NotchBuddy/Sources/App`, 
 | Wake word | "OK Coucou": energie-VAD (adaptieve drempel), herkenning pas als iemand praat, < 1 % CPU, pauze bij vergrendeld scherm. | "Hé Nook" via SFSpeech. | Coucou zuiniger |
 | Spraakopdrachten | `IntentParser` (deterministisch, FR/EN, 60+ zinnen getest), `EntityResolver` (aliassen, Levenshtein ≤ 2), `ConversationContext` ("en nu Stripe", "maak ongedaan"), Foundation Models als terugval. | `LocalIntent`, `ChatIntent` (nl/en/de), daarna het brein. | Gelijkwaardig; Coucou's vervolgopdrachten zijn slimmer |
 | Gesprekken opnemen | Notetaker: microfoon + systeemgeluid, geen bot, Parakeet + diarisatie (wie zegt wat), samenvatting en to-do's, audio daarna gewist. | Niet aanwezig. | **Coucou** |
-| WhatsApp | Lezen én **versturen** via een lokale gateway (GOWA/OpenWA), webhook op 127.0.0.1 met HMAC, max 6 per minuut, alleen in bestaande chats. | Alleen-lezen uit de database (Volledige schijftoegang). | Coucou voor versturen |
+| WhatsApp | Lezen én **versturen** via een lokale gateway (GOWA/OpenWA), webhook op 127.0.0.1 met HMAC, max 6 per minuut, alleen in bestaande chats. | Alleen-lezen uit de database (Volledige schijftoegang). | **Coucou** → overgenomen |
 | Weer | Open-Meteo, geen sleutel, 15 min cache. | Via web zoeken (onbetrouwbaar voor kleine modellen). | **Coucou** → overgenomen |
 | Diensten | GitHub, Vercel, Stripe (omzet vandaag), Resend, n8n, Notion, Cal.com, crypto-portfolio, Spotify. | Dezelfde plus Notion/Linear/Sentry via OAuth-MCP, eigen bronnen, MCP-servers, accounts. | **Nook** |
 | Privacy | Geen telemetrie, Keychain `WhenUnlockedThisDeviceOnly`, alleen bestanden in Downloads/Bureaublad/Documenten. | Geen telemetrie, Keychain, alleen-op-deze-Mac-bronnen, `UntrustedText`, `ActionGate`, `NetworkGuard`. | **Nook** |
@@ -83,7 +84,37 @@ regenkans, neerslag en wind (`Brain/Weather.swift`). Zonder plaats gebruikt Nook
   standaard, nooit een grapstem of je Persoonlijke stem (`SpeechOutput.bestVoice`). Download een Premium-stem bij
   Systeeminstellingen › Toegankelijkheid › Gesproken materiaal › Systeemstem › Beheer stemmen.
 
-Tests: `Tests/NookTests/CoucouLessonsTests.swift` (weer: plaats, voorspelling, tekst; afbeeldingen: JPEG/PNG, de drie
+### 6. WhatsApp live: lezen, antwoorden en versturen (Coucou's WhatsApp-koppeling)
+
+WhatsApp heeft geen officiële API voor een eigen account. Coucou praat daarom met een **koppeling op je eigen Mac**
+(GOWA of OpenWA), die WhatsApp ziet als een gekoppeld apparaat, net als WhatsApp Web. Nook doet nu hetzelfde
+(`Services/WhatsApp/`, de protocollen en het geheugenmodel overgenomen uit Coucou onder de MIT-licentie):
+
+* **Instellen.** Instellingen › Accounts & koppelingen › **WhatsApp live** › *WhatsApp koppelen*, dan *Installeren*:
+  Nook haalt GOWA van GitHub (de release voor jouw Mac), controleert de SHA-256 met de controlesom die GOWA publiceert
+  (zonder controlesom installeert Nook niets), en start het alleen op 127.0.0.1. Daarna scan je de QR-code met WhatsApp
+  › Gekoppelde apparaten. Liever OpenWA of een eigen GOWA? Kies het bij *Geavanceerd*, met adres en wachtwoord of sleutel
+  (in de Sleutelhanger).
+* **Nieuwe berichten in de notch.** Een kaart met de chat, de laatste regels en een veld: typ je antwoord en druk op
+  Return, dan gaat het naar die chat. Of *Laat Nook antwoorden*: Nook leest de chat en stelt een antwoord voor als plan.
+  *Gelezen* stuurt de leesbevestiging; *Niet meer tonen* verbergt de chat. Groepen blijven stil tenzij iemand je noemt.
+* **In de chat.** "Heb ik nieuwe WhatsApps?", "wat schreef Lisa?" gebruiken `whatsapp_live` (live via je telefoon, ook
+  wat net binnenkwam). "App Lisa dat ik 10 minuten later ben" of "stuur via WhatsApp aan Jan…" wordt een plan met
+  `whatsapp_send`: je ziet ontvanger en tekst, en pas na **Uitvoeren** gaat het weg (ChatIntent herkent dit als bericht,
+  niet als mail).
+* **Grenzen, zoals bij Coucou.** Alleen naar chats die op je telefoon staan (nooit een nieuw nummer: een verkeerde gok mag
+  geen vreemde bereiken), hoogstens 6 berichten per minuut, maximaal 4.096 tekens. Twee chats met dezelfde naam ("Jan")?
+  Dan vraagt Nook welke.
+* **Privacy.** Berichten staan alleen in het geheugen (de laatste 20 per chat, de afgelopen 12 uur bij het koppelen) en
+  nooit op schijf of in een logboek; uitzetten of afsluiten wist alles. Nieuwe berichten komen binnen via een webhook die
+  alleen op 127.0.0.1 luistert en elk bericht met een HMAC-SHA256-handtekening controleert; zonder webhook kijkt Nook elke
+  20 seconden. Geen verzoek volgt een redirect: alles gaat naar de koppeling en nergens anders. *Alleen op deze Mac* voor
+  WhatsApp (Instellingen › Brein) geldt ook hier: een externe AI ziet je chats dan niet.
+
+Het lezen van WhatsApp op je Mac (de database, met Volledige schijftoegang) blijft bestaan voor de hele geschiedenis.
+
+Tests: `Tests/NookTests/WhatsAppTests.swift` (gesprekken, webhook-handtekening, GOWA- en OpenWA-berichten, ontvangers,
+snelheidslimiet) en `Tests/NookTests/CoucouLessonsTests.swift` (weer: plaats, voorspelling, tekst; afbeeldingen: JPEG/PNG, de drie
 berichtformaten, herkennen van beeldbestanden; modellijsten).
 
 ## Wat nog volgt (op volgorde van waarde voor de chat)
@@ -148,19 +179,13 @@ zegt wat), samenvatting en to-do's door het gekozen brein (lokaal kan), audio ge
 Correcties die je maakt worden een woordenlijst voor de volgende keer. To-do's worden Nook-open-punten of herinneringen
 via het gewone plan (niets zonder jouw klik). Deze notities worden een bron voor de chat ("wat spraken we af met Lisa?").
 
-### I. WhatsApp versturen
-
-Nook leest WhatsApp nu uit de database. Versturen kan via Coucou's route: een lokale gateway (GOWA) die Nook met één klik
-installeert (release van GitHub, SHA-256 gecontroleerd), webhook alleen op 127.0.0.1 met HMAC-handtekening, geen
-redirects, alleen naar een bestaande chat, maximaal 6 berichten per minuut en altijd als stap in een plan.
-
-### J. Vervolgopdrachten en namen
+### I. Vervolgopdrachten en namen
 
 Coucou's `ConversationContext` begrijpt "en nu voor Stripe" (zelfde actie, ander doel) en "maak ongedaan" (de omgekeerde
 actie), en `EntityResolver` vindt "Viersel" als "Vercel" (aliassen, Levenshtein ≤ 2). Voor Nooks `LocalIntent` en de
 bronkeuze in de vraag ("zoek in Notie") is dat dezelfde winst.
 
-### K. Kleine dingen
+### J. Kleine dingen
 
 * Een zuiniger wake word: Coucou's `EnergyVAD` start de herkenning pas als iemand praat (< 1 % CPU in stilte) en
   pauzeert bij een vergrendeld scherm en in Energiebesparing.

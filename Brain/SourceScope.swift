@@ -135,7 +135,7 @@ enum SourceCatalog {
         "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_messages": "messages", "read_messages": "messages", "messages_open_chats": "messages",
-        "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp",
+        "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp", "whatsapp_live": "whatsapp", "whatsapp_send": "whatsapp",
         "search_bear": "bear", "read_bear": "bear", "search_things": "things",
         "search_mail": "mail", "read_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
@@ -430,7 +430,7 @@ enum SourceCapabilities {
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
-        "read_whatsapp": "chat lezen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
+        "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen",
@@ -539,6 +539,8 @@ enum Prefetch {
             return matches(reply, text) || matches(pending, text) ? (1, ["days": 14, "unanswered_only": true]) : (2, ["days": 7])
         case "whatsapp_open_chats", "messages_open_chats":
             return (matches(unread, text) || matches(reply, text) || matches(pending, text) ? 0 : 2, [:])
+        // The linked phone is live: its overview goes before what WhatsApp on this Mac has synced.
+        case "whatsapp_live": return (matches(unread, text) || matches(reply, text) || matches(pending, text) ? 0 : 1, [:])
         case "list_notes": return (1, ["limit": 8])
         case "list_reminders": return (1, [:])
         case "read_browser_tab": return (1, [:])

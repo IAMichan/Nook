@@ -143,6 +143,7 @@ targets:
       - path: Brain/ChartRescue.swift
       - path: Brain/Weather.swift
       - path: Brain/ChatImage.swift
+      - path: Services/WhatsApp/WhatsAppGateway.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

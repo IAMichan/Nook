@@ -277,6 +277,11 @@ extension AppModel {
 
     /// A reply typed on a proposal card: the proposal moves into the chat first, so the question is answered with it in view.
     func handleCardReply(_ text: String, card: NookCard) {
+        // A WhatsApp card's field answers that chat directly.
+        if card.id.hasPrefix(Self.whatsAppCardPrefix) {
+            replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
+            return
+        }
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !question.isEmpty, settings.brainReady, let adopt = cardReplies.removeValue(forKey: card.id) {
             warmUp()

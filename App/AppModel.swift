@@ -354,6 +354,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        startWhatsApp()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }
