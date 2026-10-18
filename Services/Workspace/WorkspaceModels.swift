@@ -25,9 +25,10 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
         case .codex:
-            return ProviderCapabilities(approvals: false, interrupt: true, streamingText: false, planMode: true,
-                                        reportsCost: false, reportsContextWindow: false, reportsCacheTokens: true,
-                                        policies: [.acceptEdits, .bypass])
+            // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass])
         case .gemini:
             // Headless Gemini CLI cannot ask: edits are allowed (auto_edit) or everything is (yolo).
             return ProviderCapabilities(approvals: false, interrupt: true, streamingText: true, planMode: true,

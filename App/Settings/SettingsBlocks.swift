@@ -235,6 +235,7 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
             Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
+            Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {

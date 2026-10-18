@@ -100,6 +100,9 @@ extension AppModel {
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
+        workspace.onQuestion = { [weak self] run, _ in self?.workspaceQuestion(run) }
+        // Codex reports new limits while it works: show them right away.
+        workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
@@ -165,6 +168,17 @@ extension AppModel {
         let runID = run.id
         presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
                             open: (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) }))
+    }
+
+    /// The agent asks a question in a session you are not looking at: a short notice that opens it.
+    private func workspaceQuestion(_ run: WorkspaceRun) {
+        if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString { return }
+        NookSound.play(.attention)
+        let runID = run.id
+        viewModel.finish(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
+            self?.openWorkspace(run: runID)
+        }
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {

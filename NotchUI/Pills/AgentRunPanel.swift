@@ -35,6 +35,11 @@ struct AgentRunPanel: View {
                 }
                 if confirmDelete {
                     deleteConfirmation(run)
+                } else if let question = workspace.questions[runID]?.first {
+                    // The agent asks something: its question takes the composer's place until answered.
+                    RunQuestionPanel(question: question, agent: run.provider.displayName) { answers in
+                        workspace.answer(runID, questionID: question.id, answers: answers)
+                    }
                 } else {
                     composer(run)
                 }
@@ -219,7 +224,22 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(run.status.color.opacity(0.07)))
     }
 
+    @ViewBuilder
     private func eventRow(_ event: RunEvent) -> some View {
+        if event.kind == .assistant, event.tool == "plan" {
+            let idle = !(workspace.run(runID)?.status.isActive ?? false)
+            // Only the latest plan can still be carried out.
+            let latest = workspace.timeline(runID).last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
+            PlanCard(text: event.text, canAct: idle && latest) {
+                workspace.configure(runID, mode: .agent)
+                workspace.send(runID, text: tr("ws.plan.implementPrompt"))
+            }
+        } else {
+            eventView(event)
+        }
+    }
+
+    private func eventView(_ event: RunEvent) -> some View {
         EventRow(
             event: event,
             expanded: expanded.contains(event.id),
@@ -285,11 +305,13 @@ struct AgentRunPanel: View {
             draft = ""
             workspace.send(runID, text: text)
         }
+        // Codex over app-server takes a new message during the turn (steering); other agents get it after the turn.
+        let steers = active && workspace.canSteer(runID)
         let queue = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return }
             draft = ""
-            workspace.enqueue(runID, text: text)
+            if !(steers && workspace.steer(runID, text: text)) { workspace.enqueue(runID, text: text) }
         }
         return VStack(alignment: .leading, spacing: 5) {
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
@@ -297,7 +319,8 @@ struct AgentRunPanel: View {
             }
             SessionComposer(
                 text: $draft,
-                prompt: active ? tr("agents.run.busyPrompt", run.provider.kind.shortName) : tr("agents.run.prompt"),
+                prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
+                                         : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
                 canSend: !active,
                 busy: active,
                 onStop: { workspace.stop(runID) },
@@ -312,7 +335,8 @@ struct AgentRunPanel: View {
                 actionsMenu(run)
             }
             // While it works, what you type waits in line and goes out when the turn is done.
-            .queueing(active ? queue : nil)
+            .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
+                      symbol: steers ? "arrow.turn.down.right" : "text.append")
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))

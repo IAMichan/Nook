@@ -295,6 +295,16 @@ struct BridgeLaunch: Equatable, Sendable {
         ]
     }
 
+    /// Codex over app-server: the same server as `thread/start` config (`mcp_servers`), no command-line overrides needed.
+    func codexMCPServers(runID: UUID) -> [String: Any] {
+        [BridgeTool.serverName: [
+            "command": script,
+            "args": ["--agent", "codex"],
+            "env": ["NOOK_RUN_ID": runID.uuidString],
+            "tool_timeout_sec": 900
+        ] as [String: Any]]
+    }
+
     /// A TOML basic string.
     static func toml(_ text: String) -> String {
         var escaped = ""

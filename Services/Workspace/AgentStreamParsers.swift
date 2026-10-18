@@ -213,6 +213,31 @@ enum ClaudeStreamParser {
                      "response": ["subtype": "success", "request_id": requestID, "response": decision]])
     }
 
+    /// The answer to AskUserQuestion, given as permission to run the tool with the answers filled in (way):
+    /// `answers` maps each question's text to the chosen labels, joined.
+    static func questionAnswer(requestID: String, input: JSONBox, questions: [RunQuestion], answers: [String: [String]]) -> String {
+        var updated = input.dictionary
+        var filled: [String: String] = [:]
+        for question in questions { filled[question.question] = (answers[question.id] ?? []).joined(separator: ", ") }
+        updated["answers"] = filled
+        return line(["type": "control_response",
+                     "response": ["subtype": "success", "request_id": requestID,
+                                  "response": ["behavior": "allow", "updatedInput": updated]]])
+    }
+
+    /// Claude Code's AskUserQuestion input as questions Nook can show: one id per question (its index).
+    static func questions(from input: JSONBox) -> [RunQuestion] {
+        ((input.dictionary["questions"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, raw in
+            guard let text = raw["question"] as? String else { return nil }
+            let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
+                guard let label = option["label"] as? String else { return nil }
+                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")
+            }
+            return RunQuestion(id: "q\(index)", header: (raw["header"] as? String) ?? "", question: text, options: options,
+                               multiSelect: (raw["multiSelect"] as? Bool) ?? false, allowsOther: true)
+        }
+    }
+
     /// Requests Claude Code to interrupt the current turn.
     static func interruptRequest(id: String) -> String {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "interrupt"]])
@@ -237,6 +262,22 @@ enum CodexStreamEvent: Equatable, Sendable {
     case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool)
     case turnCompleted(TurnUsage)
     case failed(String)
+    // `codex app-server` only (see CodexAppServer.swift).
+    case turnStarted(String)
+    case messageDelta(id: String, text: String)
+    case messageCompleted(id: String, text: String)
+    case reasoningDelta(id: String, text: String)
+    case reasoningCompleted(id: String, text: String)
+    case commandOutput(id: String, delta: String)
+    case tokenUsage(CodexTokenUsage)
+    case turnFinished(status: String, error: String?, durationSeconds: Double?)
+    case approval(CodexApprovalRequest)
+    case question(rpcID: RPCID, questions: [RunQuestion])
+    /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
+    case unsupportedRequest(RPCID)
+    case plan(String)
+    case notice(String)
+    case rateLimits(JSONBox)
 }
 
 struct CodexFileChange: Equatable, Sendable {

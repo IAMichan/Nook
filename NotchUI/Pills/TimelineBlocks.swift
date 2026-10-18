@@ -176,3 +176,32 @@ enum ToolTallyText {
         return count == 1 ? tr(key + ".one") : tr(key + ".many", count)
     }
 }
+
+/// A plan the agent proposed in Plan mode (Claude Code's ExitPlanMode, a Codex plan): the plan itself, and the button
+/// that carries it out (Agent mode, then "implement the plan").
+struct PlanCard: View {
+    let text: String
+    let canAct: Bool
+    let implement: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.clipboard").font(.system(size: 11, weight: .semibold))
+                Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(NookTheme.iris)
+            MarkdownView(text: text, size: 12.5)
+            if canAct {
+                HStack {
+                    Spacer()
+                    NookPrimaryButton(title: tr("ws.plan.implement"), action: implement)
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.25), lineWidth: 1))
+    }
+}
