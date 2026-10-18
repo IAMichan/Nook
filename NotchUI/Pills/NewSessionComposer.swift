@@ -196,6 +196,41 @@ struct NewSessionComposer: View {
         .padding(.horizontal, 6)
     }
 
+    /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
+    @ViewBuilder
+    private var notice: some View {
+        if let error {
+            Text(error)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.coralSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        } else if config.provider == .antigravity, antigravity.installed == nil {
+            AntigravitySetupRow().padding(.horizontal, 8)
+        } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
+            HStack(spacing: 8) {
+                Text(tr("ws.new.accountNotLoggedIn")).foregroundStyle(NookTheme.amber)
+                SmallGhostButton(title: tr("agents.login")) { app.connect(profile) }
+            }
+            .font(NookTheme.font(12))
+            .padding(.horizontal, 8)
+        } else if !sharing.isEmpty, config.isolation == .folder {
+            HStack(spacing: 8) {
+                Text(tr("ws.new.sharedWarning", sharing.map(\.title).joined(separator: ", ")))
+                    .foregroundStyle(NookTheme.amber)
+                    .lineLimit(2)
+                Toggle(tr("ws.new.sharedAllow"), isOn: $allowShared).toggleStyle(.checkbox)
+            }
+            .font(NookTheme.font(12))
+            .padding(.horizontal, 8)
+        } else if let reason = blockingReason, project != nil, !config.task.isEmpty {
+            Text(reason)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textTertiary)
+                .padding(.horizontal, 8)
+        }
+    }
+
     // MARK: State
 
     private var recentProjects: [String] {

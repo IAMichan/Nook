@@ -82,7 +82,12 @@ final class PullRequestStore: ObservableObject {
     func refresh(force: Bool = false) async {
         available = GitHubPullRequestList.isAvailable
         guard available else {
+            // GitHub was disconnected: no old rows from an account Nook can no longer read.
             loaded = true
+            if !accounts.isEmpty {
+                accounts = []
+                try? FileManager.default.removeItem(at: file)
+            }
             return
         }
         guard !loading, force || Date().timeIntervalSince(fetchedAt) > Self.staleAfter else { return }

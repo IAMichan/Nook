@@ -347,8 +347,11 @@ extension WorkspaceManager {
         acpClients[id] = nil
         client.stop()
         warmPrompts[id] = nil
-        // Warming up failed with no message waiting: the next message simply starts it again.
-        guard let prompt else { return }
+        // Warming up failed with no message waiting: remember a Gemini without ACP, and the next message starts it again.
+        guard let prompt else {
+            if run(id)?.provider == .gemini, client.sessionID == nil { acpFallback.insert(executable) }
+            return
+        }
         if run(id)?.provider == .gemini, client.sessionID == nil {
             acpFallback.insert(executable)
             turns[id] = nil

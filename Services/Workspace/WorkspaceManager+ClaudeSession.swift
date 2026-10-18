@@ -76,7 +76,8 @@ extension WorkspaceManager {
         claudeThinkingDisplay[executable] = false
         Task { [weak self] in
             let known = await Task.detached(priority: .utility) {
-                (try? ProcessRunner.run(executable, ["--help"], timeout: 15))?.stdout.contains("--thinking-display") == true
+                let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable, extra: [:])
+                return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout.contains("--thinking-display") == true
             }.value
             self?.claudeThinkingDisplay[executable] = known
         }

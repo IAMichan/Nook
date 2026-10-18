@@ -164,6 +164,7 @@ struct AgentModelPicker: View {
     let provider: RunProvider
     let profileID: String?
     let model: String
+    var showsAccounts = false
     let choose: (RunProvider, String?, String?) -> Void
     @State private var shown: RunProvider?
     @State private var query = ""
@@ -198,7 +199,8 @@ struct AgentModelPicker: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 let accounts = app.connectedProfiles(for: current)
-                if accounts.count > 1 {
+                // A running session keeps its account: only a new session shows the choice.
+                if providers.count > 1 || showsAccounts, accounts.count > 1 {
                     DropdownHeader(title: current.displayName)
                     ForEach(accounts) { account in
                         DropdownRow(agent: current.displayName, account: AccountKind.of(account, app: app),
@@ -233,7 +235,7 @@ struct AgentModelPicker: View {
             }
             .padding(.horizontal, 4)
         }
-        .frame(height: 320)
+        .frame(maxHeight: 320)
     }
 
     private var filtered: [String] {

@@ -497,9 +497,11 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: text, shown: false)
     }
 
-    private func send(_ id: UUID, text: String, shown: Bool) {
+    /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
+    @discardableResult
+    private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
+        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return false }
         // The previous turn's snapshot is still being made (a moment): your message shows at once, and
         // goes out right after it, so this turn's edits stay out of that snapshot.
         if checkpointing.contains(id) {
@@ -510,18 +512,19 @@ final class WorkspaceManager: ObservableObject {
                 if !shown { append(id, RunEvent(kind: .user, text: clean)) }
                 awaitingCheckpoint[id] = clean
             }
-            return
+            return true
         }
         guard let executable = executable(run.provider) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
-            return
+            return false
         }
         guard WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
-            return
+            return false
         }
         loadTimeline(id)
         launchTurn(id, prompt: clean, executable: executable, showPrompt: !shown)
+        return true
     }
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
@@ -550,7 +553,11 @@ final class WorkspaceManager: ObservableObject {
         checkpointing.remove(id)
         if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
-            send(id, text: waiting, shown: true)
+            // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
+            if !send(id, text: waiting, shown: true) {
+                queued[id, default: []].insert(waiting, at: 0)
+                sendQueued(id)
+            }
         } else {
             sendQueued(id)
         }
@@ -726,9 +733,10 @@ final class WorkspaceManager: ObservableObject {
                 thinkingDisplay: claudeThinkingDisplay[executable] == true))
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
-            process.onLines = { [weak self] lines in
+            process.onLines = { [weak self, weak process] lines in
                 Task { @MainActor in
-                    guard let self else { return }
+                    // While it only waits, nothing it prints is a turn (a failed resume must not fail the session).
+                    guard let self, let process, self.processes[id] === process else { return }
                     for line in lines { self.handle(line: line, for: id) }
                 }
             }
@@ -740,9 +748,12 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
-        case .gemini, .opencode, .cursor, .grok, .antigravity:
+        case .gemini, .opencode, .cursor, .grok:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
+        case .antigravity:
+            // Not ahead of time: signing in could open Google's page just because you looked at the session.
+            return
         }
     }
 
@@ -940,6 +951,9 @@ final class WorkspaceManager: ObservableObject {
             // A steering message cut this segment short: the turn goes on with the new message (rule).
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
+                // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
+                closeThinking(id)
+                turns[id]?.streamedThinking.removeAll()
                 return
             }
             turns[id]?.steered = false

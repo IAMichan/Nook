@@ -379,8 +379,11 @@ extension WorkspaceManager {
         codexServers[id] = nil
         client.stop()
         warmPrompts[id] = nil
-        // Warming up failed with no message waiting: the next message simply starts it again.
-        guard let prompt else { return }
+        // Warming up failed with no message waiting: remember an old Codex, and the next message starts it again.
+        guard let prompt else {
+            if error.meansUnsupported { codexExecOnly.insert(executable) }
+            return
+        }
         if error.meansUnsupported {
             fallBackToExec(id, prompt: prompt, executable: executable)
         } else {
