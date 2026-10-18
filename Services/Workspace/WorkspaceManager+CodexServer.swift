@@ -6,7 +6,7 @@ import Foundation
 /// (too old), the session falls back to `codex exec` for good, and nothing is lost.
 extension WorkspaceManager {
     /// Closes an idle Codex session after this long; the next message resumes the thread in a new process.
-    private static let codexIdleSeconds: UInt64 = 15 * 60
+    private static let codexIdleSeconds: UInt64 = 30 * 60
 
     // MARK: Turns
 
@@ -22,11 +22,18 @@ extension WorkspaceManager {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
 
-        if let client = codexServers[id], client.isRunning, client.threadID != nil {
-            startCodexTurn(id, client, prompt: prompt)
+        if let client = codexServers[id], client.isRunning {
+            // Warmed up already: the turn starts at once, or as soon as the thread is open.
+            if client.threadID != nil { startCodexTurn(id, client, prompt: prompt) } else { warmPrompts[id] = prompt }
             return
         }
+        connectCodexServer(id, executable: executable, prompt: prompt)
+    }
 
+    /// Starts Codex's app-server for a session and opens its thread. With a prompt the turn follows right away; without
+    /// one (warming up when you open the session, so your first message goes out at once) it waits for your message.
+    func connectCodexServer(_ id: UUID, executable: String, prompt: String?) {
+        guard let run = run(id) else { return }
         var environment = accountEnvironment(run.profileID)
         environment["NOOK_RUN_ID"] = id.uuidString
         let spec = LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
@@ -36,16 +43,19 @@ extension WorkspaceManager {
             Task { @MainActor in self?.handleCodexServer(id, client, message, events) }
         }
         client.onExit = { [weak self] status, stderr in
-            Task { @MainActor in self?.codexServerExited(id, client, status: status, stderr: stderr, prompt: prompt, executable: executable) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.codexServerExited(id, client, status: status, stderr: stderr, prompt: prompt ?? self.warmPrompts[id] ?? "", executable: executable)
+            }
         }
         do {
             try client.start()
         } catch {
-            failCodexTurn(id, tr("ws.error.launch", error.localizedDescription))
+            if prompt != nil { failCodexTurn(id, tr("ws.error.launch", error.localizedDescription)) }
             return
         }
         codexServers[id] = client
-        append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+        if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
                             bridgeLaunch() == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
@@ -57,7 +67,7 @@ extension WorkspaceManager {
             Task { @MainActor in
                 guard let self else { return }
                 if case .failure(let error) = result {
-                    self.codexServerFailed(id, client, error, prompt: prompt, executable: executable)
+                    self.codexServerFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                     return
                 }
                 client.notify("initialized")
@@ -66,7 +76,7 @@ extension WorkspaceManager {
                         guard let self else { return }
                         switch result {
                         case .failure(let error):
-                            self.codexServerFailed(id, client, error, prompt: prompt, executable: executable)
+                            self.codexServerFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                         case .success(let response):
                             let threadID = (response.dictionary["thread"] as? [String: Any])?["id"] as? String ?? run.providerSessionID
                             client.threadID = threadID
@@ -74,7 +84,11 @@ extension WorkspaceManager {
                                 if let threadID { $0.providerSessionID = threadID }
                                 if let model = response.dictionary["model"] as? String, !model.isEmpty { $0.resolvedModel = model }
                             }
-                            self.startCodexTurn(id, client, prompt: prompt)
+                            if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
+                                self.startCodexTurn(id, client, prompt: next)
+                            } else {
+                                self.scheduleCodexIdleClose(id)
+                            }
                         }
                     }
                 }
@@ -360,10 +374,13 @@ extension WorkspaceManager {
     // MARK: Failures
 
     /// The handshake or thread failed. A Codex without app-server support gets `codex exec` from now on.
-    private func codexServerFailed(_ id: UUID, _ client: CodexAppServerClient, _ error: CodexAppServerError, prompt: String, executable: String) {
+    private func codexServerFailed(_ id: UUID, _ client: CodexAppServerClient, _ error: CodexAppServerError, prompt: String?, executable: String) {
         guard codexServers[id] === client else { return }
         codexServers[id] = nil
         client.stop()
+        warmPrompts[id] = nil
+        // Warming up failed with no message waiting: the next message simply starts it again.
+        guard let prompt else { return }
         if error.meansUnsupported {
             fallBackToExec(id, prompt: prompt, executable: executable)
         } else {
@@ -383,6 +400,7 @@ extension WorkspaceManager {
         codexServers[id] = nil
         codexIdleClose[id]?.cancel()
         codexIdleClose[id] = nil
+        warmPrompts[id] = nil
         guard let state = turns[id], !state.finished else { return }
         if client.threadID == nil, CodexAppServerError.exited(stderr).meansUnsupported {
             fallBackToExec(id, prompt: prompt, executable: executable)

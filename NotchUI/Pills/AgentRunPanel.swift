@@ -56,11 +56,14 @@ struct AgentRunPanel: View {
             .onAppear {
                 workspace.loadTimeline(runID)
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
+                // The agent's connection opens now, so your first message goes straight in.
+                workspace.prewarm(runID)
                 focused = true
             }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
+                workspace.prewarm(runID)
                 draft = ""
                 renaming = false
                 confirmDelete = false

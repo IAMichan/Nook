@@ -57,6 +57,7 @@ struct RunDetailView: View {
             .onAppear {
                 workspace.loadTimeline(runID)
                 workspace.refreshGit(runID)
+                workspace.prewarm(runID)
                 composerFocused = true
             }
             .sheet(item: $diffFile) { file in

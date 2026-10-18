@@ -132,6 +132,10 @@ final class WorkspaceManager: ObservableObject {
     var limitedTurns: [UUID: Date?] = [:]
     /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
     var claudeThinkingDisplay: [String: Bool] = [:]
+    /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
+    var warmPrompts: [UUID: String] = [:]
+    /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
+    var awaitingCheckpoint: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
@@ -389,7 +393,8 @@ final class WorkspaceManager: ObservableObject {
             // The first snapshot, before the agent does anything: "back to here" on the first message.
             if let git {
                 let ref = GitService.checkpointRef(session: id, index: 0)
-                if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(worktreePath, ref: ref) }.value) != nil {
+                // A new worktree is exactly its branch's HEAD: point the snapshot there instead of reading every file.
+                if (try? await Task.detached(priority: .userInitiated) { try git.checkpointHead(worktreePath, ref: ref) }.value) != nil {
                     update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
                 }
             }
@@ -489,11 +494,22 @@ final class WorkspaceManager: ObservableObject {
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     func send(_ id: UUID, text: String) {
+        send(id, text: text, shown: false)
+    }
+
+    private func send(_ id: UUID, text: String, shown: Bool) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
-        // The previous turn's snapshot is still being made: wait for it (a moment), so this turn's edits stay out of it.
+        // The previous turn's snapshot is still being made (a moment): your message shows at once, and
+        // goes out right after it, so this turn's edits stay out of that snapshot.
         if checkpointing.contains(id) {
-            enqueue(id, text: clean)
+            if awaitingCheckpoint[id] != nil {
+                enqueue(id, text: clean)
+            } else {
+                loadTimeline(id)
+                if !shown { append(id, RunEvent(kind: .user, text: clean)) }
+                awaitingCheckpoint[id] = clean
+            }
             return
         }
         guard let executable = executable(run.provider) else {
@@ -505,7 +521,7 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         loadTimeline(id)
-        launchTurn(id, prompt: clean, executable: executable)
+        launchTurn(id, prompt: clean, executable: executable, showPrompt: !shown)
     }
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
@@ -533,7 +549,11 @@ final class WorkspaceManager: ObservableObject {
     private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
         checkpointing.remove(id)
         if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
-        sendQueued(id)
+        if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
+            send(id, text: waiting, shown: true)
+        } else {
+            sendQueued(id)
+        }
     }
 
     /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
@@ -686,6 +706,44 @@ final class WorkspaceManager: ObservableObject {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+    }
+
+    /// Opens the agent's connection when you open an idle session (an existing conversation), so your first message goes
+    /// straight in instead of waiting for a process to start: Claude Code waits on stdin, Codex has its thread open, an
+    /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
+    func prewarm(_ id: UUID) {
+        guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
+              run.providerSessionID != nil, !forkNext.contains(id), let executable = executable(run.provider),
+              WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
+        switch run.provider {
+        case .claude:
+            guard claudeIdle[id] == nil else { return }
+            if claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+            var spec = AgentCommand.spec(AgentCommand.Input(
+                provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
+                instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
+                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridgeLaunch(),
+                thinkingDisplay: claudeThinkingDisplay[executable] == true))
+            spec.initialInput = []
+            let process = AgentProcess(spec: spec)
+            process.onLines = { [weak self] lines in
+                Task { @MainActor in
+                    guard let self else { return }
+                    for line in lines { self.handle(line: line, for: id) }
+                }
+            }
+            process.onExit = { [weak self, weak process] status, stderr in
+                Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+            }
+            guard (try? process.start()) != nil else { return }
+            parkWarmClaude(id, process, key: claudeKey(run))
+        case .codex:
+            guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
+            connectCodexServer(id, executable: executable, prompt: nil)
+        case .gemini, .opencode, .cursor, .grok, .antigravity:
+            guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
+            connectAcp(id, executable: executable, prompt: nil)
+        }
     }
 
     // MARK: Agent Output
@@ -1162,6 +1220,8 @@ final class WorkspaceManager: ObservableObject {
         closeClaudeProcess(id)
         closeAcpClient(id)
         limitResumes.removeValue(forKey: id)?.cancel()
+        warmPrompts[id] = nil
+        awaitingCheckpoint[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         git[id] = nil

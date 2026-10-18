@@ -4,7 +4,7 @@ import Foundation
 /// message goes straight to it, warm cache and all. A change of model, mode or rights (they are command-line flags),
 /// a copy of the conversation, or ten quiet minutes start a fresh process that resumes the conversation instead.
 extension WorkspaceManager {
-    private static let claudeIdleSeconds: UInt64 = 10 * 60
+    private static let claudeIdleSeconds: UInt64 = 30 * 60
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
@@ -50,6 +50,17 @@ extension WorkspaceManager {
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         idle.process.send(ClaudeStreamParser.userMessage(prompt))
         return true
+    }
+
+    /// A process started ahead of your first message (see `prewarm`): it waits like one parked after a turn.
+    func parkWarmClaude(_ id: UUID, _ process: AgentProcess, key: String) {
+        closeClaudeProcess(id)
+        claudeIdle[id] = (process, key)
+        claudeIdleClose[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.claudeIdleSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.closeClaudeProcess(id)
+        }
     }
 
     func closeClaudeProcess(_ id: UUID) {
