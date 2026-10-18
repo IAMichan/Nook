@@ -65,7 +65,8 @@ extension AppModel {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         Self.pruneCaptures(in: folder)
         let file = folder.appendingPathComponent("Schermdeel \(Int(Date().timeIntervalSince1970)).png")
-        // The notch folds first: it must not be in the picture.
+        // The notch folds first: it must not be in the picture. The app in front gets the image back on Paste.
+        let target = NSWorkspace.shared.frontmostApplication
         viewModel.show(.idle)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -77,7 +78,7 @@ extension AppModel {
                 self.capturingScreenPart = false
                 // Esc: no file, nothing happens.
                 guard FileManager.default.fileExists(atPath: file.path) else { return }
-                self.askAboutImage(file, name: tr("chat.capture.name"))
+                self.presentScreenPart(file, target: target)
             }
         }
         do {
@@ -87,6 +88,51 @@ extension AppModel {
             capturingScreenPart = false
             viewModel.show(.card(errorCard(error.localizedDescription)))
         }
+    }
+
+    /// The part of the screen in the notch, with what to do with it: ask Nook (the default), paste it where you were,
+    /// copy it, or mark it up first.
+    func presentScreenPart(_ file: URL, target: NSRunningApplication?) {
+        guard let image = NSImage(contentsOf: file), let png = try? Data(contentsOf: file) else { return }
+        let token = "screenpart-" + UUID().uuidString
+        let name = tr("chat.capture.name")
+        let appName = target?.localizedName ?? ""
+        viewModel.register("\(token)#ask") { [weak self] in self?.askAboutImage(file, name: name) }
+        viewModel.register("\(token)#paste") { [weak self] in
+            Task { @MainActor in
+                if await ScreenPartPaste.paste(png: png, image: image, into: target) == false {
+                    self?.viewModel.finish(tr("capture.copied"))
+                }
+            }
+        }
+        viewModel.register("\(token)#copy") { ScreenPartPaste.put(png: png, image: image) }
+        viewModel.register("\(token)#annotate") { [weak self] in
+            ScreenPartAnnotator.shared.annotate(image) { result in
+                guard let self, let result, let data = ScreenPartPaste.pngData(result) else { return }
+                let marked = file.deletingPathExtension().appendingPathExtension("marked.png")
+                guard (try? data.write(to: marked, options: .atomic)) != nil else { return }
+                self.presentScreenPart(marked, target: target)
+            }
+        }
+        var extra = [CardAction(label: tr("capture.copy"), outcome: .callback("\(token)#copy", tr("capture.copiedShort"))),
+                     CardAction(label: tr("capture.annotate"), outcome: .callback("\(token)#annotate", ""))]
+        if target != nil, target?.bundleIdentifier != Bundle.main.bundleIdentifier {
+            extra.insert(CardAction(label: tr("capture.pasteIn", appName), outcome: .callback("\(token)#paste", "")), at: 0)
+        }
+        let size = image.size
+        let card = NookCard(
+            id: token,
+            mood: .seen,
+            context: "\(name) · \(Int(size.width))×\(Int(size.height))",
+            title: tr("capture.question"),
+            detail: .none,
+            primary: CardAction(label: tr("capture.ask"), outcome: .callback("\(token)#ask", "")),
+            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
+            contentHeight: 130,
+            extra: extra,
+            escape: CardAction(label: "", outcome: .dismiss)
+        )
+        viewModel.show(.card(card))
     }
 
     /// Keeps the ten newest captures.
