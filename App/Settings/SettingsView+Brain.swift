@@ -244,6 +244,7 @@ extension SettingsView {
                 }
                 .fixedSize()
                 if fetchingModels { ProgressView().controlSize(.small) }
+                if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
             if settings.provider == .claude {
                 Text(tr("settings.brain.haikuHint"))
@@ -295,7 +296,10 @@ extension SettingsView {
                 HStack {
                     ModelLogo(name: option.title + " " + option.id)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(option.title)
+                        HStack(spacing: 5) {
+                            Text(option.title)
+                            if !option.seesImages { NoImagesBadge() }
+                        }
                         Text(option.detail).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -393,5 +397,16 @@ private struct ModelLogo: View {
             }
         }
         .frame(width: 22)
+    }
+}
+
+/// A small crossed-out eye next to a model that cannot read pictures; the tooltip explains it.
+struct NoImagesBadge: View {
+    var body: some View {
+        Image(systemName: "eye.slash")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(tr("brain.noImages.help"))
+            .accessibilityLabel(tr("brain.noImages.help"))
     }
 }
