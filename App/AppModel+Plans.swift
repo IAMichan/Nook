@@ -205,7 +205,11 @@ extension AppModel {
             primaryLabel = tr("app.plan.add")
         }
 
-        viewModel.register("\(token)#run") { [weak self] in self?.execute(plan) }
+        viewModel.register("\(token)#run") { [weak self] in
+            self?.cardReplies[token] = nil
+            self?.continueInChat(plan, title: title, offers: offers)
+        }
+        registerCardReply(token) { [weak self] in self?.continueInChat(plan, title: title, offers: offers, run: false) }
 
         let cancel = CardAction(label: tr("button.cancel"), outcome: .dismiss)
         return NookCard(
@@ -251,6 +255,42 @@ extension AppModel {
         default:
             return false
         }
+    }
+
+    /// An accepted proposal from a card continues in the chat, in a conversation of its own: the proposal becomes Nook's message
+    /// and its plan runs there, so the outcome stays visible and a follow-up can steer it. `run: false` only places it,
+    /// for when the user replies to the card instead of accepting it.
+    func continueInChat(_ plan: BrainPlan, title: String, sources: [String] = [], offers: [String] = [], run: Bool = true) {
+        let conversation = chat.startNew()
+        chat.rename(conversation, to: Conversation.title(from: title))
+        var message = ChatMessage(role: .nook, text: plan.text)
+        message.sources = sources
+        message.offers = offers
+        message.actions = plan.actions
+        message.actionStates = Array(repeating: .pending, count: plan.actions.count)
+        message.actionIncluded = Array(repeating: true, count: plan.actions.count)
+        message.actionProblems = plan.actions.map { actionProblems($0, scope: .automatic) }
+        chat.append(message, to: conversation)
+        showChat()
+        if run, !plan.actions.isEmpty { runPlan(message.id) }
+    }
+
+    /// A reply typed on a proposal card: the proposal moves into the chat first, so the question is answered with it in view.
+    func handleCardReply(_ text: String, card: NookCard) {
+        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !question.isEmpty, settings.brainReady, let adopt = cardReplies.removeValue(forKey: card.id) {
+            warmUp()
+            adopt()
+            ask(question)
+        } else {
+            handleUserText(text)
+        }
+    }
+
+    /// Remembers how a proposal card moves into the chat when the user replies to it.
+    func registerCardReply(_ cardID: String, _ adopt: @escaping () -> Void) {
+        if cardReplies.count > 12 { cardReplies.removeAll() }
+        cardReplies[cardID] = adopt
     }
 
     func execute(_ plan: BrainPlan) {

@@ -394,4 +394,6 @@ final class AppModel: ObservableObject {
     var chatTasks: [UUID: Task<Void, Never>] = [:]
     /// Pending proactive offer awaiting response, displayed temporarily in Today.
     @Published var missedNudge: (line: String, card: NookCard, app: String, date: Date)?
+    /// Proposal cards that move into the chat when the user types a reply on them, by card ID.
+    var cardReplies: [String: () -> Void] = [:]
 }
