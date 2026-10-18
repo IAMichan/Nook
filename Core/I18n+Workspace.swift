@@ -6,6 +6,15 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.event.thinkingLive": "Denkt na…",
+        "compose.searchModels": "Zoek modellen…",
+        "compose.noModels": "Geen modellen gevonden",
+        "compose.searchBranches": "Zoek branches…",
+        "compose.noBranches": "Geen branches gevonden",
+        "compose.modeSwitch": "klik om te wisselen tussen Agent en Plan",
+        "compose.access": "Toegang",
+        "compose.whereWorks": "Waar de agent werkt",
+        "compose.currentCheckoutDetail": "In de map zelf, op de branch die er nu staat.",
         "agents.usage.antigravitySignIn": "log in via een Antigravity-sessie",
         "ws.permission.ask.help.acp": "De agent vraagt Nook om toestemming voor bewerkingen en commando's; lezen mag altijd.",
         "ws.permission.acceptEdits.help.acp": "Bewerkingen worden meteen toegestaan; commando's vragen eerst om je goedkeuring.",
@@ -548,6 +557,15 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.event.thinkingLive": "Thinking…",
+        "compose.searchModels": "Search models…",
+        "compose.noModels": "No models found",
+        "compose.searchBranches": "Search branches…",
+        "compose.noBranches": "No branches found",
+        "compose.modeSwitch": "click to switch between Agent and Plan",
+        "compose.access": "Access",
+        "compose.whereWorks": "Where the agent works",
+        "compose.currentCheckoutDetail": "In the folder itself, on the branch checked out there now.",
         "agents.usage.antigravitySignIn": "sign in through an Antigravity session",
         "ws.permission.ask.help.acp": "The agent asks Nook for permission for edits and commands; reading is always allowed.",
         "ws.permission.acceptEdits.help.acp": "Edits are allowed right away; commands ask for your approval first.",
@@ -1090,6 +1108,15 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.event.thinkingLive": "Denkt nach…",
+        "compose.searchModels": "Modelle suchen…",
+        "compose.noModels": "Keine Modelle gefunden",
+        "compose.searchBranches": "Branches suchen…",
+        "compose.noBranches": "Keine Branches gefunden",
+        "compose.modeSwitch": "klicken, um zwischen Agent und Plan zu wechseln",
+        "compose.access": "Zugriff",
+        "compose.whereWorks": "Wo der Agent arbeitet",
+        "compose.currentCheckoutDetail": "Im Ordner selbst, auf dem Branch, der dort gerade ausgecheckt ist.",
         "agents.usage.antigravitySignIn": "über eine Antigravity-Sitzung anmelden",
         "ws.permission.ask.help.acp": "Der Agent fragt Nook um Erlaubnis für Änderungen und Befehle; Lesen ist immer erlaubt.",
         "ws.permission.acceptEdits.help.acp": "Änderungen werden sofort erlaubt; Befehle fragen zuerst um deine Freigabe.",
