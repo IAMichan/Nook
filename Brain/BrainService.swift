@@ -195,6 +195,17 @@ final class BrainService {
         return items
     }
 
+    /// A small rewrite without tools (Flow's clean-up, a dictated prompt): the chosen brain, so on this Mac by default.
+    /// Nil when it takes longer than `timeout` seconds or fails; the caller then keeps the original text.
+    func rewrite(system: String, prompt: String, timeout: Double) async -> String? {
+        guard settings.brainReady else { return nil }
+        let profile = settings.brainProfile
+        return try? await RetrievalLedger.withTimeout(timeout) { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.complete(system: system, prompt: prompt, profile: profile)
+        }
+    }
+
     /// One answer without tools. With Claude, a fast model does this small job; the chosen model still answers.
     private func complete(system: String, prompt: String, profile: ModelProfile) async throws -> String {
         let selection = settings.selection

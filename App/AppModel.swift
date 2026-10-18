@@ -355,6 +355,7 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         connectors.start()
         startWhatsApp()
+        startFlow()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }

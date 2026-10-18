@@ -77,3 +77,13 @@ extension AppModel {
             .compactMap { $0 }.joined(separator: " ")
     }
 }
+
+/// Flow, dictation anywhere: its clean-up runs on Nook's own brain.
+extension AppModel {
+    func startFlow() {
+        FlowDictation.shared.rewrite = { [weak self] system, text, timeout in
+            await self?.brain.rewrite(system: system, prompt: text, timeout: timeout)
+        }
+        FlowDictation.shared.refresh()
+    }
+}
