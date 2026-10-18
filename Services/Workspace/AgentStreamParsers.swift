@@ -50,6 +50,9 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
     case result(ClaudeTurnResult)
     case notice(String)
+    /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
+    /// A limit changed; with the details when Claude Code gave them (a blocked window and when it resets).
+    case rateLimits(UsageLimits.ClaudeEvent?)
 }
 
 struct ClaudeTurnResult: Equatable, Sendable {
@@ -59,6 +62,13 @@ struct ClaudeTurnResult: Equatable, Sendable {
     var sessionID: String?
     var usage: TurnUsage
     var permissionDenials: Int
+    /// Why the turn ended, e.g. `aborted_streaming` or `aborted_tools` when a steering message cut it short.
+    var terminalReason: String? = nil
+    /// The HTTP status of a failed API call (429: a usage limit).
+    var apiErrorStatus: Int? = nil
+
+    /// The end of a turn segment that a steering message (`priority: "now"`) cut off: the turn goes on.
+    var endedBySteer: Bool { terminalReason == "aborted_streaming" || terminalReason == "aborted_tools" }
 }
 
 enum ClaudeStreamParser {
@@ -131,6 +141,9 @@ enum ClaudeStreamParser {
                 toolUseID: request["tool_use_id"] as? String
             )]
 
+        case "rate_limit_event":
+            return [.rateLimits((object["rate_limit_info"] as? [String: Any]).flatMap(UsageLimits.claudeEvent))]
+
         case "result":
             var usage = TurnUsage()
             if let raw = object["usage"] as? [String: Any] {
@@ -154,7 +167,9 @@ enum ClaudeStreamParser {
                 text: text,
                 sessionID: object["session_id"] as? String,
                 usage: usage,
-                permissionDenials: (object["permission_denials"] as? [Any])?.count ?? 0
+                permissionDenials: (object["permission_denials"] as? [Any])?.count ?? 0,
+                terminalReason: object["terminal_reason"] as? String,
+                apiErrorStatus: ClaudeStreamParser.number(object["api_error_status"]).map { Int($0) }
             ))]
 
         default:
@@ -195,9 +210,12 @@ enum ClaudeStreamParser {
 
     // MARK: Messages to Claude Code (stdin)
 
-    /// A user message in `--input-format stream-json` format.
-    static func userMessage(_ text: String) -> String {
-        line(["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""])
+    /// A user message in `--input-format stream-json` format. With `steer`, it has `priority: "now"`: Claude Code
+    /// stops what it is doing in the running turn and takes the message in right away (steering).
+    static func userMessage(_ text: String, steer: Bool = false) -> String {
+        var message: [String: Any] = ["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""]
+        if steer { message["priority"] = "now" }
+        return line(message)
     }
 
     /// Response to a permission prompt. On "allow", Claude Code sends back the original input.
@@ -211,6 +229,31 @@ enum ClaudeStreamParser {
         }
         return line(["type": "control_response",
                      "response": ["subtype": "success", "request_id": requestID, "response": decision]])
+    }
+
+    /// The answer to AskUserQuestion, given as permission to run the tool with the answers filled in (way):
+    /// `answers` maps each question's text to the chosen labels, joined.
+    static func questionAnswer(requestID: String, input: JSONBox, questions: [RunQuestion], answers: [String: [String]]) -> String {
+        var updated = input.dictionary
+        var filled: [String: String] = [:]
+        for question in questions { filled[question.question] = (answers[question.id] ?? []).joined(separator: ", ") }
+        updated["answers"] = filled
+        return line(["type": "control_response",
+                     "response": ["subtype": "success", "request_id": requestID,
+                                  "response": ["behavior": "allow", "updatedInput": updated]]])
+    }
+
+    /// Claude Code's AskUserQuestion input as questions Nook can show: one id per question (its index).
+    static func questions(from input: JSONBox) -> [RunQuestion] {
+        ((input.dictionary["questions"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, raw in
+            guard let text = raw["question"] as? String else { return nil }
+            let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
+                guard let label = option["label"] as? String else { return nil }
+                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")
+            }
+            return RunQuestion(id: "q\(index)", header: (raw["header"] as? String) ?? "", question: text, options: options,
+                               multiSelect: (raw["multiSelect"] as? Bool) ?? false, allowsOther: true)
+        }
     }
 
     /// Requests Claude Code to interrupt the current turn.
@@ -237,6 +280,24 @@ enum CodexStreamEvent: Equatable, Sendable {
     case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool)
     case turnCompleted(TurnUsage)
     case failed(String)
+    // `codex app-server` only (see CodexAppServer.swift).
+    case turnStarted(String)
+    case messageDelta(id: String, text: String)
+    case messageCompleted(id: String, text: String)
+    case reasoningDelta(id: String, text: String)
+    case reasoningCompleted(id: String, text: String)
+    case commandOutput(id: String, delta: String)
+    case tokenUsage(CodexTokenUsage)
+    case turnFinished(status: String, error: String?, durationSeconds: Double?)
+    case approval(CodexApprovalRequest)
+    case question(rpcID: RPCID, questions: [RunQuestion])
+    /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
+    case unsupportedRequest(RPCID)
+    case plan(String)
+    case notice(String)
+    case rateLimits(JSONBox)
+    /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).
+    case usageLimited
 }
 
 struct CodexFileChange: Equatable, Sendable {
@@ -303,12 +364,78 @@ enum CodexStreamParser {
             }
             return changes.isEmpty ? [] : [.fileChanges(id: id, changes: changes)]
         case "mcp_tool_call", "web_search":
-            let name = (item["tool"] as? String) ?? (kind == "web_search" ? "web_search" : "mcp")
-            let detail = (item["query"] as? String) ?? (item["server"] as? String) ?? ""
+            var name = (item["tool"] as? String) ?? (kind == "web_search" ? "web_search" : "mcp")
+            var detail = (item["query"] as? String) ?? (item["server"] as? String) ?? ""
+            // Nook's own workspace tools read as what they do: "Nook terminal · npm run dev".
+            if (item["server"] as? String) == BridgeTool.serverName, let tool = BridgeTool.named(name) {
+                name = tool.label
+                detail = ((item["arguments"] as? [String: Any]).flatMap(BridgeTool.detail)).map { ToolSummary.oneLine($0, 120) } ?? ""
+            }
             let failed = (item["status"] as? String) == "failed"
             return [.toolCall(id: id, name: name, detail: detail, finished: finished, failed: failed)]
         case "error":
             return [.failed((item["message"] as? String) ?? "Codex reported an error.")]
+        default:
+            return []
+        }
+    }
+}
+
+// MARK: Gemini CLI
+
+/// What Nook extracts from one line of Gemini CLI's `--output-format stream-json`.
+enum GeminiStreamEvent: Equatable, Sendable {
+    case initialized(sessionID: String, model: String?)
+    /// An answer chunk (`delta: true`) or a whole answer.
+    case text(String, delta: Bool)
+    case toolUse(id: String, name: String, input: JSONBox)
+    case toolResult(id: String, output: String, isError: Bool)
+    case warning(String)
+    case failed(String)
+    case result(isError: Bool, message: String?, usage: TurnUsage)
+}
+
+enum GeminiStreamParser {
+    static func parse(_ line: String) -> [GeminiStreamEvent] {
+        guard let data = line.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let type = object["type"] as? String else { return [] }
+        switch type {
+        case "init":
+            guard let session = object["session_id"] as? String, !session.isEmpty else { return [] }
+            return [.initialized(sessionID: session, model: object["model"] as? String)]
+        case "message":
+            // The prompt is echoed as a user message; only the answer matters.
+            guard (object["role"] as? String) == "assistant", let content = object["content"] as? String, !content.isEmpty else { return [] }
+            return [.text(content, delta: (object["delta"] as? Bool) ?? false)]
+        case "tool_use":
+            let id = (object["tool_id"] as? String) ?? UUID().uuidString
+            let name = (object["tool_name"] as? String) ?? "tool"
+            return [.toolUse(id: id, name: name, input: JSONBox((object["parameters"] as? [String: Any]) ?? [:]))]
+        case "tool_result":
+            let id = (object["tool_id"] as? String) ?? ""
+            let failed = (object["status"] as? String) == "error"
+            let error = (object["error"] as? [String: Any])?["message"] as? String
+            return [.toolResult(id: id, output: (object["output"] as? String) ?? error ?? "", isError: failed)]
+        case "error":
+            let message = (object["message"] as? String) ?? "Gemini CLI reported an error."
+            return [(object["severity"] as? String) == "warning" ? .warning(message) : .failed(message)]
+        case "result":
+            var usage = TurnUsage()
+            if let stats = object["stats"] as? [String: Any] {
+                // `input_tokens` includes the cached part; keep them apart like the other agents.
+                let cached = ClaudeStreamParser.number(stats["cached"]).map { Int($0) }
+                let input = ClaudeStreamParser.number(stats["input"]).map { Int($0) }
+                    ?? ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) - (cached ?? 0) }
+                usage.inputTokens = input
+                usage.cacheReadTokens = cached
+                usage.outputTokens = ClaudeStreamParser.number(stats["output_tokens"]).map { Int($0) }
+                usage.contextTokens = ClaudeStreamParser.number(stats["input_tokens"]).map { Int($0) }
+                usage.durationSeconds = ClaudeStreamParser.number(stats["duration_ms"]).map { $0 / 1000 }
+            }
+            let isError = (object["status"] as? String) == "error"
+            let message = (object["error"] as? [String: Any])?["message"] as? String
+            return [.result(isError: isError, message: message, usage: usage)]
         default:
             return []
         }

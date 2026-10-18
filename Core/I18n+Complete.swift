@@ -548,7 +548,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.new.dirty": "%ld Änderungen",
         "ws.new.dirtyNotIncluded": "Du hast %ld nicht committete Änderungen. Sie kommen nicht in den neuen Worktree; er startet vom Basis-Branch.",
         "ws.new.folderExplain": "Der Agent arbeitet in deinem eigenen Ordner, auf dem Branch, der jetzt ausgecheckt ist.",
-        "ws.new.geminiNote": "Gemini CLI und andere Agents werden über das Terminal verfolgt; Nook kann sie hier (noch) nicht starten.",
+        "ws.new.geminiNote": "Du siehst nur Agents und Konten, die du verbunden hast. Copilot CLI, Cursor und andere Agents verfolgst du über das Terminal.",
         "ws.new.inspecting": "Ordner wird geprüft…",
         "ws.new.instructions": "Zusätzliche Anweisungen (optional)",
         "ws.new.instructionsHint": "Zusätzlich zur CLAUDE.md oder AGENTS.md des Projekts, nur für diese Sitzung.",

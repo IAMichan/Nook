@@ -131,6 +131,7 @@ struct RunInspector: View {
                         }
                     }
                 }
+                GitQuickButton(runID: runID)
                 HStack(spacing: 6) {
                     Button(tr("ws.git.review")) {
                         if let first = files.first { review(first) }

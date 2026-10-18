@@ -13,6 +13,7 @@ struct RunDetailView: View {
     @State private var followTail = true
     @State private var diffFile: GitFileChange?
     @FocusState private var composerFocused: Bool
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -22,8 +23,36 @@ struct RunDetailView: View {
                 timeline(run)
                 if let pending = workspace.approvals[runID], !pending.isEmpty {
                     ApprovalBar(run: run, pending: pending)
+                } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+                    // A command or pull request the agent asks for through Nook's workspace (same as in the notch).
+                    let approval = ApprovalCenter.make(request)
+                    ApprovalView(approval: approval, maxHeight: 220) { app.approvals.decide(approval, $0) }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 10)
                 }
-                composer(run)
+                if let question = workspace.questions[runID]?.first {
+                    // The agent asks something: answer it here; Stop stays available.
+                    RunQuestionPanel(question: question, agent: run.provider.displayName,
+                                     onStop: { workspace.stop(runID) }) { answers in
+                        workspace.answer(runID, questionID: question.id, answers: answers)
+                    }
+                    .id(question.id)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                } else {
+                    if run.limitedAt != nil, !run.status.isActive {
+                        UsageLimitBanner(run: run)
+                            .padding(.horizontal, 18)
+                            .padding(.top, 10)
+                    }
+                    if let waiting = workspace.queued[runID], !waiting.isEmpty {
+                        QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
+                                            sendNow: run.status.isActive ? nil : { workspace.sendQueuedNow(runID) })
+                            .padding(.horizontal, 18)
+                            .padding(.top, 10)
+                    }
+                    composer(run)
+                }
             }
             .onAppear {
                 workspace.loadTimeline(runID)
@@ -276,6 +305,17 @@ struct RunDetailView: View {
                     .foregroundStyle(WS.tertiary)
                 Spacer()
                 if active {
+                    // While it works: Codex over app-server and Claude Code take the message now (steer), others after the turn (queue).
+                    let steers = workspace.canSteer(runID)
+                    Button {
+                        queueOrSteer()
+                    } label: {
+                        Label(steers ? tr("ws.action.steer") : tr("ws.action.queue"),
+                              systemImage: steers ? "arrow.turn.down.right" : "text.append")
+                    }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help(steers ? tr("compose.steer") : tr("compose.queue"))
                     Button(role: .destructive) {
                         workspace.stop(runID)
                     } label: {
@@ -302,6 +342,14 @@ struct RunDetailView: View {
         .padding(.bottom, 14)
         .frame(maxWidth: 956)
         .frame(maxWidth: .infinity)
+    }
+
+    private func queueOrSteer() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        draft = ""
+        followTail = true
+        if !workspace.steer(runID, text: text) { workspace.enqueue(runID, text: text) }
     }
 
     private func send() {

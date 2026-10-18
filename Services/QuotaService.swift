@@ -30,7 +30,8 @@ struct QuotaService {
                 window(usage.fiveHour.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.fiveHour")),
                 window(usage.sevenDay.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.week"))
             ]
-        case .gemini:
+        case .gemini, .opencode, .cursor, .grok:
+            // No limits reported; ACP agents report context and cost per session instead.
             return []
         case .antigravity:
             return antigravity.limits

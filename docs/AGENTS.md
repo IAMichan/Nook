@@ -39,7 +39,15 @@ Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-o
 - **Open terminal hier** opent de ingebouwde terminal in de map van de sessie.
 - **Limieten** per account (5 uur en week) staan bij Instellingen › Gebruik (`QuotaService`); Codex wordt per accountmap gelezen.
 
-Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code en Codex; andere agents kun je vanuit Nook volgen en beëindigen. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
+Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Grok en Antigravity, elk met één verbinding per sessie: Codex via `codex app-server`, Claude Code als één proces dat tussen beurten blijft wachten, en de rest via ACP (Antigravity op Google's ACP-server, die Nook eenmalig installeert). Goedkeuringen en vragen beantwoord je in Nook; Codex en Claude Code kun je tijdens een beurt bijsturen; bij een sessie in een eigen worktree kun je de bestanden terugzetten naar vóór een bericht. Een nieuwe sessie krijgt vanzelf een korte titel, één git-knop doet commit, push en pull request (de agent schrijft de teksten), en een sessie die op een gebruikslimiet stuit kan vanzelf verdergaan zodra die vrij is. Gesprekken uit de Antigravity-app beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen. Zie [AGENTS-PARITY.md](AGENTS-PARITY.md).
+
+**Het hele gesprek.** Bij elke sessie, lopend of eerder, zie je het volledige gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen: Claude Code, Codex (de redeneersamenvattingen), Gemini CLI (`thoughts`) en Antigravity. Neem je een sessie over, dan neemt Nook dat hele gesprek mee.
+
+**Alleen wat gekoppeld is.** Bij een nieuwe sessie, in de lijst met eerdere sessies en bij Gebruik zie je alleen agents en accounts die ingelogd zijn op een geïnstalleerde agent. De modellen zijn die de agent zelf aanbiedt (Codex `model/list`, de ACP-agents bij een sessie), anders de bekende, plus de modellen die je recent met die agent gebruikte. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
+
+## De werkruimte van Nook voor je agents
+
+Agents kunnen ook zelf Nooks werkruimte gebruiken: een commando starten in een zichtbare terminal van Nook (zoals een dev-server), een pagina openen en controleren in Nooks browser (tekst, console-fouten, screenshot) en een pull request voorstellen dat jij in de notch goedkeurt. Dat gaat via een kleine MCP-server, `~/.nook/nook-mcp`. Sessies die Nook start (Claude Code en Codex) krijgen hem vanzelf; een agent die je zelf start koppel je bij **Instellingen › Agents › Werkruimte**. Lezen gaat direct, een commando dat niet duidelijk onschuldig is en elk pull request vragen eerst jouw OK, gevaarlijke commando's weigert Nook altijd. Zie [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
 
 ## Zelf een agent koppelen
 

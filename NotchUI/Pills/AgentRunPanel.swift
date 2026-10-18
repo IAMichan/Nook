@@ -12,11 +12,18 @@ struct AgentRunPanel: View {
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
     @State private var expanded: Set<UUID> = []
+    /// Opened groups and folded turns ("group:<id>", "fold:<id>").
+    @State private var openBlocks: Set<String> = []
+    /// "Back to before this message": the message, and why it could not, if it could not.
+    @State private var revertTarget: RunEvent?
+    @State private var revertError: String?
+    @State private var reverting = false
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -25,9 +32,22 @@ struct AgentRunPanel: View {
                 timeline(run)
                 if let pending = workspace.approvals[runID], let first = pending.first {
                     approval(run, first, more: pending.count - 1)
+                } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+                    // A command or pull request the agent asks for through Nook's workspace.
+                    let approval = ApprovalCenter.make(request)
+                    ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
                 }
-                if confirmDelete {
+                if let target = revertTarget {
+                    revertConfirmation(target)
+                } else if confirmDelete {
                     deleteConfirmation(run)
+                } else if let question = workspace.questions[runID]?.first {
+                    // The agent asks something: its question takes the composer's place until answered (Stop stays).
+                    RunQuestionPanel(question: question, agent: run.provider.displayName,
+                                     onStop: { workspace.stop(runID) }) { answers in
+                        workspace.answer(runID, questionID: question.id, answers: answers)
+                    }
+                    .id(question.id)
                 } else {
                     composer(run)
                 }
@@ -44,6 +64,12 @@ struct AgentRunPanel: View {
                 draft = ""
                 renaming = false
                 confirmDelete = false
+                // Nothing of the previous session carries over: above all not a pending "restore files".
+                revertTarget = nil
+                revertError = nil
+                reverting = false
+                openBlocks = []
+                expanded = []
             }
         } else {
             Text(tr("agents.run.gone"))
@@ -162,25 +188,17 @@ struct AgentRunPanel: View {
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
-                    ForEach(events) { event in
-                        EventRow(
-                            event: event,
-                            expanded: expanded.contains(event.id),
-                            toggle: { toggle(event.id) },
-                            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
-                            decide: { decision in
-                                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
-                            }
-                        )
-                        .id(event.id)
+                    // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
+                    ForEach(TimelinePresentation.blocks(events, active: run.status.isActive)) { block in
+                        TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
+                            AnyView(eventRow(event))
+                        }
+                        .id(block.id)
                     }
                     if run.status.isActive {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text(run.status == .waitingApproval ? tr("ws.timeline.waiting") : tr("ws.timeline.working"))
-                                .font(NookTheme.font(12))
-                                .foregroundStyle(NookTheme.textSecondary)
-                        }
+                        LiveActivityRow(live: TimelinePresentation.live(events), since: run.turnStartedAt,
+                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
+                                        accent: run.provider.color)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run)
@@ -219,6 +237,82 @@ struct AgentRunPanel: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 9).fill(run.status.color.opacity(0.07)))
+    }
+
+    @ViewBuilder
+    private func eventRow(_ event: RunEvent) -> some View {
+        if event.kind == .assistant, event.tool == "plan" {
+            let idle = !(workspace.run(runID)?.status.isActive ?? false)
+            // Only the latest plan, and only until you sent something after it.
+            let timeline = workspace.timeline(runID)
+            let latest = timeline.last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
+            let answered = timeline.contains { $0.kind == .user && $0.date > event.date }
+            PlanCard(text: event.text, canAct: idle && latest && !answered) {
+                workspace.configure(runID, mode: .agent)
+                workspace.send(runID, text: tr("ws.plan.implementPrompt"))
+            }
+        } else if event.kind == .user {
+            eventView(event)
+                .contextMenu {
+                    // "edit from here": the worktree's files go back to how they were before this message.
+                    Button(tr("ws.revert.menu")) {
+                        revertError = nil
+                        revertTarget = event
+                    }
+                    .disabled(!workspace.canRevert(runID, before: event.date))
+                }
+        } else {
+            eventView(event)
+        }
+    }
+
+    private func revertConfirmation(_ target: RunEvent) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("ws.revert.confirm"))
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("button.cancel")) { revertTarget = nil }
+            NookPrimaryButton(title: reverting ? tr("ws.revert.working") : tr("ws.revert.action")) {
+                guard !reverting else { return }
+                reverting = true
+                Task {
+                    do {
+                        try await workspace.revertFiles(runID, before: target.date)
+                        revertTarget = nil
+                    } catch {
+                        revertError = error.localizedDescription
+                    }
+                    reverting = false
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.08)))
+    }
+
+    private func eventView(_ event: RunEvent) -> some View {
+        EventRow(
+            event: event,
+            expanded: expanded.contains(event.id),
+            toggle: { toggle(event.id) },
+            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
+            decide: { decision in
+                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
+            }
+        )
+    }
+
+    private func toggleBlock(_ key: String) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
+        }
     }
 
     private func toggle(_ id: UUID) {
@@ -269,10 +363,24 @@ struct AgentRunPanel: View {
             draft = ""
             workspace.send(runID, text: text)
         }
+        // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
+        let steers = active && workspace.canSteer(runID)
+        let queue = {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            draft = ""
+            if !(steers && workspace.steer(runID, text: text)) { workspace.enqueue(runID, text: text) }
+        }
         return VStack(alignment: .leading, spacing: 5) {
+            UsageLimitBanner(run: run)
+            if let waiting = workspace.queued[runID], !waiting.isEmpty {
+                QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
+                                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
+            }
             SessionComposer(
                 text: $draft,
-                prompt: active ? tr("agents.run.busyPrompt", run.provider.kind.shortName) : tr("agents.run.prompt"),
+                prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
+                                         : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
                 canSend: !active,
                 busy: active,
                 onStop: { workspace.stop(runID) },
@@ -286,6 +394,9 @@ struct AgentRunPanel: View {
                 permissionMenu(run)
                 actionsMenu(run)
             }
+            // While it works, what you type waits in line and goes out when the turn is done.
+            .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
+                      symbol: steers ? "arrow.turn.down.right" : "text.append")
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))
@@ -298,14 +409,14 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : run.model
+        let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
         return Menu {
             Section(tr("ws.new.model")) {
-                ForEach(run.provider.suggestedModels, id: \.self) { option in
+                ForEach(app.models(for: run.provider), id: \.self) { option in
                     Button {
                         workspace.configure(runID, model: option)
                     } label: {
-                        let title = option.isEmpty ? tr("ws.model.default") : option
+                        let title = app.modelName(option, for: run.provider)
                         if run.model == option { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }

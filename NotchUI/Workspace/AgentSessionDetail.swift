@@ -27,6 +27,7 @@ struct AgentSessionDetail: View {
     @State private var questionAnswers: [[String]] = []
     @State private var questionPicks: Set<String> = []
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
         Group {
@@ -135,12 +136,17 @@ struct AgentSessionDetail: View {
             if app.demoMode {
                 Spacer(minLength: 0)
             } else {
-                AgentConversation(session: shown, onReply: app.canTakeOver(session) ? { answer in
-                    perform { try await app.continueInNook(session, message: answer) }
+                // Every agent Nook can answer (Antigravity too, through its agent API), not only the ones it takes over.
+                AgentConversation(session: shown, onReply: app.canReply(to: session) ? { answer in
+                    perform { try await app.reply(to: session, message: answer) }
                 } : nil)
             }
 
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
+                let approval = ApprovalCenter.make(request)
+                ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
+            } else if !app.demoMode, let request = bridgeRequest(for: session) {
+                // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
             } else {
@@ -149,6 +155,13 @@ struct AgentSessionDetail: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// A workspace request from an agent running in a terminal in this session's folder.
+    private func bridgeRequest(for session: AgentSession) -> BridgeRequest? {
+        guard !session.cwd.isEmpty, !bridge.pending.isEmpty else { return nil }
+        let folder = WorkspacePathPolicy.normalize(session.cwd)
+        return bridge.pending.first { $0.caller.kind == .external && $0.caller.directory == folder }
     }
 
     /// The last few steps, for agents whose conversation Nook cannot read (it only hears their progress).
@@ -438,27 +451,16 @@ struct AgentSessionDetail: View {
         return VStack(alignment: .leading, spacing: 12) {
             header(folder: session.project, title: AgentFormat.title(session.title), directory: session.cwd, agentWorking: false)
 
-            ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 14) {
-                    if !session.lastPrompt.isEmpty {
-                        ConversationMessage(fromUser: true, text: session.lastPrompt)
-                    }
-                    if !session.lastReply.isEmpty {
-                        ConversationMessage(fromUser: false, text: session.lastReply, author: session.agent.name, accent: session.agent.color)
-                    }
-                    if session.lastPrompt.isEmpty && session.lastReply.isEmpty {
-                        Text(tr("agents.noMessagesInTranscript"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    Text(tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // The whole conversation, with the agent's thinking, read from its transcript.
+            TranscriptConversation(
+                path: session.path, author: session.agent.name, accent: session.agent.color,
+                fallback: pastFallback(session),
+                onReply: canContinue ? { answer in
+                    perform { try await app.reply(to: session, message: answer) }
+                } : nil,
+                footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts)
+            )
+            .id("past:" + session.id)
 
             errorLine
             SessionComposer(
@@ -470,10 +472,19 @@ struct AgentSessionDetail: View {
                 onSend: send
             ) {
                 agentPill(name: session.agent.name, profile: app.profile(for: session))
-                pastMenu(session, canContinue: canContinue)
+                // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
+                pastMenu(session, canContinue: app.canContinueInNook(session))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Without a readable transcript: the last prompt and reply the history scan kept.
+    private func pastFallback(_ session: PastSession) -> [AgentChatMessage] {
+        var messages: [AgentChatMessage] = []
+        if !session.lastPrompt.isEmpty { messages.append(AgentChatMessage(id: "p", fromUser: true, text: session.lastPrompt)) }
+        if !session.lastReply.isEmpty { messages.append(AgentChatMessage(id: "r", fromUser: false, text: session.lastReply)) }
+        return messages
     }
 
     /// Open the whole conversation in Nook without a message, or its folder or a terminal there.

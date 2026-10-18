@@ -1,0 +1,104 @@
+import XCTest
+
+/// How a session's timeline reads in the notch: finished turns fold, tool calls group, and one live line while working.
+final class TimelinePresentationTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_000)
+
+    private func event(_ kind: RunEvent.Kind, _ text: String, tool: String? = nil, detail: String? = nil,
+                       state: RunEvent.State? = nil, at seconds: Double = 0) -> RunEvent {
+        RunEvent(kind: kind, text: text, tool: tool, detail: detail, state: state, date: start.addingTimeInterval(seconds))
+    }
+
+    private func finishedTurn() -> [RunEvent] {
+        [
+            event(.user, "Fix de test"),
+            event(.thinking, "**Kijken** naar de test"),
+            event(.tool, "Bash · npm test", tool: "Bash", state: .done, at: 5),
+            event(.tool, "Edit · App.swift", tool: "Edit", detail: #"{"file_path":"/p/App.swift"}"#, state: .done, at: 20),
+            event(.tool, "Edit · App.swift", tool: "Edit", detail: #"{"file_path":"/p/App.swift"}"#, state: .done, at: 30),
+            event(.assistant, "Opgelost.", state: .done, at: 130),
+            event(.result, "2m 13s", state: .done, at: 133)
+        ]
+    }
+
+    func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
+        let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
+        XCTAssertEqual(blocks.count, 4)
+        guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner) = blocks[1],
+              case .event(let answer) = blocks[2], case .event(let result) = blocks[3] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(user.text, "Fix de test")
+        XCTAssertEqual(answer.text, "Opgelost.")
+        XCTAssertEqual(result.kind, .result)
+        XCTAssertEqual(seconds, 133)
+        // Inside: the thinking, then the three tool calls as one group.
+        XCTAssertEqual(inner.count, 2)
+        guard case .tools(_, let tools, let tally) = inner[1] else { return XCTFail("\(inner)") }
+        XCTAssertEqual(tools.count, 3)
+        XCTAssertEqual(tally.parts.map(\.category), [.command, .edit])
+        XCTAssertEqual(tally.counts[.edit], 1, "edits count files, not calls")
+        XCTAssertFalse(tally.failed)
+    }
+
+    func testBlockIdsAreUnique() {
+        let events = finishedTurn() + finishedTurn() + [event(.user, "Nog iets", at: 300), event(.tool, "Read · x", tool: "Read")]
+        let ids = TimelinePresentation.blocks(events, active: true).map(\.id)
+        XCTAssertEqual(ids.count, Set(ids).count, "SwiftUI needs every block in a list to have its own id")
+    }
+
+    func testRunningOrTroubledTurnsDoNotFold() {
+        XCTAssertFalse(TimelinePresentation.blocks(finishedTurn(), active: true).contains { if case .fold = $0 { true } else { false } },
+                       "the turn that is still running stays open")
+        var failed = finishedTurn()
+        failed.insert(event(.error, "Rate limit", at: 60), at: 5)
+        XCTAssertFalse(TimelinePresentation.blocks(failed, active: false).contains { if case .fold = $0 { true } else { false } },
+                       "a turn with an error stays open")
+        let earlier = finishedTurn()
+        let blocks = TimelinePresentation.blocks(earlier + [event(.user, "Nog iets", at: 200)], active: true)
+        XCTAssertTrue(blocks.contains { if case .fold = $0 { true } else { false } }, "earlier finished turns fold while a new one runs")
+    }
+
+    func testGroupsKeepErrorsApartAndNeedTwoTools() {
+        let blocks = TimelinePresentation.group([
+            event(.tool, "Read · a", tool: "Read"),
+            event(.error, "kapot"),
+            event(.tool, "Grep · x", tool: "Grep"),
+            event(.thinking, "hmm"),
+            event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed),
+            event(.thinking, "volgende stap")
+        ])
+        XCTAssertEqual(blocks.count, 4)
+        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1],
+              case .tools(_, let tools, let tally) = blocks[2], case .event(let thought) = blocks[3] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(read.text, "Read · a", "a single tool stands alone")
+        XCTAssertEqual(error.kind, .error)
+        XCTAssertEqual(tools.count, 3, "thinking between tools stays in the group")
+        XCTAssertTrue(tally.failed)
+        XCTAssertEqual(tally.parts.map(\.category), [.command, .search])
+        XCTAssertEqual(thought.text, "volgende stap", "thinking after the last tool is not part of the group")
+    }
+
+    func testLiveActivity() {
+        let events = finishedTurn().dropLast(2) + [event(.tool, "Bash · pnpm build", tool: "Bash", state: .running, at: 140)]
+        let live = TimelinePresentation.live(Array(events))
+        XCTAssertEqual(live.tool, "Bash · pnpm build")
+        XCTAssertEqual(live.thought, "Kijken")
+    }
+
+    func testHeadlines() {
+        XCTAssertEqual(TimelinePresentation.headline("**Plan maken**\nEerst de tests."), "Plan maken")
+        XCTAssertEqual(TimelinePresentation.headline("Ik bekijk eerst de tests. Daarna de code."), "Ik bekijk eerst de tests.")
+        XCTAssertEqual(TimelinePresentation.headline("kort"), "kort")
+    }
+
+    func testCategories() {
+        XCTAssertEqual(ToolCategory.of(tool: "mcp__nook__terminal_run"), .command)
+        XCTAssertEqual(ToolCategory.of(tool: "mcp__nook__browser_read"), .other)
+        XCTAssertEqual(ToolCategory.of(tool: "shell"), .command)
+        XCTAssertEqual(ToolCategory.of(tool: "write_file"), .edit)
+        XCTAssertEqual(ToolCategory.of(tool: "Glob"), .search)
+        XCTAssertEqual(ToolCategory.of(tool: "TodoWrite"), .other)
+        let tally = ToolTally([event(.fileChange, "a.swift", detail: "a.swift"), event(.fileChange, "b.swift", detail: "b.swift"),
+                               event(.fileChange, "a.swift", detail: "a.swift")])
+        XCTAssertEqual(tally.counts[.edit], 2)
+    }
+}

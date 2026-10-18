@@ -6,6 +6,7 @@ struct NewSessionSheet: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
+    @ObservedObject private var antigravity = AntigravityInstaller.shared
     let onStarted: (UUID) -> Void
     /// Closes the sheet (it is presented as a native AppKit sheet, see `WorkspaceWindowController.presentSheet`).
     let close: () -> Void
@@ -57,7 +58,7 @@ struct NewSessionSheet: View {
         .frame(width: embedded ? nil : 660, height: embedded ? nil : 720)
         .frame(maxWidth: embedded ? CGFloat.infinity : nil, maxHeight: embedded ? CGFloat.infinity : nil, alignment: .topLeading)
         .background(embedded ? Color.clear : WS.background)
-        .onAppear(perform: prepare)
+        .onAppear { prepare(); app.refreshAgentModels() }
         .onChange(of: config.provider) { _, provider in providerChanged(provider) }
         .onChange(of: config.task) { _, task in
             if !branchEdited { config.branchName = WorktreeNaming.branchName(task: task.isEmpty ? "sessie" : task, id: pendingID) }
@@ -195,8 +196,9 @@ struct NewSessionSheet: View {
 
     private var agentSection: some View {
         let caps = config.provider.capabilities
-        let installed = app.history.executables[config.provider.kind] != nil
-        let accounts = app.profiles.profiles(for: config.provider.kind)
+        let installed = workspace.executable(config.provider) != nil
+        let connected = app.connectedProfiles(for: config.provider)
+        let accounts = connected.isEmpty ? app.profiles.profiles(for: config.provider.kind) : connected
         let selected = app.profiles.profile(id: config.profileID)
         let loggedIn = selected.map { app.history.profileAccounts[$0.id] != nil } ?? false
         return VStack(alignment: .leading, spacing: 10) {
@@ -205,14 +207,15 @@ struct NewSessionSheet: View {
                 GridRow {
                     label(tr("ws.new.provider"))
                     VStack(alignment: .leading, spacing: 4) {
+                        // Only the agents you connected (and the one chosen, should it have been disconnected meanwhile).
                         Picker("", selection: $config.provider) {
-                            ForEach(RunProvider.allCases) { provider in
+                            ForEach(RunProvider.allCases.filter { app.connectedProviders.contains($0) || $0 == config.provider }) { provider in
                                 Text(provider.displayName).tag(provider)
                             }
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
-                        .frame(width: 260)
+                        .frame(width: 330)
                         if !installed {
                             Text(tr("ws.new.notInstalled", config.provider.displayName))
                                 .font(NookTheme.font(11.5)).foregroundStyle(NookTheme.amber)
@@ -252,8 +255,8 @@ struct NewSessionSheet: View {
                                 .frame(width: 220)
                         } else {
                             Picker("", selection: $config.model) {
-                                ForEach(config.provider.suggestedModels, id: \.self) { model in
-                                    Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                                ForEach(app.models(for: config.provider), id: \.self) { model in
+                                    Text(app.modelName(model, for: config.provider)).tag(model)
                                 }
                             }
                             .labelsHidden()
@@ -421,6 +424,8 @@ struct NewSessionSheet: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.coral)
                 Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft)
                     .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            } else if config.provider == .antigravity, antigravity.installed == nil {
+                AntigravitySetupRow()
             } else if let reason = blockingReason {
                 Text(reason).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
             }
@@ -440,7 +445,8 @@ struct NewSessionSheet: View {
     private var blockingReason: String? {
         if let problem = config.problem { return tr("ws.error.config." + problem.rawValue) }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
-        if app.history.executables[config.provider.kind] == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
+        if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
+        if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if let project, config.isolation == .folder, !allowShared, !workspace.activeRuns(sharing: project.repoRoot ?? project.path).isEmpty {
             return tr("ws.new.sharedBlocked")
         }
@@ -454,12 +460,14 @@ struct NewSessionSheet: View {
     // MARK: Actions
 
     private func prepare() {
-        config.provider = settings.defaultProvider
-        config.profileID = app.profiles.preferredProfile(settings.defaultProvider.kind).id
-        config.model = settings.model(for: settings.defaultProvider)
-        customModel = !config.provider.suggestedModels.contains(config.model)
+        let connected = app.connectedProviders
+        let provider = connected.contains(settings.defaultProvider) ? settings.defaultProvider : (connected.first ?? settings.defaultProvider)
+        config.provider = provider
+        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        config.model = settings.model(for: provider)
+        customModel = !app.models(for: provider).contains(config.model)
         config.mode = settings.defaultMode
-        config.permission = settings.permission(for: settings.defaultProvider)
+        config.permission = settings.permission(for: provider)
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         config.branchName = WorktreeNaming.branchName(task: "sessie", id: pendingID)
@@ -469,9 +477,9 @@ struct NewSessionSheet: View {
     }
 
     private func providerChanged(_ provider: RunProvider) {
-        config.profileID = app.profiles.preferredProfile(provider.kind).id
+        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
         config.model = settings.model(for: provider)
-        customModel = !provider.suggestedModels.contains(config.model)
+        customModel = !app.models(for: provider).contains(config.model)
         if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
     }
 

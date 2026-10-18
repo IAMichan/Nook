@@ -5,7 +5,7 @@ import Foundation
 
 /// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex
+    case claude, codex, gemini, opencode, cursor, grok, antigravity
 
     var id: String { rawValue }
 
@@ -13,6 +13,19 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
+        case .gemini: return "Gemini CLI"
+        case .opencode: return "OpenCode"
+        case .cursor: return "Cursor"
+        case .grok: return "Grok"
+        case .antigravity: return "Antigravity"
+        }
+    }
+
+    /// Runs over ACP (Agent Client Protocol) for these agents.
+    var usesACP: Bool {
+        switch self {
+        case .gemini, .opencode, .cursor, .grok, .antigravity: return true
+        case .claude, .codex: return false
         }
     }
 
@@ -24,9 +37,20 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
         case .codex:
-            return ProviderCapabilities(approvals: false, interrupt: true, streamingText: false, planMode: true,
-                                        reportsCost: false, reportsContextWindow: false, reportsCacheTokens: true,
-                                        policies: [.acceptEdits, .bypass])
+            // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass])
+        case .gemini:
+            // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass])
+        case .opencode, .cursor, .grok, .antigravity:
+            // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass])
         }
     }
 
@@ -35,6 +59,9 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return ["", "sonnet", "opus", "haiku"]
         case .codex: return ["", "gpt-5-codex", "gpt-5"]
+        case .gemini: return ["", "gemini-2.5-pro", "gemini-2.5-flash"]
+        // These agents choose their model in their own settings; Nook passes a name only when you type one.
+        case .opencode, .cursor, .grok, .antigravity: return [""]
         }
     }
 }
@@ -213,6 +240,13 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
+    /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
+    var checkpoints: [RunCheckpoint]? = nil
+    /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
+    /// on by itself ("Resume at reset").
+    var limitedAt: Date? = nil
+    var limitResetAt: Date? = nil
+    var autoResume: Bool? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -416,6 +450,10 @@ enum WorkspacePathPolicy {
 /// Concise, language-neutral summary of a tool call: "Bash · npm test", "Edit · Login.swift".
 enum ToolSummary {
     static func describe(tool: String, input: [String: Any]) -> String {
+        // Nook's own workspace tools (`mcp__nook__terminal_run`): their label, and the command, address or title.
+        if tool.hasPrefix(BridgeTool.toolPrefix), let bridge = BridgeTool.named(tool) {
+            return BridgeTool.detail(input).map { "\(bridge.label) · \(oneLine($0, 120))" } ?? bridge.label
+        }
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
         if let path = path(input) { return "\(tool) · \(URL(fileURLWithPath: path).lastPathComponent)" }
         for key in ["pattern", "query", "url", "description", "prompt"] {
@@ -449,8 +487,11 @@ enum ToolSummary {
         switch tool {
         case "Edit", "MultiEdit", "NotebookEdit":
             return path(input).map { [($0, "modified")] } ?? []
-        case "Write":
+        case "Write", "write_file":
             return path(input).map { [($0, "written")] } ?? []
+        case "replace":
+            // Gemini CLI's edit tool.
+            return path(input).map { [($0, "modified")] } ?? []
         default:
             return []
         }

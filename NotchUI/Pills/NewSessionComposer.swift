@@ -9,6 +9,7 @@ struct NewSessionComposer: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
+    @ObservedObject private var antigravity = AntigravityInstaller.shared
     /// Called with the new session once it runs.
     let onStarted: (UUID) -> Void
 
@@ -38,7 +39,7 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear(perform: prepare)
+        .onAppear { prepare(); app.refreshAgentModels() }
     }
 
     // MARK: Heading
@@ -122,9 +123,13 @@ struct NewSessionComposer: View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
         return Menu {
-            ForEach(RunProvider.allCases) { provider in
+            // Only agents and accounts you connected; the rest would only clutter the choice.
+            if app.connectedProviders.isEmpty {
+                Text(tr("agents.noneConnected"))
+            }
+            ForEach(app.connectedProviders) { provider in
                 Section(provider.displayName) {
-                    ForEach(app.profiles.profiles(for: provider.kind)) { account in
+                    ForEach(app.connectedProfiles(for: provider)) { account in
                         Button {
                             choose(provider, account: account.id)
                         } label: {
@@ -139,11 +144,11 @@ struct NewSessionComposer: View {
             }
             Divider()
             Section(tr("ws.new.model")) {
-                ForEach(config.provider.suggestedModels, id: \.self) { model in
+                ForEach(app.models(for: config.provider), id: \.self) { model in
                     Button {
                         config.model = model
                     } label: {
-                        let title = model.isEmpty ? tr("ws.model.default") : model
+                        let title = app.modelName(model, for: config.provider)
                         if config.model == model { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
@@ -151,7 +156,7 @@ struct NewSessionComposer: View {
         } label: {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + config.model))
+                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)))
         }
         .composerMenu()
         .help(tr("ws.new.accountPinned"))
@@ -247,6 +252,8 @@ struct NewSessionComposer: View {
                 .foregroundStyle(NookTheme.coralSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
+        } else if config.provider == .antigravity, antigravity.installed == nil {
+            AntigravitySetupRow().padding(.horizontal, 8)
         } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
             HStack(spacing: 8) {
                 Text(tr("ws.new.accountNotLoggedIn")).foregroundStyle(NookTheme.amber)
@@ -306,7 +313,8 @@ struct NewSessionComposer: View {
     private var blockingReason: String? {
         if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
-        if app.history.executables[config.provider.kind] == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
+        if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
+        if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if config.isolation == .folder, !allowShared, !sharing.isEmpty { return tr("ws.new.sharedBlocked") }
         return nil
     }
@@ -334,11 +342,14 @@ struct NewSessionComposer: View {
     // MARK: Actions
 
     private func prepare() {
-        config.provider = settings.defaultProvider
-        config.profileID = app.profiles.preferredProfile(settings.defaultProvider.kind).id
-        config.model = settings.model(for: settings.defaultProvider)
+        // Your default agent, unless it is not connected: then the first one that is.
+        let connected = app.connectedProviders
+        let provider = connected.contains(settings.defaultProvider) ? settings.defaultProvider : (connected.first ?? settings.defaultProvider)
+        config.provider = provider
+        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        config.model = settings.model(for: provider)
         config.mode = settings.defaultMode
-        config.permission = settings.permission(for: settings.defaultProvider)
+        config.permission = settings.permission(for: provider)
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }

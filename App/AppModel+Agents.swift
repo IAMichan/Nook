@@ -6,7 +6,9 @@ import AppKit
 extension AppModel {
     /// The headless agent Nook can run for this kind, if it is installed.
     func nookProvider(for kind: AgentKind?) -> RunProvider? {
-        guard let kind, let provider = RunProvider(kind: kind), history.executables[kind] != nil else { return nil }
+        // Antigravity's own conversations live in the Antigravity app (answered through agentapi); Nook's Antigravity
+        // sessions run on the separate ACP server and cannot load them.
+        guard let kind, kind != .antigravity, let provider = RunProvider(kind: kind), history.executables[kind] != nil else { return nil }
         return provider
     }
 
@@ -103,13 +105,13 @@ extension AppModel {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
         } else if busy || session.isDetected {
             // The agent still runs in its terminal. Two processes must not write one conversation: continue in a copy.
-            guard provider == .claude else { throw NookError(tr("agents.nook.codexBusy")) }
+            guard provider == .claude else { throw NookError(tr("agents.nook.busyElsewhere", session.name)) }
             fork = true
         }
         let profile = self.profile(for: session) ?? profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
-        var earlier: [(kind: RunEvent.Kind, text: String)] = []
-        if !session.lastPrompt.isEmpty { earlier.append((kind: .user, text: session.lastPrompt)) }
-        if !session.lastReply.isEmpty { earlier.append((kind: .assistant, text: session.lastReply)) }
+        let path = session.transcriptPath.isEmpty
+            ? (history.sessions.first { $0.sessionID == conversation }?.path ?? "") : session.transcriptPath
+        let earlier = await earlierConversation(path: path, prompt: session.lastPrompt, reply: session.lastReply)
         let id = try await workspace.adopt(provider: provider, sessionID: conversation, profileID: profile.id,
                                            directory: session.cwd, title: session.lastPrompt.isEmpty ? session.project : session.lastPrompt,
                                            history: earlier, fork: fork)
@@ -129,14 +131,31 @@ extension AppModel {
             throw NookError(tr("agents.nook.folderGone", folder))
         }
         let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
-        var earlier: [(kind: RunEvent.Kind, text: String)] = []
-        if !session.lastPrompt.isEmpty { earlier.append((kind: .user, text: session.lastPrompt)) }
-        if !session.lastReply.isEmpty { earlier.append((kind: .assistant, text: session.lastReply)) }
+        let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
         let id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
                                            directory: folder, title: session.title, history: earlier)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }
         viewModel.selectedAgentID = "run:" + id.uuidString
         return id
+    }
+
+    /// The conversation so far, for a session Nook takes over: the whole transcript with the agent's thinking, or, when it
+    /// cannot be read, the last prompt and reply.
+    private func earlierConversation(path: String, prompt: String, reply: String) async -> [(kind: RunEvent.Kind, text: String)] {
+        let messages = path.isEmpty ? [] : await Task.detached(priority: .userInitiated) { AgentTranscript.recent(path: path) }.value
+        if !messages.isEmpty {
+            return messages.map { message in
+                switch message.kind {
+                case .user: return (kind: .user, text: message.text)
+                case .assistant: return (kind: .assistant, text: message.text)
+                case .thinking: return (kind: .thinking, text: message.text)
+                }
+            }
+        }
+        var earlier: [(kind: RunEvent.Kind, text: String)] = []
+        if !prompt.isEmpty { earlier.append((kind: .user, text: prompt)) }
+        if !reply.isEmpty { earlier.append((kind: .assistant, text: reply)) }
+        return earlier
     }
 
     /// Ends a running session's process (the agent saves its conversation, so it can be resumed in Nook afterwards).

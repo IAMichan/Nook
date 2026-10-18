@@ -98,3 +98,31 @@ final class FinishedSessions: ObservableObject {
         key(agent: run.provider.displayName, conversation: run.providerSessionID, fallback: "run:" + run.id.uuidString)
     }
 }
+
+/// When you last looked at each session in the Agents list, so a session that finished while you were elsewhere stands
+/// out ("done" in green) until you open it. Kept in UserDefaults; old entries fall away after two weeks.
+@MainActor
+final class SessionVisits: ObservableObject {
+    static let shared = SessionVisits()
+    private static let key = "agents.visits"
+    @Published private var visited: [String: Double]
+
+    init(defaults: UserDefaults = .standard) {
+        let stored = (defaults.dictionary(forKey: Self.key) as? [String: Double]) ?? [:]
+        let cutoff = Date().addingTimeInterval(-14 * 24 * 3600).timeIntervalSince1970
+        visited = stored.filter { $0.value > cutoff }
+    }
+
+    func visit(_ id: String, at date: Date = Date()) {
+        guard !id.isEmpty else { return }
+        visited[id] = date.timeIntervalSince1970
+        UserDefaults.standard.set(visited, forKey: Self.key)
+    }
+
+    /// Finished after the last visit. A session never visited counts only when it finished in the last day, so the list
+    /// does not light up with old work the first time.
+    func isUnseen(_ id: String, finished: Date) -> Bool {
+        if let last = visited[id] { return finished.timeIntervalSince1970 > last + 1 }
+        return Date().timeIntervalSince(finished) < 24 * 3600
+    }
+}

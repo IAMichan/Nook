@@ -10,6 +10,7 @@ struct AgentsTab: View {
     @EnvironmentObject private var app: AppModel
     @State private var showFinished = false
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var visits = SessionVisits.shared
 
     private enum Selection {
         case live(AgentSession)
@@ -27,7 +28,9 @@ struct AgentsTab: View {
         let transcripts = app.demoMode ? [:] : app.detectedTranscripts()
         // A process Nook only sees is shown when its conversation can be read; agents are linked in Settings › Agents.
         let live = app.agentSessions.filter { app.demoMode || !$0.isDetected || transcripts[$0.id] != nil }
-        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace.prefix(60))
+        // Earlier sessions only of accounts that are still connected, so the list stays about what you actually use.
+        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace
+            .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
@@ -59,6 +62,8 @@ struct AgentsTab: View {
                     SessionWorkbench(viewModel: viewModel, title: run?.title ?? "", directory: run?.workingDirectory ?? "") { tools in
                         AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
                     }
+                    // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
+                    .id("run:" + id.uuidString)
                 case .pullRequests: PullRequestsPanel()
                 case .usage: AgentsUsagePanel()
                 case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
@@ -232,7 +237,16 @@ struct AgentsTab: View {
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
-        .onAppear { finishedMarks.reopenAll(busyKeys) }
+        .onAppear {
+            finishedMarks.reopenAll(busyKeys)
+            visits.visit(current)
+        }
+        // Looking at a session counts as having seen what it finished.
+        // Leaving a session counts too: what finished while you watched it is not "new".
+        .onChange(of: current) { old, new in
+            visits.visit(old)
+            visits.visit(new)
+        }
     }
 
     /// The finish/reopen action of a row, in its context menu.
@@ -292,7 +306,8 @@ struct AgentsTab: View {
             status: status,
             started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
             path: run.workingDirectory,
-            finishKey: FinishedSessions.key(run: run)
+            finishKey: FinishedSessions.key(run: run),
+            unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt)
         )
     }
 
@@ -323,7 +338,8 @@ struct AgentsTab: View {
             status: status,
             started: status == .idle ? (session.updated ?? session.started ?? known?.started) : (session.started ?? known?.started),
             path: session.cwd,
-            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id)
+            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
+            unseen: session.status == .done && unseen(session.id, session.updated)
         )
     }
 
@@ -340,6 +356,12 @@ struct AgentsTab: View {
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id)
         )
+    }
+
+    /// Finished after you last looked, and not the session you are looking at now.
+    private func unseen(_ id: String, _ finished: Date?) -> Bool {
+        guard !app.demoMode, let finished, id != viewModel.selectedAgentID else { return false }
+        return visits.isUnseen(id, finished: finished)
     }
 
     /// Sample data only: nothing to start.
@@ -376,6 +398,8 @@ struct AgentListItem: Identifiable {
     let path: String
     /// Identifies the conversation for "mark as finished", the same for a running and an earlier session of it.
     let finishKey: String
+    /// Finished after you last looked at it: "done" in green until you open it.
+    var unseen = false
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting }
@@ -452,6 +476,13 @@ struct AgentListRow: View {
             Text(tr("agents.live.failed"))
                 .foregroundStyle(NookTheme.coral)
                 .fixedSize()
+        case .idle where item.unseen:
+            HStack(spacing: 4) {
+                Circle().fill(NookTheme.mint).frame(width: 6, height: 6)
+                Text(tr("agents.time.doneUnseen"))
+            }
+            .foregroundStyle(NookTheme.mint)
+            .fixedSize()
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))
@@ -709,56 +740,87 @@ struct AgentConversation: View {
     let session: AgentSession
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
-    @State private var messages: [AgentChatMessage] = []
 
-    private var agentColor: Color { AgentKind(agentName: session.name)?.color ?? NookTheme.iris }
-
-    /// Messages from the transcript, or, without one, the last prompt and reply the hooks reported.
-    private var shown: [AgentChatMessage] {
-        if !messages.isEmpty { return messages }
-        var fallback: [AgentChatMessage] = []
-        if !session.lastPrompt.isEmpty { fallback.append(AgentChatMessage(id: "p", fromUser: true, text: session.lastPrompt)) }
-        if !session.lastReply.isEmpty { fallback.append(AgentChatMessage(id: "r", fromUser: false, text: session.lastReply)) }
-        return fallback
+    /// Without a transcript: the last prompt and reply the hooks reported.
+    private var fallback: [AgentChatMessage] {
+        var messages: [AgentChatMessage] = []
+        if !session.lastPrompt.isEmpty { messages.append(AgentChatMessage(id: "p", fromUser: true, text: session.lastPrompt)) }
+        if !session.lastReply.isEmpty { messages.append(AgentChatMessage(id: "r", fromUser: false, text: session.lastReply)) }
+        return messages
     }
+
+    var body: some View {
+        TranscriptConversation(path: session.transcriptPath, author: session.name,
+                               accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
+                               working: session.status == .running, fallback: fallback, onReply: onReply)
+            .id(session.id)
+    }
+}
+
+/// The whole conversation of a session from the agent's own transcript, with its thinking folded in between: what you
+/// asked, how the agent reasoned and what it answered. While the agent works the transcript is read again every couple
+/// of seconds; an earlier session is read once.
+struct TranscriptConversation: View {
+    let path: String
+    let author: String
+    let accent: Color
+    /// The agent is working: keep reading and show that it is busy.
+    var working = false
+    /// Shown when the transcript gives nothing (yet).
+    var fallback: [AgentChatMessage] = []
+    var onReply: ((String) -> Void)? = nil
+    var footer: String? = nil
+    @State private var messages: [AgentChatMessage] = []
+    @State private var loaded = false
+
+    private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 16) {
+                // Lazy: a long conversation only lays out what is on screen.
+                LazyVStack(alignment: .leading, spacing: 16) {
                     if shown.isEmpty {
-                        Text(tr("agents.noMessagesInTranscript"))
+                        Text(loaded || path.isEmpty ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     ForEach(shown) { message in
                         bubble(message).id(message.id)
                     }
-                    if session.status == .running {
+                    if working {
                         HStack(spacing: 6) {
-                            PulseDot(color: agentColor, animated: true)
-                            Text(tr("agents.reply.working", session.name))
+                            PulseDot(color: accent, animated: true)
+                            Text(tr("agents.reply.working", author))
                                 .font(NookTheme.font(11.5))
                                 .foregroundStyle(NookTheme.textTertiary)
                         }
                         .id("working")
+                    }
+                    if let footer {
+                        Text(footer)
+                            .font(NookTheme.font(11.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .id("footer")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onChange(of: shown) { _ in scrollToEnd(proxy) }
+            .onChange(of: shown) { _, _ in scrollToEnd(proxy) }
             .onAppear { scrollToEnd(proxy) }
         }
-        .task(id: session.id + session.transcriptPath) {
-            // While the agent works the transcript keeps growing: read it again every couple of seconds.
+        .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
-                let path = session.transcriptPath
+                let path = self.path
                 if !path.isEmpty {
                     let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
                     if fresh != messages { messages = fresh }
                 }
+                loaded = true
+                // An earlier session does not change any more: read once.
+                guard working else { break }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
@@ -769,19 +831,18 @@ struct AgentConversation: View {
         if message.isThinking {
             ThinkingBubble(text: message.text)
         } else {
-            let open = !message.fromUser && message.id == shown.last?.id && session.status != .running
-            ConversationMessage(fromUser: message.fromUser, text: message.text, author: session.name, accent: agentColor,
+            let open = !message.fromUser && message.id == shown.last?.id && !working
+            ConversationMessage(fromUser: message.fromUser, text: message.text, author: author, accent: accent,
                                onChoose: open ? onReply : nil)
         }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
-        let last = session.status == .running ? "working" : shown.last?.id
+        let last = working ? "working" : (footer != nil ? "footer" : shown.last?.id)
         guard let last else { return }
         proxy.scrollTo(last, anchor: .bottom)
     }
 }
-
 
 /// Color and label for the status of a tracked session.
 private extension AgentSession {

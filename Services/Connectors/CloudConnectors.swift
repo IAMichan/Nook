@@ -2215,6 +2215,28 @@ enum GitHubPullRequests {
         throw lastError
     }
 
+    /// The open pull request whose head is `branch` (for the git button), asked with the first account that can see the
+    /// repository. Nil when there is none, or GitHub is not connected.
+    static func openPullRequest(repo: String, branch: String) async -> URL? {
+        guard isAvailable, let owner = repo.split(separator: "/").first.map(String.init) else { return nil }
+        for token in tokens {
+            guard var components = URLComponents(string: "https://api.github.com/repos/\(repo)/pulls") else { return nil }
+            components.queryItems = [URLQueryItem(name: "state", value: "open"), URLQueryItem(name: "head", value: owner + ":" + branch),
+                                     URLQueryItem(name: "per_page", value: "1")]
+            guard let url = components.url else { return nil }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+            request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+            guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { continue }
+            return (list.first?["html_url"] as? String).flatMap(URL.init(string:))
+        }
+        return nil
+    }
+
     private static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool, token: String) async throws -> URL {
         let url = try CloudHelp.url("https://api.github.com/repos/\(repo)/pulls")
         var request = URLRequest(url: url)

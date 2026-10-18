@@ -120,6 +120,18 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
+      - path: Services/Workspace/WorkspaceBridgeProtocol.swift
+      - path: Services/Workspace/TimelinePresentation.swift
+      - path: Services/Workspace/DevServers.swift
+      - path: Services/Workspace/ProjectScripts.swift
+      - path: Services/Workspace/CodexAppServer.swift
+      - path: Services/Workspace/AcpAgent.swift
+      - path: Services/Workspace/AgentModels.swift
+      - path: Services/Workspace/TextGeneration.swift
+      - path: Services/Workspace/GitCheckpoints.swift
+      - path: Services/Workspace/GitQuickActions.swift
+      - path: Services/Workspace/UsageLimits.swift
+      - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift

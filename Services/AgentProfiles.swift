@@ -95,7 +95,7 @@ extension AgentKind {
         switch self {
         case .claude: return "CLAUDE_CONFIG_DIR"
         case .codex: return "CODEX_HOME"
-        case .gemini, .antigravity: return nil
+        case .gemini, .antigravity, .opencode, .cursor, .grok: return nil
         }
     }
 

@@ -192,6 +192,13 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var ws = WorkspaceSettings.shared
 
     var body: some View {
+        Group {
+            defaults
+            bridge
+        }
+    }
+
+    private var defaults: some View {
         Section {
             Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
                 ForEach(RunProvider.allCases) { provider in
@@ -244,10 +251,49 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
             Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
+            Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
+            Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
+            LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {
             Text(tr("settings.ws.footer"))
+        }
+    }
+
+    /// The workspace bridge: whether agents may use Nook's terminal, browser and pull requests, and linking it to agents
+    /// you start yourself in a terminal (sessions Nook starts get it automatically).
+    private var bridge: some View {
+        Section {
+            Toggle(tr("settings.bridge.enabled"), isOn: $ws.agentTools)
+            LabeledContent(tr("settings.bridge.outside")) {
+                HStack(spacing: 6) {
+                    ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
+                        Button(provider.displayName) { link(provider) }
+                            .controlSize(.small)
+                            .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
+                    }
+                }
+            }
+            .disabled(!ws.agentTools)
+        } header: {
+            Text(tr("settings.bridge.title"))
+        } footer: {
+            Text(tr("settings.bridge.footer"))
+        }
+    }
+
+    /// Registers the bridge with the agent's own configuration, typed in a visible terminal so you see exactly what runs.
+    private func link(_ provider: RunProvider) {
+        try? WorkspaceBridgeScript.install()
+        do {
+            guard let command = WorkspaceBridgeScript.linkCommand(for: provider) else { return }
+            try app.runVisibly(command,
+                               in: FileManager.default.homeDirectoryForCurrentUser.path,
+                               name: "nook-bridge-\(provider.rawValue)", title: tr("settings.bridge.terminalTitle", provider.displayName))
+        } catch {
+            app.viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
         }
     }
 }

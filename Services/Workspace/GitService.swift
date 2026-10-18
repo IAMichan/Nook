@@ -134,7 +134,7 @@ struct GitService: Sendable {
         return nil
     }
 
-    private var environment: [String: String] {
+    var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
         // Never block on password prompt; credential helper (Keychain) continues to work.
         env["GIT_TERMINAL_PROMPT"] = "0"
@@ -303,7 +303,24 @@ struct GitService: Sendable {
         guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try run(["worktree", "add", "-b", branch, path, base], in: repo, timeout: 180)
+        do {
+            try run(["worktree", "add", "-b", branch, path, base], in: repo, timeout: 180)
+        } catch {
+            throw Self.friendlyWorktreeError(error, base: base)
+        }
+    }
+
+    /// Git's "already checked out" refusal in words you can act on (the check does on the same message).
+    static func friendlyWorktreeError(_ error: Error, base: String) -> Error {
+        let text = error.localizedDescription
+        guard text.range(of: #"is already (used by worktree at|checked out at)"#, options: [.regularExpression, .caseInsensitive]) != nil else {
+            return error
+        }
+        var location = ""
+        if let quote = text.range(of: #"(?:worktree at|checked out at) '([^']+)'"#, options: .regularExpression) {
+            location = String(text[quote]).components(separatedBy: "'").dropFirst().first ?? ""
+        }
+        return GitError("'\(base)' is already checked out in another worktree\(location.isEmpty ? "" : " (\(location))"). Start from another branch, or remove that worktree first.")
     }
 
     /// Removes a worktree. Only worktrees registered by Git for this repository, and never the main root.

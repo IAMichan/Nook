@@ -11,6 +11,8 @@ struct LaunchSpec: Equatable, Sendable {
     var initialInput: [String]
     /// Does stdin stay open (for approvals and interruption)? Otherwise the agent gets /dev/null.
     var keepsInputOpen: Bool
+    /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
+    var removedEnvironment: [String] = []
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
@@ -41,6 +43,8 @@ enum AgentCommand {
         /// CLAUDE_CONFIG_DIR or CODEX_HOME for the chosen account; empty for the primary account.
         var accountEnvironment: [String: String]
         var runID: UUID
+        /// Nook's workspace bridge (terminal, browser, pull requests) as an MCP server; nil leaves the agent as it is.
+        var bridge: BridgeLaunch? = nil
     }
 
     static func spec(_ input: Input) -> LaunchSpec {
@@ -63,7 +67,11 @@ enum AgentCommand {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }
             }
-            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bridge = input.bridge {
+                arguments += bridge.claudeArguments(runID: input.runID)
+                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            }
             if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory,
@@ -74,8 +82,14 @@ enum AgentCommand {
                              "--sandbox", codexSandbox(mode: input.mode, permission: input.permission),
                              "--cd", input.workingDirectory]
             if !input.model.isEmpty { arguments += ["--model", input.model] }
+            // Detailed reasoning summaries asks for them: the timeline shows how Codex thinks, not only what it did.
+            arguments += ["-c", "model_reasoning_summary=\"detailed\""]
+            if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
-            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            if input.bridge != nil {
+                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            }
             // Codex exec has no separate system prompt: instructions prepend the first prompt.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
             if input.mode == .plan, input.resumeSessionID == nil {
@@ -86,6 +100,41 @@ enum AgentCommand {
             arguments += ["--", prompt]
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+
+        case .gemini:
+            var arguments = ["--output-format", "stream-json",
+                             "--approval-mode", geminiApprovalMode(mode: input.mode, permission: input.permission)]
+            if !input.model.isEmpty { arguments += ["--model", input.model] }
+            if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--resume", resume] }
+            var prompt = input.prompt
+            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            // No separate system prompt in headless mode: instructions go before the first prompt, like Codex.
+            if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
+            // One argument with "=", so a prompt starting with a dash is never parsed as a flag.
+            arguments.append("--prompt=" + prompt)
+            return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                              workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
+
+        case .opencode, .cursor, .grok, .antigravity:
+            return acpSpec(input)
+        }
+    }
+
+    /// The ACP server command of an agent that only runs over ACP (see AcpAgent).
+    static func acpSpec(_ input: Input) -> LaunchSpec {
+        var environment = input.accountEnvironment
+        environment["NOOK_RUN_ID"] = input.runID.uuidString
+        return LaunchSpec(executable: input.executable, arguments: AcpLaunch.arguments(input.provider, permission: input.permission),
+                          extraEnvironment: environment, workingDirectory: input.workingDirectory, initialInput: [],
+                          keepsInputOpen: true)
+    }
+
+    static func geminiApprovalMode(mode: ExecutionMode, permission: PermissionPolicy) -> String {
+        if mode == .plan { return "plan" }
+        switch permission {
+        case .ask: return "default"
+        case .acceptEdits: return "auto_edit"
+        case .bypass: return "yolo"
         }
     }
 
@@ -151,7 +200,9 @@ final class AgentProcess: @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: spec.executable)
         process.arguments = spec.arguments
         process.currentDirectoryURL = URL(fileURLWithPath: spec.workingDirectory, isDirectory: true)
-        process.environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
+        var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
+        for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
+        process.environment = environment
 
         let out = Pipe()
         let err = Pipe()

@@ -18,6 +18,20 @@ struct PendingPermission: Identifiable, Equatable {
     }
 }
 
+/// A question from an agent in a session Nook runs (Codex `requestUserInput`, Claude Code's AskUserQuestion).
+struct PendingQuestion: Identifiable, Equatable {
+    enum Origin: Equatable {
+        case codex(RPCID)
+        case claude(requestID: String, input: JSONBox)
+    }
+
+    let id: String
+    let runID: UUID
+    let questions: [RunQuestion]
+    let origin: Origin
+    let created: Date
+}
+
 /// Latest Git snapshot observed by Nook for a session.
 struct GitSnapshot: Equatable {
     var status: GitStatus?
@@ -66,37 +80,91 @@ struct ProjectInfo: Equatable {
 final class WorkspaceManager: ObservableObject {
     @Published private(set) var runs: [WorkspaceRun] = []
     @Published private(set) var events: [UUID: [RunEvent]] = [:]
-    @Published private(set) var approvals: [UUID: [PendingPermission]] = [:]
+    /// Settable within the module: the Codex app-server extension adds and answers requests too.
+    @Published var approvals: [UUID: [PendingPermission]] = [:]
+    /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
+    @Published private(set) var queued: [UUID: [String]] = [:]
+    /// Questions an agent asked in a session and that wait for your answer.
+    @Published var questions: [UUID: [PendingQuestion]] = [:]
+
+    /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
+    var codexServers: [UUID: CodexAppServerClient] = [:]
+    /// Codex executables without a usable app-server: their sessions use `codex exec`.
+    var codexExecOnly: Set<String> = []
+    /// Codex approval requests waiting for you, by Nook's request id.
+    var codexRequests: [String: CodexApprovalRequest] = [:]
+    /// The latest token totals per Codex session, so a turn's own usage is the difference.
+    var codexTotals: [UUID: TokenCounts] = [:]
+    var codexIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// Claude Code processes kept alive after a turn (way): the next message goes to the same process, as long
+    /// as model, mode and rights are unchanged. With the settings they were started with, and when they close.
+    var claudeIdle: [UUID: (process: AgentProcess, key: String)] = [:]
+    var claudeIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose end-of-turn snapshot is still being made (see captureCheckpoint).
+    var checkpointing: Set<UUID> = []
+    /// ACP sessions (Gemini CLI, OpenCode, Cursor, Grok), kept alive between turns; their permission requests waiting
+    /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
+    var acpClients: [UUID: AcpClient] = [:]
+    var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption])] = [:]
+    var acpFallback: Set<String> = []
+    var acpIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// Codex reported new limits during a session: AppModel refreshes the usage shown.
+    var onRateLimits: (() -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
     @Published private(set) var worktreeRows: [WorktreeRow] = []
     @Published private(set) var worktreesLoading = false
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
+    /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
+    @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
+    @Published var openPullRequests: [UUID: URL] = [:]
+    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
+    /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
+    var pullRequestLookup: ((_ repo: String, _ branch: String) async -> URL?)?
+    var pullRequestCreate: ((_ repo: String, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    var modelsRefreshed: [RunProvider: Date] = [:]
+    /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
+    var limitResumes: [UUID: Task<Void, Never>] = [:]
+    var codexLimitSnapshots: [UUID: JSONBox] = [:]
+    /// The turn that just ended stopped on a usage limit, with its reset when known. Kept apart from the turn state,
+    /// which some paths clear before the end of the turn is handled.
+    var limitedTurns: [UUID: Date?] = [:]
+    /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
+    var pullRequestChecked: [String: Date] = [:]
+    /// Sessions whose Antigravity sign-in page already opened.
+    var antigravitySignIns: Set<UUID> = []
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
-    private var gitService: GitService?
+    private(set) var gitService: GitService?
 
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
+    var runScript: ((String, String, String) -> Void)?
+    /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
+    var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
     var onApproval: ((WorkspaceRun, PendingPermission) -> Void)?
     var onApprovalGone: ((String) -> Void)?
+    /// A session asks you a question (Codex requestUserInput, Claude Code AskUserQuestion).
+    var onQuestion: ((WorkspaceRun, PendingQuestion) -> Void)?
     var onTurnFinished: ((WorkspaceRun) -> Void)?
     /// The week recap: sessions Nook runs itself count too, not only the ones in a terminal.
     var recap: RecapStore?
 
-    private var processes: [UUID: AgentProcess] = [:]
-    private var turns: [UUID: TurnState] = [:]
+    var processes: [UUID: AgentProcess] = [:]
+    var turns: [UUID: TurnState] = [:]
     private var saveTask: Task<Void, Never>?
     private var eventSaves: [UUID: Task<Void, Never>] = [:]
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
-    private var forkNext: Set<UUID> = []
+    var forkNext: Set<UUID> = []
 
     /// State tracked by Nook during a single turn.
-    private struct TurnState {
+    struct TurnState {
         var liveTextID: UUID?
         var toolEvents: [String: UUID] = [:]
         var toolNames: [String: String] = [:]
@@ -107,12 +175,28 @@ final class WorkspaceManager: ObservableObject {
         var stopping = false
         var lastError: String?
         var started = Date()
+        /// codex app-server: the item the live answer belongs to, the thought being streamed, and token totals.
+        var liveTextItem: String?
+        var liveReasoningID: UUID?
+        var liveReasoningItem: String?
+        var codexBaseline: TokenCounts?
+        var contextWindow: Int?
+        /// ACP: the session's cost so far, as the agent reports it.
+        var acpCost: Double?
+        /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
+        var steered = false
+        var steeredUsage: [TurnUsage] = []
+        /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
+        var limitWindows: [String: Date?] = [:]
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
         runs = store.loadRuns()
+        agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         applyAutoArchive()
+        // Sessions that were waiting for a usage limit to reset go on waiting.
+        for run in runs where run.autoResume == true { armLimitResume(run.id) }
         Task.detached(priority: .utility) {
             let service = GitService.shared
             await MainActor.run { [weak self] in
@@ -295,8 +379,22 @@ final class WorkspaceManager: ObservableObject {
         selectedRunID = id
         if let worktreePath {
             append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
+            // The first snapshot, before the agent does anything: "back to here" on the first message.
+            if let git {
+                let ref = GitService.checkpointRef(session: id, index: 0)
+                if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(worktreePath, ref: ref) }.value) != nil {
+                    update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
+                }
+            }
+            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
+            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: worktreePath) }.value
+            for script in setup where script.runOnWorktreeCreate {
+                runScript?(worktreePath, script.command, script.name)
+                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            }
         }
         launchTurn(id, prompt: config.task, executable: executable)
+        if title.isEmpty { generateTitle(id) }
         return id
     }
 
@@ -386,6 +484,11 @@ final class WorkspaceManager: ObservableObject {
     func send(_ id: UUID, text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
+        // The previous turn's snapshot is still being made: wait for it (a moment), so this turn's edits stay out of it.
+        if checkpointing.contains(id) {
+            enqueue(id, text: clean)
+            return
+        }
         guard let executable = executable(run.provider) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return
@@ -398,6 +501,85 @@ final class WorkspaceManager: ObservableObject {
         launchTurn(id, prompt: clean, executable: executable)
     }
 
+    /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
+    func turnDidFinish(_ id: UUID) {
+        checkUsageLimit(id)
+        guard let run = run(id) else { return }
+        onTurnFinished?(run)
+        captureCheckpoint(id)
+    }
+
+    /// Only for sessions in their own worktree (as): restoring there can never touch your own checkout.
+    func captureCheckpoint(_ id: UUID) {
+        guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
+        let directory = run.workingDirectory
+        let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
+        // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
+        let date = Date()
+        checkpointing.insert(id)
+        Task.detached(priority: .utility) { [weak self] in
+            let made = (try? git.checkpoint(directory, ref: ref)) != nil
+            await self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date) : nil)
+        }
+    }
+
+    private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
+        checkpointing.remove(id)
+        if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
+        sendQueued(id)
+    }
+
+    /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
+    func canRevert(_ id: UUID, before date: Date = .distantFuture) -> Bool {
+        guard let run = run(id), run.isolation == .worktree, !run.status.isActive,
+              (run.checkpoints ?? []).contains(where: { $0.date <= date }) else { return false }
+        return activeRuns(sharing: run.workingDirectory, except: id).isEmpty
+    }
+
+    /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). The conversation stays.
+    func revertFiles(_ id: UUID, before date: Date) async throws {
+        guard canRevert(id, before: date), let run = run(id), let git = gitService,
+              let checkpoint = run.checkpoints?.last(where: { $0.date <= date }) else {
+            throw StartError.git(tr("ws.revert.unavailable"))
+        }
+        let directory = run.workingDirectory
+        try await Task.detached(priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }.value
+        append(id, RunEvent(kind: .system, text: tr("ws.revert.done")))
+        refreshGit(id)
+    }
+
+    /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
+    func enqueue(_ id: UUID, text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, run(id) != nil else { return }
+        queued[id, default: []].append(clean)
+    }
+
+    /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
+    func sendQueuedNow(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var list = queued[id], !list.isEmpty else { return }
+        let next = list.removeFirst()
+        queued[id] = list.isEmpty ? nil : list
+        send(id, text: next)
+    }
+
+    func removeQueued(_ id: UUID, at index: Int) {
+        guard var list = queued[id], list.indices.contains(index) else { return }
+        list.remove(at: index)
+        queued[id] = list.isEmpty ? nil : list
+    }
+
+    /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
+    /// waits for you, so nothing goes out on top of a problem.
+    func sendQueued(_ id: UUID) {
+        // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
+        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
+              var list = queued[id], !list.isEmpty else { return }
+        let next = list.removeFirst()
+        queued[id] = list.isEmpty ? nil : list
+        send(id, text: next)
+    }
+
     /// Retries the previous task (after an error or when stopped).
     func retry(_ id: UUID) {
         guard let run = run(id), run.canContinue else { return }
@@ -408,6 +590,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
+        if stopCodexServerTurn(id) { return }
+        if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
             // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
@@ -429,8 +613,23 @@ final class WorkspaceManager: ObservableObject {
         append(id, RunEvent(kind: .system, text: tr("ws.event.stopping")))
     }
 
-    private func launchTurn(_ id: UUID, prompt: String, executable: String) {
-        guard var run = run(id), processes[id] == nil else { return }
+    func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
+        guard processes[id] == nil else { return }
+        // A new turn ends any wait for a usage limit (yours or the automatic one).
+        clearUsageLimit(id)
+        guard var run = run(id) else { return }
+        // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
+        if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
+            launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
+            return
+        }
+        // Gemini CLI, OpenCode, Cursor and Grok speak ACP (way); Gemini falls back to its headless mode.
+        if run.provider.usesACP, !acpFallback.contains(executable) {
+            launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
+            return
+        }
+        // Claude Code still running from the previous turn, with the same settings: continue in it.
+        if run.provider == .claude, continueClaudeProcess(id, prompt: prompt, showPrompt: showPrompt) { return }
         let input = AgentCommand.Input(
             provider: run.provider,
             executable: executable,
@@ -443,10 +642,11 @@ final class WorkspaceManager: ObservableObject {
             resumeSessionID: run.providerSessionID,
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
-            runID: id
+            runID: id,
+            bridge: bridgeLaunch()
         )
         let spec = AgentCommand.spec(input)
-        append(id, RunEvent(kind: .user, text: prompt))
+        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
         process.onLines = { [weak self] lines in
@@ -457,8 +657,8 @@ final class WorkspaceManager: ObservableObject {
                 }
             }
         }
-        process.onExit = { [weak self] status, stderr in
-            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr) }
+        process.onExit = { [weak self, weak process] status, stderr in
+            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
         }
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         do {
@@ -490,6 +690,75 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             let parsed = CodexStreamParser.parse(line)
             for event in parsed { handleCodex(event, id: id) }
+        case .gemini:
+            let parsed = GeminiStreamParser.parse(line)
+            for event in parsed { handleGemini(event, id: id) }
+        case .opencode, .cursor, .grok, .antigravity:
+            break // ACP sessions read their own messages (WorkspaceManager+Acp).
+        }
+    }
+
+    private func handleGemini(_ event: GeminiStreamEvent, id: UUID) {
+        switch event {
+        case .initialized(let session, let model):
+            update(id) {
+                $0.providerSessionID = session
+                if let model, !model.isEmpty { $0.resolvedModel = model }
+            }
+        case .text(let text, let delta):
+            if let live = turns[id]?.liveTextID {
+                mutateEvent(id, live) { $0.text = delta ? $0.text + text : text }
+            } else {
+                let event = RunEvent(kind: .assistant, text: text, state: .running)
+                turns[id]?.liveTextID = event.id
+                append(id, event)
+            }
+            if !delta { finishLiveText(id) }
+        case .toolUse(let callID, let name, let input):
+            finishLiveText(id)
+            let event = RunEvent(kind: .tool, text: ToolSummary.describe(tool: name, input: input.dictionary), tool: name,
+                                 callID: callID, detail: ToolSummary.json(input.object), state: .running)
+            turns[id]?.toolEvents[callID] = event.id
+            turns[id]?.toolNames[callID] = name
+            turns[id]?.toolInputs[callID] = input
+            recap?.toolUse(name)
+            append(id, event)
+        case .toolResult(let callID, let output, let isError):
+            if let eventID = turns[id]?.toolEvents[callID] {
+                mutateEvent(id, eventID) {
+                    $0.output = RunEvent.clip(output)
+                    $0.state = isError ? .failed : .done
+                }
+            }
+            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
+                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
+                    recordFileChange(id, path: change.path, kind: change.kind)
+                }
+            }
+        case .warning(let message):
+            append(id, RunEvent(kind: .system, text: message))
+        case .failed(let message):
+            turns[id]?.lastError = message
+            append(id, RunEvent(kind: .error, text: message))
+        case .result(let isError, let message, var usage):
+            finishLiveText(id)
+            if usage.durationSeconds == nil, let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
+            turns[id]?.finished = true
+            let stopping = turns[id]?.stopping ?? false
+            update(id) { run in
+                run.usage.add(usage)
+                if stopping {
+                    run.move(to: .stopped)
+                } else if isError {
+                    run.move(to: .failed, detail: message)
+                } else {
+                    run.move(to: .completed)
+                }
+            }
+            if isError && !stopping { append(id, RunEvent(kind: .error, text: message ?? tr("ws.event.failed", "error"))) }
+            append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: isError && !stopping ? .failed : .done))
+            turnDidFinish(id)
+            scheduleGitRefresh(id, delay: 0.5)
         }
     }
 
@@ -545,6 +814,27 @@ final class WorkspaceManager: ObservableObject {
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
             finishLiveText(id)
+            // A question is answered, not approved (way): the answers go back as the tool's input.
+            if tool == "AskUserQuestion" {
+                let items = ClaudeStreamParser.questions(from: input)
+                if !items.isEmpty {
+                    let pending = PendingQuestion(id: requestID, runID: id, questions: items,
+                                                  origin: .claude(requestID: requestID, input: input), created: Date())
+                    questions[id, default: []].append(pending)
+                    update(id) { $0.move(to: .waitingApproval) }
+                    if let run = run(id) { onQuestion?(run, pending) }
+                    return
+                }
+            }
+            // In Plan mode the plan becomes a card with "Carry out"; Claude Code waits for your word instead of leaving plan mode.
+            if tool == "ExitPlanMode", run(id)?.mode == .plan {
+                let plan = ((input.dictionary["plan"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !plan.isEmpty { append(id, RunEvent(kind: .assistant, text: plan, tool: "plan", state: .done)) }
+                processes[id]?.send(ClaudeStreamParser.permissionResponse(
+                    requestID: requestID, allow: false, input: input,
+                    message: "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn."))
+                return
+            }
             let summary = ToolSummary.describe(tool: tool, input: input.dictionary)
             let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID,
                                  detail: ToolSummary.json(input.object), state: .pending)
@@ -556,6 +846,17 @@ final class WorkspaceManager: ObservableObject {
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
             finishLiveText(id)
+            // A steering message cut this segment short: the turn goes on with the new message (rule).
+            if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
+                turns[id]?.steeredUsage.append(result.usage)
+                return
+            }
+            turns[id]?.steered = false
+            // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
+            if result.isError, turns[id]?.stopping != true,
+               !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
+                limitedTurns[id] = .some(UsageLimits.latestReset(turns[id]?.limitWindows ?? [:]))
+            }
             var usage = result.usage
             let state = turns[id]
             // If turn completion reported no tokens, sum up individual message counts.
@@ -570,6 +871,7 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.finished = true
             let stopping = state?.stopping ?? false
             update(id) { run in
+                for segment in state?.steeredUsage ?? [] { run.usage.add(segment) }
                 run.usage.add(usage)
                 if let session = result.sessionID { run.providerSessionID = session }
                 if stopping {
@@ -586,16 +888,20 @@ final class WorkspaceManager: ObservableObject {
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials),
                                 state: result.isError && !stopping ? .failed : .done))
             expireApprovals(id)
-            // Turn finished: close stdin, allowing Claude Code to exit.
-            processes[id]?.closeInput()
-            if let run = run(id) { onTurnFinished?(run) }
+            questions[id] = nil
+            turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
+            // Turn finished: keep Claude Code waiting for the next message instead of closing it (way).
+            parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
+        case .rateLimits(let event):
+            onRateLimits?()
+            if let event { noteClaudeLimit(id, event) }
         }
     }
 
-    private func handleCodex(_ event: CodexStreamEvent, id: UUID) {
+    func handleCodex(_ event: CodexStreamEvent, id: UUID) {
         switch event {
         case .threadStarted(let thread):
             update(id) { $0.providerSessionID = thread }
@@ -639,16 +945,29 @@ final class WorkspaceManager: ObservableObject {
                 run.move(to: stopping ? .stopped : .completed)
             }
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: .done))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
         case .failed(let message):
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
+        case .usageLimited:
+            limitedTurns[id] = .some(nil)
+        default:
+            // Events only `codex app-server` sends: live text, reasoning, output, usage, the end of a turn.
+            handleCodexServerEvent(event, id: id)
         }
     }
 
-    private func processExited(_ id: UUID, status: Int32, stderr: String) {
+    private func processExited(_ id: UUID, status: Int32, stderr: String, process: AgentProcess? = nil) {
+        // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
+        if let process, claudeIdle[id]?.process === process {
+            claudeIdle[id] = nil
+            return
+        }
+        if let process, let current = processes[id], current !== process { return }
         processes[id] = nil
+        // A question can no longer be answered once the process is gone.
+        questions[id] = nil
         let state = turns[id]
         turns[id] = nil
         finishLiveText(id)
@@ -664,6 +983,7 @@ final class WorkspaceManager: ObservableObject {
         }
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
+            sendQueued(id)
             return
         }
         if state.stopping {
@@ -673,7 +993,7 @@ final class WorkspaceManager: ObservableObject {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
-            if let run = run(id) { onTurnFinished?(run) }
+            turnDidFinish(id)
         }
         scheduleGitRefresh(id, delay: 0.2)
     }
@@ -701,7 +1021,7 @@ final class WorkspaceManager: ObservableObject {
         return String(tail.prefix(800))
     }
 
-    private func resultLine(_ usage: TurnUsage, denials: Int) -> String {
+    func resultLine(_ usage: TurnUsage, denials: Int) -> String {
         var parts: [String] = []
         if let seconds = usage.durationSeconds { parts.append(AgentPathFormat.duration(seconds)) }
         let tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
@@ -711,13 +1031,13 @@ final class WorkspaceManager: ObservableObject {
         return parts.joined(separator: " · ")
     }
 
-    private func finishLiveText(_ id: UUID) {
+    func finishLiveText(_ id: UUID) {
         guard let live = turns[id]?.liveTextID else { return }
         mutateEvent(id, live) { $0.state = .done }
         turns[id]?.liveTextID = nil
     }
 
-    private func recordFileChange(_ id: UUID, path: String, kind: String) {
+    func recordFileChange(_ id: UUID, path: String, kind: String) {
         let base = run(id)?.workingDirectory ?? ""
         let shown = path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
         append(id, RunEvent(kind: .fileChange, text: shown, tool: kind, detail: path))
@@ -730,6 +1050,8 @@ final class WorkspaceManager: ObservableObject {
     enum Decision { case allow, always, deny }
 
     func decide(_ runID: UUID, requestID: String, _ decision: Decision) {
+        if decideCodex(runID, requestID: requestID, decision) { return }
+        if decideAcp(runID, requestID: requestID, decision) { return }
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }), let process = processes[runID] else {
             expireApproval(runID, requestID: requestID)
             return
@@ -748,18 +1070,18 @@ final class WorkspaceManager: ObservableObject {
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-        if approvals[runID]?.isEmpty ?? true { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
     }
 
-    private func expireApproval(_ runID: UUID, requestID: String) {
+    func expireApproval(_ runID: UUID, requestID: String) {
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }) else { return }
         approvals[runID]?.removeAll { $0.id == requestID }
         mutateEvent(runID, pending.eventID) { $0.state = .expired }
         onApprovalGone?(requestID)
     }
 
-    private func expireApprovals(_ runID: UUID) {
+    func expireApprovals(_ runID: UUID) {
         for pending in approvals[runID] ?? [] { expireApproval(runID, requestID: pending.id) }
         approvals[runID] = nil
     }
@@ -784,9 +1106,20 @@ final class WorkspaceManager: ObservableObject {
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     func delete(_ id: UUID) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        if let root = run.repoRoot, let git = gitService, run.checkpoints != nil {
+            Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
+        }
         runs.removeAll { $0.id == id }
         events[id] = nil
         approvals[id] = nil
+        queued[id] = nil
+        questions[id] = nil
+        closeCodexServer(id)
+        closeClaudeProcess(id)
+        closeAcpClient(id)
+        limitResumes.removeValue(forKey: id)?.cancel()
+        codexLimitSnapshots[id] = nil
+        limitedTurns[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
@@ -834,7 +1167,7 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    private func scheduleGitRefresh(_ id: UUID, delay: TimeInterval) {
+    func scheduleGitRefresh(_ id: UUID, delay: TimeInterval) {
         gitRefreshes[id]?.cancel()
         gitRefreshes[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -988,6 +1321,9 @@ final class WorkspaceManager: ObservableObject {
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
+        for id in Array(codexServers.keys) { closeCodexServer(id) }
+        for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
+        for id in Array(acpClients.keys) { closeAcpClient(id) }
         for (id, process) in processes {
             turns[id]?.stopping = true
             process.closeInput()
@@ -1004,13 +1340,13 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Tracking and Persistence
 
-    private func replace(_ run: WorkspaceRun) {
+    func replace(_ run: WorkspaceRun) {
         guard let index = runs.firstIndex(where: { $0.id == run.id }) else { return }
         runs[index] = run
         scheduleSave()
     }
 
-    private func update(_ id: UUID, save: Bool = true, _ change: (inout WorkspaceRun) -> Void) {
+    func update(_ id: UUID, save: Bool = true, _ change: (inout WorkspaceRun) -> Void) {
         guard let index = runs.firstIndex(where: { $0.id == id }) else { return }
         var run = runs[index]
         change(&run)
@@ -1020,7 +1356,7 @@ final class WorkspaceManager: ObservableObject {
         if save { scheduleSave() }
     }
 
-    private func append(_ id: UUID, _ event: RunEvent) {
+    func append(_ id: UUID, _ event: RunEvent) {
         if events[id] == nil { events[id] = store.loadEvents(id) }
         events[id]?.append(event)
         if event.kind != .system || event.tool != "launch" {
@@ -1029,7 +1365,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleEventSave(id)
     }
 
-    private func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
+    func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
         guard var list = events[id], let index = list.lastIndex(where: { $0.id == eventID }) else { return }
         change(&list[index])
         events[id] = list

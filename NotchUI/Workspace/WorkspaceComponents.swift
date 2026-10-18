@@ -46,7 +46,10 @@ extension ExecutionMode {
 
 extension PermissionPolicy {
     var label: String { tr("ws.permission." + rawValue) }
-    func help(for provider: RunProvider) -> String { tr("ws.permission." + rawValue + ".help." + provider.rawValue) }
+    /// Claude Code and Codex each have their own words; the ACP agents share one text.
+    func help(for provider: RunProvider) -> String {
+        tr("ws.permission." + rawValue + ".help." + (provider.usesACP ? "acp" : provider.rawValue))
+    }
 }
 
 extension IsolationMode {

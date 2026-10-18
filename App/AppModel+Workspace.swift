@@ -6,6 +6,11 @@ extension RunProvider {
         switch self {
         case .claude: return .claude
         case .codex: return .codex
+        case .gemini: return .gemini
+        case .opencode: return .opencode
+        case .cursor: return .cursor
+        case .grok: return .grok
+        case .antigravity: return .antigravity
         }
     }
 
@@ -15,7 +20,11 @@ extension RunProvider {
         switch kind {
         case .claude: self = .claude
         case .codex: self = .codex
-        case .gemini, .antigravity: return nil
+        case .gemini: self = .gemini
+        case .opencode: self = .opencode
+        case .cursor: self = .cursor
+        case .grok: self = .grok
+        case .antigravity: self = .antigravity
         }
     }
 }
@@ -89,7 +98,9 @@ extension AppModel {
     /// Connects the workspace to the rest of Nook. Run once at startup.
     func startWorkspace() {
         workspace.executable = { [weak self] provider in
-            self?.history.executables[provider.kind]
+            // Antigravity sessions run on Google's ACP server that Nook installs, not on the Antigravity app.
+            if provider == .antigravity { return AntigravityInstaller.shared.installed?.executable }
+            return self?.history.executables[provider.kind]
         }
         workspace.accountEnvironment = { [weak self] profileID in
             guard let self, let profile = self.profiles.profile(id: profileID) else { return [:] }
@@ -98,7 +109,48 @@ extension AppModel {
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
+        workspace.onQuestion = { [weak self] run, _ in self?.workspaceQuestion(run) }
+        // Codex reports new limits while it works: show them right away.
+        workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
+        // The git button finds and opens pull requests through the GitHub connector, when it is set up.
+        workspace.pullRequestLookup = { repo, branch in await GitHubPullRequests.openPullRequest(repo: repo, branch: branch) }
+        workspace.pullRequestCreate = { repo, title, body, head, base in
+            guard GitHubPullRequests.isAvailable else { return nil }
+            return try await GitHubPullRequests.create(repo: repo, title: title, body: body, head: head, base: base, draft: false)
+        }
+        // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
+        workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
+        startWorkspaceBridge()
+    }
+
+    /// Nook's terminal, browser and pull requests for the agents (see WorkspaceBridge): requests that need you appear as
+    /// the same approval card as any other agent request, and sessions Nook starts get the bridge on their command line.
+    private func startWorkspaceBridge() {
+        let bridge = WorkspaceBridge.shared
+        bridge.app = self
+        bridge.onApproval = { [weak self] request in self?.presentBridgeApproval(request) }
+        bridge.onApprovalGone = { [weak self] id in self?.viewModel.dismissCard(id: "bridge-" + id) }
+        bridge.start()
+        workspace.bridgeLaunch = { WorkspaceBridge.shared.launch }
+    }
+
+    private func presentBridgeApproval(_ request: BridgeRequest) {
+        var open: (label: String, action: () -> Void)?
+        switch request.caller.kind {
+        case .run(let runID):
+            // Already looking at this session: the request is shown there, no card on top of it.
+            if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == runID { return }
+            if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString,
+               viewModel.sessionTool == .conversation { return }
+            open = (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) })
+        case .external:
+            open = nil
+        }
+        let folder = URL(fileURLWithPath: request.caller.directory).lastPathComponent
+        let context = request.caller.title.isEmpty ? "\(request.caller.agent) · \(folder)"
+            : "\(request.caller.agent) · \(AgentFormat.title(request.caller.title))"
+        presentApprovalCard(ApprovalCenter.make(request), context: context, open: open)
     }
 
     /// Opens your agents in the notch, optionally on one session or straight into a new one. Everything you do with
@@ -128,10 +180,24 @@ extension AppModel {
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString { return }
+        // Looking at the conversation: the request is right there. With the terminal or browser open it is not, so a card.
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+           viewModel.sessionTool == .conversation { return }
         let runID = run.id
         presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
                             open: (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) }))
+    }
+
+    /// The agent asks a question in a session you are not looking at: a short notice that opens it.
+    private func workspaceQuestion(_ run: WorkspaceRun) {
+        if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
+        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+           viewModel.sessionTool == .conversation { return }
+        NookSound.play(.attention)
+        let runID = run.id
+        viewModel.finish(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
+            self?.openWorkspace(run: runID)
+        }
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
@@ -158,6 +224,7 @@ extension AppModel {
         case .codex: command = profile.environmentPrefixOnly + "codex login"
         case .gemini: command = "gemini"
         case .antigravity: command = "agy"
+        case .opencode, .cursor, .grok: command = profile.kind.loginCommand
         }
         let intro = "echo " + TerminalLauncher.shellQuote(tr("accounts.reauthIntro", profile.kind.name))
         do {
@@ -187,7 +254,7 @@ extension AppModel {
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /logout"
         case .codex: command = profile.environmentPrefixOnly + "codex logout"
-        case .gemini, .antigravity: return
+        case .gemini, .antigravity, .opencode, .cursor, .grok: return
         }
         do {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
@@ -223,7 +290,7 @@ extension AppModel {
                 try Self.pipeKey(clean, to: executable, arguments: ["login", "--with-api-key"], environment: environment)
             }.value
             profiles.setAuth(profile.id, .apiKey)
-        case .gemini, .antigravity:
+        case .gemini, .antigravity, .opencode, .cursor, .grok:
             return
         }
         history.refresh(minimumInterval: 0)

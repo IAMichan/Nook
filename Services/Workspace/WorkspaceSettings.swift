@@ -43,6 +43,22 @@ final class WorkspaceSettings: ObservableObject {
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
     }
+    /// Codex runs over `codex app-server` (approvals, questions, steering, live reasoning); off: one `codex exec` per turn.
+    @Published var codexAppServer: Bool {
+        didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
+    }
+    /// Coding agents may use Nook's terminal, browser and pull requests through the workspace bridge.
+    @Published var agentTools: Bool {
+        didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
+    }
+    /// A new session gets a short title written by a small model (way) in place of the first line of its task.
+    @Published var autoTitles: Bool {
+        didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
+    }
+    /// A session stopped by a usage limit goes on by itself once the limit resets ("Auto-resume"; off by default).
+    @Published var autoResumeLimited: Bool {
+        didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -64,6 +80,10 @@ final class WorkspaceSettings: ObservableObject {
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
+        agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
+        codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
+        autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }
