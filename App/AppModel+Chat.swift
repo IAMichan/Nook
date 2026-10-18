@@ -99,7 +99,8 @@ extension AppModel {
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
-        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
+        reply.status = settings.useLocal && settings.localModel != AppleModel.id && !EmbeddedModel.shared.isLoaded
+            ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)

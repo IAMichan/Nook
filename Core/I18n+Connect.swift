@@ -164,7 +164,11 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "notes.ready": "Gespreksnotitie klaar: %@",
         "notes.open": "Bekijk",
         "notes.badge.recording": "Opname",
-        "notes.badge.stop": "Stop"
+        "notes.badge.stop": "Stop",
+        "brain.apple.detail": "Al op je Mac: niets te downloaden, niets gaat naar buiten. Klein venster, dus Nook zoekt eerst zelf.",
+        "brain.apple.notEnabled": "Zet Apple Intelligence aan bij Systeeminstellingen › Apple Intelligence en Siri.",
+        "brain.apple.notReady": "Apple Intelligence wordt nog klaargezet. Probeer het straks opnieuw.",
+        "brain.apple.unsupported": "Apple Intelligence vraagt macOS 26 op een Mac met Apple silicon."
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -326,7 +330,11 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "notes.ready": "Call note ready: %@",
         "notes.open": "View",
         "notes.badge.recording": "Recording",
-        "notes.badge.stop": "Stop"
+        "notes.badge.stop": "Stop",
+        "brain.apple.detail": "Already on your Mac: nothing to download, nothing leaves it. A small window, so Nook looks things up first.",
+        "brain.apple.notEnabled": "Turn on Apple Intelligence in System Settings › Apple Intelligence & Siri.",
+        "brain.apple.notReady": "Apple Intelligence is still getting ready. Try again shortly.",
+        "brain.apple.unsupported": "Apple Intelligence needs macOS 26 on a Mac with Apple silicon."
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -488,6 +496,10 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "notes.ready": "Gesprächsnotiz fertig: %@",
         "notes.open": "Ansehen",
         "notes.badge.recording": "Aufnahme",
-        "notes.badge.stop": "Stopp"
+        "notes.badge.stop": "Stopp",
+        "brain.apple.detail": "Schon auf deinem Mac: nichts herunterladen, nichts verlässt ihn. Kleines Fenster, daher sucht Nook zuerst selbst.",
+        "brain.apple.notEnabled": "Aktiviere Apple Intelligence unter Systemeinstellungen › Apple Intelligence & Siri.",
+        "brain.apple.notReady": "Apple Intelligence wird noch vorbereitet. Versuche es gleich erneut.",
+        "brain.apple.unsupported": "Apple Intelligence braucht macOS 26 auf einem Mac mit Apple Silicon."
     ]
 ]

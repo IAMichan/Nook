@@ -252,6 +252,9 @@ final class BrainService {
                          profile: ModelProfile, runner: ToolRunner, thinking: Bool, sending images: [ChatImage],
                          onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
+        if selection.runtime == .mlx, selection.model == AppleModel.id {
+            return try await AppleIntelligence.run(system: system, prompt: fittedHistory + prompt, profile: profile, runner: runner, onText: onText)
+        }
         if selection.runtime == .mlx {
             guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
             return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fittedHistory + prompt,
@@ -382,6 +385,7 @@ final class BrainService {
     func test() async throws -> String {
         if settings.useLocal {
             guard !settings.localModel.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
+            if settings.localModel == AppleModel.id { return try await AppleIntelligence.test() }
             return try await EmbeddedModel.shared.test(model: settings.localModel)
         }
         let probe = "Reply with only the word: ready"

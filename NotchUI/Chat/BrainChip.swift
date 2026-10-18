@@ -19,6 +19,14 @@ struct BrainChip: View {
     var body: some View {
         Menu {
             Section(tr("brain.chip.installed")) {
+                if AppleIntelligence.isAvailable {
+                    Button {
+                        settings.useLocal = true
+                        settings.localModel = AppleModel.id
+                    } label: {
+                        item(mark(settings.useLocal && settings.localModel == AppleModel.id) + AppleModel.title, logo: BrandLogo.forName("Apple"))
+                    }
+                }
                 ForEach(ModelAdvisor.catalog.filter { local.installed.contains($0.id) }) { option in
                     Button {
                         settings.useLocal = true
