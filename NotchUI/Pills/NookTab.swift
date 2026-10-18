@@ -115,8 +115,12 @@ struct NookChatView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        let newest = chat.messages.last?.id
                         ForEach(chat.messages) { message in
-                            ChatMessageView(message: message, isLast: message.id == chat.messages.last?.id && !chat.busy)
+                            // Equatable on the message's revision: while one answer streams in, the earlier messages
+                            // (and their Markdown) are not laid out again for every few words.
+                            ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
+                                .equatable()
                                 .id(message.id)
                         }
                         Color.clear.frame(height: 1).id("bottom")
@@ -176,8 +180,10 @@ struct NookChatView: View {
                 focus: $inputFocused,
                 onSend: send
             ) {
+                // The same row as the agents' choices: a plus menu, then model and sources split by a thin line.
                 ComposerMoreMenu(chat: chat)
                 BrainChip()
+                ComposerDivider()
                 ScopeMenu(chat: chat)
             }
             .trailing {
@@ -197,11 +203,15 @@ struct NookChatView: View {
 
 // MARK: Single message
 
-private struct ChatMessageView: View {
+private struct ChatMessageView: View, Equatable {
     let message: ChatMessage
     /// The latest finished answer: the only one you can retry.
     var isLast = false
-    @EnvironmentObject private var app: AppModel
+    /// The newest message: a question at its end can be answered with a click.
+    var isNewest = false
+    /// Used for the buttons only, deliberately not observed: observing the whole app model redrew every message on
+    /// every change anywhere in Nook.
+    let app: AppModel
     @State private var hovering = false
     @State private var copied = false
 
@@ -222,7 +232,7 @@ private struct ChatMessageView: View {
                 ChatErrorCard(message: message, canRetry: isLast)
             } else if !message.text.isEmpty {
                 ConversationMessage(fromUser: false, text: message.text, size: 14,
-                                    onChoose: !message.streaming && message.id == app.chat.messages.last?.id ? { app.handleUserText($0) } : nil)
+                                    onChoose: !message.streaming && isNewest ? { app.handleUserText($0) } : nil)
             } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
                 TypingIndicator(status: message.status)
             }
@@ -291,6 +301,10 @@ private struct ChatMessageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {
+        a.message.id == b.message.id && a.message.revision == b.message.revision && a.isLast == b.isLast && a.isNewest == b.isNewest
     }
 }
 

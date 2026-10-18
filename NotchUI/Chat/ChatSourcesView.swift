@@ -405,12 +405,7 @@ struct ComposerMoreMenu: View {
             Divider()
             Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(NookTheme.smoke))
-                .contentShape(Circle())
+            ComposerIcon(symbol: "plus")
         }
         .composerMenu()
         .help(tr("chat.more"))

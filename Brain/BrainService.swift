@@ -50,7 +50,8 @@ final class BrainService {
         let looked = Self.researchTools(in: context).filter { name in allTools.contains { $0.name == name } }
         let wanted = intent.tools + looked.filter { !intent.tools.contains($0) }
         let preferred = wanted + Research.companions(of: wanted)
-        let offered = (!profile.isSmall || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
+        // A strong local model (richPrompt) works like an external one: the full tool set, even for a plain question.
+        let offered = (!profile.isSmall || profile.richPrompt || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
         // Web search by the provider itself (Claude's web_search, Claude Code's WebSearch) follows the same rule as Nook's own
         // web tools: only when the Web source is allowed for this request.
         let webAllowed = settings.webSearch && allTools.contains { SourceCatalog.source(forTool: $0.name) == SourceCatalog.web }
@@ -90,7 +91,9 @@ final class BrainService {
             + hidden.keys.sorted().map { "\($0) — \(SourceCatalog.title($0)) (\(hidden[$0]?.count ?? 0) tools)" }.joined(separator: "; ") + "."
         let offeredWithDiscovery = offered + (useSource.map { [$0] } ?? [])
 
-        let system = (profile.isSmall ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched, evidence: context.contains("\nEvidence (")) : systemPrompt()) + catalog
+        let system = (profile.isSmall && !profile.richPrompt
+            ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched, evidence: context.contains("\nEvidence ("))
+            : systemPrompt()) + catalog
         let toolsText = offered.reduce(0) { $0 + $1.name.count + (profile.compactDescriptions ? 80 : $1.description.count) + 200 }
         // Bigger local models get a longer memory of the conversation, so follow-ups ("and on friday?") keep working.
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: profile.contextTokens >= 16_000 ? 10 : 6,
@@ -125,8 +128,11 @@ final class BrainService {
 
         runnerRef = runner
 
+        // A local model that can reason does so for hard questions only (why, compare, explain, long questions):
+        // much better answers there, no waiting on a greeting or a simple action.
+        let thinking = ThinkingPolicy.wantsThinking(userText) && !intent.isSmallTalk && intent.primaryAction == nil
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: fitted[0], history: history,
-                                     webAllowed: webAllowed, profile: profile, runner: runner, onText: onText)
+                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking, onText: onText)
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out.
@@ -206,12 +212,13 @@ final class BrainService {
 
     /// Runs one conversation on the selected brain, through the shared tool loop.
     private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
-                         profile: ModelProfile, runner: ToolRunner, onText: ((String) -> Void)?) async throws -> BrainPlan {
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false,
+                         onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
         if selection.runtime == .mlx {
             guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
             return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fittedHistory + prompt,
-                                                      profile: profile, runner: runner, onText: onText)
+                                                      profile: profile, runner: runner, thinking: thinking, onText: onText)
         }
         let conversation: ModelConversation
         switch selection.provider {

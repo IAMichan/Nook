@@ -44,6 +44,8 @@ struct SettingsView: View {
     @State var status = ""
     @State var refreshTick = 0
     @State var connectionSearch = ""
+    /// The category chip on Connected services; nil shows all of them.
+    @State var connectionCategory: ServiceCategory?
     @ObservedObject var local = EmbeddedModel.shared
     @State var installing: String?
     @State var installFraction: Double = 0

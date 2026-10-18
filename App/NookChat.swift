@@ -21,6 +21,8 @@ struct ChatMessage: Identifiable {
     var role: Role
     var text: String
     var date = Date()
+    /// Goes up with every change (`NookChat.update`), so a message view redraws only when its own message changed.
+    var revision = 0
     /// What Nook is currently doing (e.g. "Looking at your screen..."), while streaming text.
     var status = ""
     var streaming = false
@@ -327,7 +329,11 @@ final class NookChat: ObservableObject {
         for index in conversations.indices {
             if let message = conversations[index].messages.firstIndex(where: { $0.id == id }) {
                 change(&conversations[index].messages[message])
-                touch(index, save: !conversations[index].messages[message].streaming)
+                conversations[index].messages[message].revision &+= 1
+                let streaming = conversations[index].messages[message].streaming
+                // While an answer streams in, only the message changes: the conversation's place in the list stays put,
+                // and the list of Nooks is not re-sorted for every few words.
+                if streaming { lastActivity = Date() } else { touch(index) }
                 return
             }
         }
@@ -338,6 +344,7 @@ final class NookChat: ObservableObject {
             for message in conversations[index].messages.indices {
                 if let mail = conversations[index].messages[message].mails.firstIndex(where: { $0.id == mailID }) {
                     change(&conversations[index].messages[message].mails[mail])
+                    conversations[index].messages[message].revision &+= 1
                     touch(index)
                     return
                 }

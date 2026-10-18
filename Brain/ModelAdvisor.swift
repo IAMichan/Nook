@@ -14,6 +14,9 @@ struct ModelProfile: Equatable {
     var rounds: Int
     /// Small models get a simpler prompt and fewer tools.
     var isSmall: Bool
+    /// A strong local model (mixture of experts, 26B and up): the full instructions and tool set the external models get,
+    /// so it can work the same way. It still runs on the Mac, with the conversation in the prompt.
+    var richPrompt = false
 
     static let cloud = ModelProfile(contextTokens: 120_000, maxOutputTokens: 8_192, maxTools: 64, compactDescriptions: false, rounds: 10, isSmall: false)
     static let localLarge = ModelProfile(contextTokens: 16_384, maxOutputTokens: 1_200, maxTools: 14, compactDescriptions: true, rounds: 4, isSmall: true)
@@ -22,6 +25,16 @@ struct ModelProfile: Equatable {
     static let localCompact = ModelProfile(contextTokens: 8_192, maxOutputTokens: 900, maxTools: 10, compactDescriptions: true, rounds: 4, isSmall: true)
     /// 12B and up: a larger window and more tools.
     static let localXL = ModelProfile(contextTokens: 24_576, maxOutputTokens: 1_500, maxTools: 18, compactDescriptions: true, rounds: 5, isSmall: true)
+    /// Current small models (Qwen 3.5 4B): long native context and reliable tool calls, so a bigger window and more tools.
+    static let localModernSmall = ModelProfile(contextTokens: 16_384, maxOutputTokens: 1_500, maxTools: 12, compactDescriptions: true, rounds: 5, isSmall: true)
+    /// Current mid-size models (Qwen 3.5 9B, Gemma 4 12B, Qwen 3.6 27B): full tool descriptions, a 32k window, longer answers.
+    static let localModern = ModelProfile(contextTokens: 32_768, maxOutputTokens: 2_500, maxTools: 20, compactDescriptions: false, rounds: 6, isSmall: true)
+    /// Strong mixture-of-experts models (Qwen 3.6 35B-A3B, Gemma 4 26B-A4B): fast enough for the full prompt and tool set.
+    static let localPro = ModelProfile(contextTokens: 32_768, maxOutputTokens: 4_096, maxTools: 40, compactDescriptions: false, rounds: 8,
+                                       isSmall: true, richPrompt: true)
+
+    /// Room for the answer when the model first reasons it out: reasoning takes tokens of its own.
+    var thinkingOutputTokens: Int { min(max(maxOutputTokens * 3, 4_096), contextTokens / 2) }
 
     /// A small window on a Mac with memory to spare wastes what Nook reads: documents opened in full need room. The key-value
     /// cache of a 3–4B model costs about 150 KB per token, so going from 8k to 16k tokens takes roughly 1.2 GB more. Larger
@@ -76,6 +89,77 @@ struct LocalModelOption: Identifiable, Equatable {
     /// Strength at choosing and filling in tools (higher is better); measured with the evaluation questions.
     let toolSkill: Int
     let profile: ModelProfile
+    var family: ModelFamily = .other
+    /// Can reason before answering (Qwen 3.5 / 3.6): Nook switches that on for hard questions only.
+    var canThink = false
+
+    /// The sampling the model makers recommend; far better than one setting for every model (greedy decoding makes
+    /// small quantized models repeat themselves, too much randomness makes their tool calls sloppy).
+    func sampling(thinking: Bool) -> ModelSampling { family.sampling(thinking: thinking) }
+}
+
+/// Sampling settings for one answer.
+struct ModelSampling: Equatable {
+    var temperature: Float
+    var topP: Float
+    var topK: Int
+}
+
+/// The family a model belongs to: decides sampling and how a turn ends.
+enum ModelFamily: String, Equatable {
+    case qwen, gemma4, llama, other
+
+    func sampling(thinking: Bool) -> ModelSampling {
+        switch self {
+        // Qwen's own advice: 0.7 / 0.8 / 20 for direct answers, 0.6 / 0.95 / 20 when reasoning first.
+        case .qwen: return thinking ? ModelSampling(temperature: 0.6, topP: 0.95, topK: 20) : ModelSampling(temperature: 0.7, topP: 0.8, topK: 20)
+        // Gemma's own advice.
+        case .gemma4: return ModelSampling(temperature: 1.0, topP: 0.95, topK: 64)
+        case .llama: return ModelSampling(temperature: 0.6, topP: 0.9, topK: 0)
+        case .other: return ModelSampling(temperature: 0.6, topP: 0.9, topK: 0)
+        }
+    }
+
+    /// End-of-turn markers that are not always in the model's own configuration.
+    var stopTokens: Set<String> {
+        switch self {
+        case .qwen: return ["<|im_end|>"]
+        case .gemma4: return ["<turn|>"]
+        case .llama: return ["<|eot_id|>"]
+        case .other: return []
+        }
+    }
+}
+
+/// When a model that can reason should do so: only for questions where it pays off, because reasoning on a laptop takes
+/// seconds. Greetings, lookups and simple actions are answered directly.
+enum ThinkingPolicy {
+    private static let cues = [
+        "waarom", "why", "warum", "leg uit", "uitleg", "explain", "erkläre", "analyse", "analyze", "analyseer", "vergelijk",
+        "compare", "vergleich", "bereken", "calculate", "berechne", "strategie", "strategy",
+        "hoe kan ik", "how can i", "how do i", "wie kann ich", "wat is beter", "which is better", "pros and cons", "voor- en nadelen",
+        "bewijs", "prove", "debug", "fout in", "bug", "algoritme", "algorithm", "stap voor stap", "step by step", "afweging", "advies", "advice"
+    ]
+
+    static func wantsThinking(_ question: String) -> Bool {
+        let text = question.lowercased()
+        if text.count > 280 { return true }
+        if text.contains("```") { return true }
+        return cues.contains { text.contains($0) }
+    }
+
+    /// The visible answer of a model that reasoned first. Qwen's template opens the reasoning itself, so the output often
+    /// holds only its end ("…</think>"). While the reasoning is still running nothing is visible.
+    static func answer(from output: String, thinking: Bool) -> String {
+        var text = output.replacingOccurrences(of: "<think>[\\s\\S]*?</think>", with: "", options: .regularExpression)
+        if let close = text.range(of: "</think>", options: .backwards) {
+            text = String(text[close.upperBound...])
+        } else if thinking {
+            return ""
+        }
+        if let open = text.range(of: "<think>") { text = String(text[..<open.lowerBound]) }
+        return text
+    }
 }
 
 /// A model served by Ollama or LM Studio on this Mac.
@@ -104,19 +188,34 @@ enum ModelAdvisor {
         }
     }
 
-    /// Built-in choices (MLX, 4-bit). Qwen 3 is preferred for its reliable tool calling and Dutch; the 30B model is a
-    /// mixture of experts with 3B active parameters, so it answers about as fast as a 4B model on a Mac with enough memory.
-    /// Older models stay listed so an installed one keeps working.
+    /// Built-in choices (MLX, 4-bit), newest generation first. Qwen 3.5 / 3.6 are preferred for their reliable tool calling,
+    /// long context and Dutch; the 35B-A3B model is a mixture of experts with 3B active parameters, so it answers about as
+    /// fast as a 4B model on a Mac with enough memory. Gemma 4 is a strong alternative. Older models stay listed so an
+    /// installed one keeps working; the advisor no longer proposes them.
     static let catalog: [LocalModelOption] = [
-        LocalModelOption(id: "mlx-community/Qwen3-4B-Instruct-2507-4bit", title: "Qwen 3 (4B)", sizeGB: 2.3, minMemoryGB: 8, toolSkill: 4, profile: .localCompact),
-        LocalModelOption(id: "mlx-community/Qwen3-8B-4bit", title: "Qwen 3 (8B)", sizeGB: 4.6, minMemoryGB: 16, toolSkill: 6, profile: .localLarge),
-        LocalModelOption(id: "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit", title: "Qwen 3 (30B-A3B)", sizeGB: 17.2, minMemoryGB: 32, toolSkill: 8,
-                         profile: ModelProfile(contextTokens: 24_576, maxOutputTokens: 2_000, maxTools: 24, compactDescriptions: false, rounds: 6, isSmall: true)),
-        LocalModelOption(id: "mlx-community/Qwen2.5-3B-Instruct-4bit", title: "Qwen 2.5 (3B)", sizeGB: 1.9, minMemoryGB: 8, toolSkill: 2, profile: .localSmall),
-        LocalModelOption(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", title: "Llama 3.2 (3B)", sizeGB: 1.8, minMemoryGB: 8, toolSkill: 1, profile: .localSmall),
-        LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)", sizeGB: 4.3, minMemoryGB: 16, toolSkill: 4, profile: .localLarge),
-        LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)", sizeGB: 4.5, minMemoryGB: 16, toolSkill: 3, profile: .localLarge),
-        LocalModelOption(id: "mlx-community/Qwen2.5-14B-Instruct-4bit", title: "Qwen 2.5 (14B)", sizeGB: 8.3, minMemoryGB: 32, toolSkill: 5, profile: .localXL)
+        LocalModelOption(id: "mlx-community/Qwen3.5-4B-4bit", title: "Qwen 3.5 (4B)", sizeGB: 3.1, minMemoryGB: 8, toolSkill: 6,
+                         profile: .localModernSmall, family: .qwen, canThink: true),
+        LocalModelOption(id: "mlx-community/Qwen3.5-9B-4bit", title: "Qwen 3.5 (9B)", sizeGB: 6.0, minMemoryGB: 16, toolSkill: 8,
+                         profile: .localModern, family: .qwen, canThink: true),
+        LocalModelOption(id: "mlx-community/gemma-4-12B-it-4bit", title: "Gemma 4 (12B)", sizeGB: 6.8, minMemoryGB: 16, toolSkill: 7,
+                         profile: .localModern, family: .gemma4),
+        LocalModelOption(id: "mlx-community/Qwen3.6-27B-4bit", title: "Qwen 3.6 (27B)", sizeGB: 16.1, minMemoryGB: 32, toolSkill: 9,
+                         profile: .localModern, family: .qwen, canThink: true),
+        LocalModelOption(id: "mlx-community/gemma-4-26b-a4b-it-4bit", title: "Gemma 4 (26B-A4B)", sizeGB: 15.4, minMemoryGB: 32, toolSkill: 8,
+                         profile: .localPro, family: .gemma4),
+        LocalModelOption(id: "mlx-community/Qwen3.6-35B-A3B-4bit", title: "Qwen 3.6 (35B-A3B)", sizeGB: 20.4, minMemoryGB: 36, toolSkill: 10,
+                         profile: .localPro, family: .qwen, canThink: true),
+        LocalModelOption(id: "mlx-community/Qwen3-4B-Instruct-2507-4bit", title: "Qwen 3 (4B)", sizeGB: 2.3, minMemoryGB: 8, toolSkill: 4,
+                         profile: .localCompact, family: .qwen),
+        LocalModelOption(id: "mlx-community/Qwen3-8B-4bit", title: "Qwen 3 (8B)", sizeGB: 4.6, minMemoryGB: 16, toolSkill: 5, profile: .localLarge, family: .qwen),
+        LocalModelOption(id: "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit", title: "Qwen 3 (30B-A3B)", sizeGB: 17.2, minMemoryGB: 32, toolSkill: 7,
+                         profile: ModelProfile(contextTokens: 24_576, maxOutputTokens: 2_000, maxTools: 24, compactDescriptions: false, rounds: 6, isSmall: true),
+                         family: .qwen),
+        LocalModelOption(id: "mlx-community/Qwen2.5-3B-Instruct-4bit", title: "Qwen 2.5 (3B)", sizeGB: 1.9, minMemoryGB: 8, toolSkill: 2, profile: .localSmall, family: .qwen),
+        LocalModelOption(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", title: "Llama 3.2 (3B)", sizeGB: 1.8, minMemoryGB: 8, toolSkill: 1, profile: .localSmall, family: .llama),
+        LocalModelOption(id: "mlx-community/Qwen2.5-7B-Instruct-4bit", title: "Qwen 2.5 (7B)", sizeGB: 4.3, minMemoryGB: 16, toolSkill: 3, profile: .localLarge, family: .qwen),
+        LocalModelOption(id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit", title: "Llama 3.1 (8B)", sizeGB: 4.5, minMemoryGB: 16, toolSkill: 3, profile: .localLarge, family: .llama),
+        LocalModelOption(id: "mlx-community/Qwen2.5-14B-Instruct-4bit", title: "Qwen 2.5 (14B)", sizeGB: 8.3, minMemoryGB: 32, toolSkill: 4, profile: .localXL, family: .qwen)
     ]
 
     struct Recommendation: Equatable {

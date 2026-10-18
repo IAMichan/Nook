@@ -5,16 +5,17 @@ import AppKit
 extension SettingsView {
     // MARK: Connectors
 
-    /// Calm and in the order you need it: what is connected, what is on your Mac, and below that what you can add.
-    /// Adding a service is one click on its card; agent accounts live under Agents, MCP servers under MCP.
+    /// Every service in one calm list, grouped by what it is for. Each row says its state in plain words (Not connected,
+    /// Connecting, Connected, Sign-in expired) and has one obvious button. Services with an official MCP server sign in
+    /// with OAuth; the rest use a key with a step-by-step guide. Agent accounts live under Agents, raw MCP under MCP.
     var connectionsSection: some View {
         // Collected once per redraw: every capability line below is derived from it.
         let tools: [(name: String, isAction: Bool)] = app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }
         let capabilityLine: (String) -> String = { SourceCapabilities.line($0, tools: tools) }
-        let services = app.connectors.sources.filter { !($0 is MCPConnector) && matchesSearch($0, capabilityLine) }
-        let connected = services.filter(isConnected)
-        let available = services.filter { !isConnected($0) }
         let refresh = { app.connectors.refreshAll() }
+        let oauthIDs = Set(MCPRemoteService.all.map(\.id))
+        let cloud = app.connectors.sources.filter { !($0 is MCPConnector) && $0 is any CloudConnectorConfig }
+        let expired = expiredServices()
         return Group {
             Section {
                 HStack(spacing: 8) {
@@ -26,45 +27,53 @@ extension SettingsView {
                             .buttonStyle(.plain)
                     }
                 }
+                categoryChips
+            } footer: {
+                Text(tr("connect.intro"))
             }
-            if !connected.isEmpty {
+
+            if !expired.isEmpty {
                 Section {
-                    ForEach(connected.indices, id: \.self) { index in
-                        CloudConnectorViews.row(connected[index], capabilities: capabilityLine(connected[index].id), onChange: refresh)
+                    ForEach(expired, id: \.self) { name in
+                        Label(tr("connect.expiredBanner", name), systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(NookTheme.amber)
+                            .font(.callout)
                     }
-                } header: {
-                    Text(tr("settings2.connections.connected", connected.count))
-                } footer: {
-                    Text(tr("settings2.connections.connectedFooter"))
                 }
             }
-            let sources = localSources(capabilityLine)
-            if !sources.isEmpty {
-                Section {
-                    ForEach(sources.indices, id: \.self) { index in
-                        localRow(sources[index], capabilityLine)
-                    }
-                } header: {
-                    Text(tr("settings.connections.onYourMac"))
-                } footer: {
-                    Text(tr("settings.connections.footer"))
-                }
-            }
-            if !available.isEmpty {
-                Section {
-                    GalleryGrid {
-                        ForEach(available.indices, id: \.self) { index in
-                            CloudConnectorViews.card(available[index], capabilities: capabilityLine(available[index].id), onChange: refresh)
+
+            ForEach(ServiceCategory.allCases.filter { connectionCategory == nil || connectionCategory == $0 }) { category in
+                let builtIn = cloud.filter { ServiceCategory.of(sourceID: $0.id) == category && matchesSearch($0, capabilityLine) }
+                let remote = MCPRemoteService.all.filter { ServiceCategory.of($0) == category && matchesSearch(title: $0.name + " " + $0.tagline) }
+                let local = category == .mac ? localSources(capabilityLine) : []
+                if !builtIn.isEmpty || !remote.isEmpty || !local.isEmpty {
+                    Section {
+                        // A built-in service that also has an OAuth server shows once: the key row when a key is set,
+                        // otherwise the sign-in row with the key as the alternative.
+                        ForEach(builtIn.indices, id: \.self) { index in
+                            let source = builtIn[index]
+                            if !oauthIDs.contains(source.id) || isConnected(source) {
+                                serviceRow(source, capabilityLine, refresh)
+                            }
                         }
+                        ForEach(remote) { service in
+                            let keyed = builtIn.first { $0.id == service.id }
+                            if keyed.map({ !isConnected($0) }) ?? true {
+                                MCPServiceRow(service: service, keyAlternative: keyed,
+                                              capabilities: keyed.map { capabilityLine($0.id) } ?? "", onChange: refresh)
+                            }
+                        }
+                        ForEach(local.indices, id: \.self) { index in
+                            localRow(local[index], capabilityLine)
+                        }
+                    } header: {
+                        Text(category.title)
+                    } footer: {
+                        if category == .mac { Text(tr("settings.connections.footer")) }
                     }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    .listRowBackground(Color.clear)
-                } header: {
-                    Text(tr("settings2.connections.add"))
-                } footer: {
-                    Text(tr("settings2.connections.addFooter"))
                 }
             }
+
             Section {
                 Button { app.settingsSection = .mcp } label: {
                     HStack(spacing: 12) {
@@ -101,7 +110,54 @@ extension SettingsView {
                         }
                     }
                 }
+            } header: {
+                Text(tr("connect.notListed"))
             }
+        }
+    }
+
+    /// The category filter: All, then one chip per group.
+    private var categoryChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                chip(tr("connect.category.all"), selected: connectionCategory == nil) { connectionCategory = nil }
+                ForEach(ServiceCategory.allCases) { category in
+                    chip(category.title, selected: connectionCategory == category) { connectionCategory = category }
+                }
+            }
+        }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.callout.weight(selected ? .semibold : .regular))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 4)
+                .foregroundStyle(selected ? NookTheme.onIris : Color.primary)
+                .background(Capsule().fill(selected ? NookTheme.iris : Color.primary.opacity(0.06)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// A built-in service: the manage row once a key is set, otherwise a row with Connect.
+    @ViewBuilder
+    private func serviceRow(_ source: ContextSource, _ capabilityLine: (String) -> String, _ refresh: @escaping () -> Void) -> some View {
+        if isConnected(source) {
+            CloudConnectorViews.row(source, capabilities: capabilityLine(source.id), onChange: refresh)
+        } else {
+            CloudConnectorViews.linkRow(source, capabilities: capabilityLine(source.id), onChange: refresh)
+        }
+    }
+
+    /// Names of signed-in services whose sign-in has expired: shown on top, so nobody has to go looking.
+    func expiredServices() -> [String] {
+        MCPServerStore.shared.servers.filter(\.signsIn).compactMap { config in
+            guard let source = app.connectors.source(id: config.sourceID), source.isActive,
+                  case .error = source.status.state, (source.status.errorKind ?? .other).needsReconnect else { return nil }
+            return config.name
         }
     }
 

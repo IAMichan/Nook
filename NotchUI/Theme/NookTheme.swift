@@ -32,6 +32,17 @@ enum NookTheme {
     /// Current accent (kept in sync by `AppSettings.accentHex`).
     static var accentHex: UInt32 = defaultAccentHex
     static var iris: Color { Color(hex: accentHex) }
+    /// Text and symbols on an iris fill: dark on a light accent (the default soft white), white on a deep one.
+    static var onIris: Color { relativeLuminance(accentHex) > 0.45 ? ink : .white }
+
+    /// WCAG relative luminance of a 0xRRGGBB color, 0 (black) to 1 (white).
+    static func relativeLuminance(_ hex: UInt32) -> Double {
+        func channel(_ value: UInt32) -> Double {
+            let c = Double(value & 0xFF) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
+    }
     static let mint = Color(hex: 0x46E0A6)
     static let amber = Color(hex: 0xFFB84D)
     static let coral = Color(hex: 0xFF6B6B)

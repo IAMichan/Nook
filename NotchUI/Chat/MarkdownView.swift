@@ -38,6 +38,29 @@ extension MarkdownBlock {
 }
 
 /// Renders an answer with headings, lists, tables, charts, code blocks, call-outs, and questions, in Nook's visual style.
+/// Parsed Markdown per text. SwiftUI asks for a message's body far more often than its text changes (scrolling, hover,
+/// another message streaming in); parsing once per text keeps long conversations smooth.
+private final class ParsedMarkdown {
+    let blocks: [MarkdownBlock]
+    init(_ blocks: [MarkdownBlock]) { self.blocks = blocks }
+}
+
+enum MarkdownCache {
+    private static let cache: NSCache<NSString, ParsedMarkdown> = {
+        let cache = NSCache<NSString, ParsedMarkdown>()
+        cache.countLimit = 400
+        return cache
+    }()
+
+    static func blocks(_ text: String) -> [MarkdownBlock] {
+        let key = text as NSString
+        if let hit = cache.object(forKey: key) { return hit.blocks }
+        let blocks = MarkdownBlock.parse(text)
+        cache.setObject(ParsedMarkdown(blocks), forKey: key)
+        return blocks
+    }
+}
+
 struct MarkdownView: View {
     let text: String
     var size: CGFloat = 14
@@ -45,7 +68,7 @@ struct MarkdownView: View {
     var onChoose: ((String) -> Void)? = nil
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(text)
+        let blocks = MarkdownCache.blocks(text)
         let choices = onChoose == nil ? nil : MarkdownBlock.trailingChoices(blocks)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { offset, block in
