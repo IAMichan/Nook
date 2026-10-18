@@ -172,7 +172,7 @@ struct NotchRootView: View {
                     card: card,
                     onAction: { viewModel.perform($0) },
                     onVoice: { viewModel.startListening() },
-                    onReply: { app.handleUserText($0) },
+                    onReply: { app.handleCardReply($0, card: card) },
                     onChoose: { viewModel.choose($0, $1) }
                 )
             }

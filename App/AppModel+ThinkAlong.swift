@@ -130,23 +130,35 @@ extension AppModel {
     /// Full proposal: what Nook observed, suggested action, with Accept, Dismiss, or Mute in App.
     func nudgeCard(_ plan: BrainPlan, offers: [String], bundleID: String, appName: String) -> NookCard {
         let token = "nudge-" + UUID().uuidString
+        let title = plan.text.isEmpty ? tr("app.nudge.title") : String(plan.text.prefix(600))
+        let topic = Self.nudgeLine(body: plan.text, fallback: tr("app.nudge.title"))
+        // Accepted, the proposal goes on in the chat: the outcome shows there and can be adjusted with a follow-up.
+        let shown = BrainPlan(text: title, actions: plan.actions)
         viewModel.register("\(token)#yes") { [weak self] in
             guard let self else { return }
             self.thinkAlong.accepted()
             self.missedNudge = nil
-            if !plan.actions.isEmpty { self.execute(plan) }
+            self.cardReplies[token] = nil
+            if !plan.actions.isEmpty { self.continueInChat(shown, title: topic, sources: [appName], offers: offers) }
         }
         viewModel.register("\(token)#no") { [weak self] in
             self?.thinkAlong.declined()
             self?.missedNudge = nil
+            self?.cardReplies[token] = nil
         }
         viewModel.register("\(token)#mute") { [weak self] in
             self?.thinkAlong.mute(bundleID: bundleID, name: appName)
             self?.missedNudge = nil
+            self?.cardReplies[token] = nil
+        }
+        registerCardReply(token) { [weak self] in
+            guard let self else { return }
+            self.thinkAlong.accepted()
+            self.missedNudge = nil
+            self.continueInChat(shown, title: topic, sources: [appName], offers: offers, run: false)
         }
 
         let steps = planSteps(plan.actions)
-        let title = plan.text.isEmpty ? tr("app.nudge.title") : String(plan.text.prefix(600))
         let long = title.count > 140
         let lines = min(8, max(1, Int(ceil(Double(title.count) / (long ? 62.0 : 46.0)))))
         var height = 150 + CGFloat(lines) * (long ? 21 : 24)
