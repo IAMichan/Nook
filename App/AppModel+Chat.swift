@@ -103,7 +103,9 @@ extension AppModel {
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
         // Only some brains can see pictures; say so instead of answering as if they had.
-        if !images.isEmpty, settings.selection.runtime == .mlx || settings.selection.provider == .claudeCode {
+        let selection = settings.selection
+        let localModel = ModelAdvisor.catalog.first { $0.id == selection.model }
+        if !images.isEmpty, selection.runtime == .mlx && !(localModel?.seesImages ?? false) {
             reply.notices.append(tr("image.unsupported"))
         }
         reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
