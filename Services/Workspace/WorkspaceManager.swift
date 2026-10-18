@@ -130,6 +130,8 @@ final class WorkspaceManager: ObservableObject {
     /// The turn that just ended stopped on a usage limit, with its reset when known. Kept apart from the turn state,
     /// which some paths clear before the end of the turn is handled.
     var limitedTurns: [UUID: Date?] = [:]
+    /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
+    var claudeThinkingDisplay: [String: Bool] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
@@ -186,6 +188,11 @@ final class WorkspaceManager: ObservableObject {
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
+        /// Claude Code's thinking as it streams: the block being written, whether a thinking block is open, and the
+        /// finished streamed blocks waiting for their complete copy (nil: the block streamed no text).
+        var liveThinkingID: UUID?
+        var thinkingOpen = false
+        var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
     }
@@ -643,8 +650,10 @@ final class WorkspaceManager: ObservableObject {
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
-            bridge: bridgeLaunch()
+            bridge: bridgeLaunch(),
+            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true
         )
+        if run.provider == .claude, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
         let spec = AgentCommand.spec(input)
         if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
         let process = AgentProcess(spec: spec)
@@ -784,8 +793,32 @@ final class WorkspaceManager: ObservableObject {
             } else {
                 append(id, RunEvent(kind: .assistant, text: text, state: .done))
             }
+        case .thinkingDelta(let text, let starts):
+            if starts {
+                closeThinking(id)
+                turns[id]?.thinkingOpen = true
+            }
+            guard !text.isEmpty else { return }
+            if let live = turns[id]?.liveThinkingID {
+                mutateEvent(id, live) { $0.text += text }
+            } else {
+                let event = RunEvent(kind: .thinking, text: text, state: .running)
+                turns[id]?.liveThinkingID = event.id
+                append(id, event)
+            }
+        case .blockStopped:
+            closeThinking(id)
         case .thinking(let text):
-            append(id, RunEvent(kind: .thinking, text: text))
+            closeThinking(id)
+            // The complete copy of a block that streamed: keep the streamed text unless this one has more to say.
+            if let state = turns[id], !state.streamedThinking.isEmpty {
+                let streamed = turns[id]?.streamedThinking.removeFirst()
+                if let streamed = streamed ?? nil {
+                    if !text.isEmpty { mutateEvent(id, streamed) { $0.text = text } }
+                    return
+                }
+            }
+            if !text.isEmpty { append(id, RunEvent(kind: .thinking, text: text)) }
         case .toolUse(let callID, let name, let input, let nested):
             finishLiveText(id)
             let summary = ToolSummary.describe(tool: name, input: input.dictionary)
@@ -852,6 +885,7 @@ final class WorkspaceManager: ObservableObject {
                 return
             }
             turns[id]?.steered = false
+            closeThinking(id)
             // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
             if result.isError, turns[id]?.stopping != true,
                !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
@@ -976,7 +1010,7 @@ final class WorkspaceManager: ObservableObject {
         if var list = events[id] {
             var changed = false
             for index in list.indices where list[index].state == .running {
-                list[index].state = list[index].kind == .assistant ? .done : .failed
+                list[index].state = list[index].kind == .assistant || list[index].kind == .thinking ? .done : .failed
                 changed = true
             }
             if changed { events[id] = list; scheduleEventSave(id) }
@@ -1029,6 +1063,16 @@ final class WorkspaceManager: ObservableObject {
         if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }
         return parts.joined(separator: " · ")
+    }
+
+    /// Ends the thinking block being streamed; it then waits for its complete copy (see `.thinking`).
+    func closeThinking(_ id: UUID) {
+        guard turns[id]?.thinkingOpen == true else { return }
+        turns[id]?.thinkingOpen = false
+        let live = turns[id]?.liveThinkingID
+        if let live { mutateEvent(id, live) { $0.state = .done } }
+        turns[id]?.liveThinkingID = nil
+        turns[id]?.streamedThinking.append(live)
     }
 
     func finishLiveText(_ id: UUID) {

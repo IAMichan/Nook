@@ -59,4 +59,15 @@ extension WorkspaceManager {
         idle.process.closeInput()
         idle.process.stop(grace: 2)
     }
+
+    /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.
+    func probeClaudeFlags(_ executable: String) {
+        claudeThinkingDisplay[executable] = false
+        Task { [weak self] in
+            let known = await Task.detached(priority: .utility) {
+                (try? ProcessRunner.run(executable, ["--help"], timeout: 15))?.stdout.contains("--thinking-display") == true
+            }.value
+            self?.claudeThinkingDisplay[executable] = known
+        }
+    }
 }
