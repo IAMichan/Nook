@@ -544,6 +544,7 @@ struct ToolRow: View {
                         .foregroundStyle(WS.text.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    if event.state != .failed, let lines = EditLines.of(event) { EditLinesLabel(lines: lines) }
                     // A test run, build or linter says how it went.
                     if let check = Verification.check(event) { VerificationChips(checks: [check]) }
                     Spacer(minLength: 0)
