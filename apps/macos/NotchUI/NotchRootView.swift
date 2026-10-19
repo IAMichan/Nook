@@ -358,7 +358,7 @@ struct NotchRootView: View {
         return HStack(alignment: .top, spacing: ring ? 34 : 20) {
             Button {
                 NookPresence.shared.poke()
-                viewModel.show(.panel(.nook))
+                viewModel.show(.panel(.nook), inNotch: true)
             } label: {
                 NookOrb(mood: mood, size: 46, glow: viewModel.geometry.isFloating)
             }
@@ -438,7 +438,7 @@ extension NotchRootView {
         switch item.target {
         case .agent(let id):
             viewModel.selectedAgentID = id
-            viewModel.show(.panel(.agents))
+            viewModel.show(.panel(.agents), inNotch: true)
         case .nook(let id):
             app.openConversation(id)
         }

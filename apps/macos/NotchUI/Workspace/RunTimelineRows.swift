@@ -1,0 +1,298 @@
+import SwiftUI
+
+// The rows of a session's timeline (messages, thinking, tool calls, approvals), shared by the session views.
+
+struct EventRow: View {
+    let event: RunEvent
+    let expanded: Bool
+    let toggle: () -> Void
+    let openFile: (String) -> Void
+    let decide: (WorkspaceManager.Decision) -> Void
+
+    var body: some View {
+        switch event.kind {
+        case .user:
+            ConversationMessage(fromUser: true, text: event.text)
+                .padding(.top, 6)
+
+        case .assistant:
+            ConversationMessage(fromUser: false, text: event.text)
+                .padding(.horizontal, 2)
+
+        case .thinking:
+            // The agent's reasoning in the chat itself: muted, live while it is written, the first
+            // lines at once and the rest a click away.
+            Button(action: toggle) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "brain").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NookTheme.iris)
+                        Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
+                            .font(NookTheme.font(11.5, .medium))
+                            .foregroundStyle(WS.tertiary)
+                        if event.text.count > 280 || event.text.split(separator: "\n").count > 4 {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundStyle(WS.tertiary)
+                                .rotationEffect(.degrees(expanded ? 90 : 0))
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    Text(event.text)
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(WS.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(expanded || event.state == .running ? nil : 4)
+                        .opacity(0.85)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.iris.opacity(0.35)).frame(width: 2) }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+        case .tool:
+            ToolRow(event: event, expanded: expanded, toggle: toggle)
+
+        case .fileChange:
+            Button { openFile(event.detail ?? event.text) } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "doc.badge.ellipsis")
+                        .foregroundStyle(NookTheme.iris)
+                    Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.text)
+                    Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                    Image(systemName: "arrow.up.right.square").font(.system(size: 10)).foregroundStyle(WS.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(tr("ws.change.openDiff"))
+
+        case .approval:
+            ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
+
+        case .error:
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(NookTheme.coral)
+                Text(event.text)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.coral.opacity(0.08)))
+
+        case .system where event.tool == "handoff":
+            // What the new agent was given: a summary you can read, not a hidden prompt.
+            DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
+                Text(event.detail ?? "")
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(WS.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.swap").font(.system(size: 10))
+                    Text(event.text).font(NookTheme.font(11.5)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+                }
+                .foregroundStyle(WS.tertiary)
+            }
+
+        case .system:
+            HStack(spacing: 6) {
+                Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(.system(size: 10))
+                Text(event.text)
+                    .font(event.tool == "launch" ? NookTheme.mono(11) : NookTheme.font(11.5))
+                    .lineLimit(event.tool == "launch" ? 1 : 3)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+                Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+            }
+            .foregroundStyle(WS.tertiary)
+
+        case .result:
+            HStack(spacing: 8) {
+                Rectangle().fill(WS.border).frame(height: 1)
+                Image(systemName: event.state == .failed ? "xmark.circle" : "checkmark.circle")
+                    .foregroundStyle(event.state == .failed ? NookTheme.coral : NookTheme.mint)
+                Text(event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(WS.tertiary)
+                    .fixedSize()
+                Rectangle().fill(WS.border).frame(height: 1)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// A tool call: single-line summary, expandable to inspect input and output.
+struct ToolRow: View {
+    let event: RunEvent
+    let expanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggle) {
+                HStack(spacing: 8) {
+                    stateIcon
+                        .frame(width: 14)
+                    Image(systemName: Self.symbol(event.tool ?? ""))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(WS.tertiary)
+                    Text(event.text)
+                        .font(NookTheme.mono(11.5))
+                        .foregroundStyle(WS.text.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if event.state != .failed, let lines = EditLines.of(event) { EditLinesLabel(lines: lines) }
+                    // A test run, build or linter says how it went.
+                    if let check = Verification.check(event) { VerificationChips(checks: [check]) }
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(WS.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(event.text)
+            .accessibilityHint(tr("ws.tool.expandHint"))
+
+            // An MCP app is there to be used: shown whether or not the call is open.
+            if let app = McpUI.resource(in: event.output) {
+                McpAppBlock(resource: app, event: event).padding(.leading, 22)
+            }
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    // A task list (TodoWrite, update_plan) reads as the list, not as its JSON.
+                    if let steps = SessionOutputs.taskList(tool: event.tool ?? "", input: AgentActivity.input(event.detail) ?? [:]),
+                       !steps.isEmpty {
+                        TaskListRows(steps: steps)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    } else if let detail = event.detail, !detail.isEmpty, detail != "{}" {
+                        CodeBlock(title: tr("ws.tool.input"), text: detail)
+                    }
+                    if let output = event.output.map(McpUI.stripped), !output.isEmpty {
+                        CodeBlock(title: tr("ws.tool.output"), text: output, failed: event.state == .failed)
+                    } else if event.state == .running {
+                        Text(tr("ws.tool.running")).font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
+                    }
+                }
+                .padding(.leading, 22)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var stateIcon: some View {
+        switch event.state {
+        case .running: ProgressView().controlSize(.mini)
+        case .failed: Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.coral)
+        default: Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.mint.opacity(0.8))
+        }
+    }
+
+    static func symbol(_ tool: String) -> String {
+        switch tool {
+        case "Bash", "shell", "BashOutput", "KillShell": return "terminal"
+        case "Read", "NotebookRead": return "doc.text"
+        case "Edit", "MultiEdit", "Write", "NotebookEdit": return "pencil"
+        case "Grep", "Glob": return "magnifyingglass"
+        case "WebFetch", "WebSearch", "web_search": return "globe"
+        case "Task", "Agent": return "person.2"
+        case "TodoWrite": return "checklist"
+        default: return tool.hasPrefix("mcp") ? "puzzlepiece.extension" : "wrench.and.screwdriver"
+        }
+    }
+}
+
+struct CodeBlock: View {
+    let title: String
+    let text: String
+    var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(NookTheme.font(10.5, .semibold)).foregroundStyle(WS.tertiary)
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(WS.tertiary)
+                .help(tr("button.copy"))
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(text)
+                    .font(NookTheme.mono(11))
+                    .foregroundStyle(failed ? NookTheme.coralSoft : Color(hex: 0xC9C7D2))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+            .frame(maxHeight: 260)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(WS.code))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(WS.border, lineWidth: 1))
+    }
+}
+
+/// An approval request in the timeline. If still pending, you can respond directly here.
+struct ApprovalRow: View {
+    let event: RunEvent
+    let expanded: Bool
+    let toggle: () -> Void
+    let decide: (WorkspaceManager.Decision) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(tr("ws.approval.asks", event.tool ?? "tool"))
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(WS.text)
+                Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.secondary).lineLimit(1)
+                Spacer(minLength: 0)
+                Text(stateLabel).font(NookTheme.font(11.5, .semibold)).foregroundStyle(color)
+            }
+            if expanded, let detail = event.detail {
+                CodeBlock(title: tr("ws.tool.input"), text: detail)
+            }
+        }
+        .padding(10)
+        // Calm: the state label carries the color, the row itself stays neutral.
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.03)))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .onTapGesture { toggle() }
+    }
+
+    private var color: Color {
+        switch event.state {
+        case .pending: return NookTheme.amber
+        case .allowed: return NookTheme.mint
+        case .denied: return NookTheme.coral
+        default: return WS.tertiary
+        }
+    }
+
+    private var stateLabel: String {
+        switch event.state {
+        case .pending: return tr("ws.approval.pending")
+        case .allowed: return tr("ws.approval.allowed")
+        case .denied: return tr("ws.approval.denied")
+        default: return tr("ws.approval.expired")
+        }
+    }
+}

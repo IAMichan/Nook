@@ -27,7 +27,7 @@ extension AppModel {
         // Short deterministic commands handled locally without querying the brain: instant execution.
         if images.isEmpty, let intent = LocalIntent.parse(text) {
             // In chat mode, keep the flow: music and time queries are replied to inline.
-            if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
+            if (viewModel.state == .panel(.nook) || viewModel.isShowing(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
                 chat.append(ChatMessage(role: .nook, text: reply))
                 return
@@ -123,7 +123,7 @@ extension AppModel {
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
         // If prompt originated from a card or voice, reveal chat. If user is already typing in chat, stay there.
-        if viewModel.state != .panel(.chat) {
+        if !viewModel.isShowing(.chat) {
             warmUp()
             showChat()
         }
@@ -424,7 +424,7 @@ extension AppModel {
 
     /// Conversation finished in background while looking elsewhere: display notification.
     func nookFinished(_ id: UUID) {
-        let watching = viewModel.state == .panel(.chat) && chat.activeID == id
+        let watching = viewModel.isShowing(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let token = "nookdone-" + UUID().uuidString

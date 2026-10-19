@@ -32,37 +32,13 @@ extension RunProvider {
     }
 }
 
-private final class SheetBox { var sheet: NSWindow? }
-
-/// The workspace window controller. A single window; opening brings it to front.
+/// The main window's controller. A single window; opening brings it to front.
 @MainActor
 final class WorkspaceWindowController {
     static let shared = WorkspaceWindowController()
     private var window: NSWindow?
 
     var isKey: Bool { window?.isKeyWindow ?? false }
-
-    /// Shows `content` as a native sheet on the workspace window. The content gets a closure that ends the sheet;
-    /// `onClosed` runs once it has ended, however it was closed.
-    func presentSheet<V: View>(size: NSSize, onClosed: @escaping () -> Void,
-                               @ViewBuilder content: (@escaping () -> Void) -> V) {
-        guard let parent = window, parent.attachedSheet == nil else { onClosed(); return }
-        let box = SheetBox()
-        let close: () -> Void = { [weak parent] in
-            if let sheet = box.sheet { parent?.endSheet(sheet) }
-        }
-        let host = NSHostingController(rootView: content(close).onExitCommand(perform: close))
-        host.sizingOptions = []
-        let sheet = NSWindow(contentViewController: host)
-        sheet.styleMask = [.titled]
-        sheet.setContentSize(size)
-        box.sheet = sheet
-        parent.beginSheet(sheet) { _ in
-            sheet.orderOut(nil)
-            box.sheet = nil
-            onClosed()
-        }
-    }
 
     func show(app: AppModel) {
         if window == nil {
@@ -71,8 +47,8 @@ final class WorkspaceWindowController {
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings)
             let host = NSHostingController(rootView: root)
-            // The window sets its own minSize; letting the hosting view also drive it makes the inspector's
-            // appearance resize the window in a layout loop.
+            // The window sets its own minSize; letting the hosting view also drive it makes a pane's appearance resize
+            // the window in a layout loop.
             host.sizingOptions = []
             let window = NSWindow(contentViewController: host)
             // Dark for the window and everything presented from it (sheets inherit the window's appearance). Asking for it
@@ -81,10 +57,12 @@ final class WorkspaceWindowController {
             window.appearance = NSAppearance(named: .darkAqua)
             window.title = tr("ws.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            window.titlebarAppearsTransparent = false
-            window.toolbarStyle = .unified
-            window.setContentSize(NSSize(width: 1240, height: 780))
-            window.minSize = NSSize(width: 760, height: 520)
+            // The sidebar runs up under the traffic lights, as in Finder or Mail; the title is in the Dock and ⌘Tab.
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.backgroundColor = NSColor(red: 0x0B / 255, green: 0x0B / 255, blue: 0x0D / 255, alpha: 1)
+            window.setContentSize(NSSize(width: 1240, height: 800))
+            window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
             window.setFrameAutosaveName("NookWorkspace")
             if window.frame.origin == .zero { window.center() }
@@ -166,8 +144,7 @@ extension AppModel {
         switch request.caller.kind {
         case .run(let runID):
             // Already looking at this session: the request is shown there, no card on top of it.
-            if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == runID { return }
-            if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString,
+            if viewModel.isShowing(.agents), viewModel.selectedAgentID == "run:" + runID.uuidString,
                viewModel.sessionTool == .conversation { return }
             open = (label: tr("ws.approval.open"), action: { [weak self] in self?.openWorkspace(run: runID) })
         case .external:
@@ -179,8 +156,8 @@ extension AppModel {
         presentApprovalCard(ApprovalCenter.make(request), context: context, open: open)
     }
 
-    /// Opens your agents in the notch, optionally on one session or straight into a new one. Everything you do with
-    /// agents happens in the notch; the separate window is only for who asks for it (menu bar › Open in window).
+    /// Opens your agents in the notch (or in the main window while that is in front), optionally on one session or
+    /// straight into a new one.
     func openWorkspace(run id: UUID? = nil, newSession: Bool = false) {
         if let id {
             workspace.selectedRunID = id
@@ -189,10 +166,11 @@ extension AppModel {
         // A new session starts in the Agents tab itself: the + next to Sessions.
         if newSession { viewModel.selectedAgentID = "new" }
         viewModel.sheet = nil
+        viewModel.windowSheet = nil
         viewModel.show(.panel(.agents))
     }
 
-    /// The separate main window (chat, agents and workspace side by side), opened only on request.
+    /// The main window: the notch's tabs with more room, opened only on request.
     func openWindow() {
         if case .panel = viewModel.state { viewModel.show(.idle) }
         WorkspaceWindowController.shared.show(app: self)
@@ -205,10 +183,9 @@ extension AppModel {
 
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
         CompanionNotifier.shared.approval(run, pending)
-        // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
-        if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        // Looking at the conversation: the request is right there. With the terminal or browser open it is not, so a card.
-        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+        // Looking at the conversation (in the notch or the main window): the request is right there. With the terminal or
+        // browser open it is not, so a card.
+        if viewModel.isShowing(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
            viewModel.sessionTool == .conversation { return }
         let runID = run.id
         presentApprovalCard(ApprovalCenter.make(pending, run: run), context: "\(run.provider.displayName) · \(run.title)",
@@ -217,8 +194,7 @@ extension AppModel {
 
     /// The agent asks a question in a session you are not looking at: a short notice that opens it.
     private func workspaceQuestion(_ run: WorkspaceRun) {
-        if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
-        if viewModel.state == .panel(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
+        if viewModel.isShowing(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
            viewModel.sessionTool == .conversation { return }
         NookSound.play(.attention)
         let runID = run.id
@@ -384,31 +360,11 @@ extension AgentProfile {
     }
 }
 
-extension Notification.Name {
-    static let nookWorkspaceNewSession = Notification.Name("nookWorkspaceNewSession")
-    /// Switches the main window to a part (object: WorkspacePane raw value).
-    static let nookMainWindowPane = Notification.Name("nookMainWindowPane")
-    /// Switches the main window's Agents part to a tool (object: WorkbenchTool raw value).
-    static let nookWorkbenchTool = Notification.Name("nookWorkbenchTool")
-}
-
 extension AppModel {
-    /// Opens Nook's main window on a part (and, in Agents, a tool).
-    func openMainWindow(_ pane: WorkspacePane, tool: WorkbenchTool? = nil) {
-        if case .panel = viewModel.state { viewModel.show(.idle) }
-        WorkspaceWindowController.shared.show(app: self)
-        NotificationCenter.default.post(name: .nookMainWindowPane, object: pane.rawValue)
-        if let tool { NotificationCenter.default.post(name: .nookWorkbenchTool, object: tool.rawValue) }
-    }
-
     /// A terminal in Nook, in `folder`, optionally running `command` first. In the notch it opens with the agent session
-    /// working in that folder, or under Agents › Terminals when no session is; in the window if you are working there.
+    /// working in that folder, or under Agents › Terminals when no session is; in the main window while that is in front.
     func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
         TerminalStore.shared.open(in: folder, command: command, title: title)
-        if WorkspaceWindowController.shared.isKey {
-            openMainWindow(.sessions, tool: .terminals)
-            return
-        }
         if let session = sessionID(workingIn: folder) {
             viewModel.selectedAgentID = session
             viewModel.sessionTool = .terminal

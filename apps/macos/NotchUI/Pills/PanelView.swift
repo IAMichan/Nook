@@ -12,11 +12,14 @@ struct PanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let sheet = viewModel.sheet {
-                NotchSheetView(viewModel: viewModel, sheet: sheet)
+                NotchSheetView(sheet: sheet, close: { viewModel.sheet = nil }) {
+                    viewModel.sheet = nil
+                    viewModel.show(.idle)
+                }
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
                 header
-                PanelApprovalBar(viewModel: viewModel, tab: tab, hub: app.hub, workspace: app.workspace)
+                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: viewModel.sheet, hub: app.hub, workspace: app.workspace)
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
@@ -32,7 +35,7 @@ struct PanelView: View {
             HStack(spacing: 2) {
                 ForEach(PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)) { t in
                     Button {
-                        viewModel.show(.panel(t))
+                        viewModel.show(.panel(t), inNotch: true)
                     } label: {
                         Text(t.title)
                             .font(NookTheme.font(13, .medium))
@@ -98,11 +101,14 @@ struct PanelView: View {
     }
 }
 
-/// A permission request that comes in while the panel is open: one compact bar under the tabs instead of a card over
-/// the whole notch. Hidden while the session that asks is on screen, which shows the whole request itself.
-private struct PanelApprovalBar: View {
+/// A permission request that comes in while the panel (or the main window) is open: one compact bar under the tabs
+/// instead of a card over the whole notch. Hidden while the session that asks is on screen, which shows the whole
+/// request itself.
+struct PanelApprovalBar: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
+    /// The task open over the tab, if any: the session behind it is not on screen.
+    let sheet: NotchSheet?
     @ObservedObject var hub: AgentHub
     @ObservedObject var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
@@ -168,23 +174,25 @@ private struct PanelApprovalBar: View {
 
     /// The session's own view shows the whole request, with the same buttons.
     private func onScreen(_ approval: AgentApproval) -> Bool {
-        guard tab == .agents, viewModel.sheet == nil, let key = sessionKey(approval) else { return false }
+        guard tab == .agents, sheet == nil, let key = sessionKey(approval) else { return false }
         return viewModel.selectedAgentID == key
     }
 }
 
-/// A task inside the notch: one clear title, Back to return, and the task itself. Escape also goes back.
-private struct NotchSheetView: View {
-    @ObservedObject var viewModel: NotchViewModel
+/// A task inside the notch or the main window: one clear title, Back to return, and the task itself. Escape also goes
+/// back.
+struct NotchSheetView: View {
     let sheet: NotchSheet
+    /// Back: returns to the tab.
+    let close: () -> Void
+    /// The close button: closes the task and whatever holds it.
+    let dismiss: () -> Void
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Button {
-                    viewModel.sheet = nil
-                } label: {
+                Button(action: close) {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
                         Text(tr("notch.back")).font(NookTheme.font(13, .medium))
@@ -205,10 +213,7 @@ private struct NotchSheetView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) {
-                    viewModel.sheet = nil
-                    viewModel.show(.idle)
-                }
+                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: dismiss)
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -232,7 +237,6 @@ private struct NotchSheetView: View {
 
     @ViewBuilder
     private var content: some View {
-        let close = { viewModel.sheet = nil }
         switch sheet {
         case .details(let id):
             RunInspector(runID: id, embedded: true)

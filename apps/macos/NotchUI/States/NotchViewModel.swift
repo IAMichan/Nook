@@ -54,6 +54,23 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`).
+    @Published var windowTab: PanelTab = .chat
+    /// A task open in the main window (changes, commit…): the window's counterpart of `sheet`.
+    @Published var windowSheet: NotchSheet?
+
+    /// While the main window is in front (and the panel is not open), the tabs and tasks you ask for open there instead
+    /// of in the notch.
+    var routesToWindow: Bool {
+        if case .panel = state { return false }
+        return WorkspaceWindowController.shared.isKey
+    }
+
+    /// Whether `tab` is on screen: in the open panel, or in the main window while that is in front.
+    func isShowing(_ tab: PanelTab) -> Bool {
+        state == .panel(tab) || (routesToWindow && windowTab == tab && windowSheet == nil)
+    }
+
     /// The tab you used last: the notch opens there again, unless an agent is waiting for you.
     private(set) var lastTab: PanelTab {
         get { PanelTab(rawValue: UserDefaults.standard.string(forKey: "notch.lastTab") ?? "") ?? .chat }
@@ -96,7 +113,9 @@ final class NotchViewModel: ObservableObject {
 
     // MARK: States
 
-    func show(_ new: NotchState) {
+    /// - `inNotch`: the notch itself asks (hover, a click on it, the menu bar): the panel opens even while the main
+    ///   window is in front. Anything else that asks for a tab goes to the main window while that is in front.
+    func show(_ new: NotchState, inNotch: Bool = false) {
         doneTask?.cancel()
         NookPresence.shared.noteActivity()
         var target = new
@@ -112,6 +131,13 @@ final class NotchViewModel: ObservableObject {
             default:
                 break
             }
+        }
+        if case .panel(let tab) = target, !inNotch, routesToWindow {
+            if tab == .chat { app?.warmUp() }
+            // Tasks belong to Agents; another tab means you moved on.
+            if tab != .agents { windowSheet = nil }
+            windowTab = tab
+            return
         }
         if case .idle = new {
             if !pending.isEmpty {
@@ -344,14 +370,14 @@ final class NotchViewModel: ObservableObject {
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: working ? 200_000_000 : 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.pointerInside, self.state.isResting { self.show(.panel(self.homeTab())) }
+            if self.pointerInside, self.state.isResting { self.show(.panel(self.homeTab()), inNotch: true) }
         }
     }
 
     /// Clicking the notch opens the panel immediately, without hover delay.
     func openPanel() {
         hoverTask?.cancel()
-        show(.panel(homeTab()))
+        show(.panel(homeTab()), inNotch: true)
     }
 
     /// Where the panel opens: at the agent that waits for you, otherwise at the tab you used last. Predictable, no jumping.
@@ -363,8 +389,14 @@ final class NotchViewModel: ObservableObject {
         return lastTab
     }
 
-    /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab.
+    /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab; in the main window while that is
+    /// in front.
     func open(_ sheet: NotchSheet) {
+        if routesToWindow {
+            windowTab = .agents
+            windowSheet = sheet
+            return
+        }
         if state != .panel(.agents) { show(.panel(.agents)) }
         self.sheet = sheet
     }
