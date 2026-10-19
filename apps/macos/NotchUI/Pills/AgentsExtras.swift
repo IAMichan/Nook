@@ -207,8 +207,9 @@ private struct UsageGlyph: View {
 
 // MARK: Pull requests
 
-/// Every open pull request of your GitHub accounts: the ones you wrote, and the ones waiting for your review. A click
-/// opens the pull request in Nook (see PullRequestDetailView), where it can be read in full and merged.
+/// The pull requests of your GitHub accounts: the ones you wrote, and the ones waiting for your review. Open ones by
+/// default; the Filters dropdown (see PullRequestFilterMenu) also shows closed and merged ones. A click opens the pull
+/// request in Nook (see PullRequestDetailView), where it can be read in full and merged.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = PullRequestStore.shared
@@ -251,10 +252,15 @@ struct PullRequestsPanel: View {
                 empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
                 filterBar
-                if filter.isActive && shown.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
-                    empty(title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
-                        filter = PullRequestFilter()
-                    }))
+                if shown.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
+                    if filter.isActive {
+                        empty(title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
+                            filter = PullRequestFilter()
+                        }))
+                    } else {
+                        // Only closed or merged pull requests: nothing open, but the State filter shows them.
+                        empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
+                    }
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 18) {
@@ -286,7 +292,7 @@ struct PullRequestsPanel: View {
     // MARK: Search and filters
 
     private var filterBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
                 TextField(tr("agents.pulls.search"), text: $filter.query)
@@ -310,49 +316,8 @@ struct PullRequestsPanel: View {
                 Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
             }
 
-            HStack(spacing: 4) {
-                ForEach(PullRequestFilter.Scope.allCases) { scope in
-                    filterChip(tr("agents.pulls.scope." + scope.rawValue), selected: filter.scope == scope) { filter.scope = scope }
-                }
-                Spacer(minLength: 6)
-                Menu {
-                    ForEach(PullRequestFilter.Status.allCases) { status in
-                        Button {
-                            filter.status = status
-                        } label: {
-                            if filter.status == status {
-                                Label(tr("agents.pulls.status." + status.rawValue), systemImage: "checkmark")
-                            } else {
-                                Text(tr("agents.pulls.status." + status.rawValue))
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text(tr("agents.pulls.status." + filter.status.rawValue))
-                    }
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(filter.status == .any ? NookTheme.textSecondary : NookTheme.paper)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
+            PullRequestFilterMenu(filter: $filter, authors: PullRequestFilter.authors(in: accounts))
         }
-    }
-
-    private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(selected ? NookTheme.paper : NookTheme.textTertiary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(selected ? NookTheme.smoke : Color.white.opacity(0.04)))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
@@ -391,7 +356,9 @@ struct PullRequestsPanel: View {
                 }
             }
             if !account.reviews.isEmpty {
-                group(title: tr("agents.pulls.reviews", account.reviews.count), items: account.reviews, account: account.id, showAuthor: true)
+                // Closed and merged ones no longer wait for you: those are the ones you reviewed.
+                group(title: tr(filter.state == .open ? "agents.pulls.reviews" : "agents.pulls.forReview", account.reviews.count),
+                      items: account.reviews, account: account.id, showAuthor: true)
             }
             if !account.mine.isEmpty {
                 group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, account: account.id, showAuthor: false)
@@ -492,6 +459,20 @@ private struct PullRequestRow: View {
 
     @ViewBuilder
     private var ci: some View {
+        switch item.state {
+        case .merged:
+            Image(systemName: "arrow.triangle.merge").font(.system(size: 12, weight: .medium)).foregroundStyle(NookTheme.violet)
+                .help(tr("agents.pulls.state.merged"))
+        case .closed:
+            Image(systemName: "xmark.circle").font(.system(size: 13)).foregroundStyle(NookTheme.coralSoft)
+                .help(tr("agents.pulls.state.closed"))
+        case .open:
+            ciMark
+        }
+    }
+
+    @ViewBuilder
+    private var ciMark: some View {
         switch item.ci {
         case .passing: Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.mint)
         case .failing: Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.coral)
