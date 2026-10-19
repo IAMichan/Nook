@@ -234,6 +234,33 @@ struct SessionComposer<Controls: View>: View {
         return .handled
     }
 
+    // The text field and its keys are built in separate steps: as one chain the compiler cannot type-check it in time.
+    private func field(focused: FocusState<Bool>.Binding) -> some View {
+        let placeholder: Text = Text(prompt).foregroundStyle(NookTheme.textTertiary)
+        return TextField("", text: $text, prompt: placeholder, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(NookTheme.font(14))
+            .foregroundStyle(NookTheme.paper)
+            .lineLimit(lines)
+            .focused(focused)
+            .onSubmit(submit)
+            .onChange(of: text) { old, new in textChanged(old, new) }
+    }
+
+    private func withKeys(_ view: some View) -> some View {
+        view
+            .onKeyPress(.upArrow) { (_: KeyPress) -> KeyPress.Result in arrow(-1) }
+            .onKeyPress(.downArrow) { (_: KeyPress) -> KeyPress.Result in arrow(1) }
+            .onKeyPress(.return) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
+            .onKeyPress(.tab) { (_: KeyPress) -> KeyPress.Result in tabKey() }
+            .onKeyPress(.escape) { (_: KeyPress) -> KeyPress.Result in escapeKey() }
+            .onKeyPress(KeyEquivalent("s")) { (press: KeyPress) -> KeyPress.Result in stashKey(press) }
+    }
+
+    private func submit() {
+        if busy, let queueAction, !isEmpty { fire(queueAction) } else if enabled { fire(onSend) }
+    }
+
     private var box: some View {
         let focused = focus ?? $ownFocus
         return VStack(alignment: .leading, spacing: 12) {
@@ -242,22 +269,7 @@ struct SessionComposer<Controls: View>: View {
                     imagesBinding.wrappedValue.removeAll { $0.id == gone.id }
                 }
             }
-            TextField("", text: $text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(14))
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(lines)
-                .focused(focused)
-                .onSubmit {
-                    if busy, let queueAction, !isEmpty { fire(queueAction) } else if enabled { fire(onSend) }
-                }
-                .onChange(of: text) { old, new in textChanged(old, new) }
-                .onKeyPress(.upArrow) { _ in arrow(-1) }
-                .onKeyPress(.downArrow) { _ in arrow(1) }
-                .onKeyPress(.return) { press in returnKey(press) }
-                .onKeyPress(.tab) { _ in tabKey() }
-                .onKeyPress(.escape) { _ in escapeKey() }
-                .onKeyPress(KeyEquivalent("s")) { press in stashKey(press) }
+            withKeys(field(focused: focused))
                 .frame(minHeight: minHeight, alignment: .topLeading)
             HStack(spacing: 6) {
                 controls()
