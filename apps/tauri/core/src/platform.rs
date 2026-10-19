@@ -69,6 +69,10 @@ pub trait ScreenReader: Send + Sync {
     fn running_apps(&self) -> Vec<RunningApp> {
         vec![]
     }
+    /// Of [`capture_screen`](Self::capture_screen) kan, zonder hem te maken.
+    fn can_capture(&self) -> bool {
+        false
+    }
     /// Een schermafbeelding van het scherm waar de muis is (voor een schermdeel).
     fn capture_screen(&self) -> Result<Capture, String> {
         Err("Een schermafbeelding maken kan op dit platform niet.".into())
