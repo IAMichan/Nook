@@ -85,14 +85,13 @@ struct NookOrb: View {
                 .offset(y: size * 0.14)
                 .opacity(p.cheeks)
             }
+            // Inside the orb's stack, so the headphones hop, squash and tilt with Nook.
+            if presence.listeningToMusic { headphones(gaze: p.gaze) }
         }
         .frame(width: size, height: size)
         .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
         .rotationEffect(.degrees(p.rotation))
         .offset(p.offset)
-        .overlay {
-            if presence.listeningToMusic { headphones }
-        }
         .overlay {
             if let progress = p.sparks { sparks(progress) }
         }
@@ -131,22 +130,28 @@ struct NookOrb: View {
     }
 
     /// Headphones while music plays: a band over the top and an ear cup on each side.
-    private var headphones: some View {
+    ///
+    /// They turn with Nook's head: looking right, the band narrows and slides along, the left cup comes round towards
+    /// you (wider) and the right cup turns away (narrower); looking down, the band tips forward a little.
+    private func headphones(gaze: CGPoint) -> some View {
         let band = max(1.5, size * 0.07)
         let cupWidth = size * 0.17
         let cupHeight = size * 0.34
+        let angle = Double(max(-1, min(gaze.x, 1))) * 0.5   // head turn in radians
+        let across = CGFloat(cos(angle))
+        let side = CGFloat(sin(angle))
+        let reach = size * 0.455   // distance from the center to each cup
         return ZStack {
             Circle()
                 .trim(from: 0.5, to: 1)
                 .stroke(Color(hex: 0x4A4A58), style: StrokeStyle(lineWidth: band, lineCap: .round))
                 .frame(width: size * 1.02, height: size * 1.02)
-                .offset(y: size * 0.01)
-            HStack {
-                cup(width: cupWidth, height: cupHeight)
-                Spacer(minLength: 0)
-                cup(width: cupWidth, height: cupHeight)
-            }
-            .frame(width: size * 1.08)
+                .scaleEffect(x: across, y: 1 - 0.06 * abs(gaze.y))
+                .offset(x: side * size * 0.06, y: size * 0.01 + gaze.y * size * 0.03)
+            cup(width: cupWidth * (1 + 0.3 * side), height: cupHeight)
+                .offset(x: -reach * across + side * size * 0.04, y: gaze.y * size * 0.02)
+            cup(width: cupWidth * (1 - 0.3 * side), height: cupHeight)
+                .offset(x: reach * across + side * size * 0.04, y: gaze.y * size * 0.02)
         }
         .frame(width: size, height: size)
         .allowsHitTesting(false)
