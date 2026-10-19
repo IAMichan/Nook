@@ -158,6 +158,7 @@ final class AgentHub: ObservableObject {
             let found = await LocalAgentScanner.scan()
             processes = found
             dropEndedRestored(found)
+            await settleStale(found)
             // A hooked session covers one process of its agent and folder, not all of them: two sessions of the same agent in
             // the same folder stay two rows.
             var covered: [String: Int] = [:]
@@ -321,6 +322,50 @@ final class AgentHub: ObservableObject {
             }
         }
         unconfirmed = []
+        if changed { rebuild() }
+    }
+
+    /// Scans in a row each busy session's process was missing from the process list.
+    private var missingScans: [String: Int] = [:]
+
+    /// Settles sessions that still read as busy while their turn has ended or their agent has quit, when the hook that
+    /// should have said so never came (see `SessionLiveness`).
+    private func settleStale(_ found: [DetectedAgent]) async {
+        let scannable = Set(LocalAgentScanner.agentNames)
+        let busy = records.filter { $0.value.status == .running || $0.value.status == .waiting }
+        missingScans = missingScans.filter { busy[$0.key] != nil }
+        guard !busy.isEmpty else { return }
+        let running = found.map { (name: $0.name, cwd: $0.cwd) }
+        for (key, record) in busy {
+            let gone = scannable.contains(record.agent)
+                && !SessionLiveness.isRunning(agent: record.agent, cwd: record.cwd, in: running)
+            missingScans[key] = gone ? (missingScans[key] ?? 0) + 1 : 0
+        }
+        let paths = busy.filter { $0.value.status == .running }.mapValues(\.transcriptPath)
+        let turns = await Task.detached(priority: .utility) {
+            paths.compactMapValues { SessionLiveness.readTurn(path: $0) }
+        }.value
+
+        let now = Date()
+        var changed = false
+        for (key, seen) in busy {
+            // A hook event while the transcript was read wins.
+            guard var record = records[key], record.updated == seen.updated, record.status == seen.status else { continue }
+            if pendingApprovals.values.contains(where: { $0.request.sessionKey == key })
+                || pendingQuestions.values.contains(where: { $0.request.sessionKey == key }) { continue }
+            let read = turns[key]
+            guard let verdict = SessionLiveness.verdict(
+                working: record.status == .running, lastEvent: record.updated, turn: read?.turn ?? .unknown,
+                transcriptModified: read?.modified, missingScans: missingScans[key] ?? 0, now: now
+            ) else { continue }
+            record.status = .done
+            Self.complete(&record, as: .done)
+            Self.push(&record, .done, verdict == .processGone ? "session closed" : "done")
+            records[key] = record
+            missingScans[key] = nil
+            changed = true
+            Log.agents.info("Settled stale session \(key, privacy: .public): \(String(describing: verdict), privacy: .public)")
+        }
         if changed { rebuild() }
     }
 

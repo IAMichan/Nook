@@ -101,13 +101,36 @@ struct LiveActivity: Equatable, Sendable {
 enum TimelinePresentation {
     /// Groups the events of a session into blocks. `active`: the last turn is still running and never folds.
     static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
-        let turns = split(events)
+        let turns = split(visible(events, active: active))
         var blocks: [TimelineBlock] = []
         for (index, turn) in turns.enumerated() {
             let isLast = index == turns.count - 1
             blocks += present(turn, open: isLast && active)
         }
         return blocks
+    }
+
+    /// One line per command: an approval you gave says nothing the tool call it let through does not, and the tool that
+    /// runs right now is the live line under the timeline (with its time), so neither gets a row of its own.
+    static func visible(_ events: [RunEvent], active: Bool) -> [RunEvent] {
+        var hidden: Set<UUID> = []
+        let turns = split(events)
+        for turn in turns {
+            let calls = Set(turn.filter { $0.kind == .tool }.map { key($0.tool, $0.text) })
+            for approval in turn where approval.kind == .approval && approval.state == .allowed
+                && calls.contains(key(approval.tool, approval.text)) {
+                hidden.insert(approval.id)
+            }
+        }
+        if active, let turn = turns.last, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
+            hidden.insert(running.id)
+        }
+        return hidden.isEmpty ? events : events.filter { !hidden.contains($0.id) }
+    }
+
+    /// A tool call and the approval that asked for it share tool and summary; a nested call carries "↳ " in front.
+    private static func key(_ tool: String?, _ text: String) -> String {
+        (tool ?? "") + "\u{0}" + (text.hasPrefix("↳ ") ? String(text.dropFirst(2)) : text)
     }
 
     /// The live line for the running turn: the tool that runs (or ran last) and what the agent last thought about.

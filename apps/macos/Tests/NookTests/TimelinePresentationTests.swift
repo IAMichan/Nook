@@ -92,6 +92,35 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(live.thought, "Kijken")
     }
 
+    func testOneLinePerCommand() {
+        let command = "Bash · cd apps/macos && xcodegen generate"
+        let running = finishedTurn().dropLast(2) + [
+            event(.tool, command, tool: "Bash", state: .running, at: 140),
+            event(.approval, command, tool: "Bash", state: .allowed, at: 141)
+        ]
+        let shown = TimelinePresentation.visible(Array(running), active: true)
+        XCTAssertFalse(shown.contains { $0.text == command }, "the live line shows the running command; the approval is done")
+        XCTAssertEqual(TimelinePresentation.live(Array(running)).tool, command)
+
+        var done = Array(running)
+        done[done.count - 2].state = .done
+        let after = TimelinePresentation.visible(done, active: true)
+        XCTAssertEqual(after.filter { $0.text == command }.map(\.kind), [.tool], "once done the command keeps one row")
+
+        let waiting = finishedTurn().dropLast(2) + [
+            event(.tool, command, tool: "Bash", state: .running, at: 140),
+            event(.approval, command, tool: "Bash", state: .pending, at: 141)
+        ]
+        XCTAssertEqual(TimelinePresentation.visible(Array(waiting), active: true).filter { $0.text == command }.map(\.kind),
+                       [.approval], "a question still open stays in view")
+        let denied = finishedTurn().dropLast(2) + [
+            event(.tool, command, tool: "Bash", state: .failed, at: 140),
+            event(.approval, command, tool: "Bash", state: .denied, at: 141)
+        ]
+        XCTAssertEqual(TimelinePresentation.visible(Array(denied), active: false).filter { $0.text == command }.count, 2,
+                       "a refusal says why the command failed")
+    }
+
     func testHeadlines() {
         XCTAssertEqual(TimelinePresentation.headline("**Plan maken**\nEerst de tests."), "Plan maken")
         XCTAssertEqual(TimelinePresentation.headline("Ik bekijk eerst de tests. Daarna de code."), "Ik bekijk eerst de tests.")

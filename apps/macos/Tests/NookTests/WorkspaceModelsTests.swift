@@ -150,6 +150,12 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(usage.totalTokens, 1175)
     }
 
+    func testTurnTokensLeaveCacheReadsOut() {
+        let turn = TurnUsage(inputTokens: 40, outputTokens: 2_000, cacheReadTokens: 740_000, cacheWriteTokens: 12_000)
+        XCTAssertEqual(turn.ownTokens, 14_040, "re-reading the cached context on every call is not what the question cost")
+        XCTAssertEqual(TurnUsage().ownTokens, 0)
+    }
+
     func testUnreviewedChanges() {
         var run = TestData.run(status: .completed)
         XCTAssertFalse(run.hasUnreviewedChanges)
