@@ -1,40 +1,45 @@
 import Foundation
 import LlamaSwift
 
-/// Lets a running completion be stopped from outside, as soon as the text it was made for has changed.
-final class CompletionCancel: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return flag }
-    func cancel() { lock.lock(); flag = true; lock.unlock() }
-}
-
-/// Runs a GGUF model through llama.cpp (Metal on Apple Silicon) and continues a piece of text with a few words.
+/// Runs a GGUF model through llama.cpp (Metal on Apple Silicon) and continues text a few words at a time.
 ///
-/// llama.cpp's contexts are not thread-safe, so every call runs on one serial queue. The prompt of the previous call stays in
-/// the model's cache: typing one more letter only has to read that letter, which keeps a suggestion fast.
+/// - Every llama call runs on one serial queue; a new request makes the one before it stop at its next token.
+/// - The model's cache keeps the prompt of the last request: one more letter only has to read one more token.
+/// - Greedy, with a certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its
+///   certainty drops.
+/// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
+///
+/// The approach (threshold, word bonus, word alternatives) follows Typist's engine (MIT, © 2026 Brody Salvucci).
 final class LlamaCompleter: @unchecked Sendable {
+    let path: String
+
     private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInitiated)
+    private let lock = NSLock()
+    private var latest = 0
+
     private let model: OpaquePointer
     private let context: OpaquePointer
     private let vocab: OpaquePointer
-    private let contextSize: Int
-    /// What the model's cache holds now: the prompt of the last call and the words it generated.
+    private let vocabSize: Int
+    /// What sequence 0 of the cache holds now.
     private var cached: [llama_token] = []
+    private var favored: [String: Double] = [:]
+    private var strength: Float = 0
+    private var bias: [llama_token: Float] = [:]
 
-    let path: String
+    static let contextLength: UInt32 = 4_096
 
     private static let backendReady: Void = {
         llama_log_set({ _, _, _ in }, nil)
         llama_backend_init()
     }()
 
-    private init(path: String, model: OpaquePointer, context: OpaquePointer, contextSize: Int) {
+    private init(path: String, model: OpaquePointer, context: OpaquePointer) {
         self.path = path
         self.model = model
         self.context = context
-        self.vocab = llama_model_get_vocab(model)
-        self.contextSize = contextSize
+        vocab = llama_model_get_vocab(model)
+        vocabSize = Int(llama_vocab_n_tokens(vocab))
     }
 
     deinit {
@@ -42,113 +47,229 @@ final class LlamaCompleter: @unchecked Sendable {
         llama_model_free(model)
     }
 
-    /// Loads the model (a second or two for a small one) off the main thread.
-    static func load(path: String, contextSize: Int = 1_024) async throws -> LlamaCompleter {
+    /// Loads the model off the main thread (a second or two for a small one).
+    static func load(path: String) async throws -> LlamaCompleter {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = backendReady
                 var modelParams = llama_model_default_params()
-                modelParams.n_gpu_layers = 99
+                modelParams.n_gpu_layers = 999
                 guard let model = llama_model_load_from_file(path, modelParams) else {
-                    continuation.resume(throwing: NookError("The model file could not be loaded. It may not be a GGUF model that llama.cpp supports."))
-                    return
+                    return continuation.resume(throwing: NookError(tr("autocomplete.error.load")))
                 }
                 var params = llama_context_default_params()
-                params.n_ctx = UInt32(contextSize)
-                params.n_batch = UInt32(contextSize)
+                params.n_ctx = contextLength
+                params.n_batch = contextLength
                 params.no_perf = true
                 let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
                 params.n_threads = threads
                 params.n_threads_batch = threads
                 guard let context = llama_init_from_model(model, params) else {
                     llama_model_free(model)
-                    continuation.resume(throwing: NookError("The model loaded, but there is not enough memory to run it."))
-                    return
+                    return continuation.resume(throwing: NookError(tr("autocomplete.error.memory")))
                 }
-                continuation.resume(returning: LlamaCompleter(path: path, model: model, context: context, contextSize: contextSize))
+                continuation.resume(returning: LlamaCompleter(path: path, model: model, context: context))
             }
         }
     }
 
-    /// Continues `prompt` with at most `maxTokens` tokens, stopping at the end of the line. Greedy, so the same text always
-    /// gets the same suggestion.
-    func complete(prompt: String, maxTokens: Int, cancel: CompletionCancel) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    continuation.resume(returning: try self.run(prompt: prompt, maxTokens: maxTokens, cancel: cancel))
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+    /// Makes the running request stop at its next token.
+    func cancel() { lock.withLock { latest += 1 } }
+
+    private func begin() -> Int { lock.withLock { latest += 1; return latest } }
+    private func superseded(_ id: Int) -> Bool { lock.withLock { latest != id } }
+
+    /// Continues `prompt`; nil when superseded, not sure enough, or the model failed.
+    func complete(prompt: String, options: CompletionOptions) async -> CompletionResult? {
+        let id = begin()
+        return await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: self.generate(prompt: prompt, options: options) { self.superseded(id) }) }
         }
     }
 
-    private func run(prompt: String, maxTokens: Int, cancel: CompletionCancel) throws -> String {
-        if cancel.isCancelled { return "" }
-        var tokens = tokenize(prompt)
-        let budget = max(16, contextSize - maxTokens - 1)
-        if tokens.count > budget { tokens = Array(tokens.suffix(budget)) }
-        guard !tokens.isEmpty else { return "" }
+    /// Words that could come next after `prompt`, most likely first, each with the space before it when the model would put
+    /// one there. For other words for a selected word, and alternatives to the next suggested word.
+    func alternatives(prompt: String, excluding: String, count: Int) async -> [String] {
+        let id = begin()
+        return await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: self.rankedWords(prompt: prompt, excluding: excluding, count: count) { self.superseded(id) }) }
+        }
+    }
 
+    /// Leans generation toward words the user writes often. Strength 0 turns it off.
+    func setPersonalization(words: [String: Double], strength: Double) {
+        queue.async {
+            self.favored = words
+            self.strength = Float(strength)
+            self.rebuildBias()
+        }
+    }
+
+    // MARK: On the queue
+
+    private func rebuildBias() {
+        bias = [:]
+        guard strength > 0 else { return }
+        for (word, weight) in favored {
+            // In the middle of a sentence a word starts with a space in most vocabularies.
+            guard let token = tokenize(" " + word, special: false).first else { continue }
+            bias[token] = max(bias[token] ?? 0, Float(weight) * strength * 2.5)
+        }
+    }
+
+    /// Reads `prompt` into the cache, reusing what it shares with the last one. Returns the prompt's length in tokens.
+    private func prime(_ prompt: String, reserve: Int) -> Int? {
+        var tokens = tokenize(prompt, special: true)
+        let limit = Int(Self.contextLength) - reserve - 1
+        if tokens.count > limit { tokens.removeFirst(tokens.count - limit) }
+        guard !tokens.isEmpty else { return nil }
+        // Read at least the last token again, for fresh logits.
+        var shared = min(zip(tokens, cached).prefix { $0 == $1 }.count, tokens.count - 1)
         let memory = llama_get_memory(context)
-        // Keep what the cache already has of this prompt; read only the rest. At least one token must be read for the logits.
-        var shared = zip(cached, tokens).prefix { $0 == $1 }.count
-        if shared == tokens.count { shared -= 1 }
-        if shared > 0, !llama_memory_seq_rm(memory, 0, Int32(shared), -1) { shared = 0 }
-        if shared == 0 { llama_memory_clear(memory, true) }
-        cached = Array(tokens.prefix(shared))
-
-        var fresh = Array(tokens[shared...])
-        guard decode(&fresh) else { cached = []; throw NookError("The model could not read the text.") }
-        cached = tokens
-
-        let chain = llama_sampler_chain_init(llama_sampler_chain_default_params())
-        llama_sampler_chain_add(chain, llama_sampler_init_greedy())
-        defer { llama_sampler_free(chain) }
-
-        var bytes: [UInt8] = []
-        for _ in 0..<maxTokens {
-            if cancel.isCancelled { break }
-            var token = llama_sampler_sample(chain, context, -1)
-            if llama_vocab_is_eog(vocab, token) { break }
-            bytes += piece(token)
-            if bytes.contains(10) { break }
-            guard decode(&token) else { cached = []; break }
-            cached.append(token)
+        if !llama_memory_seq_rm(memory, 0, llama_pos(shared), -1) {
+            llama_memory_clear(memory, true)
+            shared = 0
         }
-        var text = String(decoding: bytes, as: UTF8.self)
-        // A word cut off in the middle of a character leaves a replacement mark at the end.
-        while text.last == "\u{FFFD}" { text.removeLast() }
-        return text
+        cached = Array(tokens[..<shared])
+        var pending = Array(tokens[shared...])
+        return decode(&pending) ? tokens.count : nil
     }
 
-    private func tokenize(_ text: String) -> [llama_token] {
-        let count = text.utf8.count
-        var tokens = [llama_token](repeating: 0, count: count + 8)
-        let addBOS = llama_vocab_get_add_bos(vocab)
-        var written = llama_tokenize(vocab, text, Int32(count), &tokens, Int32(tokens.count), addBOS, false)
-        if written < 0 {
-            tokens = [llama_token](repeating: 0, count: Int(-written))
-            written = llama_tokenize(vocab, text, Int32(count), &tokens, Int32(tokens.count), addBOS, false)
+    private func generate(prompt: String, options: CompletionOptions, isCancelled: () -> Bool) -> CompletionResult? {
+        guard !isCancelled(), prime(prompt, reserve: options.maxTokens) != nil else { return nil }
+        var bytes: [UInt8] = []
+        var truncated = true
+        for step in 0..<options.maxTokens {
+            if isCancelled() { return nil }
+            guard let logits = llama_get_logits_ith(context, -1) else { return nil }
+            let (token, probability) = mostLikely(logits)
+            if step == 0, probability < options.minFirstProbability { return nil }
+            if probability < options.minProbability || llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
+                truncated = false
+                break
+            }
+            let piece = self.piece(token)
+            if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
+                bytes += piece[..<newline]
+                truncated = false
+                break
+            }
+            bytes += piece
+            if String(decoding: bytes, as: UTF8.self).completionWordCount > options.maxWords {
+                truncated = false
+                break
+            }
+            var next = [token]
+            guard decode(&next) else { break }
         }
-        return written > 0 ? Array(tokens.prefix(Int(written))) : []
+        // The generated tokens stay in the cache; the shared-prefix check trims them on the next request.
+        let text = String(decoding: bytes, as: UTF8.self).replacingOccurrences(of: "\u{FFFD}", with: "")
+        return CompletionResult(text: text, truncated: truncated)
+    }
+
+    private func rankedWords(prompt: String, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {
+        var text = prompt
+        while text.last == " " { text.removeLast() }
+        guard !isCancelled(), let length = prime(text, reserve: 8), let logits = llama_get_logits_ith(context, -1) else { return [] }
+        let candidates = topTokens(logits, count: count * 4)
+        var results: [String] = []
+        let excluded = excluding.lowercased()
+        for candidate in candidates {
+            if isCancelled() { return [] }
+            if results.count == count { break }
+            if llama_vocab_is_eog(vocab, candidate) || llama_vocab_is_control(vocab, candidate) { continue }
+            // Back to the end of the prompt, then spell out the rest of the word.
+            guard llama_memory_seq_rm(llama_get_memory(context), 0, llama_pos(length), -1) else { break }
+            cached = Array(cached.prefix(length))
+            var bytes = piece(candidate)
+            var next = [candidate]
+            for _ in 0..<4 {
+                guard decode(&next), let logits = llama_get_logits_ith(context, -1) else { break }
+                let token = mostLikely(logits).0
+                let piece = self.piece(token)
+                guard let first = piece.first, Character(UnicodeScalar(first)).isLetter || first >= 0x80 || first == UInt8(ascii: "'") else { break }
+                bytes += piece
+                next = [token]
+            }
+            let raw = String(decoding: bytes, as: UTF8.self)
+            let word = raw.trimmingCharacters(in: .whitespaces)
+            let entry = (raw.first == " " ? " " : "") + word
+            guard word.count >= 2, word.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "-" }), word.lowercased() != excluded,
+                  !results.contains(where: { $0.lowercased() == entry.lowercased() }) else { continue }
+            results.append(entry)
+        }
+        return results
+    }
+
+    private func decode(_ tokens: inout [llama_token]) -> Bool {
+        let count = Int32(tokens.count)
+        let status = tokens.withUnsafeMutableBufferPointer { llama_decode(context, llama_batch_get_one($0.baseAddress, count)) }
+        guard status == 0 else {
+            llama_memory_clear(llama_get_memory(context), true)
+            cached = []
+            return false
+        }
+        cached += tokens
+        return true
+    }
+
+    private func tokenize(_ text: String, special: Bool) -> [llama_token] {
+        let bytes = Array(text.utf8CString.dropLast())
+        guard !bytes.isEmpty else { return [] }
+        var tokens = [llama_token](repeating: 0, count: bytes.count + 8)
+        var count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, Int32(tokens.count), special, false)
+        if count < 0 {
+            tokens = [llama_token](repeating: 0, count: Int(-count))
+            count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, Int32(tokens.count), special, false)
+        }
+        return count > 0 ? Array(tokens.prefix(Int(count))) : []
     }
 
     private func piece(_ token: llama_token) -> [UInt8] {
         var buffer = [CChar](repeating: 0, count: 64)
-        let length = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
-        guard length > 0 else { return [] }
-        return buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }
-    }
-
-    private func decode(_ tokens: inout [llama_token]) -> Bool {
-        tokens.withUnsafeMutableBufferPointer { buffer in
-            llama_decode(context, llama_batch_get_one(buffer.baseAddress, Int32(buffer.count))) == 0
+        var length = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+        if length < 0 {
+            buffer = [CChar](repeating: 0, count: Int(-length))
+            length = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
         }
+        return buffer.prefix(Int(max(length, 0))).map { UInt8(bitPattern: $0) }
     }
 
-    private func decode(_ token: inout llama_token) -> Bool {
-        withUnsafeMutablePointer(to: &token) { llama_decode(context, llama_batch_get_one($0, 1)) == 0 }
+    /// The most likely token after the word bonus, with its probability before the bonus (softmax over all tokens).
+    private func mostLikely(_ logits: UnsafeMutablePointer<Float>) -> (llama_token, Float) {
+        var best = 0
+        var maximum = logits[0]
+        for index in 1..<vocabSize where logits[index] > maximum {
+            maximum = logits[index]
+            best = index
+        }
+        var sum: Float = 0
+        for index in 0..<vocabSize { sum += exp(logits[index] - maximum) }
+        var score = maximum
+        for (token, bonus) in bias where Int(token) < vocabSize && logits[Int(token)] + bonus > score {
+            score = logits[Int(token)] + bonus
+            best = Int(token)
+        }
+        return (llama_token(best), exp(logits[best] - maximum) / sum)
+    }
+
+    /// The `count` highest logits without sorting the whole vocabulary (often 150 000+ tokens).
+    private func topTokens(_ logits: UnsafeMutablePointer<Float>, count: Int) -> [llama_token] {
+        var top: [(Int, Float)] = []
+        top.reserveCapacity(count + 1)
+        for index in 0..<vocabSize {
+            let value = logits[index]
+            if top.count < count {
+                top.append((index, value))
+                if top.count == count { top.sort { $0.1 > $1.1 } }
+            } else if value > top[count - 1].1 {
+                var position = count - 1
+                while position > 0, top[position - 1].1 < value { position -= 1 }
+                top.insert((index, value), at: position)
+                top.removeLast()
+            }
+        }
+        if top.count < count { top.sort { $0.1 > $1.1 } }
+        return top.map { llama_token($0.0) }
     }
 }

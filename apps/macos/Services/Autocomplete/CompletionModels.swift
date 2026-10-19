@@ -2,7 +2,7 @@ import Foundation
 
 /// A GGUF model file on this Mac that autocompletion can run.
 struct CompletionModelFile: Identifiable, Equatable {
-    enum Source: Equatable { case cotypist, custom }
+    enum Source: Equatable { case cotypist, nook, custom }
 
     let url: URL
     let bytes: Int64
@@ -45,10 +45,19 @@ enum CompletionModelLocator {
             .sorted { $0.modified > $1.modified }
     }
 
-    /// The model file to use: the one the user picked if it is still there, otherwise the newest one Cotypist has.
+    /// The model file to use: the one the user picked if it is still there, otherwise the newest one Cotypist has, then
+    /// one Nook downloaded itself.
     static func resolve(storedPath: String, candidates: [CompletionModelFile]) -> CompletionModelFile? {
-        if !storedPath.isEmpty { return model(at: URL(fileURLWithPath: storedPath), source: .custom) }
-        return candidates.first
+        if !storedPath.isEmpty {
+            if let known = candidates.first(where: { $0.url.path == storedPath }) { return known }
+            return model(at: URL(fileURLWithPath: storedPath), source: .custom)
+        }
+        return candidates.first { $0.source == .cotypist } ?? candidates.first
+    }
+
+    /// The GGUF files Nook downloaded or the user dropped in its models folder.
+    static func nookModels(in folder: URL) -> [CompletionModelFile] {
+        ggufFiles(in: folder, maxDepth: 1).compactMap { model(at: $0, source: .nook) }.sorted { $0.modified > $1.modified }
     }
 
     /// A readable GGUF file, or nil.
@@ -86,5 +95,41 @@ enum CompletionModelLocator {
     private static func matches(_ url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
         return needles.contains { name.contains($0) }
+    }
+}
+
+/// A model Nook can download for autocomplete when Cotypist's is not there. Base (not chat) models: plain continuation is
+/// what inline completion needs. The list follows Typist's catalog (MIT, © 2026 Brody Salvucci).
+struct CompletionCatalogModel: Identifiable, Equatable {
+    var name: String
+    var fileName: String
+    var repository: String
+    var sizeGB: Double
+    /// Below this much memory the model is not recommended.
+    var minimumMemoryGB: Int
+    /// Key of the one-line note (i18n).
+    var noteKey: String
+
+    var id: String { fileName }
+    var url: URL { URL(string: "https://huggingface.co/\(repository)/resolve/main/\(fileName)")! }
+
+    static let catalog: [CompletionCatalogModel] = [
+        CompletionCatalogModel(name: "Qwen3 0.6B Base", fileName: "Qwen3-0.6B-Base.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/Qwen3-0.6B-Base-i1-GGUF", sizeGB: 0.4, minimumMemoryGB: 8, noteKey: "autocomplete.note.fastest"),
+        CompletionCatalogModel(name: "Qwen3 1.7B Base", fileName: "Qwen3-1.7B-Base.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/Qwen3-1.7B-Base-i1-GGUF", sizeGB: 1.1, minimumMemoryGB: 8, noteKey: "autocomplete.note.balanced"),
+        CompletionCatalogModel(name: "Gemma 3 1B", fileName: "gemma-3-1b-pt.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/gemma-3-1b-pt-i1-GGUF", sizeGB: 0.8, minimumMemoryGB: 8, noteKey: "autocomplete.note.gemmaSmall"),
+        CompletionCatalogModel(name: "Qwen3 4B Base", fileName: "Qwen3-4B-Base.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/Qwen3-4B-Base-i1-GGUF", sizeGB: 2.5, minimumMemoryGB: 16, noteKey: "autocomplete.note.better"),
+        CompletionCatalogModel(name: "Gemma 3 4B", fileName: "gemma-3-4b-pt.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/gemma-3-4b-pt-i1-GGUF", sizeGB: 2.5, minimumMemoryGB: 16, noteKey: "autocomplete.note.gemmaLarge"),
+        CompletionCatalogModel(name: "Qwen3 8B Base", fileName: "Qwen3-8B-Base.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/Qwen3-8B-Base-i1-GGUF", sizeGB: 5.0, minimumMemoryGB: 24, noteKey: "autocomplete.note.best"),
+    ]
+
+    /// The best model this Mac runs comfortably. Gemma, because it writes Dutch (Nook's first language) better than Qwen.
+    static func recommended(memoryGB: Int) -> CompletionCatalogModel {
+        memoryGB >= 16 ? catalog[4] : catalog[2]
     }
 }

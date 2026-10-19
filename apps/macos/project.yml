@@ -202,7 +202,11 @@ targets:
       - path: Services/Flow/FlowLogic.swift
       - path: Services/Autocomplete/GGUFReader.swift
       - path: Services/Autocomplete/CompletionModels.swift
-      - path: Services/Autocomplete/CompletionText.swift
+      - path: Services/Autocomplete/CompletionSuggestion.swift
+      - path: Services/Autocomplete/CompletionPreferences.swift
+      - path: Services/Autocomplete/CompletionEmoji.swift
+      - path: Services/Autocomplete/CompletionPrivacy.swift
+      - path: Services/Autocomplete/CompletionLearning.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift

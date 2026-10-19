@@ -87,7 +87,22 @@ extension AppModel {
             await self?.brain.rewrite(system: system, prompt: text, timeout: timeout)
         }
         FlowDictation.shared.refresh()
-        AutocompleteController.shared.refresh()
+        startAutocomplete()
+    }
+
+    /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
+    func startAutocomplete() {
+        let autocomplete = AutocompleteController.shared
+        autocomplete.facts = { [weak self] in
+            guard let self, self.settings.useMemory else { return [] }
+            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil }
+                .sorted { $0.strength > $1.strength }.prefix(8).map(\.text)
+        }
+        autocomplete.screenText = { [weak self] bundleID in
+            let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []
+            return (windows.first { $0.isFront } ?? windows.first)?.text
+        }
+        autocomplete.refresh()
     }
 }
 
