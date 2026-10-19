@@ -2,6 +2,7 @@
   // Instellingen: de enige plek voor configuratie. Elke sectie is een eigen component in ./settings;
   // een nieuwe sectie is één regel in `sections`.
   import type { Component } from "svelte";
+  import { events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import "./settings/settings.css";
   import General from "./settings/General.svelte";
@@ -29,6 +30,13 @@
   let section = $state(localStorage.getItem("settings.section") ?? "brain");
   $effect(() => {
     localStorage.setItem("settings.section", section);
+  });
+  // Een knop elders (chat, welkom) kan een sectie kiezen via localStorage + navigate.
+  $effect(() => {
+    const un = events.onNavigate(() => (section = localStorage.getItem("settings.section") ?? section));
+    return () => {
+      un.then((f) => f());
+    };
   });
   const visible = $derived(sections.filter((s) => !s.when || s.when()));
   const Current = $derived(visible.find((s) => s.id === section)?.component ?? Brain);
