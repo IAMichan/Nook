@@ -40,8 +40,11 @@ struct PanelView: View {
                     .fill(NookTheme.textTertiary.opacity(0.35))
                     .frame(width: 1, height: 14)
                     .padding(.horizontal, 6)
-                NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
-                    .help(tr("button.settings"))
+                // On Agents the gear sits in the footer under the session list instead.
+                if tab != .agents || app.demoMode {
+                    NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
+                        .help(tr("button.settings"))
+                }
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
                     .help(tr("button.close"))
             }

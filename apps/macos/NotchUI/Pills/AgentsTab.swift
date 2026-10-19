@@ -44,7 +44,8 @@ struct AgentsTab: View {
                 listHeader(selection)
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
                 if !app.demoMode {
-                    AgentsFooter(selected: selectedID(selection)) { viewModel.selectedAgentID = $0 }
+                    AgentsFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
+                                 openSettings: { app.openSettings() })
                 }
             }
             .padding(.trailing, 4)
