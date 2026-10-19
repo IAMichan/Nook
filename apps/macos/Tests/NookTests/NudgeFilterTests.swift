@@ -43,4 +43,19 @@ final class NudgeFilterTests: XCTestCase {
         XCTAssertFalse(NudgeFilter.asksWithoutAction(body, hasActions: true))
         XCTAssertFalse(NudgeFilter.asksWithoutAction("Tip: met ⌘⇧T open je het tabblad weer.", hasActions: false))
     }
+
+    func testOffersMustBeAboutWhatIsOnScreen() {
+        let mail = "Mail\nRe: offerte dakkapel\nVan: Sanne de Vries\nKun je vóór donderdag laten weten of de offerte akkoord is?"
+        XCTAssertTrue(NudgeFilter.isGrounded("Zal ik een antwoord aan Sanne opstellen? Ze wacht op je akkoord.", screen: mail),
+                      "names the person on screen")
+        XCTAssertFalse(NudgeFilter.isGrounded("Tip: dit kan ook in één keer.", screen: mail), "generic advice")
+        XCTAssertFalse(NudgeFilter.isGrounded("Zal ik hem herinneren aan de deadline van IMDigital.info (2027-09-20)?", screen: mail),
+                       "brought up from Nook's own reminders, not from the screen")
+        XCTAssertFalse(NudgeFilter.isGrounded("Zal ik een antwoord aan Sanne opstellen?", screen: ""))
+    }
+
+    func testSpecificWordsSkipCapitalsThatStartASentence() {
+        XCTAssertEqual(NudgeFilter.specificWords("Zal ik Sanne mailen? Tip: Gebruik Flash Fill in Excel 2024."),
+                       ["sanne", "flash", "fill", "excel", "2024"])
+    }
 }

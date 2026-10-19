@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pure checks that keep think-along offers useful: a clean teaser line, no offers about things far away,
-/// and no repeats of a suggestion that was only reworded.
+/// no generic advice that is not about what is on screen, and no repeats of a suggestion that was only reworded.
 enum NudgeFilter {
     /// Dates further away than this are never a reason to interrupt the user.
     static let horizon: TimeInterval = 14 * 24 * 3600
@@ -51,6 +51,31 @@ enum NudgeFilter {
     /// wherever in the text the question sits.
     static func asksWithoutAction(_ body: String, hasActions: Bool) -> Bool {
         !hasActions && body.contains("?")
+    }
+
+    /// An offer must be about what is on screen: it names something visible there (a name, a number, a subject),
+    /// or shares at least two longer words with it. Generic advice ("this can be done in one go") and things
+    /// Nook only knows from its own reminders or memory fail this check.
+    static func isGrounded(_ body: String, screen: String) -> Bool {
+        let visible = Set(normalize(screen).split(separator: " ").map(String.init))
+        guard !visible.isEmpty else { return false }
+        if !specificWords(body).isDisjoint(with: visible) { return true }
+        return words(body).filter { $0.count >= 6 }.intersection(visible).count >= 2
+    }
+
+    /// Names, products and numbers in a text: words with a digit, or with a capital where a sentence does not start.
+    static func specificWords(_ text: String) -> Set<String> {
+        var result = Set<String>()
+        var sentenceStart = true
+        for token in text.split(whereSeparator: \.isWhitespace) {
+            let core = token.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
+            let specific = core.contains(where: \.isNumber) || (!sentenceStart && core.first?.isUppercase == true)
+            if specific {
+                result.formUnion(normalize(core).split(separator: " ").map(String.init).filter { $0.count >= 3 })
+            }
+            if let last = token.last { sentenceStart = ".?!:".contains(last) }
+        }
+        return result
     }
 
     /// Lowercased letters, digits and single spaces.

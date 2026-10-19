@@ -70,23 +70,33 @@ extension AppModel {
     func thinkAlongRun(bundleID: String, appName: String, window: String) async {
         guard let snapshot = try? await screenSnapshot() else { return }
         var request = """
-        [Meedenken] De gebruiker is nu bezig in \(appName)\(window.isEmpty ? "" : " (venster: \(window.prefix(80)))"). \
-        Je kijkt ongevraagd mee. Is er één concreet ding dat jij nu voor hem kunt overnemen met een actie-tool (iets inplannen, \
-        een herinnering of open punt, een concept schrijven, een app of link openen), of weet je een duidelijk slimmere of snellere \
-        aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan; bied nooit iets aan ("Zal ik…?") zonder die tool aan te roepen. \
-        Begin je tekst met één korte vraag of tip van hooguit acht woorden over dit specifieke scherm, daarna hooguit twee zinnen uitleg. \
-        Een tip is een concrete werkwijze voor wat hij nu doet, geen losse algemene zin; combineer nooit een tip met een vraag. \
-        Alleen als het hem echt tijd scheelt of voorkomt dat hij iets vergeet; samenvattingen, complimenten of wat hij al doet tellen niet. \
-        Plan of herinner alleen iets als er op het scherm een concrete datum, tijd, deadline of afspraak met iemand staat. \
-        Gewoon bezig zijn met werk (code, een pull request, een document, een tool of app) is nooit een reden voor een agendapunt of herinnering. \
-        Kijk bij datums van herinneringen en afspraken altijd naar het volledige jaartal en vergelijk met de huidige datum ("Nu"): \
-        alleen wat binnen twee dagen valt of al verlopen is, is dichtbij; iets over weken, maanden of een jaar is geen reden om te melden. \
-        Bied nooit aan om te herinneren aan iets dat al in Nooks herinneringen, open punten of agenda staat. \
-        Twijfel je, antwoord dan alleen NONE.
+        [Think along] The user is working in \(appName)\(window.isEmpty ? "" : " (window: \(window.prefix(80)))"). \
+        You are looking over their shoulder without being asked. Every interruption costs them attention, so speak up only \
+        with something they would be glad to see right now. Most of the time the right answer is NONE.
+
+        Worth an offer, and only when it is about something visible on this screen:
+        - A follow-up you can take over with an action tool: an invitation or appointment with a date and time to put in the calendar, \
+        a question or request in a mail or chat to answer (write a draft), a task or promise due within two days to remind them of, \
+        a link, file or app to open.
+        - A concrete, clearly faster way to do exactly what they are doing on this screen: a specific feature, shortcut or command, \
+        named together with the thing on screen it applies to.
+
+        Never:
+        - Anything that is not on this screen. Nook's own reminders, open loops, calendar, memory and earlier conversations are in \
+        the context to avoid duplicates and conflicts, not to be brought up.
+        - Dates more than two days away. Always read the full year and compare with the current date ("Now").
+        - A calendar item or reminder for ongoing work (code, a pull request, a document, a tool or app).
+        - Summaries, compliments, generic productivity advice, or describing what they are already doing.
+        - Offering something without calling the tool in this same answer. A question without an action is never allowed.
+
+        Form: when you take something over, call the tool right away and start your text with one short question of at most \
+        ten words that names the concrete thing (the person, subject or date), followed by at most one sentence on why now. \
+        A tip starts with "Tip:", names the concrete thing on screen, and is never combined with a question. \
+        Write in the user's language. When in doubt, answer only NONE.
         """
         let earlier = thinkAlong.recentOffers
         if !earlier.isEmpty {
-            request += " You recently offered this; do not repeat it: " + earlier.joined(separator: "; ") + "."
+            request += "\nYou recently offered these; do not repeat them, not even reworded: " + earlier.joined(separator: "; ") + "."
         }
         // The same preparation as a chat answer; thinking along reads the screen, so no lookups up front.
         let prepared = await prepareRun(text: request, scope: .automatic, snapshotText: snapshot.text, ledger: RetrievalLedger(), prefetch: false)
@@ -117,6 +127,9 @@ extension AppModel {
         guard !NudgeFilter.isFarOff(Self.mentionedDates(in: body)) else { return }
         // An offer ("Shall I…?") without an action would do nothing when accepted; only plain tips may go without one.
         guard !NudgeFilter.asksWithoutAction(body, hasActions: !plan.actions.isEmpty) else { return }
+        // Only offers about what is on screen: no generic advice, nothing dug up from Nook's own reminders or memory.
+        let visible = [snapshot.appName, snapshot.windowTitle, snapshot.text].joined(separator: "\n")
+        guard NudgeFilter.isGrounded(body.isEmpty ? line : body, screen: visible) else { return }
 
         let offer = BrainPlan(text: body, actions: plan.actions)
         let card = nudgeCard(offer, offers: split.offers, bundleID: bundleID, appName: appName)
