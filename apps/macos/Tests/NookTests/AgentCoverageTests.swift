@@ -23,6 +23,45 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(messages[1].text, "**Kijken** naar de test\n\nOorzaak gevonden", "reasoning in a row joins one bubble, never twice")
     }
 
+    func testClaudeCodeTranscriptShowsItsStepsAndThatItThought() {
+        let data = lines([
+            ["type": "user", "uuid": "u1", "message": ["role": "user", "content": "Verwerk het nu in de code"]],
+            ["type": "assistant", "uuid": "a1", "message": ["role": "assistant", "content": [["type": "thinking", "thinking": "", "signature": "x"]]]],
+            ["type": "assistant", "uuid": "a2", "message": ["role": "assistant", "content": [
+                ["type": "tool_use", "id": "t1", "name": "Bash", "input": ["command": "git status --short", "description": "Survey hosting files and sizes"]]
+            ]]],
+            ["type": "user", "uuid": "r1", "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "t1", "content": "ok"]]]],
+            ["type": "assistant", "uuid": "a3", "message": ["role": "assistant", "content": [
+                ["type": "tool_use", "id": "t2", "name": "Read", "input": ["file_path": "/Users/m/app/src/hosting-overview-page.tsx"]]
+            ]]],
+            ["type": "user", "uuid": "r2", "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "t2", "is_error": true, "content": "nope"]]]],
+            ["type": "assistant", "uuid": "a4", "message": ["role": "assistant", "content": [
+                ["type": "tool_use", "id": "t3", "name": "mcp__github__create_issue", "input": ["title": "Bug"]]
+            ]]],
+            ["type": "assistant", "uuid": "a5", "message": ["role": "assistant", "content": [["type": "text", "text": "Klaar."]]]]
+        ])
+        let messages = AgentTranscript.jsonl(data)
+        XCTAssertEqual(messages.map(\.kind), [.user, .thinking, .tools, .assistant])
+        XCTAssertEqual(messages[1].text, "", "thinking the agent kept to itself still shows that it thought")
+        XCTAssertEqual(messages[2].steps.map(\.name), ["Bash", "Read", "create_issue"])
+        XCTAssertEqual(messages[2].steps.map(\.summary), ["Survey hosting files and sizes", "hosting-overview-page.tsx", "Bug"])
+        XCTAssertEqual(messages[2].steps.map(\.state), [.done, .failed, .running])
+        XCTAssertEqual(messages[3].text, "Klaar.")
+    }
+
+    func testCodexTranscriptShowsItsCommands() {
+        let data = lines([
+            ["type": "event_msg", "payload": ["type": "user_message", "message": "Draai de tests"]],
+            ["type": "response_item", "payload": ["type": "function_call", "name": "shell", "call_id": "c1",
+                                                  "arguments": #"{"command":["bash","-lc","swift test\necho klaar"]}"#]],
+            ["type": "response_item", "payload": ["type": "function_call_output", "call_id": "c1", "output": "ok"]],
+            ["type": "event_msg", "payload": ["type": "agent_message", "message": "Groen."]]
+        ])
+        let messages = AgentTranscript.jsonl(data)
+        XCTAssertEqual(messages.map(\.kind), [.user, .tools, .assistant])
+        XCTAssertEqual(messages[1].steps, [AgentToolStep(id: "c1", name: "Shell", summary: "swift test", state: .done)])
+    }
+
     func testGeminiChatWithThoughts() {
         let chat: [String: Any] = ["sessionId": "s1", "messages": [
             ["id": "u1", "type": "user", "content": "Wat doet main.swift?"],

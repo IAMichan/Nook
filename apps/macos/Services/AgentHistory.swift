@@ -210,10 +210,13 @@ struct PastSession: Identifiable, Equatable {
     var profileID = ""
     /// The transcript file the session was read from.
     var path = ""
+    /// A session in Anthropic's cloud (started in the Claude app or on claude.ai): no transcript or folder on this Mac.
+    var cloud: CloudSession?
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
     var project: String {
+        if let cloud { return cloud.repository.isEmpty ? "cloud" : URL(fileURLWithPath: cloud.repository).lastPathComponent }
         let name = URL(fileURLWithPath: cwd).lastPathComponent
         return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
     }
@@ -317,6 +320,7 @@ final class AgentHistory: ObservableObject {
 
     /// Refreshes if more than `minimumInterval` has elapsed. Called by the Agents tab when opened.
     func refresh(minimumInterval: TimeInterval = 20) {
+        refreshCloud(minimumInterval: max(minimumInterval, Self.cloudInterval))
         guard !loading, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
         loading = true
         lastRefresh = Date()
@@ -340,11 +344,57 @@ final class AgentHistory: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.loading = false
-                if self.sessions != result.sessions { self.sessions = result.sessions }
+                self.localSessions = result.sessions
+                self.publishSessions()
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
                 if self.installed != result.installed { self.installed = result.installed }
                 if self.executables != result.executables { self.executables = result.executables }
+            }
+        }
+    }
+
+    // MARK: Cloud
+
+    private var localSessions: [PastSession] = []
+    /// Per account (`AgentProfile.id`): its sessions in Anthropic's cloud.
+    private var cloudSessions: [String: [PastSession]] = [:]
+    private var lastCloudRefresh = Date.distantPast
+    private var cloudLoading = false
+    /// The cloud list is a network request: at most this often, also when the local scan runs more often.
+    private static let cloudInterval: TimeInterval = 60
+
+    private func publishSessions() {
+        // Two accounts signed in to the same organization see the same cloud sessions: list each once.
+        var seen = Set<String>()
+        let cloud = cloudSessions.keys.sorted().flatMap { cloudSessions[$0] ?? [] }.filter { seen.insert($0.id).inserted }
+        let all = (localSessions + cloud).sorted { $0.ended > $1.ended }
+        if sessions != all { sessions = all }
+    }
+
+    /// Sessions of every Claude subscription account that run in the cloud: started in the Claude app (desktop or phone)
+    /// or on claude.ai/code. They are read with the account's own login, like the usage limits (`ClaudeUsage`).
+    private func refreshCloud(minimumInterval: TimeInterval) {
+        guard !cloudLoading, Date().timeIntervalSince(lastCloudRefresh) >= minimumInterval else { return }
+        let accounts = profiles.filter { $0.kind == .claude && !$0.usesAPIKey }
+            .map { (id: $0.id, home: $0.homeURL, isDefault: $0.isDefault) }
+        guard !accounts.isEmpty else { return }
+        cloudLoading = true
+        lastCloudRefresh = Date()
+        Task.detached(priority: .utility) { [weak self] in
+            var found: [String: [PastSession]] = [:]
+            for account in accounts {
+                if let list = CloudSessionFetch.sessions(home: account.home, isDefault: account.isDefault) {
+                    found[account.id] = list.map { CloudSessionFetch.pastSession($0, profileID: account.id) }
+                }
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.cloudLoading = false
+                // An account that could not be read (offline, token just expired) keeps what it had, so rows don't flicker away.
+                for (id, list) in found { self.cloudSessions[id] = list }
+                for id in self.cloudSessions.keys where !accounts.contains(where: { $0.id == id }) { self.cloudSessions[id] = nil }
+                self.publishSessions()
             }
         }
     }
@@ -366,6 +416,53 @@ struct ProfileHome: Sendable {
     var isDefault: Bool
     /// This account logs in using an API key from Nook's Keychain (Claude Code).
     var apiKey = false
+}
+
+// MARK: Cloud sessions
+
+/// Reads an account's cloud sessions from Anthropic, with the login Claude Code keeps for it. Read-only; the token is used
+/// only for this request and never stored or logged.
+enum CloudSessionFetch {
+    /// How far back cloud sessions are listed, like the transcripts on this Mac.
+    static let days = 30
+
+    /// nil when the account is not signed in with a subscription, or the list could not be read.
+    static func sessions(home: URL, isDefault: Bool) -> [CloudSession]? {
+        guard let token = ClaudeUsage.accessToken(home: home, isDefault: isDefault),
+              let org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault) else { return nil }
+        var request = URLRequest(url: ClaudeCloudSessions.endpoint)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue(ClaudeCloudSessions.beta, forHTTPHeaderField: "anthropic-beta")
+        request.setValue(org, forHTTPHeaderField: "x-organization-uuid")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var payload: Data?
+        var status = 0
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            payload = data
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            semaphore.signal()
+        }.resume()
+        guard semaphore.wait(timeout: .now() + 20) == .success, status == 200, let payload else { return nil }
+        let since = Date().addingTimeInterval(-Double(days) * 86_400)
+        return ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since }
+    }
+
+    static func pastSession(_ cloud: CloudSession, profileID: String) -> PastSession {
+        var session = PastSession(
+            agent: .claude, sessionID: cloud.id,
+            title: cloud.title.isEmpty ? cloud.repository : cloud.title,
+            cwd: "", branch: cloud.branch, model: cloud.model,
+            started: cloud.created, ended: cloud.updated,
+            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+        )
+        session.profileID = profileID
+        session.cloud = cloud
+        return session
+    }
 }
 
 // MARK: Reading

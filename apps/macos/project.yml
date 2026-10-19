@@ -126,6 +126,7 @@ targets:
       - path: App/ConversationList.swift
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
+      - path: Services/ClaudeCloudSessions.swift
       - path: Services/FinishedSessions.swift
       - path: Services/SessionLiveness.swift
       - path: Core/NookError.swift

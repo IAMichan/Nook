@@ -109,7 +109,7 @@ final class ClaudeUsage {
     // MARK: Token
 
     /// The OAuth access token of this account, if it is signed in with a subscription and the token is still valid.
-    private nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
+    nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
         var candidates: [Data] = []
         // Claude Code keeps the login in the Keychain; every extra account directory has its own entry, named after a hash of the path.
         var services = [isDefault ? "Claude Code-credentials" : "Claude Code-credentials-" + hash(home.path)]
