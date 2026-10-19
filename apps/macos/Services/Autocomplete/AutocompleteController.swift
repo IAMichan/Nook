@@ -2,6 +2,15 @@ import AppKit
 import Carbon.HIToolbox
 import IOKit.ps
 
+/// The key tap's callback. At file level: a C function pointer may not carry the controller's main-actor isolation. The tap
+/// runs on the main run loop, so the controller is entered on the main thread.
+private let autocompleteTapCallback: CGEventTapCallBack = { _, type, event, refcon in
+    guard let refcon else { return Unmanaged.passUnretained(event) }
+    let controller = Unmanaged<AutocompleteController>.fromOpaque(refcon).takeUnretainedValue()
+    let swallow = MainActor.assumeIsolated { controller.handle(type: type, event: event) }
+    return swallow ? nil : Unmanaged.passUnretained(event)
+}
+
 /// Autocomplete anywhere: while you type in any app, a model on this Mac suggests how the sentence goes on, as grey text at
 /// the cursor. Tab takes the next word, ⇧Tab all of it; typing what was suggested keeps the rest; any other key sends it
 /// away. Also: emoji by name (`:lachen`), a fix for the word you just mistyped, and other words for a selected word.
@@ -72,7 +81,7 @@ final class AutocompleteController: ObservableObject {
     private var idleTask: Task<Void, Never>?
 
     private var completer: LlamaCompleter?
-    private var loading: Task<LlamaCompleter?, Never>?
+    private var loading: (path: String, task: Task<LlamaCompleter?, Never>)?
 
     /// How often to re-read the field while the app takes in a key, and how many times.
     private let settleInterval: TimeInterval = 0.03
@@ -144,20 +153,13 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    private static let tapCallback: CGEventTapCallBack = { _, type, event, refcon in
-        guard let refcon else { return Unmanaged.passUnretained(event) }
-        let controller = Unmanaged<AutocompleteController>.fromOpaque(refcon).takeUnretainedValue()
-        let swallow = MainActor.assumeIsolated { controller.handle(type: type, event: event) }
-        return swallow ? nil : Unmanaged.passUnretained(event)
-    }
-
     /// An active tap (not only a listener): the accept keys must not reach the app as an ordinary Tab.
     private func start() -> Bool {
         guard tap == nil else { return true }
         let mask: CGEventMask = 1 << CGEventType.keyDown.rawValue | 1 << CGEventType.leftMouseDown.rawValue
             | 1 << CGEventType.rightMouseDown.rawValue | 1 << CGEventType.leftMouseUp.rawValue
         guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
-                                           callback: Self.tapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
+                                           callback: autocompleteTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
@@ -181,6 +183,7 @@ final class AutocompleteController: ObservableObject {
         commitSample()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
+        if let tap { CFMachPortInvalidate(tap) }
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
         pressure?.cancel()
         tap = nil
@@ -251,7 +254,7 @@ final class AutocompleteController: ObservableObject {
     }
 
     /// True swallows the event.
-    private func handle(type: CGEventType, event: CGEvent) -> Bool {
+    fileprivate func handle(type: CGEventType, event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -549,19 +552,22 @@ final class AutocompleteController: ObservableObject {
     private func scheduleSelectionCheck() {
         selectionWork?.cancel()
         guard prefs.wordAlternatives, prefs.autoAlternatives else { return }
-        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.showAlternatives() } }
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.showAlternatives(selectionOnly: true) } }
         selectionWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
     }
 
     /// Words to pick by number: for the selected word, or, without a selection, instead of the word Nook would suggest next.
-    private func showAlternatives() {
+    /// - Parameter selectionOnly: only for a selected word (shown by itself after selecting, not after every click).
+    private func showAlternatives(selectionOnly: Bool = false) {
         guard let app = frontApp, isActive(in: app) else { return }
         var suggested = ""
         if case .completion(let completion) = proposal { suggested = completion.suggestion.nextChunk().trimmingCharacters(in: .whitespaces) }
-        dismiss()
+        if !selectionOnly { dismiss() }
         read(in: app) { [weak self] snapshot in
-            if let snapshot { self?.showAlternatives(for: snapshot, in: app, suggested: suggested) }
+            guard let self, let snapshot, !selectionOnly || snapshot.hasSelection else { return }
+            if selectionOnly { self.dismiss() }
+            self.showAlternatives(for: snapshot, in: app, suggested: suggested)
         }
     }
 
@@ -627,24 +633,27 @@ final class AutocompleteController: ObservableObject {
     // MARK: The model
 
     private func loadedCompleter(for model: CompletionModelFile) async -> LlamaCompleter? {
-        if let completer, completer.path == model.url.path { return completer }
-        if let loading { return await loading.value }
+        let path = model.url.path
+        if let completer, completer.path == path { return completer }
+        if let loading, loading.path == path { return await loading.task.value }
         state = .loading
         let task = Task { () -> LlamaCompleter? in
             do {
-                let loaded = try await LlamaCompleter.load(path: model.url.path)
+                let loaded = try await LlamaCompleter.load(path: path)
+                // Another model was chosen while this one loaded: let it go.
+                guard activeModel?.url.path == path else { return nil }
                 completer = loaded
                 applyPersonalization()
                 state = .ready
                 return loaded
             } catch {
-                state = .failed(error.localizedDescription)
+                if activeModel?.url.path == path { state = .failed(error.localizedDescription) }
                 return nil
             }
         }
-        loading = task
+        loading = (path, task)
         let result = await task.value
-        loading = nil
+        if loading?.path == path { loading = nil }
         return result
     }
 

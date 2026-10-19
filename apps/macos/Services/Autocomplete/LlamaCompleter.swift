@@ -216,21 +216,25 @@ final class LlamaCompleter: @unchecked Sendable {
     private func tokenize(_ text: String, special: Bool) -> [llama_token] {
         let bytes = Array(text.utf8CString.dropLast())
         guard !bytes.isEmpty else { return [] }
-        var tokens = [llama_token](repeating: 0, count: bytes.count + 8)
-        var count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, Int32(tokens.count), special, false)
+        var capacity = Int32(bytes.count + 8)
+        var tokens = [llama_token](repeating: 0, count: Int(capacity))
+        var count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, false)
         if count < 0 {
-            tokens = [llama_token](repeating: 0, count: Int(-count))
-            count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, Int32(tokens.count), special, false)
+            capacity = -count
+            tokens = [llama_token](repeating: 0, count: Int(capacity))
+            count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, false)
         }
         return count > 0 ? Array(tokens.prefix(Int(count))) : []
     }
 
     private func piece(_ token: llama_token) -> [UInt8] {
-        var buffer = [CChar](repeating: 0, count: 64)
-        var length = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+        var capacity: Int32 = 64
+        var buffer = [CChar](repeating: 0, count: Int(capacity))
+        var length = llama_token_to_piece(vocab, token, &buffer, capacity, 0, false)
         if length < 0 {
-            buffer = [CChar](repeating: 0, count: Int(-length))
-            length = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+            capacity = -length
+            buffer = [CChar](repeating: 0, count: Int(capacity))
+            length = llama_token_to_piece(vocab, token, &buffer, capacity, 0, false)
         }
         return buffer.prefix(Int(max(length, 0))).map { UInt8(bitPattern: $0) }
     }

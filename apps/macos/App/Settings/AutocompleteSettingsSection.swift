@@ -280,7 +280,7 @@ struct AutocompleteSettingsSection: View {
     }
 
     @ViewBuilder private func appRule(_ bundleID: String) -> some View {
-        let rule = rule(bundleID)
+        let rule = self.rule(bundleID)
         Picker(tr("autocomplete.app.suggestions"), selection: rule.enabled) {
             ForEach(CompletionTriState.allCases) { Text(tr("autocomplete.tri.\($0.rawValue)")).tag($0) }
         }

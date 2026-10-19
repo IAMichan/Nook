@@ -1,4 +1,5 @@
 import AppKit
+import NaturalLanguage
 
 /// Draws suggestions over whatever app has the focus, in a panel that takes no clicks and never becomes key, so typing goes
 /// on in the app underneath. After Typist's overlay (MIT, © 2026 Brody Salvucci).
@@ -88,12 +89,24 @@ enum AutocompleteTypos {
     }
 
     @MainActor static func fix(for before: String) -> Fix? {
-        guard let (word, separator) = CompletionTextAnalysis.justCompletedWord(in: before) else { return nil }
+        guard let (word, separator) = CompletionTextAnalysis.justCompletedWord(in: before),
+              let language = language(of: before) else { return nil }
         let checker = NSSpellChecker.shared
         let range = NSRange(location: 0, length: (word as NSString).length)
-        guard checker.checkSpelling(of: word, startingAt: 0).location != NSNotFound,
-              let corrected = checker.correction(forWordRange: range, in: word, language: checker.language(), inSpellDocumentWithTag: 0),
+        let miss = checker.checkSpelling(of: word, startingAt: 0, language: language, wrap: false, inSpellDocumentWithTag: 0, wordCount: nil)
+        guard miss.location != NSNotFound,
+              let corrected = checker.correction(forWordRange: range, in: word, language: language, inSpellDocumentWithTag: 0),
               corrected != word else { return nil }
         return Fix(deleteCount: word.count + 1, replacement: corrected + String(separator), original: word, corrected: corrected)
+    }
+
+    /// The language the text is written in, as one of the spell checker's languages; nil when unsure or not available.
+    /// Checking Dutch with an English dictionary would mark every word, and a marked word holds back every suggestion.
+    @MainActor static func language(of text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(String(text.suffix(400)))
+        guard let (code, confidence) = recognizer.languageHypotheses(withMaximum: 1).first, confidence > 0.6 else { return nil }
+        let available = NSSpellChecker.shared.availableLanguages
+        return available.first { $0 == code.rawValue } ?? available.first { $0.hasPrefix(code.rawValue + "_") || $0.hasPrefix(code.rawValue + "-") }
     }
 }
