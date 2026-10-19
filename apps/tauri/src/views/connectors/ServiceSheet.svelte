@@ -193,10 +193,10 @@
               {#if service.signupUrl}<button onclick={() => openUrl(service.signupUrl!)}>Open {service.title} ↗</button>{/if}
             </li>
             <li class:done={current?.configured}>
-              <strong>Plak je sleutel of token</strong>
+              <strong>{service.id === "icalfeeds" ? "Plak je ICS-adressen" : service.id === "customsources" ? "Zet je bronnen erin" : "Plak je sleutel of token"}</strong>
               {@render fields()}
             </li>
-            <li class:done={h === "working"}>
+            <li class:done={current?.status.state.kind === "ok"}>
               <strong>Verbinding controleren</strong>
               {@render result()}
             </li>
@@ -225,7 +225,7 @@
         {/if}
       {/if}
       <span class="spacer"></span>
-      <button class="primary" onclick={onclose}>{h === "working" ? "Klaar" : "Sluit"}</button>
+      <button class="primary" onclick={onclose}>{current?.status.state.kind === "ok" ? "Klaar" : "Sluit"}</button>
     </footer>
   </div>
 </div>

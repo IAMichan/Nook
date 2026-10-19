@@ -61,7 +61,7 @@ pub fn services() -> Vec<ServiceInfo> {
             category: "development",
             tagline: "Pull requests, reviews en issues",
             fields: vec![field("connector.github.token", "Token", "ghp_… / github_pat_…", true)],
-            help: "Het makkelijkst: Koppel met GitHub hierboven. Lukt dat niet? Klik Maak een token, de rechten staan dan al goed, en plak het token hier. Nook leest je pull requests en kan ze, na jouw goedkeuring, beoordelen, samenvoegen of sluiten; daarvoor moet het token schrijfrechten op pull requests hebben.",
+            help: "Het makkelijkst: log in met een van de knoppen hierboven. Lukt dat niet? Klik Open GitHub, de rechten voor een nieuw token staan dan al goed, en plak het token hier. Nook leest je pull requests en kan ze, na jouw goedkeuring, beoordelen, samenvoegen of sluiten; daarvoor moet het token schrijfrechten op pull requests hebben.",
             signup_url: Some(super::github::TOKEN_URL),
             capabilities: "Lezen: je open pull requests, reviews die op jou wachten, CI, issues en diffs. Doen (alleen na Uitvoeren): een review plaatsen of goedkeuren, reageren, samenvoegen, sluiten, een issue maken of bijwerken.",
         },

@@ -92,7 +92,7 @@
               <span class="faint small" class:bad={h === "broken"}>{summary(info, s.tagline)}</span>
             </span>
           </button>
-          {#if h === "broken" || h === "needsYou"}<button class="fix" onclick={() => (sheet = s)}>Herstel</button>{:else}<HealthPill health={h} />{/if}
+          {#if info?.status.state.kind === "error"}<button class="fix" onclick={() => (sheet = s)}>Herstel</button>{:else}<HealthPill health={h} text={h === "needsYou" ? "Wacht op jou" : undefined} />{/if}
           <input type="checkbox" checked={info?.on ?? true} title="Zet deze koppeling aan of uit" onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
         </div>
       {/each}
