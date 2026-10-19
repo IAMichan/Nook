@@ -171,12 +171,12 @@ struct RemoteRepository: Hashable, Sendable {
         value.split(separator: "/", omittingEmptySubsequences: false).map { encode(String($0)) }.joined(separator: "/")
     }
 
-    private var repoBase: String { webOrigin + "/" + encodePath(path) }
+    private var repoBase: String { webOrigin + "/" + Self.encodePath(path) }
 
     private func query(_ items: [(String, String?)]) -> String {
         let pairs = items.compactMap { item -> String? in
             guard let value = item.1, !value.isEmpty || item.0 == "expand" else { return nil }
-            return item.0 + "=" + Self.encode(value)
+            return Self.encode(item.0) + "=" + Self.encode(value)
         }
         return pairs.isEmpty ? "" : "?" + pairs.joined(separator: "&")
     }

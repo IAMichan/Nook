@@ -191,6 +191,16 @@ struct SessionComposer<Controls: View>: View {
         return .handled
     }
 
+    /// Cmd+S: set the draft aside, bring one back, or choose from several (prompt stash).
+    private func stashKey(_ press: KeyPress) -> KeyPress.Result {
+        guard let extras, press.modifiers.contains(.command), let result = extras.model.stashKey(composerText: text) else {
+            return press.modifiers.contains(.command) ? .handled : .ignored
+        }
+        assign(result)
+        extras.model.onStashChanged?()
+        return .handled
+    }
+
     private func tabKey() -> KeyPress.Result {
         guard let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) else { return .ignored }
         choose(extras.model.suggestions[extras.model.selection])
@@ -221,6 +231,7 @@ struct SessionComposer<Controls: View>: View {
                 .onKeyPress(.return) { press in returnKey(press) }
                 .onKeyPress(.tab) { _ in tabKey() }
                 .onKeyPress(.escape) { _ in escapeKey() }
+                .onKeyPress(KeyEquivalent("s")) { press in stashKey(press) }
                 .frame(minHeight: minHeight, alignment: .topLeading)
             HStack(spacing: 6) {
                 controls()

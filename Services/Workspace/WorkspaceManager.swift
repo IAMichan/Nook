@@ -83,7 +83,7 @@ final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
-    @Published private(set) var queued: [UUID: [String]] = [:]
+    @Published private(set) var queued: [UUID: MessageQueue] = [:]
     /// Questions an agent asked in a session and that wait for your answer.
     @Published var questions: [UUID: [PendingQuestion]] = [:]
 
@@ -490,6 +490,8 @@ final class WorkspaceManager: ObservableObject {
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     func send(_ id: UUID, text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
+        if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
         // The previous turn's snapshot is still being made: wait for it (a moment), so this turn's edits stay out of it.
         if checkpointing.contains(id) {
@@ -517,6 +519,7 @@ final class WorkspaceManager: ObservableObject {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
         displayPrompt[id] = nil
+        if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status == .completed {
             clearContinuations(id)
             if run.pendingHandoff != nil { update(id) { $0.pendingHandoff = nil } }
@@ -567,23 +570,66 @@ final class WorkspaceManager: ObservableObject {
 
     /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String) {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, run(id) != nil else { return }
-        queued[id, default: []].append(clean)
+        guard run(id) != nil else { return }
+        var queue = queued[id] ?? MessageQueue()
+        queue.enqueue(text)
+        queued[id] = queue.isEmpty ? nil : queue
+    }
+
+    private func store(_ queue: MessageQueue, for id: UUID) {
+        queued[id] = queue.isEmpty && !queue.isHeld ? nil : queue
     }
 
     /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
     func sendQueuedNow(_ id: UUID) {
-        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var list = queued[id], !list.isEmpty else { return }
-        let next = list.removeFirst()
-        queued[id] = list.isEmpty ? nil : list
-        send(id, text: next)
+        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var queue = queued[id] else { return }
+        queue.resume()
+        guard let next = queue.next() else { return store(queue, for: id) }
+        store(queue, for: id)
+        send(id, text: next.text)
     }
 
-    func removeQueued(_ id: UUID, at index: Int) {
-        guard var list = queued[id], list.indices.contains(index) else { return }
-        list.remove(at: index)
-        queued[id] = list.isEmpty ? nil : list
+    func removeQueued(_ id: UUID, message: UUID) {
+        guard var queue = queued[id] else { return }
+        queue.remove(message)
+        store(queue, for: id)
+    }
+
+    func moveQueued(_ id: UUID, message: UUID, toIndex index: Int) {
+        guard var queue = queued[id] else { return }
+        queue.move(message, toIndex: index)
+        store(queue, for: id)
+    }
+
+    /// Takes a queued message into the running turn now. It stays queued when the turn cannot
+    /// take it.
+    func steerQueued(_ id: UUID, message: UUID) {
+        guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+        store(queue, for: id)
+        if !steer(id, text: text) { enqueue(id, text: text) }
+    }
+
+    /// The text of a queued message for the composer; the draft you had is kept for `endEditQueued`.
+    func beginEditQueued(_ id: UUID, message: UUID, currentDraft: String) -> String? {
+        guard var queue = queued[id], let text = queue.beginEdit(message, currentDraft: currentDraft) else { return nil }
+        queued[id] = queue
+        return text
+    }
+
+    /// Ends the edit and returns the draft to put back in the composer.
+    @discardableResult
+    func endEditQueued(_ id: UUID, save: Bool, text: String = "") -> String? {
+        guard var queue = queued[id] else { return nil }
+        let draft = queue.endEdit(save: save, text: text)
+        store(queue, for: id)
+        return draft
+    }
+
+    /// After a failure, a stop or a restart nothing goes out on top of the problem; you resume the queue yourself.
+    func holdQueue(_ id: UUID) {
+        guard var queue = queued[id], !queue.isEmpty else { return }
+        queue.hold()
+        queued[id] = queue
     }
 
     /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
@@ -591,10 +637,9 @@ final class WorkspaceManager: ObservableObject {
     func sendQueued(_ id: UUID) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
         guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
-              var list = queued[id], !list.isEmpty else { return }
-        let next = list.removeFirst()
-        queued[id] = list.isEmpty ? nil : list
-        send(id, text: next)
+              var queue = queued[id], let next = queue.next() else { return }
+        store(queue, for: id)
+        send(id, text: next.text)
     }
 
     /// Retries the previous task (after an error or when stopped).

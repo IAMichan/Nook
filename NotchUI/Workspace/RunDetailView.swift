@@ -46,7 +46,9 @@ struct RunDetailView: View {
                             .padding(.top, 10)
                     }
                     if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                        QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
+                        QueuedMessagesStrip(queue: waiting, remove: { workspace.removeQueued(runID, message: $0) },
+                                            steer: workspace.canSteer(runID) ? { workspace.steerQueued(runID, message: $0) } : nil,
+                                            move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
                                             sendNow: run.status.isActive ? nil : { workspace.sendQueuedNow(runID) })
                             .padding(.horizontal, 18)
                             .padding(.top, 10)

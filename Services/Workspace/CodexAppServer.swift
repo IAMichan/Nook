@@ -151,7 +151,7 @@ enum CodexRPC {
     }
 
     static func turnStartParams(threadID: String, text: String, cwd: String, model: String, mode: ExecutionMode,
-                                permission: PermissionPolicy, planModel: String?) -> [String: Any] {
+                                permission: PermissionPolicy, planModel: String?, effort: String? = nil) -> [String: Any] {
         let policy = policy(mode: mode, permission: permission)
         var params: [String: Any] = [
             "threadId": threadID,
@@ -164,6 +164,7 @@ enum CodexRPC {
             "sandboxPolicy": policy.sandbox
         ]
         if !model.isEmpty { params["model"] = model }
+        params.merge(CodexTurnEffort.param(effort: effort)) { $1 }
         // Codex's own plan mode needs a model name; without one the read-only sandbox and the instruction keep it to a plan.
         if mode == .plan, let planModel, !planModel.isEmpty {
             params["collaborationMode"] = ["mode": "plan", "settings": ["model": planModel, "reasoning_effort": "medium"]]

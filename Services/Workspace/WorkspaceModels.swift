@@ -266,6 +266,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var pendingHandoff: String? = nil
     /// Set for a fork.
     var lineage: RunLineage? = nil
+    /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
+    var effort: String? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

@@ -90,7 +90,8 @@ extension WorkspaceManager {
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]
         let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
-                                              mode: run.mode, permission: run.permission, planModel: planModel)
+                                              mode: run.mode, permission: run.permission, planModel: planModel,
+                                              effort: run.effort)
         client.request("turn/start", params) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }

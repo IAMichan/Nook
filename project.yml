@@ -137,6 +137,19 @@ targets:
       - path: Services/Workspace/ScrollModel.swift
       - path: Services/Workspace/HistoryWindow.swift
       - path: Services/Workspace/TimelineHandles.swift
+      - path: Services/Workspace/SkillIndex.swift
+      - path: Services/Workspace/ComposerDrafts.swift
+      - path: Services/Workspace/AgentCommands.swift
+      - path: Services/Workspace/EffortLevels.swift
+      - path: Services/Workspace/AgentAdvice.swift
+      - path: Services/Workspace/SourceControlHost.swift
+      - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/ScheduledTasks.swift
+      - path: Services/Workspace/WebhookSecurity.swift
+      - path: Services/Workspace/SettingsResolver.swift
+      - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/PromptLink.swift
+      - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift

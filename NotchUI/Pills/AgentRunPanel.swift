@@ -23,6 +23,10 @@ struct AgentRunPanel: View {
     @State private var titleDraft = ""
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
     @State private var repository: String?
+    /// The agent's skills for `$`, read from its skill folders.
+    @State private var skills: [Skill] = []
+    /// A queued message that is being edited in the composer, and the draft that waits behind it.
+    @State private var editingQueued: UUID?
     @StateObject private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
@@ -61,11 +65,14 @@ struct AgentRunPanel: View {
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
                 focused = true
                 Task { repository = await workspace.githubRepository(runID) }
+                loadComposerState(run)
             }
+            .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 draft = ""
+                if let fresh = workspace.run(runID) { loadComposerState(fresh) }
                 renaming = false
                 confirmDelete = false
                 // Nothing of the previous session carries over: above all not a pending "restore files".
@@ -139,6 +146,10 @@ struct AgentRunPanel: View {
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
         return ComposerPlusMenu(attach: { attachFile(run) }) {
+            Button(tr("compose.stash.set")) {
+                if let text = composerModel.stashKey(composerText: draft) { draft = text; ComposerDraftStore.shared.setStash(composerModel.stash) }
+            }
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && composerModel.stash.entries.isEmpty)
             Divider()
             Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
             Divider()
@@ -186,6 +197,20 @@ struct AgentRunPanel: View {
         }
     }
 
+    private func saveQueuedEdit() {
+        guard editingQueued != nil else { return }
+        let restored = workspace.endEditQueued(runID, save: true, text: draft)
+        editingQueued = nil
+        draft = restored ?? ""
+    }
+
+    private func cancelQueuedEdit() {
+        guard editingQueued != nil else { return }
+        let restored = workspace.endEditQueued(runID, save: false)
+        editingQueued = nil
+        draft = restored ?? ""
+    }
+
     /// A file you add to the message: it sits in the text as a reference, the agent reads it itself.
     private func attachFile(_ run: WorkspaceRun) {
         guard let ref = ComposerFilePicker.pick(startingIn: run.workingDirectory) else { return }
@@ -195,11 +220,6 @@ struct AgentRunPanel: View {
 
     /// What this composer offers beyond typing: the commands, files and sessions to point at, and the agent's own color.
     private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
-        var commands = [ComposerCommand(name: "plan", insertion: "", action: .plan),
-                        ComposerCommand(name: "fork", insertion: "", action: .fork)]
-        if run.provider == .claude || run.provider == .codex {
-            commands.insert(ComposerCommand(name: "compact", insertion: "/compact", action: .insert), at: 0)
-        }
         var config = ComposerConfig()
         config.tint = run.provider.color
         config.fileRoot = run.workingDirectory
@@ -207,7 +227,10 @@ struct AgentRunPanel: View {
         config.sessions = { [workspace, runID] in
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
-        config.commands = commands
+        // Only the commands this agent really has (see AgentCommands).
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.skills = skills
+        config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
         config.onCommand = { [workspace, app, runID] command in
             switch command.action {
@@ -218,6 +241,57 @@ struct AgentRunPanel: View {
             }
         }
         return config
+    }
+
+    /// The draft you left in this session, the drafts set aside, and the agent's skills.
+    private func loadComposerState(_ run: WorkspaceRun) {
+        let store = ComposerDraftStore.shared
+        if draft.isEmpty, let saved = store.draft(for: runID.uuidString) { draft = saved }
+        composerModel.stash = store.stash
+        composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
+        let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
+        Task {
+            skills = await Task.detached(priority: .utility) {
+                SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
+            }.value
+        }
+    }
+
+    /// The reasoning effort for the next turns, only for agents that have it.
+    @ViewBuilder
+    private func effortMenu(_ run: WorkspaceRun) -> some View {
+        let levels = EffortLevels.levels(for: run.provider, model: run.model)
+        if !levels.isEmpty {
+            ComposerDivider()
+            Menu {
+                Button { workspace.setEffort(runID, nil) } label: {
+                    if run.effort == nil { Label(tr(EffortLevels.label(nil)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(nil))) }
+                }
+                ForEach(levels, id: \.self) { level in
+                    Button { workspace.setEffort(runID, level) } label: {
+                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                    }
+                }
+            } label: {
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+            }
+            .composerMenu()
+            .disabled(run.status.isActive)
+            .help(tr("compose.effort.help"))
+        }
+    }
+
+    /// The context ring, and the microphone next to it.
+    @ViewBuilder
+    private func composerTrailing(_ run: WorkspaceRun) -> some View {
+        HStack(spacing: 2) {
+            if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                ComposerContextRing(used: used, window: window,
+                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
+                                        : { workspace.send(runID, text: "/compact") })
+            }
+            ComposerMic(text: $draft)
+        }
     }
 
     // MARK: Timeline
@@ -431,6 +505,8 @@ struct AgentRunPanel: View {
         let active = run.status.isActive
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Return while a queued message is open in the box saves it instead of sending.
+            if editingQueued != nil { saveQueuedEdit(); return }
             guard !text.isEmpty, !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
@@ -442,6 +518,7 @@ struct AgentRunPanel: View {
         let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
         func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
             {
+                if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { return }
                 let outgoing = composerModel.outgoing(text)
@@ -456,8 +533,23 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
-                                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
+                QueuedMessagesStrip(
+                    queue: waiting, editing: editingQueued,
+                    remove: { id in
+                        if editingQueued == id { cancelQueuedEdit() }
+                        workspace.removeQueued(runID, message: id)
+                    },
+                    edit: { id in
+                        if editingQueued != nil { cancelQueuedEdit() }
+                        if let text = workspace.beginEditQueued(runID, message: id, currentDraft: draft) {
+                            editingQueued = id
+                            draft = text
+                            focused = true
+                        }
+                    },
+                    steer: canSteer ? { workspace.steerQueued(runID, message: $0) } : nil,
+                    move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
+                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
             }
             SessionComposer(
                 text: $draft,
@@ -475,9 +567,10 @@ struct AgentRunPanel: View {
                 modeMenu(run)
                 ComposerDivider()
                 permissionMenu(run)
+                effortMenu(run)
             }
             .rich(composerModel, composerConfig(run))
-            .trailing { ComposerMic(text: $draft) }
+            .trailing { composerTrailing(run) }
             // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
             .queueing(active ? deliver(preferred) : nil,
                       alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,

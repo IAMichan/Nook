@@ -198,7 +198,7 @@ struct NookChatView: View {
     /// a question goes to the brain as plain text.
     private var chatComposerConfig: ComposerConfig {
         var config = ComposerConfig()
-        config.commands = [ComposerCommand(name: "new", insertion: "", action: .new)]
+        config.commands = AgentCommands.commands(for: .claude, hasProject: false, surface: .chat).filter { $0.action == .new }
         config.onCommand = { [app] command in
             if command.action == .new { app.newChat() }
         }

@@ -16,6 +16,8 @@ struct ComposerTrigger: Equatable, Sendable {
         case mention
         /// `#`: a pull request.
         case pullRequest
+        /// `$`: a skill of the agent.
+        case skill
     }
 
     var kind: Kind
@@ -28,6 +30,7 @@ struct ComposerTrigger: Equatable, Sendable {
         case .command: return "/"
         case .mention: return "@"
         case .pullRequest: return "#"
+        case .skill: return "$"
         }
     }
 
@@ -46,6 +49,7 @@ struct ComposerTrigger: Equatable, Sendable {
         case "/": guard atStart else { return nil }; kind = .command
         case "@": kind = .mention
         case "#": kind = .pullRequest
+        case "$": kind = .skill
         default: return nil
         }
         return ComposerTrigger(kind: kind, query: String(token.dropFirst()), token: token)
@@ -194,6 +198,8 @@ enum PasteRule {
 struct ContextRef: Codable, Equatable, Hashable, Sendable {
     enum Kind: String, Codable, Sendable {
         case file, session, pullRequest, excerpt, source
+        /// A skill the agent has (by name): named in the text, the agent loads it itself.
+        case skill
         /// A big paste kept out of the box: it goes to the agent whole (up to `ContextRefs.pasteLimit`).
         case paste
     }
@@ -288,6 +294,7 @@ enum ContextRefs {
         case .file: return "@" + item.label
         case .session: return "[session: " + item.label + "]"
         case .pullRequest: return "#" + item.label
+        case .skill: return "$" + item.label
         case .excerpt, .paste: return "[" + item.label + "]"
         case .source: return "[" + item.label + "]"
         }

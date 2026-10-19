@@ -10,6 +10,8 @@ struct ComposerSuggestion: Identifiable, Equatable {
     enum Payload: Equatable {
         case command(ComposerCommand)
         case ref(ContextRef)
+        /// A set-aside draft (prompt stash), by position.
+        case stash(Int)
     }
 
     let id: String
@@ -32,10 +34,14 @@ struct ComposerConfig {
     var sessions: () -> [(id: String, title: String)] = { [] }
     var commands: [ComposerCommand] = []
     var onCommand: (ComposerCommand) -> Void = { _ in }
+    /// The agent's skills for `$` (named in the text; the agent loads them itself).
+    var skills: [Skill] = []
+    /// Open pull requests of the repository, for `#` (asked on demand).
+    var pullRequests: ((String) async -> [(number: Int, title: String)])? = nil
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
 
-    var referencesEnabled: Bool { fileRoot != nil || repository != nil }
+    var referencesEnabled: Bool { fileRoot != nil || repository != nil || !skills.isEmpty }
 }
 
 /// The state behind one composer: the list, the history and the text kept out of the box. A call site owns it with
@@ -45,6 +51,9 @@ final class ComposerModel: ObservableObject {
     @Published private(set) var suggestions: [ComposerSuggestion] = []
     @Published var selection = 0
     var history = PromptHistory()
+    /// Drafts set aside with Cmd+S; the call site keeps them across launches.
+    var stash = PromptStash()
+    var onStashChanged: (() -> Void)?
     private(set) var excerpts: [String: String] = [:]
     private var search: Task<Void, Never>?
     private var trigger: ComposerTrigger?
@@ -112,19 +121,58 @@ final class ComposerModel: ObservableObject {
                 self.publish(rows + Array(sessions))
             }
         case .pullRequest:
-            guard let repo = config.repository, let number = Int(found.query), number > 0 else { return close() }
-            publish([ComposerSuggestion(id: "pr:\(number)", title: "#\(number)", detail: repo, symbol: "arrow.triangle.pull",
-                                        payload: .ref(ContextRef(kind: .pullRequest, id: "\(repo)#\(number)", label: "\(number)")))])
+            guard let repo = config.repository else { return close() }
+            let query = found.query
+            // Typing a number is enough; the open pull requests of the repository are added when GitHub is connected.
+            var typed: [ComposerSuggestion] = []
+            if let number = Int(query), number > 0 {
+                typed = [pullRequestRow(repo: repo, number: number, title: nil)]
+            }
+            publish(typed)
+            guard let load = config.pullRequests else { return }
+            search = Task { [weak self] in
+                let all = await load(repo)
+                guard !Task.isCancelled, let self else { return }
+                let rows = PullRequestMatch.filter(all, query: query).map { self.pullRequestRow(repo: repo, number: $0.number, title: $0.title) }
+                let known = Set(rows.map(\.id))
+                self.publish(rows + typed.filter { !known.contains($0.id) })
+            }
+        case .skill:
+            let rows = SkillIndex.filter(config.skills, query: found.query).map { skill in
+                ComposerSuggestion(id: "skill:" + skill.name, title: "$" + skill.name, detail: skill.description.isEmpty ? nil : skill.description,
+                                   symbol: "wand.and.stars", payload: .ref(ContextRef(kind: .skill, id: skill.name, label: skill.name)))
+            }
+            publish(rows)
         }
     }
 
-    private func commandDetail(_ command: ComposerCommand) -> String? {
-        switch command.action {
-        case .plan: return tr("compose.command.plan")
-        case .compact: return tr("compose.command.compact")
-        case .new: return tr("compose.command.new")
-        case .fork: return tr("compose.command.fork")
-        case .insert: return nil
+    private func commandDetail(_ command: ComposerCommand) -> String? { tr(AgentCommands.descriptionKey(for: command)) }
+
+    private func pullRequestRow(repo: String, number: Int, title: String?) -> ComposerSuggestion {
+        ComposerSuggestion(id: "pr:\(number)", title: "#\(number)" + (title.map { " " + $0 } ?? ""), detail: repo, symbol: "arrow.triangle.pull",
+                           payload: .ref(ContextRef(kind: .pullRequest, id: "\(repo)#\(number)", label: "\(number)")))
+    }
+
+    // MARK: Stash
+
+    /// Cmd+S: set the draft aside, bring one back, or choose from several. Returns the new text for the box.
+    func stashKey(composerText: String) -> String? {
+        switch StashAction.decide(composerText: composerText, stashCount: stash.entries.count) {
+        case .stash:
+            _ = stash.push(composerText)
+            return ""
+        case .restoreOnly:
+            return stash.pop() ?? composerText
+        case .openMenu:
+            suggestions = stash.entries.enumerated().reversed().map { index, entry in
+                ComposerSuggestion(id: "stash:\(index)", title: entry.title, detail: tr("compose.stash.detail"), symbol: "tray.and.arrow.up",
+                                   payload: .stash(index))
+            }
+            selection = 0
+            trigger = nil
+            return nil
+        case .nothing:
+            return nil
         }
     }
 
@@ -140,9 +188,17 @@ final class ComposerModel: ObservableObject {
 
     /// The text after choosing a line: a command runs or fills the box, a reference becomes a link.
     func accept(_ suggestion: ComposerSuggestion, in text: String, _ config: ComposerConfig) -> String {
+        if case .stash(let index) = suggestion.payload {
+            defer { close() }
+            let restored = stash.restore(at: index) ?? text
+            onStashChanged?()
+            return restored
+        }
         guard let trigger else { return text }
         defer { close() }
         switch suggestion.payload {
+        case .stash:
+            return text
         case .command(let command):
             if command.action == .insert { return trigger.replacing(in: text, with: command.insertion) }
             config.onCommand(command)
@@ -283,6 +339,51 @@ struct ComposerMic: View {
             } catch {
                 listening = false
             }
+        }
+    }
+}
+
+/// How full the agent's context window is: a small ring that starts at the top and turns coral above 90 % (
+/// context meter). Hover says how much; a button asks the agent to summarize when it can.
+struct ComposerContextRing: View {
+    let used: Int
+    let window: Int
+    var onCompact: (() -> Void)? = nil
+    @State private var open = false
+
+    private var fraction: Double { window > 0 ? min(1, Double(used) / Double(window)) : 0 }
+
+    var body: some View {
+        let level = ContextMeter.level(fraction)
+        let tint: Color = level == .critical ? NookTheme.coral : (level == .warning ? NookTheme.amber : NookTheme.textSecondary)
+        Button { open.toggle() } label: {
+            ZStack {
+                Circle().stroke(NookTheme.line2, lineWidth: 2)
+                Circle().trim(from: 0, to: fraction)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 16, height: 16)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
+        .accessibilityLabel(tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
+        .popover(isPresented: $open, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(tr("compose.context.title")).font(NookTheme.font(12.5, .semibold))
+                ProgressView(value: fraction).tint(tint)
+                Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
+                    .font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
+                if let onCompact {
+                    Button(tr("compose.context.compact")) { open = false; onCompact() }
+                } else {
+                    Text(tr("compose.context.noCompact")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                }
+            }
+            .padding(12)
+            .frame(width: 240)
         }
     }
 }
