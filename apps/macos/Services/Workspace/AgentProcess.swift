@@ -312,14 +312,21 @@ final class AgentProcess: @unchecked Sendable {
     }
 
     private func consume(_ data: Data) {
+        // What is left in the buffer holds no newline, so only the new bytes need searching for the first one; the
+        // consumed lines are dropped in one go at the end. Removing each line on its own shifted the rest of the buffer
+        // every time, and rescanning a long line from its start for every chunk made both quadratic in the output size.
+        var from = buffer.endIndex
         buffer.append(data)
+        var start = buffer.startIndex
         var batch: [String] = []
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let lineData = buffer[buffer.startIndex..<newline]
-            buffer.removeSubrange(buffer.startIndex...newline)
+        while let newline = buffer[from...].firstIndex(of: 0x0A) {
+            let lineData = buffer[start..<newline]
             let line = String(decoding: lineData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             if !line.isEmpty { batch.append(line) }
+            start = newline + 1
+            from = start
         }
+        if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }
         if let onLines {
             onLines(batch)

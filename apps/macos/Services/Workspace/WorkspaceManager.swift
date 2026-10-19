@@ -80,7 +80,12 @@ struct ProjectInfo: Equatable {
 final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the stop and handoff extensions settle open work and add forked sessions.
     @Published var runs: [WorkspaceRun] = []
-    @Published var events: [UUID: [RunEvent]] = [:]
+    /// Each session's timeline. Not `@Published`: a streaming answer changes it for every token, and a published
+    /// dictionary can only be replaced as a whole, which copied the session's entire timeline per token. Changed in place
+    /// here, and views hear about it at most every `eventsPublishInterval` (see `eventsDidChange`).
+    var events: [UUID: [RunEvent]] = [:] {
+        didSet { eventsDidChange() }
+    }
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
@@ -187,6 +192,13 @@ final class WorkspaceManager: ObservableObject {
     var turns: [UUID: TurnState] = [:]
     private var saveTask: Task<Void, Never>?
     private var eventSaves: [UUID: Task<Void, Never>] = [:]
+    /// The session list as it was last handed to the store: a timeline save only rewrites `runs.json` when it changed.
+    private var savedRuns: [WorkspaceRun]?
+    /// A change to `events` was announced less than `eventsPublishInterval` ago; `eventsDirty` says another one followed.
+    private var eventsThrottled = false
+    private var eventsDirty = false
+    /// At most this often a view redraws for a changing timeline: about 20 times a second, smooth for streaming text.
+    private static let eventsPublishInterval: UInt64 = 50_000_000
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
@@ -1750,10 +1762,29 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
-        guard var list = events[id], let index = list.lastIndex(where: { $0.id == eventID }) else { return }
-        change(&list[index])
-        events[id] = list
+        // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
+        guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else { return }
+        change(&events[id]![index])
         scheduleEventSave(id)
+    }
+
+    /// Announces a changed timeline: the first change at once, later ones within the same short window together.
+    private func eventsDidChange() {
+        if eventsThrottled {
+            eventsDirty = true
+            return
+        }
+        objectWillChange.send()
+        eventsThrottled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.eventsPublishInterval)
+            guard let self else { return }
+            self.eventsThrottled = false
+            if self.eventsDirty {
+                self.eventsDirty = false
+                self.eventsDidChange()
+            }
+        }
     }
 
     func scheduleSave() {
@@ -1762,6 +1793,7 @@ final class WorkspaceManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled, self.runsLoaded else { return }
             let runsSnapshot = self.runs
+            self.savedRuns = runsSnapshot
             self.store.saveRunsAsync(runsSnapshot)
         }
     }
@@ -1769,10 +1801,17 @@ final class WorkspaceManager: ObservableObject {
     func scheduleEventSave(_ id: UUID) {
         guard eventSaves[id] == nil else { return }
         eventSaves[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            // Each save encodes and rewrites the whole timeline (up to RunStore.eventLimit events); while an answer streams,
+            // every two seconds is plenty: a crash loses at most the last two seconds of text.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard let self else { return }
             self.eventSaves[id] = nil
-            let runsSnapshot = self.runsLoaded ? self.runs : nil
+            // The session list only when it changed since it was last written (a new event bumps `updatedAt`).
+            var runsSnapshot: [WorkspaceRun]?
+            if self.runsLoaded, self.savedRuns != self.runs {
+                runsSnapshot = self.runs
+                self.savedRuns = self.runs
+            }
             if let list = self.events[id] {
                 self.store.saveEventsAsync(id, list, runs: runsSnapshot)
             } else if let runsSnapshot {

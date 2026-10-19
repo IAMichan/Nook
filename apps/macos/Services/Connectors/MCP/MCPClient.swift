@@ -274,13 +274,19 @@ final class MCPStdioTransport: MCPTransport, @unchecked Sendable {
 
     private func receive(_ data: Data) {
         lock.lock()
+        // The rest of the buffer holds no newline: search the new bytes only, and drop the consumed lines in one go
+        // (see AgentProcess.consume; a large tool result arrives in many chunks).
+        var from = buffer.endIndex
         buffer.append(data)
+        var start = buffer.startIndex
         var messages: [[String: Any]] = []
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let line = buffer[buffer.startIndex..<newline]
-            buffer.removeSubrange(buffer.startIndex...newline)
+        while let newline = buffer[from...].firstIndex(of: 0x0A) {
+            let line = buffer[start..<newline]
             if let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] { messages.append(object) }
+            start = newline + 1
+            from = start
         }
+        if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         lock.unlock()
         for message in messages {
             guard let id = message["id"].map({ "\($0)" }), message["method"] == nil else { continue }
