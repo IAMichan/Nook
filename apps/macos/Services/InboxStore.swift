@@ -55,6 +55,21 @@ final class InboxStore: ObservableObject {
         save()
     }
 
+    /// Several at once, undone together.
+    func pin(_ ids: [String], now: Date = Date()) {
+        guard !ids.isEmpty else { return }
+        for id in ids { state.pin(id) }
+        undoLog.record(.pinned, ids: ids, now: now)
+        save()
+    }
+
+    func unpin(_ ids: [String], now: Date = Date()) {
+        guard !ids.isEmpty else { return }
+        for id in ids { state.unpin(id) }
+        undoLog.record(.unpinned, ids: ids, now: now)
+        save()
+    }
+
     func reorder(_ id: String, toIndex index: Int, within section: InboxSection) {
         state.reorder(id, toIndex: index, within: section)
         save()

@@ -313,6 +313,41 @@ final class NookChat: ObservableObject {
         scheduleSave()
     }
 
+    // MARK: Several at once
+
+    func setUnread(_ unread: Bool, _ ids: Set<UUID>) {
+        for index in conversations.indices where ids.contains(conversations[index].id) {
+            conversations[index].unread = unread
+        }
+        scheduleSave()
+    }
+
+    /// Pins or unpins; a pinned conversation leaves the archive, as with one.
+    func setPinned(_ pinned: Bool, _ ids: Set<UUID>) {
+        for index in conversations.indices where ids.contains(conversations[index].id) {
+            conversations[index].pinned = pinned
+            if pinned { conversations[index].archived = false }
+        }
+        scheduleSave()
+    }
+
+    /// Archives or brings back; a conversation Nook is still answering stays where it is.
+    func setArchived(_ archived: Bool, _ ids: Set<UUID>) {
+        for index in conversations.indices where ids.contains(conversations[index].id) && !conversations[index].busy {
+            conversations[index].archived = archived
+            if archived { conversations[index].pinned = false }
+        }
+        if archived, let activeID, ids.contains(activeID), active?.archived == true { self.activeID = history.first?.id }
+        scheduleSave()
+    }
+
+    /// Deletes all but the conversations Nook is still answering.
+    func delete(_ ids: Set<UUID>) {
+        conversations.removeAll { ids.contains($0.id) && !$0.busy }
+        if let activeID, conversation(activeID) == nil { self.activeID = history.first?.id }
+        scheduleSave()
+    }
+
     // MARK: Messages
 
     func append(_ message: ChatMessage, to id: UUID? = nil) {

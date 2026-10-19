@@ -23,6 +23,7 @@ struct AgentInboxList: View {
     @State private var dragging: String?
     @State private var targeted: InboxSection.Kind?
     @State private var hint: String?
+    @State private var selection = ListSelection<String>()
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -78,8 +79,18 @@ struct AgentInboxList: View {
         let visible = InboxSearch.filter(rows: rows, query: store.query)
         let sections = InboxLayout.sections(rows: visible, state: store.state, showWorking: store.showWorking, now: now,
                                             settledLimit: settledLimit, selectedID: current)
+        // The rows as shown, top to bottom (folded shelves left out): what select all and a ⇧-click range go by.
+        let shown = sections.filter { $0.kind == .pinned || $0.kind == .active || !collapsed.contains($0.kind) }
+            .flatMap { $0.rows.map(\.id) }
         VStack(alignment: .leading, spacing: 6) {
-            searchField
+            HStack(spacing: 6) {
+                searchField
+                SelectionModeButton(active: selection.isActive) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        if selection.isActive { selection.clear() } else { selection.begin() }
+                    }
+                }
+            }
             if let hint {
                 Text(hint)
                     .font(NookTheme.font(11.5))
@@ -89,13 +100,17 @@ struct AgentInboxList: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(sections, id: \.kind) { section in
-                        sectionView(section, sections: sections, byID: byID)
+                        sectionView(section, sections: sections, byID: byID, shown: shown)
                     }
                     if sections.isEmpty { emptyState }
                 }
             }
             undoNotice
+            if selection.isActive {
+                selectionBar(rows: rows, byID: byID, shown: shown)
+            }
         }
+        .onChange(of: shown) { _, current in selection.keep(only: current) }
         .onAppear {
             pullRequests.refresh(workspace: app.workspace, now: now)
             store.undoSnooze = { ids in
@@ -143,11 +158,11 @@ struct AgentInboxList: View {
     // MARK: Sections
 
     @ViewBuilder
-    private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem]) -> some View {
+    private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem], shown: [String]) -> some View {
         switch section.kind {
         case .pinned, .active:
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID) }
+                ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             }
             .padding(.bottom, section.kind == .pinned ? 4 : 0)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
@@ -155,7 +170,7 @@ struct AgentInboxList: View {
             VStack(alignment: .leading, spacing: 2) {
                 shelfHeader(section, sections: sections, byID: byID)
                 if !collapsed.contains(section.kind) {
-                    ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID) }
+                    ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
                     if section.kind == .settled, section.hiddenCount > 0 {
                         Button { settledLimit += InboxLayout.settledPage } label: {
                             Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))
@@ -224,7 +239,8 @@ struct AgentInboxList: View {
     // MARK: A row
 
     @ViewBuilder
-    private func entryRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem]) -> some View {
+    private func entryRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
+                          shown: [String]) -> some View {
         if let item = byID[entry.id] {
             let slim = section.kind == .snoozed || section.kind == .settled
             let isRun = runID(item) != nil
@@ -242,8 +258,10 @@ struct AgentInboxList: View {
                     onWake: isRun && snoozeActive ? { wake(item) } : nil),
                 pullRequest: runID(item).flatMap { pullRequests.badge($0) }
             ) {
-                select(item.id)
-                if entry.woke { store.dismissWoke(item.id) }
+                click(item, entry, shown: shown)
+            }
+            .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
+                withAnimation(.easeOut(duration: 0.15)) { selection.toggle(item.id) }
             }
             .contextMenu { contextMenu(item, entry) }
             .onDrag {
@@ -251,6 +269,20 @@ struct AgentInboxList: View {
                 return NSItemProvider(object: item.id as NSString)
             }
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: entry.id))
+        }
+    }
+
+    /// A click on a row: opens the session, or with ⌘, ⇧ or while selecting, picks it.
+    private func click(_ item: AgentListItem, _ entry: InboxEntry, shown: [String]) {
+        let keys = SelectionClick.modifiers()
+        switch selection.click(command: keys.command, shift: keys.shift) {
+        case .open:
+            select(item.id)
+            if entry.woke { store.dismissWoke(item.id) }
+        case .toggle:
+            withAnimation(.easeOut(duration: 0.15)) { selection.toggle(item.id) }
+        case .extend:
+            withAnimation(.easeOut(duration: 0.15)) { selection.extend(to: item.id, in: shown) }
         }
     }
 
@@ -317,6 +349,44 @@ struct AgentInboxList: View {
             }
             .disabled(item.isBusy)
         }
+    }
+
+    // MARK: Several at once
+
+    private func selectionBar(rows: [InboxRow], byID: [String: AgentListItem], shown: [String]) -> some View {
+        let ids = selection.ordered(shown)
+        let picked = ids.compactMap { byID[$0] }
+        let rowByID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let allPinned = !picked.isEmpty && picked.allSatisfy { store.state.pinned.contains($0.id) }
+        let settled = picked.filter { rowByID[$0.id]?.settled == true }
+        let allSettled = !picked.isEmpty && settled.count == picked.count
+        // Earlier sessions are settled by nature; only a session that ran can be reopened, and a busy one never settles.
+        let reopenable = settled.filter { !$0.id.hasPrefix("past:") }
+        let settleable = picked.filter { !$0.isBusy && rowByID[$0.id]?.settled != true }
+        let archivable = picked.filter { !$0.isBusy && runID($0) != nil }
+        var actions: [SelectionAction] = [
+            picked.contains(where: \.unseen)
+                ? SelectionAction(symbol: "envelope.open", label: tr("select.markRead")) { for item in picked { visits.visit(item.id) } }
+                : SelectionAction(symbol: "envelope.badge", label: tr("select.markUnread")) { for item in picked { visits.markUnread(item.id) } },
+            allPinned
+                ? SelectionAction(symbol: "pin.slash", label: tr("select.unpin")) { store.unpin(picked.map(\.id)) }
+                : SelectionAction(symbol: "pin", label: tr("select.pin")) {
+                    let settledPicks = picked.filter { rowByID[$0.id]?.settled == true && !$0.id.hasPrefix("past:") }
+                    if !settledPicks.isEmpty { store.unsettle(settledPicks, record: false) }
+                    store.pin(picked.map(\.id).filter { !store.state.pinned.contains($0) })
+                },
+        ]
+        actions.append(allSettled
+            ? SelectionAction(symbol: "arrow.uturn.backward", label: tr("select.reopen"), enabled: !reopenable.isEmpty) { store.unsettle(reopenable) }
+            : SelectionAction(symbol: "checkmark", label: tr("select.settle"), enabled: !settleable.isEmpty) { store.settle(settleable) })
+        actions.append(SelectionAction(symbol: "archivebox", label: tr("select.archive"), enabled: !archivable.isEmpty) {
+            for item in archivable { if let id = runID(item) { app.workspace.setArchived(id, true) } }
+            store.note(.archived, ids: archivable.map(\.id))
+        })
+        return SelectionBar(count: ids.count, allSelected: !shown.isEmpty && ids.count == shown.count,
+                            actions: actions,
+                            toggleAll: { selection.toggleAll(shown) },
+                            done: { withAnimation(.easeOut(duration: 0.15)) { selection.clear() } })
     }
 
     private func copy(_ text: String) {
