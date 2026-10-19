@@ -203,3 +203,47 @@ struct EmbeddedAppPane: View {
         }
     }
 }
+
+/// The line between the chat and the app: drag it to give one more room than the other, double-click to reset.
+struct EmbeddedSplitHandle: View {
+    /// The horizontal distance dragged since the drag began.
+    let onDrag: (Double) -> Void
+    let onEnd: () -> Void
+    let onReset: () -> Void
+    @State private var hovering = false
+    @State private var dragging = false
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(hovering || dragging ? NookTheme.line2 : Color(hex: 0x19191B))
+                .frame(width: 1)
+            Capsule()
+                .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
+                .frame(width: 4, height: 36)
+        }
+        .frame(width: EmbeddedSplit.handle)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            hovering = inside
+            if inside { NSCursor.resizeLeftRight.push() } else if !dragging { NSCursor.pop() }
+        }
+        .gesture(
+            // Global coordinates: the line itself moves while you drag it.
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    dragging = true
+                    onDrag(Double(value.translation.width))
+                }
+                .onEnded { _ in
+                    dragging = false
+                    if !hovering { NSCursor.pop() }
+                    onEnd()
+                }
+        )
+        .onTapGesture(count: 2) { onReset() }
+        .help(tr("embedded.resize"))
+        .accessibilityLabel(tr("embedded.resize"))
+    }
+}

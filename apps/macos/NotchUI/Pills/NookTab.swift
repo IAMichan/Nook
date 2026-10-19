@@ -29,6 +29,10 @@ struct NookChatView: View {
     @State private var renaming = false
     @State private var titleDraft = ""
     @ObservedObject private var embedded = EmbeddedAppStore.shared
+    /// How wide the chat is next to an open app: drag the line between them, double-click it to reset. Remembered.
+    @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
+    @State private var totalWidth: Double = 0
+    @State private var dragStartWidth: Double?
 
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
@@ -51,13 +55,22 @@ struct NookChatView: View {
                 inputBar
                     .padding(.top, 10)
             }
-            .frame(width: embedded.current == nil ? nil : (compact ? 400 : 440))
+            .frame(width: embedded.current == nil ? nil : EmbeddedSplit.chatWidth(chatWidth, total: totalWidth))
             if embedded.current != nil {
+                EmbeddedSplitHandle(
+                    onDrag: { offset in
+                        let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
+                        dragStartWidth = start
+                        chatWidth = EmbeddedSplit.chatWidth(start + offset, total: totalWidth)
+                    },
+                    onEnd: { dragStartWidth = nil },
+                    onReset: { chatWidth = EmbeddedSplit.defaultChatWidth }
+                )
                 EmbeddedAppPane()
-                    .padding(.leading, compact ? 12 : 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 14)

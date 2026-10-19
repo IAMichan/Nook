@@ -143,3 +143,19 @@ enum EmbeddedAppCatalog {
         raw.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }
+
+/// The line between the chat and an open app: how wide the chat may be, so neither side gets too narrow to use.
+enum EmbeddedSplit {
+    static let defaultChatWidth: Double = 400
+    static let minimumChat: Double = 300
+    static let minimumApp: Double = 380
+    /// Room the line itself takes between the two.
+    static let handle: Double = 16
+
+    /// `wanted` kept between the chat's minimum and what leaves the app its minimum. Before the total width is known
+    /// (0), only the chat's minimum applies.
+    static func chatWidth(_ wanted: Double, total: Double) -> Double {
+        let most = total > 0 ? max(minimumChat, total - minimumApp - handle) : .infinity
+        return min(max(wanted, minimumChat), most)
+    }
+}
