@@ -1056,6 +1056,9 @@ final class AutocompleteController: ObservableObject {
                                           milliseconds: Int(Date().timeIntervalSince(start) * 1000))
     }
 
+    /// The Playground typed on: stop the running suggestion at its next token.
+    func cancelPlaygroundCompletion() { completer?.cancel() }
+
     // MARK: The model
 
     private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
