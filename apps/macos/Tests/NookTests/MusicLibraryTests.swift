@@ -133,4 +133,16 @@ final class MusicLibraryTests: XCTestCase {
         XCTAssertEqual(recent.tracks.count, RecentTracks.limit)
         XCTAssertEqual(recent.tracks.first?.id, "x49")
     }
+
+    func testCoverPaletteIsStableAndInRange() {
+        let index = MusicCoverPalette.index(for: "Workout Mix", count: 7)
+        XCTAssertEqual(MusicCoverPalette.index(for: "Workout Mix", count: 7), index)
+        XCTAssertTrue((0..<7).contains(index))
+        // djb2 of "a" is 5381 * 33 + 97 = 177670, and 177670 % 7 = 3: no per-launch hash seed.
+        XCTAssertEqual(MusicCoverPalette.index(for: "a", count: 7), 3)
+        XCTAssertEqual(MusicCoverPalette.index(for: "", count: 7), Int(5381 % 7))
+        XCTAssertEqual(MusicCoverPalette.index(for: "anything", count: 0), 0)
+        let spread = Set(["Focus", "Favorites", "Road trip", "Sunday", "Workout Mix", "New finds", "Chill"].map { MusicCoverPalette.index(for: $0, count: 7) })
+        XCTAssertGreaterThan(spread.count, 2)
+    }
 }
