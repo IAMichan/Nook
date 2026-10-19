@@ -339,7 +339,7 @@ struct NewSessionSheet: View {
                     GridRow {
                         label(tr("ws.new.branch"))
                         VStack(alignment: .leading, spacing: 3) {
-                            TextField("nook/…", text: Binding(get: { config.branchName }, set: {
+                            TextField(WorktreeNaming.branchPrefix + "/…", text: Binding(get: { config.branchName }, set: {
                                 config.branchName = $0
                                 branchEdited = true
                             }))

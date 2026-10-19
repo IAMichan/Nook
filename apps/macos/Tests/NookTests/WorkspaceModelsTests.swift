@@ -112,6 +112,18 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(WorktreeNaming.directorySlug(branch: "feature/x"), "feature-x")
     }
 
+    func testBranchPrefixIsConfigurable() {
+        let id = UUID(uuidString: "3FA2C0DE-0000-4000-8000-000000000000")!
+        XCTAssertEqual(WorktreeNaming.branchName(task: "Fix login", id: id, prefix: "nook"), "nook/fix-login-3fa2")
+        XCTAssertEqual(WorktreeNaming.branchName(task: "Fix login", id: id, prefix: " Team/Michan/ "), "team/michan/fix-login-3fa2")
+        XCTAssertEqual(WorktreeNaming.branchName(task: "Fix login", id: id, prefix: ""), "nook/fix-login-3fa2", "never without a prefix")
+        XCTAssertEqual(WorktreeNaming.normalizedBranchPrefix("my prefix//"), "my-prefix")
+        XCTAssertEqual(WorktreeNaming.normalizedBranchPrefix("/ - /"), "nook")
+        XCTAssertTrue(WorktreeNaming.isPlausibleBranchName(WorktreeNaming.branchName(task: "x", id: id, prefix: "a.b/c")))
+        XCTAssertEqual(WorktreeNaming.directorySlug(branch: "team/fix-login-3fa2", prefix: "team"), "fix-login-3fa2")
+        XCTAssertEqual(WorktreeNaming.directorySlug(branch: "nook/fix-login-3fa2", prefix: "team"), "fix-login-3fa2")
+    }
+
     func testBranchNameRules() {
         for bad in ["", "-x", "a..b", "a b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "x.lock", "x/", "/x", "@", "a@{b", "x."] {
             XCTAssertFalse(WorktreeNaming.isPlausibleBranchName(bad), bad)

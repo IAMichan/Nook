@@ -28,6 +28,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var worktreeRoot: String {
         didSet { defaults.set(worktreeRoot, forKey: "ws.worktreeRoot") }
     }
+    /// Prefix of the branches Nook creates ("nook" → "nook/fix-login-3fa2"). Read by `WorktreeNaming.branchPrefix`.
+    @Published var branchPrefix: String {
+        didSet { defaults.set(branchPrefix, forKey: WorktreeNaming.branchPrefixKey) }
+    }
     /// Bundle ID of your editor; empty = app macOS chooses for folders (Finder).
     @Published var editorBundleID: String {
         didSet { defaults.set(editorBundleID, forKey: "ws.editor") }
@@ -93,6 +97,7 @@ final class WorkspaceSettings: ObservableObject {
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
         worktreeRoot = defaults.string(forKey: "ws.worktreeRoot").flatMap { $0.isEmpty ? nil : $0 } ?? Self.standardWorktreeRoot
+        branchPrefix = defaults.string(forKey: WorktreeNaming.branchPrefixKey) ?? WorktreeNaming.defaultBranchPrefix
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0

@@ -267,6 +267,16 @@ struct WorkspaceSettingsSection: View {
                     .controlSize(.small)
                 }
             }
+            LabeledContent(tr("settings.ws.branchPrefix")) {
+                HStack {
+                    TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                        .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
+                    Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
             Picker(tr("settings.ws.editor"), selection: $ws.editorBundleID) {
                 Text(tr("settings.ws.finder")).tag("")
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.editorCandidates)) { Text($0.name).tag($0.bundleID) }

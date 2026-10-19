@@ -423,6 +423,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.terminal": "Terminal",
         "settings.ws.title": "Arbeitsbereich",
         "settings.ws.worktreeRoot": "Worktree-Ordner",
+        "settings.ws.branchPrefix": "Branch-Präfix",
+        "settings.ws.branchPrefix.example": "z. B. %@/fix-login-3fa2",
         "ws.account.menu.help": "Standardkonto pro Agent für neue Sitzungen",
         "ws.action.retry.help": "Letzte Aufgabe erneut senden, in derselben Agent-Sitzung",
         "ws.action.send.help": "Nachricht senden (⌘↩). Der Agent macht in derselben Sitzung weiter.",
