@@ -6,9 +6,12 @@ import ScreenCaptureKit
 import SwiftUI
 
 /// A Mac app open next to the chat ("@open whatsapp" with WhatsApp installed). macOS does not let one app put another
-/// app's window inside its own, so Nook shows a live picture of the real window (ScreenCaptureKit, 60 frames a second,
-/// straight from the GPU into a layer, nothing copied) and passes your clicks, scrolling and typing on that picture to the
-/// app. The real window stays where it is; with Accessibility it is sized to the pane, so the picture is sharp and 1:1.
+/// app's window inside its own, so Nook does the next best thing: it lays the real window exactly under the pane (with
+/// Accessibility), shows a live picture of it in the pane (ScreenCaptureKit, 60 frames a second, straight from the GPU
+/// into a layer, nothing copied), and lets the pointer fall through the notch onto the real window there. So you click,
+/// scroll, drag and type in the app itself, with its own menus and cursor; only what you see is the picture.
+/// Without Accessibility the window cannot be moved; then clicks on the picture are sent to the app as events instead,
+/// which many apps ignore.
 @MainActor
 final class MacAppMirror: ObservableObject {
     static let shared = MacAppMirror()
@@ -41,8 +44,14 @@ final class MacAppMirror: ObservableObject {
     private var fullFrame: CGRect = .zero
     private var shownFrame: CGRect = .zero
     private var displayID: CGDirectDisplayID?
-    private var originalSize: CGSize?
-    private var paneSize: CGSize = .zero
+    /// Where the window was before it went under the pane, to put it back on close.
+    private var originalFrame: CGRect?
+    private var axElement: AXUIElement?
+    private var alignTarget: CGRect?
+    private var alignTries = 0
+    private var lastRaise = Date.distantPast
+    /// The view showing the picture: where it is on screen is where the real window goes.
+    weak var host: NSView?
     private var stream: SCStream?
     private var sink: FrameSink?
     private var tracker: Timer?
@@ -72,14 +81,17 @@ final class MacAppMirror: ObservableObject {
         tracker?.invalidate()
         tracker = nil
         stopStream()
-        restoreSize()
+        restoreFrame()
         layer.contents = nil
         app = nil
         pid = nil
         windowID = nil
         fullFrame = .zero
         shownFrame = .zero
-        originalSize = nil
+        originalFrame = nil
+        axElement = nil
+        alignTarget = nil
+        alignTries = 0
         status = .idle
         notice = nil
     }
@@ -187,7 +199,12 @@ final class MacAppMirror: ObservableObject {
         self.sink = sink
         status = .showing
         track()
-        fitWindow()
+        if AXIsProcessTrusted() {
+            alignWindow()
+        } else {
+            AppTextReader.requestPermission()
+            notice = tr("embedded.mac.control", app?.title ?? "")
+        }
     }
 
     private func configuration(for shown: CGRect, on display: CGRect) -> SCStreamConfiguration {
@@ -248,90 +265,185 @@ final class MacAppMirror: ObservableObject {
               (info[kCGWindowIsOnscreen as String] as? Bool) == true,
               let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else {
             // Closed, minimised or on another Space: look for its window again.
-            stopStream()
-            tracker?.invalidate()
-            status = .starting
-            startTask = Task { [weak self] in await self?.findWindow(tries: 6) }
+            findAgain()
             return
         }
         let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-        guard frame != fullFrame else { return }
-        let display = CGDisplayBounds(displayID)
-        let shown = frame.intersection(display)
-        guard !shown.isEmpty, shown.width > 40, shown.height > 40 else {
-            // Moved to another display.
-            restart()
-            return
+        if frame != fullFrame {
+            let display = CGDisplayBounds(displayID)
+            let shown = frame.intersection(display)
+            guard !shown.isEmpty, shown.width > 40, shown.height > 40 else {
+                // On another display now (the pane is there): capture that one.
+                findAgain()
+                return
+            }
+            // Moved away from under the pane (dragged by its title bar): it may go back.
+            if aligned { alignTries = 0 }
+            fullFrame = frame
+            shownFrame = shown
+            let configuration = configuration(for: shown, on: display)
+            Task { try? await stream.updateConfiguration(configuration) }
         }
-        fullFrame = frame
-        shownFrame = shown
-        let configuration = configuration(for: shown, on: display)
-        Task { try? await stream.updateConfiguration(configuration) }
+        // The pane moved or resized, or the window left it: put the window back under the pane. A few tries per spot,
+        // so an app that refuses (a minimum size larger than the pane) is not pushed forever.
+        if !aligned, let target = holeTarget {
+            if target != alignTarget { alignTries = 0 }
+            if alignTries < 3 { alignWindow() }
+        }
     }
 
-    // MARK: Sizing the real window
+    private func findAgain() {
+        stopStream()
+        tracker?.invalidate()
+        status = .starting
+        startTask = Task { [weak self] in await self?.findWindow(tries: 6) }
+    }
 
-    /// The pane changed size: the real window follows once you stop dragging, so the picture stays sharp.
+    // MARK: The real window under the pane
+
+    /// The picture on screen, in Cocoa coordinates (origin bottom left). Nil while the pane is not on screen.
+    private var hole: CGRect? {
+        guard let host, let window = host.window, window.isVisible, host.bounds.width > 0, host.bounds.height > 0 else { return nil }
+        return window.convertToScreen(host.convert(host.bounds, to: nil))
+    }
+
+    /// The same, in the top-left coordinates windows have.
+    private var holeTarget: CGRect? {
+        guard let hole, let main = NSScreen.screens.first else { return nil }
+        return CGRect(x: hole.minX.rounded(), y: (main.frame.height - hole.maxY).rounded(),
+                      width: hole.width.rounded(), height: hole.height.rounded())
+    }
+
+    /// True when the real window lies exactly under the picture.
+    var aligned: Bool {
+        guard let target = holeTarget else { return false }
+        return abs(fullFrame.minX - target.minX) < 2 && abs(fullFrame.minY - target.minY) < 2
+            && abs(fullFrame.width - target.width) < 2 && abs(fullFrame.height - target.height) < 2
+    }
+
+    /// The pane changed size: the window follows once you stop dragging.
     func paneResized(_ size: CGSize) {
-        guard size != paneSize else { return }
-        paneSize = size
         resizeTask?.cancel()
         resizeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
-            self?.fitWindow()
+            self?.checkWindow()
         }
     }
 
-    /// Makes the real window as big as the pane, kept on its display. Needs Accessibility; without it the picture is
-    /// scaled to fit instead.
-    private func fitWindow() {
-        guard status == .showing, paneSize.width > 200, paneSize.height > 150, AXIsProcessTrusted(),
-              let element = axWindow(), let displayID else { return }
-        if originalSize == nil { originalSize = fullFrame.size }
-        let display = CGDisplayBounds(displayID)
-        var size = CGSize(width: min(paneSize.width.rounded(), display.width), height: min(paneSize.height.rounded(), display.height))
-        var origin = CGPoint(x: min(max(fullFrame.minX, display.minX), display.maxX - size.width),
-                             y: min(max(fullFrame.minY, display.minY), display.maxY - size.height))
-        if origin != fullFrame.origin, let value = AXValueCreate(.cgPoint, &origin) {
-            AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
-        }
-        if let value = AXValueCreate(.cgSize, &size) {
-            AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
-        }
-        checkWindow()
+    /// Moves and sizes the real window to lie exactly under the pane. Needs Accessibility.
+    private func alignWindow() {
+        guard status == .showing, let target = holeTarget, target.width > 200, target.height > 150, AXIsProcessTrusted(),
+              let element = axWindow() else { return }
+        if originalFrame == nil { originalFrame = fullFrame }
+        alignTarget = target
+        alignTries += 1
+        // Position, size, then position again: a window that grows past the screen edge is pushed back otherwise.
+        Self.set(element, position: target.origin)
+        Self.set(element, size: target.size)
+        Self.set(element, position: target.origin)
+        raise(activating: false)
     }
 
-    private func restoreSize() {
-        guard var size = originalSize, AXIsProcessTrusted(), let element = axWindow(),
-              let value = AXValueCreate(.cgSize, &size) else { return }
-        AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
+    private func restoreFrame() {
+        guard let frame = originalFrame, AXIsProcessTrusted(), let element = axWindow() else { return }
+        Self.set(element, size: frame.size)
+        Self.set(element, position: frame.origin)
     }
 
-    /// The accessibility element of the shown window: the one at its position.
+    /// Puts the real window in front of other apps' windows, so the pointer lands on it under the pane. Activating also
+    /// gives it the keyboard.
+    func raise(activating: Bool) {
+        guard let pid else { return }
+        if let element = axWindow(), Date().timeIntervalSince(lastRaise) > 0.5 || activating {
+            lastRaise = Date()
+            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        }
+        if activating, let running = NSRunningApplication(processIdentifier: pid) { _ = running.activate() }
+    }
+
+    /// Whether the notch should let the pointer through at `mouse` (Cocoa coordinates): over the picture, with the real
+    /// window right under it and in front. If another app's window is in the way, the real window is raised first.
+    func passesThrough(at mouse: NSPoint) -> Bool {
+        guard status == .showing, aligned, let pid, let hole, hole.contains(mouse), let main = NSScreen.screens.first else { return false }
+        if Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y)) { return true }
+        raise(activating: false)
+        return false
+    }
+
+    /// True when `mouse` (Cocoa coordinates) is over the picture: a click there is in the app, not outside Nook.
+    func holds(_ mouse: NSPoint) -> Bool {
+        status == .showing && (hole?.contains(mouse) ?? false)
+    }
+
+    /// Whether the front-most window at the point (top-left coordinates) is the app's: a normal window, or a menu or
+    /// popover of the app itself. Nook's own windows and other apps' overlays (above normal windows) are looked past.
+    private static func isFront(_ pid: pid_t, at point: CGPoint) -> Bool {
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for info in list {
+            guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != own,
+                  owner == pid || (info[kCGWindowLayer as String] as? Int) == 0,
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
+            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            if frame.contains(point) { return owner == pid }
+        }
+        return false
+    }
+
+    /// The accessibility element of the shown window: the one at its position, kept once found.
     private func axWindow() -> AXUIElement? {
         guard let pid else { return nil }
+        if let axElement, Self.position(of: axElement) != nil { return axElement }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.5)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return nil }
-        return windows.first { window in
-            var position: CFTypeRef?
-            var point = CGPoint.zero
-            guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
-                  let position, CFGetTypeID(position) == AXValueGetTypeID(),
-                  AXValueGetValue(position as! AXValue, .cgPoint, &point) else { return false }
+        axElement = windows.first { window in
+            guard let point = Self.position(of: window) else { return false }
             return abs(point.x - fullFrame.minX) < 4 && abs(point.y - fullFrame.minY) < 4
+        }
+        return axElement
+    }
+
+    private static func position(of element: AXUIElement) -> CGPoint? {
+        var value: CFTypeRef?
+        var point = CGPoint.zero
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID(),
+              AXValueGetValue(value as! AXValue, .cgPoint, &point) else { return nil }
+        return point
+    }
+
+    private static func set(_ element: AXUIElement, position: CGPoint) {
+        var position = position
+        if let value = AXValueCreate(.cgPoint, &position) {
+            AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+        }
+    }
+
+    private static func set(_ element: AXUIElement, size: CGSize) {
+        var size = size
+        if let value = AXValueCreate(.cgSize, &size) {
+            AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
         }
     }
 
     // MARK: Clicking, scrolling and typing
 
+    /// A click that reached the picture instead of the window under it. With the window under the pane, another app's
+    /// window was in the way: bring the app forward, the next click lands. Otherwise send it as an event.
+    func pressed(_ event: NSEvent, at local: CGPoint, in size: CGSize) {
+        if aligned { raise(activating: true) } else { forward(event, at: local, in: size) }
+    }
+
     /// A mouse or scroll event on the picture, at `local` (top-left origin) in a pane of `size`, sent to the app at the
-    /// same spot in its window. Moving the pointer is sent `quietly`: without permission it is dropped without a word.
+    /// same spot in its window: the fallback without Accessibility. Moving the pointer is sent `quietly`: without
+    /// permission it is dropped without a word.
     func forward(_ event: NSEvent, at local: CGPoint, in size: CGSize, quietly: Bool = false) {
-        guard status == .showing, let pid,
+        guard status == .showing, !aligned, let pid,
               let point = MirrorGeometry.screenPoint(local, view: size, window: shownFrame),
               mayControl(quietly: quietly), let copy = event.cgEvent?.copy() else { return }
         copy.location = point
@@ -347,7 +459,7 @@ final class MacAppMirror: ObservableObject {
 
     /// A key typed while the picture has focus, sent to the app as is (shortcuts included).
     func forwardKey(_ event: NSEvent) {
-        guard status == .showing, let pid, mayControl(quietly: false), let copy = event.cgEvent?.copy() else { return }
+        guard status == .showing, !aligned, let pid, mayControl(quietly: false), let copy = event.cgEvent?.copy() else { return }
         copy.postToPid(pid)
     }
 
@@ -433,6 +545,7 @@ final class MacAppMirrorView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.addSublayer(mirror.layer)
+        mirror.host = self
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -440,9 +553,15 @@ final class MacAppMirrorView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { mirror.host = self }
+    }
+
     override func layout() {
         super.layout()
         if mirror.layer.superlayer !== layer { layer?.addSublayer(mirror.layer) }
+        mirror.host = self
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         mirror.layer.frame = bounds
@@ -465,7 +584,8 @@ final class MacAppMirrorView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        pass(event)
+        let point = convert(event.locationInWindow, from: nil)
+        mirror.pressed(event, at: CGPoint(x: point.x, y: bounds.height - point.y), in: bounds.size)
     }
     override func mouseUp(with event: NSEvent) { pass(event) }
     override func mouseDragged(with event: NSEvent) { pass(event) }

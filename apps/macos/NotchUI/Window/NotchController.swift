@@ -365,7 +365,11 @@ final class NotchController {
             return event
         }) { monitors.append(m) }
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.viewModel.clickedOutside() }
+            MainActor.assumeIsolated {
+                // A click in the Mac app under the chat's pane is a click in Nook, not outside it.
+                guard !MacAppMirror.shared.holds(NSEvent.mouseLocation) else { return }
+                self?.viewModel.clickedOutside()
+            }
         }) { monitors.append(m) }
         // A click in another Nook window (Settings) is not treated as a global click by macOS.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
@@ -402,8 +406,10 @@ final class NotchController {
         lastCheckedMouseLocation = mouse
         followMouseIfNeeded()
         let inside = surfaceRect().insetBy(dx: -4, dy: -4).contains(mouse)
-        if panel.ignoresMouseEvents == inside {
-            panel.ignoresMouseEvents = !inside
+        // Over a Mac app open next to the chat, the pointer falls through onto the real app window lying under it.
+        let ignores = !inside || MacAppMirror.shared.passesThrough(at: mouse)
+        if panel.ignoresMouseEvents != ignores {
+            panel.ignoresMouseEvents = ignores
         }
         viewModel.pointerChanged(inside: inside)
     }
