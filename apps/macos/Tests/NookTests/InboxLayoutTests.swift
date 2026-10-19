@@ -52,6 +52,12 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(Set(ids(off, .active)), ["w", "bg", "asks", "f"])
     }
 
+    func testWorkingShelfSitsAboveEverythingElse() {
+        let rows = [row("a"), row("w", .working), row("p"), row("z")]
+        let s = sections(rows, InboxState(pinned: ["p"], settled: ["z"]))
+        XCTAssertEqual(s.map(\.kind), [.working, .pinned, .active, .settled])
+    }
+
     func testSnoozeAndWakeAreReversible() {
         var r = row("s")
         r.snoozedUntil = now.addingTimeInterval(600); r.snoozedAt = now.addingTimeInterval(-60)

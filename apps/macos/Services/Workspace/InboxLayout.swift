@@ -172,9 +172,10 @@ enum InboxLayout {
 
         let limit = max(0, settledLimit)
         var result: [InboxSection] = [
+            // Running agents come first: they are the ones you usually want to open.
+            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .pinned, rows: pinned),
             InboxSection(kind: .active, rows: active),
-            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .snoozed, rows: snoozed),
             InboxSection(kind: .settled, rows: Array(settled.prefix(limit)), hiddenCount: max(0, settled.count - limit)),
         ]
