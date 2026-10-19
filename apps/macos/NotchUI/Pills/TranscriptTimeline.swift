@@ -29,6 +29,8 @@ struct TranscriptConversation: View {
     /// that shows the conversation (see SessionOutputsButton), which reads the count from TranscriptOutputCount.
     var outputsOpen: Binding<Bool> = .constant(false)
     @State private var outputSelection: String?
+    /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
+    @State private var preview: String?
     /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
     @State private var totalWidth: Double = 0
@@ -74,7 +76,15 @@ struct TranscriptConversation: View {
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
             }
-            if outputsOpen.wrappedValue {
+            if let preview {
+                FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
+                    withAnimation(.easeInOut(duration: 0.2)) { self.preview = nil }
+                }
+                .id(preview)
+                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if outputsOpen.wrappedValue {
                 SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
                     withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.wrappedValue = false }
                 }
@@ -85,6 +95,10 @@ struct TranscriptConversation: View {
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .preference(key: TranscriptOutputCount.self, value: outputs.count)
+        // The outputs button in the header asks for the outputs, also while a file is open.
+        .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
+            if isOpen { withAnimation(.easeInOut(duration: 0.2)) { preview = nil } }
+        }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
                 let path = self.path
@@ -180,16 +194,20 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// One step. A step that set the agent's task list (TodoWrite, update_plan) opens to that list.
+    /// One step. A step that set the agent's task list (TodoWrite, update_plan) opens to that list; a step that read or
+    /// wrote a file on this Mac opens that file in the side panel.
     private func stepLine(_ step: AgentToolStep) -> some View {
         let key = "plan:" + step.id
         let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
+        let file = tasks == nil ? directory.flatMap { folder in step.file.map { SessionOutputs.resolve($0, in: folder) } } : nil
         return VStack(alignment: .leading, spacing: 4) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
                                lines: step.state == .failed ? nil : step.lines,
-                               open: tasks == nil ? nil : open.contains(key)) { toggle(key) }
-                .help(step.summary)
+                               open: tasks == nil ? nil : open.contains(key), reveals: file.map { $0 == preview }) {
+                if let file { show(file) } else { toggle(key) }
+            }
+            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? step.summary)
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
                     .padding(10)
@@ -231,6 +249,11 @@ struct TranscriptConversation: View {
         withAnimation(.easeInOut(duration: 0.18)) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
         }
+    }
+
+    /// Opens a file in the side panel; the file that is open already closes again.
+    private func show(_ file: String) {
+        withAnimation(.easeInOut(duration: 0.2)) { preview = preview == file ? nil : file }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -403,8 +426,12 @@ struct TranscriptWorkLine: View {
     var lines: EditLines? = nil
     /// Nil: the line does not open.
     var open: Bool? = nil
+    /// Nil: the line has no file to show; true while its file is open in the side panel.
+    var reveals: Bool? = nil
     var action: (() -> Void)? = nil
     @State private var hovering = false
+
+    private var clickable: Bool { open != nil || reveals != nil }
 
     var body: some View {
         let content = HStack(spacing: 6) {
@@ -417,7 +444,8 @@ struct TranscriptWorkLine: View {
                     .lineLimit(1)
             } else {
                 Text(label)
-                    .foregroundStyle(hovering && open != nil ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary)
+                    .foregroundStyle(reveals == true ? NookTheme.paper
+                                     : hovering && clickable ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -427,6 +455,12 @@ struct TranscriptWorkLine: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
+            if let reveals {
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .opacity(reveals || hovering ? 1 : 0)
+            }
             if let lines { EditLinesLabel(lines: lines, size: 11) }
             if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
@@ -435,11 +469,11 @@ struct TranscriptWorkLine: View {
         .frame(minHeight: 22)
         .contentShape(Rectangle())
 
-        if let action, open != nil {
+        if let action, clickable {
             Button(action: action) { content }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
-                .accessibilityAddTraits(open == true ? .isSelected : [])
+                .accessibilityAddTraits(open == true || reveals == true ? .isSelected : [])
         } else {
             content
         }

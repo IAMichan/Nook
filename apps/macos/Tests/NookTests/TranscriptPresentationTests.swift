@@ -119,4 +119,14 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(steps.first?.lines, EditLines(added: 2, removed: 1))
         XCTAssertEqual(ToolTally(steps: steps).lines, EditLines(added: 2, removed: 1))
     }
+
+    func testTranscriptStepsKeepTheFileTheyReadOrWrote() {
+        let lines = [
+            #"{"type":"assistant","uuid":"a1","timestamp":"2026-10-19T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/p/.claude/skills/update/SKILL.md"}},{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/p/App.swift","old_string":"a","new_string":"b"}},{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"ls"}}]}}"#
+        ]
+        let steps = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8)).flatMap(\.steps)
+        XCTAssertEqual(steps.map(\.file), ["/p/.claude/skills/update/SKILL.md", "/p/App.swift", nil])
+        // A file it only read is not one of its outputs.
+        XCTAssertEqual(steps.map(\.path), [nil, "/p/App.swift", nil])
+    }
 }

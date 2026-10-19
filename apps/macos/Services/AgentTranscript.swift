@@ -26,6 +26,8 @@ struct AgentToolStep: Identifiable, Equatable {
     var plan: String? = nil
     /// The lines an edit added and removed.
     var lines: EditLines? = nil
+    /// The file a step read, wrote or edited, as the agent named it: what clicking the step opens in the side panel.
+    var file: String? = nil
 }
 
 /// A single message from an active session's conversation.
@@ -228,7 +230,8 @@ enum AgentTranscript {
                                                        tasks: SessionOutputs.taskList(tool: name, input: input),
                                                        path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
                                                        plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
-                                                       lines: EditLines.of(tool: name, input: input)),
+                                                       lines: EditLines.of(tool: name, input: input),
+                                                       file: opensFile(name) ? ToolSummary.path(input) : nil),
                                    at: when, to: &messages)
                         default:
                             continue
@@ -401,6 +404,12 @@ enum AgentTranscript {
     }
 
     /// What a Claude Code step was about, the way the Claude app shows it next to the tool's name.
+    /// A step that read or wrote one file, which you can open from it (a folder listing names a folder, not a file).
+    static func opensFile(_ name: String) -> Bool {
+        let category = ToolCategory.of(tool: name)
+        return (category == .read || category == .edit) && !["ls", "list_directory"].contains(name.lowercased())
+    }
+
     static func toolSummary(_ name: String, _ input: [String: Any]) -> String {
         func string(_ key: String) -> String? {
             guard let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }

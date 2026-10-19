@@ -209,6 +209,152 @@ private struct OutputViewer: View {
     }
 }
 
+/// A file the agent read or wrote, opened from its step in the conversation: Markdown formatted, a picture as itself,
+/// anything else as its text with line numbers. It is read when it opens, as it is on disk now.
+struct FilePreviewPanel: View {
+    let path: String
+    @Binding var wide: Bool
+    let close: () -> Void
+    /// Fixed while the panel shows this file: the Markdown preview reads it once.
+    @State private var opened = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            ToolSurface {
+                VStack(spacing: 0) {
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Rectangle().fill(NookTheme.line2.opacity(0.6)).frame(height: 1)
+                    actions
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Text(URL(fileURLWithPath: path).lastPathComponent)
+                .font(NookTheme.font(13, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(AgentPathFormat.tilde(path))
+            Spacer(minLength: 4)
+            iconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
+                withAnimation(.easeInOut(duration: 0.2)) { wide.toggle() }
+            }
+            iconButton("xmark", tr("ws.outputs.close"), close)
+        }
+        .frame(height: 30)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch SessionOutputs.kind(path: path) {
+        case .document?:
+            DocumentPreview(path: path, version: opened)
+        case .image?:
+            if let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
+            } else {
+                FileTextPreview(path: path)
+            }
+        default:
+            FileTextPreview(path: path)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 6) {
+            Text(AgentPathFormat.tilde(path))
+                .font(NookTheme.mono(10.5))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.head)
+            Spacer(minLength: 6)
+            SmallGhostButton(title: tr("ws.outputs.open")) { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+            SmallGhostButton(title: tr("ws.outputs.reveal")) {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+    }
+
+    private func iconButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A file as plain text with line numbers, selectable. A very long one shows its start; a binary file says so.
+private struct FileTextPreview: View {
+    private enum Loaded: Sendable { case text([String]), binary, missing }
+
+    let path: String
+    @State private var loaded: Loaded?
+
+    var body: some View {
+        Group {
+            switch loaded {
+            case nil:
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .missing:
+                note(tr("ws.outputs.missing"))
+            case .binary:
+                note(tr("ws.file.binary"))
+            case .text(let lines):
+                ScrollView([.vertical, .horizontal]) {
+                    let digits = String(lines.count).count
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(String(index + 1))
+                                    .foregroundStyle(NookTheme.textTertiary)
+                                    .frame(width: CGFloat(digits) * 7.5, alignment: .trailing)
+                                Text(line.isEmpty ? " " : line)
+                                    .foregroundStyle(NookTheme.textSecondary)
+                                    .fixedSize()
+                            }
+                        }
+                    }
+                    .font(NookTheme.mono(11.5))
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .task(id: path) {
+            let path = self.path
+            loaded = await Task.detached(priority: .utility) { () -> Loaded in
+                guard let data = FileManager.default.contents(atPath: path) else { return .missing }
+                let head = data.prefix(400_000)
+                if head.prefix(8_000).contains(0) { return .binary }
+                return .text(String(decoding: head, as: UTF8.self).components(separatedBy: "\n"))
+            }.value
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(NookTheme.font(12))
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 /// A Markdown file the agent wrote, formatted. Read again when it is written again; a very long one shows its start.
 private struct DocumentPreview: View {
     let path: String
