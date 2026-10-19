@@ -121,6 +121,24 @@ targets:
     platform: macOS
     sources:
       - path: Tests/NookTests
+      # The texts: core code (Retrieval's error descriptions) reads them through tr().
+      - path: Core/I18n.swift
+      - path: Core/I18n+Agents.swift
+      - path: Core/I18n+AgentWork.swift
+      - path: Core/I18n+Autocomplete.swift
+      - path: Core/I18n+Complete.swift
+      - path: Core/I18n+Connect.swift
+      - path: Core/I18n+Control.swift
+      - path: Core/I18n+Home.swift
+      - path: Core/I18n+Languages.swift
+      - path: Core/I18n+Look.swift
+      - path: Core/I18n+Memory.swift
+      - path: Core/I18n+Music.swift
+      - path: Core/I18n+Permissions.swift
+      - path: Core/I18n+Redesign.swift
+      - path: Core/I18n+Selection.swift
+      - path: Core/I18n+SettingsLayout.swift
+      - path: Core/I18n+Workspace.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift

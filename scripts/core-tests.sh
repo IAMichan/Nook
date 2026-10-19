@@ -48,7 +48,9 @@ root, work, *excluded = sys.argv[1:]
 text = open(os.path.join(root, "project.yml")).read()
 block = text[text.index("  NookTests:"):]
 block = re.split(r"\n  # iPhone companion|\n  NookCompanion:|\nschemes:", block)[0]
-sources = [p for p in re.findall(r"- path: (\S+)", block) if p.endswith(".swift") and p not in excluded]
+# The I18n tables need SwiftUI; `tr` is shimmed below instead.
+sources = [p for p in re.findall(r"- path: (\S+)", block)
+           if p.endswith(".swift") and p not in excluded and not p.startswith("Core/I18n")]
 sdir = os.path.join(work, "Sources", "Core")
 for folder in (sdir, os.path.join(work, "Tests", "CoreTests")):
     for name in os.listdir(folder):
@@ -67,6 +69,9 @@ public protocol ObservableObject: AnyObject {}
     public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
 }
 #endif
+
+// `tr` lives in Core/I18n.swift, which needs SwiftUI and is not part of this package: a text is its key here.
+func tr(_ key: String, _ args: CVarArg...) -> String { key }
 SWIFT
 
 cat > "$WORK/Package.swift" <<'SWIFT'
