@@ -100,8 +100,6 @@ final class AutocompleteController: ObservableObject {
     private var readToken = 0
 
     private var proposal: Proposal?
-    /// The read token of a suggestion still being written, word by word.
-    private var streaming: Int?
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
     private var upcoming: Upcoming?
@@ -507,16 +505,18 @@ final class AutocompleteController: ObservableObject {
     /// Types `text`. What is left of the suggestion stays: the word lands where its ghost was, so the overlay only moves once
     /// the app has caught up, without a flicker or a new model call.
     private func accept(_ raw: String, leaving rest: Completion) {
-        let text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
+        var text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
+        var ahead = rest.suggestion.isEmpty ? writtenAhead(after: rest.anchor + text, from: rest) : nil
+        // The model ends the sentence right after the last word: its period comes along with the same key, not with another.
+        if prefs.attachedPunctuation, var next = ahead, let mark = next.takeAttachedPunctuation() {
+            text += mark
+            ahead = next.isEmpty ? nil : next
+        }
         AutocompleteTyper.type(text)
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
-        // Taken while the model was still writing it: the rest of that stream is dropped (the text changed), so nothing would
-        // write ahead. Start that now, from what is on screen.
-        let wasStreaming = streaming != nil
-        streaming = nil
         if rest.suggestion.isEmpty {
             let anchor = rest.anchor + text
-            if continueAtOnce(after: anchor, typed: text, from: rest) { return }
+            if continueAtOnce(after: anchor, typed: text, from: rest, ahead: ahead) { return }
             proposal = nil
             overlay.hide()
             followUp(after: anchor)
@@ -525,7 +525,6 @@ final class AutocompleteController: ObservableObject {
             rest.anchor += text
             rest.fresh = false
             proposal = .completion(rest)
-            if wasStreaming { writeAhead(for: rest) }
             overlay.advance(over: text, remaining: rest.suggestion.remaining)
             settle()
         }
@@ -534,11 +533,8 @@ final class AutocompleteController: ObservableObject {
     /// After the last word of a suggestion is taken: when the next one is already written (see `upcoming`), show it right
     /// away, moved past the word just typed as if the app had drawn it already. `settle()` then puts it where the app shows
     /// the cursor. No pause, no read first, no model call: Tab, Tab, Tab goes on as fast as you press it.
-    private func continueAtOnce(after anchor: String, typed: String, from previous: Completion) -> Bool {
-        guard let ahead = upcoming, ahead.done, ahead.app == previous.app.bundleIdentifier, ahead.before == anchor, let result = ahead.result,
-              let suggestion = CompletionSuggestion.make(raw: result.text, before: anchor, after: previous.after, maxWords: previous.maxWords,
-                                                         truncated: result.truncated, unfinished: result.unfinished),
-              overlay.advance(over: typed, remaining: suggestion.remaining) else { return false }
+    private func continueAtOnce(after anchor: String, typed: String, from previous: Completion, ahead: CompletionSuggestion?) -> Bool {
+        guard let suggestion = ahead, overlay.advance(over: typed, remaining: suggestion.remaining) else { return false }
         var next = previous
         next.suggestion = suggestion
         next.anchor = anchor
@@ -552,13 +548,19 @@ final class AutocompleteController: ObservableObject {
         return true
     }
 
+    /// The suggestion written ahead (see `upcoming`) for the text `anchor`, when the model is done with it.
+    private func writtenAhead(after anchor: String, from previous: Completion) -> CompletionSuggestion? {
+        guard let ahead = upcoming, ahead.done, ahead.app == previous.app.bundleIdentifier, ahead.before == anchor, let result = ahead.result else { return nil }
+        return CompletionSuggestion.make(raw: result.text, before: anchor, after: previous.after, maxWords: previous.maxWords,
+                                         truncated: result.truncated, unfinished: result.unfinished)
+    }
+
     private func dismiss() {
         readToken += 1
         refreshWork?.cancel()
         selectionWork?.cancel()
         completer?.cancel()
         proposal = nil
-        streaming = nil
         alternatives = nil
         overlay.hide()
     }
@@ -674,52 +676,39 @@ final class AutocompleteController: ObservableObject {
         let prompt = self.prompt(for: snapshot, in: app)
         let token = readToken
         let after = midLine ? snapshot.after : ""
-        // Each finished word is shown as soon as the model has it; the rest follows.
-        let partial: @Sendable (String) -> Void = { [weak self] text in
-            Task { @MainActor in self?.present(text, truncated: true, final: false, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app) }
-        }
         // Written ahead while the last suggestion was on screen: no need to ask the model again.
         let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
         upcoming = nil
         Task {
             if let ahead, let result = await ahead.value {
                 guard token == readToken else { return }
-                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
                 return
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
-            let result = await completer.complete(prompt: prompt, options: options, partial: partial)
+            // The whole suggestion at once, never word by word as the model writes it.
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
             scheduleUnload()
             if let result {
-                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
-            } else if streaming == token {
-                streaming = nil
             }
         }
     }
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
-    /// on screen. A suggestion still being written (`final` false) is replaced by the next part and the final one.
-    private func present(_ text: String, truncated: Bool, unfinished: Bool = false, final: Bool, token: Int, snapshot: AutocompleteFieldSnapshot,
+    /// on screen.
+    private func present(_ text: String, truncated: Bool, unfinished: Bool = false, token: Int, snapshot: AutocompleteFieldSnapshot,
                          after: String, maxWords: Int, app: NSRunningApplication) {
-        guard token == readToken, alternatives == nil, proposal == nil || streaming == token else { return }
-        guard let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
-                                                         unfinished: unfinished) else {
-            if final { streaming = nil }
-            return
-        }
-        let first = proposal == nil
-        if case .completion(let shown) = proposal, shown.suggestion == suggestion {
-            if final { streaming = nil }
-            return
-        }
-        proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords))
-        streaming = final ? nil : token
+        guard token == readToken, alternatives == nil, proposal == nil,
+              let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
+                                                         unfinished: unfinished) else { return }
+        let completion = Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords)
+        proposal = .completion(completion)
         show(suggestion, for: snapshot, in: app)
-        if first { store.recordShown() }
-        if final, case .completion(let shown) = proposal { writeAhead(for: shown) }
+        store.recordShown()
+        writeAhead(for: completion)
     }
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).

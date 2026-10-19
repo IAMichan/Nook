@@ -147,6 +147,23 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(suggestion.isEmpty)
     }
 
+    func testAttachedPunctuationComesWithTheLastWord() {
+        var period = CompletionSuggestion(".")
+        XCTAssertEqual(period.takeAttachedPunctuation(), ".")
+        XCTAssertTrue(period.isEmpty)
+        var sentence = CompletionSuggestion("! See you")
+        XCTAssertEqual(sentence.takeAttachedPunctuation(), "!")
+        XCTAssertEqual(sentence.remaining, " See you")
+        var trailing = CompletionSuggestion(". ")
+        XCTAssertEqual(trailing.takeAttachedPunctuation(), ".")
+        XCTAssertTrue(trailing.isEmpty)
+        var word = CompletionSuggestion(" and more")
+        XCTAssertNil(word.takeAttachedPunctuation())
+        var domain = CompletionSuggestion(".com")
+        XCTAssertNil(domain.takeAttachedPunctuation(), "not the end of a sentence")
+        XCTAssertEqual(domain.remaining, ".com")
+    }
+
     func testTrailingSpaceOption() {
         let suggestion = CompletionSuggestion(" see you")
         XCTAssertEqual(suggestion.nextChunk(.init(trailingSpace: true)), " see ")

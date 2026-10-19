@@ -91,6 +91,15 @@ struct CompletionSuggestion: Equatable {
         return chunk
     }
 
+    /// Punctuation right at the start, stuck to the word before it (". Then" or "!"), taken off; nil when there is none.
+    mutating func takeAttachedPunctuation() -> String? {
+        let mark = remaining.prefix { ".,!?;:…".contains($0) }
+        guard !mark.isEmpty, remaining.dropFirst(mark.count).first?.isWhitespace ?? true else { return nil }
+        remaining.removeFirst(mark.count)
+        if remaining.allSatisfy(\.isWhitespace) { remaining = "" }
+        return String(mark)
+    }
+
     mutating func acceptAll() -> String {
         defer { remaining = "" }
         return remaining
