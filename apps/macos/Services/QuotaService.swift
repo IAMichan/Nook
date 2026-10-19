@@ -7,7 +7,16 @@ struct QuotaLimit: Identifiable, Equatable {
     var resetsAt: Date?
     /// Shown instead of a reset time, e.g. when the window has not started yet.
     var note: String? = nil
+    /// How long the window lasts (5 hours, a week), when known. With `resetsAt` it places the window's start.
+    var duration: TimeInterval? = nil
     var id: String { label }
+
+    /// How far `now` is into the window, 0...1: where usage would sit if it were spread evenly over the window.
+    /// Nil when the window's start is unknown or it has already reset.
+    func elapsed(at now: Date = Date()) -> Double? {
+        guard let duration, duration > 0, let resetsAt, resetsAt > now else { return nil }
+        return min(1, max(0, 1 - resetsAt.timeIntervalSince(now) / duration))
+    }
 
     /// The model group of a label like "Gemini 4 Pro · Week" ("Gemini 4 Pro"), or nil for a plain window ("5 hours").
     var group: String? {
@@ -39,8 +48,8 @@ struct QuotaService {
         case .claude:
             guard let usage = hub.subscriptionUsage(for: profile) else { return [] }
             return [
-                window(usage.fiveHour.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.fiveHour")),
-                window(usage.sevenDay.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.week"))
+                window(usage.fiveHour.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.fiveHour"), duration: Self.fiveHours),
+                window(usage.sevenDay.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.week"), duration: Self.week)
             ]
         case .gemini, .opencode, .cursor, .grok, .acp:
             // No limits reported; ACP agents report context and cost per session instead.
@@ -50,16 +59,21 @@ struct QuotaService {
         case .codex:
             guard let snapshot = codex.snapshot(home: profile.home.map { _ in profile.homeURL }) else { return [] }
             return [
-                window(snapshot.fiveHour.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.fiveHour")),
-                window(snapshot.weekly.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.week"))
+                window(snapshot.fiveHour.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.fiveHour"),
+                       duration: snapshot.fiveHour?.windowMinutes.map { TimeInterval($0 * 60) } ?? Self.fiveHours),
+                window(snapshot.weekly.map { (Double($0.percent()), $0.resetsAt) }, label: tr("agents.week"),
+                       duration: snapshot.weekly?.windowMinutes.map { TimeInterval($0 * 60) } ?? Self.week)
             ]
         }
     }
 
+    private static let fiveHours: TimeInterval = 5 * 3600
+    private static let week: TimeInterval = 7 * 24 * 3600
+
     /// A window as reported, or, when the agent reports none (or it has run out), an idle one: 0% that starts with the next message.
-    private func window(_ reported: (percent: Double, resetsAt: Date?)?, label: String) -> QuotaLimit {
+    private func window(_ reported: (percent: Double, resetsAt: Date?)?, label: String, duration: TimeInterval) -> QuotaLimit {
         if let reported, reported.resetsAt.map({ $0 > Date() }) ?? true {
-            return QuotaLimit(label: label, percent: reported.percent, resetsAt: reported.resetsAt)
+            return QuotaLimit(label: label, percent: reported.percent, resetsAt: reported.resetsAt, duration: duration)
         }
         return QuotaLimit(label: label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"))
     }
