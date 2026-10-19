@@ -85,7 +85,7 @@ final class ClaudeUsage {
             semaphore.signal()
         }.resume()
         let answered = semaphore.wait(timeout: .now() + 20) == .success
-        if answered, status == 401 || status == 403 { forgetToken(home: home, isDefault: isDefault) }
+        if answered, status == 401 { forgetToken(home: home, isDefault: isDefault) }
         guard answered, status == 200, let payload,
               let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any] else { return nil }
         let five = window(object["five_hour"])
@@ -153,7 +153,7 @@ final class ClaudeUsage {
             guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let oauth = object["claudeAiOauth"] as? [String: Any],
                   let token = oauth["accessToken"] as? String, !token.isEmpty else { continue }
-            let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue.map { Date(timeIntervalSince1970: $0 / 1000) }
+            let expires = ((oauth["expiresAt"] as? NSNumber)?.doubleValue).map { Date(timeIntervalSince1970: $0 / 1000) }
             if let expires, expires < Date() { continue }
             return (token, expires)
         }

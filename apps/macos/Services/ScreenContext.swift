@@ -245,14 +245,15 @@ final class ScreenContext: ObservableObject {
         var captured: [(window: SCWindow, isFront: Bool, image: CGImage?, print: UInt64)] = []
         for job in jobs {
             let probe = SCStreamConfiguration()
-            probe.width = 64
-            probe.height = 64
+            probe.width = 256
+            probe.height = 256
             probe.showsCursor = false
             let filter = SCContentFilter(desktopIndependentWindow: job.window)
             guard let small = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: probe) else { continue }
-            // The window size is part of the print: the probe has a fixed size, but a resized window reflows its text.
+            // The window size is part of the print: the probe has a fixed size, but a resized window reflows its text. So is
+            // the recognition level, so a window read fast is read again when an accurate read is asked for.
             let size = UInt64(Int(job.window.frame.width)) << 16 | UInt64(Int(job.window.frame.height))
-            let print = Self.fingerprint(small) ^ size
+            let print = Self.fingerprint(small, side: 32) ^ size ^ (job.accurate ? 1 << 63 : 0)
             if let old = cache[job.window.windowID], old.fingerprint == print {
                 captured.append((job.window, job.isFront, nil, print))
                 continue
@@ -309,16 +310,16 @@ final class ScreenContext: ObservableObject {
 
     // MARK: Helpers
 
-    /// Visual fingerprint: 16×16 greyscale thumbnail, coarsened so minor artifacts like a blinking cursor don't invalidate it.
-    nonisolated static func fingerprint(_ image: CGImage) -> UInt64 {
-        let side = 16
+    /// Visual fingerprint: a `side`×`side` greyscale thumbnail, coarsened so minor artifacts like a blinking cursor don't
+    /// invalidate it. Each cell averages its area, so changed text in it moves the value.
+    nonisolated static func fingerprint(_ image: CGImage, side: Int = 16) -> UInt64 {
         var pixels = [UInt8](repeating: 0, count: side * side)
         let made: Bool = pixels.withUnsafeMutableBytes { buffer in
             guard let context = CGContext(
                 data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
                 space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
             ) else { return false }
-            context.interpolationQuality = .low
+            context.interpolationQuality = .medium
             context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
             return true
         }

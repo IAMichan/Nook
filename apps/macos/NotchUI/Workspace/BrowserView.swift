@@ -13,6 +13,8 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         return made
     }
     private static var instance: BrowserStore?
+    /// The browser if it was ever opened, without starting it.
+    static var existing: BrowserStore? { instance }
 
     @Published var address = ""
     @Published private(set) var title = ""

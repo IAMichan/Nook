@@ -447,7 +447,7 @@ enum CloudSessionFetch {
             semaphore.signal()
         }.resume()
         let answered = semaphore.wait(timeout: .now() + 20) == .success
-        if answered, status == 401 || status == 403 { ClaudeUsage.forgetToken(home: home, isDefault: isDefault) }
+        if answered, status == 401 { ClaudeUsage.forgetToken(home: home, isDefault: isDefault) }
         guard answered, status == 200, let payload else { return nil }
         let since = Date().addingTimeInterval(-Double(days) * 86_400)
         return ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since }

@@ -169,7 +169,7 @@ final class CodexUsage: ObservableObject {
                 self.states[key] = state
                 if var fresh = result.snapshot {
                     // A session log does not always name the plan; keep the one the app-server reported.
-                    if fresh.planType == nil { fresh.planType = self.snapshots[key]?.planType }
+                    if fresh.planType == nil, fresh.source == .sessionLog { fresh.planType = self.snapshots[key]?.planType }
                     if fresh != self.snapshots[key] { self.snapshots[key] = fresh }
                 }
             }
