@@ -73,6 +73,52 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertNil(ChatIntent.detect("opnieuw", history: []).primaryAction, "nothing to do again")
     }
 
+    func testCorrectionAndTypoCarryTheMessage() {
+        // The conversation from the bug report: a correction of the recipient, then "Vestuur" (a typo), both read by the
+        // model as the new message text.
+        let asked = [
+            ChatTurn(fromUser: true, text: "Stuur een appje naar Doosturen: ik ben er om 8 uur"),
+            ChatTurn(fromUser: false, text: "Ik heb het bericht klaargezet voor Doosturen.")
+        ]
+        XCTAssertEqual(ChatIntent.detect("Nee naar de appgroep genaamd Doosturen", history: asked).primaryAction, "whatsapp_send")
+        let corrected = asked + [
+            ChatTurn(fromUser: true, text: "Nee naar de appgroep genaamd Doosturen"),
+            ChatTurn(fromUser: false, text: "Ik heb het bericht \"nee\" voorbereid en klaar om te sturen naar de WhatsApp-groep genaamd \"Doosturen\".")
+        ]
+        XCTAssertEqual(ChatIntent.detect("Vestuur", history: corrected).primaryAction, "whatsapp_send")
+        XCTAssertEqual(ChatIntent.detect("verstur", history: corrected).primaryAction, "whatsapp_send")
+        // A correction of an event keeps it an event.
+        let event = [ChatTurn(fromUser: true, text: "Plan een meeting met Jan op maandag om 10 uur"), ChatTurn(fromUser: false, text: "Klaargezet.")]
+        XCTAssertEqual(ChatIntent.detect("nee, om 11 uur", history: event).primaryAction, "create_event")
+        XCTAssertEqual(ChatIntent.detect("Niet met Jan maar met Lisa", history: event).primaryAction, "create_event")
+        // Declining is not a correction.
+        XCTAssertNil(ChatIntent.detect("nee, laat maar", history: asked).primaryAction)
+        XCTAssertNil(ChatIntent.detect("nee", history: asked).primaryAction)
+    }
+
+    func testRecognizingCorrectionsAndTypos() {
+        XCTAssertTrue(ChatIntent.corrects("Nee, naar Lisa"))
+        XCTAssertTrue(ChatIntent.corrects("no, to the family group"))
+        XCTAssertTrue(ChatIntent.corrects("ik bedoel Lisa"))
+        XCTAssertFalse(ChatIntent.corrects("nee, op dit moment niet"))
+        XCTAssertFalse(ChatIntent.corrects("no, to be honest I forgot"))
+        XCTAssertEqual(ChatIntent.fixingSendTypo("Vestuur"), "verstuur")
+        XCTAssertEqual(ChatIntent.fixingSendTypo("stuor het maar"), "stuur het maar")
+        XCTAssertEqual(ChatIntent.fixingSendTypo("Stuurt Lisa nog iets?"), "Stuurt Lisa nog iets?", "another word, not a typo")
+        XCTAssertEqual(ChatIntent.fixingSendTypo("stoer"), "stoer")
+        XCTAssertEqual(action("Vestuur een appje naar Lisa dat ik later ben"), "whatsapp_send")
+        XCTAssertTrue(ChatIntent.detect("Wat is er gezegd in de appgroep?").kinds.contains(.chats))
+    }
+
+    func testPreparedWithoutAnActionIsCaught() {
+        XCTAssertTrue(ChatIntent.claimsPrepared("Ik heb het bericht \"Vestuur\" voorbereid en klaar om te sturen naar de WhatsApp-groep genaamd \"Doosturen\"."))
+        XCTAssertTrue(ChatIntent.claimsPrepared("I've prepared the WhatsApp message to Lisa."))
+        XCTAssertTrue(ChatIntent.claimsPrepared("Ich habe die Nachricht an Anna vorbereitet."))
+        XCTAssertFalse(ChatIntent.claimsPrepared("Ik heb een overzicht van je mail opgesteld:"))
+        XCTAssertFalse(ChatIntent.claimsPrepared("Ik heb een samenvatting voorbereid van je agenda."))
+        XCTAssertFalse(ChatIntent.claimsPrepared("Lisa heeft je een bericht gestuurd."))
+    }
+
     func testFollowUpWithoutAnOpenQuestionStaysPlain() {
         let sent = [
             ChatTurn(fromUser: true, text: "App Lisa dat ik later ben"),
