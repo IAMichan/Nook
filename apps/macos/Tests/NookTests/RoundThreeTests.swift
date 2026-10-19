@@ -80,4 +80,18 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertEqual(PullRequestNews.lines(old: seen, new: merged), ["The pull request was merged."])
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: merged))
     }
+
+    // MARK: Review comments
+
+    func testNewLineNumbers() {
+        let diff = ["diff --git a/x b/x", "--- a/x", "+++ b/x", "@@ -10,3 +12,4 @@ func", " keep", "-gone", "+new", "+newer", " end"]
+        XCTAssertEqual(ReviewComments.newLineNumbers(diff), [nil, nil, nil, nil, 12, nil, 13, 14, 15])
+        XCTAssertEqual(ReviewComments.hunkStart("@@ -1 +7 @@"), 7)
+    }
+
+    func testReviewMessageAndQuote() {
+        let message = ReviewComments.message([ReviewComment(path: "App.swift", line: 12, code: "+let x = 1", text: " Use a constant ")])
+        XCTAssertTrue(message.contains("<review_comment file=\"App.swift\" line=\"12\">\n> +let x = 1\nUse a constant\n</review_comment>"))
+        XCTAssertEqual(ReviewComments.quote("one\ntwo", into: "why?"), "> one\n> two\n\nwhy?")
+    }
 }

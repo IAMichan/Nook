@@ -197,6 +197,9 @@ struct AgentRunPanel: View {
                 Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
                     .disabled(watchablePullRequest() == nil)
             }
+            // terminal context: the last lines of this session's terminal go with your message.
+            Button(tr("ws.context.terminal")) { addTerminalOutput(run) }
+                .disabled(TerminalStore.shared.sessions(in: run.workingDirectory).isEmpty)
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
@@ -211,6 +214,14 @@ struct AgentRunPanel: View {
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
         }
+    }
+
+    private func addTerminalOutput(_ run: WorkspaceRun) {
+        guard let terminal = TerminalStore.shared.sessions(in: run.workingDirectory).last else { return }
+        let output = terminal.output(lines: 80).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty else { return }
+        draft = "<terminal_context title=\"\(terminal.title)\">\n\(output)\n</terminal_context>\n\n" + draft
+        focused = true
     }
 
     /// The session's open GitHub pull request, from the git button or the pull request list.
@@ -502,6 +513,11 @@ struct AgentRunPanel: View {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
                         .disabled(!workspace.canTransfer(runID))
+                    // Quote the agent's words in your next message (citations).
+                    Button(tr("ws.review.quote")) {
+                        draft = ReviewComments.quote(event.text, into: draft)
+                        focused = true
+                    }
                 }
         } else {
             eventView(event)

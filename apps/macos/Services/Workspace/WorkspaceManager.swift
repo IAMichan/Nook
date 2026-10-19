@@ -127,6 +127,8 @@ final class WorkspaceManager: ObservableObject {
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
     var watchesInFlight: Set<UUID> = []
+    /// Comments on a session's diff, waiting to go to the agent together (review comments).
+    @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -1306,6 +1308,24 @@ final class WorkspaceManager: ObservableObject {
     /// The agent's latest task list. An empty list clears it.
     func setTasks(_ id: UUID, _ steps: [RunTaskStep]) {
         update(id) { $0.tasks = steps.isEmpty ? nil : steps }
+    }
+
+    // MARK: Review comments
+
+    func addReviewComment(_ id: UUID, _ comment: ReviewComment) {
+        reviewComments[id, default: []].append(comment)
+    }
+
+    func removeReviewComment(_ id: UUID, _ commentID: UUID) {
+        reviewComments[id]?.removeAll { $0.id == commentID }
+    }
+
+    /// All comments in one message: now if the session is free, otherwise after the turn.
+    func sendReviewComments(_ id: UUID) {
+        guard let comments = reviewComments[id], !comments.isEmpty, let run = run(id) else { return }
+        let message = ReviewComments.message(comments)
+        reviewComments[id] = nil
+        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
     }
 
     // MARK: Watching pull requests
