@@ -71,6 +71,8 @@ extension AppModel {
                 state.result.map { Undo.step(tool: action.tool, input: action.input, result: $0) != nil } ?? false
             }
             if undoable { chat.update(id) { if !$0.offers.contains(tr("undo.offer")) { $0.offers.append(tr("undo.offer")) } } }
+            // Mouse and keyboard steps ran: Nook looks at the window again and proposes what comes next.
+            continueAfterControl(id)
         }
     }
 

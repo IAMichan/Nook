@@ -102,6 +102,7 @@ final class AppModel: ObservableObject {
         all += BrowserStore.tools
         all += EmbeddedAppStore.tools
         all += TerminalStore.shared.tools
+        all += UIDriver.tools
         return all
     }
     private(set) lazy var brain = BrainService(settings: settings)
@@ -114,6 +115,7 @@ final class AppModel: ObservableObject {
         all += BrowserStore.tools
         all += EmbeddedAppStore.tools
         all += TerminalStore.shared.tools
+        all += UIDriver.tools
         return all
     }
 

@@ -129,6 +129,7 @@ targets:
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
+      - path: Brain/UIControl.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
       - path: Brain/ModelAdvisor.swift

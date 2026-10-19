@@ -8,7 +8,7 @@ import Foundation
 struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
-        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory
+        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control
     }
 
     /// Recognized kinds, strongest first.
@@ -86,6 +86,8 @@ struct ChatIntent: Equatable {
         if has(#"^(open|start|launch|öffne|starte)\s+\S+(\s+\S+)?$|\b(open|start) (de |het |the )?app\b"#) { kinds.append(.openApp) }
         if has(#"shortcut|kurzbefehl|opdracht(en)? (uitvoeren|draaien)"#) { kinds.append(.shortcut) }
         if has(#"grafiek|diagram|\bchart|\bplot\b|visualiseer|visualize|staafdiagram|taartdiagram"#) { kinds.append(.chart) }
+        // Doing something in an app by hand: a switch in System Settings, a click, typing into a field.
+        if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
         if has(#"scherm|\bhier\b|\bdit\b|\bdeze (mail|pagina|tekst|tabel|code)|\bthis\b|\bscreen|bildschirm|venster|\bwindow|\bdas hier"#) { kinds.append(.screen) }
         if has(#"browser|tabblad|\btabs?\b|webpagina|\bpagina\b|artikel|website|\bsite\b|article|webseite"#) { kinds.append(.browser) }
         if has(#"bestand|document|\bpdf|\bmap\b|\bfile|folder|\bdatei|\bordner"#) { kinds.append(.files) }
@@ -259,6 +261,7 @@ struct ChatIntent: Equatable {
         .shortcut: ["run_shortcut"],
         .chart: ["show_chart"],
         .screen: ["read_screen", "read_app", "list_app_menu", "app_menu_command"],
+        .control: ["read_ui", "control_ui", "app_menu_command", "list_app_menu"],
         .browser: ["read_browser_tab", "read_webpage"],
         .files: ["search_files", "read_file"],
         .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
@@ -272,7 +275,7 @@ struct ChatIntent: Equatable {
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
-        .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .openApp, .shortcut,
+        .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
         .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
     ]
 
