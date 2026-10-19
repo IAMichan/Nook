@@ -249,12 +249,13 @@ struct SessionComposer<Controls: View>: View {
 
     private func withKeys(_ view: some View) -> some View {
         view
-            .onKeyPress(.upArrow) { (_: KeyPress) -> KeyPress.Result in arrow(-1) }
-            .onKeyPress(.downArrow) { (_: KeyPress) -> KeyPress.Result in arrow(1) }
-            .onKeyPress(.return) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
-            .onKeyPress(.tab) { (_: KeyPress) -> KeyPress.Result in tabKey() }
-            .onKeyPress(.escape) { (_: KeyPress) -> KeyPress.Result in escapeKey() }
-            .onKeyPress(KeyEquivalent("s")) { (press: KeyPress) -> KeyPress.Result in stashKey(press) }
+            .onKeyPress(.upArrow) { () -> KeyPress.Result in arrow(-1) }
+            .onKeyPress(.downArrow) { () -> KeyPress.Result in arrow(1) }
+            .onKeyPress(.tab) { () -> KeyPress.Result in tabKey() }
+            .onKeyPress(.escape) { () -> KeyPress.Result in escapeKey() }
+            // These two need the modifiers, so the overload that passes the KeyPress (it has no default phases).
+            .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
+            .onKeyPress(KeyEquivalent("s"), phases: .down) { (press: KeyPress) -> KeyPress.Result in stashKey(press) }
     }
 
     private func submit() {
