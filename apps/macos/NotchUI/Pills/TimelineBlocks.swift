@@ -19,7 +19,7 @@ struct TimelineBlockView: View {
             VStack(alignment: .leading, spacing: 8) {
                 TimelineSummaryRow(symbol: tally.failed ? "exclamationmark.triangle" : Self.symbol(tally),
                                    text: ToolTallyText.sentence(tally), open: expanded.contains(key),
-                                   tint: tally.failed ? NookTheme.coralSoft : nil) { toggle(key) }
+                                   tint: tally.failed ? NookTheme.coralSoft : nil, checks: tally.checks) { toggle(key) }
                 if expanded.contains(key) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(events) { eventRow($0) }
@@ -30,8 +30,10 @@ struct TimelineBlockView: View {
         case .fold(let id, let seconds, let blocks):
             let key = "fold:" + id.uuidString
             VStack(alignment: .leading, spacing: 10) {
+                // What the turn's tests and builds came to stays in sight while its work is folded away.
                 TimelineSummaryRow(symbol: "checkmark.circle", text: tr("ws.fold.worked", AgentPathFormat.duration(seconds)),
-                                   open: expanded.contains(key), tint: nil) { toggle(key) }
+                                   open: expanded.contains(key), tint: nil,
+                                   checks: Verification.checks(TimelinePresentation.events(blocks))) { toggle(key) }
                 if expanded.contains(key) {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(blocks) { inner in
@@ -63,6 +65,8 @@ struct TimelineSummaryRow: View {
     let text: String
     let open: Bool
     let tint: Color?
+    /// The tests, builds and linters among what it summarizes.
+    var checks: [VerificationCheck] = []
     let action: () -> Void
     @State private var hovering = false
 
@@ -75,6 +79,7 @@ struct TimelineSummaryRow: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .opacity(hovering || open ? 0.9 : 0.5)
+                if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
             .font(NookTheme.font(12))
@@ -88,9 +93,13 @@ struct TimelineSummaryRow: View {
     }
 }
 
-/// While the agent works: one line with what it is doing, the headline of its latest thought, and for how long.
+/// While the agent works: one line with what it is doing in words ("Running the tests", "Reading index.html") and for
+/// how long, and under it the headline of its latest thought or the task it works on.
 struct LiveActivityRow: View {
     let live: LiveActivity
+    let activity: AgentActivity
+    /// The step of the agent's task list that runs now.
+    var step: String? = nil
     let since: Date?
     let waiting: Bool
     /// Waiting for an answer to a question rather than for an approval.
@@ -98,15 +107,29 @@ struct LiveActivityRow: View {
     let accent: Color
 
     var body: some View {
+        let headline = AgentActivityText.headline(activity, step: step)
+        // The second line adds what the first does not say yet.
+        let detail = [live.thought, step].compactMap { $0 }.first { !$0.isEmpty && $0 != headline }
         HStack(alignment: .top, spacing: 8) {
             PulseDot(color: waiting ? NookTheme.amber : accent, animated: !waiting)
                 .frame(width: 14, height: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(waiting ? tr(asking ? "ws.timeline.asking" : "ws.timeline.waiting") : (live.tool ?? tr("ws.timeline.working")))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if !waiting {
+                        Image(systemName: AgentActivityText.symbol(activity))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    Group {
+                        if waiting {
+                            Text(tr(asking ? "ws.timeline.asking" : "ws.timeline.waiting")).foregroundStyle(NookTheme.textSecondary)
+                        } else {
+                            ShimmerText(text: headline)
+                        }
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(live.tool ?? headline)
                     if let since, !waiting {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(AgentPathFormat.duration(context.date.timeIntervalSince(since)))
@@ -115,14 +138,16 @@ struct LiveActivityRow: View {
                         }
                     }
                 }
-                if let thought = live.thought, !waiting {
-                    ShimmerText(text: thought)
+                if let detail, !waiting {
+                    Text(detail)
+                        .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
             }
             .font(NookTheme.font(12))
             Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
