@@ -98,3 +98,44 @@ jobs:
             apps/tauri/target/release/bundle/**/*.deb
             apps/tauri/target/release/bundle/**/*.AppImage
           if-no-files-found: warn
+
+  android:
+    name: Android
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Android NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri
+      - run: npm ci
+      # Het Android-project staat in de repo (src-tauri/gen/android, met eigen MainActivity); alleen als het
+      # ontbreekt maakt de CLI het opnieuw.
+      - name: Android-project
+        run: test -d src-tauri/gen/android || npx tauri android init --ci
+      - name: APK bouwen (ongetekend)
+        run: npx tauri android build --apk --ci
+      - uses: actions/upload-artifact@v5
+        with:
+          name: nook-Android
+          path: apps/tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

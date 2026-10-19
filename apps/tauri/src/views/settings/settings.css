@@ -27,4 +27,12 @@
   .settings { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .settings nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 8px; }
   .settings .entry { grid-template-columns: 1fr; }
+  /* Eén kolom op de telefoon, met knoppen en velden die je met een vinger raakt. */
+  .settings .pane { padding: 16px 16px 32px; }
+  .settings nav button { flex: none; min-height: 40px; }
+  .settings .row { flex-wrap: wrap; min-height: 48px; }
+  .settings .row > span:first-child { flex: 1 1 160px; }
+  .settings .row select, .settings .row input:not([type="checkbox"]) { min-height: 40px; max-width: 100%; }
+  .settings input[type="checkbox"] { width: 22px; height: 22px; }
+  .settings button { min-height: 40px; }
 }

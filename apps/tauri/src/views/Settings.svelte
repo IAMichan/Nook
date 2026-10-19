@@ -9,6 +9,7 @@
   import Memory from "./settings/Memory.svelte";
   import Privacy from "./settings/Privacy.svelte";
   import About from "./settings/About.svelte";
+  import Companion from "./settings/Companion.svelte";
 
   interface Section {
     id: string;
@@ -23,6 +24,7 @@
     { id: "brain", title: "Brein", component: Brain },
     { id: "memory", title: "Geheugen", component: Memory },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
+    { id: "companion", title: "Companion", component: Companion, when: () => !!nook.info?.capabilities.desktop },
     { id: "about", title: "Over Nook", component: About },
   ];
 
@@ -47,4 +49,8 @@
 
 <style>
   .settings { display: grid; grid-template-columns: 200px 1fr; height: 100%; }
+  /* Op de telefoon één kolom: de secties als rij bovenaan (zie settings.css). */
+  @media (max-width: 640px) {
+    .settings { grid-template-columns: 1fr; grid-template-rows: auto 1fr; min-height: 0; }
+  }
 </style>

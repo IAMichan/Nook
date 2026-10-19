@@ -2,6 +2,7 @@
 //! de sneltoetsen, de commando's voor de interface en de platformlaag.
 
 mod commands;
+mod companion;
 mod platform;
 mod state;
 mod tools;
@@ -22,6 +23,11 @@ pub fn run() {
             .plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init()).plugin(tauri_plugin_notification::init());
+    }
+
     builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -29,6 +35,7 @@ pub fn run() {
                 nook_core::paths::set_support_directory(dir);
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
+            companion::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -84,6 +91,25 @@ pub fn run() {
             commands::show_main,
             commands::bar_moved,
             commands::take_route,
+            commands::companion::companion_info,
+            commands::companion::companion_set_enabled,
+            commands::companion::companion_begin_pairing,
+            commands::companion::companion_cancel_pairing,
+            commands::companion::companion_remove_device,
+            commands::companion::companion_set_push,
+            commands::companion::companion_set_apns,
+            commands::companion::companion_remove_apns_key,
+            commands::companion::companion_push_test,
+            commands::companion::companion_client,
+            commands::companion::companion_client_pair,
+            commands::companion::companion_client_unpair,
+            commands::companion::companion_client_refresh,
+            commands::companion::companion_client_decide,
+            commands::companion::companion_client_answer,
+            commands::companion::companion_client_send,
+            commands::companion::companion_client_stop,
+            commands::companion::companion_client_clear_notice,
+            commands::companion::companion_client_visible,
         ])
         .run(tauri::generate_context!())
         .expect("Nook kon niet starten");

@@ -5,6 +5,7 @@
 //! De Swift-code in `apps/macos` is de specificatie: namen en gedrag volgen die zo veel mogelijk.
 
 pub mod brain;
+pub mod companion;
 pub mod error;
 pub mod nooks;
 pub mod paths;
