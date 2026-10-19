@@ -31,32 +31,145 @@ struct UsageView: View {
         Section {
             // Every connected account, Gemini CLI included (it reports no limits: its tokens instead).
             ForEach(app.connectedProfiles) { profile in
-                LabeledContent {
-                    Text(app.quota.summary(for: profile) ?? fallbackSummary(profile))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .layoutPriority(1)
-                } label: {
-                    HStack(spacing: 8) {
-                        AgentLogo(profile.kind, size: 14)
-                        Text("\(profile.kind.shortName) · \(AccountLabel.name(profile, app: app))")
-                    }
-                }
+                accountCard(profile)
             }
-            LabeledContent {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(NookTheme.iris.opacity(0.18))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NookTheme.iris)
+                }
+                .frame(width: 22, height: 22)
+                Text(tr("settings.usage.brain"))
+                    .font(.subheadline.weight(.medium))
+                Spacer(minLength: 8)
                 Text(settings.isLocalBrain ? tr("settings.usage.brainLocal") : tr("settings.usage.brainExternal", settings.provider.title))
+                    .font(.callout)
                     .foregroundStyle(.secondary)
-                    .layoutPriority(1)
-            } label: {
-                HStack(spacing: 8) {
-                    Circle().fill(NookTheme.iris).frame(width: 8, height: 8)
-                    Text(tr("settings.usage.brain"))
-                }
+                    .multilineTextAlignment(.trailing)
             }
+            .padding(.vertical, 2)
         } header: {
             Text(tr("settings.agents.subscriptions"))
         } footer: {
             Text(tr("ws.usage.quotaNote"))
+        }
+    }
+
+    /// One account: its logo and name, the fullest window as a badge, then every window as a bar, grouped per model.
+    private func accountCard(_ profile: AgentProfile) -> some View {
+        let limits = app.quota.limits(for: profile)
+        let highest = limits.map(\.percent).max()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                AgentLogo(profile.kind, size: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(profile.kind.shortName)
+                        .font(.subheadline.weight(.semibold))
+                    Text(AccountLabel.name(profile, app: app))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if let highest {
+                    Text("\(Int(highest.rounded()))%")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Self.color(percent: highest))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Self.color(percent: highest).opacity(0.14)))
+                }
+            }
+            if limits.isEmpty {
+                Label(fallbackSummary(profile), systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                let groups = Self.grouped(limits)
+                LazyVGrid(columns: groups.count > 1 ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)] : [GridItem(.flexible())],
+                          alignment: .leading, spacing: 12) {
+                    ForEach(groups) { group in
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !group.name.isEmpty {
+                                Text(group.name)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            ForEach(group.limits) { limit in
+                                limitRow(limit)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func limitRow(_ limit: QuotaLimit) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(limit.window)
+                    .font(.caption)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                Text("\(Int(limit.percent.rounded()))%")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Self.color(percent: limit.percent))
+            }
+            meter(limit.percent / 100, color: Self.color(percent: limit.percent))
+        }
+    }
+
+    /// A rounded bar, filled to `fraction`.
+    private func meter(_ fraction: Double, color: Color) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08))
+                Capsule().fill(color.gradient)
+                    .frame(width: max(fraction > 0 ? 4 : 0, geo.size.width * CGFloat(min(1, max(0, fraction)))))
+            }
+        }
+        .frame(height: 6)
+    }
+
+    /// The windows of one model ("Gemini 4 Pro"); plain windows ("5 hours") form one unnamed group.
+    private struct LimitGroup: Identifiable {
+        var name: String
+        var limits: [QuotaLimit]
+        var id: String { name }
+    }
+
+    /// Windows per model group, in the order they came.
+    private static func grouped(_ limits: [QuotaLimit]) -> [LimitGroup] {
+        var result: [LimitGroup] = []
+        for limit in limits {
+            let name = limit.group ?? ""
+            if let index = result.firstIndex(where: { $0.name == name }) {
+                result[index].limits.append(limit)
+            } else {
+                result.append(LimitGroup(name: name, limits: [limit]))
+            }
+        }
+        return result
+    }
+
+    private static func color(percent: Double) -> Color {
+        switch percent {
+        case ..<60: return .green
+        case ..<85: return .orange
+        default: return .red
         }
     }
 
@@ -254,38 +367,41 @@ struct UsageView: View {
                     .padding(.vertical, 16)
             } else {
                 ForEach(report.rows) { row in
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                AgentLogo(row.provider.kind, size: 14)
-                                Text(row.provider.displayName)
-                                    .font(.subheadline.weight(.medium))
-                                Text(row.model == "default" ? tr("ws.model.default") : row.model)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text("\(row.sessions) \(tr("ws.usage.sessions").lowercased())" + (row.sessionsWithoutTokens > 0 ? " (\(tr("ws.usage.withoutTokens", row.sessionsWithoutTokens)))" : ""))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Spacer(minLength: 8)
-                        VStack(alignment: .trailing, spacing: 2) {
-                            HStack(spacing: 8) {
-                                Text("\(TokenTally.format(row.inputTokens)) in · \(TokenTally.format(row.outputTokens)) uit")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                if workspace.settings.showCost {
-                                    Text(costText(row))
-                                        .font(.subheadline.weight(.medium).monospacedDigit())
-                                        .foregroundStyle(row.reportedCostUSD == nil ? Color.secondary : Color.primary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    AgentLogo(row.provider.kind, size: 14)
+                                    Text(row.provider.displayName)
+                                        .font(.subheadline.weight(.medium))
+                                    Text(row.model == "default" ? tr("ws.model.default") : row.model)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary)
                                 }
-                            }
-                            if row.provider.capabilities.reportsCacheTokens && row.cacheReadTokens > 0 {
-                                Text("Cache: \(TokenTally.format(row.cacheReadTokens))")
-                                    .font(.caption2.monospacedDigit())
+                                Text("\(row.sessions) \(tr("ws.usage.sessions").lowercased())" + (row.sessionsWithoutTokens > 0 ? " (\(tr("ws.usage.withoutTokens", row.sessionsWithoutTokens)))" : ""))
+                                    .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Text(tr("ws.usage.inOut", TokenTally.format(row.inputTokens), TokenTally.format(row.outputTokens)))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                    if workspace.settings.showCost {
+                                        Text(costText(row))
+                                            .font(.subheadline.weight(.medium).monospacedDigit())
+                                            .foregroundStyle(row.reportedCostUSD == nil ? Color.secondary : Color.primary)
+                                    }
+                                }
+                                if row.provider.capabilities.reportsCacheTokens && row.cacheReadTokens > 0 {
+                                    Text(tr("ws.usage.cache", TokenTally.format(row.cacheReadTokens)))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
                         }
+                        meter(share(of: row, in: report), color: row.provider.color)
                     }
                     .padding(.vertical, 3)
                 }
@@ -299,6 +415,13 @@ struct UsageView: View {
                 Text(tr("ws.usage.note.scope"))
             }
         }
+    }
+
+    /// The row's tokens relative to the busiest row, for the bar under it.
+    private func share(of row: UsageReport.Row, in report: UsageReport) -> Double {
+        func tokens(_ row: UsageReport.Row) -> Int { row.inputTokens + row.outputTokens + row.cacheReadTokens }
+        guard let busiest = report.rows.map(tokens).max(), busiest > 0 else { return 0 }
+        return Double(tokens(row)) / Double(busiest)
     }
 
     private func costText(_ row: UsageReport.Row) -> String {
