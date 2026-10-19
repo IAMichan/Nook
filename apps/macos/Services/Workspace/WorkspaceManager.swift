@@ -109,6 +109,12 @@ final class WorkspaceManager: ObservableObject {
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption])] = [:]
     var acpFallback: Set<String> = []
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
+    var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
+    /// ACP: ends a turn the agent started by itself, once it has been quiet for a moment.
+    var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
+    /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
+    var backgroundWork: Set<UUID> = []
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -216,6 +222,8 @@ final class WorkspaceManager: ObservableObject {
         var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
+        /// A turn the agent started by itself after background work, with no message of yours to answer.
+        var unprompted = false
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -539,6 +547,13 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: text, shown: false)
     }
 
+    /// A message from Nook rather than from you (the result of background work): it goes to the agent without a bubble
+    /// of yours in the timeline.
+    @discardableResult
+    func sendHidden(_ id: UUID, text: String) -> Bool {
+        send(id, text: text, shown: true)
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -580,6 +595,12 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        // Before open work is settled: what still runs is what keeps the session open.
+        if BackgroundWork.pending(after: timeline(id), before: backgroundWork.contains(id)) {
+            backgroundWork.insert(id)
+        } else {
+            backgroundWork.remove(id)
+        }
         displayPrompt[id] = nil
         stopCoordinators[id] = nil
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
@@ -1133,7 +1154,7 @@ final class WorkspaceManager: ObservableObject {
             append(id, event)
         case .commandFinished(let callID, let command, let output, let exitCode):
             let failed = (exitCode ?? 0) != 0
-            if let eventID = turns[id]?.toolEvents[callID] {
+            if let eventID = turns[id]?.toolEvents[callID] ?? timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })?.id {
                 mutateEvent(id, eventID) {
                     $0.output = RunEvent.clip(output)
                     $0.state = failed ? .failed : .done
@@ -1410,6 +1431,7 @@ final class WorkspaceManager: ObservableObject {
         awaitingCheckpoint[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
+        backgroundWork.remove(id)
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil

@@ -298,3 +298,34 @@ enum TurnChanges {
         return (before, checkpoints.first { $0.date >= end && $0.date > before.date })
     }
 }
+
+/// Work an agent left running in the background, finished after its turn (continuation).
+enum BackgroundWork {
+    /// The session still has work running in the background after its turn, so it should stay open (up to four hours
+    /// instead of thirty minutes): from the latest turn, a tool still running when it ended, or one started
+    /// to run in the background. It ends with a turn the agent woke up for by itself. `before` is what was known.
+    static func pending(after events: [RunEvent], before: Bool) -> Bool {
+        guard let turn = TimelinePresentation.split(events).last else { return before }
+        let started = turn.contains { event in
+            guard event.kind == .tool else { return false }
+            if event.state == .running { return true }
+            guard let detail = event.detail, detail.contains("run_in_background") else { return false }
+            let input = detail.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            return (input?["run_in_background"] as? Bool) == true
+        }
+        if started { return true }
+        if turn.first?.kind == .system, turn.first?.tool == "wake" { return false }
+        return before
+    }
+
+    /// What Codex gets when a background command finished: the command, its exit code and the end of its output.
+    static func codexMessage(command: String, exitCode: Int?, output: String) -> String {
+        let exit = exitCode.map(String.init) ?? "unknown"
+        var message = "Background command completed (exit \(exit)): \(command)"
+        let lines = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        var tail = lines.suffix(40).joined(separator: "\n")
+        if tail.count > 4000 { tail = String(tail.suffix(4000)) }
+        if !tail.isEmpty { message += "\n\nOutput tail:\n" + tail }
+        return message
+    }
+}

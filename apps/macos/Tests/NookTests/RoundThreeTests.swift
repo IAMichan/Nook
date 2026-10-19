@@ -420,4 +420,37 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertEqual(Simulators.runtimeName("com.apple.CoreSimulator.SimRuntime.xrOS-2-0"), "xrOS 2.0")
         XCTAssertTrue(Simulators.parse(Data("nope".utf8)).isEmpty)
     }
+
+    func testBackgroundWorkPendingAndMessage() {
+        let user = RunEvent(kind: .user, text: "run the server")
+        let background = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash",
+                                  detail: #"{"command":"npm run dev","run_in_background":true}"#, state: .done)
+        let end = RunEvent(kind: .result, text: "ok")
+        XCTAssertTrue(BackgroundWork.pending(after: [user, background, end], before: false))
+        // A later turn of yours keeps what was known; the turn the agent woke up for ends it.
+        let next = [user, background, end, RunEvent(kind: .user, text: "thanks"), RunEvent(kind: .result, text: "ok")]
+        XCTAssertTrue(BackgroundWork.pending(after: next, before: true))
+        XCTAssertFalse(BackgroundWork.pending(after: next, before: false))
+        let woke = next + [RunEvent(kind: .system, text: "woke", tool: "wake"), RunEvent(kind: .result, text: "done")]
+        XCTAssertFalse(BackgroundWork.pending(after: woke, before: true))
+        let running = [user, RunEvent(kind: .tool, text: "shell · sleep 60", tool: "shell", state: .running)]
+        XCTAssertTrue(BackgroundWork.pending(after: running, before: false))
+
+        let message = BackgroundWork.codexMessage(command: "npm test", exitCode: 1,
+                                                  output: (1...100).map { "line \($0)" }.joined(separator: "\n"))
+        XCTAssertTrue(message.hasPrefix("Background command completed (exit 1): npm test\n\nOutput tail:\nline 61"))
+        XCTAssertTrue(message.hasSuffix("line 100"))
+        XCTAssertEqual(BackgroundWork.codexMessage(command: "x", exitCode: nil, output: ""), "Background command completed (exit unknown): x")
+    }
+
+    func testAcpWakeEvidence() {
+        XCTAssertTrue(AcpEvent.messageChunk("Done: tests pass").isWakeEvidence)
+        XCTAssertFalse(AcpEvent.messageChunk("  \n").isWakeEvidence)
+        XCTAssertFalse(AcpEvent.usage(used: 1, size: 2, costUSD: nil).isWakeEvidence)
+        let call = AcpToolCall(id: "1", title: "Run", kind: "execute", status: "completed", input: nil, output: "", paths: [])
+        XCTAssertTrue(AcpEvent.toolCallUpdate(call).isWakeEvidence)
+        var running = call
+        running.status = "in_progress"
+        XCTAssertFalse(AcpEvent.toolCallUpdate(running).isWakeEvidence)
+    }
 }

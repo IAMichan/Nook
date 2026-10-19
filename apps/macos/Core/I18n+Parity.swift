@@ -102,6 +102,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.openApp": "Open Simulator",
         "sim.none": "Er draait geen simulator. Start er een vanuit Xcode of met Open Simulator; hij verschijnt hier vanzelf.",
         "sim.looking": "Simulators zoeken…",
+        "ws.wake.command": "Achtergrondopdracht klaar: %@",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -200,6 +201,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.openApp": "Open Simulator",
         "sim.none": "No simulator is running. Start one from Xcode or with Open Simulator; it shows up here by itself.",
         "sim.looking": "Looking for simulators…",
+        "ws.wake.command": "Background command finished: %@",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -298,6 +300,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.openApp": "Simulator öffnen",
         "sim.none": "Es läuft kein Simulator. Starte einen in Xcode oder mit „Simulator öffnen“; er erscheint hier von selbst.",
         "sim.looking": "Simulatoren werden gesucht…",
+        "ws.wake.command": "Hintergrundbefehl fertig: %@",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -396,6 +399,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.openApp": "Ouvrir Simulator",
         "sim.none": "Aucun simulateur ne tourne. Lancez-en un depuis Xcode ou avec Ouvrir Simulator ; il apparaîtra ici.",
         "sim.looking": "Recherche des simulateurs…",
+        "ws.wake.command": "Commande en arrière-plan terminée : %@",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -494,5 +498,6 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.openApp": "Abrir Simulator",
         "sim.none": "No hay ningún simulador en marcha. Inicia uno desde Xcode o con Abrir Simulator; aparecerá aquí solo.",
         "sim.looking": "Buscando simuladores…",
+        "ws.wake.command": "Comando en segundo plano terminado: %@",
     ],
 ]

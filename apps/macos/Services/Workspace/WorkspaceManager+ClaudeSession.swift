@@ -22,8 +22,9 @@ extension WorkspaceManager {
         }
         closeClaudeProcess(id)
         claudeIdle[id] = (process, claudeKey(run))
+        let seconds = idleSeconds(id, Self.claudeIdleSeconds)
         claudeIdleClose[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.claudeIdleSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled else { return }
             self?.closeClaudeProcess(id)
         }
@@ -67,6 +68,12 @@ extension WorkspaceManager {
         run.move(to: .running)
         run.turnStartedAt = Date()
         replace(run)
+    }
+
+    /// How long a waiting session stays open: thirty minutes, or four hours while it has background work running
+    /// (limits), so the agent is still there to pick up the result.
+    func idleSeconds(_ id: UUID, _ normal: UInt64) -> UInt64 {
+        backgroundWork.contains(id) ? 4 * 60 * 60 : normal
     }
 
     /// A process started ahead of your first message (see `prewarm`): it waits like one parked after a turn.

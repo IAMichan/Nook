@@ -240,6 +240,18 @@ extension WorkspaceManager {
             case .rateLimits(let limits):
                 codexLimitSnapshots[id] = limits
                 onRateLimits?()
+            case .commandFinished(let callID, let command, let output, let exitCode)
+                where turns[id] == nil && run(id)?.status.isActive != true:
+                // A command left running in the background finished after the turn: its result goes to Codex as a new
+                // turn (continuation), so Codex can act on it.
+                handleCodex(event, id: id)
+                append(id, RunEvent(kind: .system, text: tr("ws.wake.command", ToolSummary.oneLine(command, 80)), tool: "wake"))
+                let message = BackgroundWork.codexMessage(command: command, exitCode: exitCode, output: output)
+                if let run = run(id), run.canContinue, processes[id] == nil, !run.status.isActive {
+                    sendHidden(id, text: message)
+                } else {
+                    enqueue(id, text: message)
+                }
             default:
                 handleCodex(event, id: id)
             }
@@ -418,8 +430,9 @@ extension WorkspaceManager {
 
     private func scheduleCodexIdleClose(_ id: UUID) {
         codexIdleClose[id]?.cancel()
+        let seconds = idleSeconds(id, Self.codexIdleSeconds)
         codexIdleClose[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.codexIdleSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled, let self, self.run(id)?.status.isActive != true else { return }
             self.closeCodexServer(id)
         }

@@ -14,6 +14,8 @@ extension WorkspaceManager {
         acpIdleClose[id]?.cancel()
         acpIdleClose[id] = nil
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
+        // Your message starts over: whatever the agent sent by itself since is not a turn any more.
+        acpWakeBuffer[id] = nil
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
@@ -203,6 +205,8 @@ extension WorkspaceManager {
     func closeAcpClient(_ id: UUID) {
         acpIdleClose[id]?.cancel()
         acpIdleClose[id] = nil
+        acpWakeFinish.removeValue(forKey: id)?.cancel()
+        acpWakeBuffer[id] = nil
         acpClients.removeValue(forKey: id)?.stop()
     }
 
@@ -221,7 +225,54 @@ extension WorkspaceManager {
     // MARK: Updates
 
     private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
-        guard acpClients[id] === client else { return }
+        guard acpClients[id] === client, !events.isEmpty else { return }
+        if turns[id] == nil, client.sessionID != nil, !client.replaying, run(id)?.status.isActive != true {
+            // After its turn: kept until the agent shows it is really working again (wake buffer).
+            // A request needs its answer now, turn or not.
+            for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
+            acpWakeBuffer[id, default: []] += events.filter { if case .unsupportedRequest = $0 { return false } else { return true } }
+            guard events.contains(where: \.isWakeEvidence) else { return }
+            wakeAcp(id)
+            let buffered = acpWakeBuffer.removeValue(forKey: id) ?? []
+            applyAcp(id, client, buffered)
+        } else {
+            applyAcp(id, client, events)
+        }
+        if turns[id]?.unprompted == true { armAcpWakeFinish(id) }
+    }
+
+    /// The agent carries on by itself (background work it waited for finished): its updates become a live turn. ACP has
+    /// no reply that ends such a turn; it ends after three quiet seconds with nothing still running.
+    private func wakeAcp(_ id: UUID) {
+        guard var run = run(id) else { return }
+        acpIdleClose[id]?.cancel()
+        acpIdleClose[id] = nil
+        var state = TurnState()
+        state.unprompted = true
+        turns[id] = state
+        append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
+        if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
+        run.move(to: .running)
+        run.turnStartedAt = Date()
+        replace(run)
+    }
+
+    private func armAcpWakeFinish(_ id: UUID) {
+        acpWakeFinish[id]?.cancel()
+        acpWakeFinish[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, let self, let state = self.turns[id], state.unprompted, !state.finished else { return }
+            let running = state.toolEvents.values.contains { eventID in
+                self.timeline(id).first { $0.id == eventID }?.state == .running
+            }
+            // Still a tool at work, or waiting on you: not over yet.
+            if running || self.approvals[id]?.isEmpty == false { return self.armAcpWakeFinish(id) }
+            self.acpWakeFinish[id] = nil
+            self.finishAcpTurn(id, reason: "end_turn", usage: TurnUsage())
+        }
+    }
+
+    private func applyAcp(_ id: UUID, _ client: AcpClient, _ events: [AcpEvent]) {
         for event in events {
             switch event {
             case .messageChunk(let text):
@@ -253,7 +304,8 @@ extension WorkspaceManager {
                 append(id, event)
                 if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
             case .toolCallUpdate(let call):
-                guard let eventID = turns[id]?.toolEvents[call.id] else { continue }
+                // A call from an earlier turn (work it left running in the background) is found by its id.
+                guard let eventID = turns[id]?.toolEvents[call.id] ?? timeline(id).last(where: { $0.callID == call.id })?.id else { continue }
                 mutateEvent(id, eventID) { event in
                     if !call.title.isEmpty { event.text = call.title }
                     if !call.output.isEmpty { event.output = RunEvent.clip(call.output) }
@@ -341,8 +393,9 @@ extension WorkspaceManager {
     /// An idle session closes after a while; the next message loads it again in a new process.
     private func scheduleAcpIdleClose(_ id: UUID) {
         acpIdleClose[id]?.cancel()
+        let seconds = idleSeconds(id, Self.acpIdleSeconds)
         acpIdleClose[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.acpIdleSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled, let self, self.run(id)?.status.isActive != true else { return }
             self.closeAcpClient(id)
         }

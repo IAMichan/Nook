@@ -34,6 +34,19 @@ enum AcpEvent: Equatable, Sendable {
     case unsupportedRequest(RPCID)
 }
 
+extension AcpEvent {
+    /// After a turn, a sign the agent is really working again (wake evidence): text it writes, a tool call that
+    /// finished, or a question for you; not an empty chunk, usage or a stray notice.
+    var isWakeEvidence: Bool {
+        switch self {
+        case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
+        case .permission: return true
+        default: return false
+        }
+    }
+}
+
 struct AcpToolCall: Equatable, Sendable {
     var id: String
     var title: String
