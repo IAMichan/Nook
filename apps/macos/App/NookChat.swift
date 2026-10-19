@@ -200,6 +200,8 @@ final class NookChat: ObservableObject {
     private static let saveQueue = DispatchQueue(label: "nl.imdigital.nook.chatsave", qos: .utility)
 
     private let maxMessages = 80
+    /// The saved conversations have been read. Until then nothing is written, so an early save can never replace the file.
+    private var loaded = false
 
     init() {
         load()
@@ -471,6 +473,7 @@ final class NookChat: ObservableObject {
     }
 
     private func save() {
+        guard loaded else { return }
         let stored = StoredChats(
             active: activeID,
             conversations: conversations.filter { !$0.isEmpty }.map { StoredConversation($0) }
@@ -482,12 +485,32 @@ final class NookChat: ObservableObject {
         }
     }
 
+    /// Reads and decodes the file off the main thread (it can hold hundreds of conversations), so launching Nook does
+    /// not wait for it. Conversations started in the meantime are kept next to the loaded ones.
     private func load() {
-        // Conversation by conversation, and an unreadable file is kept aside: the next save must never wipe your history.
-        guard let stored = SafeStorage.load(StoredChats.self, from: Self.fileURL, skipped: { $0.skipped }).value else { return }
-        conversations = stored.conversations.map { $0.restored() }.filter { !$0.isEmpty }
-        activeID = stored.active.flatMap { id in conversations.contains { $0.id == id } ? id : nil }
-            ?? history.first?.id
+        let url = Self.fileURL
+        Task.detached(priority: .userInitiated) { [weak self] in
+            // Conversation by conversation, and an unreadable file is kept aside: the next save must never wipe your history.
+            let stored = SafeStorage.load(StoredChats.self, from: url, skipped: { $0.skipped }).value
+            await self?.finishLoading(stored)
+        }
+    }
+
+    private func finishLoading(_ stored: StoredChats?) {
+        loaded = true
+        guard let stored else {
+            if !conversations.isEmpty { scheduleSave() }
+            return
+        }
+        let started = conversations
+        let known = Set(started.map(\.id))
+        let restored = stored.conversations.map { $0.restored() }.filter { !$0.isEmpty && !known.contains($0.id) }
+        conversations = started + restored
+        if activeID == nil {
+            activeID = stored.active.flatMap { id in conversations.contains { $0.id == id } ? id : nil }
+                ?? history.first?.id
+        }
+        if !started.isEmpty { scheduleSave() }
     }
 }
 

@@ -42,7 +42,7 @@ final class CompanionServer: ObservableObject {
         guard listener == nil else { return }
         do {
             let listener = try NWListener(using: .tcp, on: port == 0 ? .any : NWEndpoint.Port(rawValue: port)!)
-            listener.service = NWListener.Service(name: Host.current().localizedName ?? "Nook", type: CompanionConstants.bonjourType)
+            listener.service = NWListener.Service(name: MachineName.local, type: CompanionConstants.bonjourType)
             listener.stateUpdateHandler = { [weak self] new in
                 Task { @MainActor in self?.listenerChanged(new) }
             }
@@ -86,7 +86,7 @@ final class CompanionServer: ObservableObject {
         let key = CompanionStore.shared.activePending() ?? CompanionStore.shared.beginPairing()
         var host = ProcessInfo.processInfo.hostName
         if !host.contains(".") { host += ".local" }
-        return PairingLink(host: host, port: port, key: key, macName: Host.current().localizedName ?? "Mac")
+        return PairingLink(host: host, port: port, key: key, macName: MachineName.local)
     }
 
     // MARK: Connections
@@ -174,7 +174,7 @@ final class CompanionServer: ObservableObject {
     private func handle(_ request: CompanionRequest, deviceID: String) async -> CompanionResponse {
         guard let app else { return .failure(request.id, .failed) }
         let workspace = app.workspace
-        let macName = Host.current().localizedName ?? "Mac"
+        let macName = MachineName.local
         switch request.op {
         case .hello:
             return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace))

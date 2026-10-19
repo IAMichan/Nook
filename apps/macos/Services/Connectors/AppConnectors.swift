@@ -141,9 +141,15 @@ class AppDatabaseConnector: ContextSource {
     /// Where the app keeps its database (nil: not found).
     var databasePath: String? { nil }
 
+    /// Asked on every redraw of the notch (through `isActive`): a Launch Services lookup each time adds up, so the answer
+    /// is kept for a minute.
     var isInstalled: Bool {
-        bundles.contains { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
+        if let installedCheck, Date().timeIntervalSince(installedCheck.at) < 60 { return installedCheck.installed }
+        let installed = bundles.contains { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
+        installedCheck = (installed, Date())
+        return installed
     }
+    private var installedCheck: (installed: Bool, at: Date)?
 
     var isActive: Bool { ConnectorToggle.isOn(id) && isInstalled && !denied }
     var refreshInterval: TimeInterval { 600 }

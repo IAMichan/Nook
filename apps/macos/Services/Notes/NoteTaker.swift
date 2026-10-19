@@ -41,12 +41,25 @@ final class NoteTaker: ObservableObject {
     private var transcribing = 0
     private var starting = false
 
-    static var folder: URL { NookPaths.supportDirectory.appendingPathComponent("Notes", isDirectory: true) }
+    nonisolated static var folder: URL { NookPaths.supportDirectory.appendingPathComponent("Notes", isDirectory: true) }
 
     var isRecording: Bool { current != nil }
 
+    /// Notes deleted before the saved ones finished loading, so they do not come back with them.
+    private var deletedEarly: Set<UUID>? = []
+
     private init() {
-        notes = Self.loadAll()
+        // Every note holds its whole transcript: read them off the main thread so launching Nook does not wait for it.
+        Task.detached(priority: .utility) { [weak self] in
+            let loaded = Self.loadAll()
+            await self?.finishLoading(loaded)
+        }
+    }
+
+    private func finishLoading(_ loaded: [Note]) {
+        let known = Set(notes.map(\.id)).union(deletedEarly ?? [])
+        deletedEarly = nil
+        notes = (notes + loaded.filter { !known.contains($0.id) }).sorted { $0.start > $1.start }
     }
 
     // MARK: Recording
@@ -229,6 +242,7 @@ final class NoteTaker: ObservableObject {
 
     func delete(_ id: UUID) {
         notes.removeAll { $0.id == id }
+        deletedEarly?.insert(id)
         try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent("\(id.uuidString).json"))
     }
 
@@ -248,7 +262,7 @@ final class NoteTaker: ObservableObject {
         }
     }
 
-    private static func loadAll() -> [Note] {
+    private nonisolated static func loadAll() -> [Note] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []

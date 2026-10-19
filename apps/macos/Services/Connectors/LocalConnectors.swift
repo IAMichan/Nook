@@ -48,7 +48,7 @@ final class CalendarConnector: ContextSource {
             return
         }
         let now = Date()
-        events = calendar.events(from: Calendar.current.startOfDay(for: now), to: now.addingTimeInterval(7 * 86_400))
+        events = await calendar.loadEvents(from: Calendar.current.startOfDay(for: now), to: now.addingTimeInterval(7 * 86_400))
         let upcoming = events.filter { $0.end > now }
         let today = upcoming.filter { Calendar.current.isDateInToday($0.start) }
         var next = ""

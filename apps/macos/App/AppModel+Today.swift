@@ -104,7 +104,7 @@ extension AppModel {
     func refreshUpcoming() async {
         guard calendar.hasEventAccess else { return }
         let now = Date()
-        upcoming = calendar.events(from: now, to: now.addingTimeInterval(36 * 3600))
+        upcoming = await calendar.loadEvents(from: now, to: now.addingTimeInterval(36 * 3600))
     }
 
 
