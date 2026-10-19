@@ -73,6 +73,8 @@ struct NookCard: Equatable, Identifiable {
     var contentHeight: CGFloat
     /// Displays a text field for immediate follow-up. The field gains focus as soon as the card appears.
     var input: Bool = false
+    /// The text field's placeholder when it is not a follow-up question (e.g. "Answer Lisa…").
+    var inputPrompt: String? = nil
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// An agent is waiting on this (permission or prompt): the card takes precedence and persists until answered.

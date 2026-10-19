@@ -8,13 +8,21 @@ import NaturalLanguage
 extension AppModel {
     // MARK: Asking Nook
 
-    func handleUserText(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+    func handleUserText(_ raw: String, images: [ImageAttachment] = []) {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !images.isEmpty else { return }
+        // A picture without a question: ask what is on it.
+        if text.isEmpty { text = tr("image.defaultQuestion") }
         NookPresence.shared.heard()
 
+        // "Maak ongedaan": the last actions Nook carried out, reversed as a plan to approve.
+        if Undo.isRequest(text) {
+            proposeUndo(asked: text)
+            return
+        }
+
         // Short deterministic commands handled locally without querying the brain: instant execution.
-        if let intent = LocalIntent.parse(text) {
+        if images.isEmpty, let intent = LocalIntent.parse(text) {
             // In chat mode, keep the flow: music and time queries are replied to inline.
             if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
@@ -29,7 +37,7 @@ extension AppModel {
             presentSetupCard()
             return
         }
-        ask(text)
+        ask(text, images: images)
     }
 
     // MARK: Chat
@@ -92,14 +100,22 @@ extension AppModel {
     }
 
     /// Submits a query in chat: response streams in real-time.
-    func ask(_ text: String) {
+    func ask(_ text: String, images: [ImageAttachment] = []) {
         let conversation = chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
-        let question = ChatMessage(role: .user, text: text)
+        var question = ChatMessage(role: .user, text: text)
+        question.images = images
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
-        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
+        // Only some brains can see pictures; say so instead of answering as if they had.
+        let selection = settings.selection
+        let localModel = ModelAdvisor.catalog.first { $0.id == selection.model }
+        if !images.isEmpty, selection.runtime == .mlx && !(localModel?.seesImages ?? false) {
+            reply.notices.append(tr("image.unsupported"))
+        }
+        reply.status = settings.useLocal && settings.localModel != AppleModel.id && !EmbeddedModel.shared.isLoaded
+            ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
@@ -111,8 +127,10 @@ extension AppModel {
         let history = chat.history(before: question.id, hiding: settings.privateSources)
         let replyID = reply.id
         chatTasks[conversation] = Task { [weak self] in
-            await ReplyContext.$messageID.withValue(replyID) {
-                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+            await ReplyContext.$images.withValue(images) {
+                await ReplyContext.$messageID.withValue(replyID) {
+                    await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                }
             }
         }
     }
@@ -128,6 +146,7 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
         let shouldCaptureScreen: Bool
@@ -137,6 +156,7 @@ extension AppModel {
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
+            images = attachmentImages
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
@@ -219,6 +239,12 @@ extension AppModel {
                 : "\n\n(Your previous answer was empty, or contained code/JSON or was in the wrong language. Answer the question itself, in plain sentences, \(settings.languageInstruction(for: text)) Use the context and what was looked up; if something is missing, fetch it with the matching tool (a connected source, an app with read_app, the screen, a file or the web). If it really is not possible, briefly say where you looked and what was missing.)"
         }
 
+        // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
+        // answer may still be checked and written again: then it is read once it is final.
+        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil
+            && !(settings.checkAnswers && settings.brainProfile.isSmall)
+        var spokenQueue = SpokenText.Queue()
+        if speaksLive { speech.stop() }
         do {
             var lastCleanedText = ""
             let plan = try await brain.run(
@@ -228,6 +254,7 @@ extension AppModel {
                 context: brainContext,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
+                images: images,
                 tools: tools,
                 onText: { [weak self] partial in
                     guard let self, self.replies[conversation] == id else { return }
@@ -239,6 +266,9 @@ extension AppModel {
                     self.chat.update(id) { message in
                         message.text = cleaned
                         message.status = ""
+                    }
+                    if speaksLive {
+                        for sentence in spokenQueue.feed(cleaned) { self.speech.enqueue(sentence, language: self.settings.language) }
                     }
                 }
             )
@@ -316,11 +346,15 @@ extension AppModel {
             if !withheld.isEmpty {
                 notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
             }
-            let actions = plan.actions.map { action -> PlannedAction in
+            let normalized = plan.actions.map { action -> PlannedAction in
                 var copy = action
                 if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }
                 return copy
             }
+            // Fields the user keeps choosing (a calendar, a list) are filled in when the brain left them empty.
+            let habits = withHabits(normalized, tools: tools)
+            let actions = habits.actions
+            notices += habits.notices
             let problems: [[String]] = actions.map { actionProblems($0, scope: scope) }
             chat.update(id) { message in
                 message.text = body
@@ -344,15 +378,24 @@ extension AppModel {
             if let message = chat.message(id) {
                 let spoken = !message.text.isEmpty ? message.text
                     : (!message.mails.isEmpty ? tr("app.spoken.mail") : (!message.charts.isEmpty ? tr("app.spoken.chart") : tr("app.plan.ready")))
-                speakIfAsked(spoken)
+                if speaksLive {
+                    for sentence in spokenQueue.finish(message.text.isEmpty ? spoken : message.text) {
+                        speech.enqueue(sentence, language: settings.language)
+                    }
+                    spokenRequest = false
+                } else {
+                    speakIfAsked(spoken)
+                }
             }
             replies[conversation] = nil
             chatTasks[conversation] = nil
             chat.setBusy(false, conversation: conversation)
             NookPresence.shared.nod()
             nookFinished(conversation)
+            // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
+            learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(plan, request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)

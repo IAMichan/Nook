@@ -83,12 +83,18 @@ final class AppModel: ObservableObject {
         onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
     )
 
+    /// What Nook learned about the user, stored next to the open loops (see `AppModel+Memory`).
+    private(set) lazy var memory = NookMemory(store: store)
+    /// remember, forget and recall_memory.
+    private(set) lazy var memoryTools: [ToolSpec] = makeMemoryTools()
+
     /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
+        if settings.useMemory { all += memoryTools }
         all += webSpecs
         all += BrowserStore.shared.tools
         all += TerminalStore.shared.tools
@@ -98,7 +104,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.shared.tools
@@ -185,8 +191,21 @@ final class AppModel: ObservableObject {
     var spokenRequest = false
     /// File from Shelf attached as prompt context.
     var attachment: (name: String, text: String, date: Date)? {
-        didSet { attachmentName = attachment?.name }
+        didSet {
+            attachmentName = attachment?.name
+            // Images belong to the attachment they came with: another file (or none) leaves them behind.
+            if attachment?.name != oldValue?.name { attachmentImages = [] }
+        }
     }
+    /// The picture itself when the attachment is an image (a dropped photo, a part of the screen), for brains that see.
+    var attachmentImages: [ChatImage] = [] {
+        didSet { attachmentIsImage = !attachmentImages.isEmpty }
+    }
+    @Published private(set) var attachmentIsImage = false
+    /// Actions carried out in the last half hour, for "maak ongedaan".
+    var recentActions: [(item: (tool: String, input: [String: Any], result: String), date: Date)] = []
+    /// macOS's selection for "ask about a part of the screen" is open.
+    var capturingScreenPart = false
     /// Attachment indicator for the input field: file currently included.
     @Published private(set) var attachmentName: String?
 
@@ -207,6 +226,7 @@ final class AppModel: ObservableObject {
         }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        memory.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // Tracks whether any conversation is active (for orb mood and idle notch state); chat handles messages directly.
         chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
             .receive(on: RunLoop.main)
@@ -316,11 +336,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] info in self?.notch.announce(info) }
             .store(in: &bag)
 
-        hotKeys = [
-            HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
-            HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
-            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
-        ].compactMap { $0 }
+        reloadHotKeys()
 
         // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.
         connectors.register([
@@ -335,7 +351,11 @@ final class AppModel: ObservableObject {
             MessagesConnector(),
             WhatsAppConnector(),
             BearConnector(),
-            ThingsConnector()
+            ThingsConnector(),
+            // Calls the Notetaker recorded.
+            CallNotesConnector(),
+            // The Mac itself: processor, memory, battery, disk.
+            SystemConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
         // The crypto portfolio (PortfolioConnector) is switched off for now: not registered, not in Settings.
@@ -347,12 +367,21 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        startWhatsApp()
+        startFlow()
+        startNotes()
+        startWindowAttach()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }
         }
         codex.start()
         antigravityUsage.home = { [weak self] in self?.profiles.profiles(for: .antigravity).first?.homeURL ?? AgentKind.antigravity.defaultHome }
+        // Signing in during an Antigravity session in Nook leaves its token in that account's profile folder.
+        antigravityUsage.sessionProfiles = { [weak self] in
+            let paths = AntigravityPaths(support: NookPaths.supportDirectory)
+            return (self?.profiles.profiles(for: .antigravity) ?? []).map { paths.profile($0.id) }
+        }
         antigravityUsage.start()
         claudeUsage.start()
 
@@ -401,4 +430,7 @@ final class AppModel: ObservableObject {
     @Published var missedNudge: (line: String, card: NookCard, app: String, date: Date)?
     /// Proposal cards that move into the chat when the user types a reply on them, by card ID.
     var cardReplies: [String: () -> Void] = [:]
+    /// The value a proposed action field had before the user first edited it ("message#step#field"), so running the
+    /// plan teaches Nook the user's habits.
+    var editOrigins: [String: String] = [:]
 }

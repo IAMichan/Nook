@@ -70,7 +70,7 @@ struct UsageView: View {
         case .codex: return tr("settings.usage.codexMissing")
         case .gemini: return tr("agents.usage.geminiNoLimits")
         case .opencode, .cursor, .grok: return tr("agents.usage.acpNoLimits")
-        case .antigravity: return tr("ws.usage.quotaUnavailable")
+        case .antigravity: return app.antigravityUsage.noLogin ? tr("agents.usage.antigravitySignIn") : tr("ws.usage.quotaUnavailable")
         }
     }
 

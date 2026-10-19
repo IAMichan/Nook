@@ -33,7 +33,8 @@ extension AppModel {
     func isConnected(_ profile: AgentProfile) -> Bool {
         guard history.profileAccounts[profile.id] != nil else { return false }
         switch profile.kind {
-        case .antigravity: return !antigravityUsage.noLogin || AntigravityClient.isAvailable
+        // Google's ACP server that Nook installed counts too: you sign in during the first session.
+        case .antigravity: return !antigravityUsage.noLogin || AntigravityClient.isAvailable || AntigravityInstaller.shared.installed != nil
         default: return history.executables[profile.kind] != nil
         }
     }

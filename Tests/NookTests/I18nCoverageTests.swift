@@ -1,10 +1,10 @@
 import XCTest
 
-/// The three languages stay in step: every text exists in each, and the placeholders (%@, %ld) match, so a translated
+/// The languages stay in step: every text exists in each, and the placeholders (%@, %ld) match, so a translated
 /// text can never crash or show a wrong value. The tables are read from the source files (Core/I18n*.swift), so the test
 /// needs nothing of the app itself.
 final class I18nCoverageTests: XCTestCase {
-    private static let files = ["I18n.swift", "I18n+Agents.swift", "I18n+Workspace.swift", "I18n+Redesign.swift", "I18n+Complete.swift", "I18n+Connect.swift"]
+    private static let files = ["I18n.swift", "I18n+Agents.swift", "I18n+Workspace.swift", "I18n+Redesign.swift", "I18n+Complete.swift", "I18n+Connect.swift", "I18n+Memory.swift", "I18n+Languages.swift"]
 
     /// language → key → text, merged over all table files.
     private static let tables: [String: [String: String]] = {
@@ -12,7 +12,7 @@ final class I18nCoverageTests: XCTestCase {
             .appendingPathComponent("Core")
         var result: [String: [String: String]] = [:]
         let entry = try! NSRegularExpression(pattern: #"^\s+"([^"]+)":\s*"((?:[^"\\]|\\.)*)""#, options: [.anchorsMatchLines])
-        let header = try! NSRegularExpression(pattern: #"^\s*\.(nl|en|de): \["#, options: [.anchorsMatchLines])
+        let header = try! NSRegularExpression(pattern: #"^\s*\.(nl|en|de|fr|es): \["#, options: [.anchorsMatchLines])
         for name in files {
             guard let text = try? String(contentsOf: core.appendingPathComponent(name), encoding: .utf8) else { continue }
             // Walk through the file: a `.nl: [` line starts a language block, entries belong to the block they follow.
@@ -37,7 +37,7 @@ final class I18nCoverageTests: XCTestCase {
     }
 
     func testTheTablesWereFound() {
-        for language in ["nl", "en", "de"] {
+        for language in ["nl", "en", "de", "fr", "es"] {
             XCTAssertGreaterThan(Self.tables[language]?.count ?? 0, 1000, "tables for \(language) not read")
         }
     }
@@ -48,13 +48,17 @@ final class I18nCoverageTests: XCTestCase {
         XCTAssertEqual(Set(nl.keys).subtracting(de.keys).sorted(), [], "missing in German")
         XCTAssertEqual(Set(en.keys).subtracting(nl.keys).sorted(), [], "missing in Dutch")
         XCTAssertEqual(Set(de.keys).subtracting(nl.keys).sorted(), [], "German text without Dutch original")
+        for (name, other) in [("French", Self.tables["fr"] ?? [:]), ("Spanish", Self.tables["es"] ?? [:])] {
+            XCTAssertEqual(Set(nl.keys).subtracting(other.keys).sorted(), [], "missing in \(name)")
+            XCTAssertEqual(Set(other.keys).subtracting(nl.keys).sorted(), [], "\(name) text without Dutch original")
+        }
     }
 
     func testPlaceholdersMatchAcrossLanguages() {
         let nl = Self.tables["nl"] ?? [:], en = Self.tables["en"] ?? [:], de = Self.tables["de"] ?? [:]
         var mismatches: [String] = []
         for (key, dutch) in nl {
-            for (name, other) in [("en", en), ("de", de)] {
+            for (name, other) in [("en", en), ("de", de), ("fr", Self.tables["fr"] ?? [:]), ("es", Self.tables["es"] ?? [:])] {
                 if let text = other[key], placeholders(text) != placeholders(dutch) { mismatches.append("\(key) (\(name))") }
             }
         }

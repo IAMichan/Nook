@@ -207,6 +207,33 @@ final class CalendarService {
         return reminder.calendarItemIdentifier
     }
 
+    /// Removes an event Nook made ("maak ongedaan"). Returns its title.
+    func deleteEvent(id: String) async throws -> String {
+        guard await requestEvents() else {
+            throw NookError("Nook does not have access to your calendar. Enable it in Settings › Permissions.")
+        }
+        guard let event = store.event(withIdentifier: id) else { throw NookError("That event does not exist (anymore).") }
+        guard event.calendar?.allowsContentModifications ?? false else {
+            throw NookError("The calendar \(event.calendar?.title ?? "") is read-only.")
+        }
+        let title = event.title ?? ""
+        try store.remove(event, span: .thisEvent, commit: true)
+        return title
+    }
+
+    /// Removes a reminder Nook made. Returns its title.
+    func deleteReminder(id: String) async throws -> String {
+        guard await requestReminders() else {
+            throw NookError("Nook does not have access to your reminders. Enable it in Settings › Permissions.")
+        }
+        guard let reminder = store.calendarItem(withIdentifier: id) as? EKReminder else {
+            throw NookError("That reminder does not exist (anymore).")
+        }
+        let title = reminder.title ?? ""
+        try store.remove(reminder, commit: true)
+        return title
+    }
+
     /// Whether an event with this identifier exists (used to confirm an action really happened).
     func eventExists(_ id: String) -> Bool {
         store.event(withIdentifier: id) != nil

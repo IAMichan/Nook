@@ -26,7 +26,7 @@ extension AgentDisplayState {
 
 /// A status as a quiet tinted badge: a light wash of its color behind the symbol and word (tinted-surface badges),
 /// never a solid chip. `detail` adds a tail such as "3m" or "tot 9:00".
-struct StatusBadge: View {
+struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
     var long = false

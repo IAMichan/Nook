@@ -288,8 +288,36 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 Text(tr("settings2.github.useToken")).font(.callout)
             }
             if configured { resultStep(number: 1) }
+        } else if isGitHub {
+            ghCLIButton
+            DisclosureGroup(isExpanded: $showKeySteps) {
+                VStack(alignment: .leading, spacing: 20) { keySteps }
+                    .padding(.top, 12)
+            } label: {
+                Text(tr("settings2.github.useToken")).font(.callout)
+            }
+            if configured { resultStep(number: 1) }
         } else {
             keySteps
+        }
+    }
+
+    /// Takes over the login of the GitHub CLI, for when there is no OAuth app to sign in with.
+    @ViewBuilder
+    private var ghCLIButton: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { gitHubSignIn.useGitHubCLI() } label: {
+                Label(tr("connector.useGitHubCLI"), systemImage: "terminal.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(gitHubSignIn.phase == .checkingCLI)
+            if case .failed(let message) = gitHubSignIn.phase {
+                Text(message).font(.caption).foregroundStyle(.red)
+            } else {
+                Text(tr("connector.useGitHubCLIHint")).font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -377,7 +405,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("settings2.service.keyTitle")).font(.headline)
             if replacing || connector.configFields.contains(where: { !$0.secret }) {
-                if isGitHub && GitHubSignIn.isAvailable { gitHubSignInButton }
+                if isGitHub { if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton } }
                 fieldsAndPaste
             } else {
                 HStack {
@@ -492,7 +520,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     .foregroundStyle(.red)
                 Button(tr("button.tryAgain")) { gitHubSignIn.start() }
             }
-        case .idle, .done:
+        case .idle, .checkingCLI, .done:
             Button { gitHubSignIn.start() } label: {
                 Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)

@@ -6,6 +6,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case nl = "nl"
     case en = "en"
     case de = "de"
+    case fr = "fr"
+    case es = "es"
 
     public var id: String { rawValue }
 
@@ -14,6 +16,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .nl: return "Nederlands"
         case .en: return "English"
         case .de: return "Deutsch"
+        case .fr: return "Français"
+        case .es: return "Español"
         }
     }
 }
@@ -49,7 +53,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         } else {
             let preferred = Locale.preferredLanguages.first?.prefix(2).lowercased() ?? "nl"
             if preferred == "en" { initial = .en }
-            else if preferred == "de" { initial = .de }
+            else if let lang = AppLanguage(rawValue: preferred) { initial = lang }
             else { initial = .nl }
         }
         self.cachedLanguage = initial
@@ -58,13 +62,13 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [languageTranslations, memoryTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
         for table in tables { if let val = table[lang]?[key] { return val } }
-        // German falls back to English before Dutch: closer for a German reader than the other way round.
-        let fallbacks: [AppLanguage] = lang == .de ? [.en, .nl] : [.nl, .en]
+        // Everyone but a Dutch reader falls back to English before Dutch.
+        let fallbacks: [AppLanguage] = lang == .nl ? [.nl, .en] : [.en, .nl]
         for fallback in fallbacks where fallback != lang {
             for table in tables { if let val = table[fallback]?[key] { return val } }
         }
@@ -109,6 +113,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Instellingen…",
         "menu.quit": "Nook afsluiten",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Open Nook",
+        "menu.now": "nu",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d agents bezig",
+        "menu.agentsWaiting": "%d agents bezig, %d wachten op jou",
+        "menu.pause": "Pauzeer",
+        "menu.play": "Speel af",
+        "menu.nextTrack": "Volgend nummer",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
@@ -558,6 +570,10 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.keychainDenied": "De Keychain weigerde de sleutel. Probeer het nog eens.",
         "connector.keysCleared": "Sleutels gewist.",
         "connector.linkWithGitHub": "Koppel met GitHub",
+        "connector.useGitHubCLI": "Gebruik mijn GitHub CLI-login",
+        "connector.useGitHubCLIHint": "Heb je `gh auth login` al gedaan? Dan neemt Nook die login over, zonder token te plakken.",
+        "connector.ghMissing": "GitHub CLI (gh) niet gevonden. Installeer met `brew install gh` en voer `gh auth login` uit.",
+        "connector.ghNotLoggedIn": "Je bent nog niet ingelogd in gh. Voer `gh auth login` uit in Terminal en probeer het opnieuw.",
         "connector.notConfigured": "Niet ingesteld",
         "connector.notYetFetched": "Nog niet opgehaald",
         "connector.nothingOnClipboard": "Er staat niets bruikbaars op je klembord.",
@@ -857,6 +873,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Settings…",
         "menu.quit": "Quit Nook",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Open Nook",
+        "menu.now": "now",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d agents running",
+        "menu.agentsWaiting": "%d agents running, %d waiting for you",
+        "menu.pause": "Pause",
+        "menu.play": "Play",
+        "menu.nextTrack": "Next track",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
@@ -1306,6 +1330,10 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.keychainDenied": "The Keychain refused the key. Please try again.",
         "connector.keysCleared": "Keys cleared.",
         "connector.linkWithGitHub": "Connect with GitHub",
+        "connector.useGitHubCLI": "Use my GitHub CLI login",
+        "connector.useGitHubCLIHint": "Already ran `gh auth login`? Nook takes over that login, no token pasting needed.",
+        "connector.ghMissing": "GitHub CLI (gh) not found. Install it with `brew install gh` and run `gh auth login`.",
+        "connector.ghNotLoggedIn": "You're not logged in to gh yet. Run `gh auth login` in Terminal and try again.",
         "connector.notConfigured": "Not configured",
         "connector.notYetFetched": "Not fetched yet",
         "connector.nothingOnClipboard": "Nothing usable found on your clipboard.",
@@ -1605,6 +1633,14 @@ private let translations: [AppLanguage: [String: String]] = [
         "menu.settings": "Einstellungen…",
         "menu.quit": "Nook beenden",
         "menu.accessibility": "Nook",
+        "menu.openPanel": "Nook öffnen",
+        "menu.now": "jetzt",
+        "menu.nextEvent": "%@ · %@",
+        "menu.agentsRunning": "%d Agents aktiv",
+        "menu.agentsWaiting": "%d Agents aktiv, %d warten auf dich",
+        "menu.pause": "Pausieren",
+        "menu.play": "Abspielen",
+        "menu.nextTrack": "Nächster Titel",
 
         // MARK: Panel Tabs
         "tab.nook": "Nook",
@@ -2054,6 +2090,10 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.keychainDenied": "Der Schlüsselbund hat den Schlüssel verweigert. Bitte versuche es erneut.",
         "connector.keysCleared": "Schlüssel gelöscht.",
         "connector.linkWithGitHub": "Mit GitHub verbinden",
+        "connector.useGitHubCLI": "Meinen GitHub-CLI-Login verwenden",
+        "connector.useGitHubCLIHint": "Schon `gh auth login` ausgeführt? Dann übernimmt Nook diesen Login, ganz ohne Token einzufügen.",
+        "connector.ghMissing": "GitHub CLI (gh) nicht gefunden. Installiere sie mit `brew install gh` und führe `gh auth login` aus.",
+        "connector.ghNotLoggedIn": "Du bist in gh noch nicht angemeldet. Führe `gh auth login` im Terminal aus und versuche es erneut.",
         "connector.notConfigured": "Nicht konfiguriert",
         "connector.notYetFetched": "Noch nicht abgerufen",
         "connector.nothingOnClipboard": "In der Zwischenablage wurde nichts Verwendbares gefunden.",

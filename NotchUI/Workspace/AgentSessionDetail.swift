@@ -18,6 +18,7 @@ struct AgentSessionDetail: View {
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
     @StateObject private var composerModel = ComposerModel()
+    @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
     /// An action is in progress (sending, ending a process).
@@ -245,6 +246,7 @@ struct AgentSessionDetail: View {
             SessionComposer(text: $draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
+            .images($images)
         } else {
             SessionComposer(
                 text: $draft,
@@ -257,6 +259,7 @@ struct AgentSessionDetail: View {
                 agentPill(name: session.name, profile: app.profile(for: session))
             }
             .rich(composerModel, composerConfig(folder: session.cwd, tint: NookTheme.iris))
+            .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
     }
@@ -272,32 +275,46 @@ struct AgentSessionDetail: View {
     private func sessionMenu(_ session: AgentSession) -> some View {
         let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
-        return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
-            Divider()
-            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
-            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+        let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
+        return ComposerDropdown(width: 250) {
+            moreLabel
+        } content: {
+            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
+            DropdownDivider()
+            DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                        title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
+                        disabledReason: busy ? tr("ws.error.busy") : nil) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
-            .disabled(busy)
-            Divider()
             if app.canEnd(session) && app.canTakeOver(session) {
-                Button(tr("agents.nook.takeOver")) {
+                DropdownDivider()
+                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.takeOver")) {
                     perform { try await app.continueInNook(session, endingTerminal: true) }
                 }
             }
             if app.canEnd(session) {
-                Button(tr("agents.nook.end"), role: .destructive) {
+                if !app.canTakeOver(session) { DropdownDivider() }
+                DropdownRow(symbol: "xmark.octagon", title: tr("agents.nook.end"), tint: NookTheme.coralSoft) {
                     perform { try app.endSession(session) }
                 }
             }
             if !session.cwd.isEmpty {
-                if app.canEnd(session) { Divider() }
-                Button(tr("button.openFolder")) {
+                DropdownDivider()
+                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
         }
+        .help(tr("agents.nook.more"))
+    }
+
+    private var moreLabel: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
     }
 
     /// A multiple-choice question from the agent (AskUserQuestion), answered right here: one question at a time.
@@ -470,6 +487,7 @@ struct AgentSessionDetail: View {
                 agentPill(name: session.agent.name, profile: app.profile(for: session))
             }
             .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.color))
+            .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -501,21 +519,25 @@ struct AgentSessionDetail: View {
 
     /// Open the whole conversation in Nook without a message, or its folder or a terminal there.
     private func pastMenu(_ session: PastSession, canContinue: Bool) -> some View {
-        ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
-            Divider()
+        ComposerDropdown(width: 250) {
+            moreLabel
+        } content: {
+            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
+            DropdownDivider()
             if canContinue {
-                Button(tr("agents.nook.open")) {
+                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.open")) {
                     perform { try await app.continueInNook(session) }
                 }
-                Divider()
+                if !session.cwd.isEmpty { DropdownDivider() }
             }
             if !session.cwd.isEmpty {
-                Button(tr("button.openFolder")) {
+                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
         }
+        .help(tr("agents.nook.more"))
     }
 
     /// "Work", or for the first unnamed account: organization name, otherwise "Personal".

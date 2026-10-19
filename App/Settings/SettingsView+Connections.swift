@@ -74,6 +74,11 @@ extension SettingsView {
                 }
             }
 
+            if connectionCategory == nil || connectionCategory == .mac,
+               connectionSearch.isEmpty || "whatsapp".contains(connectionSearch.lowercased()) || connectionSearch.lowercased().contains("whats") {
+                WhatsAppLinkSection()
+            }
+
             Section {
                 Button { app.settingsSection = .mcp } label: {
                     HStack(spacing: 12) {

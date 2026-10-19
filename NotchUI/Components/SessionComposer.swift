@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// The box you write to an agent or to Nook in. Starting a session, answering one and chatting look and work the same:
 /// the text on top, underneath the choices for the turn (agent, mode, permissions… or model and sources) passed in as
@@ -33,7 +35,16 @@ struct SessionComposer<Controls: View>: View {
     /// The composer's own color: the send button, the focus ring and a trace in the surface.
     private var tint: Color = NookTheme.iris
 
+    /// Pictures added by dragging or pasting. Optional: a composer without it does not take pictures.
+    private var imagesBinding: Binding<[ImageAttachment]>?
+    /// Agents read pictures from disk: on send their paths go below the text. Without it the caller sends the pictures itself.
+    private var imagesAsPaths = true
+    /// What happens to another file that is dropped (default: its path goes into the text, which agents read).
+    private var fileDropped: ((URL) -> Void)?
+
     @FocusState private var ownFocus: Bool
+    @State private var dropTargeted = false
+    @State private var pasteMonitor = PasteMonitor()
 
     /// The same composer that, while busy, queues what you type (Return or the queue button) for after the turn.
     func queueing(_ action: (() -> Void)?, alternate: (() -> Void)? = nil, label: String = tr("compose.queue"),
@@ -52,6 +63,15 @@ struct SessionComposer<Controls: View>: View {
         var copy = self
         copy.extras = (model, config)
         copy.tint = config.tint
+        return copy
+    }
+
+    /// The same composer that takes pictures (drag, drop and paste) and shows them above the text.
+    func images(_ images: Binding<[ImageAttachment]>, asPaths: Bool = true, onFile: ((URL) -> Void)? = nil) -> Self {
+        var copy = self
+        copy.imagesBinding = images
+        copy.imagesAsPaths = asPaths
+        copy.fileDropped = onFile
         return copy
     }
 
@@ -121,7 +141,8 @@ struct SessionComposer<Controls: View>: View {
 
     static var surface: Color { Color(hex: 0x121214) }
 
-    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
+    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
     private var enabled: Bool { canSend && !sending && !isEmpty }
 
     var body: some View {
@@ -216,6 +237,11 @@ struct SessionComposer<Controls: View>: View {
     private var box: some View {
         let focused = focus ?? $ownFocus
         return VStack(alignment: .leading, spacing: 12) {
+            if let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
+                ImageAttachmentStrip(images: imagesBinding.wrappedValue) { gone in
+                    imagesBinding.wrappedValue.removeAll { $0.id == gone.id }
+                }
+            }
             TextField("", text: $text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.font(14))
@@ -223,7 +249,7 @@ struct SessionComposer<Controls: View>: View {
                 .lineLimit(lines)
                 .focused(focused)
                 .onSubmit {
-                    if busy, let queueAction, !isEmpty { queueAction() } else if enabled { onSend() }
+                    if busy, let queueAction, !isEmpty { fire(queueAction) } else if enabled { fire(onSend) }
                 }
                 .onChange(of: text) { old, new in textChanged(old, new) }
                 .onKeyPress(.upArrow) { _ in arrow(-1) }
@@ -239,11 +265,11 @@ struct SessionComposer<Controls: View>: View {
                 if let trailingAccessory { trailingAccessory }
                 if busy, let onStop {
                     if let queueAction, !isEmpty {
-                        roundButton(symbol: queueSymbol, label: queueLabel, active: true, action: queueAction)
+                        roundButton(symbol: queueSymbol, label: queueLabel, active: true) { fire(queueAction) }
                     }
                     roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
                 } else {
-                    roundButton(symbol: "arrow.up", label: sendLabel ?? tr("button.send"), active: enabled, action: onSend)
+                    roundButton(symbol: "arrow.up", label: sendLabel ?? tr("button.send"), active: enabled) { fire(onSend) }
                         .disabled(!enabled)
                 }
             }
@@ -260,7 +286,48 @@ struct SessionComposer<Controls: View>: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(focused.wrappedValue ? tint.opacity(0.5) : Color(hex: 0x222226), lineWidth: 1)
         )
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .allowsHitTesting(false)
+            }
+        }
         .animation(.easeInOut(duration: 0.15), value: focused.wrappedValue)
+        .onDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
+            guard let imagesBinding else { return false }
+            return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
+                if let fileDropped { fileDropped(url) } else { insertPath(url) }
+            })
+        }
+        .onAppear { startPasteMonitor(focused: focused) }
+        .onDisappear { pasteMonitor.stop() }
+    }
+
+    /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text.
+    private func fire(_ action: () -> Void) {
+        if imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
+            text = ImageAttachment.appendingPaths(of: imagesBinding.wrappedValue, to: text)
+            imagesBinding.wrappedValue = []
+        }
+        action()
+    }
+
+    private func insertPath(_ url: URL) {
+        let path = url.path.contains(" ") ? "\"\(url.path)\"" : url.path
+        text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + path + " "
+    }
+
+    /// Cmd-V with a picture on the clipboard adds it here; with text it pastes as always.
+    private func startPasteMonitor(focused: FocusState<Bool>.Binding) {
+        guard let imagesBinding else { return }
+        pasteMonitor.start {
+            guard focused.wrappedValue else { return false }
+            let pictures = ImageAttachment.fromPasteboard()
+            guard !pictures.isEmpty else { return false }
+            imagesBinding.wrappedValue += pictures
+            return true
+        }
     }
 
     private func roundButton(symbol: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -281,6 +348,27 @@ struct SessionComposer<Controls: View>: View {
         .help(label)
         .accessibilityLabel(label)
     }
+}
+
+/// Watches for Cmd-V while a composer is on screen and lets it claim a paste that holds a picture.
+final class PasteMonitor {
+    private var monitor: Any?
+
+    func start(handle: @escaping () -> Bool) {
+        stop()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command, event.charactersIgnoringModifiers == "v" else { return event }
+            return handle() ? nil : event
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    deinit { stop() }
 }
 
 /// A quiet choice inside or under the composer: an agent logo, a symbol or a colored dot, and a short text.

@@ -44,8 +44,8 @@ struct ConfigPreview: View {
 
     private func color(_ kind: DiffLine.Kind) -> Color {
         switch kind {
-        case .add: return .green
-        case .remove: return .red
+        case .add: return NookTheme.mint
+        case .remove: return NookTheme.coral
         case .context: return .secondary
         }
     }
@@ -63,7 +63,7 @@ struct SettingsHeader: View {
             if section == .general {
                 NookOrb(mood: mood, size: 30, animated: false)
                     .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.14)))
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.smoke))
             } else {
                 SettingsTile(section, size: 44)
             }
@@ -91,10 +91,10 @@ enum StatusState {
 
     var color: Color {
         switch self {
-        case .done: return .green
+        case .done: return NookTheme.mint
         case .todo: return Color.secondary.opacity(0.55)
-        case .warning: return .orange
-        case .error: return .red
+        case .warning: return NookTheme.amber
+        case .error: return NookTheme.coral
         }
     }
 }

@@ -11,6 +11,7 @@ struct AgentRunPanel: View {
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @State private var images: [ImageAttachment] = []
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
@@ -68,6 +69,8 @@ struct AgentRunPanel: View {
             .onAppear {
                 workspace.loadTimeline(runID)
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
+                // The agent's connection opens now, so your first message goes straight in.
+                workspace.prewarm(runID)
                 focused = true
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
@@ -76,6 +79,7 @@ struct AgentRunPanel: View {
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
+                workspace.prewarm(runID)
                 draft = ""
                 if let fresh = workspace.run(runID) { loadComposerState(fresh) }
                 renaming = false
@@ -665,6 +669,7 @@ struct AgentRunPanel: View {
                       alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
                       label: steers ? tr("compose.steer") : tr("compose.queue"),
                       symbol: steers ? "arrow.turn.down.right" : "text.append")
+            .images($images)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))
@@ -673,52 +678,46 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account and the model, as when you start a session. A model counts from the next turn; another
-    /// account or agent moves the session there with a summary of what happened (shown in the timeline).
+    /// The agent with its account and the model (model picker). A model counts from the next turn; another account
+    /// or agent moves the session there with a summary of what happened (shown in the timeline).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
-        AgentPickerMenu(provider: run.provider, profileID: run.profileID, model: run.model, resolvedModel: run.resolvedModel,
-                        disabled: !workspace.canTransfer(runID),
-                        pickAccount: { provider, account in
-                            let model = provider == run.provider ? run.model : workspace.settings.model(for: provider)
-                            workspace.applySelection(runID, provider: provider, profileID: account.id, model: model)
-                        },
-                        pickModel: { model in
-                            workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: model)
-                        })
+        let profile = app.profile(for: run)
+        let account = profile.map { AccountLabel.name($0, app: app) }
+        let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
+        let providers = workspace.canTransfer(runID) ? app.connectedProviders : [run.provider]
+        return ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
+            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
+                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+        } content: {
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: true) { provider, accountID, option in
+                let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
+                let chosen = option ?? (provider == run.provider ? run.model : workspace.settings.model(for: provider))
+                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen)
+            }
+        }
+        .disabled(run.status.isActive)
+        .help(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {
-        Menu {
-            ForEach(ExecutionMode.allCases) { mode in
-                Button {
-                    workspace.configure(runID, mode: mode)
-                } label: {
-                    if run.mode == mode { Label(mode.label, systemImage: "checkmark") } else { Text(mode.label) }
-                }
-            }
-        } label: {
-            ComposerPill(symbol: run.mode == .plan ? "list.bullet.clipboard" : "sparkles", text: run.mode.label)
-        }
-        .composerMenu()
-        .disabled(run.status.isActive)
-        .help(run.mode.help)
+        ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
+            .disabled(run.status.isActive)
     }
 
     private func permissionMenu(_ run: WorkspaceRun) -> some View {
-        Menu {
-            ForEach(run.provider.capabilities.policies) { policy in
-                Button {
-                    workspace.configure(runID, permission: policy)
-                } label: {
-                    if run.permission == policy { Label(policy.label, systemImage: "checkmark") } else { Text(policy.label) }
-                }
-            }
-        } label: {
+        ComposerDropdown(width: 300) {
             ComposerPill(symbol: run.permission == .bypass ? "lock.open" : "lock",
                          text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
                          tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
+        } content: {
+            DropdownHeader(title: tr("compose.access"))
+            ForEach(run.provider.capabilities.policies) { policy in
+                DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: run.provider),
+                            chosen: run.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
+                    workspace.configure(runID, permission: policy)
+                }
+            }
         }
-        .composerMenu()
         .disabled(run.status.isActive || run.mode == .plan)
         .help(run.permission.help(for: run.provider))
     }

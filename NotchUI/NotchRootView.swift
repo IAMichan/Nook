@@ -456,11 +456,24 @@ private struct AgentDots: View {
 
 private extension View {
     /// In floating mode, you can drag Nook by this component. Tapping continues to work as expected.
+    /// With ⌥ held, the drag attaches the window you drop Nook on to the chat instead (any placement).
     func floatingDrag(_ viewModel: NotchViewModel) -> some View {
         simultaneousGesture(
             DragGesture(minimumDistance: 4)
-                .onChanged { _ in if viewModel.geometry.isFloating { viewModel.onDragMoved?() } }
-                .onEnded { _ in if viewModel.geometry.isFloating { viewModel.onDragEnded?() } }
+                .onChanged { _ in
+                    if WindowAttach.shared.isDragging || NSEvent.modifierFlags.contains(.option) {
+                        WindowAttach.shared.dragMoved()
+                    } else if viewModel.geometry.isFloating {
+                        viewModel.onDragMoved?()
+                    }
+                }
+                .onEnded { _ in
+                    if WindowAttach.shared.isDragging {
+                        WindowAttach.shared.dragEnded()
+                    } else if viewModel.geometry.isFloating {
+                        viewModel.onDragEnded?()
+                    }
+                }
         )
     }
 }

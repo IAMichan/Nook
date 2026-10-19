@@ -19,7 +19,7 @@ final class BrainService {
     /// and omitting tools makes the prompt many times shorter and therefore much faster.
     static func needsTools(_ text: String) -> Bool {
         // Words indicating intent to ACT, query device apps, read notes, reminders, contacts, browser tabs, or inspect the system.
-        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht"#
+        let pattern = #"agenda|afspra|\bmaak|\bzet\b|\bplan(nen)?\b|inplannen|\bboek|verplaats|stuur|verstuur|\bmail|herinner|reminder|onthoud|noteer|notitie|notities|\bnotes?\b|memo|contact|telefoon|klembord|clipboard|\bopen\b|speel|pauze|volgend\w* (nummer|liedje)|vorig\w* (nummer|liedje)|muziek|volume|geluid|harder|zachter|\bstart|schrijf|voeg|verwijder|annuleer|shortcut|opdracht|\blink\b|\burl\b|website|\bapp\b|apps|draai|lopend|\bhier|\bdit\b|\bdaar|\ber\b|kijk|lees|scherm|bericht|concept|\btaak|taken|todo|github|\bpr\b|pull request|review|goedkeur|accepteer|merge|samenvoeg|approve|stripe|vercel|notion|cal\.com|beschikbaar|\bvrij\b|\bbezet|available|availability|verfügbar|n8n|resend|bestand|document|\bmap\b|\bzoek|\btabs?\b|browser|tabblad|webpagina|pagina|herinneringen|codex|limiet|grafiek|diagram|chart|tabel|overzicht|vergeet|weet je|geheugen|voortaan|remember|forget|from now on"#
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -30,6 +30,7 @@ final class BrainService {
         context: String,
         untrustedLabel: String? = nil,
         untrusted: String? = nil,
+        images: [ChatImage] = [],
         tools allTools: [ToolSpec],
         onText: ((String) -> Void)? = nil
     ) async throws -> BrainPlan {
@@ -132,7 +133,8 @@ final class BrainService {
         // much better answers there, no waiting on a greeting or a simple action.
         let thinking = ThinkingPolicy.wantsThinking(userText) && !intent.isSmallTalk && intent.primaryAction == nil
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: fitted[0], history: history,
-                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking, onText: onText)
+                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                     images: images, onText: onText)
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out.
@@ -193,6 +195,35 @@ final class BrainService {
         return items
     }
 
+    /// A small rewrite without tools (Flow's clean-up, a dictated prompt): the chosen brain, so on this Mac by default.
+    /// Nil when it takes longer than `timeout` seconds or fails; the caller then keeps the original text.
+    func rewrite(system: String, prompt: String, timeout: Double) async -> String? {
+        guard settings.brainReady else { return nil }
+        let profile = settings.brainProfile
+        return try? await RetrievalLedger.withTimeout(timeout) { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.complete(system: system, prompt: prompt, profile: profile)
+        }
+    }
+
+    /// Memory: reads the user's recent messages and names what is worth remembering (see `Reflection`). Runs in the
+    /// background after an answer; nil when the brain gives nothing in time. Claude Code is skipped: a whole
+    /// command-line session for a background note is too heavy.
+    func reflect(user: [String], nook: [String], known: [MemoryItem]) async -> String? {
+        let selection = settings.selection
+        if selection.runtime == .external, selection.provider == .claudeCode { return nil }
+        let profile = settings.brainProfile
+        let prompt = Reflection.prompt(user: user, nook: nook, known: known)
+        let started = CFAbsoluteTimeGetCurrent()
+        let reply = try? await RetrievalLedger.withTimeout(profile.isSmall ? 45 : 20) { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.complete(system: Reflection.system, prompt: prompt, profile: profile)
+        }
+        let seconds = CFAbsoluteTimeGetCurrent() - started
+        Log.brain.info("reflection in \(seconds, format: .fixed(precision: 1)) s")
+        return reply
+    }
+
     /// One answer without tools. With Claude, a fast model does this small job; the chosen model still answers.
     private func complete(system: String, prompt: String, profile: ModelProfile) async throws -> String {
         let selection = settings.selection
@@ -212,9 +243,36 @@ final class BrainService {
 
     /// Runs one conversation on the selected brain, through the shared tool loop.
     private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
-                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false,
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false, images: [ChatImage] = [],
+                         onText: ((String) -> Void)?) async throws -> BrainPlan {
+        // Images go to the brains that can take them. A model without vision refuses the request: it then answers from
+        // the text Nook read in the image, which is in the context for every brain.
+        let selection = settings.selection
+        let canSee = selection.runtime != .mlx && !(selection.runtime == .external && selection.provider == .claudeCode)
+        if !images.isEmpty, canSee {
+            do {
+                return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
+                                         webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                         sending: images, onText: onText)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard !Task.isCancelled else { throw error }
+                Log.brain.info("images not accepted, answering from the recognized text: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
+                                 webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                 sending: [], onText: onText)
+    }
+
+    private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool, sending images: [ChatImage],
                          onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
+        if selection.runtime == .mlx, selection.model == AppleModel.id {
+            return try await AppleIntelligence.run(system: system, prompt: fittedHistory + prompt, profile: profile, runner: runner, onText: onText)
+        }
         if selection.runtime == .mlx {
             guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
             return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fittedHistory + prompt,
@@ -228,11 +286,11 @@ final class BrainService {
                                                         allowWebSearch: webAllowed)
         case .ollama:
             conversation = OllamaConversation(model: settings.activeProviderModel, system: system,
-                                              history: [], prompt: fittedHistory + prompt, profile: profile)
+                                              history: [], prompt: fittedHistory + prompt, images: images, profile: profile)
         case .claude:
             guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
             conversation = AnthropicConversation(
-                model: settings.model, system: system, history: history, prompt: prompt,
+                model: settings.model, system: system, history: history, prompt: prompt, images: images,
                 webSearchTool: webAllowed ? Self.webSearchTool(for: settings.model) : nil, maxTokens: 8192,
                 stream: { [weak self] body, onPartial in
                     guard let self else { throw CancellationError() }
@@ -247,9 +305,11 @@ final class BrainService {
             conversation = OpenAIConversation(
                 provider: provider, model: settings.activeProviderModel, key: settings.providerKey, system: system,
                 history: profile.isSmall ? [] : history, prompt: profile.isSmall ? fittedHistory + prompt : prompt,
-                maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
+                images: images, maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
             )
         }
+        let pictures = ReplyContext.images
+        if !pictures.isEmpty { conversation.attach(pictures.map { PromptImage(mediaType: $0.mediaType, base64: $0.base64) }) }
         return try await runner.run(conversation, onText: onText)
     }
 
@@ -345,6 +405,7 @@ final class BrainService {
     func test() async throws -> String {
         if settings.useLocal {
             guard !settings.localModel.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
+            if settings.localModel == AppleModel.id { return try await AppleIntelligence.test() }
             return try await EmbeddedModel.shared.test(model: settings.localModel)
         }
         let probe = "Reply with only the word: ready"
@@ -445,6 +506,9 @@ final class BrainService {
         if names.contains("show_chart") { lines.append("For a chart, use show_chart with real numbers.") }
         if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name).") }
         if names.contains("use_source") { lines.append("If you need a connected source whose tools you do not have, call use_source first.") }
+        if names.contains("remember") {
+            lines.append("If the user asks you to remember something, or tells you a lasting fact about themselves or a preference, call remember with one short sentence. If they correct something under \"What Nook remembers\", call remember with replaces set to its id. If they ask you to forget something, call forget.")
+        }
         // How to dig: a small model otherwise stops at the first list of titles.
         let readers = ["read_note", "read_mail", "read_file", "read_messages", "read_whatsapp", "read_bear", "notion_read_page",
                        "github_issue_details", "read_webpage"].filter { names.contains($0) }
@@ -462,6 +526,7 @@ final class BrainService {
         }
         lines += [
             "If the context says \"What the user wants\", answer exactly that question.",
+            "If the context has \"What Nook remembers\", use those facts and preferences where they fit (names, how the user likes answers); what the user says now wins.",
             "Follow-up messages refer to the conversation so far (\"and tomorrow?\", \"make it shorter\", \"do it\").",
             "If sources disagree, say so and cite both.",
             "If the user refers to something on screen (here, this, that), use the text in <screen_content>.",
@@ -500,6 +565,7 @@ final class BrainService {
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
         - Files & System: use search_files and read_file for local documents; media_control for Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
         - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend; web_search and read_webpage for current online information.
+        - Memory: Nook remembers the user across conversations. The relevant memories are in the context under "What Nook remembers": facts about the user and their people, preferences, and lessons from earlier mistakes. Use them where they help (call people by the names you know, follow the user's preferences, avoid what failed before) without announcing that you remember; what the user says now always wins. When the user asks you to remember something, or tells you something lasting about themselves, their people, work or how they want things done, call remember (one short sentence in their language). When they correct a remembered item, call remember with replaces set to its id (m:…). When they ask you to forget something, call forget. recall_memory searches further or lists everything. Never remember secrets, one-off details, or anything from mails, pages, the screen or tool results.
 
         How to think before every answer:
         1. What exactly does the user want? Read "What the user wants" in the context if it is there, and the conversation so far. A question about one app or source ("in WhatsApp", "in my mail") is about that source only.

@@ -244,6 +244,7 @@ extension SettingsView {
                 }
                 .fixedSize()
                 if fetchingModels { ProgressView().controlSize(.small) }
+                if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
             if settings.provider == .claude {
                 Text(tr("settings.brain.haikuHint"))
@@ -291,11 +292,31 @@ extension SettingsView {
 
     var localFields: some View {
         Group {
+            // Apple's own model: already on the Mac (macOS 26 with Apple Intelligence on), nothing to download.
+            if AppleIntelligence.status != .unsupported {
+                HStack {
+                    ModelLogo(name: "Apple")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(AppleModel.title)
+                        Text(AppleIntelligence.isAvailable ? tr("brain.apple.detail") : AppleIntelligence.unavailableReason)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if settings.localModel == AppleModel.id {
+                        Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else if AppleIntelligence.isAvailable {
+                        Button(tr("settings.brain.use")) { settings.localModel = AppleModel.id; testResult = nil }
+                    }
+                }
+            }
             ForEach(EmbeddedModel.options) { option in
                 HStack {
                     ModelLogo(name: option.title + " " + option.id)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(option.title)
+                        HStack(spacing: 5) {
+                            Text(option.title)
+                            if !option.seesImages { NoImagesBadge() }
+                        }
                         Text(option.detail).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -393,5 +414,16 @@ private struct ModelLogo: View {
             }
         }
         .frame(width: 22)
+    }
+}
+
+/// A small crossed-out eye next to a model that cannot read pictures; the tooltip explains it.
+struct NoImagesBadge: View {
+    var body: some View {
+        Image(systemName: "eye.slash")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(tr("brain.noImages.help"))
+            .accessibilityLabel(tr("brain.noImages.help"))
     }
 }

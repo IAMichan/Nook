@@ -222,6 +222,15 @@ final class AppSettings: ObservableObject {
     @Published var checkAnswers: Bool {
         didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
     }
+    /// Memory: what Nook learned about the user goes along with every question (Settings › Memory).
+    @Published var useMemory: Bool {
+        didSet { UserDefaults.standard.set(useMemory, forKey: "useMemory") }
+    }
+    /// Memory: Nook learns by itself from corrections, conversations and how plans are changed and run. Without it, Nook
+    /// only remembers what the user asks it to.
+    @Published var learnFromChats: Bool {
+        didSet { UserDefaults.standard.set(learnFromChats, forKey: "learnFromChats") }
+    }
     /// Onboarding flow completed.
     @Published var onboardingDone: Bool {
         didSet { UserDefaults.standard.set(onboardingDone, forKey: "onboardingDone") }
@@ -250,6 +259,7 @@ final class AppSettings: ObservableObject {
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
         let memory = ModelAdvisor.Hardware.current.memoryGB
+        if useLocal, localModel == AppleModel.id { return .apple }
         if useLocal { return (ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall).roomier(memoryGB: memory) }
         if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel).roomier(memoryGB: memory) }
         return .cloud
@@ -259,6 +269,7 @@ final class AppSettings: ObservableObject {
     var brainLabel: String {
         if useLocal {
             if localModel.isEmpty { return tr("brain.chip.noModel") }
+            if localModel == AppleModel.id { return AppleModel.title }
             return ModelAdvisor.catalog.first { $0.id == localModel }?.title ?? activeModelName
         }
         let name = activeProviderModel.isEmpty ? tr("brain.chip.firstModel") : activeProviderModel
@@ -287,6 +298,7 @@ final class AppSettings: ObservableObject {
 
     /// Name of the current reasoning engine, for notifications.
     var activeModelName: String {
+        if useLocal, localModel == AppleModel.id { return AppleModel.title }
         if useLocal { return localModel.split(separator: "/").last.map(String.init) ?? localModel }
         let name = activeProviderModel
         return provider == .claude ? name : "\(provider.title) · \(name.isEmpty ? "first model" : name)"
@@ -359,6 +371,8 @@ final class AppSettings: ObservableObject {
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")
         checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
+        useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
+        learnFromChats = defaults.object(forKey: "learnFromChats") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
         let key = Keychain.read(Self.keyAccount)
         cachedKey = key

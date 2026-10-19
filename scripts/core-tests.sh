@@ -30,11 +30,15 @@ EXCLUDE_SOURCES=(
   "Services/Workspace/Antigravity.swift"
   "Services/Workspace/TextGeneration.swift"
   "App/ChatRecovery.swift"
+  "Brain/ChatImage.swift"
+  "Services/WhatsApp/WhatsAppGateway.swift"
+  "Brain/Weather.swift"
 )
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
+  "ExtrasTests" "WhatsAppTests"
 )
 
 python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'

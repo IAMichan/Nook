@@ -142,6 +142,38 @@ enum AIProvider: String, CaseIterable, Identifiable {
         let list = (object["data"] as? [[String: Any]]) ?? (object["models"] as? [[String: Any]]) ?? []
         return list.compactMap { ($0["id"] as? String) ?? ($0["name"] as? String) }
             .map { $0.replacingOccurrences(of: "models/", with: "") }
+            .filter(Self.isChatModel)
             .sorted()
+    }
+
+    /// Model lists also hold embedding, speech, image and moderation models; picked as a brain, they only give an error.
+    static func isChatModel(_ id: String) -> Bool {
+        let lower = id.lowercased()
+        let excluded = ["embed", "bge-", "all-minilm", "rerank", "clip", "whisper", "tts", "transcribe", "dall-e", "imagen",
+                        "gpt-image", "sora", "veo", "moderat", "realtime", "babbage", "davinci", "aqa"]
+        return !excluded.contains { lower.contains($0) }
+    }
+}
+
+extension AIProvider {
+    /// Whether this model can read a picture, going by its name. Best guess for services that offer text-only models next to
+    /// ones with vision; a model that cannot see ignores the picture or answers with an error.
+    func seesImages(model: String) -> Bool {
+        let name = model.lowercased()
+        func has(_ parts: String...) -> Bool { parts.contains { name.contains($0) } }
+        switch self {
+        case .claude, .claudeCode, .gemini: return true
+        case .openai: return !has("gpt-3", "o1-mini", "o3-mini", "instruct")
+        case .grok: return has("vision", "grok-4", "grok-2-image")
+        case .mistral: return has("pixtral", "small", "medium", "large")
+        case .groq: return has("vision", "scout", "maverick")
+        case .openrouter: return true
+        case .deepseek: return false
+        case .qwen: return has("vl", "omni")
+        case .moonshot: return has("vision", "vl", "k2.5")
+        case .ollama, .lmstudio:
+            return has("vl", "vision", "llava", "gemma3", "gemma-3", "gemma4", "gemma-4", "minicpm-v", "moondream", "pixtral",
+                       "qwen3.5", "qwen3.6", "llama4", "llama-4", "mistral-small3")
+        }
     }
 }

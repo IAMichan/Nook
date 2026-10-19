@@ -1,20 +1,28 @@
 import Foundation
+import AppKit
 import AVFoundation
 import Speech
 
 /// Listens in the background for "Hey Nook" and triggers active listening.
 /// Disabled by default and requires on-device speech recognition: audio never leaves your Mac.
+///
+/// Frugal: the microphone only measures loudness until someone speaks (EnergyVAD); speech
+/// recognition runs for that stretch only, with the half second before it, and stops in the silence after. Listening
+/// pauses while the screen is locked or asleep and in Low Power Mode, and comes back by itself.
 @MainActor
 final class WakeWordService {
     var onWake: (() -> Void)?
+    /// The user turned it on (it may be paused for now).
     private(set) var isRunning = false
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
     private let engine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private let gate = WakeGate()
     private var task: SFSpeechRecognitionTask?
-    private var restartTimer: Timer?
-    /// Each new recognition task receives an incremented generation ID; stale messages are ignored.
+    private var hasTap = false
+    private var paused = false
+    private var observers: [NSObjectProtocol] = []
+    /// Each speech stretch gets an incremented generation; late results of an older one are ignored.
     private var generation = 0
 
     /// "hé nook", "hey nook", "oké nook"… plus common speech recognition approximations.
@@ -28,8 +36,6 @@ final class WakeWordService {
         SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))?.supportsOnDeviceRecognition ?? false
     }
 
-    private var hasTap = false
-
     func start() throws {
         guard !isRunning else { return }
         guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
@@ -39,51 +45,49 @@ final class WakeWordService {
             throw NookError("Please grant Nook access to microphone and speech recognition first.")
         }
         isRunning = true
-        try begin(recognizer)
-        // A recognition task lasts at most one minute; restart every 50 seconds.
-        restartTimer = Timer.scheduledTimer(withTimeInterval: 50, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.restart() }
-        }
+        observePause()
+        if shouldPause { paused = true } else { try listen() }
     }
 
     func stop() {
         guard isRunning else { return }
         isRunning = false
-        restartTimer?.invalidate()
-        restartTimer = nil
+        paused = false
+        observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
+        observers = []
         teardown()
     }
 
-    private func restart() {
-        guard isRunning, let recognizer else { return }
-        teardown()
-        do {
-            try begin(recognizer)
-        } catch {
-            stop()
+    // MARK: Listening for speech
+
+    private func listen() throws {
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        if hasTap { input.removeTap(onBus: 0) }
+        let gate = self.gate
+        gate.reset()
+        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            switch gate.consume(buffer) {
+            case .start: Task { @MainActor in self?.speechStarted() }
+            case .end: Task { @MainActor in self?.speechEnded() }
+            case .none: break
+            }
         }
+        hasTap = true
+        engine.prepare()
+        try engine.start()
     }
 
-    private func begin(_ recognizer: SFSpeechRecognizer) throws {
+    /// Someone speaks: recognize this stretch, with the moment before it.
+    private func speechStarted() {
+        guard isRunning, !paused, let recognizer else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.requiresOnDeviceRecognition = true
         request.taskHint = .search
-        self.request = request
         generation += 1
         let current = generation
-
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        if hasTap {
-            input.removeTap(onBus: 0)
-            hasTap = false
-        }
-        Self.installTap(on: input, format: format, request: request)
-        hasTap = true
-        engine.prepare()
-        try engine.start()
-
+        task?.cancel()
         task = Self.startTask(recognizer: recognizer, request: request) { [weak self] text, finished in
             Task { @MainActor in
                 guard let self, self.isRunning, self.generation == current else { return }
@@ -91,44 +95,85 @@ final class WakeWordService {
                     self.stop()
                     self.onWake?()
                 } else if finished {
-                    // Brief delay to prevent tight restart loops on error.
-                    self.generation += 1
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    self.restart()
+                    self.task = nil
                 }
             }
         }
+        gate.attach(request)
+    }
+
+    /// Silence again: the stretch is over; recognition stops.
+    private func speechEnded() {
+        gate.detach()?.endAudio()
     }
 
     private func teardown() {
-        if engine.isRunning {
-            engine.stop()
-        }
+        if engine.isRunning { engine.stop() }
         if hasTap {
             engine.inputNode.removeTap(onBus: 0)
             hasTap = false
         }
-        request?.endAudio()
+        gate.detach()?.endAudio()
         task?.cancel()
-        request = nil
         task = nil
     }
+
+    // MARK: Pausing
+
+    private var shouldPause: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    private func observePause() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let pauseNames: [Notification.Name] = [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                                               NSWorkspace.sessionDidResignActiveNotification]
+        let resumeNames: [Notification.Name] = [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification,
+                                                NSWorkspace.sessionDidBecomeActiveNotification]
+        for name in pauseNames {
+            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.pause() }
+            })
+        }
+        for name in resumeNames {
+            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.resume() }
+            })
+        }
+        // Screen locked: macOS posts this distributed notification.
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pause() }
+        })
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resume() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.shouldPause { self.pause() } else { self.resume() }
+            }
+        })
+    }
+
+    private func pause() {
+        guard isRunning, !paused else { return }
+        paused = true
+        teardown()
+    }
+
+    private func resume() {
+        guard isRunning, paused, !shouldPause else { return }
+        paused = false
+        do { try listen() } catch { stop() }
+    }
+
+    // MARK: Matching
 
     static func matches(_ text: String) -> Bool {
         guard let pattern else { return false }
         // Only check the trailing suffix to avoid matching earlier wake words retained in the text.
         let tail = String(text.suffix(40))
         return pattern.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
-    }
-
-    private nonisolated static func installTap(
-        on input: AVAudioInputNode,
-        format: AVAudioFormat,
-        request: SFSpeechAudioBufferRecognitionRequest
-    ) {
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-            request.append(buffer)
-        }
     }
 
     private nonisolated static func startTask(
@@ -139,5 +184,75 @@ final class WakeWordService {
         recognizer.recognitionTask(with: request) { result, error in
             handler(result?.bestTranscription.formattedString, (result?.isFinal ?? false) || error != nil)
         }
+    }
+}
+
+/// The audio thread's side: loudness → voice activity, the last half second kept for the start of a word, and the
+/// recognition request the buffers go to while someone speaks.
+private final class WakeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var vad = EnergyVAD()
+    private var rateSet = false
+    private var preroll: [AVAudioPCMBuffer] = []
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        vad = EnergyVAD()
+        rateSet = false
+        preroll = []
+        request = nil
+    }
+
+    func consume(_ buffer: AVAudioPCMBuffer) -> EnergyVAD.Event {
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return .none }
+        let count = Int(buffer.frameLength)
+        var sum: Float = 0
+        for index in 0..<count { sum += samples[index] * samples[index] }
+        let power = Double(sum / Float(count))
+        lock.lock()
+        defer { lock.unlock() }
+        if !rateSet {
+            vad.setFrameRate(buffer.format.sampleRate / Double(count))
+            rateSet = true
+        }
+        let event = vad.feed(power)
+        if let request {
+            request.append(buffer)
+        } else if let copy = Self.copy(buffer) {
+            preroll.append(copy)
+            let keep = max(1, Int((0.5 * buffer.format.sampleRate / Double(count)).rounded(.up)))
+            if preroll.count > keep { preroll.removeFirst(preroll.count - keep) }
+        }
+        return event
+    }
+
+    func attach(_ request: SFSpeechAudioBufferRecognitionRequest) {
+        lock.lock()
+        defer { lock.unlock() }
+        for buffer in preroll { request.append(buffer) }
+        preroll = []
+        self.request = request
+    }
+
+    /// Stops sending buffers; returns the request so it can be ended.
+    func detach() -> SFSpeechAudioBufferRecognitionRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = request
+        request = nil
+        vad.reset()
+        return current
+    }
+
+    private static func copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength),
+              let from = buffer.floatChannelData, let to = copy.floatChannelData else { return nil }
+        copy.frameLength = buffer.frameLength
+        for channel in 0..<Int(buffer.format.channelCount) {
+            to[channel].update(from: from[channel], count: Int(buffer.frameLength))
+        }
+        return copy
     }
 }

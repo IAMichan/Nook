@@ -69,7 +69,7 @@ extension WorkspaceManager {
     private func proposePullRequest(_ id: UUID, progress: @escaping (String) -> Void) async throws -> URL {
         guard let run = run(id), let git = gitService else { throw StartError.noGit }
         let directory = run.workingDirectory
-        guard let repo = await remoteRepository(id) else { throw StartError.git(tr("ws.quick.noRemote")) }
+        guard let repo = await remoteRepository(id) else { throw StartError.git(tr("ws.quick.noForge")) }
         guard let branch = await currentBranch(id) else { throw StartError.git(tr("ws.error.detached")) }
         let sessionBase = run.baseBranch
         let root = run.repoRoot ?? directory
@@ -104,7 +104,7 @@ extension WorkspaceManager {
         }
         // No connected account (or another forge): the forge's own page, with the title and description already filled in.
         guard let compare = SourceForge.newRequestPage(repo: repo, base: base, head: branch, title: title, body: body) else {
-            throw StartError.git(tr("ws.quick.noRemote"))
+            throw StartError.git(tr("ws.quick.noForge"))
         }
         NSWorkspace.shared.open(compare)
         append(id, RunEvent(kind: .system, text: tr("ws.event.prCompare", branch)))

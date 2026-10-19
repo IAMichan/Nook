@@ -11,8 +11,18 @@ final class SpeechOutput {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         stop()
-        let utterance = AVSpeechUtterance(string: String(clean.prefix(600)))
-        utterance.voice = AVSpeechSynthesisVoice(language: Self.voiceLanguage(for: language, text: clean))
+        let utterance = AVSpeechUtterance(string: String(SpokenText.plain(clean).prefix(1_200)))
+        utterance.voice = Self.bestVoice(for: Self.voiceLanguage(for: language, text: clean))
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        synthesizer.speak(utterance)
+    }
+
+    /// Adds a sentence after what is being said (the answer read while it is written).
+    func enqueue(_ text: String, language: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let utterance = AVSpeechUtterance(string: String(clean.prefix(1_200)))
+        utterance.voice = Self.bestVoice(for: Self.voiceLanguage(for: language, text: clean))
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
         synthesizer.speak(utterance)
     }
@@ -20,6 +30,32 @@ final class SpeechOutput {
     func stop() {
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
     }
+
+    /// The best installed voice for a language: Premium before Enhanced before the compact default, then the same region
+    /// (nl-NL before nl-BE). Novelty voices and the user's Personal Voice are never used. Remembered per language;
+    /// a voice downloaded later is picked up after a restart of Nook.
+    static func bestVoice(for language: String) -> AVSpeechSynthesisVoice? {
+        if let known = chosen[language] { return known }
+        let prefix = String(language.prefix(2))
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            voice.language.hasPrefix(prefix)
+                && !voice.voiceTraits.contains(.isNoveltyVoice) && !voice.voiceTraits.contains(.isPersonalVoice)
+        }
+        func rank(_ voice: AVSpeechSynthesisVoice) -> (Int, Int) {
+            let quality: Int
+            switch voice.quality {
+            case .premium: quality = 2
+            case .enhanced: quality = 1
+            default: quality = 0
+            }
+            return (quality, voice.language == language ? 1 : 0)
+        }
+        let best = candidates.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: language)
+        chosen[language] = best
+        return best
+    }
+
+    private static var chosen: [String: AVSpeechSynthesisVoice] = [:]
 
     private static func voiceLanguage(for code: String, text: String) -> String {
         var language = code
