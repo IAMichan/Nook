@@ -377,7 +377,8 @@ final class NotchController {
             let eventWindow = event.window
             MainActor.assumeIsolated {
                 guard let self, NSApp.modalWindow == nil, window != self.panel?.windowNumber else { return }
-                // A dropdown (SwiftUI popover) is a window of its own, but it belongs to the notch: a click in it is not outside.
+                // A dropdown (SwiftUI popover) or a confirmation (the sheet of a `.confirmationDialog`, e.g. "Merge pull
+                // request?") is a window of its own, but it belongs to the notch: a click in it is not outside.
                 if let eventWindow, self.belongsToNotch(eventWindow) { return }
                 self.viewModel.clickedOutside()
             }
@@ -385,12 +386,13 @@ final class NotchController {
         }) { monitors.append(m) }
     }
 
-    /// True for a popover or other child window that hangs off a notch panel (the real one or a mirror).
+    /// True for a popover, sheet or other child window that hangs off a notch panel (the real one or a mirror).
     private func belongsToNotch(_ window: NSWindow) -> Bool {
         var parent: NSWindow? = window
         while let current = parent {
             if current is NotchPanel { return true }
-            parent = current.parent
+            // A sheet is not a child window: it hangs off its window through `sheetParent`.
+            parent = current.parent ?? current.sheetParent
         }
         return false
     }
