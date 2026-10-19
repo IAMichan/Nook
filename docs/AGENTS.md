@@ -34,6 +34,8 @@ All agent sessions converge in a single registry (`AgentSessionRegistry`): hooks
 - **In the Notch** (**Agents** tab, compact view): see what is running and what is waiting for you, approve or deny tool calls, answer multiple-choice questions, and send quick follow-ups. Clicking **New Session** opens the workspace window; accounts are managed in Settings.
 - **In the Main Window** (`⌥⌘W` › **Agents**): full conversation timeline, inline approvals, stop (`⌘.`), resume, retry, and per-turn mode, permission, and model controls. The right inspector displays branch, worktree, changed files with diffs, **Commit**, **Push**, and **Pull Request** actions.
 
+- **Pull Requests** (**Agents** › **Pull requests**): every open GitHub pull request you wrote or are asked to review, per connected account. Clicking one opens it inside Nook: description, checks of the latest commit, reviews and (line) comments, commits, and each changed file with its diff. **Merge** (merge commit, squash, or rebase, as the repository allows) asks for confirmation, pins the head commit you looked at (GitHub refuses if someone pushed since), uses the account the pull request is listed under, and logs the result to the action log (`github_merge_pr`).
+
 Key capabilities:
 - **Unified Approvals** (`ApprovalCenter`, `ApprovalView`): shows the complete command or file diff, risk level, and **Allow**, **Always**, **Deny**, or **In Terminal**. Approving in the window or terminal immediately clears the notch card.
 - **Running Sessions:** Continue a busy external session safely as a fork (`--fork-session`) so two writers never collide, or choose **Take Over** (`⋯`) to stop the external process and continue the session directly inside Nook.
