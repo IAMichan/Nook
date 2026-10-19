@@ -26,7 +26,9 @@ extension SettingsView {
         let oneClick = MCPRemoteService.all.filter {
             !linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline)
         }
-        let withKey = cloud.filter { !isConnected($0) && !oauthIDs.contains($0.id) && matchesSearch($0, capabilityLine) }
+        // GitHub signs in too (its own login page, or the GitHub CLI login): never a key you have to make first.
+        let gitHub = cloud.first { $0.id == "github" && !isConnected($0) && matchesSearch($0, capabilityLine) }
+        let withKey = cloud.filter { !isConnected($0) && !oauthIDs.contains($0.id) && $0.id != "github" && matchesSearch($0, capabilityLine) }
         let local = localSources(capabilityLine)
         let query = connectionSearch.trimmingCharacters(in: .whitespaces).lowercased()
         return Group {
@@ -71,9 +73,12 @@ extension SettingsView {
                 }
             }
 
-            if !oneClick.isEmpty {
+            if !oneClick.isEmpty || gitHub != nil {
                 Section {
                     GalleryGrid {
+                        if let gitHub {
+                            GitHubSignInCard(keyAlternative: gitHub, capabilities: capabilityLine(gitHub.id), onChange: refresh)
+                        }
                         ForEach(oneClick) { service in
                             OneClickServiceCard(service: service, keyAlternative: cloud.first { $0.id == service.id },
                                                 capabilities: capabilityLine(service.id), onChange: refresh)

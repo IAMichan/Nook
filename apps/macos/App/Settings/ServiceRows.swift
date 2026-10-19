@@ -207,6 +207,67 @@ struct OneClickServiceCard: View {
     }
 }
 
+/// GitHub, not connected yet: one click signs in on GitHub's own page (or takes over the GitHub CLI login), without
+/// making a token first. A token stays available on right-click.
+struct GitHubSignInCard: View {
+    let keyAlternative: ContextSource
+    var capabilities: String = ""
+    var onChange: () -> Void = {}
+
+    @ObservedObject private var signIn = GitHubSignIn.shared
+    @State private var showKeySetup = false
+
+    private var connecting: Bool {
+        switch signIn.phase {
+        case .checkingCLI, .waiting, .waitingForCLI: return true
+        case .idle, .done, .failed: return false
+        }
+    }
+
+    private var failure: String? {
+        if case .failed(let message) = signIn.phase { return message }
+        return nil
+    }
+
+    var body: some View {
+        GalleryCard(title: "GitHub",
+                    detail: failure ?? (connecting ? tr("connector.githubFinishLogin") : ServiceState.tagline("github"))) {
+            ServiceTile(domain: keyAlternative.iconDomain, fallback: keyAlternative.symbol, tint: keyAlternative.accent, size: 32,
+                        source: keyAlternative.id)
+        } accessory: {
+            if connecting {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(failure == nil ? tr("settings.connections.signIn") : tr("connector.retry"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NookTheme.onIris)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(NookTheme.iris))
+            }
+        } action: {
+            if connecting { signIn.cancel() } else { signIn.reconnect() }
+        }
+        .help(connecting ? tr("button.cancel") : tr("settings.connections.signInHelp", "GitHub"))
+        .contextMenu {
+            Button(tr("connect.useKey")) { showKeySetup = true }
+        }
+        .onChange(of: signIn.phase) { _, phase in
+            guard phase == .done else { return }
+            ConnectorToggle.set(keyAlternative.id, true)
+            let target = keyAlternative
+            let done = onChange
+            Task { @MainActor in
+                await target.refresh()
+                done()
+            }
+        }
+        .sheet(isPresented: $showKeySetup, onDismiss: onChange) {
+            CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities, onChange: onChange)
+        }
+    }
+}
+
 /// A connected (or expired) MCP service: observes its connector so the state changes without reopening Settings.
 private struct LinkedMCPServiceRow: View {
     let service: MCPRemoteService
