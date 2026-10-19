@@ -1,6 +1,6 @@
 import XCTest
 
-/// The models an agent offers itself, read reads them.
+/// The models an agent offers itself.
 final class AgentModelsTests: XCTestCase {
     func testCodexModelListPage() {
         let response: [String: Any] = [

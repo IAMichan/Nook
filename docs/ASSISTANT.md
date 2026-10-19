@@ -1,250 +1,169 @@
-# De Nook-chat: bronnen, bewijs en acties
+# Nook Chat: Sources, Evidence & Actions
 
-> **English summary:** how the Nook chat decides which sources to use, how it records what it actually searched, how answers cite their sources, and how proposed actions are validated, approved and executed. Includes the capability matrix per integration and the known limitations.
+This document describes how a question in the Nook chat (**Chat** tab, `⌥⌘Space`) flows through Nook, how sources and citations work, how actions are validated and executed, and what each integration supports.
 
-Dit document beschrijft hoe een vraag in de chat (tab **Chat**, ⌥⌘ spatie) door Nook loopt, wat elke koppeling echt kan en wat (nog) niet.
+## Lifecycle of a Question
 
-## De weg van een vraag
-
-```
-NookChatView (invoer, bronkiezer, modelchip, bijlage)   — gedeeld door de notch en het hoofdvenster
+```text
+NookChatView (input, source picker, model chip, attachments) — shared by the notch and main window
   └─ AppModel.handleUserText → ask → answer             (App/AppModel+Chat.swift)
-       1. Bronkeuze     SourceScope.parse(vraag)  +  bronkiezer van deze Nook   (Brain/SourceScope.swift)
-       2. Voorbereiding AppModel.prepareRun: één voorbereiding voor chat, kaarten, scherm kijken en Meedenken
-          Context       SourceRouter.relevant → ConnectorHub.contextLines(scope:full:)
-                        relevante bronnen volledig, de rest als één regel met de tool om erin te kijken
-          Zelf zoeken   Research: zoektermen uit de vraag (en bij een vervolgvraag uit de vraag ervoor), elke relevante
-                        bron doorzoeken (zonder genoemde bron: overal), treffers rangschikken en de beste volledig lezen
-                                                                                                    (Brain/Research.swift)
-       3. Tools         AppModel.scopedTools: alleen tools van toegestane bronnen en accounts; lees-tools via RetrievalLedger
-                        ChatIntent (nl/en/de) herkent wat de vraag wil; die tools staan altijd vooraan   (Brain/ChatIntent.swift)
-                        Gefaseerd: een startset (kleiner voor lokale modellen) plus één regel per overige bron;
-                        het brein ontgrendelt een bron met `use_source` (BrainService.run)
-       4. Brein         BrainService.run met BrainSelection (ingebouwd MLX, Ollama, LM Studio of extern), één ToolRunner
-                        voor alle modellen; lees-tools draaien meteen
-       5. Opzoeken      RetrievalLedger: per bron de zoekterm, gelukt / niets / mislukt, time-out 25 s,
-                        geen dubbele aanroepen, korte cache (90 s), genummerde bronverwijzingen   (Brain/Retrieval.swift)
-       6. Antwoord      Citations.sanitize: alleen [n] die bij een echt opgehaalde bron hoort blijft staan
-       7. Voorstel      actie-tools worden nooit uitgevoerd; ActionGate controleert de invoer   (Brain/ActionGate.swift)
-       8. Goedkeuring   PlanReview: elke stap met alle velden, aan/uit, tekst aanpassen, Uitvoeren / Annuleren
-                        (stappen met een account tonen dat account; bij twee mogelijke accounts vraagt Nook welk)
-       9. Uitvoeren     PlanRunner: opnieuw controleren, dubbel-uitvoeren voorkomen, stoppen bij een fout,
-                        verder gaan zonder herhaling; staten: voorgesteld → goedgekeurd → uitgevoerd → gecontroleerd
-                                                                                                    (AppModel+Plans.swift)
-      10. Bewaren       nooks.json (gesprek, bronnen, verwijzingen, uitkomst per stap); nook.sqlite (audit,
-                        executed_actions)
+       1. Source scope   SourceScope.parse(question) + per-Nook source picker   (Brain/SourceScope.swift)
+       2. Preparation    AppModel.prepareRun: unified preparation for chat, cards, Screen Peek, and Think Along
+          Context        SourceRouter.relevant → ConnectorHub.contextLines(scope:full:)
+                         relevant sources in full, remaining sources as a one-line summary with the tool to inspect them
+          Auto-research  Research: extracts search terms from the question (and follow-up context), searches every
+                         relevant source (or all sources if none specified), ranks hits, and reads top hits in full
+                                                                                (Brain/Research.swift)
+       3. Tools          AppModel.scopedTools: only tools from permitted sources and accounts; read tools via RetrievalLedger
+                         ChatIntent (en/nl/de) detects intent so matching tools appear first (Brain/ChatIntent.swift)
+                         Staged toolset: a starter set (smaller for local models) plus one line per remaining source;
+                         the brain unlocks additional sources via `use_source` (BrainService.run)
+       4. Brain          BrainService.run with BrainSelection (built-in MLX, Ollama, LM Studio, or external), unified
+                         ToolRunner across all runtimes; read tools execute immediately
+       5. Retrieval      RetrievalLedger: records query per source, success / empty / error, 25 s timeout,
+                         deduplicates calls, short cache (90 s), numbered citations (Brain/Retrieval.swift)
+       6. Answer         Citations.sanitize: only [n] citations matching an actually retrieved reference are kept
+       7. Proposal       action tools never execute automatically; ActionGate validates inputs (Brain/ActionGate.swift)
+       8. Approval       PlanReview: every step with all fields, toggle on/off, editable text, Run / Cancel
+                         (steps with an account display that account; if multiple accounts match, Nook asks which one)
+       9. Execution      PlanRunner: re-validates, prevents duplicate runs, stops on first error,
+                         resumes remaining steps without repeating; states: proposed → approved → executed → verified
+                                                                                (AppModel+Plans.swift)
+      10. Persistence    nooks.json (conversation, sources, citations, per-step outcomes); nook.sqlite (audit,
+                         executed_actions)
 ```
 
-### Eerst de vraag begrijpen
+### Understanding the Question First
 
-Woordenlijsten raden slecht wat een vraag betekent: "heb ik chats openstaan in WhatsApp?" is geen zoekopdracht naar de woorden "chats" en "whatsapp" in je bestanden en code, maar de vraag welke WhatsApp-chats ongelezen zijn of op je antwoord wachten. Daarom leest het gekozen brein de vraag eerst zelf, vóór Nook iets opzoekt (`QueryPlanner`, `Brain/QueryPlan.swift`, aangeroepen vanuit `prepareRun`). Het krijgt de vraag, de laatste beurten en de lijst met bronnen (met wat Nook in elke bron kan: zoeken, nieuwste/ongelezen/open items, of nu niet leesbaar) en geeft één klein plan terug:
+Keyword lists alone are poor at guessing intent: *"Do I have open chats in WhatsApp?"* is not a full-text search for the words `"chats"` and `"whatsapp"` across your files and code—it is asking which WhatsApp conversations are unread or awaiting your reply. Before looking anything up, the selected brain first reads the question (`QueryPlanner`, `Brain/QueryPlan.swift`, called from `prepareRun`). Given the question, recent turns, and available sources (including what each source supports: search, newest/unread/open items, or currently unavailable), it returns a compact plan:
 
-* **goal**: wat de gebruiker echt wil weten of gedaan wil hebben, in één zin. Dat gaat mee naar het antwoord ("What the user wants"), zodat het model die vraag beantwoordt en niet iets wat erop lijkt;
-* **kind**: iets specifieks opzoeken, een overzicht van wat nieuw of open is, een actie, algemene kennis, of een groet;
-* **sources**: waar het antwoord echt staat, de genoemde bron eerst; geen bronnen waar het woord toevallig in voorkomt;
-* **queries**: één tot drie korte zoekopdrachten met de woorden die letterlijk in het item staan, synoniemen inbegrepen. Nook probeert ze allemaal.
+- **goal**: what the user actually wants to know or do, in a single sentence. This is passed to the answering step (`"What the user wants"`) so the model answers the exact question asked;
+- **kind**: specific lookup, overview of new/open items, action, general knowledge, or greeting;
+- **sources**: where the answer actually lives, with explicitly mentioned sources first;
+- **queries**: one to three short search queries containing the terms expected to appear in the target item, including synonyms. Nook tries all of them.
 
-Met Claude doet Haiku deze kleine stap (snel en goedkoop); het gekozen model antwoordt. Lokale modellen en andere aanbieders doen het zelf. Komt er binnen 8 s (lokaal 12 s) geen bruikbaar plan, dan valt Nook terug op zijn eigen woordonderzoek hieronder. Claude Code slaat de stap over (een hele sessie per vraag is te traag).
+With Claude, Haiku performs this lightweight planning step (fast and inexpensive) while your selected model writes the final answer. Local models and other providers run the planner themselves. If no valid plan arrives within 8 s (12 s locally), Nook falls back to its built-in keyword research below. Claude Code skips this step because spawning a full CLI session just for query planning is too slow.
 
-Daarnaast denkt het antwoordende model volgens een vaste volgorde: wat wil de gebruiker precies, waar staat dat, gaat het bewijs in de context echt over de vraag (anders zelf verder zoeken), en dan pas antwoorden. Het zegt nooit ja of nee over je gegevens zonder bewijs. Bij het zoeken in bestanden komen documenten vóór broncode en blijft build-uitvoer (`dist/`, `node_modules/`, `.build/`…) weg.
+When answering, the model follows a strict reasoning order: what does the user want, where does that information live, does the retrieved context actually answer the question (if not, search further), and only then formulate the answer. It never guesses yes or no about your personal data without evidence. When searching files, documents rank ahead of source code and build artifacts (`dist/`, `node_modules/`, `.build/`, etc.) are excluded.
 
-### Zelf zoeken en lezen
+### Automatic Search & Full-Document Reading
 
-Een klein lokaal model zoekt slecht: het roept één tool aan met de hele vraag als zoekterm, leest alleen de titels van de acht nieuwste notities of het begin van een mail. Daarom doet Nook dat werk zelf, op de Mac, vóór het model antwoordt, voor elk brein en elke bron hetzelfde (`Research`, aangeroepen vanuit `prepareRun`):
+Small local models often struggle with multi-step tool calling: they may invoke a single search tool with the entire sentence as the query, or read only the titles of the eight newest notes. Nook therefore performs the initial retrieval pass on your Mac before the model answers, consistently across every brain and source (`Research`, called from `prepareRun`):
 
-1. **Zoektermen.** De woorden die de vraag dragen: "Wat staat er in mijn notitie over de verbouwing?" wordt `verbouwing`. Vulwoorden, vraagwoorden, namen van bronnen en apps (WhatsApp, chats, Slack…), woorden over de status (open, openstaan, onbeantwoord, pending), datums en tijden vallen weg (nl/en/de); namen gaan voor, een zin tussen aanhalingstekens blijft heel. Een korte vervolgvraag ("en het budget?") houdt de woorden van de vraag ervoor (`budget verbouwing`) en zoekt in dezelfde bronnen.
-2. **Zoeken.** Elke relevante bron wordt met die woorden doorzocht: Notities (titel én inhoud van álle notities), Mail, Bestanden (Spotlight), Notion, GitHub, het web en elke MCP-server of eigen bron met een zoekveld. Noemt de vraag geen bron ("wat weet ik over project Apollo?"), dan zoekt Nook overal waar hij kan zoeken; het web alleen als de vraag erom vraagt, Contacten alleen bij een naam. Zonder zoekwoorden ("welke notities heb ik?") of bij een vraag naar het nieuwste of ongelezen kijkt Nook in het overzicht van de bron.
-3. **Lezen.** De treffers van alle bronnen worden gerangschikt (een woord in de titel telt zwaarder dan in de tekst, hoofdletters en accenten tellen niet) en de beste worden volledig geopend met de lees-tool van die bron: `read_note`, `read_mail`, `read_file`, `notion_read_page`, `github_issue_details`, `read_webpage`. Een treffer die al helemaal zichtbaar was, wordt niet nog eens geopend.
+1. **Search terms.** Extracts the core terms carrying the meaning of the question. Stop words, question words, app/source names (WhatsApp, chats, Slack…), status words (open, unread, pending), dates, and times are stripped (en/nl/de); proper names are prioritized, and quoted phrases are kept intact. Short follow-up questions (*"And the budget?"*) inherit terms from the preceding turn and search the same sources.
+2. **Searching.** Every relevant source is searched with those terms: Notes (both title and body across all notes), Mail, Files (Spotlight), Notion, GitHub, the web, and any MCP server or custom source with a search parameter. If the question does not name a specific source (*"What do I know about Project Apollo?"*), Nook searches all searchable sources (the web only when requested; Contacts only when a person's name is present).
+3. **Reading.** Hits across all sources are ranked (title matches weigh more than body matches, case- and diacritic-insensitive) and the top matches are opened in full using the source's read tool: `read_note`, `read_mail`, `read_file`, `notion_read_page`, `github_issue_details`, `read_webpage`.
 
-Het model krijgt dit bovenaan de context ("Looked up for this question"): eerst waar Nook zocht en met welke woorden, dan de volledig gelezen documenten, dan de zoekresultaten. Wordt de context te lang, dan wijkt het algemene overzicht, niet de documenten. Het model krijgt daarnaast altijd de lees-tool bij elke zoek-tool, en de opdracht om zelf door te zoeken met andere woorden (een synoniem, een naam, één woord) voordat het zegt dat het iets niet vond. Lokale modellen met een groter venster (16k+) kunnen net als cloudmodellen met `use_source` elke toegestane bron bereiken.
+The model receives these results at the top of its context (`"Looked up for this question"`): first where Nook searched and with which queries, then the full documents, and then the remaining search hits.
 
-**Je noemt een bron: dan kijkt Nook daar.** Noemt de vraag een bron ("heb ik chats openstaan in WhatsApp?"), dan zoekt Nook nooit "overal" in de plaats daarvan, ook niet als hij die bron nu niet kan lezen. Kan dat niet (geen Volledige schijftoegang, app niet geïnstalleerd, koppeling uit), dan staat de bron als ✗ boven het antwoord met de reden, en zegt het antwoord dat eerlijk en hoe je het oplost, in plaats van ja of nee te gokken uit bestanden of notities waarin toevallig het woord "WhatsApp" staat. Het venster van de app (`read_app`) is dan de enige terugvaloptie. Kan Nook de gegevens van de app wel direct lezen, dan opent hij het venster niet (een gesloten app wordt dus niet voor niets gestart).
+**Explicit source targeting.** If your question names a specific source (*"Do I have open chats in WhatsApp?"*), Nook never falls back to searching "everywhere" instead—even if that source is currently unreadable. If a source cannot be read (missing Full Disk Access, app not installed, integration disabled), the source is shown as `✗` above the answer with the exact reason, and Nook tells you how to enable it rather than guessing from unrelated notes or files.
 
-**Openstaande chats.** "Heb ik chats openstaan?", "wie wacht er op mijn antwoord?", "ongelezen appjes?": `whatsapp_open_chats` en `messages_open_chats` geven de chats van de laatste 14 dagen met ongelezen berichten (ook handmatig als ongelezen gemarkeerd, WhatsApp) en de één-op-één-chats waarin de ander het laatst schreef, met het nieuwste bericht en een chat-id om de chat te lezen. Groepen tellen alleen mee als ze ongelezen berichten hebben. Zijn er geen, dan zegt de tool dat letterlijk.
+**Open chats.** For questions like *"Do I have open chats?"*, *"Who is waiting for my reply?"*, or *"Any unread messages?"*, `whatsapp_open_chats` and `messages_open_chats` return conversations from the last 14 days that have unread messages (including manually marked unread in WhatsApp) as well as 1-on-1 chats where the other person sent the last message, complete with the latest message preview and a chat ID for reading the thread.
 
-**Alleen wat over je vraag gaat.** Uit zoekresultaten haalt Nook de notities, mails, chats en bestanden die niets met de zoekwoorden te maken hebben, voordat het model ze ziet; vindt een bron alleen zulke resultaten, dan staat er "geen resultaten over …". Van een lang document en van het venster van een app (`read_app`) houdt Nook de passages over de vraag (met de titel en de bronnenlijst). Het model mag alleen antwoorden uit een bron die over de vraag gaat, en zegt anders dat het niets vond.
+**Local database connectors.** Messages (iMessage & SMS), WhatsApp, Bear, and Things store their data in SQLite databases on your Mac. Nook queries them read-only via `sqlite3` (`Services/Connectors/AppConnectors.swift`, formatting in `Brain/AppData.swift`), allowing it to search your full history rather than only what is visible on screen: `search_messages` / `read_messages`, `search_whatsapp` / `read_whatsapp`, `search_bear` / `read_bear`, `search_things`. Contact names are resolved via Contacts (when authorized). Reading Messages and WhatsApp requires **Full Disk Access** for Nook in **System Settings › Privacy & Security**.
 
-**Apps zonder eigen koppeling.** Berichten (iMessage en sms), WhatsApp, Bear en Things bewaren alles in een database op je Mac. Nook leest die alleen-lezen met `sqlite3` (`Services/Connectors/AppConnectors.swift`, de opmaak in `Brain/AppData.swift`), zodat hij de hele geschiedenis doorzoekt en niet alleen wat op het scherm staat: `search_messages` / `read_messages`, `search_whatsapp` / `read_whatsapp`, `search_bear` / `read_bear`, `search_things`. Een gesprek lezen laat de berichten rond de treffers zien plus de nieuwste, in tijdsvolgorde. Namen komen uit Contacten (als Nook daar al bij mag), zodat "wat appte Jan?" Jans chats vindt. Berichten en WhatsApp vragen **Volledige schijftoegang** voor Nook (Systeeminstellingen › Privacy en beveiliging); tot die er is, laat Nook ze buiten het zoeken en staat de reden bij Instellingen › Accounts & koppelingen.
+**MCP servers.** Every read tool with a search parameter is included in automatic research. If the same MCP server exposes a single-item read tool (`get`/`read`/`fetch`/`show` with an ID parameter), Nook automatically fetches the top hits.
 
-**MCP-servers.** Elke lees-tool met een zoekveld wordt meegezocht. Heeft dezelfde server een tool die één item opent (get/read/fetch/show… met één veld), dan opent Nook daarmee de beste treffers, uit een JSON-antwoord of uit regels met een id.
+**Other apps.** When you name an app (*"What's in Slack?"*), Nook reads its windows via the macOS Accessibility API and keeps the passages relevant to your question. Documents from apps (Obsidian, Word, Pages, PDFs) are found and read via Spotlight.
 
-**Andere apps.** Noem je een app ("wat staat er in Slack?"), dan leest Nook haar vensters via de toegankelijkheidslaag en houdt hij de passages over je vraag. Documenten van apps (Obsidian, Word, Pages, pdf) vindt en leest hij via Spotlight.
+### Memory: How Nook Remembers & Learns
 
-Notities en Mail zoeken op elk woord apart en zetten de berichten met de meeste treffers bovenaan, met een id om ze daarna volledig te lezen. Spotlight vraagt alle woorden tegelijk; vindt dat niets, dan zoekt Nook per woord en houdt hij de bestanden die de meeste woorden raken.
+Memory is built directly into Nook—no external MCP server, Node, or `npx` required. Everything is stored locally in `nook.sqlite` (`memories` table) on your Mac and managed in **Settings › Memory**: search, edit, pin, mark individual memories as **Only on this Mac**, or delete individual/all memories.
 
-### Geheugen: Nook onthoudt en leert
+**How Nook learns** (`Brain/Memory.swift`, `Services/NookMemory.swift`, `App/AppModel+Memory.swift`):
 
-Geheugen zit in Nook zelf: geen MCP-server, geen Node of `npx`, niets te installeren. Alles staat in `nook.sqlite` (tabel `memories`) op je Mac. Je beheert het bij **Instellingen › Geheugen**: zoeken, aanpassen, vastzetten, per herinnering "alleen op deze Mac", vergeten of alles vergeten.
+- **Explicit requests.** *"Remember that Alice is my partner"*, *"Always give concise answers"*, or *"Forget my old address"*. The brain proposes `remember` or `forget`. If you explicitly asked for it and the fact comes from your own words, it is saved immediately; otherwise it appears as an approval step in the plan. Corrections replace the outdated memory via `replaces`.
+- **Background reflection.** After a correction, a personal statement, or every four questions, the brain reviews what **you** wrote in the conversation and extracts durable facts worth remembering (`Reflection`). Only facts grounded in your own messages are stored, and `"Remembered: …"` is shown below the answer.
+- **Observed habits & tool lessons.** If you repeatedly adjust the same field in an action plan (e.g., choosing the `"Work"` calendar or `"Groceries"` list twice in a row), Nook learns that default and fills it in automatically when the brain leaves it blank. Failed tool calls are recorded as lessons so the brain avoids repeating the same mistake.
+- **Source affinity.** When an answer cites an email for a query about `"invoice"`, Nook learns that Mail answers that topic and includes Mail automatically on future questions about invoices.
+- **MCP Knowledge Graph import.** If you previously used `@modelcontextprotocol/server-memory`, Nook detects its knowledge graph in the `npx` cache and lets you import it with one click.
 
-**Hoe Nook leert** (`Brain/Memory.swift`, `Services/NookMemory.swift`, `App/AppModel+Memory.swift`):
+**Security & Privacy of Memory:**
+- Passwords, secret keys, tokens, URLs, and anything resembling an instruction (*"ignore previous instructions"*, *"run without asking"*, tool tags) are automatically rejected.
+- Learned memories must be grounded in your own user messages—screen text, emails, and web pages can never inject entries into your memory without explicit approval.
+- Memory is a first-class source (`memory`): mark it as **Only on this Mac** (globally or per memory via the lock icon) and external cloud models never see it.
 
-* **Jij vertelt het.** "Onthoud dat Lisa mijn vrouw is", "voortaan korte antwoorden" of "vergeet mijn oude adres". Het brein stelt `remember` of `forget` voor. Vroeg je er zelf om en staat de tekst echt in je eigen woorden, dan gebeurt het meteen; anders zie je het als stap in het plan. Een correctie ("nee, ze heet Lies") vervangt de oude herinnering via `replaces`. "Onthoud dat ik morgen moet bellen" blijft een taak of herinnering.
-* **Zelf geleerd.** Na een correctie, iets wat je over jezelf vertelt, of elke vier vragen kijkt het brein op de achtergrond naar wat jij in het gesprek schreef en noemt het wat het onthouden waard is (`Reflection`). Alleen wat in je eigen woorden staat, wordt bewaard. Onder het antwoord zie je "Onthouden: …".
-* **Gezien.** Pas je in een plan steeds hetzelfde veld aan (agenda "Werk", lijst "Boodschappen"), dan wordt dat na twee keer een gewoonte: Nook vult het voortaan zelf in als het brein het leeg liet, en zegt dat onder het antwoord. Een actie die mislukt, wordt een les die het brein meekrijgt als het die tool weer kan gebruiken; lukt de tool daarna wel, dan weegt de les minder.
-* **Welke bron antwoordt.** Verwijst een antwoord naar een mail over "factuur", dan leert Nook dat zulke vragen in Mail beantwoord worden en zoekt hij daar voortaan ook, ook als de vraag Mail niet noemt. Een bron die steeds niets vindt voor een woord, verliest dat.
-* **Overnemen.** Gebruikte je de MCP-geheugenserver (`@modelcontextprotocol/server-memory`), dan vindt Nook die kennisgraaf in de npx-cache en neem je hem met één klik over. Daarna kun je die koppeling weghalen.
+### Cards & Think Along Share the Same Pipeline
 
-**Terughalen.** `prepareRun` zet per vraag alleen de herinneringen die erbij horen in de context, onder "What Nook remembers", met een kort id (`m:…`) waar het brein naar kan verwijzen. Een naam in de vraag, gedeelde woorden of de tools van deze vraag maken een herinnering relevant; algemene voorkeuren gaan altijd mee. Een klein lokaal model krijgt er minder (5 tot 8) dan een groot (14). Met `recall_memory` zoekt het brein verder.
+Notch cards (Screen Peek `⌥⌘N` and Think Along) use the exact same `prepareRun` pipeline as the chat: the same source scoping, `RetrievalLedger`, `ActionGate` validation, and verified citations.
 
-**Vervagen.** Wat jij vertelde of vastzette, blijft. Wat Nook zelf leerde, halveert na 90 dagen zonder gebruik (lessen na 45) en verdwijnt als het bijna niets meer weegt. Er passen 400 herinneringen in; de zwakste geleerde gaan eerst.
+### Brain Selection
 
-**Veiligheid en privacy.**
+`BrainSelection` defines where Nook thinks: built-in (MLX), Ollama, LM Studio, or an external cloud provider. Fresh installs default to local on-device inference. Nook never silently falls back to another provider—if your selected model is unavailable, Nook displays a clear error explaining how to resolve it.
 
-* Wachtwoorden, codes, sleutels, links en alles wat op een opdracht lijkt ("negeer…", "voer uit zonder te vragen", tooltags) worden nooit opgeslagen.
-* Een geleerde herinnering moet in je eigen berichten staan. Tekst van het scherm, uit een mail of van een webpagina kan dus niets in je geheugen zetten. Een `remember` die het brein uit zulke tekst haalt, vraagt altijd eerst om **Uitvoeren**.
-* Geheugen is een bron (`memory`): zet hem bij **Alleen op deze Mac** en een externe AI krijgt er niets van. Per herinnering kan dat ook (het slotje). Wat Nook leerde uit een antwoord met zo'n bron, krijgt vanzelf het slotje.
-* In het geheugen staat tekst over jou, nooit opdrachten: het brein krijgt herinneringen als gegevens, met de regel dat wat je nu zegt altijd voorgaat.
+### "Only on This Mac" Source Lock
 
-### Kaarten en Meedenken gebruiken dezelfde route
+`AppSettings.localOnlySources` tracks sources that external cloud providers are never allowed to see (**Settings › Brain**). Whenever an external brain is active (`AppSettings.privateSources`), those sources are stripped from the scope via `SourceScope.keepingLocal` at the start of `prepareRun` and `answer`. Their context, tools, and search queries are completely excluded, and prior turns that used a local-only source are omitted from conversation history (`NookChat.withoutPrivate`). With a local brain (built-in MLX, Ollama, LM Studio), all enabled sources remain available.
 
-De kaarten in de notch (scherm bekijken ⌥⌘N, Meedenken) lopen via dezelfde `prepareRun` als de chat: dezelfde bronkeuze, dezelfde tools met het grootboek, dezelfde controle van acties en dezelfde bronverwijzingen. Alleen de presentatie verschilt (een kaart in plaats van een bericht). Bij die kaarten laat Nook de lookups vooraf weg, omdat de vraag over het scherm zelf gaat. Meedenken werkt ook met een lokaal brein.
+### Local Brain Quality & Grounding
 
-### Welk brein
+4B–8B parameter local models benefit from structured assistance (`Brain/LocalQuality.swift`, tested in `LocalQualityTests`):
 
-`BrainSelection` is de ene waarde die zegt waar Nook denkt: ingebouwd (MLX), Ollama, LM Studio of extern. Nieuwe installaties zijn lokaal; wie al een externe AI had gekozen, houdt die. Het modelprofiel (`ModelProfile`) bepaalt contextgrootte, aantal tools en rondes, voor alle runtimes gelijk. Nook schakelt nooit zelf naar een andere aanbieder: is het gekozen model niet beschikbaar, dan zie je een duidelijke fout met wat je kunt doen.
+- **Expanded context window (`ModelProfile.roomier`):** On Macs with 16 GB+ RAM, models with an 8k default window are expanded to 16k so full retrieved documents fit comfortably.
+- **Evidence First** (**Settings › Brain**, off by default): runs a narrow extraction pass per retrieved document that copies verbatim sentences relevant to the question (`BrainService.extractEvidence`). Quotes not present verbatim in the document are discarded.
+- **Verify Answers** (on by default for small local models): `Grounding.ungrounded` checks numbers (3+ digits), times, email addresses, and URLs in the draft answer against retrieved sources. If an ungrounded value is found, Nook regenerates the answer once while highlighting the unverified details.
+- **Evaluate This Brain:** **Settings › Brain › Evaluate this brain** runs a 20-question benchmark (`LocalEval`) with known ground-truth answers (facts, distractors, missing answers, wrong person, superseding updates, prompt-injection attempts) and records accuracy and latency.
+- **Fine-tuning:** `scripts/finetune/` generates synthetic training data and trains a LoRA adapter with MLX (see [`scripts/finetune/README.md`](../scripts/finetune/README.md)).
 
-### Alleen op deze Mac
+### Multi-Account Support
 
-`AppSettings.localOnlySources` bevat de bronnen die een externe AI nooit mag zien (Instellingen › Brein). Zolang het brein extern is (`AppSettings.privateSources`), gaan ze uit de bronkeuze via `SourceScope.keepingLocal`: dat gebeurt in `AppModel.privacyScope`, aan het begin van `prepareRun` (dus ook voor kaarten en Meedenken) en in `answer`. Daardoor verdwijnen hun context, tools en zoekopdrachten, en kan een vraag ("zoek in mijn WhatsApp") ze niet terugbrengen. Daarnaast:
+Integrations can have multiple accounts (`AccountRegistry`, e.g., `"GitHub · Work"`). Read tools without an explicit `account` parameter search across all permitted accounts and label each result; write actions prompt you to pick an account whenever more than one account is connected.
 
-* eerdere antwoorden die met zo'n bron gemaakt zijn (opgezocht, geciteerd, of in de context) en de vraag erbij gaan niet mee in de gespreksgeschiedenis (`NookChat.withoutPrivate`);
-* staat het scherm op alleen-lokaal, dan kijken ⌥⌘N en Meedenken niet mee;
-* noemt de vraag zo'n bron bij naam, dan staat onder het antwoord dat hij niet is gebruikt (`chat.notice.private`).
+### Terminal & Browser Tools
 
-Met een brein op je Mac (ingebouwd, Ollama, LM Studio) verandert er niets.
+`run_command` (*Terminal* source) is always an explicit action: the full command is shown in the plan, `CommandRisk` evaluates token-level risk, dangerous commands are blocked by `ActionGate`, and approved commands run inside a visible workspace terminal. `read_nook_browser` reads the active page in Nook's built-in browser; `open_in_nook_browser` only allows `https://` URLs and requires approval.
 
-### Een klein lokaal brein goed laten antwoorden
+### Source Chips & Citations
 
-Een model van 4–8 miljard parameters leest en antwoordt slecht in één keer. Nook neemt daarom werk uit zijn handen
-(`Brain/LocalQuality.swift`, alles Foundation en getest in `LocalQualityTests`):
+Above every answer, Nook shows a status chip per source:
 
-* **Meer ruimte** (`ModelProfile.roomier`): op een Mac met 16 GB of meer krijgt een model met een venster van 8k een venster van
-  16k, zodat de volledig gelezen documenten erin passen. Kost ongeveer 1,2 GB geheugen extra voor een model van 3–4B.
-* **Bewijs eerst** (Instellingen › Brein, standaard uit): per gevonden document één smalle stap die de zinnen kopieert die
-  over de vraag gaan (`BrainService.extractEvidence`, `Evidence`). Een citaat dat niet letterlijk in het document staat, wordt
-  weggegooid, dus het model kan geen bewijs verzinnen. Het antwoord komt uit die citaten (de context heet dan "Evidence").
-* **Antwoorden controleren** (standaard aan, alleen voor kleine breinen): `Grounding.ungrounded` zoekt in het antwoord naar
-  getallen van drie cijfers of meer, tijden, e-mailadressen en links die in geen enkele bron staan (context, vraag,
-  tool-uitkomsten, gesprek). Zo'n detail geeft één keer een nieuw antwoord met die details bij naam genoemd. 8.450,00 en
-  8450, of 14:30 en 14.30, tellen als hetzelfde. Een vraag die om rekenen vraagt ("in totaal") wordt niet gecontroleerd.
-* **Meten**: Instellingen › Brein › *Meet dit brein* stelt 20 vragen met bekende antwoorden (`LocalEval`: feiten, een afleider
-  ernaast, antwoord ontbreekt, verkeerde persoon, update wint, geïnjecteerde opdracht…) met de instellingen zoals ze staan.
-  Score en tijd komen in een lijst, zodat je modellen en schakelaars met cijfers vergelijkt.
-* **Trainen**: `scripts/finetune/` maakt verzonnen trainingsdata en traint er een LoRA mee (zie de README daar).
-
-Nieuwere modelfamilies (Gemma 4, gpt-oss, Qwen 3.5/3.6) krijgen bij Ollama en LM Studio dezelfde voorkeur als Gemma 3 en Llama 3.
-Ze staan niet in de ingebouwde lijst voordat een meting laat zien dat ze op jouw Mac beter scoren.
-
-### Accounts
-
-Een dienst kan meerdere accounts hebben (`AccountRegistry`, bijvoorbeeld "GitHub · Werk"). Tools van zo'n dienst hebben een optioneel veld `account`. Lezen zonder account doorzoekt alle toegestane accounts en labelt de uitkomst; een actie vraagt een account zodra er meer dan één mogelijk is. De bronkiezer bepaalt per chat welke accounts mogen. Een mislukte koppeling toont **Opnieuw verbinden** (ongeldige gegevens) of **Opnieuw proberen** (netwerk), gebaseerd op `ConnectorErrorKind`.
-
-### Terminal en browser
-
-`run_command` (bron *Terminal*) is altijd een actie: het hele commando staat in het plan, `CommandRisk` werkt op tokens, een gevaarlijk commando wordt door `ActionGate` geweigerd, en het draait in een zichtbare terminal van de werkruimte. `read_nook_browser` leest de open pagina in de ingebouwde browser; `open_in_nook_browser` opent alleen https en vraagt toestemming.
-
-### Bronkeuze
-
-* **Bronkiezer** naast het invoerveld, per Nook bewaard: *Alle bronnen* (automatisch), *Alleen deze bronnen*, of *Nooit gebruiken* (scherm, web, klembord).
-* **In de vraag zelf**, in het Nederlands, Engels of Duits: "alleen mijn agenda en mail", "only use my calendar and email", "zoek in Slack en GitHub, maar niet op mijn scherm", "ohne Bildschirm", "gebruik alle bronnen".
-* Wat de vraag zegt gaat voor, behalve dat een bron die in de bronkiezer uit staat niet terugkomt.
-* Uitgesloten bronnen gaan niet als context mee en hun tools zijn voor het brein onzichtbaar. Ook bij het uitvoeren wordt het nog eens gecontroleerd.
-
-### Verbonden, gekozen, doorzocht, gevonden
-
-Boven elk antwoord staat per bron een chip:
-
-| Chip | Betekenis |
+| Chip | Meaning |
 |---|---|
-| filter-icoon | De bronkeuze voor dit antwoord (alleen als die beperkt was) |
-| oog | Context die zonder tool meeging (scherm, bestand) |
-| ✓ Mail · 3 | Doorzocht, met 3 verwijzingen |
-| ○ GitHub · niets gevonden | Doorzocht, niets gevonden |
-| ✗ Notion | Doorzoeken mislukte; de reden staat in de tooltip én onder het antwoord |
+| Filter icon | Restricted source scope active for this answer |
+| Eye icon | Ambient context included without a tool call (screen, attached file) |
+| `✓ Mail · 3` | Searched, with 3 retrieved references |
+| `○ GitHub · nothing found` | Searched, 0 results |
+| `✗ Notion` | Search failed; hover or read below the answer for the exact reason |
 
-Met ⓘ zie je precies welke context meeging en elke zoekactie met zoekterm en uitkomst. Faalt een bron, dan zegt Nook onder het antwoord dat het mogelijk onvolledig is. Het brein krijgt de fout ook en moet het zelf melden.
+Clicking `ⓘ` reveals the exact context and every search query with its outcome. Tools emit references (`@ref title | url | detail`), which `RetrievalLedger` numbers sequentially across the turn (`[1]`, `[2]`, …). Hallucinated citation numbers are stripped by `Citations.sanitize`. Only `https:`, `file:` (inside your home directory), and `message:` (opens the email in Mail.app) links are clickable.
 
-### Bronverwijzingen
+### Action Validation & Execution
 
-Tools geven verwijzingen mee (`ReferenceParser.line`, een regel `@ref titel | link | detail`). Het grootboek nummert ze over alle tools van één antwoord en geeft het brein alleen de genummerde lijst. Het antwoord verwijst met `[1]`. Nummers die niet bij een opgehaalde bron horen, worden verwijderd. Klikbaar zijn alleen `https:`, `file:` (binnen je eigen map) en `message:` (opent de mail in Mail).
+- Every write operation is a proposal validated by `ActionGate.problems` (required fields, types, allowed values, ISO 8601 dates, end-after-start, `https://`-only URLs, `owner/repo` without `..`, valid email addresses).
+- You can inspect all fields, toggle individual steps on or off, and edit text fields inline before clicking **Run**.
+- `PlanRunner` re-validates every step at execution time and records a deterministic key (tool + inputs) in `executed_actions` so identical actions are not accidentally repeated within 12 hours unless you explicitly click **Run Anyway**.
+- All approvals, cancellations, and executions are logged in `nook.sqlite` (`audit` table).
 
-### Acties
+## Integration Capabilities Matrix
 
-* Elke actie is een voorstel. `ActionGate.problems` controleert verplichte velden, typen, toegestane waarden, datums (ISO 8601), einde na begin, alleen https-links, `eigenaar/naam` voor repositories (zonder `..`) en mailadressen. Onbekende velden gaan eruit.
-* De gebruiker ziet per stap alle velden volledig, kan stappen uitzetten en tekstvelden aanpassen (opnieuw gecontroleerd). Uitvoeren kan pas als alle aangezette stappen kloppen.
-* Bij het uitvoeren controleert `PlanRunner` alles opnieuw: de tool bestaat nog, de bron mag nog en de invoer klopt. Een tool-aanroep van het model alleen is nooit genoeg.
-* **Geen dubbel werk:** elke gelukte actie krijgt een vaste sleutel (tool + invoer) in `executed_actions`. Precies dezelfde actie binnen 12 uur wordt niet herhaald, maar gemeld als *al uitgevoerd*. Met **Toch nog een keer** kan het wel. Muziek, volume en apps of links openen zijn hiervan uitgezonderd.
-* **Gedeeltelijk mislukt:** het plan stopt bij de eerste fout (latere stappen kunnen ervan afhangen). Per stap zie je gelukt, mislukt, niet uitgevoerd of overgeslagen. **Verder met de rest** voert alleen de stappen uit die nog niet lukten. Nook zegt nooit dat iets gelukt is zonder bevestiging van de dienst.
-* Goedkeuren, annuleren en elke uitvoering staan in `nook.sqlite`, tabel `audit`.
-* De uitkomst per stap (met id's, zoals het id van een gemaakte afspraak) staat in de geschiedenis voor het brein, zodat "verplaats die afspraak" en "rond dat punt af" werken.
+Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built-in (use an MCP server).
 
-### Veiligheid
-
-* Mail, berichten, webpagina's, documenten en schermtekst gaan omlijnd als `<tool_data>` / `<screen_content>` naar het brein. `UntrustedText.neutralize` maakt tags in die tekst onschadelijk, zodat een mail de omlijning niet kan sluiten of zich als systeem- of gebruikersbericht kan voordoen.
-* Het systeemprompt verbiedt instructies uit zulke data te volgen of een uitgesloten bron te gebruiken. De echte bescherming zit in de uitvoerlaag: zonder jouw klik gebeurt er niets buiten Nook.
-* Sleutels blijven in de Keychain en gaan nooit naar het brein.
-
-## Wat elke koppeling kan
-
-Legenda: ✅ werkt (code nagelopen, logica getest) · ➕ nieuw in deze versie · ⚠️ werkt met beperkingen · ❌ niet ingebouwd.
-
-| Bron | Soort | Lezen | Schrijven (na jouw OK) |
+| Source | Type | Read | Write (Always After Approval) |
 |---|---|---|---|
-| Apple Agenda (alle accounts in macOS) | Op je Mac | ✅ context 7 dagen, `list_events` (➕ met id en agenda), `check_availability` over alle agenda's | ✅ `create_event` (➕ kies agenda, geeft id), ➕ `update_event`. ❌ deelnemers uitnodigen: EventKit staat dat niet toe |
-| Andere agenda's (ICS) | Adres | ✅ via `check_availability` | ❌ alleen lezen |
-| Herinneringen | Op je Mac | ✅ open herinneringen in de context | ✅ `create_reminder` (➕ geeft id), ➕ `complete_reminder` |
-| Open punten van Nook | Nook | ✅ `list_open_loops` (➕ met id) | ✅ `add_open_loop`, ➕ `complete_open_loop` |
-| Mail (app Mail) | Op je Mac | ✅ ongelezen in de context; `search_mail` ➕ ook in Verzonden, ➕ met link naar het bericht, ➕ op elk woord apart; ➕ `read_mail` (hele bericht) | ⚠️ `compose_mail`: concept in de chat; jij klikt Versturen (via Mail) |
-| Browser | Op je Mac en in Nook | ✅ open tabbladen met links (context); ➕ `read_nook_browser` (ingebouwde browser) | ➕ `open_in_nook_browser` |
-| Terminal | In Nook | – | ➕ `run_command`: hele commando in het plan, gevaarlijke commando's geweigerd, draait zichtbaar in de werkruimte |
-| MCP-servers | stdio of HTTP | ➕ lees-tools van de server | ➕ actie-tools van de server, altijd na jouw OK |
-| Berichten (iMessage, sms) | Op je Mac, Volledige schijftoegang | ➕ `search_messages` (hele geschiedenis, op tekst en contactnaam), `read_messages` (gesprek rond de treffers), ➕ `messages_open_chats` (ongelezen en onbeantwoorde gesprekken) | – |
-| WhatsApp | Op je Mac, Volledige schijftoegang; of live via een lokale koppeling (GOWA/OpenWA) | ➕ `search_whatsapp`, `read_whatsapp`, ➕ `whatsapp_open_chats` (ongelezen en onbeantwoorde chats); ➕ `whatsapp_live` (live via je telefoon) | ➕ `whatsapp_send` naar een bestaande chat, max 6 per minuut; antwoorden vanuit de notch-kaart. |
-| Bear | Op je Mac | ➕ `search_bear`, `read_bear` | – |
-| Things | Op je Mac | ➕ `search_things` (open en afgerond, met project) | – |
-| Bestanden (Spotlight) | Op je Mac | ✅ `search_files`, `read_file` (pdf, Word, rtf, tekst), ➕ met klikbare verwijzing | – |
-| Klembord | Op je Mac | ✅ standaard uit | – |
-| Scherm | Op je Mac | ✅ OCR van alle vensters, alleen met toestemming | – |
-| GitHub | Inloggen (device flow, scope `repo read:user`) of token | ✅ je PR's, `github_pr_details`; ➕ `github_search` (issues en PR's), ➕ `github_issue_details` | ✅ review, reactie, samenvoegen, sluiten van PR's; ➕ `github_create_issue`, ➕ `github_comment_issue`, ➕ `github_update_issue` |
-| Notion | API-sleutel (integratie) | ✅ `notion_search` (➕ met id), ➕ `notion_read_page` (tekst van een pagina) | ❌ |
-| Stripe, Vercel, Cal.com, n8n, Resend | API-sleutel | ✅ overzichten | ❌ alleen lezen |
-| Eigen bronnen | Eigen API of webhook | ✅ `read_source` (GET, alleen binnen de host) | ✅ `send_to_source`: Slack (webhook of API), Discord, Teams (webhook), Telegram, algemene webhook |
-| Web | Internet | ✅ zoeken en pagina's lezen | – |
+| Apple Calendar (all macOS accounts) | On your Mac | ✅ 7-day context, `list_events`, `check_availability` across calendars | ✅ `create_event` (calendar picker, returns ID), `update_event`. ❌ inviting attendees (EventKit limitation) |
+| External Calendars (ICS) | URL | ✅ via `check_availability` | ❌ read-only |
+| Apple Reminders | On your Mac | ✅ open reminders in context | ✅ `create_reminder`, `complete_reminder` |
+| Nook Open Loops | Nook | ✅ `list_open_loops` | ✅ `add_open_loop`, `complete_open_loop` |
+| Apple Mail | On your Mac | ✅ unread in context, `search_mail` (Inbox + Sent, message links), `read_mail` | ⚠️ `compose_mail`: drafts in chat and opens in Mail.app where you click Send |
+| Browser | Mac & Nook | ✅ open tabs with URLs; `read_nook_browser` | ✅ `open_in_nook_browser` |
+| Terminal | In Nook | – | ✅ `run_command`: full command in plan, dangerous commands blocked, runs in visible workspace terminal |
+| MCP Servers | stdio or HTTP | ✅ server read tools | ✅ server write tools, always gated by approval |
+| Messages (iMessage & SMS) | On your Mac (Full Disk Access) | ✅ `search_messages`, `read_messages`, `messages_open_chats` | – |
+| WhatsApp | On your Mac (Full Disk Access) or local bridge | ✅ `search_whatsapp`, `read_whatsapp`, `whatsapp_open_chats`, `whatsapp_live` | ✅ `whatsapp_send` to existing chats (rate-limited to 6/min) |
+| Bear | On your Mac | ✅ `search_bear`, `read_bear` | – |
+| Things | On your Mac | ✅ `search_things` | – |
+| Files (Spotlight) | On your Mac | ✅ `search_files`, `read_file` (PDF, Word, RTF, plain text) | – |
+| Clipboard | On your Mac | ✅ off by default | – |
+| Screen | On your Mac | ✅ OCR of open windows (requires permission) | – |
+| GitHub | OAuth Device Flow (`repo read:user`) or PAT | ✅ PR list, `github_pr_details`, `github_search`, `github_issue_details` | ✅ PR review, comment, merge, close; `github_create_issue`, `github_comment_issue`, `github_update_issue` |
+| Notion | API token | ✅ `notion_search`, `notion_read_page` | ❌ (use Notion MCP for writes) |
+| Stripe, Vercel, Cal.com, n8n, Resend | API token | ✅ read summaries | ❌ read-only |
+| Custom Sources & Webhooks | Custom API / webhook | ✅ `read_source` (GET, same-host enforced) | ✅ `send_to_source`: Slack, Discord, Microsoft Teams, Telegram, generic webhook |
+| Web | Internet | ✅ web search & page reader | – |
 
-### Nog niet ingebouwd (en wat nu wel kan)
+## Known Limitations
 
-Dit staat ook in de app, bij **Instellingen › Accounts & koppelingen › Nog niet ingebouwd**. Een **MCP-server** (Instellingen › Accounts & koppelingen) is de generieke route voor Slack, Linear, Jira, Notion en andere diensten die er een hebben.
-
-* **Slack lezen:** kan als eigen bron met een user-token (`search.messages`, scope `search:read`). Inloggen met Slack (OAuth) zit er nog niet in.
-* **Microsoft Teams lezen, OneDrive, SharePoint:** dit vraagt Microsoft Graph met een eigen app-registratie en OAuth, en dat is niet gebouwd. Sturen naar Teams kan via een webhook. Bestanden die met Finder synchroniseren, vindt Nook via Spotlight.
-* **Google Drive:** geen directe koppeling. Synchroniseer de map met Finder.
-* **Gmail, Outlook en Exchange:** via de app Mail.
-* **Linear, Jira, Todoist en GitLab:** lezen kan als eigen bron. Taken aanmaken in die diensten kan niet.
-* **Discord lezen:** niet ingebouwd.
-
-## Testen
-
-`Tests/NookTests` (doel `NookTests` in `project.yml`, draait in CI met `xcodebuild test`) test de kern, die alleen Foundation gebruikt:
-
-* bronkeuze uit de vraag (nl/en/de), samenvoegen met de bronkiezer, routering;
-* intentie uit de vraag (nl/en/de): welke actie, vraag of opdracht, kleine praat, datumoverzicht voor lokale modellen (`ChatIntentTests`);
-* het grootboek: bron per tool, gelukt/leeg/mislukt, time-out, geen dubbele aanroep, cache, nummering;
-* bronverwijzingen: alleen echte nummers blijven staan, alleen veilige links;
-* prompt-injectie: tekst van derden kan de omlijning niet sluiten;
-* gedeelde tool-loop met een nep-model (tool-aanroep in tekst, schemafout → reparatie, limieten, acties nooit in de loop), brein-keuze, sessieregister, vertaaldekking (nl/en/de), terminal-commando's;
-* geheugen: opslaan en samenvoegen, vervangen, vergeten, terughalen binnen een budget, vervagen, gewoontes uit aangepaste plannen, lessen uit mislukte acties, welke bron wat beantwoordt, reflectie alleen uit eigen woorden, geen geheimen of opdrachten, import van de MCP-kennisgraaf (`MemoryTests`);
-* acties: validatie, normaliseren, velden voor de controle, vaste sleutel, gedeeltelijk mislukken en verder gaan zonder herhaling, uitgezette stappen, dubbel uitvoeren alleen na **Toch**, controle op het moment van uitvoeren.
-
-Alle tools in deze tests zijn nep (mocks). De koppelingen zelf (Mail via AppleScript, EventKit, GitHub, Notion) zijn **niet** automatisch getest tegen echte accounts. Daarvoor is een Mac met toegang en sleutels nodig.
-
-## Bekende beperkingen
-
-* De bronkeuze uit de vraag werkt met trefwoorden en is geen taalbegrip. Een ongewone formulering wordt soms niet herkend; de bronkiezer werkt altijd.
-* De interne teksten voor het brein en de beschrijvingen van wat een koppeling kan zijn in het Nederlands. De knoppen en meldingen zijn vertaald (nl/en/de).
-* `search_mail` zoekt op onderwerp en afzender of ontvanger, niet in de hele tekst: in de inhoud zoeken via AppleScript is te traag. De beste treffers leest Nook wel volledig (`read_mail`).
-* AppleScript-opdrachten (Notities, Mail) draaien na elkaar. Zoeken in duizenden notities kan daardoor een paar seconden duren; na 20 seconden stopt Nook en meldt hij dat bij de bron.
-* Berichten, WhatsApp, Bear en Things worden gelezen uit hun eigen database. Verandert een app die opbouw in een update, dan kan zoeken daar mislukken tot Nook is bijgewerkt; de fout staat dan bij de bron. Discord, Teams en Telegram hebben geen leesbare lokale database: daarvoor blijft een MCP-server de route.
-* De zoektermen komen uit een lijst met vulwoorden, niet uit taalbegrip. Een ongewoon woord als zoekterm maakt het zoeken hooguit breder; het model kan zelf opnieuw zoeken met andere woorden.
-* Een klein lokaal model blijft zwak in meerstaps-redeneren over vijf of meer bronnen. Vraag je duidelijk om één actie en stelt het model die niet voor, dan vraagt Nook het nog één keer met alleen die tool. Zie [CHAT-PLAN.md](CHAT-PLAN.md) voor de volgende stappen. De loop vangt fouten op, maar de kwaliteit van de synthese hangt af van het model. `RoutingEvalTests` meet of de juiste bronnen gekozen worden, niet de kwaliteit van het antwoord.
-* Google (Gmail, Drive) en Microsoft (Teams, OneDrive) vragen een eigen app-registratie met OAuth (PKCE) en zijn niet ingebouwd; MCP is daarvoor de route.
-* Voorgestelde acties worden na een herstart niet opnieuw aangeboden (bewust). De uitkomst per stap blijft als tekst in het gesprek.
+- Keyword-based source fallback uses a curated stop-word list when `QueryPlanner` times out; the manual source picker always overrides automatic detection.
+- `search_mail` searches subject, sender, and recipient via AppleScript (full-body AppleScript search across large mailboxes is too slow), then reads top matches in full via `read_mail`.
+- Messages, WhatsApp, Bear, and Things are read from their local SQLite databases; if an app changes its internal schema in an update, queries fail gracefully and report the error on the source chip.
+- Gmail/Google Drive and Microsoft Teams/OneDrive require custom OAuth app registrations and are not built in directly; connect them via an **MCP server** in **Settings › Integrations & Models**, or use Mail.app / Finder sync.

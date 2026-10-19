@@ -1,95 +1,66 @@
-# Aanvullen
+# Autocomplete Anywhere
 
-Terwijl je in een andere app typt, stelt Nook voor hoe je zin verdergaat. Dat gebeurt als grijze tekst achter je cursor, door een model op je eigen Mac. **Tab** neemt het volgende woord, **⇧Tab** neemt alles. Typ je zelf wat er staat, dan blijft de rest staan. Elke andere toets stuurt het voorstel weg.
+While you type in any macOS app, Nook suggests how your sentence continues as inline gray ghost text right after your cursor—powered by a local model on your Mac. Press **Tab** to accept the next word, or **⇧Tab** to accept the entire suggestion. If you keep typing matching characters, the ghost text advances smoothly; any other key dismisses it immediately.
 
-Aanzetten doe je bij **Instellingen › Aanvullen**. Dat paneel heeft vier tabbladen:
+Enable it in **Settings › Autocomplete**, which has four tabs:
 
-- **Algemeen**: aan/uit en de status, het model (dat van je brein, een GGUF-model op je Mac, een eigen bestand of een download), hoe lang en hoe gretig de voorstellen zijn, en de toetsen.
-- **Apps**: al je geïnstalleerde apps met hun icoon en een schakelaar. Zoek een app of filter op Aan of Uit. Klik op een app voor eigen uitleg, Tab aan de app laten, midden in een regel, leren, tekstgrootte, hoogte en pauzeren. Daaronder staan websites: die zet je apart uit of geef je eigen uitleg, ook als de browser aan staat. Terminals, code-editors en wachtwoordmanagers staan standaard uit.
-- **Stijl en context**: wat het model weet (app en venster, je geheugen, je scherm, het klembord), jouw stijl en leren, emoji, typfouten, batterij en andere woorden.
-- **Statistiek**: hoe vaak je aanvullen gebruikte vandaag, deze week en in totaal, een grafiek van 30 dagen, bespaarde typtijd, ingevulde tekens, hoeveel voorstellen je nam, je reeks en in welke apps je het meest aanvult. Een keer is elke Tab die iets invult. Nook bewaart alleen aantallen, nooit wat je typte.
+- **General:** On/off toggle and live status, model selection (your Brain model, a local GGUF model on your Mac, a custom `.gguf` file, or a one-click download), suggestion length and eagerness, and customizable shortcuts.
+- **Apps:** Every installed app with its icon and toggle. Search or filter by Enabled/Disabled. Click any app for custom per-app instructions, whether to leave `Tab` to the app, mid-line suggestions, learning, font size, vertical offset, or pausing. Below the app list, configure per-website rules and instructions inside browsers. Terminals, code editors, and password managers are disabled by default.
+- **Style & Context:** What context the model receives (active app and window title, Nook memory, screen text, clipboard), your writing style and local learning, emoji shortcodes, typo correction, battery behavior, and alternative word suggestions.
+- **Statistics:** Usage counts for today, this week, and all time, a 30-day chart, estimated typing time saved, characters completed, acceptance rate, daily streak, and top apps. Nook only records aggregate counts—never what you typed.
 
-In de notch staat bij Vandaag een regel als aanvullen aan staat maar niet kan werken (geen toegang of geen model), met een knop die het juiste tabblad opent. Heb je vandaag aangevuld en is er ruimte, dan zie je daar ook hoe vaak, met een link naar Statistiek. Het menubalkmenu heeft een knop om te pauzeren met het aantal woorden van vandaag, en in de zijbalk van Instellingen krijgt Aanvullen een badge als er iets moet gebeuren.
+## Key Features
 
-## Wat het kan
+- Inline ghost text in any app. **Tab** accepts one word, **⇧Tab** accepts the full completion, or just keep typing. All shortcuts are customizable.
+- 100% local inference on your Mac: uses either your built-in MLX brain model or a GGUF model via `llama.cpp` (Metal-accelerated). No word limits and no subscription.
+- Custom instructions globally, per app, and per website.
+- Optional context from your Nook memory, active screen text (e.g., the email you are replying to), and clipboard.
+- Mid-line completions, an emoji picker (type `:` and pick by arrow keys, number or click, or type on to search: `:smile`, `:duim`), inline typo fixes, and numbered word alternatives.
+- Optionally, the number of words completed today next to Nook's icon in the menu bar.
+- Learns from your own writing locally while automatically filtering out secrets, API keys, and national ID numbers.
+- Respects macOS smart quotes and can shorten or pause completions on battery power.
 
-- Voorstellen in elke app als grijze tekst in de regel. **Tab** neemt een woord en **⇧Tab** alles; je kunt ook doortypen. Alle toetsen kun je zelf kiezen.
-- Een model op je eigen Mac: het model van je brein (MLX) of een GGUF-model (llama.cpp). Er is geen woordlimiet en geen abonnement.
-- Je eigen instructies, ook per app en per website. Per app zet je aanvullen aan of uit, met een lijst van al je apps.
-- Context uit je geheugen (naam, werk, mensen), van je scherm (de mail waarop je antwoordt) en van het klembord.
-- Midden in een regel, emoji op naam (ook Nederlands: `:lachen`, `:duim`), typfouten verbeteren en andere woorden kiezen met een cijfer.
-- Leren van je eigen schrijven, lokaal. Geheimen, ook een BSN, worden eruit gefilterd en je kunt alles wissen.
-- Slimme aanhalingstekens volgens macOS, met `'s` en `'t` goed.
-- Kortere voorstellen of pauze op batterij.
-- Statistiek per dag, per week en per app.
+## How It Works
 
-## Hoe het werkt
+1. **Key event filter (`CGEventTap`).** Observes keystrokes before the target app. Only acceptance keys are intercepted, and only while a suggestion is actively displayed.
+2. **Reading the focused field (`AutocompleteField`).** After a brief debounce (40 ms by default), Nook reads the focused text field via the macOS Accessibility API: text before and after the cursor, selection, cursor bounds, placeholder, window title, and browser URL. For Chromium, Electron, and WebKit apps, it uses text markers and `AXManualAccessibility` / `AXEnhancedUserInterface`. Password fields (`AXSecureTextField`) and Secure Event Input mode are strictly ignored.
+3. **Choosing the completion source.** Typing `:` at the start of a word opens the emoji picker; a misspelled preceding word offers a typo correction; otherwise, the local language model generates a continuation.
+4. **Prompt construction (`PromptBuilder`).** Assembles a structured prompt containing your instructions and Nook memory, writing samples, screen context, clipboard, target app/site metadata, and the text preceding your cursor. The prompt window slides in 500–1,000 character increments so the model's KV cache is reused across keystrokes.
+5. **Model inference (`LlamaCompleter` / `BrainCompleter`).** Runs `llama.cpp` (via `LlamaSwift`) or `mlx-swift-lm` on Metal. A certainty threshold filters out low-confidence starts and stops generation as soon as token confidence drops. Words you frequently write receive a small logit bonus.
+6. **Rendering & typing (`GhostOverlay` & `AutocompleteTyper`).** Draws the suggestion in a click-through, non-activating overlay panel matching the host app's font and size (`AXAttributedStringForRange`). Accepted words are injected as Unicode key events so your clipboard is never touched.
 
-1. **Toetsen opvangen.** Een toetsenbordfilter (`CGEventTap`) ziet elke toets eerder dan de app. Alleen de accepteertoetsen worden tegengehouden, en dan alleen als er een voorstel staat.
-2. **Het veld lezen.** Na een korte pauze (standaard 120 ms) leest `AutocompleteField` via de Accessibility-API het veld met de focus. Dat is de tekst voor en na de cursor, de selectie, waar de cursor staat, de placeholder, de venstertitel en bij browsers de website. Voor Chromium, Electron en WebKit gebruikt het text markers en `AXManualAccessibility`. Wachtwoordvelden worden nooit gelezen. Zolang macOS beveiligde invoer gebruikt, doet Nook niets.
-3. **Kiezen wat er komt.** Typ je `:naam`, dan komt er een emoji. Is het vorige woord een typfout, dan komt er de verbetering. Anders komt er een voorstel van het model.
-4. **De prompt.** `PromptBuilder` maakt er een document van: wie je bent (je instructies en Nooks geheugen), eerder geschreven tekst, de tekst op het scherm, het klembord, waar je schrijft, en dan de tekst voor je cursor. Het begin van het venster schuift in stappen van 1000 tekens op. Zo hergebruikt het model zijn cache en kost één letter erbij maar één token.
-5. **Het model.** `LlamaCompleter` gebruikt llama.cpp met Metal en kiest per stap het waarschijnlijkste token. Is het model te onzeker over het eerste woord, dan toont Nook niets. Daarna stopt het voorstel waar die zekerheid wegzakt. Hoe gretig dat gaat, stel je zelf in. Woorden die je vaak schrijft krijgen een kleine bonus.
-6. **Tonen en typen.** `GhostOverlay` tekent het voorstel zelf, in een paneel dat geen klikken en geen focus aanneemt. De tekst krijgt het lettertype en de grootte van de app, uitgelezen via `AXAttributedStringForRange`. Hij is grijs zoals een plaatshouder, staat verticaal gecentreerd op de regel en begint precies waar je tekst eindigt, dus naast je tekst en nooit eroverheen. Daarvoor telt de rechterrand van het teken vóór de cursor eerder dan het lege bereik, want veel apps geven voor dat lege bereik een verkeerde plek. Alleen als de cursor op een nieuwe regel staat, telt het lege bereik. Een cursor buiten zijn eigen veld wordt genegeerd.
-7. **Wat past.** Er verschijnen alleen woorden die tot de rechterrand van het veld passen, en Tab neemt alleen wat je ziet. Past er niets, dan komt het voorstel als kaartje onder de cursor.
-8. **Doortypen en nemen.** Typ je een letter van het voorstel of neem je een woord, dan schuift de grijze tekst meteen op met de breedte van die letters. Daarna zet Nook hem precies op de plek die de app opgeeft. `AutocompleteTyper` typt een genomen woord als Unicode-toetsen, dus het klembord blijft ongemoeid.
+## Speed
 
-Velden zonder gewone tekstwaarde, zoals rich-text editors in de browser (Gmail, Notion, Slack, Google Docs met toegankelijkheid aan), leest Nook via text markers. Chromium-browsers krijgen `AXEnhancedUserInterface` en Electron-apps `AXManualAccessibility`, zodat ze hun velden laten zien. Een webpagina die je alleen leest, telt niet als veld.
+- **Word by word:** each word is shown as soon as the model has finished it, while the rest is still being written.
+- **Fixed context per field:** everything before your text in the prompt is gathered once per field, so a key only costs the last few tokens.
+- **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the key delay or a new model call.
+- **Window text without blocking:** with "What is on your screen" on (the default), the text of the window you write in comes from Nook's screen reading when that is on, and otherwise autocomplete reads the focused window itself through Accessibility (`AppTextReader.focusedWindowText`), once per field and off the main thread. The first suggestion in a field does not wait for it.
 
-## Welk model
+## Quality
 
-**Automatisch** kiest in deze volgorde:
-
-1. **Een GGUF-model dat al op je Mac staat.** Andere apps en tools hebben het dan al gedownload. `CompletionModelLocator` zoekt in `~/Library/Application Support`, `~/Library/Caches`, de map van LM Studio en de caches van Hugging Face en llama.cpp. De containers van andere apps slaat het over, want daarvoor vraagt macOS toestemming. Projectoren voor beeld, embedding-modellen en bestanden onder 50 MB tellen niet mee. `GGUFReader` leest van elk bestand alleen de header (naam, architectuur, contextlengte). Nook leest zo'n bestand alleen, op de plek waar het staat: geen kopie, geen wijziging.
-2. **Een GGUF-model dat je in Instellingen downloadde.** Dat doe je bij **Instellingen › Aanvullen › Algemeen › GGUF-modellen downloaden**. Bovenaan staan de GGUF-modellen die al op je Mac staan, met een vinkje en *In gebruik* of *Gebruik*. Daaronder staat een lijst basismodellen met hun grootte en het geheugen dat ze vragen. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft. Je kunt ook een eigen link naar een `.gguf`-bestand plakken, zoals een Hugging Face-pagina of een directe link. Je ziet de voortgang in GB en kunt de download annuleren. Is een download klaar, dan controleert Nook of het echt een GGUF-model is en gebruikt het meteen. Gedownloade modellen kun je weer verwijderen. Staat er nog geen enkel model op je Mac, dan zit de knop voor het aanbevolen model direct in de melding "Nog geen model".
-3. **Het model van je brein.** Dat is het lokale MLX-model dat het brein gebruikt. Je hoeft dan niets te downloaden. Aanvullen gebruikt alleen dat model en laadt nooit een ander, zodat de chat zijn model in het geheugen houdt.
-
-Je kunt ook zelf een model kiezen, of een `.gguf`-bestand.
-
-### Snelheid
-
-Een voorstel moet er zijn voordat je verder typt. Daarom:
-
-- **Woord voor woord.** Zodra het model één woord af heeft, staat dat woord al in beeld. De rest volgt terwijl het model doorschrijft, en Tab werkt meteen.
-- **Vaste context per veld.** Wat vóór je tekst in de prompt staat (instructies, geheugen, scherm, klembord, waar je schrijft), haalt Nook één keer per veld op, en daarna maximaal elke tien minuten opnieuw. Zo blijft het begin van de prompt gelijk, en een toets kost alleen de laatste paar tokens.
-- **Cache hergebruiken.** llama.cpp zet de cache terug tot het gedeelde begin. Modellen met een rollend venster (Gemma 3 en 4) krijgen daarvoor een volledige cache (`swa_full`). Hybride modellen, waarvan de cache niet terug kan, krijgen checkpoints: elke 64 tokens bewaart Nook een kopie (`llama_state_seq_get_data`), en bij de volgende toets gaat het daar verder. Het model van het brein werkt altijd met zulke checkpoints (`KVCache.copy()`), dus voor elk soort cache.
-- **Kortere prompt:** hoogstens zo'n 2000 tekens tekst, met een begin dat in stappen van 500 opschuift.
-- **Korte wachttijd:** 40 ms na de laatste toets. Een voorstel dat te laat is, stopt bij de volgende toets.
-- **Window text without blocking:** with "What is on your screen" on (the default), the text of the window you write in comes from Nook's screen reading when that is on, and otherwise autocomplete reads the focused window itself through Accessibility (`AppTextReader.focusedWindowText`), once per field and off the main thread. The first suggestion in a field does not wait for it; the window text joins the prompt from the next key on.
-- **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the pause after a key or a new model call.
-- **Model blijft geladen.** Gebruikt aanvullen het model van het brein, dan blijft dat tijdens het typen een kwartier in het geheugen in plaats van anderhalve minuut.
-
-### Emoji picker
-
-Typing `:` at the start of a word opens a picker under the cursor: the emoji you used last, then the most used. Typing on (`:lach`, `:heart`) filters it at once, without reading the field again. Pick with the arrow keys and Tab (or Return, once two letters are typed, so `:D` and Return still sends), with 1–9 for the row with the selection, or with a click: the panel itself takes no clicks, so the key tap hit-tests the card on a mouse down and swallows that click. Escape, a space or punctuation closes it.
-
-### Quality
-
-What keeps suggestions in line with your sentence, and what keeps out the odd ones:
-
-- **Token healing (GGUF):** with the cursor in the middle of a word, the prompt is read without that word, and the model has to spell it again from the tokens that fit it (`CompletionHealing`). A cut-off word like "morg" tokenizes unlike anything the model learned from, which made it guess wildly. It is faster too: while you type the rest of the word, the prompt stays the same.
-- **Sure of the whole suggestion:** besides the threshold per token, the product of all token probabilities must stay above a threshold (`minSequenceProbability`), so a suggestion ends where it starts to drift. The thresholds are stricter than before; "Eagerness" still sets them.
+- **Token healing (GGUF):** with the cursor in the middle of a word, the prompt is read without that word, and the model has to spell it again from the tokens that fit it (`CompletionHealing`). A cut-off word like "morg" tokenizes unlike anything the model learned from. While you type the rest of the word, the prompt stays the same, so it is faster too.
+- **Sure of the whole suggestion:** besides the threshold per token, the product of all token probabilities must stay above a threshold (`minSequenceProbability`), so a suggestion ends where it starts to drift. "Eagerness" sets all thresholds.
 - **No half words:** when the model stops because it is no longer sure, it stops at the last whole word.
 - **No copies:** three words or more that already stand in the last lines before the cursor are not shown.
 - **Screen text without the interface:** only lines of four words or more go into the prompt, not buttons, labels and menus.
 - **Base models first:** automatic model choice prefers a base model over a chat, code or math model found on this Mac.
 
-### Het model van je brein
+## Emoji Picker
 
-`BrainCompleter` gebruikt hetzelfde model als het brein via `EmbeddedModel`, en werkt net als `LlamaCompleter`:
+Typing `:` at the start of a word opens a picker under the cursor: the emoji you used last, then the most used. Typing on (`:lach`, `:heart`) filters it at once, without reading the field again. Pick with the arrow keys and Tab (or Return, once two letters are typed, so `:D` and Return still sends), with 1–9 for the row with the selection, or with a click: the panel itself takes no clicks, so the key tap hit-tests the card on a mouse down and swallows that click. Escape, a space or punctuation closes it.
 
-- **Zekerheidsdrempel:** een `LogitSampler` kiest steeds het waarschijnlijkste token en onthoudt hoe zeker het model daarvan was. Is het model onzeker over het eerste token, dan toont Nook niets. Daarna stopt het voorstel waar die zekerheid wegzakt.
-- **Een eigen cache:** de prompt blijft in een eigen key-value-cache staan. Bij de volgende toets snijdt Nook die terug tot het gedeelde begin, zodat het model alleen leest wat nieuw is. Hybride modellen, waarvan de cache niet terug te snijden is, lezen de prompt opnieuw.
-- **Jouw woorden:** woorden die je vaak schrijft krijgen een bonus.
-- **Andere woorden:** Nook neemt de waarschijnlijkste eerste tokens en spelt elk woord daarna uit.
-- **Spaties:** Nook decodeert tokens samen met het laatste token van de prompt. Anders laat de tokenizer de spatie vooraan vallen en plakt een voorstel aan het vorige woord vast.
+## Model Selection
 
-Een chatantwoord gaat altijd voor: zolang het brein schrijft, toont aanvullen niets. Een chatmodel zet gewone tekst goed voort, maar een GGUF-basismodel is daar het best in.
+In **Automatic** mode, Nook selects a model in this order:
 
-## Bouwen en testen
+1. **An existing GGUF model already on your Mac.** `CompletionModelLocator` scans `~/Library/Application Support`, `~/Library/Caches`, LM Studio's models folder, and Hugging Face / `llama.cpp` caches (skipping vision projectors, embedding models, and files under 50 MB) without copying or modifying the file.
+2. **A GGUF model downloaded in Settings.** Under **Settings › Autocomplete › General › Download GGUF models**, you can download recommended base models with live progress or paste any Hugging Face `.gguf` URL.
+3. **Your local Brain model.** Reuses Nook's built-in MLX model (`BrainCompleter`) with KV-cache checkpointing so no extra model download is needed. Whenever the chat brain is actively generating a reply, autocomplete yields automatically.
 
-Het pakket `LlamaSwift` ([mattt/llama.swift](https://github.com/mattt/llama.swift), vastgezet op 2.10549.0, dat is llama.cpp b10549) staat in `apps/macos/project.yml`. Draai na een `git pull` `xcodegen` zoals gewoonlijk.
+## Building & Testing
 
-De logica zonder AppKit heeft tests in `Tests/NookTests/AutocompleteTests.swift`. Dat zijn `GGUFReader`, `CompletionModels` (ook de modelkeuze), `CompletionSuggestion`, `CompletionPreferences`, `CompletionEmoji`, `CompletionPrivacy` en `CompletionLearning`. Ze draaien ook zonder Xcode met `scripts/core-tests.sh --filter AutocompleteTests`. De engine, het toetsfilter, de veldlezer en de overlay test je alleen op een Mac.
+The `LlamaSwift` package ([mattt/llama.swift](https://github.com/mattt/llama.swift), pinned to `2.10549.0` / `llama.cpp` `b10549`) is configured in `apps/macos/project.yml`. Run `xcodegen` in `apps/macos` after pulling changes.
 
-Een deel van het ontwerp en de code komt uit [Typist](https://github.com/BrodySalvucci/Typist) (MIT). Zie `THIRD-PARTY-NOTICES.md`.
+Foundation-only autocomplete logic is tested in `apps/macos/Tests/NookTests/AutocompleteTests.swift` (`GGUFReader`, `CompletionModels`, `CompletionSuggestion`, `CompletionPreferences`, `CompletionEmoji`, `CompletionPrivacy`, and `CompletionLearning`) and runs via `./scripts/core-tests.sh --filter AutocompleteTests`.
+
+Parts of the autocomplete design and implementation are adapted from [Typist](https://github.com/BrodySalvucci/Typist) (MIT License); see [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).

@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Agents list: pinned sessions first, then what is active, a shelf for sessions that work and need
+/// The Agents list as an inbox: pinned sessions first, then what is active, a shelf for sessions that work and need
 /// nothing, one for snoozed sessions and one for what you settled. Rows that need you stay loud, the rest recede; you pin,
 /// settle and snooze from the row or by dragging it, and the last such action can be undone for five seconds (⌘Z).
 /// The decisions are in `InboxLayout`, `InboxDrop`, `UndoLog` and `AutoSettlePolicy`.
@@ -207,7 +207,7 @@ struct AgentInboxList: View {
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
 
-    /// What dropping the dragged row on this section would do, named before you let go (drag ghost).
+    /// What dropping the dragged row on this section would do, named before you let go.
     private func ghostLabel(for kind: InboxSection.Kind, sections: [InboxSection]) -> String? {
         guard targeted == kind, let dragging, let (section, entry) = locate(dragging, in: sections) else { return nil }
         let result = InboxDrop.decide(row: entry.row, from: section.kind, to: kind)

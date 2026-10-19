@@ -1,5 +1,5 @@
 # core
 
-Platformonafhankelijke kern van Nook (Foundation-only), als Swift-pakket. Hier komt de kern uit `apps/macos` (`Core/`, `Brain/`, `Services/Workspace/`, …) zodra een tweede platform hem nodig heeft. Zie [docs/MONOREPO.md](../../docs/MONOREPO.md).
+Platform-independent Swift core package (`Foundation`-only) for Nook. Shared logic from `apps/macos` (`Core/`, `Brain/`, `Services/Workspace/`, …) migrates here as additional desktop and mobile platforms are built out. See [`docs/MONOREPO.md`](../../docs/MONOREPO.md).
 
-Nu staat er alleen een placeholder die laat zien dat het pakket bouwt (`swift test` in deze map).
+Run `swift test` in this directory to verify the package build.

@@ -1,8 +1,8 @@
-# Nook voor iOS
+# Nook for iOS (`NookCompanion`)
 
-Hier staat **Nook Companion**, de iPhone-app die laat zien welke Agents-sessies jou nodig hebben, met goedkeuren, antwoorden, een bericht sturen en stoppen. Hij praat via je eigen wifi met Nook op je Mac; zie [docs/COMPANION.md](../../docs/COMPANION.md).
+This directory contains **Nook Companion**, the iPhone app that shows which coding-agent sessions on your Mac need your attention, with support for approving or denying tool calls, answering questions, sending follow-up messages, and stopping sessions. It communicates directly with Nook on your Mac over your local Wi-Fi network; see [`docs/COMPANION.md`](../../docs/COMPANION.md).
 
-## Bouwen
+## Building
 
 ```sh
 brew install xcodegen
@@ -11,16 +11,12 @@ xcodegen
 open NookCompanion.xcodeproj
 ```
 
-Kies een iPhone (of simulator) en druk op ⌘R. `NookCompanion.xcodeproj`, `Info.plist` en de entitlements worden gemaakt vanuit [`project.yml`](project.yml) en staan niet in git.
+Select an iPhone simulator (or configure your own Apple Developer Team in Xcode for a physical device) and press `⌘R`. `NookCompanion.xcodeproj`, `Info.plist`, and the `.entitlements` file are generated from [`project.yml`](project.yml) and are ignored by Git.
 
-## Opbouw
+## Structure
 
+```text
+NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs push notifications
 ```
-NookCompanion/   de app (SwiftUI): koppelen, sessielijst, acties, pushmeldingen
-```
 
-Het protocol, de verzegeling en de hashing deelt hij met de Mac via [`packages/protocol`](../../packages/protocol). Code uit `apps/macos` gebruikt hij niet.
-
-## Volgende stap
-
-De companion groeit hier uit tot een volwaardige iOS-versie van Nook. Wat iOS en de Mac allebei nodig hebben, hoort in `packages/`, niet gekopieerd in deze map.
+The wire protocol, ChaCha20-Poly1305 sealing, and SHA-256/HMAC helpers are shared with the macOS app via [`packages/protocol`](../../packages/protocol).

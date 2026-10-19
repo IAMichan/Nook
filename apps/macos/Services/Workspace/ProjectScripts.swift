@@ -1,9 +1,8 @@
 import Foundation
 
-/// A command a project defines for its sessions, in `nook.json` at the repository root:
+/// A command a project defines for its sessions, in `nook.json` () at the repository root:
 /// `{"scripts": [{"id": "dev", "name": "Dev server", "command": "pnpm dev", "runOnWorktreeCreate": false,
-/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true}]}`. Nook reads the same schema, so a
-/// project set up for one works in the other.
+/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true}]}`.
 struct ProjectScript: Equatable, Identifiable, Sendable {
     var id: String
     var name: String

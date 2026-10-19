@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// one git button for a session: commit, push and pull request in one go, as far as the branch needs. The
+/// Single git action button for a session: commit, push and pull request in one go, as far as the branch needs. The
 /// agent writes the commit message and the pull request; pushing to the default branch asks first.
 struct GitQuickButton: View {
     @EnvironmentObject private var workspace: WorkspaceManager

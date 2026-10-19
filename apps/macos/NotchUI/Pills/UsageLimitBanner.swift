@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Above the composer of a session a usage limit stopped (recovery banner): when the limit resets, and
+/// Above the composer of a session a usage limit stopped: when the limit resets, and
 /// "Resume at reset", which sends "Continue where you left off." once it has.
 struct UsageLimitBanner: View {
     @EnvironmentObject private var workspace: WorkspaceManager

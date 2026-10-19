@@ -21,7 +21,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Runs over ACP (Agent Client Protocol) for these agents.
+    /// Runs over ACP (Agent Client Protocol).
     var usesACP: Bool {
         switch self {
         case .gemini, .opencode, .cursor, .grok, .antigravity: return true
@@ -37,7 +37,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
         case .codex:
-            // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
+            // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true)
@@ -250,10 +250,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
-    /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
+    /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
-    /// on by itself ("Resume at reset").
+    /// on by itself.
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil

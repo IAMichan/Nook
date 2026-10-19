@@ -1,8 +1,8 @@
 import Foundation
 
-/// Short pieces of text an agent writes for Nook them written: a session title, a commit message,
+/// Short pieces of text an agent writes for Nook: a session title, a commit message,
 /// a pull request. One headless call to Claude Code (a small model, no tools, no hooks) or Codex (`exec`, read-only,
-/// ephemeral), with a JSON schema for the answer. The prompts are.
+/// ephemeral), with a JSON schema for the answer.
 enum TextGeneration {
     enum Engine: Equatable, Sendable { case claude, codex }
 
@@ -117,7 +117,7 @@ enum TextGeneration {
         return (try? JSONSerialization.jsonObject(with: Data(text[start...end].utf8))) as? [String: Any]
     }
 
-    // MARK: Cleaning up answers (rules)
+    // MARK: Cleaning up answers
 
     /// First line, no quotes or backticks around it, single spaces, at most 120 characters. Nil when nothing is left.
     static func title(_ raw: String) -> String? {

@@ -90,7 +90,7 @@ struct ComposerCommand: Equatable, Sendable, Identifiable {
 
 // MARK: Send, queue, steer
 
-/// What the send button does while the agent works (`resolveComposerDispatchMode`).
+/// What the send button does while the agent works.
 enum ComposerDispatch {
     enum Intent: String, CaseIterable, Sendable { case steer, queue }
     enum Outcome: Equatable, Sendable { case send, steer, queue }
@@ -194,7 +194,7 @@ enum PasteRule {
 // MARK: Context references
 
 /// Something you point the agent at. It sits in the message as a link that reads well, and reaches the agent as a short
-/// marker plus a record (`nook-context://` links).
+/// marker plus a record.
 struct ContextRef: Codable, Equatable, Hashable, Sendable {
     enum Kind: String, Codable, Sendable {
         case file, session, pullRequest, excerpt, source

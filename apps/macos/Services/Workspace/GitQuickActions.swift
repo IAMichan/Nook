@@ -1,6 +1,6 @@
 import Foundation
 
-/// one git button: what it does depends on the state of the branch. Changes are committed (with a message an
+/// Single git action button: what it does depends on the state of the branch. Changes are committed (with a message an
 /// agent writes), then pushed, then proposed as a pull request, as far as makes sense; a branch that is behind is
 /// pulled; a diverged branch is left to you.
 enum GitQuickAction: Equatable, Sendable {
@@ -39,7 +39,7 @@ struct GitQuickState: Equatable, Sendable {
 }
 
 enum GitQuickResolver {
-    /// The action, or the localization key of why there is nothing to do (`resolveQuickAction` in).
+    /// The action, or the localization key of why there is nothing to do.
     static func resolve(_ state: GitQuickState) -> Result<GitQuickAction, Reason> {
         guard state.branch != nil else { return .failure(Reason("ws.quick.detached")) }
         let finished = state.hasOpenPullRequest || state.isDefaultBranch

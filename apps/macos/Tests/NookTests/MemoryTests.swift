@@ -261,9 +261,9 @@ final class MemoryTests: XCTestCase {
     // MARK: Text
 
     func testGroundingAndSubjects() {
-        XCTAssertTrue(MemoryText.grounded("De gebruiker werkt bij IM Digital", in: "ik werk bij IM Digital sinds 2020"))
-        XCTAssertFalse(MemoryText.grounded("De gebruiker woont in Parijs", in: "ik werk bij IM Digital"))
-        XCTAssertEqual(MemoryText.subject(of: "De vrouw van de gebruiker heet Lisa"), "Lisa")
+        XCTAssertTrue(MemoryText.grounded("De gebruiker werkt bij Acme", in: "ik werk bij Acme sinds 2020"))
+        XCTAssertFalse(MemoryText.grounded("De gebruiker woont in Parijs", in: "ik werk bij Acme"))
+        XCTAssertEqual(MemoryText.subject(of: "De partner van de gebruiker heet Alice"), "Alice")
         XCTAssertGreaterThan(MemoryText.similarity("Mijn afspraken staan in Werk", "Afspraak in agenda Werk"), 0.3)
     }
 
@@ -271,16 +271,16 @@ final class MemoryTests: XCTestCase {
 
     func testTheMCPKnowledgeGraphIsImported() {
         let graph = """
-        {"type":"entity","name":"Lisa","entityType":"person","observations":["Is de vrouw van Michan","Houdt van tulpen"]}
+        {"type":"entity","name":"Alice","entityType":"person","observations":["Is de partner van Alex","Houdt van tulpen"]}
         {"type":"entity","name":"Apollo","entityType":"project","observations":[]}
-        {"type":"relation","from":"Michan","to":"Apollo","relationType":"works_on"}
+        {"type":"relation","from":"Alex","to":"Apollo","relationType":"works_on"}
         """
         let entries = MemoryImport.parseKnowledgeGraph(graph)
         XCTAssertEqual(entries, [
-            MemoryImport.Entry(subject: "Lisa", text: "Lisa: Is de vrouw van Michan"),
-            MemoryImport.Entry(subject: "Lisa", text: "Lisa: Houdt van tulpen"),
+            MemoryImport.Entry(subject: "Alice", text: "Alice: Is de partner van Alex"),
+            MemoryImport.Entry(subject: "Alice", text: "Alice: Houdt van tulpen"),
             MemoryImport.Entry(subject: "Apollo", text: "Apollo is a project."),
-            MemoryImport.Entry(subject: "Michan", text: "Michan works on Apollo")
+            MemoryImport.Entry(subject: "Alex", text: "Alex works on Apollo")
         ])
         let old = #"{"entities":[{"name":"Jan","entityType":"person","observations":["Collega"]}],"relations":[]}"#
         XCTAssertEqual(MemoryImport.parseKnowledgeGraph(old), [MemoryImport.Entry(subject: "Jan", text: "Jan: Collega")])

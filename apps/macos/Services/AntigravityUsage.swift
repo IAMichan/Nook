@@ -3,8 +3,8 @@ import SQLite3
 
 /// Antigravity's quota windows (per model family: 5-hour and weekly), read the way Antigravity itself does.
 ///
-/// Antigravity's ACP server keeps its Google sign-in in `<GEMINI_HOME>/antigravity-acp/acp_token.json` (reads the
-/// same file): first the profiles of Nook's own Antigravity sessions, then Antigravity's own folder. Nook exchanges the
+/// Antigravity's ACP server keeps its Google sign-in in `<GEMINI_HOME>/antigravity-acp/acp_token.json`:
+/// first the profiles of Nook's own Antigravity sessions, then Antigravity's own folder. Nook exchanges the
 /// refresh token for a short-lived access token (kept until shortly before it expires) and asks Google's Cloud Code
 /// endpoint for the quota summary. The token never leaves this
 /// request and is not stored or logged; nothing is written to Antigravity's files.
@@ -147,7 +147,7 @@ final class AntigravityUsage: ObservableObject {
         return nil
     }
 
-    /// The last access token per refresh token, until a minute before it expires (as keeps it).
+    /// The last access token per refresh token, until a minute before it expires.
     private nonisolated(unsafe) static var tokenCache: [String: (token: String, until: Date)] = [:]
     private nonisolated static let tokenLock = NSLock()
 

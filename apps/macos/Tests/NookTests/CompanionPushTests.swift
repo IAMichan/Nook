@@ -65,13 +65,13 @@ final class CompanionPushTests: XCTestCase {
     }
 
     func testJWTInput() throws {
-        let input = try XCTUnwrap(APNsJWT.signingInput(keyID: "ABC123DEFG", teamID: "35SMNHP9K7", issuedAt: Date(timeIntervalSince1970: 1_700_000_000)))
+        let input = try XCTUnwrap(APNsJWT.signingInput(keyID: "ABC123DEFG", teamID: "TEAMID1234", issuedAt: Date(timeIntervalSince1970: 1_700_000_000)))
         let parts = input.split(separator: ".").map(String.init)
         XCTAssertEqual(parts.count, 2)
         XCTAssertEqual(String(decoding: try XCTUnwrap(Base64URL.decode(parts[0])), as: UTF8.self), #"{"alg":"ES256","kid":"ABC123DEFG"}"#)
-        XCTAssertEqual(String(decoding: try XCTUnwrap(Base64URL.decode(parts[1])), as: UTF8.self), #"{"iss":"35SMNHP9K7","iat":1700000000}"#)
-        XCTAssertNil(APNsJWT.signingInput(keyID: "bad", teamID: "35SMNHP9K7", issuedAt: Date()))
-        XCTAssertNil(APNsJWT.signingInput(keyID: "ABC123DEFG\"}", teamID: "35SMNHP9K7", issuedAt: Date()), "no injection into the JSON")
+        XCTAssertEqual(String(decoding: try XCTUnwrap(Base64URL.decode(parts[1])), as: UTF8.self), #"{"iss":"TEAMID1234","iat":1700000000}"#)
+        XCTAssertNil(APNsJWT.signingInput(keyID: "bad", teamID: "TEAMID1234", issuedAt: Date()))
+        XCTAssertNil(APNsJWT.signingInput(keyID: "ABC123DEFG\"}", teamID: "TEAMID1234", issuedAt: Date()), "no injection into the JSON")
     }
 
     func testEndpointAndTokens() {
