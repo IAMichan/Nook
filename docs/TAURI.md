@@ -61,7 +61,7 @@ al is.
 | "Hé Nook" | ◐ Windows · — Linux en Android | `platform/windows/speech.rs` |
 | Flow-dicteren | ◐ (logica met tests; niet met een microfoon getest) | `core/src/services/flow.rs` |
 | Notetaker | ◐ (geen sprekerherkenning) | `core/src/services/notes.rs` |
-| Vandaag, weekoverzicht | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |
+| Vandaag, weekoverzicht (met agentcijfers per project) | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |
 | Nook zelf (bol, ring, geluiden) | ✓ | `components/Orb.svelte`, `lib/sounds.ts` |
 
 ## Agents en werkruimte
@@ -75,7 +75,7 @@ al is.
 | Werkruimte-sessies: Claude Code, Codex `exec`, Gemini CLI, wachtrij, hervatten | ✓ (met een nep-`claude` getest) | `core/src/workspace/manager.rs` |
 | Codex app-server, ACP-agents, Antigravity | ○ | |
 | Delegeren, overdragen, geplande taken, webhooks, automatische titels | ○ | |
-| Git: wijzigingen, commit, push, pull request, worktrees | ✓ | `core/src/workspace/` |
+| Git: wijzigingen, commit, push, pull request (alle GitHub-accounts, eigenaar eerst), worktrees | ✓ | `core/src/workspace/` |
 | Terminals (portable-pty + xterm.js), browser, dev-servers | ✓ (geen schermafbeelding van de browser) | `src-tauri/src/workspace/` |
 | Werkruimte voor agents (MCP-brug `nook --mcp`) | ✓ | `src-tauri/src/workspace/` |
 | Gebruik en limieten | ◐ | `views/workspace/` |
@@ -85,7 +85,7 @@ al is.
 | Onderdeel (Mac) | Tauri | Waar |
 |---|---|---|
 | Companion-protocol (`CompanionModels`, `CompanionSeal`, `CompanionPush`) | ✓ (testvectoren) | `core/src/companion/` |
-| Companion-server op Windows en Linux (iPhone-app koppelen) | ✓ | `core/src/companion/server.rs`, `src-tauri/src/companion/` |
+| Companion-server op Windows en Linux (iPhone-app koppelen): alle werkruimte- en hook-sessies; goedkeuren, antwoorden, sturen, stoppen | ✓ (sessies uit een terminal: alleen goedkeuren en antwoorden) | `core/src/companion/`, `src-tauri/src/companion/backend.rs` |
 | Pushmeldingen via APNs | ◐ (niet tegen Apple getest) | `core/src/companion/apns.rs` |
 | Android als companion (zoals de iPhone-app) | ✓ (meldingen alleen terwijl de app draait; geen FCM) | `src/views/companion/` |
 | Android-project, telefoonindeling, Delen met Nook, terugknop | ◐ (APK alleen via de CI) | `src-tauri/gen/android` |
