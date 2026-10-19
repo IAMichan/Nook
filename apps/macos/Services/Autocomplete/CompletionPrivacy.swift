@@ -10,15 +10,15 @@ enum CompletionPrivacy {
 
     // The literal is typed on its own: in one expression with the .map the compiler cannot infer .none/.luhn.
     private static let sources: [(String, Check)] = [
-        (#"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b"#, .none),
-        (#"\b\d(?:[ -]?\d){12,18}\b"#, .luhn),
-        (#"\b\d{9}\b|\b\d{4}\.\d{2}\.\d{3}\b"#, .elevenTest),
-        (#"\b(?:sk|pk|rk)[-_](?:live|test|proj|ant)?[-_]?[A-Za-z0-9_\-]{16,}\b"#, .none),
-        (#"\b(?:ghp|gho|ghu|ghs|github_pat|glpat|xox[abprs]|AKIA|AIza|re_|whsec_)[A-Za-z0-9_\-]{12,}\b"#, .none),
-        (#"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"#, .none),
-        (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"#, .none),
-        (#"\b(?=[A-Za-z0-9+/_\-]*\d)(?=[A-Za-z0-9+/_\-]*[A-Za-z])[A-Za-z0-9+/_\-]{32,}={0,2}"#, .none),
-        (#"(?i)\b(?:password|passwd|pwd|wachtwoord|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, .none),
+        (#"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b"#, Check.none),
+        (#"\b\d(?:[ -]?\d){12,18}\b"#, Check.luhn),
+        (#"\b\d{9}\b|\b\d{4}\.\d{2}\.\d{3}\b"#, Check.elevenTest),
+        (#"\b(?:sk|pk|rk)[-_](?:live|test|proj|ant)?[-_]?[A-Za-z0-9_\-]{16,}\b"#, Check.none),
+        (#"\b(?:ghp|gho|ghu|ghs|github_pat|glpat|xox[abprs]|AKIA|AIza|re_|whsec_)[A-Za-z0-9_\-]{12,}\b"#, Check.none),
+        (#"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"#, Check.none),
+        (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"#, Check.none),
+        (#"\b(?=[A-Za-z0-9+/_\-]*\d)(?=[A-Za-z0-9+/_\-]*[A-Za-z])[A-Za-z0-9+/_\-]{32,}={0,2}"#, Check.none),
+        (#"(?i)\b(?:password|passwd|pwd|wachtwoord|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, Check.none),
     ]
 
     private static let patterns: [(NSRegularExpression, Check)] = sources.map { (try! NSRegularExpression(pattern: $0.0), $0.1) }

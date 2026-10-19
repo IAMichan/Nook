@@ -216,7 +216,7 @@ final class SystemAudioTap: @unchecked Sendable {
 /// Turns the microphone's or the Mac's audio, in whatever format it comes, into the 16 kHz mono
 /// Float32 samples Parakeet and the diarizer take. Fed from one audio thread at a time.
 final class Resampler16k: @unchecked Sendable {
-    nonisolated(unsafe) static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
+    static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
                                                           channels: 1, interleaved: false)!
     private let converter: AVAudioConverter
     private let ratio: Double

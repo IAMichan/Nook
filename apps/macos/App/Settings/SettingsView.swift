@@ -62,7 +62,11 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: Binding(
                 get: { Optional(app.settingsSection) },
-                set: { if let value = $0 { app.settingsSection = value } }
+                set: { value in
+                    // The List writes its selection while SwiftUI is still updating the view; publish on the next turn.
+                    guard let value, value != app.settingsSection else { return }
+                    DispatchQueue.main.async { app.settingsSection = value }
+                }
             )) {
                 ForEach(SettingsSection.Group.allCases) { group in
                     Section(group.title) {
