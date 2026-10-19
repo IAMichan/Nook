@@ -42,6 +42,7 @@ import os, re, sys
 root, work, *excluded = sys.argv[1:]
 text = open(os.path.join(root, "project.yml")).read()
 block = text[text.index("  NookTests:"):]
+block = re.split(r"\n  # iPhone companion|\n  NookCompanion:|\nschemes:", block)[0]
 sources = [p for p in re.findall(r"- path: (\S+)", block) if p.endswith(".swift") and p not in excluded]
 sdir = os.path.join(work, "Sources", "Core")
 for folder in (sdir, os.path.join(work, "Tests", "CoreTests")):

@@ -351,3 +351,8 @@ Voor elke stap hierboven, in deze volgorde:
 4. **Prioriteit F10 versus F4–F7**: aanbeveling is eerst F0–F3 (betrouwbaarheid), dan F10.1 en F10.2 omdat ze Nook het meest onderscheiden, en F4–F7 daarna.
 5. **Een build van deze branch**: een pull request openen (of mij laten openen) zodat de CI draait.
 6. **UX-spoor**: eerst U0–U2 (status, actieknop, banners) omdat ze in elke latere stap terugkomen, of eerst het werk aan de lijst (U4)? Aanbeveling: U0–U3 bij F1–F2.
+
+## Besluiten (na de eerste ronde)
+
+- **GitLab**: gebouwd. `GitLabAPI` (puur, getest), eigen token per host in de Keychain (Instellingen › Werkruimte), `SourceForge` kiest per remote GitHub-API, GitLab-API of de eigen "nieuwe aanvraag"-pagina van de forge (Bitbucket, Gitea, Forgejo, Azure DevOps). Merge requests tellen mee voor de PR-badge en automatisch afhandelen.
+- **iPhone-metgezel**: gebouwd als lokale, versleutelde koppeling (geen server): zie `docs/COMPANION.md`. Pushmeldingen zijn bewust niet gedaan.
