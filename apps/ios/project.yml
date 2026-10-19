@@ -5,9 +5,14 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
   developmentLanguage: en
+  # Matches the Xcode the project is built with, so Xcode does not ask to "Update to recommended settings".
+  xcodeVersion: "26.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
