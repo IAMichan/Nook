@@ -189,7 +189,8 @@ struct NewSessionComposer: View {
         return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296) {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)))
+                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)),
+                         short: config.model.isEmpty ? config.provider.displayName : app.modelName(config.model, for: config.provider))
         } content: {
             if app.connectedProviders.isEmpty {
                 DropdownHeader(title: tr("agents.noneConnected"))
@@ -197,9 +198,10 @@ struct NewSessionComposer: View {
                 AgentModelPicker(providers: app.connectedProviders, provider: config.provider, profileID: config.profileID,
                                  model: config.model) { provider, account, model in
                     if provider != config.provider || (account != nil && account != config.profileID) {
-                        choose(provider, account: account ?? app.connectedProfiles(for: provider).first?.id ?? config.profileID)
+                        choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
                     }
                     if let model { config.model = model }
+                    remember()
                 }
             }
         }
@@ -207,7 +209,7 @@ struct NewSessionComposer: View {
     }
 
     private var modeMenu: some View {
-        ModeToggle(mode: $config.mode)
+        ModeToggle(mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }))
     }
 
     private var permissionMenu: some View {
@@ -222,6 +224,7 @@ struct NewSessionComposer: View {
                 DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: config.provider),
                             chosen: config.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
                     config.permission = policy
+                    remember()
                 }
             }
         }
@@ -289,10 +292,12 @@ struct NewSessionComposer: View {
             DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
                         chosen: config.isolation == .folder) {
                 config.isolation = .folder
+                remember()
             }
             DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
                         chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : reason) {
                 config.isolation = .worktree
+                remember()
             }
         }
         .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
@@ -423,7 +428,7 @@ struct NewSessionComposer: View {
         if let path = link.project, FileManager.default.fileExists(atPath: path) { select(path) }
         if let name = link.agent?.lowercased(),
            let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {
-            choose(provider, account: (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id)
+            choose(provider, account: rememberedProfile(for: provider) ?? app.profiles.preferredProfile(provider.kind).id)
             if let model = link.model { config.model = model }
         }
         linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
@@ -434,7 +439,7 @@ struct NewSessionComposer: View {
         let connected = app.connectedProviders
         let provider = connected.contains(settings.defaultProvider) ? settings.defaultProvider : (connected.first ?? settings.defaultProvider)
         config.provider = provider
-        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        config.profileID = rememberedProfile(for: provider) ?? app.profiles.preferredProfile(provider.kind).id
         config.model = settings.model(for: provider)
         config.mode = settings.defaultMode
         config.permission = settings.permission(for: provider)
@@ -452,6 +457,23 @@ struct NewSessionComposer: View {
             if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
         }
         config.profileID = account
+    }
+
+    /// The account you last chose for this agent while it is still connected, else its first connected one.
+    private func rememberedProfile(for provider: RunProvider) -> String? {
+        let connected = app.connectedProfiles(for: provider)
+        if let saved = settings.profile(for: provider), connected.contains(where: { $0.id == saved }) { return saved }
+        return connected.first?.id
+    }
+
+    /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
+    private func remember() {
+        settings.defaultProvider = config.provider
+        settings.setProfile(config.profileID, for: config.provider)
+        settings.setModel(config.model, for: config.provider)
+        settings.defaultMode = config.mode
+        settings.defaultPermission = config.permission
+        settings.defaultIsolation = config.isolation
     }
 
     private func chooseMachine(_ machine: RemoteMachine) {
@@ -539,11 +561,7 @@ struct NewSessionComposer: View {
                 if let remote = finalConfig.remote {
                     UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
                 }
-                settings.defaultProvider = config.provider
-                settings.setModel(config.model, for: config.provider)
-                settings.defaultMode = config.mode
-                settings.defaultIsolation = config.isolation
-                settings.defaultPermission = config.permission
+                remember()
                 config.task = ""
                 pendingID = UUID()
                 starting = false

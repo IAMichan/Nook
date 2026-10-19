@@ -301,7 +301,8 @@ struct AgentSessionDetail: View {
             let providers = app.connectedProviders
             ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
                 ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
-                             text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+                             text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
+                             short: model ?? current.provider.displayName)
             } content: {
                 AgentModelPicker(providers: providers, provider: current.provider, profileID: current.profileID,
                                  model: current.model, showsAccounts: true) { provider, accountID, option in
@@ -323,7 +324,7 @@ struct AgentSessionDetail: View {
     private func agentPill(name: String, profile: AgentProfile?) -> some View {
         let label = profile.map { AccountLabel.name($0, app: app) }
         return ComposerPill(agent: name, account: profile.map { AccountKind.of($0, app: app) },
-                            text: [name, label].compactMap { $0 }.joined(separator: " · "), showsChevron: false)
+                            text: [name, label].compactMap { $0 }.joined(separator: " · "), short: name, showsChevron: false)
     }
 
     /// End the session, or open its folder or a terminal there.
