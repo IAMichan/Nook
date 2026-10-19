@@ -668,15 +668,25 @@ private struct NookList: View {
     @State private var showArchived = false
     @State private var renaming: UUID?
     @State private var nameDraft = ""
+    @State private var selection = ListSelection<UUID>()
 
     var body: some View {
         let items = chat.list(query: query, showArchived: false)
         let archived = chat.list(query: query, showArchived: true)
         let pinned = items.filter(\.pinned)
         let rest = items.filter { !$0.pinned }
+        // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
+        let shown = (pinned + rest + (showArchived ? archived : [])).map(\.id)
         VStack(alignment: .leading, spacing: 8) {
             header
-            searchField
+            HStack(spacing: 6) {
+                searchField
+                SelectionModeButton(active: selection.isActive) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        if selection.isActive { selection.clear() } else { selection.begin() }
+                    }
+                }
+            }
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -688,19 +698,65 @@ private struct NookList: View {
                         }
                         if !pinned.isEmpty {
                             sectionLabel(tr("nooks.section.pinned"))
-                            rows(pinned, now: context.date)
+                            rows(pinned, now: context.date, shown: shown)
                             if !rest.isEmpty {
                                 sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
                             }
                         }
-                        rows(rest, now: context.date)
+                        rows(rest, now: context.date, shown: shown)
                         if !archived.isEmpty {
-                            archiveShelf(archived, now: context.date)
+                            archiveShelf(archived, now: context.date, shown: shown)
                         }
                     }
                 }
             }
+            if selection.isActive {
+                selectionBar(shown: shown)
+            }
         }
+        .onChange(of: shown) { _, current in selection.keep(only: current) }
+    }
+
+    // MARK: Selecting several
+
+    /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
+    private func click(_ conversation: Conversation, shown: [UUID]) {
+        let keys = SelectionClick.modifiers()
+        withAnimation(.easeOut(duration: 0.15)) {
+            switch selection.click(command: keys.command, shift: keys.shift) {
+            case .open: app.openConversation(conversation.id)
+            case .toggle: selection.toggle(conversation.id)
+            case .extend: selection.extend(to: conversation.id, in: shown)
+            }
+        }
+    }
+
+    private func selectionBar(shown: [UUID]) -> some View {
+        let picked = chat.conversations.filter { selection.contains($0.id) }
+        let ids = Set(picked.map(\.id))
+        let allPinned = !picked.isEmpty && picked.allSatisfy(\.pinned)
+        let allArchived = !picked.isEmpty && picked.allSatisfy(\.archived)
+        let anyUnread = picked.contains(where: \.unread)
+        let idle = picked.filter { !$0.busy }
+        var actions: [SelectionAction] = [
+            anyUnread
+                ? SelectionAction(symbol: "envelope.open", label: tr("select.markRead")) { chat.setUnread(false, ids) }
+                : SelectionAction(symbol: "envelope.badge", label: tr("select.markUnread")) { chat.setUnread(true, ids) },
+        ]
+        if !allArchived {
+            actions.append(allPinned
+                ? SelectionAction(symbol: "pin.slash", label: tr("select.unpin")) { chat.setPinned(false, ids) }
+                : SelectionAction(symbol: "pin", label: tr("select.pin")) { chat.setPinned(true, ids) })
+        }
+        actions.append(allArchived
+            ? SelectionAction(symbol: "tray.and.arrow.up", label: tr("select.unarchive"), enabled: !idle.isEmpty) { chat.setArchived(false, ids) }
+            : SelectionAction(symbol: "archivebox", label: tr("select.archive"), enabled: !idle.isEmpty) { chat.setArchived(true, ids) })
+        actions.append(SelectionAction(symbol: "trash", label: tr("select.delete"), destructive: true, enabled: !idle.isEmpty,
+                                       confirm: tr("select.deleteConfirm", idle.count)) { chat.delete(ids) })
+        return SelectionBar(count: selection.count, allSelected: !shown.isEmpty && Set(shown).isSubset(of: ids),
+                            actions: actions,
+                            toggleAll: { selection.toggleAll(shown) },
+                            done: { withAnimation(.easeOut(duration: 0.15)) { selection.clear() } })
     }
 
     // MARK: Header and search
@@ -761,7 +817,7 @@ private struct NookList: View {
     }
 
     /// The archive as a shelf, like the settled sessions: a line with its count, opened with a click.
-    private func archiveShelf(_ archived: [Conversation], now: Date) -> some View {
+    private func archiveShelf(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showArchived.toggle() }
@@ -784,14 +840,14 @@ private struct NookList: View {
             .buttonStyle(.plain)
             .accessibilityValue(showArchived ? tr("compose.queue.expanded") : "")
             if showArchived {
-                rows(archived, now: now)
+                rows(archived, now: now, shown: shown)
             }
         }
         .padding(.top, 6)
     }
 
     @ViewBuilder
-    private func rows(_ conversations: [Conversation], now: Date) -> some View {
+    private func rows(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
         ForEach(conversations) { conversation in
             if renaming == conversation.id {
                 TextField("", text: $nameDraft)
@@ -811,7 +867,10 @@ private struct NookList: View {
                 NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
                         onPin: { chat.togglePin(conversation.id) },
                         onArchive: { chat.setArchived(!conversation.archived, conversation.id) }) {
-                    app.openConversation(conversation.id)
+                    click(conversation, shown: shown)
+                }
+                .selectable(active: selection.isActive, selected: selection.contains(conversation.id)) {
+                    withAnimation(.easeOut(duration: 0.15)) { selection.toggle(conversation.id) }
                 }
                 .contextMenu { contextMenu(conversation) }
             }
