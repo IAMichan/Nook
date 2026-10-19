@@ -479,6 +479,28 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionScreenText.prose(text), "Hoi Michan, kun je morgen om tien uur langskomen?")
     }
 
+    func testShortChatMessagesAreProseToo() {
+        let chat = "Chats\nLisa\nKom je morgen?\nJa, prima.\nOké\nWaar?\nArchive"
+        XCTAssertEqual(CompletionScreenText.prose(chat), "Kom je morgen?\nJa, prima.\nWaar?")
+        XCTAssertFalse(CompletionScreenText.isProse("New message"))
+        XCTAssertFalse(CompletionScreenText.isProse("Send"))
+    }
+
+    func testScreenTextKeepsTheNewestLines() {
+        let text = (1...50).map { "Bericht nummer \($0) in het gesprek." }.joined(separator: "\n")
+        let recent = CompletionScreenText.recent(text, limit: 120)
+        XCTAssertTrue(recent.hasSuffix("Bericht nummer 50 in het gesprek."))
+        XCTAssertFalse(recent.contains("nummer 1 in"))
+        XCTAssertLessThanOrEqual(recent.count, 122)
+        XCTAssertEqual(CompletionScreenText.recent("kort", limit: 120), "kort")
+        XCTAssertEqual(CompletionScreenText.recent(String(repeating: "a", count: 200), limit: 10), "…" + String(repeating: "a", count: 10))
+
+        var input = CompletionContext(before: "Ja, ik")
+        input.screenText = text
+        let prompt = PromptBuilder().build(input)
+        XCTAssertTrue(prompt.contains("Bericht nummer 50 in het gesprek.\n\nJa, ik"), "the newest message sits right above the text")
+    }
+
     func testBaseModelsGoBeforeChatModels() {
         func file(_ name: String, _ source: CompletionModelFile.Source = .found) -> CompletionModelFile {
             CompletionModelFile(url: URL(fileURLWithPath: "/models/\(name)"), bytes: 1, modified: Date(), info: nil, source: source)

@@ -164,7 +164,7 @@ struct PromptBuilder {
     /// The window's start moves only in steps this big, so consecutive prompts share a prefix and the model's cache is reused:
     /// one more letter costs one token, not a whole prompt.
     var windowStep = 500
-    var maxContextLength = 1_200
+    var maxContextLength = 1_600
     var maxSampleLength = 400
 
     func build(_ input: CompletionContext) -> String {
@@ -177,7 +177,10 @@ struct PromptBuilder {
             let samples = input.samples.map { "- " + clip($0, to: maxSampleLength).replacingOccurrences(of: "\n", with: " ") }
             sections.append("Earlier writing by the author:\n" + samples.joined(separator: "\n"))
         }
-        if let screen = cleaned(input.screenText) { sections.append("Visible on screen:\n" + clip(screen, to: maxContextLength)) }
+        // The end of the screen text: what is closest to the field and newest (the last messages in a chat).
+        if let screen = cleaned(input.screenText) {
+            sections.append("On screen, around where the author writes (newest last):\n" + CompletionScreenText.recent(screen, limit: maxContextLength))
+        }
         if let clipboard = cleaned(input.clipboard) { sections.append("Clipboard:\n" + clip(clipboard, to: maxContextLength / 2)) }
         var place: [String] = []
         if let app = cleaned(input.appName) { place.append(app) }
@@ -362,12 +365,34 @@ enum CompletionHealing {
 /// The text of the window around the field, for the prompt.
 enum CompletionScreenText {
     /// Only the lines that read as text (a message, a paragraph), not the buttons, labels and menus around them: those make
-    /// the model write like a user interface.
+    /// the model write like a user interface. Short chat messages stay when they read as a sentence ("Kom je morgen?",
+    /// "Ja, prima."): a reply depends on them most.
     static func prose(_ text: String) -> String {
         text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { $0.completionWordCount >= 4 }
+            .filter(isProse)
             .joined(separator: "\n")
+    }
+
+    static func isProse(_ line: String) -> Bool {
+        let words = line.completionWordCount
+        if words >= 4 { return true }
+        guard let last = line.last, words >= 2 || last == "?" else { return false }
+        return ".?!".contains(last)
+    }
+
+    /// The last whole lines of `text` within `limit` characters (a line longer than that is cut from the front).
+    static func recent(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        var kept: [Substring] = []
+        var length = 0
+        for line in text.split(whereSeparator: \.isNewline).reversed() {
+            if length + line.count + 1 > limit { break }
+            kept.append(line)
+            length += line.count + 1
+        }
+        if kept.isEmpty { return "…" + String(text.suffix(limit)) }
+        return "…\n" + kept.reversed().joined(separator: "\n")
     }
 }
 

@@ -110,6 +110,11 @@ final class AutocompleteController: ObservableObject {
     /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
     /// `fieldContext`). For when Nook's own screen reading has nothing for this app.
     private var windowText: (key: String, text: String?)?
+    /// How long the field's text was at the last prompt (same key as `fieldContext`): much shorter means a message was sent.
+    private var fieldLength: (key: String, length: Int)?
+    /// The clipboard's change count and when Nook first saw it: only something copied in the last minutes says anything
+    /// about what is being written.
+    private var clipboardSeen: (count: Int, date: Date)?
     private let windowQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.window", qos: .utility)
     private var alternatives: [String]?
     private var refreshWork: DispatchWorkItem?
@@ -133,6 +138,10 @@ final class AutocompleteController: ObservableObject {
     /// How often to re-read the field while the app takes in a key, and how many times.
     private let settleInterval: TimeInterval = 0.03
     private let settleAttempts = 12
+    /// The context around a field is gathered again after this long (and after a message is sent).
+    private static let contextSeconds: TimeInterval = 180
+    /// The clipboard goes into the prompt only this long after it was copied.
+    private static let clipboardSeconds: TimeInterval = 5 * 60
     /// The model leaves memory after this long without a suggestion.
     private static let idleSeconds: UInt64 = 15 * 60
 
@@ -232,6 +241,8 @@ final class AutocompleteController: ObservableObject {
         pressure.resume()
         self.pressure = pressure
         if let app = frontApp { readQueue.async { AutocompleteField.wake(app) } }
+        // What is on the clipboard now was copied before autocomplete started: not recent.
+        clipboardSeen = (NSPasteboard.general.changeCount, .distantPast)
         return true
     }
 
@@ -724,7 +735,16 @@ final class AutocompleteController: ObservableObject {
     private func prompt(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> String {
         let bundleID = app.bundleIdentifier
         let key = [bundleID ?? "", snapshot.site ?? "", snapshot.placeholder ?? "", snapshot.windowTitle ?? ""].joined(separator: "|")
-        if let saved = fieldContext, saved.key == key, Date().timeIntervalSince(saved.made) < 600 {
+        // A message was sent (the field emptied), or the context is a few minutes old: new messages may have come in, so read
+        // the screen again. Rarely enough that the prompt cache still pays off.
+        let length = snapshot.before.count + snapshot.after.count
+        let sent = fieldLength.map { $0.key == key && $0.length >= 8 && length < $0.length / 2 } ?? false
+        fieldLength = (key, length)
+        if let saved = fieldContext, saved.key == key, sent || Date().timeIntervalSince(saved.made) > Self.contextSeconds {
+            fieldContext = nil
+            if windowText?.key == key { windowText = nil }
+        }
+        if let saved = fieldContext, saved.key == key {
             var input = saved.context
             input.before = snapshot.before
             return builder.build(input)
@@ -741,20 +761,25 @@ final class AutocompleteController: ObservableObject {
         if prefs.screenContext, let bundleID {
             // Leave out the field's own text: it is already the body of the prompt.
             let own = snapshot.before + snapshot.after
-            let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-            if let seen {
-                input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
-            } else if let read = windowText, read.key == key {
-                input.screenText = read.text
+            // The pane around the field first (the conversation, the mail being answered): it is what the text replies to.
+            // Nook's own screen reading of the whole window fills in until that is read.
+            if let read = windowText, read.key == key, let text = read.text, !text.isEmpty {
+                input.screenText = text
             } else {
-                readWindow(key: key, app: app, own: own)
+                if windowText?.key != key { readWindow(key: key, app: app, own: own) }
+                let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                if let seen {
+                    input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
+                }
             }
         }
         if prefs.clipboardContext {
             let board = NSPasteboard.general
+            if clipboardSeen?.count != board.changeCount { clipboardSeen = (board.changeCount, Date()) }
+            let recent = clipboardSeen.map { Date().timeIntervalSince($0.date) < Self.clipboardSeconds } ?? false
             // Password managers mark secrets as concealed: leave those alone.
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
-            if !concealed { input.clipboard = board.string(forType: .string).map(CompletionPrivacy.sanitize) }
+            if recent, !concealed { input.clipboard = board.string(forType: .string).map(CompletionPrivacy.sanitize) }
         }
         if prefs.learn, prefs.personalStrength > 0, let bundleID { input.samples = store.samples.relevant(for: bundleID, limit: 2) }
         fieldContext = (key, Date(), input)
@@ -762,15 +787,16 @@ final class AutocompleteController: ObservableObject {
         return builder.build(input)
     }
 
-    /// Reads the text of the window being written in, off the main thread, once per field. The prompt takes it from the next
-    /// key on; until then suggestions go on without it, so a slow app never holds up the first one.
+    /// Reads the text around the field being written in (the pane it sits in, see `AppTextReader.textAroundFocus`), off the
+    /// main thread, once per field context. The prompt takes it from the next key on; until then suggestions go on without
+    /// it, so a slow app never holds up the first one.
     private func readWindow(key: String, app: NSRunningApplication, own: String) {
         guard windowText?.key != key else { return }
         windowText = (key, nil)
         let pid = app.processIdentifier
         let limit = builder.maxContextLength * 3
         windowQueue.async {
-            let text = AppTextReader.focusedWindowText(pid: pid, limit: limit).map { text in
+            let text = AppTextReader.textAroundFocus(pid: pid, limit: limit).map { text in
                 CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: "")))
             }
             DispatchQueue.main.async {
