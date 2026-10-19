@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Agents: linking each agent, its accounts and what it used, on one page without tabs.
+/// Settings › Agents: linking each agent and its accounts, on one page without tabs. What they used has its own page,
+/// Settings › Usage.
 /// Settings › Workspace: what a new session starts with, and automation.
 /// Settings › Devices: the iPhone companion and machines over SSH.
 extension SettingsView {
@@ -23,23 +24,6 @@ extension SettingsView {
             Section {} footer: {
                 Text(tr("accounts.isolationNote"))
             }
-            // Usage is a page of sections of its own: shown on request, so the agents stay at the top.
-            Section {
-                Button { withAnimation { showUsage.toggle() } } label: {
-                    HStack {
-                        Text(tr("settings.agents.usage")).foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: showUsage ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            if showUsage {
-                usageSection
-            }
             // The week recap lives here only, so the menu bar stays calm.
             Section {
                 LabeledContent {
@@ -52,6 +36,7 @@ extension SettingsView {
                 }
             }
             Section {
+                settingsLink(.usage, title: tr("settings.agents.usage"), detail: tr("settings.agents.usageMoved"))
                 settingsLink(.workspace, title: tr("settings.ws.title"), detail: tr("settings.agents.workspaceMoved"))
             }
         }

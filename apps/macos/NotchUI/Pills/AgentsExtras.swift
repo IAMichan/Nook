@@ -485,8 +485,9 @@ private struct PullRequestRow: View {
 // MARK: Usage
 
 /// The usage of every connected account at once, grouped per AI: one section for all Claude accounts, one for
-/// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), what was used in
-/// tokens today and this week with a small chart of the last seven days, and what Nook itself ran with the account.
+/// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
+/// tokens today and this week with a small chart of the last seven days. Tokens per model and costs live in
+/// Settings › Usage.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
@@ -547,19 +548,21 @@ struct AgentsUsagePanel: View {
         .onAppear { app.history.refresh() }
     }
 
-    /// One AI: its logo and name with the number of accounts and the highest limit in use, then all its accounts in
-    /// one card, divided by hairlines.
+    /// One AI: its logo and name, then all its accounts on one surface, divided by hairlines. With several accounts the
+    /// header also counts them and shows the highest limit in use; with one, the account itself already says it all.
     private func section(_ kind: AgentKind, _ profiles: [AgentProfile]) -> some View {
-        let peak = profiles.flatMap { app.quota.limits(for: $0) }.map(\.percent).max()
+        let peak = profiles.count > 1 ? profiles.flatMap { app.quota.limits(for: $0) }.map(\.percent).max() : nil
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AgentLogo(agent: kind.name, size: 16)
                 Text(kind.name)
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.paper)
-                Text(profiles.count == 1 ? tr("agents.usage.oneAccount") : tr("agents.usage.accounts", profiles.count))
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.textTertiary)
+                if profiles.count > 1 {
+                    Text(tr("agents.usage.accounts", profiles.count))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
                 Spacer(minLength: 0)
                 if let peak {
                     Text(tr("agents.usage.peak", Int(peak.rounded())))
@@ -575,19 +578,14 @@ struct AgentsUsagePanel: View {
             VStack(spacing: 0) {
                 ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                     if index > 0 {
-                        Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+                        Rectangle().fill(NookTheme.line2.opacity(0.5)).frame(height: 1)
                     }
                     account(profile)
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(hex: 0x111114))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-            )
+            // The same surface the terminals, the browser and the worktrees sit on.
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
         }
     }
 
@@ -598,7 +596,7 @@ struct AgentsUsagePanel: View {
         let accent = profile.kind.color
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
-                AccountBadge(kind: AccountKind.of(profile, app: app), size: 20, ring: Color(hex: 0x111114))
+                AccountBadge(kind: AccountKind.of(profile, app: app), size: 20, ring: NookTheme.field)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(AccountLabel.name(profile, app: app))
                         .font(NookTheme.font(13, .medium))
@@ -638,34 +636,16 @@ struct AgentsUsagePanel: View {
             }
 
             if let usage {
-                HStack(alignment: .bottom, spacing: 18) {
+                HStack(alignment: .bottom, spacing: 14) {
                     stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
                     stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
-                    stat(tr("agents.usage.sessions"), "\(usage.sessionsWeek)")
                     Spacer(minLength: 0)
                     WeekBars(days: usage.perDay, color: accent)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.025)))
             } else {
                 Text(tr("agents.usage.none"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
-            }
-
-            let nook = nookUsage(profile)
-            if nook.turns > 0 {
-                HStack(spacing: 5) {
-                    Image(systemName: "sparkles").font(.system(size: 9.5, weight: .semibold))
-                    Text(tr("agents.usage.inNook", nook.turns, TokenTally.format(nook.tokens)))
-                    if let cost = nook.cost, cost > 0, WorkspaceSettings.shared.showCost {
-                        Text("· " + AgentPathFormat.cost(cost))
-                    }
-                }
-                .font(NookTheme.font(11))
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
             }
         }
         .padding(14)
@@ -720,30 +700,20 @@ struct AgentsUsagePanel: View {
         return result
     }
 
-    /// What sessions Nook ran with this account did in the last seven days: turns, tokens and the cost the agent reported.
-    private func nookUsage(_ profile: AgentProfile) -> (turns: Int, tokens: Int, cost: Double?) {
-        let since = Date().addingTimeInterval(-7 * 24 * 3600)
-        var turns = 0, tokens = 0
-        var cost: Double?
-        for run in app.workspace.runs where run.profileID == profile.id && run.provider.kind == profile.kind && run.updatedAt > since {
-            turns += run.usage.turns
-            tokens += run.usage.totalTokens ?? 0
-            if let reported = run.usage.reportedCostUSD { cost = (cost ?? 0) + reported }
-        }
-        return (turns, tokens, cost)
-    }
-
+    /// "Today 1.2M": the label quiet, the number plain, on one line.
     private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
-            Text(value).font(NookTheme.font(13, .semibold).monospacedDigit()).foregroundStyle(NookTheme.paper)
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text(title).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+            Text(value).font(NookTheme.font(12.5, .semibold).monospacedDigit()).foregroundStyle(NookTheme.paper)
         }
+        .lineLimit(1)
     }
 }
 
 /// How a usage percentage is colored: calm in the AI's own color while there is room, amber when it gets close, coral
-/// when it is nearly gone. The number stays plain white until then, so only what needs attention stands out.
-private enum UsageTone {
+/// when it is nearly gone. The number stays plain white until then, so only what needs attention stands out. Shared by
+/// the notch and Settings › Usage, so a limit looks the same in both.
+enum UsageTone {
     static func fill(_ percent: Double, accent: Color) -> Color {
         switch percent {
         case ..<75: return accent
@@ -763,7 +733,7 @@ private enum UsageTone {
 
 /// A solid bar on a quiet track. With `pace` (0...1) a white tick, a little taller than the bar, marks where usage would
 /// be at an even pace through the window.
-private struct UsageBar: View {
+struct UsageBar: View {
     let fraction: Double
     let color: Color
     var pace: Double?
