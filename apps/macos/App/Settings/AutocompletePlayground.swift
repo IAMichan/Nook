@@ -143,6 +143,17 @@ final class CompletionPlayground: ObservableObject {
         cancel()
     }
 
+    /// An accept key with nothing to accept: ask right away, without the pause after a key and with a lower bar (the user
+    /// asked for a word, see `CompletionOptions.continuing()`). True when the key is taken (a suggestion is on its way), false
+    /// when there is nothing to ask about and the key should do what it always does.
+    func askNow(before: String, after: String) -> Bool {
+        if thinking || task != nil { return true }
+        guard suggestion == nil else { return false }
+        anchor = before
+        request(before: before, after: after, continuing: true)
+        return task != nil
+    }
+
     private func take(_ text: String, leaving rest: CompletionSuggestion) -> String? {
         guard !text.isEmpty else { return nil }
         wordsTaken += text.completionWordCount
@@ -156,13 +167,18 @@ final class CompletionPlayground: ObservableObject {
         task?.cancel()
         task = nil
         thinking = false
+        // Stop the model at its next token, so the next request does not wait for an answer to text that is gone.
+        AutocompleteController.shared.cancelPlaygroundCompletion()
     }
 
     private func request(before: String, after: String, continuing: Bool) {
+        // Typing on while the model writes: keep showing that it thinks, instead of flickering off and on with every key.
+        let wasThinking = thinking
         cancel()
         let policy = CompletionPolicy(midLine: false)
         guard prefs.enabled, policy.shouldComplete(before: before, after: after, hasSelection: false), before.last?.isNewline != true else { return }
         requested = before
+        thinking = wasThinking
         let token = self.token
         let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 120)) * 1_000_000
         task = Task { [weak self] in
@@ -264,10 +280,18 @@ private final class PlaygroundTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        let prefs = AutocompleteStore.shared.prefs
+        let code = Int(event.keyCode)
+        let modifiers = Self.modifiers(event.modifierFlags)
+        let acceptKey = prefs.acceptWord.matches(keyCode: code, modifiers: modifiers) || prefs.acceptAll.matches(keyCode: code, modifiers: modifiers)
+        // Nothing on screen (the model was not sure, or is still writing): the accept key asks again instead of typing a tab.
+        if acceptKey, let playground, playground.suggestion == nil, selectedRange().length == 0 {
+            let text = string as NSString
+            let location = selectedRange().location
+            if location <= text.length,
+               playground.askNow(before: text.substring(to: location), after: text.substring(from: location)) { return }
+        }
         if let playground, playground.suggestion != nil {
-            let prefs = AutocompleteStore.shared.prefs
-            let code = Int(event.keyCode)
-            let modifiers = Self.modifiers(event.modifierFlags)
             if prefs.acceptWord.matches(keyCode: code, modifiers: modifiers), let word = playground.takeWord() {
                 insertText(word, replacementRange: selectedRange())
                 return
@@ -303,10 +327,15 @@ private final class PlaygroundTextView: NSTextView {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.placeholderTextColor, .paragraphStyle: style]
-        let width = bounds.width - textContainerInset.width - origin.x
+        let lineHeight = font.boundingRectForFont.height + 2
+        var place = origin
+        // No room left on the line: the suggestion goes on at the start of the next one, rather than not showing at all.
+        if bounds.width - textContainerInset.width - place.x < 40 {
+            place = NSPoint(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: origin.y + lineHeight)
+        }
+        let width = bounds.width - textContainerInset.width - place.x
         guard width > 8 else { return }
-        (ghost as NSString).draw(in: NSRect(x: origin.x, y: origin.y, width: width, height: font.boundingRectForFont.height + 2),
-                                 withAttributes: attributes)
+        (ghost as NSString).draw(in: NSRect(x: place.x, y: place.y, width: width, height: lineHeight), withAttributes: attributes)
     }
 
     /// The top left of where the next letter goes: the right edge of the character before the cursor.
