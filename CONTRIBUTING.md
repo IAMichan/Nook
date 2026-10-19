@@ -17,7 +17,7 @@ Or build from the command line (inside `apps/macos`):
 xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-> **Signing:** `xcodegen` runs `Config/local-signing.sh`, which signs local builds with the Apple Development certificate in your keychain (written to the untracked `Config/Signing.local.xcconfig`). Without one, Nook is signed ad hoc and macOS asks for Keychain access and permissions again after every build; add a free Apple ID under Xcode › Settings › Accounts to avoid that.
+> **Signing:** `xcodegen` runs `Config/local-signing.sh`, which signs local builds with the Apple Development certificate in your keychain (written to the untracked `Config/Signing.local.xcconfig`). Without one, it creates a self-signed "Nook Local Signing" identity in your login keychain once, and the scheme's post-build action re-signs every build with it, so macOS keeps the permissions you granted (set `NOOK_NO_LOCAL_IDENTITY=1` to stay ad hoc). A free Apple ID under Xcode › Settings › Accounts works too.
 
 > **Note:** Whenever you add, move, or remove a source file, run `xcodegen` again (or `./update.sh` in the repository root). The generated `.xcodeproj` files are intentionally not tracked in Git.
 

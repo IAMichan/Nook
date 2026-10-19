@@ -5,8 +5,11 @@
 // again. With a stable identity (a free "Apple Development" certificate) they are asked once.
 //
 // Config/local-signing.sh runs before every `xcodegen` and writes Signing.local.xcconfig (not in git) with your team
-// when an Apple Development certificate is in your keychain. You can also write that file yourself.
+// when an Apple Development certificate is in your keychain. Without one it creates a self-signed "Nook Local Signing"
+// identity once and sets NOOK_LOCAL_SIGNING_IDENTITY, which the scheme's post-build action (Config/resign-local.sh)
+// re-signs every build with. You can also write that file yourself.
 CODE_SIGN_IDENTITY = -
 DEVELOPMENT_TEAM =
+NOOK_LOCAL_SIGNING_IDENTITY =
 
 #include? "Signing.local.xcconfig"
