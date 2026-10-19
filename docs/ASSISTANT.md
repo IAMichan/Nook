@@ -113,6 +113,16 @@ Integrations can have multiple accounts (`AccountRegistry`, e.g., `"GitHub · Wo
 
 `run_command` (*Terminal* source) is always an explicit action: the full command is shown in the plan, `CommandRisk` evaluates token-level risk, dangerous commands are blocked by `ActionGate`, and approved commands run inside a visible workspace terminal. `read_nook_browser` reads the active page in Nook's built-in browser; `open_in_nook_browser` only allows `https://` URLs and requires approval.
 
+### Mouse & Keyboard
+
+When no tool or menu command can do something (a switch in System Settings, an option in another app's window), Nook reads the window with `read_ui` and proposes the clicks, typing and key presses with `control_ui` (*Screen* source). The plan lists every step in full, and the steps run only after you approve them:
+
+- **One app only.** Every step acts in the app named in the plan: it is brought to the front first, elements are looked up in that app only (by their label, found again right before each step), a click on a point lands only when that app's own window is on top there, and keys stop as soon as another app takes the focus.
+- **Off limits.** Nook never drives terminals, password managers, Keychain Access, script editors or itself (`UIControl.isBlocked`), never types into a password field, and refuses shortcuts that leave the app (lock screen, log out, force quit, app switcher, Spotlight).
+- **Step by step.** After an approved batch ran, Nook reads the window again and proposes the next batch, up to six batches in a row; after that a *Continue* button asks you first. Every batch is a plan of its own and is written to the audit log.
+
+Requires Accessibility access for Nook (System Settings › Privacy & Security › Accessibility).
+
 ### Apps Next to the Chat
 
 `@open whatsapp` (or `@whatsapp`, `open whatsapp in nook`) opens an app's web version next to the chat: over a hundred apps from `EmbeddedAppCatalog` (WhatsApp Web, Telegram, Slack, Gmail, Google Docs, Notion, Trello, GitHub, ChatGPT, Spotify…), or any `https` address (`@open notion.so`). You work in the app itself while you chat with Nook beside it; `@close` puts it away. Each app keeps its own sign-in across launches in a separate `WKWebsiteDataStore`, so WhatsApp asks for the QR code only once; the pane's menu signs out and removes that data. `read_open_app` (*Browser* source) reads what the app shows when you ask about it; Nook never types or clicks in it.
@@ -166,6 +176,7 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 | Clipboard | On your Mac | ✅ off by default | – |
 | Screen | On your Mac | ✅ OCR of open windows (requires permission) | – |
 | Any Mac app (menu bar) | On your Mac (Accessibility) | ✅ `list_app_menu`: the app's menu commands | ✅ `app_menu_command`: runs one menu command (e.g. Finder › File › New Folder) after approval |
+| Any Mac app (mouse & keyboard) | On your Mac (Accessibility) | ✅ `read_ui`: the buttons, switches, fields and texts of an app's window | ✅ `control_ui`: clicks, typing, key presses and scrolling in one app (e.g. a switch in System Settings) after approval |
 | GitHub | OAuth Device Flow (`repo read:user`) or PAT | ✅ PR list, `github_pr_details`, `github_search`, `github_issue_details` | ✅ PR review, comment, merge, close; `github_create_issue`, `github_comment_issue`, `github_update_issue` |
 | Notion | API token | ✅ `notion_search`, `notion_read_page` | ❌ (use Notion MCP for writes) |
 | Stripe, Vercel, Cal.com, n8n, Resend | API token | ✅ read summaries | ❌ read-only |

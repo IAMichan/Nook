@@ -153,6 +153,16 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(Set(tools).count, tools.count, "no duplicates")
     }
 
+    func testChangingAMacSettingOffersMouseAndKeyboard() {
+        for text in ["Zet Night Shift aan", "Kun je de Bluetooth uitzetten?", "Klik op de knop Opslaan", "Change the dark mode setting", "Pas mijn systeeminstellingen aan"] {
+            let intent = ChatIntent.detect(text)
+            XCTAssertTrue(intent.kinds.contains(.control), text)
+            XCTAssertEqual(intent.tools.first, "read_ui", text)
+        }
+        XCTAssertFalse(ChatIntent.detect("Herinner me morgen aan de tandarts").kinds.contains(.control))
+        XCTAssertEqual(ChatIntent.detect("Open Safari").primaryAction, "open_app", "opening an app stays open_app")
+    }
+
     func testDateSheetSpellsOutTheComingDays() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!

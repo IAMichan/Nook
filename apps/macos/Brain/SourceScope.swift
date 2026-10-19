@@ -149,6 +149,7 @@ enum SourceCatalog {
         "run_command": "terminal",
         "read_screen": screen, "read_app": screen,
         "list_running_apps": screen, "get_active_app": screen, "list_app_menu": screen, "app_menu_command": screen,
+        "read_ui": screen, "control_ui": screen,
         "search_contacts": "contacts", "read_clipboard": "clipboard",
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
         "remember": memory, "forget": memory, "recall_memory": memory,

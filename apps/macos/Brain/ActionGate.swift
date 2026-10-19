@@ -60,7 +60,7 @@ struct ActionField: Equatable, Identifiable {
 
 enum ActionGate {
     /// Actions safe to repeat without deduplication checks.
-    static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url", "change_setting", "open_settings"]
+    static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url", "change_setting", "open_settings", "control_ui"]
     /// Window duration within which an action is considered a duplicate.
     static let duplicateWindow: TimeInterval = 12 * 3600
 
@@ -131,6 +131,11 @@ enum ActionGate {
         if tool == "run_command", let command = input["command"] as? String {
             let assessment = CommandRisk.assess(command)
             if assessment.level == .danger { problems.append("Dit commando voer ik niet uit: \(assessment.title)") }
+        }
+
+        // Mouse and keyboard steps: known actions only, what each needs, never a blocked app or a shortcut that leaves it.
+        if tool == "control_ui" {
+            problems += UIControl.problems(app: (input["app"] as? String) ?? "", steps: input["steps"])
         }
 
         // Mail changes need a selection narrow enough to show the user what they approve.
