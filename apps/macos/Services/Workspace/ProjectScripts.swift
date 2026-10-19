@@ -38,6 +38,59 @@ enum ProjectScripts {
         return []
     }
 
+    /// The file new scripts go into: the nearest `nook.json` up to the repository root, else a new
+    /// `nook.json` at that root (or in the folder itself outside a repository).
+    static func fileURL(folder: String) -> URL {
+        let fm = FileManager.default
+        let start = URL(fileURLWithPath: folder, isDirectory: true)
+        var url = start
+        for _ in 0..<12 {
+            for name in fileNames where fm.fileExists(atPath: url.appendingPathComponent(name).path) {
+                return url.appendingPathComponent(name)
+            }
+            if fm.fileExists(atPath: url.appendingPathComponent(".git").path) { return url.appendingPathComponent(fileNames[0]) }
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path { break }
+            url = parent
+        }
+        return start.appendingPathComponent(fileNames[0])
+    }
+
+    /// `data` (a project file, or nothing yet) with one more script at the end; everything else in the file stays.
+    static func appending(name: String, command: String, to data: Data?) throws -> Data {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { throw ProjectScriptError.emptyCommand }
+        var root: [String: Any] = [:]
+        if let data, !data.isEmpty {
+            guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw ProjectScriptError.unreadable }
+            root = object
+        }
+        var list = (root["scripts"] as? [[String: Any]]) ?? []
+        let taken = Set(parse((try? JSONSerialization.data(withJSONObject: ["scripts": list])) ?? Data()).map(\.id))
+        var id = WorktreeNaming.slug(name.isEmpty ? command : name, limit: 32)
+        if id.isEmpty { id = "script" }
+        var unique = id
+        var counter = 2
+        while taken.contains(unique) { unique = "\(id)-\(counter)"; counter += 1 }
+        var entry: [String: Any] = ["id": unique, "command": command]
+        if !name.isEmpty { entry["name"] = name }
+        list.append(entry)
+        root["scripts"] = list
+        var output = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        output.append(contentsOf: Array("\n".utf8))
+        return output
+    }
+
+    /// Adds a script to the project around `folder` and returns the file it went into.
+    @discardableResult
+    static func add(name: String, command: String, folder: String) throws -> URL {
+        let url = fileURL(folder: folder)
+        let existing = FileManager.default.contents(atPath: url.path)
+        try appending(name: name, command: command, to: existing).write(to: url, options: .atomic)
+        return url
+    }
+
     /// Lenient: a script without a command is skipped, missing names and ids are derived, at most 50 scripts.
     static func parse(_ data: Data) -> [ProjectScript] {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -58,5 +111,16 @@ enum ProjectScripts {
                                          previewURL: preview, autoOpenPreview: (item["autoOpenPreview"] as? Bool) ?? false))
         }
         return scripts
+    }
+}
+
+enum ProjectScriptError: LocalizedError, Equatable {
+    case emptyCommand, unreadable
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyCommand: return tr("agents.panel.script.noCommand")
+        case .unreadable: return tr("agents.panel.script.unreadable")
+        }
     }
 }

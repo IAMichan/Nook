@@ -150,7 +150,7 @@ struct AgentRunPanel: View {
                 .help(tr("ws.remote.terminal", remote.host))
             } else {
                 if let headerAccessory { headerAccessory }
-                FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
+                FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive, showChanges: {
                     workspace.markReviewed(runID)
                     app.viewModel.open(.changes(runID, file: nil))
                 }, onChange: {

@@ -8,6 +8,8 @@ final class FolderGitModel: ObservableObject {
     @Published private(set) var status: GitStatus?
     @Published private(set) var branches: [String] = []
     @Published private(set) var remotes: [String] = []
+    /// What the branch compares against: the remote's default branch ("origin/main"), else the local one.
+    @Published private(set) var base: String?
     /// The repository root; git reports paths relative to it, so everything runs there.
     @Published private(set) var root: String?
     @Published private(set) var working = false
@@ -40,17 +42,21 @@ final class FolderGitModel: ObservableObject {
             return
         }
         let directory = directory
-        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String]) in
-            guard let root = git.repositoryRoot(for: directory) else { return (nil, nil, [], []) }
+        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?) in
+            guard let root = git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil) }
             let status = try? git.status(root)
             let local = (try? git.branches(root))?.local ?? []
-            return (root, status, local, git.remotes(root))
+            let remotes = git.remotes(root)
+            let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+            let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
+            return (root, status, local, remotes, base)
         }.value
         if root != result.root { root = result.root }
         if status != result.status { status = result.status }
         let sorted = result.branches.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         if branches != sorted { branches = sorted }
         if remotes != result.remotes { remotes = result.remotes }
+        if base != result.base { base = result.base }
     }
 
     func checkout(_ branch: String) {
@@ -84,20 +90,23 @@ final class FolderGitModel: ObservableObject {
     }
 }
 
-/// Top right in a session: the branch and what changed ("agents-cleanup +29 −12"). Opens a menu to open the folder,
-/// switch branch, push, and look at the changes.
+/// Top right in a session: the branch and what changed ("agents-cleanup +29 −12"). Opens the session panel: the
+/// machine, open the folder in an app, project scripts, the base branch, the git action the branch needs, the changes.
 struct FolderGitButton: View {
-    @EnvironmentObject private var app: AppModel
     @StateObject private var model: FolderGitModel
+    /// A session Nook runs: its commit, push and pull request go through the workspace.
+    let runID: UUID?
     /// While the agent works in this folder Nook does not switch its branch underneath it.
     let agentWorking: Bool
     /// Shows the changes; for sessions Nook runs this opens its own review, otherwise the folder's.
     let showChanges: () -> Void
     /// Called after a push or branch switch, so a session Nook runs can refresh its own view of git.
     var onChange: (() -> Void)? = nil
+    @State private var open = false
 
-    init(directory: String, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
+    init(directory: String, runID: UUID? = nil, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
         _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        self.runID = runID
         self.agentWorking = agentWorking
         self.showChanges = showChanges
         self.onChange = onChange
@@ -105,16 +114,20 @@ struct FolderGitButton: View {
 
     var body: some View {
         Group {
-            if model.isRepository {
-                menu
-            } else if !model.directory.isEmpty {
-                Button {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: model.directory, isDirectory: true))
-                } label: {
-                    label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent, counts: false)
+            if !model.directory.isEmpty {
+                Button { open.toggle() } label: {
+                    if model.isRepository {
+                        label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"), counts: true)
+                    } else {
+                        label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent, counts: false)
+                    }
                 }
                 .buttonStyle(.plain)
-                .help(tr("button.openFolder"))
+                .fixedSize()
+                .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
+                .popover(isPresented: $open, arrowEdge: .bottom) {
+                    SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
+                }
             }
         }
         .task(id: model.directory) {
@@ -126,42 +139,6 @@ struct FolderGitButton: View {
         .onChange(of: model.working) { _, working in
             if !working { onChange?() }
         }
-    }
-
-    private var menu: some View {
-        Menu {
-            Button(tr("agents.git.openFinder")) {
-                NSWorkspace.shared.open(URL(fileURLWithPath: model.directory, isDirectory: true))
-            }
-            Button(tr("button.openTerminalHere")) { app.openTerminal(in: model.directory) }
-            Divider()
-            Menu(model.status?.branch ?? tr("agents.git.detached")) {
-                ForEach(model.branches, id: \.self) { branch in
-                    Button {
-                        model.checkout(branch)
-                    } label: {
-                        if branch == model.status?.branch { Label(branch, systemImage: "checkmark") } else { Text(branch) }
-                    }
-                }
-            }
-            .disabled(agentWorking || model.working || model.branches.count < 2)
-            Button(model.status.map { $0.ahead > 0 ? tr("agents.git.pushAhead", $0.ahead) : tr("agents.git.push") } ?? tr("agents.git.push")) {
-                model.push()
-            }
-            .disabled(!model.canPush)
-            Button(model.files.isEmpty ? tr("agents.git.noChanges") : tr("agents.git.changes", model.files.count)) {
-                showChanges()
-            }
-            .disabled(model.files.isEmpty)
-            if agentWorking {
-                Divider()
-                Text(tr("agents.git.lockedWhileWorking"))
-            }
-        } label: {
-            label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"), counts: true)
-        }
-        .composerMenu()
-        .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? ""))
     }
 
     private func label(icon: String, text: String, counts: Bool) -> some View {
