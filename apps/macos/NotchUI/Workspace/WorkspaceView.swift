@@ -62,19 +62,30 @@ struct WorkspaceView: View {
         HStack(spacing: 0) {
             if pane == .sessions {
                 WorkspaceSidebar(pane: $pane, showNewSession: $showNewSession)
-                    .frame(width: 290)
-                Divider()
+                    .frame(width: 264)
+                WSHairline()
             }
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(WS.background)
             if showInspector, pane == .sessions, tool == .conversation, let run = workspace.run(workspace.selectedRunID) {
-                Divider()
+                WSHairline()
                 RunInspector(runID: run.id)
                     .frame(width: 320)
             }
         }
         .toolbar { toolbar }
+        .background {
+            // ⌘N starts a session from anywhere in the window; the visible button is in the sidebar.
+            Button("") {
+                pane = .sessions
+                showNewSession = true
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
         // Presented as a native AppKit sheet: SwiftUI's own `.sheet` re-negotiates its presentation window on every layout
         // pass here and aborts with "needing another Update Constraints in Window pass".
         .onChange(of: showNewSession) { _, show in
@@ -189,15 +200,6 @@ struct WorkspaceView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button {
-                showNewSession = true
-            } label: {
-                Label(tr("ws.newSession"), systemImage: "square.and.pencil")
-            }
-            .keyboardShortcut("n", modifiers: .command)
-            .help(tr("ws.newSession.help"))
-        }
         ToolbarItem(placement: .principal) {
             Picker(tr("ws.pane.label"), selection: $pane) {
                 ForEach(WorkspacePane.allCases) { pane in

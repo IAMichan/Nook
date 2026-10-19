@@ -26,7 +26,7 @@ struct RunInspector: View {
                 .padding(16)
             }
             .scrollIndicators(embedded ? .never : .automatic)
-            .background(embedded ? Color.clear : WS.surface)
+            .background(embedded ? Color.clear : WS.sidebar)
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }

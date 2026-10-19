@@ -1,16 +1,23 @@
 import SwiftUI
 
-/// Workspace colors. Dark theme consistent with Nook; color always represents state.
+/// Workspace colors. A neutral, near-black dark theme in the manner of a code tool: surfaces lift by a few percent of
+/// white, lines are faint white, and color always represents state.
 enum WS {
-    static let background = Color(hex: 0x111115)
-    static let surface = Color(hex: 0x17171C)
-    static let raised = Color(hex: 0x1D1D23)
-    static let border = Color(hex: 0x2A2A33)
-    static let subtle = Color(hex: 0x22222A)
+    static let background = Color(hex: 0x0B0B0D)
+    /// The sidebar and the inspector: the canvas lifted a little.
+    static let sidebar = Color(hex: 0x121214)
+    static let surface = Color(hex: 0x141416)
+    static let raised = Color(hex: 0x1A1A1D)
+    static let border = Color.white.opacity(0.07)
+    static let subtle = Color.white.opacity(0.05)
+    /// A row or control under the pointer.
+    static let hover = Color.white.opacity(0.045)
+    /// The selected row.
+    static let selected = Color.white.opacity(0.085)
     static let text = NookTheme.paper
     static let secondary = NookTheme.textSecondary
     static let tertiary = NookTheme.textTertiary
-    static let code = Color(hex: 0x0C0C10)
+    static let code = Color(hex: 0x08080A)
 }
 
 extension RunStatus {
@@ -65,6 +72,13 @@ extension GitChangeKind {
         case .modified, .typeChanged: return NookTheme.iris
         case .renamed, .copied: return Color(hex: 0x8AB4F8)
         }
+    }
+}
+
+/// A one-point line between the window's columns: fainter than a system divider.
+struct WSHairline: View {
+    var body: some View {
+        Rectangle().fill(WS.border).frame(width: 1)
     }
 }
 
