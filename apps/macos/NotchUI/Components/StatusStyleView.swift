@@ -24,40 +24,46 @@ extension AgentDisplayState {
     var tone: StatusTone { AgentStatusStyle.tone(self) }
 }
 
-/// A status as a small tinted capsule that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
-/// It shares its height, type and wash with `PullRequestPill`, so the two read as one family and a row with a badge
-/// is exactly as tall as one without. `detail` follows a middle dot in tabular digits, such as "3m" or "tot 9:00".
+/// A status as a small neutral capsule that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
+/// Only the symbol (or the live dot) carries the status color; the word stays in the row's own greys, and turns
+/// paper-white when the agent waits on you. That keeps a list of badges calm instead of a row of colored blocks.
+/// 16pt high like `PullRequestPill`, so a row with a badge is as tall as one without. `detail` follows a middle dot
+/// in tabular digits, such as "3m" or "tot 9:00".
 struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
     var long = false
 
+    /// Approval, input and failure: the ones you have to act on.
+    private var needsYou: Bool { AgentStatusStyle.priority(state) >= AgentStatusStyle.priority(.failed) }
+
     var body: some View {
         let tint = state.tone.color
         HStack(spacing: 4) {
-            if AgentStatusStyle.pulses(state) {
-                SteppedPulseDot(color: tint, size: 6)
-                    .frame(width: 10, height: 10)
-            } else {
-                Image(systemName: state.symbol)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .frame(width: 10, height: 10)
+            Group {
+                if AgentStatusStyle.pulses(state) {
+                    SteppedPulseDot(color: tint, size: 6)
+                } else {
+                    Image(systemName: state.symbol).font(.system(size: 9.5, weight: .semibold))
+                }
             }
+            .foregroundStyle(tint)
+            .frame(width: 10, height: 10)
             Text(long ? state.longWord : state.word)
                 .font(NookTheme.font(11, .medium))
+                .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
                 .lineLimit(1)
             if let detail {
-                Text("·").font(NookTheme.font(11, .medium)).opacity(0.5)
-                Text(detail)
+                Text("· \(detail)")
                     .font(NookTheme.font(11).monospacedDigit())
-                    .opacity(0.7)
+                    .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
         }
-        .foregroundStyle(tint)
         .padding(.horizontal, 6)
         .frame(height: 16)
-        .background(Capsule().fill(tint.opacity(0.13)))
+        .background(Capsule().fill(Color.white.opacity(0.055)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
