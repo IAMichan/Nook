@@ -37,6 +37,28 @@ extension MarkdownBlock {
     }
 }
 
+/// A run of text blocks that select as one, or a single block drawn on its own (code, tables, charts, call-outs …).
+private struct MarkdownSegment {
+    /// Index of the segment's first block in the answer.
+    let offset: Int
+    let blocks: [MarkdownBlock]
+    let prose: Bool
+
+    /// Groups headings, paragraphs, and lists that follow each other; `kept` is a block that stays on its own.
+    static func split(_ blocks: [MarkdownBlock], keeping kept: Int?) -> [MarkdownSegment] {
+        var segments: [MarkdownSegment] = []
+        for (offset, block) in blocks.enumerated() {
+            let prose = offset != kept && SelectableProse.joins(block)
+            if prose, let last = segments.last, last.prose {
+                segments[segments.count - 1] = MarkdownSegment(offset: last.offset, blocks: last.blocks + [block], prose: true)
+            } else {
+                segments.append(MarkdownSegment(offset: offset, blocks: [block], prose: prose))
+            }
+        }
+        return segments
+    }
+}
+
 /// Renders an answer with headings, lists, tables, charts, code blocks, call-outs, and questions, in Nook's visual style.
 /// Parsed Markdown per text. SwiftUI asks for a message's body far more often than its text changes (scrolling, hover,
 /// another message streaming in); parsing once per text keeps long conversations smooth.
@@ -71,11 +93,13 @@ struct MarkdownView: View {
         let blocks = MarkdownCache.blocks(text)
         let choices = onChoose == nil ? nil : MarkdownBlock.trailingChoices(blocks)
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { offset, block in
-                if let choices, choices.index == offset {
+            ForEach(MarkdownSegment.split(blocks, keeping: choices?.index), id: \.offset) { segment in
+                if let choices, choices.index == segment.offset {
                     ChoiceList(options: choices.options, size: size) { onChoose?($0) }
+                } else if segment.prose {
+                    SelectableProse(blocks: segment.blocks, size: size)
                 } else {
-                    view(for: block)
+                    view(for: segment.blocks[0])
                 }
             }
         }
@@ -89,20 +113,8 @@ struct MarkdownView: View {
     @ViewBuilder
     private func view(for block: MarkdownBlock) -> some View {
         switch block {
-        case .heading(let level, let text):
-            Text(MarkdownBlock.inline(text, size: size))
-                .font(NookTheme.font(level <= 1 ? size + 5 : level == 2 ? size + 3 : size + 1, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .padding(.top, level <= 2 ? 6 : 3)
-                .fixedSize(horizontal: false, vertical: true)
-        case .paragraph(let text):
-            paragraph(text)
-        case .list(let items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    listItem(item)
-                }
-            }
+        case .heading, .paragraph, .list:
+            SelectableProse(blocks: [block], size: size)
         case .code(let language, let code):
             MarkdownCodeBlock(language: language, code: code, size: size)
         case .chart(let chart):
@@ -137,33 +149,6 @@ struct MarkdownView: View {
             Rectangle().fill(NookTheme.line2).frame(height: 1).padding(.vertical, 4)
         }
     }
-
-    /// A list item, indented by its depth; nested bullets get a lighter glyph so the hierarchy reads at a glance.
-    private func listItem(_ item: MarkdownListItem) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if let task = MarkdownBlock.task(item.text) {
-                Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                    .font(.system(size: size - 1))
-                    .foregroundStyle(task.done ? NookTheme.mint : NookTheme.textTertiary)
-                paragraph(task.text, color: task.done ? NookTheme.textSecondary : NookTheme.paper)
-            } else {
-                if let number = item.number {
-                    Text(number)
-                        .font(NookTheme.font(size, .semibold))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(minWidth: 16, alignment: .trailing)
-                } else {
-                    Text(Self.bullets[min(item.level, Self.bullets.count - 1)])
-                        .foregroundStyle(item.level == 0 ? NookTheme.iris : NookTheme.textTertiary)
-                        .frame(minWidth: 8, alignment: .center)
-                }
-                paragraph(item.text, color: item.level == 0 ? NookTheme.paper : NookTheme.textSecondary)
-            }
-        }
-        .padding(.leading, CGFloat(item.level) * (size + 4))
-    }
-
-    private static let bullets = ["•", "◦", "▪"]
 
     private func paragraph(_ text: String, color: Color = NookTheme.paper) -> some View {
         Text(MarkdownBlock.inline(text, size: size))
