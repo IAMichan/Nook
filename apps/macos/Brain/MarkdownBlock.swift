@@ -4,8 +4,8 @@ import Foundation
 enum MarkdownBlock {
     case heading(level: Int, text: String)
     case paragraph(String)
-    case bullets([String])
-    case numbered([(number: String, text: String)])
+    /// A bulleted or numbered list; nested items keep their depth.
+    case list([MarkdownListItem])
     case code(language: String, code: String)
     case chart(ChatChart)
     /// A question from the answer with options to pick from (a ```question block).
@@ -18,8 +18,10 @@ enum MarkdownBlock {
     private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
     private static let ruleRegex = try? NSRegularExpression(pattern: #"^([-*_]\s*){3,}$"#)
     private static let tableDividerRegex = try? NSRegularExpression(pattern: #"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$"#)
-    private static let bulletRegex = try? NSRegularExpression(pattern: #"^\s*[-*•+]\s+"#)
+    private static let bulletRegex = try? NSRegularExpression(pattern: #"^\s*[-*•◦▪+]\s+"#)
     private static let numberRegex = try? NSRegularExpression(pattern: #"^\s*\d{1,3}[.)]\s+"#)
+    /// A bullet glyph a model typed after the list marker ("- • text"): it would show up as a second bullet.
+    private static let strayBulletRegex = try? NSRegularExpression(pattern: #"^[•◦▪]\s+"#)
 
     private static func matches(_ text: String, _ rx: NSRegularExpression?) -> Bool {
         guard let rx else { return false }
@@ -68,11 +70,8 @@ enum MarkdownBlock {
         guard blocks.count >= 2, case .paragraph(let ask) = blocks[blocks.count - 2],
               ask.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") || ask.contains("?") && ask.hasSuffix(":") else { return nil }
         let last = blocks.count - 1
-        switch blocks[last] {
-        case .bullets(let items) where (2...6).contains(items.count): return (last, items.map(stripTask))
-        case .numbered(let items) where (2...6).contains(items.count): return (last, items.map(\.text))
-        default: return nil
-        }
+        guard case .list(let items) = blocks[last], (2...6).contains(items.count), items.allSatisfy({ $0.level == 0 }) else { return nil }
+        return (last, items.map { stripTask($0.text) })
     }
 
     /// `[ ]` / `[x]` task markers at the start of a list item.
@@ -84,6 +83,51 @@ enum MarkdownBlock {
     }
 
     private static func stripTask(_ item: String) -> String { task(item)?.text ?? item }
+
+    /// Leading whitespace of a line in columns; a tab counts as four.
+    private static func indent(_ line: String) -> Int {
+        line.prefix { $0 == " " || $0 == "\t" }.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+    }
+
+    /// The list item a line starts, if any: its indent, its number when numbered, and its text.
+    private static func listMarker(_ line: String) -> (indent: Int, number: String?, text: String)? {
+        let number: String?
+        let rest: String
+        if matches(line, bulletRegex) {
+            number = nil
+            rest = stripPrefix(line, bulletRegex)
+        } else if matches(line, numberRegex) {
+            number = String(line.trimmingCharacters(in: .whitespaces).prefix { $0.isNumber }) + "."
+            rest = stripPrefix(line, numberRegex)
+        } else {
+            return nil
+        }
+        return (indent(line), number, stripPrefix(rest, strayBulletRegex))
+    }
+
+    /// A list from `index` on, bulleted, numbered, or both mixed, with each item's depth taken from its indent.
+    private static func parseList(_ lines: [String], from index: inout Int) -> [MarkdownListItem] {
+        var items: [MarkdownListItem] = []
+        // The indents of the levels that are open, outermost first.
+        var levels: [Int] = []
+        while index < lines.count {
+            let line = lines[index]
+            if let marker = listMarker(line) {
+                while let last = levels.last, marker.indent < last { levels.removeLast() }
+                if levels.last.map({ marker.indent > $0 }) ?? true { levels.append(marker.indent) }
+                items.append(MarkdownListItem(level: levels.count - 1, number: marker.number, text: marker.text))
+            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                // A blank line between items keeps the list going ("loose" lists).
+                guard index + 1 < lines.count, listMarker(lines[index + 1]) != nil else { break }
+            } else if indent(line) >= 2, !items.isEmpty {
+                items[items.count - 1].text += " " + line.trimmingCharacters(in: .whitespaces)
+            } else {
+                break
+            }
+            index += 1
+        }
+        return items
+    }
 
     static func parse(_ raw: String) -> [MarkdownBlock] {
         let lines = clean(raw).components(separatedBy: "\n")
@@ -165,42 +209,10 @@ enum MarkdownBlock {
                 blocks.append(.table(header: header, rows: rows))
                 continue
             }
-            // Bulleted list
-            if matches(line, bulletRegex) {
+            // Bulleted or numbered list
+            if listMarker(line) != nil {
                 flush()
-                var items: [String] = []
-                while index < lines.count {
-                    let current = lines[index]
-                    if matches(current, bulletRegex) {
-                        let indent = current.prefix { $0 == " " || $0 == "\t" }.count
-                        let text = stripPrefix(current, bulletRegex)
-                        items.append((indent >= 2 ? "◦ " : "") + text)
-                    } else if !current.trimmingCharacters(in: .whitespaces).isEmpty, current.hasPrefix("  "), !items.isEmpty {
-                        items[items.count - 1] += " " + current.trimmingCharacters(in: .whitespaces)
-                    } else {
-                        break
-                    }
-                    index += 1
-                }
-                blocks.append(.bullets(items))
-                continue
-            }
-            // Numbered list
-            if matches(line, numberRegex) {
-                flush()
-                var items: [(number: String, text: String)] = []
-                while index < lines.count, matches(lines[index], numberRegex) {
-                    let current = lines[index].trimmingCharacters(in: .whitespaces)
-                    let digits = String(current.prefix { $0.isNumber })
-                    let text = stripPrefix(current, numberRegex)
-                    items.append((digits + ".", text))
-                    index += 1
-                    // Blank lines between list items are treated as part of the list.
-                    if index + 1 < lines.count, lines[index].trimmingCharacters(in: .whitespaces).isEmpty, matches(lines[index + 1], numberRegex) {
-                        index += 1
-                    }
-                }
-                blocks.append(.numbered(items))
+                blocks.append(.list(parseList(lines, from: &index)))
                 continue
             }
             // Blockquote
@@ -228,6 +240,15 @@ enum MarkdownBlock {
         default: return false
         }
     }
+}
+
+// MARK: - List
+
+/// One item of a list: how deep it is nested (0 is the outer list), its number when numbered ("1."), and its text.
+struct MarkdownListItem: Equatable {
+    let level: Int
+    let number: String?
+    var text: String
 }
 
 // MARK: - Callout

@@ -579,6 +579,56 @@ enum Prefetch {
         return Array(calls.prefix(limit))
     }
 
+    // MARK: Agenda questions
+
+    /// Words that put a question on the calendar: an appointment, a call, a meeting, being busy.
+    private static let agendaCue = #"afspra?ak\w*|gesprek\w*|meeting\w*|vergader\w*|overleg\w*|call\w*|bel(afspraak|len)|gepland|ingepland|agenda'?s?|kalender\w*|calendars?|planning|appointments?|termine?|besprechung\w*|druk|bezet|busy|plans?|lunch\w*|diner|etentje|borrel|date|events?|evenement\w*|verjaardag\w*|birthday"#
+    /// A question about the user's own time ("heb ik", "do I have", "wat doe ik").
+    private static let ownTime = #"heb ik|ben ik|moet ik|hebben we|zijn we|wat doe ik|waar ben ik|have i|am i|do i|what do i|are we|habe ich|bin ich|muss ich|haben wir"#
+
+    /// The days a question about the calendar is about, from the start of the first day to the end of the last
+    /// ("heb ik morgen een gesprek met Aron?" → tomorrow). Nil when the question is not about the calendar. Calendar
+    /// data in the context is only the coming week of one calendar; this window is checked across every calendar.
+    static func agendaWindow(for text: String, now: Date = Date(), calendar: Calendar = .current) -> (from: Date, to: Date)? {
+        let today = calendar.startOfDay(for: now)
+        func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: today) ?? today }
+        let cue = matches(agendaCue, text)
+        var window: (from: Date, to: Date)?
+        if matches(#"overmorgen|übermorgen|day after tomorrow"#, text) {
+            window = (day(2), day(3))
+        } else if matches(#"morgen(?!s)|tomorrow"#, text), !matches(#"goede morgen|guten morgen|heute morgen"#, text) {
+            window = (day(1), day(2))
+        } else if matches(#"vandaag|vanavond|vanmiddag|vanochtend|vannacht|straks|today|tonight|this (morning|afternoon|evening)|heute"#, text) {
+            window = (day(0), day(1))
+        } else if matches(#"volgende week|next week|nächste woche"#, text) {
+            // From next Monday, a whole week.
+            let ahead = (9 - calendar.component(.weekday, from: today)) % 7
+            let monday = ahead == 0 ? 7 : ahead
+            window = (day(monday), day(monday + 7))
+        } else if matches(#"deze week|this week|diese woche|komende dagen|coming days|nächsten tage"#, text) {
+            window = (day(0), day(7))
+        } else if let weekday = weekday(in: text) {
+            // The next such day, today included.
+            let ahead = (weekday - calendar.component(.weekday, from: today) + 7) % 7
+            window = (day(ahead), day(ahead + 1))
+        }
+        if let window {
+            return cue || matches(ownTime, text) ? window : nil
+        }
+        // "Wat staat er in mijn agenda?" without a day: the coming week.
+        return matches(#"agenda'?s?|kalender\w*|calendars?"#, text) ? (day(0), day(7)) : nil
+    }
+
+    /// Weekday number (Sunday 1 … Saturday 7) a question names, in Dutch, English or German.
+    private static func weekday(in text: String) -> Int? {
+        let names: [(String, Int)] = [
+            (#"zondag|sunday|sonntag"#, 1), (#"maandag|monday|montag"#, 2), (#"dinsdag|tuesday|dienstag"#, 3),
+            (#"woensdag|wednesday|mittwoch"#, 4), (#"donderdag|thursday|donnerstag"#, 5), (#"vrijdag|friday|freitag"#, 6),
+            (#"zaterdag|saturday|samstag"#, 7)
+        ]
+        return names.first { matches($0.0, text) }?.1
+    }
+
     private static func matches(_ pattern: String, _ text: String) -> Bool {
         text.range(of: #"(?<![\p{L}\d])(?:"# + pattern + ")", options: [.regularExpression, .caseInsensitive]) != nil
     }

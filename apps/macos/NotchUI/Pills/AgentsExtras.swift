@@ -352,6 +352,14 @@ struct AgentsUsagePanel: View {
                     ForEach(groups, id: \.kind) { group in
                         section(group.kind, group.profiles)
                     }
+                    if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.elapsed() != nil } }) {
+                        HStack(spacing: 7) {
+                            Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
+                            Text(tr("agents.usage.paceLegend"))
+                        }
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    }
                     Text(tr("agents.usage.note"))
                         .font(NookTheme.font(11.5))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -490,27 +498,36 @@ struct AgentsUsagePanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A limit as one line of text above a slim bar: the bar takes the AI's own color while there is room, and only
-    /// turns amber or coral once the limit comes close.
+    /// A limit as its name, reset time and percentage above a solid bar: the bar takes the AI's own color while there
+    /// is room, and only turns amber or coral once the limit comes close. A tick on the bar marks where an even pace
+    /// would be by now, so a fill past it is running ahead of the window; it moves along every minute.
     private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .font(NookTheme.font(12.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Spacer(minLength: 6)
-                if let note = limit.note {
-                    Text(note).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
-                } else if let reset = AgentFormat.reset(limit.resetsAt) {
-                    Text(reset).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                Group {
+                    if let note = limit.note {
+                        Text(note)
+                    } else if let reset = AgentFormat.reset(limit.resetsAt) {
+                        Text(reset)
+                    }
                 }
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                Spacer(minLength: 6)
                 Text("\(Int(limit.percent.rounded()))%")
-                    .font(NookTheme.font(12, .semibold).monospacedDigit())
+                    .font(NookTheme.font(16, .bold).monospacedDigit())
                     .foregroundStyle(UsageTone.text(limit.percent))
-                    .frame(minWidth: 34, alignment: .trailing)
             }
-            .font(NookTheme.font(11.5))
-            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent))
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                let pace = limit.elapsed(at: context.date)
+                UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
+                    .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
+            }
         }
     }
 
@@ -570,21 +587,39 @@ private enum UsageTone {
     }
 }
 
-/// A slim bar on a faint track, its fill fading in from a softer tone of its color.
+/// A solid bar on a quiet track. With `pace` (0...1) a white tick, a little taller than the bar, marks where usage would
+/// be at an even pace through the window.
 private struct UsageBar: View {
     let fraction: Double
     let color: Color
+    var pace: Double?
+    private static let height: CGFloat = 10
 
     var body: some View {
-        GeometryReader { geo in
+        let height = Self.height
+        return GeometryReader { geo in
+            let width = geo.size.width
+            let fill = CGFloat(min(1, max(0, fraction)))
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.06))
-                Capsule()
-                    .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
-                    .frame(width: max(4, geo.size.width * CGFloat(min(1, max(0, fraction)))))
+                RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: height)
+                if fill > 0 {
+                    RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+                        .fill(color)
+                        .frame(width: max(height, width * fill), height: height)
+                }
+                if let pace {
+                    Capsule()
+                        .fill(NookTheme.paper)
+                        .frame(width: 2, height: height + 6)
+                        .shadow(color: .black.opacity(0.5), radius: 1)
+                        .offset(x: min(width - 2, max(0, width * CGFloat(pace) - 1)))
+                }
             }
+            .frame(width: width, height: geo.size.height, alignment: .leading)
         }
-        .frame(height: 5)
+        .frame(height: height + 6)
         .accessibilityHidden(true)
     }
 }

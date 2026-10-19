@@ -451,7 +451,7 @@ final class WorkspaceManager: ObservableObject {
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
             let repoName = URL(fileURLWithPath: root).lastPathComponent
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
-                                                   slug: WorktreeNaming.slug(name.replacingOccurrences(of: "/", with: "-"), limit: 60),
+                                                   slug: WorktreeNaming.directorySlug(branch: name),
                                                    exists: { FileManager.default.fileExists(atPath: $0) })
             do {
                 try await Task.detached(priority: .userInitiated) {
@@ -765,13 +765,22 @@ final class WorkspaceManager: ObservableObject {
         queued[id] = queue.isEmpty && !queue.isHeld ? nil : queue
     }
 
-    /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
-    func sendQueuedNow(_ id: UUID) {
-        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var queue = queued[id] else { return }
+    /// A queued message can go out right away: into the running turn, or as a new turn when the agent is idle.
+    func canSendQueuedNow(_ id: UUID) -> Bool {
+        guard let run = run(id) else { return false }
+        if run.status.isActive { return canSteer(id) }
+        return run.canContinue && processes[id] == nil && !checkpointing.contains(id)
+    }
+
+    /// Sends one queued message now, ahead of the rest: it steers a running turn, or starts the next turn when the
+    /// agent is idle (also after a stop or a failure). It stays queued when it cannot go out.
+    func sendQueuedNow(_ id: UUID, message: UUID) {
+        guard canSendQueuedNow(id), let run = run(id) else { return }
+        if run.status.isActive { return steerQueued(id, message: message) }
+        guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         queue.resume()
-        guard let next = queue.next() else { return store(queue, for: id) }
         store(queue, for: id)
-        send(id, text: next.text)
+        if !send(id, text: text, shown: false) { queued[id, default: MessageQueue()].requeueFirst(text) }
     }
 
     func removeQueued(_ id: UUID, message: UUID) {

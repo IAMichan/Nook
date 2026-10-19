@@ -25,6 +25,29 @@ final class MarkdownBlockTests: XCTestCase {
         XCTAssertEqual(MarkdownBlock.trailingChoices(asked)?.options, ["Optie een", "Optie twee"])
         let statement = MarkdownBlock.parse("Dit is gedaan.\n\n- Een\n- Twee")
         XCTAssertNil(MarkdownBlock.trailingChoices(statement))
+        let nested = MarkdownBlock.parse("Welke wil je?\n\n- Een\n  - detail\n- Twee")
+        XCTAssertNil(MarkdownBlock.trailingChoices(nested))
+    }
+
+    func testNestedListKeepsItsDepth() {
+        let text = "- **Update:** main is bijgewerkt:\n  - Sessies tonen voortgang\n  - • Nieuwe tests\n    1. Diep\n- **Build:** geslaagd"
+        guard case .list(let items) = MarkdownBlock.parse(text).first else { return XCTFail("no list") }
+        XCTAssertEqual(items, [
+            MarkdownListItem(level: 0, number: nil, text: "**Update:** main is bijgewerkt:"),
+            MarkdownListItem(level: 1, number: nil, text: "Sessies tonen voortgang"),
+            MarkdownListItem(level: 1, number: nil, text: "Nieuwe tests"),
+            MarkdownListItem(level: 2, number: "1.", text: "Diep"),
+            MarkdownListItem(level: 0, number: nil, text: "**Build:** geslaagd")
+        ])
+    }
+
+    func testNumberedListWithBulletsAndBlankLinesStaysOneList() {
+        let text = "1. Eerst\n   - detail\n\n2. Daarna\n   vervolg van de regel\n\nKlaar."
+        let blocks = MarkdownBlock.parse(text)
+        guard case .list(let items) = blocks.first else { return XCTFail("no list") }
+        XCTAssertEqual(items.map(\.level), [0, 1, 0])
+        XCTAssertEqual(items.last?.text, "Daarna vervolg van de regel")
+        guard case .paragraph("Klaar.") = blocks.last else { return XCTFail("no closing paragraph") }
     }
 
     func testCalloutAndTask() {

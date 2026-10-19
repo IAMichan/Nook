@@ -45,9 +45,8 @@ struct RunDetailView: View {
                     }
                     if let waiting = workspace.queued[runID], !waiting.isEmpty {
                         QueuedMessagesStrip(queue: waiting, remove: { workspace.removeQueued(runID, message: $0) },
-                                            steer: workspace.canSteer(runID) ? { workspace.steerQueued(runID, message: $0) } : nil,
                                             move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
-                                            sendNow: run.status.isActive ? nil : { workspace.sendQueuedNow(runID) })
+                                            sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
                             .padding(.horizontal, 18)
                             .padding(.top, 10)
                     }
@@ -545,6 +544,8 @@ struct ToolRow: View {
                         .foregroundStyle(WS.text.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    // A test run, build or linter says how it went.
+                    if let check = Verification.check(event) { VerificationChips(checks: [check]) }
                     Spacer(minLength: 0)
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
@@ -562,7 +563,13 @@ struct ToolRow: View {
             }
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let detail = event.detail, !detail.isEmpty, detail != "{}" {
+                    // A task list (TodoWrite, update_plan) reads as the list, not as its JSON.
+                    if let steps = SessionOutputs.taskList(tool: event.tool ?? "", input: AgentActivity.input(event.detail) ?? [:]),
+                       !steps.isEmpty {
+                        TaskListRows(steps: steps)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    } else if let detail = event.detail, !detail.isEmpty, detail != "{}" {
                         CodeBlock(title: tr("ws.tool.input"), text: detail)
                     }
                     if let output = event.output.map(McpUI.stripped), !output.isEmpty {

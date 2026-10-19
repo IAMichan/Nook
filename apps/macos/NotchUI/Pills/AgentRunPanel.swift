@@ -38,41 +38,77 @@ struct AgentRunPanel: View {
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    /// The panel next to the conversation with what the agent produced: open, which output it shows, and wider.
+    @State private var outputsOpen = false
+    @State private var outputSelection: String?
+    @State private var outputsWide = false
+    /// The outputs (by signature) you have seen, for the dot on the panel's button; nil until the session shows.
+    @State private var seenOutputs: Set<String>?
+    /// The terminal on the left: the command it shows; nil while it is closed.
+    @State private var consoleEventID: UUID?
 
     var body: some View {
         if let run = workspace.run(runID) {
-            VStack(alignment: .leading, spacing: 10) {
-                header(run)
-                timeline(run)
-                if let pending = workspace.approvals[runID], let first = pending.first {
-                    approval(run, first, more: pending.count - 1)
-                } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
-                    // A command or pull request the agent asks for through Nook's workspace.
-                    let approval = ApprovalCenter.make(request)
-                    ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
-                }
-                if let target = revertTarget {
-                    revertConfirmation(target)
-                } else if confirmDelete {
-                    deleteConfirmation(run)
-                } else if let question = workspace.questions[runID]?.first {
-                    // The agent asks something: its question takes the composer's place until answered (Stop stays).
-                    RunQuestionPanel(question: question, agent: run.provider.displayName,
-                                     onStop: { workspace.stop(runID) }) { answers in
-                        workspace.answer(runID, questionID: question.id, answers: answers)
+            let outputs = SessionOutputs.collect(workspace.timeline(runID), tasks: run.tasks, directory: run.workingDirectory)
+            let runningCommand = CommandConsole.running(workspace.timeline(runID))?.id
+            HStack(alignment: .top, spacing: 14) {
+                if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
+                    CommandConsolePanel(event: event) {
+                        withAnimation(.easeInOut(duration: 0.2)) { self.consoleEventID = nil }
                     }
-                    .id(question.id)
-                } else {
-                    composer(run)
+                    .frame(width: 400)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    header(run, outputs: outputs)
+                    timeline(run)
+                    if let pending = workspace.approvals[runID], let first = pending.first {
+                        approval(run, first, more: pending.count - 1)
+                    } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+                        // A command or pull request the agent asks for through Nook's workspace.
+                        let approval = ApprovalCenter.make(request)
+                        ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
+                    }
+                    if let target = revertTarget {
+                        revertConfirmation(target)
+                    } else if confirmDelete {
+                        deleteConfirmation(run)
+                    } else if let question = workspace.questions[runID]?.first {
+                        // The agent asks something: its question takes the composer's place until answered (Stop stays).
+                        RunQuestionPanel(question: question, agent: run.provider.displayName,
+                                         onStop: { workspace.stop(runID) }) { answers in
+                            workspace.answer(runID, questionID: question.id, answers: answers)
+                        }
+                        .id(question.id)
+                    } else {
+                        composer(run)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if outputsOpen {
+                    SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: $outputsWide) {
+                        withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
+                    }
+                    .frame(width: outputsWide ? 620 : 400)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // An open terminal follows the agent to the next command it runs.
+            .onChange(of: runningCommand) { _, next in
+                if consoleEventID != nil, let next { consoleEventID = next }
+            }
+            .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
+                noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
+            }
             .onAppear {
                 workspace.loadTimeline(runID)
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
                 // The agent's connection opens now, so your first message goes straight in.
                 workspace.prewarm(runID)
                 focused = true
+                // What was there before you opened the session is not news.
+                seenOutputs = Set(outputs.map(SessionOutputs.signature))
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
@@ -91,6 +127,10 @@ struct AgentRunPanel: View {
                 reverting = false
                 openBlocks = []
                 expanded = []
+                outputsOpen = false
+                outputSelection = nil
+                seenOutputs = nil
+                consoleEventID = nil
             }
         } else {
             Text(tr("agents.run.gone"))
@@ -102,8 +142,51 @@ struct AgentRunPanel: View {
 
     // MARK: Header
 
+    /// While the agent works, a plan, design, document or image that is new opens the outputs panel on it, and anything
+    /// new while it is closed puts a dot on its button. What a session that does not work shows (its timeline loading
+    /// as you open it) is not news.
+    private func noticeOutputs(_ outputs: [SessionOutput], working: Bool, turnStart: Date?) {
+        guard working, let seen = seenOutputs else {
+            seenOutputs = Set(outputs.map(SessionOutputs.signature))
+            return
+        }
+        let fresh = outputs.filter { !seen.contains(SessionOutputs.signature($0)) }
+        // Only what this turn made opens the panel by itself, not earlier work that comes in as the timeline loads.
+        if let shown = fresh.first(where: { output in
+            if case .tasks = output.kind { return false }
+            return output.date >= (turnStart ?? .distantFuture)
+        }) {
+            outputSelection = shown.id
+            withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = true }
+        }
+        if outputsOpen { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
+    }
+
+    /// Opens or closes the outputs panel; opening it marks everything seen.
+    private func outputsButton(_ run: WorkspaceRun, _ outputs: [SessionOutput]) -> some View {
+        let fresh = !outputsOpen && SessionOutputs.hasNew(outputs, seen: seenOutputs ?? [])
+        let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.toggle() }
+            seenOutputs = Set(outputs.map(SessionOutputs.signature))
+        } label: {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(outputsOpen ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7).fill(outputsOpen ? NookTheme.smoke : Color.clear))
+                .overlay(alignment: .topTrailing) {
+                    if fresh { Circle().fill(run.provider.color).frame(width: 6, height: 6).offset(x: -3, y: 3) }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
-    private func header(_ run: WorkspaceRun) -> some View {
+    private func header(_ run: WorkspaceRun, outputs: [SessionOutput]) -> some View {
         HStack(spacing: 8) {
             Text(run.projectName)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -133,6 +216,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
             }
             Spacer(minLength: 8)
+            outputsButton(run, outputs)
             if let fraction = run.usage.contextFraction, fraction > 0.6 {
                 Text("ctx \(Int((fraction * 100).rounded()))%")
                     .font(NookTheme.mono(11, .medium))
@@ -403,9 +487,18 @@ struct AgentRunPanel: View {
                         .id(block.id)
                     }
                     if run.status.isActive {
-                        LiveActivityRow(live: TimelinePresentation.live(events), since: run.turnStartedAt,
+                        // The agent's task list, live, right above what it does now.
+                        if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
+                            TaskChecklistCard(steps: tasks)
+                        }
+                        LiveActivityRow(live: TimelinePresentation.live(events), activity: AgentActivity.current(events),
+                                        step: run.tasks.flatMap(TaskChecklist.activeStep),
+                                        since: run.turnStartedAt,
                                         waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: run.provider.color)
+                                        accent: run.provider.color,
+                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
+                                            { withAnimation(.easeInOut(duration: 0.2)) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                        })
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
@@ -718,7 +811,10 @@ struct AgentRunPanel: View {
             // The subagents the agent started this turn, and its task list.
             let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
-            if let tasks = run.tasks, !tasks.isEmpty { TasksStrip(steps: tasks) }
+            // While the agent works its list shows in the timeline; one it left unfinished waits here.
+            if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
+                TasksStrip(steps: tasks)
+            }
             if let watch = run.prWatch {
                 PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
             }
@@ -737,9 +833,8 @@ struct AgentRunPanel: View {
                             focused = true
                         }
                     },
-                    steer: canSteer ? { workspace.steerQueued(runID, message: $0) } : nil,
                     move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
-                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
+                    sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
             }
             SessionComposer(
                 text: $draft,

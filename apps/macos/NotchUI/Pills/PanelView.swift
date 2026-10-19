@@ -8,8 +8,6 @@ struct PanelView: View {
     let tab: PanelTab
     @EnvironmentObject private var app: AppModel
     @Namespace private var selection
-    @ObservedObject private var settings = AppSettings.shared
-    private var large: Bool { settings.panelLarge }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -64,15 +62,6 @@ struct PanelView: View {
                     .fill(NookTheme.textTertiary.opacity(0.35))
                     .frame(width: 1, height: 14)
                     .padding(.horizontal, 6)
-                NookIconButton(
-                    systemName: large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                    label: tr(large ? "button.shrink" : "button.enlarge"),
-                    size: 30
-                ) {
-                    AppSettings.shared.panelLarge.toggle()
-                    viewModel.show(.panel(tab))
-                }
-                .help(tr(large ? "button.shrink" : "button.enlarge"))
                 NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
                     .help(tr("button.settings"))
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }

@@ -11,14 +11,12 @@ import Contacts
 /// Runs one read-only query on an app's database.
 enum AppDatabase {
     static func query(_ path: String, _ sql: String, app: String) async throws -> [[String: Any]] {
-        let output: Result<String, Error> = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    continuation.resume(returning: .success(try SystemControl.runProcess("/usr/bin/sqlite3", ["-readonly", "-json", path, sql], timeout: 8.0)))
-                } catch {
-                    continuation.resume(returning: .failure(error))
-                }
-            }
+        // The app writes to its database while it runs (Messages almost always): wait for its lock instead of failing.
+        var output = await run(arguments(path: path, sql: sql))
+        if case .failure(let error) = output, isLocked(error) {
+            // Still locked: read the database file as it is on disk. The newest messages may still be in the app's
+            // write-ahead log, but an answer from nearly everything beats none.
+            output = await run(arguments(path: snapshotURI(path), sql: sql))
         }
         switch output {
         case .success(let json):
@@ -28,7 +26,40 @@ enum AppDatabase {
             if message.contains("authorization denied") || message.contains("unable to open") || message.contains("not permitted") {
                 throw AppDatabase.noAccess(app)
             }
+            if isLocked(error) {
+                throw NookError(tr("connect.appdb.locked", app))
+            }
             throw NookError("\(app) kon niet gelezen worden: \(error.localizedDescription)")
+        }
+    }
+
+    /// `sqlite3` arguments for one read-only query that waits up to 3 seconds for a lock the app holds.
+    static func arguments(path: String, sql: String) -> [String] {
+        ["-readonly", "-json", "-cmd", ".timeout 3000", path, sql]
+    }
+
+    /// The database opened as an unchanging file: no locks taken or waited for, and the write-ahead log is not read.
+    static func snapshotURI(_ path: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "?#%")
+        let escaped = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+        return "file:\(escaped)?mode=ro&immutable=1"
+    }
+
+    static func isLocked(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("database is locked") || message.contains("database is busy")
+    }
+
+    private static func run(_ arguments: [String]) async -> Result<String, Error> {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    continuation.resume(returning: .success(try SystemControl.runProcess("/usr/bin/sqlite3", arguments, timeout: 8.0)))
+                } catch {
+                    continuation.resume(returning: .failure(error))
+                }
+            }
         }
     }
 

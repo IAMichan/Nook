@@ -67,6 +67,7 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(sparse.state, .open)
         XCTAssertEqual(sparse.repository, "")
         XCTAssertNil(sparse.title)
+        XCTAssertFalse(sparse.conflicted)
         XCTAssertThrowsError(try JSONDecoder().decode(PullRequestLink.self, from: Data(#"{"repository":"a/b"}"#.utf8)))
     }
 
@@ -127,6 +128,27 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .open), link(2, state: .merged)])?.label, .numberPlus(1, extra: 1))
     }
 
+    func testBadgeShowsAMergeConflictOnlyWhileOpen() {
+        var conflicted = link(5)
+        conflicted.conflicted = true
+        XCTAssertEqual(PullRequestBadge.text(links: [conflicted]), PullRequestBadge(glyph: .conflict, label: .number(5)))
+        conflicted.state = .draft
+        XCTAssertEqual(PullRequestBadge.text(links: [conflicted])?.glyph, .conflict)
+        conflicted.state = .merged
+        XCTAssertEqual(PullRequestBadge.text(links: [conflicted])?.glyph, .merged)
+        XCTAssertEqual(PullRequestBadge.text(links: [link(6)])?.glyph, .open)
+    }
+
+    func testMergeabilityOfEachForge() {
+        XCTAssertTrue(PullRequestMergeability.githubConflicted(["mergeable": false, "mergeable_state": "dirty"]))
+        XCTAssertTrue(PullRequestMergeability.githubConflicted(["mergeable_state": "dirty"]))
+        XCTAssertFalse(PullRequestMergeability.githubConflicted(["mergeable": true, "mergeable_state": "clean"]))
+        XCTAssertFalse(PullRequestMergeability.githubConflicted(["mergeable": NSNull(), "mergeable_state": "unknown"]))
+        XCTAssertTrue(PullRequestMergeability.gitlabConflicted(["has_conflicts": true]))
+        XCTAssertTrue(PullRequestMergeability.gitlabConflicted(["detailed_merge_status": "conflict"]))
+        XCTAssertFalse(PullRequestMergeability.gitlabConflicted(["has_conflicts": false, "detailed_merge_status": "mergeable"]))
+    }
+
     // MARK: Composer match
 
     func testMatchNumberPrefixOnlyForDigits() {
@@ -178,6 +200,13 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertTrue(PullRequestSettlement.needsSync(lastChecked: now.addingTimeInterval(-60), now: now))
         XCTAssertTrue(PullRequestSettlement.needsSync(lastChecked: now.addingTimeInterval(30), now: now), "clock went back")
         XCTAssertFalse(PullRequestSettlement.needsSync(lastChecked: now.addingTimeInterval(-100), now: now, interval: 300))
+    }
+
+    func testSyncIntervalFollowsTheState() {
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1)]), 30)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1, state: .merged), link(2, state: .draft)]), 30)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: []), 60)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1, state: .merged)]), 900)
     }
 
     // MARK: BranchPolicy

@@ -49,7 +49,7 @@ extension WorkspaceManager {
                 guard let home = RemoteShell.home(remote) else { throw GitError(tr("ws.remote.noHome")) }
                 let base = requested.isEmpty ? (git.currentBranch(root) ?? "HEAD") : requested
                 let path = WorktreeNaming.worktreePath(root: RemoteShell.worktreeRoot(home: home), repoName: URL(fileURLWithPath: root).lastPathComponent,
-                                                       slug: WorktreeNaming.slug(name.replacingOccurrences(of: "/", with: "-"), limit: 60),
+                                                       slug: WorktreeNaming.directorySlug(branch: name),
                                                        exists: { RemoteShell.exists($0, on: remote) })
                 try git.addWorktree(repo: root, path: path, branch: name, base: base)
                 return (path, base)

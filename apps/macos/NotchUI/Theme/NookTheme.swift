@@ -47,6 +47,8 @@ enum NookTheme {
     static let amber = Color(hex: 0xFFB84D)
     static let coral = Color(hex: 0xFF6B6B)
     static let coralSoft = Color(hex: 0xFF8A8A)
+    /// A merged pull request, as forges show it.
+    static let violet = Color(hex: 0xB48CFF)
     static let mintSoft = Color(hex: 0x5FE3B0)
     static let music = Color(hex: 0xFF8A5B)
 
