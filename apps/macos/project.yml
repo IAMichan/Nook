@@ -25,6 +25,10 @@ packages:
     # Parakeet speech-to-text and speaker diarization on the Neural Engine (Apache-2.0).
     url: https://github.com/FluidInference/FluidAudio
     exactVersion: 0.17.7
+  LlamaSwift:
+    # llama.cpp as a ready-built xcframework (MIT): runs the GGUF model that autocomplete uses (Cotypist's, or one you pick).
+    url: https://github.com/mattt/llama.swift
+    exactVersion: 2.10549.0
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     # The built-in terminal (Workspace › Terminals). Pinned: a stable release whose API matches TerminalSessions.swift.
@@ -57,6 +61,8 @@ targets:
         product: Tokenizers
       - package: SwiftTerm
         product: SwiftTerm
+      - package: LlamaSwift
+        product: LlamaSwift
       - package: FluidAudio
         product: FluidAudio
     info:
@@ -196,6 +202,13 @@ targets:
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/Flow/FlowLogic.swift
+      - path: Services/Autocomplete/GGUFReader.swift
+      - path: Services/Autocomplete/CompletionModels.swift
+      - path: Services/Autocomplete/CompletionSuggestion.swift
+      - path: Services/Autocomplete/CompletionPreferences.swift
+      - path: Services/Autocomplete/CompletionEmoji.swift
+      - path: Services/Autocomplete/CompletionPrivacy.swift
+      - path: Services/Autocomplete/CompletionLearning.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift

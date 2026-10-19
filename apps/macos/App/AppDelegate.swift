@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
+        AutocompleteController.shared.flush()
     }
 
     // MARK: Menubalk
@@ -98,11 +99,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         #endif
 
+        if AutocompleteStore.shared.prefs.enabled {
+            let words = AutocompleteStore.shared.stats.day().words
+            let title = AutocompleteController.shared.isPausedEverywhere ? tr("autocomplete.menu.resume") : tr("autocomplete.menu.pause", words)
+            add(to: menu, title: title, action: #selector(toggleAutocomplete), icon: "text.cursor")
+        }
         let hover = add(to: menu, title: tr("menu.hover"), action: #selector(toggleHover(_:)))
         hover.state = model.viewModel.openOnHover ? .on : .off
         add(to: menu, title: tr("menu.settings"), action: #selector(openSettings), key: ",")
         menu.addItem(.separator())
         add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
+    }
+
+    @objc private func toggleAutocomplete() {
+        AutocompleteController.shared.togglePauseEverywhere()
     }
 
     private static let timeFormatter: DateFormatter = {

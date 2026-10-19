@@ -6,7 +6,7 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, display, brain, assistant, memory, connections, mcp, agents, privacy
+    case general, display, brain, assistant, autocomplete, memory, connections, mcp, agents, privacy
 
     /// The sidebar groups: what belongs together sits together.
     enum Group: String, CaseIterable, Identifiable {
@@ -19,7 +19,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         var sections: [SettingsSection] {
             switch self {
             case .nook: return [.general, .display]
-            case .intelligence: return [.brain, .assistant, .memory]
+            case .intelligence: return [.brain, .assistant, .autocomplete, .memory]
             case .connect: return [.connections, .mcp, .agents]
             case .security: return [.privacy]
             }
@@ -137,6 +137,7 @@ struct SettingsView: View {
         case .general: return checklist.filter { !$0.done }.count
         case .connections: return broken.filter { !($0 is MCPConnector) }.count
         case .mcp: return broken.filter { $0 is MCPConnector }.count
+        case .autocomplete: return AutocompleteController.shared.needsAttention ? 1 : 0
         default: return 0
         }
     }
@@ -153,6 +154,7 @@ struct SettingsView: View {
         case .display: displaySection
         case .brain: brainSection
         case .assistant: assistantSection
+        case .autocomplete: AutocompleteSettingsSection()
         case .memory: MemorySettingsSection()
         case .connections: connectionsSection
         case .mcp: MCPSettingsSection()
