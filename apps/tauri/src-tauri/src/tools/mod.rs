@@ -4,6 +4,7 @@
 //!
 //! Een nieuwe bron: een module met een type dat [`ToolSource`] implementeert, en één regel in [`sources`].
 
+mod connectors;
 mod loops;
 mod system;
 
@@ -27,12 +28,19 @@ pub struct ToolCtx {
     /// De vraag waar het om gaat (leeg bij uitvoeren), voor bronnen die hun context erop afstemmen.
     #[allow(dead_code)]
     pub request: String,
+    /// De Nook (chat) waarin gevraagd of uitgevoerd wordt, voor de accounts die die chat mag gebruiken.
+    pub nook: Option<String>,
 }
 
 impl ToolCtx {
     pub fn new(app: &AppHandle, request: &str) -> Self {
         let state = app.state::<AppState>();
-        Self { app: app.clone(), store: state.store.clone(), settings: state.settings(), request: request.into() }
+        Self { app: app.clone(), store: state.store.clone(), settings: state.settings(), request: request.into(), nook: None }
+    }
+
+    pub fn in_nook(mut self, nook: &str) -> Self {
+        self.nook = Some(nook.to_string());
+        self
     }
 }
 
@@ -58,7 +66,23 @@ pub trait ToolSource: Send + Sync {
 
 /// Alle bronnen, in de volgorde waarin hun context in de prompt komt.
 pub fn sources() -> Vec<Box<dyn ToolSource>> {
-    vec![Box::new(loops::Loops), Box::new(system::System)]
+    vec![
+        Box::new(loops::Loops),
+        Box::new(connectors::Calendar),
+        Box::new(connectors::Hub("icalfeeds")),
+        Box::new(connectors::Hub("calcom")),
+        Box::new(connectors::Hub("github")),
+        Box::new(connectors::Hub("vercel")),
+        Box::new(connectors::Hub("stripe")),
+        Box::new(connectors::Hub("notion")),
+        Box::new(connectors::Hub("n8n")),
+        Box::new(connectors::Hub("resend")),
+        Box::new(connectors::Hub("customsources")),
+        Box::new(connectors::Hub("whatsapp")),
+        Box::new(connectors::Mcp),
+        Box::new(connectors::Sources),
+        Box::new(system::System),
+    ]
 }
 
 /// Bronnen die het actieve brein niet mag zien (alleen-lokaal bij een extern brein) vallen af.
