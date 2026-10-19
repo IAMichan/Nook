@@ -4,12 +4,135 @@ import Security
 
 /// The one place secrets are read from and written to the Keychain (API keys, tokens, webhook URLs).
 ///
+/// All secrets live together in one Keychain item (the vault, a JSON dictionary) that is read once per launch and then
+/// kept in memory. macOS asks for Keychain access per item and per build of the app, so one item means at most one
+/// prompt instead of one for every key, token and paired device. Older separate items move into the vault on first use.
+/// Accounts other programs read (see `isStandalone`) stay items of their own, and are cached too.
+///
 /// Writing updates the existing item in place and only adds one when there is none, so a failed write can no longer
 /// leave the old key deleted and the new one missing. Values are trimmed first (pasted keys often carry a newline).
 /// The data-protection keychain is deliberately not used: it needs a signed build with a keychain access group,
 /// and Nook is also run unsigned from source.
 enum SecretStore {
     static let service = "nl.imdigital.nook"
+    private static let vaultAccount = "vault"
+
+    /// Accounts the `security` tool reads from a terminal command (the Claude agent's API key), so they cannot move
+    /// into the vault.
+    static func isStandalone(_ account: String) -> Bool { account.hasPrefix("agent.apikey.") }
+
+    private static let lock = NSLock()
+    /// The vault's contents once loaded; nil until then.
+    private nonisolated(unsafe) static var vault: [String: String]?
+    /// Why the vault could not be read this launch (access denied, unreadable): reads return nil and writes fail,
+    /// so a vault that is merely locked away is never overwritten with only the newest secret.
+    private nonisolated(unsafe) static var vaultFailure: OSStatus?
+    /// Standalone secrets already read this launch; "" means there is none.
+    private nonisolated(unsafe) static var standalone: [String: String] = [:]
+
+    /// The secret, trimmed; nil when missing or empty.
+    static func read(_ account: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        if isStandalone(account) {
+            if let cached = standalone[account] { return cached.isEmpty ? nil : cached }
+            let (data, status) = item(account)
+            let value = data.flatMap { String(data: $0, encoding: .utf8) }?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Only remember a definite answer; a denied prompt is asked again next time.
+            if status == errSecSuccess || status == errSecItemNotFound { standalone[account] = value }
+            return value.isEmpty ? nil : value
+        }
+        guard let vault = loadVault(), let value = vault[account], !value.isEmpty else { return nil }
+        return value
+    }
+
+    /// Saves the secret; an empty value removes it.
+    @discardableResult
+    static func write(_ value: String, account: String) -> OSStatus {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return remove(account) }
+        lock.lock(); defer { lock.unlock() }
+        if isStandalone(account) {
+            let status = store(Data(cleaned.utf8), account: account)
+            if status == errSecSuccess { standalone[account] = cleaned }
+            return status
+        }
+        vaultFailure = nil  // Saving is something you chose to do, so a vault that was denied earlier is asked for again.
+        guard var updated = loadVault() else { return vaultFailure ?? errSecInteractionNotAllowed }
+        if updated[account] == cleaned { return errSecSuccess }
+        updated[account] = cleaned
+        return saveVault(updated)
+    }
+
+    @discardableResult
+    static func remove(_ account: String) -> OSStatus {
+        lock.lock(); defer { lock.unlock() }
+        if isStandalone(account) {
+            let status = delete(account)
+            if status == errSecSuccess { standalone[account] = "" }
+            return status
+        }
+        vaultFailure = nil  // Saving is something you chose to do, so a vault that was denied earlier is asked for again.
+        guard var updated = loadVault() else { return vaultFailure ?? errSecInteractionNotAllowed }
+        // A leftover separate item (one migration could not read) goes too, so it cannot come back later.
+        _ = delete(account)
+        guard updated.removeValue(forKey: account) != nil else { return errSecSuccess }
+        return saveVault(updated)
+    }
+
+    // MARK: - Vault
+
+    /// The vault, read from the Keychain the first time (moving older separate items into it); nil when it cannot be
+    /// read. Callers hold `lock`.
+    private static func loadVault() -> [String: String]? {
+        if let vault { return vault }
+        if vaultFailure != nil { return nil }
+        let (data, status) = item(vaultAccount)
+        var contents: [String: String] = [:]
+        switch status {
+        case errSecSuccess:
+            guard let data, let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
+                vaultFailure = errSecDecode
+                return nil
+            }
+            contents = decoded
+        case errSecItemNotFound:
+            break
+        default:
+            vaultFailure = status
+            return nil
+        }
+        // Separate items from earlier versions move in. Listing them reads attributes only, so this asks for nothing
+        // once they are gone.
+        var moved: [String] = []
+        for account in legacyAccounts() where account != vaultAccount && !isStandalone(account) {
+            let (itemData, itemStatus) = item(account)
+            // An item that cannot be read now (access denied) stays where it is and is tried again next launch.
+            guard itemStatus == errSecSuccess, let itemData, let text = String(data: itemData, encoding: .utf8) else { continue }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, contents[account] == nil { contents[account] = trimmed }
+            moved.append(account)
+        }
+        if !moved.isEmpty {
+            let saved = saveVault(contents)
+            guard saved == errSecSuccess else {
+                vaultFailure = saved
+                return nil
+            }
+            for account in moved { _ = delete(account) }
+        }
+        vault = contents
+        return contents
+    }
+
+    /// Writes the vault and, when that worked, keeps it as the in-memory copy.
+    private static func saveVault(_ contents: [String: String]) -> OSStatus {
+        guard let data = try? JSONEncoder().encode(contents) else { return errSecParam }
+        let status = store(data, account: vaultAccount)
+        if status == errSecSuccess { vault = contents }
+        return status
+    }
+
+    // MARK: - Keychain items
 
     private static func base(_ account: String) -> [String: Any] {
         [
@@ -19,24 +142,30 @@ enum SecretStore {
         ]
     }
 
-    /// The secret, trimmed; nil when missing or empty.
-    static func read(_ account: String) -> String? {
+    private static func item(_ account: String) -> (Data?, OSStatus) {
         var query = base(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data, let text = String(data: data, encoding: .utf8) else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return (result as? Data, status)
     }
 
-    /// Saves the secret; an empty value removes it.
-    @discardableResult
-    static func write(_ value: String, account: String) -> OSStatus {
-        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return remove(account) }
-        let data = Data(cleaned.utf8)
+    /// Account names of every item under `service`. Only attributes are read, which never asks for access.
+    private static func legacyAccounts() -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let items = result as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
+    private static func store(_ data: Data, account: String) -> OSStatus {
         let status = SecItemUpdate(base(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
             var add = base(account)
@@ -46,8 +175,7 @@ enum SecretStore {
         return status
     }
 
-    @discardableResult
-    static func remove(_ account: String) -> OSStatus {
+    private static func delete(_ account: String) -> OSStatus {
         let status = SecItemDelete(base(account) as CFDictionary)
         return status == errSecItemNotFound ? errSecSuccess : status
     }

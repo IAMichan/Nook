@@ -1,0 +1,12 @@
+// Code signing for local builds of Nook.
+//
+// By default Nook is signed ad hoc ("-"), so it builds without an Apple account. An ad-hoc signature changes with every
+// build, though, and macOS then treats each build as a new app: Keychain access and privacy permissions are asked for
+// again. With a stable identity (a free "Apple Development" certificate) they are asked once.
+//
+// Config/local-signing.sh runs before every `xcodegen` and writes Signing.local.xcconfig (not in git) with your team
+// when an Apple Development certificate is in your keychain. You can also write that file yourself.
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"

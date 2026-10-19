@@ -20,3 +20,6 @@ node_modules/
 *.xcuserstate
 apps/ios/NookCompanion/Info.plist
 apps/ios/NookCompanion/*.entitlements
+
+# Local code signing identity (written by apps/macos/Config/local-signing.sh)
+apps/macos/Config/Signing.local.xcconfig

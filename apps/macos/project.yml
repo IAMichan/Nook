@@ -5,6 +5,8 @@ options:
     macOS: "15.0"
   createIntermediateGroups: true
   developmentLanguage: en
+  # Signs local builds with your Apple Development certificate when there is one (see Config/Signing.xcconfig).
+  preGenCommand: sh Config/local-signing.sh
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -94,14 +96,16 @@ targets:
         com.apple.security.personal-information.calendars: true
         com.apple.security.personal-information.addressbook: true
         com.apple.security.network.client: true
+    # CODE_SIGN_IDENTITY and DEVELOPMENT_TEAM come from here, so a local signing identity survives every `xcodegen`.
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         PRODUCT_NAME: Nook
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
         # Hardened runtime: other programs cannot inject code into Nook and inherit its screen, microphone and automation access.
         ENABLE_HARDENED_RUNTIME: YES
-        DEVELOPMENT_TEAM: ""
-        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
