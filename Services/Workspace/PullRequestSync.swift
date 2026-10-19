@@ -37,8 +37,8 @@ final class PullRequestSync: ObservableObject {
             defer { running = false }
             for run in due {
                 checked[run.id] = now
-                guard let branch = run.branch, let repo = await workspace.githubRepository(run.id),
-                      let found = await GitHubPullRequests.pullRequests(repo: repo, branch: branch) else { continue }
+                guard let branch = run.branch, let repo = await workspace.remoteRepository(run.id),
+                      let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
                 if found.isEmpty { links[run.id] = nil } else { links[run.id] = found }
             }
             save()

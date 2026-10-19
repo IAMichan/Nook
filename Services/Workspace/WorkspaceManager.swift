@@ -121,8 +121,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var openPullRequests: [UUID: URL] = [:]
     /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
     /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
-    var pullRequestLookup: ((_ repo: String, _ branch: String) async -> URL?)?
-    var pullRequestCreate: ((_ repo: String, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
+    var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -1283,6 +1283,14 @@ final class WorkspaceManager: ObservableObject {
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return url.flatMap(GitHubRemote.repository(from:))
+    }
+
+    /// The forge of the session's folder (GitHub, GitLab, Bitbucket…), from its remote; nil without a recognisable remote.
+    func remoteRepository(_ id: UUID) async -> RemoteRepository? {
+        guard let run = run(id), let git = gitService else { return nil }
+        let directory = run.workingDirectory
+        let url = await Task.detached(operation: { git.remoteURL(directory) }).value
+        return SourceForge.repository(remoteURL: url)
     }
 
     func currentBranch(_ id: UUID) async -> String? {

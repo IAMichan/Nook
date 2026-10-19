@@ -483,15 +483,17 @@ final class WorkspaceBridge: ObservableObject {
             return (git.currentBranch(directory), remote, git.remoteURL(directory, remote: remote), base, git.changedFileCount(directory))
         }.value
         guard let branch = facts.branch else { throw NookError("The folder is not on a branch (detached HEAD). Create a branch first.") }
-        guard let remoteURL = facts.url, let repo = GitHubRemote.repository(from: remoteURL) else {
-            throw NookError("This folder has no GitHub remote, so Nook cannot open a pull request for it.")
+        guard let forge = SourceForge.repository(remoteURL: facts.url) else {
+            throw NookError("This folder has no remote Nook recognises (GitHub, GitLab, Bitbucket, Gitea, Forgejo or Azure DevOps), so it cannot open a pull request for it.")
         }
+        let repo = forge.displayName
+        let word = SourceForge.word(forge)
         var base = facts.base ?? ""
         for prefix in ["origin/", facts.remote + "/"] where base.hasPrefix(prefix) { base = String(base.dropFirst(prefix.count)) }
         guard !base.isEmpty else { throw NookError("Nook could not tell which branch to merge into; pass base.") }
         guard base != branch else { throw NookError("You are on \(branch) itself. Work on a separate branch, then propose the pull request.") }
 
-        let viaConnector = GitHubPullRequests.isAvailable
+        let viaConnector = SourceForge.canCreate(forge)
         var detail = "\(repo) · \(branch) → \(base)\(draft && viaConnector ? " · draft" : "")\n\n\(title)"
         let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
         if !clean.isEmpty { detail += "\n\n" + clean }
@@ -515,13 +517,15 @@ final class WorkspaceBridge: ObservableObject {
         if case .run(let id) = caller.kind { app?.workspace.refreshGit(id) }
 
         guard viaConnector else {
-            if let compare = GitHubRemote.compareURL(repo: repo, base: base, head: branch) { NSWorkspace.shared.open(compare) }
-            audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", "pagina op github.com geopend")
-            return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote). Nook has no GitHub connection, so it opened GitHub's compare page in the user's browser for them to finish the pull request.")
+            if let page = SourceForge.newRequestPage(repo: forge, base: base, head: branch, title: title, body: body, draft: draft) {
+                NSWorkspace.shared.open(page)
+            }
+            audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", "pagina op \(forge.hostName) geopend")
+            return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote). Nook has no connection to \(forge.hostName), so it opened the page for a new \(word) in the user's browser for them to finish it.")
         }
-        let link = try await GitHubPullRequests.create(repo: repo, title: title, body: body, head: branch, base: base, draft: draft)
+        let link = try await SourceForge.create(repo: forge, title: title, body: body, head: branch, base: base, draft: draft)
         audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", link.absoluteString)
-        return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote) and opened the pull request\(draft ? " as draft" : ""): \(link.absoluteString)")
+        return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote) and opened the \(word)\(draft ? " as draft" : ""): \(link.absoluteString)")
     }
 
     // MARK: Delegation

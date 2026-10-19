@@ -146,6 +146,7 @@ targets:
       - path: Services/Workspace/EffortLevels.swift
       - path: Services/Workspace/AgentAdvice.swift
       - path: Services/Workspace/SourceControlHost.swift
+      - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
       - path: Services/Workspace/WebhookSecurity.swift

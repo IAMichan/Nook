@@ -294,6 +294,7 @@ struct WorkspaceSettingsSection: View {
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
             }
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
+            GitLabSettingsRows()
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {
