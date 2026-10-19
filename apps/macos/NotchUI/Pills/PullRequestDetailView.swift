@@ -64,12 +64,6 @@ struct PullRequestDetailView: View {
                 if !Task.isCancelled { await load() }
             }
         }
-        .confirmationDialog(tr("agents.pr.confirmTitle", "#\(item.number)", detail?.baseBranch ?? ""), isPresented: $confirmMerge) {
-            Button(tr("agents.pr.confirmButton")) { merge() }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(confirmMessage)
-        }
     }
 
     // MARK: Header
@@ -454,33 +448,10 @@ struct PullRequestDetailView: View {
         let note = detail.mergeNote
         let ready = detail.canMerge && note == nil
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
-                Text(tr(note ?? "agents.pr.note.ready"))
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 6)
-                if detail.isOpen && detail.canPush != false && !detail.methods.isEmpty {
-                    Menu {
-                        ForEach(detail.methods) { option in
-                            Button(tr(option.titleKey)) { methodRaw = option.rawValue }
-                        }
-                    } label: {
-                        Text(tr(method.titleKey)).font(NookTheme.font(12))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .disabled(merging)
-                    if merging {
-                        ProgressView().controlSize(.small)
-                    }
-                    NookPrimaryButton(title: merging ? tr("agents.pr.merging") : tr("agents.pr.merge")) { confirmMerge = true }
-                        .disabled(!detail.canMerge || merging)
-                        .opacity(!detail.canMerge || merging ? 0.4 : 1)
-                }
+            if confirmMerge {
+                confirmation(detail)
+            } else {
+                mergeRow(detail, note: note, ready: ready)
             }
             if let mergeError {
                 Text(mergeError)
@@ -492,6 +463,65 @@ struct PullRequestDetailView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: 0x111113)))
+    }
+
+    /// The confirmation, inside the bar: a system dialog is a window of its own, and on the notch panel its buttons do not
+    /// reliably get the click (the merge never ran).
+    private func confirmation(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.merge")
+                .font(.system(size: 13))
+                .foregroundStyle(NookTheme.amber)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
+                    .font(NookTheme.font(12.5, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(confirmMessage)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("button.cancel")) { confirmMerge = false }
+            NookPrimaryButton(title: tr("agents.pr.confirmButton")) {
+                confirmMerge = false
+                merge()
+            }
+        }
+    }
+
+    private func mergeRow(_ detail: PullRequestDetail, note: String?, ready: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.system(size: 13))
+                .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
+            Text(tr(note ?? "agents.pr.note.ready"))
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            if detail.isOpen && detail.canPush != false && !detail.methods.isEmpty {
+                Menu {
+                    ForEach(detail.methods) { option in
+                        Button(tr(option.titleKey)) { methodRaw = option.rawValue }
+                    }
+                } label: {
+                    Text(tr(method.titleKey)).font(NookTheme.font(12))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(merging)
+                if merging {
+                    ProgressView().controlSize(.small)
+                }
+                NookPrimaryButton(title: merging ? tr("agents.pr.merging") : tr("agents.pr.merge")) {
+                    mergeError = nil
+                    confirmMerge = true
+                }
+                .disabled(!detail.canMerge || merging)
+                .opacity(!detail.canMerge || merging ? 0.4 : 1)
+            }
+        }
     }
 
     private var confirmMessage: String {
