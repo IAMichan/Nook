@@ -118,6 +118,7 @@ final class AutocompleteController: ObservableObject {
     private let windowQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.window", qos: .utility)
     private var alternatives: [String]?
     private var refreshWork: DispatchWorkItem?
+    private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
     /// Words (lowercased) the typo check leaves alone: the user's own vocabulary, and fixes turned down with Escape.
@@ -279,6 +280,7 @@ final class AutocompleteController: ObservableObject {
         upcoming = nil
         commitSample()
         dismiss()
+        scheduleWarm(after: 0.3)
     }
 
     // MARK: State
@@ -360,6 +362,8 @@ final class AutocompleteController: ObservableObject {
         case .leftMouseUp:
             if swallowMouseUp { swallowMouseUp = false; return true }
             scheduleSelectionCheck()
+            // Perhaps another field: read its context into the model before the first key.
+            scheduleWarm(after: 0.3)
             return false
         case .keyDown:
             // What Nook types itself. Some apps lose the mark, so also check who sent it.
@@ -487,6 +491,8 @@ final class AutocompleteController: ObservableObject {
 
         scheduleRefresh()
         if key.flags.contains(.maskShift) { scheduleSelectionCheck() }
+        // Perhaps a message was sent: once new messages are on screen, read the new context before the next one is typed.
+        if key.code == kVK_Return { scheduleWarm(after: 0.8) }
         return false
     }
 
@@ -564,6 +570,7 @@ final class AutocompleteController: ObservableObject {
         // Reads still under way are for text that is no longer there.
         readToken += 1
         refreshWork?.cancel()
+        warmWork?.cancel()
         completer?.cancel()
         upcoming = nil
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refreshProposal() } }
@@ -589,6 +596,24 @@ final class AutocompleteController: ObservableObject {
         guard let app = frontApp, isActive(in: app) else { return }
         read(in: app) { [weak self] snapshot in
             if let snapshot { self?.propose(for: snapshot, in: app) }
+        }
+    }
+
+    /// Reads the prompt for the focused field into the model ahead of the next key. The context before the typed text
+    /// (memory, screen, samples) is most of the prompt; when it is new (another app or field, a message sent, the window's
+    /// text just read) the model would otherwise read all of it on that key, which on a larger model takes seconds.
+    private func scheduleWarm(after seconds: TimeInterval) {
+        warmWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.warmFocusedField() } }
+        warmWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    private func warmFocusedField() {
+        guard completer != nil, let app = frontApp, isActive(in: app) else { return }
+        read(in: app) { [weak self] snapshot in
+            guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), let completer = self.completer else { return }
+            completer.warm(prompt: self.prompt(for: snapshot, in: app))
         }
     }
 
@@ -743,7 +768,7 @@ final class AutocompleteController: ObservableObject {
     /// the model would have to read the whole prompt again. With it fixed, a key costs only the last few tokens.
     private func prompt(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> CompletionPrompt {
         let bundleID = app.bundleIdentifier
-        let key = [bundleID ?? "", snapshot.site ?? "", snapshot.placeholder ?? "", snapshot.windowTitle ?? ""].joined(separator: "|")
+        let key = CompletionFieldKey.make(app: bundleID, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
         // A message was sent (the field emptied), or the context is a few minutes old: new messages may have come in, so read
         // the screen again. Rarely enough that the prompt cache still pays off.
         let length = snapshot.before.count + snapshot.after.count
@@ -812,8 +837,12 @@ final class AutocompleteController: ObservableObject {
                 MainActor.assumeIsolated {
                     guard self.windowText?.key == key, let text else { return }
                     self.windowText = (key, text)
-                    // Build the field's context again with the window in it.
-                    if self.fieldContext?.key == key { self.fieldContext = nil }
+                    // Build the field's context again with the window in it, and read it into the model now rather than on
+                    // the next key.
+                    if self.fieldContext?.key == key {
+                        self.fieldContext = nil
+                        self.scheduleWarm(after: 0)
+                    }
                 }
             }
         }

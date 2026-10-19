@@ -12,6 +12,8 @@ protocol CompletionEngine: AnyObject, Sendable {
     /// each time another word is finished, so the suggestion can show before the model is done. A chat model reads the prompt
     /// as a request with its answer already begun (`CompletionChat`), a base model as a document.
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult?
+    /// Reads `prompt` into the model's cache ahead of the next key, without writing anything or stopping the running request.
+    func warm(prompt: CompletionPrompt)
     /// Words that could come next, most likely first, each with the space before it when the model would put one there.
     func alternatives(prompt: CompletionPrompt, excluding: String, count: Int) async -> [String]
     /// Leans generation toward words the user writes often. Strength 0 turns it off.

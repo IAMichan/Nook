@@ -371,13 +371,20 @@ final class MailConnector: ContextSource {
                 kind: .read,
                 summarize: { _ in "Count unread mail" },
                 tag: { _ in ("", .neutral) },
-                run: { _ in
+                run: { [weak self] _ in
                     try await MailConnector.ensureRunning()
-                    let result = await ScriptText.run(MailStats.unreadScript)
+                    // A big unread pile takes Mail a while to list: give it time.
+                    let result = await ScriptText.run(MailStats.unreadScript, timeout: 20)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
-                    guard let raw = result.text else { throw NookError("Mail did not respond.") }
+                    guard let raw = result.text else {
+                        // Still too slow: the count from the last background refresh beats no answer.
+                        if let self, self.loadedAt != nil {
+                            return "Mail was too slow to count per day and sender. Unread in the inbox (last refresh): \(self.unreadCount)."
+                        }
+                        throw NookError("Mail did not respond.")
+                    }
                     return MailStats.unread(raw, now: Date())
                 }
             ),
@@ -421,91 +428,17 @@ final class MailConnector: ContextSource {
                         return sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
                     }.joined(separator: " or ")
 
-                    // Searching the unified `inbox` with `whose` on large accounts can take >20s in Apple Mail.
-                    // Searching each account's INBOX mailbox directly (bounded to recent 600 messages per mailbox) is ~10x faster.
-                    let script: String
-                    if sent {
-                        script = """
-                        tell application "Mail"
-                            set total to count of messages of sent mailbox
-                            if total is 0 then return ""
-                            if total > 600 then
-                                set found to (messages 1 thru 600 of sent mailbox whose \(filter))
-                            else
-                                set found to (messages of sent mailbox whose \(filter))
-                            end if
-                            set n to count of found
-                            if n > 18 then set n to 18
-                            set out to ""
-                            repeat with i from 1 to n
-                                set m to item i of found
-                                set body to ""
-                                try
-                                    set body to content of m
-                                end try
-                                if (length of body) > 12000 then set body to text 1 thru 12000 of body
-                                set mid to ""
-                                try
-                                    set mid to message id of m
-                                end try
-                                set rcpt to ""
-                                try
-                                    set rcpt to address of item 1 of to recipients of m
-                                end try
-                                set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                            end repeat
-                            return out
-                        end tell
-                        """
-                    } else {
-                        script = """
-                        tell application "Mail"
-                            set found to {}
-                            repeat with acc in accounts
-                                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
-                                    set total to count of messages of box
-                                    if total > 0 then
-                                        if total > 600 then
-                                            set hits to (messages 1 thru 600 of box whose \(filter))
-                                        else
-                                            set hits to (messages of box whose \(filter))
-                                        end if
-                                        repeat with h in hits
-                                            if (count of found) >= 20 then exit repeat
-                                            set end of found to contents of h
-                                        end repeat
-                                    end if
-                                end repeat
-                            end repeat
-                            set n to count of found
-                            if n > 18 then set n to 18
-                            set out to ""
-                            repeat with i from 1 to n
-                                set m to item i of found
-                                set body to ""
-                                try
-                                    set body to content of m
-                                end try
-                                if (length of body) > 12000 then set body to text 1 thru 12000 of body
-                                set mid to ""
-                                try
-                                    set mid to message id of m
-                                end try
-                                set rcpt to ""
-                                try
-                                    set rcpt to address of item 1 of to recipients of m
-                                end try
-                                set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
-                            end repeat
-                            return out
-                        end tell
-                        """
-                    }
-                    let result = await ScriptText.run(script, timeout: 8)
+                    var result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: true), timeout: 20)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
+                    // Fetching message text is the slow part on big mailboxes: try once more with subjects and senders only
+                    // (read_mail opens a whole message by its id).
+                    if result.errorNumber == -1712 {
+                        result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: false), timeout: 20)
+                    }
                     if result.errorNumber == -1712 { throw NookError("Searching Mail took too long. Try a more specific keyword.") }
+                    if result.text == nil { throw NookError("Mail did not respond.") }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
                     let now = Date()
@@ -611,8 +544,127 @@ final class MailConnector: ContextSource {
                         + ReferenceParser.line(title: header[0].isEmpty ? "(no subject)" : header[0], url: MailConnector.messageLink(id),
                                                detail: "\(MailConnector.name(header[1])) · \(String(header[3].prefix(10)))")
                 }
+            ),
+            mailChangeTool(
+                name: "trash_mail",
+                description: "Moves messages in the Mail app's inbox to the Trash (recoverable from there). Use this when the user asks to delete, remove or clean up mail. Select the mail with ids from search_mail, or with a filter: from (part of the sender) and/or subject, optionally unread_only and days. Never guess: when it is unclear which mail is meant, search first. At most 200 messages per action.",
+                fixed: .trash
+            ),
+            mailChangeTool(
+                name: "mark_mail",
+                description: "Marks messages in the Mail app's inbox as read, unread, flagged or unflagged. Use this for 'mark everything from X as read', 'flag Lisa's mail'. Select the mail with ids from search_mail, or with a filter: from, subject, unread_only, days (unread_only with days alone is fine for 'mark all unread mail of this week as read'). At most 200 messages per action.",
+                fixed: nil
             )
         ]
+    }
+
+    /// An action tool that changes inbox messages. `fixed` is the change of a single-purpose tool (trash_mail); without it the
+    /// model picks the state.
+    private func mailChangeTool(name: String, description: String, fixed: MailActions.Change?) -> ToolSpec {
+        var properties: [String: Any] = [
+            "ids": ["type": "array", "items": ["type": "string"], "description": "Message ids from search_mail (the part after \"id:\")."] as [String: Any],
+            "from": ["type": "string", "description": "Part of the sender's name or address, e.g. \"linkedin\"."],
+            "subject": ["type": "string", "description": "Part of the subject."],
+            "unread_only": ["type": "boolean", "description": "Only unread messages (default false)."],
+            "days": ["type": "integer", "description": "Only mail received in the last this many days."]
+        ]
+        var required: [String] = []
+        if fixed == nil {
+            properties["state"] = ["type": "string", "enum": ["read", "unread", "flagged", "unflagged"], "description": "The new state."] as [String: Any]
+            required = ["state"]
+        }
+        func change(_ input: [String: Any]) -> MailActions.Change? {
+            fixed ?? (input["state"] as? String).flatMap { MailActions.Change(rawValue: $0.lowercased()) }
+        }
+        return ToolSpec(
+            name: name,
+            description: description,
+            schema: ["type": "object", "properties": properties, "required": required],
+            kind: .action,
+            summarize: { input in
+                guard let change = change(input) else { return "Change mail" }
+                return MailActions.summary(change, MailActions.selection(input))
+            },
+            tag: { _ in fixed == .trash ? ("to Trash", .caution) : ("", .good) },
+            run: { [weak self] input in
+                guard let change = change(input) else { throw NookError("Choose read, unread, flagged or unflagged.") }
+                let selection = MailActions.selection(input)
+                let problems = MailActions.problems(change, selection)
+                guard problems.isEmpty else { throw NookError(problems.joined(separator: "; ")) }
+                try await MailConnector.ensureRunning()
+                // Approved by the user: changing many messages may take Mail a while.
+                let result = await ScriptText.run(MailActions.script(change, selection), timeout: 60)
+                if result.errorNumber == -1743 {
+                    throw NookError("Grant Nook permission to control Mail: System Settings › Privacy & Security › Automation.")
+                }
+                if result.errorNumber == -1712 { throw NookError("Mail took too long. Some messages may already have changed; check Mail.") }
+                guard let raw = result.text else { throw NookError("Mail did not respond.") }
+                self?.loadedAt = nil
+                return MailActions.describe(change, raw: raw)
+            }
+        )
+    }
+
+    /// Searches every account's INBOX (or the sent mailbox) directly: the unified `inbox` with `whose` can take more than
+    /// 20 s on large accounts, and only the newest 600 messages per mailbox are searched. Without `bodies` only the
+    /// headers come back, which is much faster when Mail is slow.
+    nonisolated static func searchScript(filter: String, sent: Bool, bodies: Bool) -> String {
+        let collect = sent ? """
+            set total to count of messages of sent mailbox
+            if total is 0 then return ""
+            if total > 600 then
+                set found to (messages 1 thru 600 of sent mailbox whose \(filter))
+            else
+                set found to (messages of sent mailbox whose \(filter))
+            end if
+        """ : """
+            set found to {}
+            repeat with acc in accounts
+                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                    set total to count of messages of box
+                    if total > 0 then
+                        if total > 600 then
+                            set hits to (messages 1 thru 600 of box whose \(filter))
+                        else
+                            set hits to (messages of box whose \(filter))
+                        end if
+                        repeat with h in hits
+                            if (count of found) >= 20 then exit repeat
+                            set end of found to contents of h
+                        end repeat
+                    end if
+                end repeat
+            end repeat
+        """
+        let body = bodies ? """
+                try
+                    set body to content of m
+                end try
+                if (length of body) > 12000 then set body to text 1 thru 12000 of body
+        """ : ""
+        return """
+        tell application "Mail"
+        \(collect)
+            set n to count of found
+            if n > \(bodies ? 12 : 18) then set n to \(bodies ? 12 : 18)
+            set out to ""
+            repeat with i from 1 to n
+                set m to item i of found
+                set body to ""
+        \(body)
+                set mid to ""
+                try
+                    set mid to message id of m
+                end try
+                set rcpt to ""
+                try
+                    set rcpt to address of item 1 of to recipients of m
+                end try
+                set out to out & "<<<MSG>>>" & (subject of m) & "|||" & (sender of m) & "|||" & rcpt & "|||" & ((date received of m) as «class isot» as string) & "|||" & mid & linefeed & body & linefeed
+            end repeat
+            return out
+        end tell
+        """
     }
 
     /// Formats matches to be readable for the brain, with a reference per message (a message: link opens it in Mail).

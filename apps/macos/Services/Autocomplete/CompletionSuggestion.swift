@@ -156,6 +156,15 @@ struct CompletionContext {
     var clipboard: String?
 }
 
+/// Which field a prompt's context belongs to: while it stays the same, the context is kept and the model's cache reused.
+enum CompletionFieldKey {
+    /// Digits are left out of the window title: unread counters and clocks ("(3) Inbox") change it all the time, and every
+    /// change would make the model read the whole context again.
+    static func make(app: String?, site: String?, placeholder: String?, windowTitle: String?) -> String {
+        [app ?? "", site ?? "", placeholder ?? "", (windowTitle ?? "").filter { !$0.isNumber }].joined(separator: "|")
+    }
+}
+
 /// What the model reads, in two parts: the context around the text (instructions, memory, screen, where you write), fixed per
 /// field, and the text before the cursor. An engine lays them out for its model: a base model continues a document,
 /// a chat model gets the context and the task as the user's turn and starts its answer with the text (see `CompletionChat`).

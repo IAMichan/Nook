@@ -27,9 +27,31 @@ struct EmbeddedApp: Equatable, Identifiable, Sendable {
     var isMacApp: Bool { url.isFileURL }
 }
 
+/// How an app opens. A Mac app shows live beside the chat; some people would rather not have that (it needs Screen
+/// Recording) and use the web version beside the chat, or the Mac app in its own window outside Nook.
+enum EmbeddedAppMode: String, CaseIterable, Sendable {
+    /// The Mac app beside the chat, as a live picture of its real window.
+    case mirror
+    /// The web version beside the chat, inside Nook.
+    case web
+    /// The Mac app in its own window, outside Nook.
+    case window
+
+    /// The words after an app's name that ask for a way: "@open whatsapp web", "… mac", "… venster".
+    static func named(_ word: String) -> EmbeddedAppMode? {
+        switch word.lowercased() {
+        case "web": return .web
+        case "mac": return .mirror
+        case "window", "venster", "fenster", "fenêtre", "fenetre", "ventana": return .window
+        default: return nil
+        }
+    }
+}
+
 /// What a chat message asks of the embedded apps.
 enum EmbeddedAppCommand: Equatable, Sendable {
-    case open(EmbeddedApp)
+    /// The way asked for after the name, if any ("@open whatsapp web").
+    case open(EmbeddedApp, EmbeddedAppMode?)
     case close
     /// "@open something" that is no known app and no web address.
     case unknown(String)
@@ -218,19 +240,74 @@ enum EmbeddedAppCatalog {
         if lower.range(of: #"^@(close|sluit|schließe|schliesse|ferme|fermer|cierra|cerrar)\b"#, options: .regularExpression) != nil {
             return .close
         }
+        // The app for a name, with a way to open it when the name ends in one ("whatsapp web", "whatsapp venster").
+        func app(_ raw: String) -> (EmbeddedApp, EmbeddedAppMode?)? {
+            var words = raw.split(whereSeparator: { $0.isWhitespace })
+            if words.count > 1, let mode = words.last.flatMap({ EmbeddedAppMode.named(String($0)) }) {
+                words.removeLast()
+                let name = words.joined(separator: " ")
+                if let found = find(name, installed: installed) {
+                    let resolved = resolve(found, mode: mode, installed: installed)
+                    return (resolved.app, resolved.mode)
+                }
+            }
+            return find(raw, installed: installed).map { ($0, nil) }
+        }
         if let name = groups(#"^@(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+(.+?)[.!]?$"#)?.first {
-            if let app = find(name, installed: installed) ?? webApp(name) { return .open(app) }
+            if case let (found, mode)? = app(name) { return .open(found, mode) }
+            if let web = webApp(name) { return .open(web, nil) }
             return .unknown(name.trimmingCharacters(in: .whitespaces))
         }
         // "@whatsapp" alone: only a known app, so "@Lisa …" or an e-mail address is left alone.
-        if let name = groups(#"^@([\p{L}\p{N}][\p{L}\p{N} .-]{0,30})$"#)?.first, let app = find(name, installed: installed) {
-            return .open(app)
+        if let name = groups(#"^@([\p{L}\p{N}][\p{L}\p{N} .-]{0,30})$"#)?.first, case let (found, mode)? = app(name) {
+            return .open(found, mode)
         }
-        if let name = groups(#"^(?:open|start|toon|show|öffne|ouvre|abre)\s+(.+?)\s+(?:in|bij|im|dans|en)\s+nook[.!]?$"#)?.first,
-           let app = find(name, installed: installed) ?? webApp(name) {
-            return .open(app)
+        if let name = groups(#"^(?:open|start|toon|show|öffne|ouvre|abre)\s+(.+?)\s+(?:in|bij|im|dans|en)\s+nook[.!]?$"#)?.first {
+            if case let (found, mode)? = app(name) { return .open(found, mode) }
+            if let web = webApp(name) { return .open(web, nil) }
         }
         return nil
+    }
+
+    /// The web version of an app: itself for a web app, the catalog app whose names a Mac app took over otherwise.
+    static func webVersion(of app: EmbeddedApp) -> EmbeddedApp? {
+        guard app.isMacApp else { return app }
+        return all.first { app.aliases.contains($0.id) }
+    }
+
+    /// The Mac app of an app: itself for a Mac app, the installed app that took over a web app's names otherwise.
+    static func macVersion(of app: EmbeddedApp, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedApp? {
+        if app.isMacApp { return app }
+        return installed.first { $0.aliases.contains(app.id) }
+    }
+
+    /// The ways `app` can open, in menu order: the Mac app ones only when it is installed, the web one only when it
+    /// has a web version.
+    static func modes(for app: EmbeddedApp, installed: [EmbeddedApp] = InstalledMacApps.all) -> [EmbeddedAppMode] {
+        let mac = macVersion(of: app, installed: installed) != nil
+        let web = webVersion(of: app) != nil
+        return EmbeddedAppMode.allCases.filter { $0 == .web ? web : mac }
+    }
+
+    /// The app to open and how, for `app` as found and the way asked for (or remembered). A way it does not have falls
+    /// back to its own: a Mac app beside the chat, a web app as itself.
+    static func resolve(_ app: EmbeddedApp, mode: EmbeddedAppMode?,
+                        installed: [EmbeddedApp] = InstalledMacApps.all) -> (app: EmbeddedApp, mode: EmbeddedAppMode) {
+        switch mode {
+        case .web?:
+            if let web = webVersion(of: app) { return (web, .web) }
+        case .mirror?, .window?:
+            if let mode, let mac = macVersion(of: app, installed: installed) { return (mac, mode) }
+        case nil:
+            break
+        }
+        return (app, app.isMacApp ? .mirror : .web)
+    }
+
+    /// One name for an app's Mac and web versions together, for remembering how it opens: the web app's id when there
+    /// is one ("whatsapp"), the app's own id otherwise.
+    static func family(of app: EmbeddedApp) -> String {
+        webVersion(of: app)?.id ?? app.id
     }
 
     /// "@open notion.so/my-page": any https web address opens as an app of its own.
@@ -327,6 +404,20 @@ enum InstalledMacApps {
             return EmbeddedApp(id: "mac:" + name, title: title, url: URL(fileURLWithPath: path, isDirectory: true),
                                symbol: web?.symbol ?? "macwindow", aliases: aliases)
         }
+    }
+}
+
+/// How you last chose to open an app, per app (its Mac and web versions together): "@open whatsapp" opens it that way
+/// again.
+enum EmbeddedAppPreference {
+    private static func key(_ app: EmbeddedApp) -> String { "nook.embeddedApp.mode." + EmbeddedAppCatalog.family(of: app) }
+
+    static func mode(for app: EmbeddedApp, defaults: UserDefaults = .standard) -> EmbeddedAppMode? {
+        defaults.string(forKey: key(app)).flatMap(EmbeddedAppMode.init(rawValue:))
+    }
+
+    static func remember(_ mode: EmbeddedAppMode, for app: EmbeddedApp, defaults: UserDefaults = .standard) {
+        defaults.set(mode.rawValue, forKey: key(app))
     }
 }
 

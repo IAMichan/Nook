@@ -100,6 +100,7 @@ enum ClaudeCodeBrain {
             allowWebSearch
                 ? "You may use your built-in tool WebSearch for web queries. To read a page, use Nook's read_webpage tool."
                 : "Do not use the web for this request.",
+            "These are ALL your tools: Claude Code's own tools, tool search and MCP servers are not available here. When a source's tools are not listed, call use_source; never tell the user a tool is missing before checking this list.",
             "Tools:"
         ]
         for tool in tools {
@@ -119,7 +120,9 @@ enum ClaudeCodeBrain {
     /// audit log) and WebFetch could send it anywhere; Nook's own tools cover files and pages with their own checks.
     nonisolated static let blockedTools = [
         "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task",
-        "Read", "Glob", "Grep", "LS", "WebFetch", "TodoWrite"
+        "Read", "Glob", "Grep", "LS", "WebFetch", "TodoWrite",
+        // Claude Code's own tool search finds only its own tools, never Nook's: the brain then wrongly says the tools are missing.
+        "ToolSearch", "Agent"
     ]
 
     nonisolated static func arguments(message: String, model: String, system: String, resume: String?, allowWebSearch: Bool,

@@ -238,6 +238,14 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(b.count, 12, "same start, so the cache is reused")
     }
 
+    func testFieldKeyIgnoresCounters() {
+        let a = CompletionFieldKey.make(app: "com.google.Chrome", site: "mail.google.com", placeholder: nil, windowTitle: "Inbox (3) - Gmail")
+        let b = CompletionFieldKey.make(app: "com.google.Chrome", site: "mail.google.com", placeholder: nil, windowTitle: "Inbox (12) - Gmail")
+        let c = CompletionFieldKey.make(app: "com.google.Chrome", site: "mail.google.com", placeholder: nil, windowTitle: "Sent - Gmail")
+        XCTAssertEqual(a, b, "a new unread count keeps the context, so the model's cache stays")
+        XCTAssertNotEqual(a, c)
+    }
+
     func testJustCompletedWord() {
         XCTAssertEqual(CompletionTextAnalysis.justCompletedWord(in: "ik heb het gedaam ")?.word, "gedaam")
         XCTAssertNil(CompletionTextAnalysis.justCompletedWord(in: "ik ben bij NASA "))

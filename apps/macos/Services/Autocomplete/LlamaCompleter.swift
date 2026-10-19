@@ -35,6 +35,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// Checkpoints sit on multiples of this many tokens, at least `checkpointTail` before the end.
     private static let checkpointStep = 64
     private static let checkpointTail = 24
+    /// A long prompt is read in pieces of this many tokens: between pieces a newer request can stop it, and what was read
+    /// stays in the cache for that request.
+    private static let readChunk = 256
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var bias: [llama_token: Float] = [:]
@@ -136,6 +139,17 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
+    /// Reads `prompt` into the cache without writing anything, so the next request only has to read its last few tokens.
+    /// Does not stop the running request; a newer request stops it between pieces and goes on from what it read.
+    func warm(prompt: CompletionPrompt) {
+        let id = lock.withLock { latest }
+        queue.async {
+            let isCancelled = { self.superseded(id) }
+            guard !isCancelled() else { return }
+            _ = self.prime(prompt, reserve: 32, isCancelled: isCancelled)
+        }
+    }
+
     /// Leans generation toward words the user writes often. Strength 0 turns it off.
     func setPersonalization(words: [String: Double], strength: Double) {
         queue.async {
@@ -179,7 +193,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     }
 
     /// Reads `prompt` into the cache, reusing what it shares with the last one. Returns the prompt's length in tokens.
-    private func prime(_ prompt: CompletionPrompt, reserve: Int) -> Int? {
+    private func prime(_ prompt: CompletionPrompt, reserve: Int, isCancelled: () -> Bool) -> Int? {
         let tokens = self.tokens(for: prompt, limit: Int(Self.contextLength) - reserve - 1)
         guard !tokens.isEmpty else { return nil }
         // Read at least the last token again, for fresh logits.
@@ -201,16 +215,26 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // Read up to a new checkpoint first and save it, when this model needs them and the prompt has grown a step.
         let target = max(0, ((tokens.count - Self.checkpointTail) / Self.checkpointStep) * Self.checkpointStep)
         if needsCheckpoints, target - shared >= Self.checkpointStep {
-            var head = Array(tokens[shared ..< target])
-            guard decode(&head) else { return nil }
+            guard read(Array(tokens[shared ..< target]), isCancelled: isCancelled) else { return nil }
             let size = llama_state_seq_get_size(context, 0)
             var data = [UInt8](repeating: 0, count: size)
             let written = data.withUnsafeMutableBufferPointer { llama_state_seq_get_data(context, $0.baseAddress, size, 0) }
             checkpoint = written > 0 ? (Array(tokens[..<target]), Array(data.prefix(written))) : nil
             shared = target
         }
-        var pending = Array(tokens[shared...])
-        return decode(&pending) ? tokens.count : nil
+        return read(Array(tokens[shared...]), isCancelled: isCancelled) ? tokens.count : nil
+    }
+
+    /// Decodes `tokens` in pieces of `readChunk`; false when it failed or was stopped (what was read stays in the cache).
+    private func read(_ tokens: [llama_token], isCancelled: () -> Bool) -> Bool {
+        var start = 0
+        while start < tokens.count {
+            if start > 0, isCancelled() { return false }
+            var piece = Array(tokens[start ..< min(start + Self.readChunk, tokens.count)])
+            guard decode(&piece) else { return false }
+            start += piece.count
+        }
+        return true
     }
 
     private func generate(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
@@ -219,7 +243,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // the rest of that word the prompt stays the same, so the cache has nothing new to read.
         let healing = options.heal ? prompt.healed() : (prompt: prompt, pending: "")
         var required = Array(healing.pending.utf8)
-        guard !isCancelled(), prime(healing.prompt, reserve: options.maxTokens + 8) != nil else { return nil }
+        guard !isCancelled(), prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) != nil else { return nil }
         var bytes: [UInt8] = []
         var truncated = true
         var unfinished = false
@@ -296,7 +320,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private func rankedWords(prompt: CompletionPrompt, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {
         var text = prompt
         while text.text.last == " " { text.text.removeLast() }
-        guard !isCancelled(), let length = prime(text, reserve: 8), let logits = llama_get_logits_ith(context, -1) else { return [] }
+        guard !isCancelled(), let length = prime(text, reserve: 8, isCancelled: isCancelled), let logits = llama_get_logits_ith(context, -1) else { return [] }
         let candidates = topTokens(logits, count: count * 4)
         var results: [String] = []
         for candidate in candidates {

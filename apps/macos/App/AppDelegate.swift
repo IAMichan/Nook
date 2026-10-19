@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         installStatusItem()
     }
 
+    /// Clicking Nook's Dock icon (there while one of its windows is open) brings that window back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        DockPresence.shared.reopen()
+        return false
+    }
+
     /// `nook://prompt?text=…`: fills a draft in a new session, never sends it (see PromptLink).
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {

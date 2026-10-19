@@ -124,6 +124,8 @@ targets:
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
+      - path: Brain/MailActions.swift
+      - path: Brain/AppMenu.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
@@ -142,6 +144,7 @@ targets:
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
+      - path: Core/NookLook.swift
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
       - path: Services/ResumedConversations.swift

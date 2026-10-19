@@ -90,6 +90,7 @@ final class WorkspaceWindowController {
             if window.frame.origin == .zero { window.center() }
             self.window = window
         }
+        if let window { DockPresence.shared.track(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

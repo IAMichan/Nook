@@ -133,6 +133,12 @@ enum ActionGate {
             if assessment.level == .danger { problems.append("Dit commando voer ik niet uit: \(assessment.title)") }
         }
 
+        // Mail changes need a selection narrow enough to show the user what they approve.
+        if tool == "trash_mail" || tool == "mark_mail" {
+            let change: MailActions.Change? = tool == "trash_mail" ? .trash : (input["state"] as? String).flatMap { MailActions.Change(rawValue: $0.lowercased()) }
+            if let change { problems += MailActions.problems(change, MailActions.selection(input)) }
+        }
+
         // Fields with fixed semantics.
         var dates: [String: Date] = [:]
         for key in ["start", "end", "due", "from", "to", "date"] {

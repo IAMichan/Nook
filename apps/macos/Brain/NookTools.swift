@@ -362,6 +362,57 @@ final class NookTools {
                 }
             ),
             ToolSpec(
+                name: "list_app_menu",
+                description: "Lists the menu commands of any Mac app (File > New Folder, Message > Move to Trash, Format > Bold …), started first when it is closed. Use this before app_menu_command when the user asks to do something in an app that has no tool of its own. Pass a filter word (e.g. \"trash\", \"archive\", \"new\") to see only matching commands.",
+                schema: object([
+                    "app": string("Name of the app, e.g. \"Finder\", \"Mail\" or \"Slack\"."),
+                    "filter": string("Optional word to narrow the list, e.g. \"delete\".")
+                ], required: ["app"]),
+                kind: .read,
+                summarize: { input in "Menu of \((input["app"] as? String) ?? "app")" },
+                tag: { _ in ("", .neutral) },
+                run: { [weak self] input in
+                    guard let self, let name = self.text(input, "app") else { throw NookError("App name is missing.") }
+                    let app = try await Self.menuTarget(name)
+                    let process = app.localizedName ?? name
+                    let result = await ScriptText.run(AppMenu.listScript(process: process), timeout: 12)
+                    try Self.checkMenuAccess(result.errorNumber)
+                    guard let raw = result.text else { throw NookError("\(process) did not show its menus.") }
+                    return AppMenu.describe(raw, app: process, filter: self.text(input, "filter"))
+                }
+            ),
+            ToolSpec(
+                name: "app_menu_command",
+                description: "Runs one menu command in any Mac app, exactly as the user would pick it from the menu bar, after the user approved it. This is how Nook acts in apps without a tool of their own (archive or move a message, new folder in Finder, export in Preview, mark as done …). Get the exact path from list_app_menu first; select the right item in the app first (with another action or by asking the user) when the command works on a selection.",
+                schema: object([
+                    "app": string("Name of the app, e.g. \"Finder\"."),
+                    "path": ["type": "array", "items": ["type": "string"], "description": "Menu titles from the menu bar down to the item, e.g. [\"File\", \"New Folder\"], exactly as list_app_menu shows them."]
+                ], required: ["app", "path"]),
+                kind: .action,
+                summarize: { input in
+                    "\((input["app"] as? String) ?? "App"): \(AppMenu.path(input["path"]).joined(separator: " › "))"
+                },
+                tag: { _ in ("menu command", .caution) },
+                run: { [weak self] input in
+                    let name = self?.text(input, "app") ?? ""
+                    let path = AppMenu.path(input["path"])
+                    let problems = AppMenu.problems(app: name, path: path)
+                    guard problems.isEmpty else { throw NookError(problems.joined(separator: "; ")) }
+                    let app = try await Self.menuTarget(name)
+                    app.activate()
+                    let process = app.localizedName ?? name
+                    let result = await ScriptText.run(AppMenu.clickScript(process: process, path: path), timeout: 10)
+                    try Self.checkMenuAccess(result.errorNumber)
+                    if result.text == "DISABLED" {
+                        throw NookError("\(path.joined(separator: " › ")) is not available in \(process) right now (nothing selected?).")
+                    }
+                    guard result.text == "OK" else {
+                        throw NookError("\(process) has no menu item \(path.joined(separator: " › ")). Check the path with list_app_menu.")
+                    }
+                    return "\(process): \(path.joined(separator: " › ")) done"
+                }
+            ),
+            ToolSpec(
                 name: "list_running_apps",
                 description: "Geeft een overzicht van alle apps die momenteel draaien op de Mac van de gebruiker, inclusief welke app nu voorop staat. Gebruik dit voor vragen als 'welke apps staan er open', 'wat draait er nu', of om te bepalen welke app de gebruiker gebruikt.",
                 schema: object([:], required: []),
@@ -467,6 +518,37 @@ final class NookTools {
                 }
             )
         ]
+    }
+
+    /// The running app a menu tool is meant for (by name, also roughly), started first when it is closed.
+    static func menuTarget(_ name: String) async throws -> NSRunningApplication {
+        func find() -> NSRunningApplication? {
+            let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+            if let exact = apps.first(where: { $0.localizedName?.caseInsensitiveCompare(name) == .orderedSame }) { return exact }
+            guard let match = Fuzzy.best(name, in: apps.compactMap(\.localizedName)) else { return nil }
+            return apps.first { $0.localizedName == match }
+        }
+        if let app = find() { return app }
+        try SystemControl.openApp(name)
+        for _ in 0..<50 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if let app = find() { return app }
+        }
+        throw NookError("\(name) did not start.")
+    }
+
+    /// Menus are read and clicked through System Events, which needs Accessibility (and Automation) for Nook.
+    static func checkMenuAccess(_ errorNumber: Int?) throws {
+        switch errorNumber {
+        case -1719, -25211:
+            throw NookError("Grant Nook Accessibility access to use app menus: System Settings › Privacy & Security › Accessibility.")
+        case -1743:
+            throw NookError("Grant Nook permission to control System Events: System Settings › Privacy & Security › Automation.")
+        case -1712:
+            throw NookError("The app took too long to respond.")
+        default:
+            return
+        }
     }
 
     nonisolated static func parseDate(_ input: [String: Any], _ key: String) -> Date? {

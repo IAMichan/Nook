@@ -102,6 +102,8 @@ struct AgentSession: Identifiable, Equatable {
     var lastReply: String = ""
     /// When the session started, as far as Nook knows.
     var started: Date? = nil
+    /// When the current turn began (your last prompt); nil between turns.
+    var turnStarted: Date? = nil
     /// The last time anything happened in it (a hook event).
     var updated: Date? = nil
     /// Derived from a running process rather than hooks.

@@ -17,7 +17,7 @@ enum ScreenError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noPermission:
-            return "Nook does not have screen recording permission yet. Enable it in System Settings › Privacy & Security › Screen & System Audio Recording, and restart Nook."
+            return "Nook does not have screen recording permission yet. Enable it in System Settings › Privacy & Security › Screen & System Audio Recording, and restart Nook. Is it already on? Remove Nook from that list with −, add it again and restart Nook."
         case .excluded(let app):
             return "I don't look inside \(app)."
         case .nothing:
@@ -40,10 +40,9 @@ final class ScreenReader {
     ]
 
     func capture() async throws -> ScreenSnapshot {
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            throw ScreenError.noPermission
-        }
+        // No CGRequestScreenCaptureAccess here: this runs without the user asking (think-along, the brain's read_screen),
+        // and a build macOS no longer matches to its switch would get the system prompt on every read.
+        guard CGPreflightScreenCaptureAccess() else { throw ScreenError.noPermission }
         guard let app = NSWorkspace.shared.frontmostApplication else { throw ScreenError.nothing }
         let appName = app.localizedName ?? "this app"
         if let bundle = app.bundleIdentifier, Self.excludedBundles.contains(bundle) {
@@ -393,10 +392,9 @@ final class ScreenReader {
     /// Reads all visible windows across all screens (frontmost first), providing holistic context to Nook.
     /// Each window receives its own heading; together the text respects a fixed budget.
     func captureAll(maxWindows: Int = 6, totalLimit: Int = 9000) async throws -> ScreenSnapshot {
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            throw ScreenError.noPermission
-        }
+        // No CGRequestScreenCaptureAccess here: this runs without the user asking (think-along, the brain's read_screen),
+        // and a build macOS no longer matches to its switch would get the system prompt on every read.
+        guard CGPreflightScreenCaptureAccess() else { throw ScreenError.noPermission }
         let front = NSWorkspace.shared.frontmostApplication
         let frontName = front?.localizedName ?? "this app"
         if let bundle = front?.bundleIdentifier, Self.excludedBundles.contains(bundle) {

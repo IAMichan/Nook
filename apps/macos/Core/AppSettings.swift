@@ -289,6 +289,13 @@ final class AppSettings: ObservableObject {
             NookTheme.accentHex = accentHex
         }
     }
+    /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Display).
+    @Published var nookLook: NookLook {
+        didSet {
+            UserDefaults.standard.set(nookLook.stored, forKey: "nookLook")
+            NookAppearance.shared.look = nookLook
+        }
+    }
 
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
@@ -495,6 +502,9 @@ final class AppSettings: ObservableObject {
         let storedAccent = (defaults.object(forKey: "accentHex") as? Int).map { UInt32(truncatingIfNeeded: $0) } ?? NookTheme.defaultAccentHex
         accentHex = storedAccent
         NookTheme.accentHex = storedAccent
+        let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
+        nookLook = storedLook
+        NookAppearance.shared.look = storedLook
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
