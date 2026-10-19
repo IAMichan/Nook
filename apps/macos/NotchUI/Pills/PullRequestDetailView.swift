@@ -132,28 +132,17 @@ struct PullRequestDetailView: View {
     }
 
     private func tabs(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: 4) {
-            tabButton(.conversation, tr("agents.pr.tab.conversation"))
-            tabButton(.commits, tr("agents.pr.tab.commits", detail.commits.count))
-            tabButton(.files, tr("agents.pr.tab.files", max(detail.changedFiles, detail.files.count)))
+        HStack(spacing: 0) {
+            NookTabBar<Tab>(items: [
+                .init(value: Tab.conversation, title: tr("agents.pr.tab.conversation")),
+                .init(value: Tab.commits, title: tr("agents.pr.tab.commits", detail.commits.count)),
+                .init(value: Tab.files, title: tr("agents.pr.tab.files", max(detail.changedFiles, detail.files.count))),
+            ], selected: tab) { value in
+                withAnimation(NookTheme.swap) { tab = value }
+                if value != .files { openFile = nil }
+            }
             Spacer()
         }
-    }
-
-    private func tabButton(_ value: Tab, _ title: String) -> some View {
-        Button {
-            tab = value
-            if value != .files { openFile = nil }
-        } label: {
-            Text(title)
-                .font(NookTheme.font(12.5, tab == value ? .semibold : .regular))
-                .foregroundStyle(tab == value ? NookTheme.paper : NookTheme.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background(Capsule().fill(tab == value ? NookTheme.smoke : Color.clear))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder
