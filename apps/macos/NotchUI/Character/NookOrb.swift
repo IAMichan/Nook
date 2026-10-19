@@ -23,8 +23,11 @@ struct NookOrb: View {
     /// Frames per second while awake. The closed notch thinks along at a lower rate for hours on end (an agent working
     /// or waiting), where its slow breathing looks the same and costs a fraction of the redraws.
     var frameRate: Double = 30
+    /// Draws this look instead of the one chosen in Settings: the previews in Settings › Display.
+    var look: NookLook?
 
     @ObservedObject private var presence = NookPresence.shared
+    @ObservedObject private var appearance = NookAppearance.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var tracker = OrbTracker()
     @State private var moodSince = Date()
@@ -44,6 +47,9 @@ struct NookOrb: View {
 
     private static let dozingFrameRate: Double = 8
 
+    /// The look this orb draws: eyes, mouth, gloss, glow and blush.
+    var style: NookLook { look ?? appearance.look }
+
     /// Drowsiness is shared by every screen: the pointer being on one screen (`.seen`) must not keep the others awake.
     private var dozing: Bool { presence.drowsy && (mood == .rest || mood == .seen) }
 
@@ -55,10 +61,46 @@ struct NookOrb: View {
         return ZStack {
             // Inside the orb's stack, so the headphones hop, squash and tilt with Nook; what turns away goes behind him.
             if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
+            let glowing = glow && style.glow
             Circle()
                 .fill(mood.color)
                 // Without glow the radius is 0 as well: an invisible shadow is still blurred every frame otherwise.
-                .shadow(color: mood.color.opacity(glow ? p.glowOpacity : 0), radius: glow ? p.glowRadius : 0)
+                .shadow(color: mood.color.opacity(glowing ? p.glowOpacity : 0), radius: glowing ? p.glowRadius : 0)
+            if style.gloss { shading(light: light, shadeCenter: shadeCenter) }
+            eyes(p, turn: turn)
+                .offset(y: -eyeLift)
+            if style.cheeks, p.cheeks > 0.01 {
+                HStack(spacing: size * 0.44) {
+                    cheek
+                    cheek
+                }
+                .offset(y: size * 0.14)
+                .opacity(p.cheeks)
+            }
+            if style.mouth != .none { mouthLayer(p.mouth, gaze: p.gaze, turn: turn) }
+            if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .front) }
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
+        .rotationEffect(.degrees(p.rotation))
+        .offset(p.offset)
+        .overlay {
+            if let progress = p.sparks { sparks(progress) }
+        }
+        .overlay(alignment: .topTrailing) {
+            if p.drowsy {
+                Text(verbatim: "z")
+                    .font(.system(size: max(7, size * 0.32), weight: .bold, design: .rounded))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .offset(x: size * 0.3, y: -size * 0.18)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: mood)
+    }
+
+    /// Ball lighting: shade towards the edge, a little light bouncing back from below, and the highlight.
+    private func shading(light: UnitPoint, shadeCenter: UnitPoint) -> some View {
+        ZStack {
             Circle()
                 .fill(RadialGradient(
                     gradient: Gradient(stops: [
@@ -83,41 +125,30 @@ struct NookOrb: View {
                     ]),
                     center: light, startRadius: 0, endRadius: size * 0.24
                 ))
+        }
+    }
+
+    /// With a mouth the eyes sit a little higher, so the face stays centered on the orb.
+    private var eyeLift: CGFloat {
+        style.mouth == .none ? 0 : size * (style.eyes == .bars ? 0.04 : 0.05)
+    }
+
+    @ViewBuilder
+    private func eyes(_ p: Pose, turn: CGFloat) -> some View {
+        if style.eyes == .bars {
             HStack(spacing: size * 0.18 * (1 - 0.18 * turn)) {
                 eye(p.eyes[0], turn: turn)
                 eye(p.eyes[1], turn: turn)
             }
-            if p.cheeks > 0.01 {
-                HStack(spacing: size * 0.44) {
-                    cheek
-                    cheek
-                }
-                .offset(y: size * 0.14)
-                .opacity(p.cheeks)
-            }
-            if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .front) }
+        } else {
+            roundEyes(p, turn: turn)
         }
-        .frame(width: size, height: size)
-        .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
-        .rotationEffect(.degrees(p.rotation))
-        .offset(p.offset)
-        .overlay {
-            if let progress = p.sparks { sparks(progress) }
-        }
-        .overlay(alignment: .topTrailing) {
-            if p.drowsy {
-                Text(verbatim: "z")
-                    .font(.system(size: max(7, size * 0.32), weight: .bold, design: .rounded))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .offset(x: size * 0.3, y: -size * 0.18)
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: mood)
     }
 
+    /// The original bar-shaped eye.
     private func eye(_ e: EyePose, turn: CGFloat) -> some View {
         // A catchlight on larger eyes, gone when they close or smile.
-        let shine = size >= 30 && !e.happy && e.height > size * 0.12 && e.squash > 0.4
+        let shine = style.gloss && size >= 30 && !e.happy && e.height > size * 0.12 && e.squash > 0.4
         return eyeShape(happy: e.happy, width: e.width)
             .fill(LinearGradient(
                 colors: [Color(hex: 0x1D1D25), NookTheme.eyeInk],
@@ -178,7 +209,7 @@ struct NookOrb: View {
 
     // MARK: Pose
 
-    private struct EyePose {
+    struct EyePose {
         var width: CGFloat
         var height: CGFloat
         var dx: CGFloat = 0
@@ -186,10 +217,28 @@ struct NookOrb: View {
         var squash: CGFloat = 1
         var rotation: Double = 0
         var happy = false
+        /// Round and dot eyes squeeze into > < while giggling, 0…1.
+        var giggle: CGFloat = 0
+        /// Round and dot eyes: the outer side of the lid droops when worried, 0…1.
+        var lid: CGFloat = 0
+        /// -1 for the left eye, 1 for the right one.
+        var side: CGFloat = -1
     }
 
-    private struct Pose {
+    /// The mouth, as fractions of the orb: width, how far it is open, curve (1 smiles, -1 frowns), roundness (1 is an
+    /// "o"), a sideways shift, and teeth showing (f, v).
+    struct MouthPose {
+        var width: CGFloat = 0.19
+        var open: CGFloat = 0
+        var curve: CGFloat = 0.55
+        var round: CGFloat = 0
+        var shift: CGFloat = 0
+        var teeth = false
+    }
+
+    struct Pose {
         var eyes: [EyePose]
+        var mouth = MouthPose()
         var scale: CGFloat = 1
         var stretch = CGSize(width: 1, height: 1)
         var rotation: Double = 0
@@ -208,13 +257,13 @@ struct NookOrb: View {
             for i in eyes.indices { change(&eyes[i]) }
         }
 
-        /// Blends the eyes towards happy arcs (^ ^); k = 1 is fully happy.
-        mutating func happy(_ k: Double, size: CGFloat) {
+        /// Blends the eyes towards happy arcs (^ ^) of the given size; k = 1 is fully happy.
+        mutating func happy(_ k: Double, to target: CGSize) {
             guard k > 0 else { return }
             let amount = CGFloat(min(k, 1))
             eachEye { e in
-                e.width += (size * 0.20 - e.width) * amount
-                e.height += (size * 0.09 - e.height) * amount
+                e.width += (target.width - e.width) * amount
+                e.height += (target.height - e.height) * amount
                 e.happy = amount > 0.5
             }
         }
@@ -257,7 +306,11 @@ struct NookOrb: View {
             p.drowsy = true
         }
 
-        guard lively else { return p }
+        p.mouth = moodMouth(drowsy: drowsy)
+        guard lively else {
+            tracker.mouth = p.mouth
+            return p
+        }
 
         // Woken after a long rest: wide eyes and a little jump.
         let woke = since(presence.wokeAt)
@@ -274,7 +327,7 @@ struct NookOrb: View {
             p.offset.height += CGFloat(-9 * hop + 2 * bump((hello - 0.45) / 0.25)) * u
             p.stretch.width *= CGFloat(1 - 0.03 * hop)
             p.stretch.height *= CGFloat(1 + 0.05 * hop)
-            p.happy(hello < 0.15 ? ease(hello / 0.15) : 1 - ease((hello - 0.75) / 0.2), size: size)
+            p.happy(hello < 0.15 ? ease(hello / 0.15) : 1 - ease((hello - 0.75) / 0.2), to: eyeSize(for: .done))
         }
 
         // Clicked: squash, then spring back with the eyes briefly squeezed shut.
@@ -305,11 +358,15 @@ struct NookOrb: View {
             p.rotation += 10 * sin(giggle * 18) * k
             p.offset.height -= CGFloat(abs(sin(giggle * 18)) * 4 * k) * u
             for i in p.eyes.indices {
+                p.eyes[i].happy = false
+                p.eyes[i].squash = 1
+                guard style.eyes == .bars else {
+                    p.eyes[i].giggle = CGFloat(k)
+                    continue
+                }
                 p.eyes[i].width += (size * 0.17 - p.eyes[i].width) * CGFloat(k)
                 p.eyes[i].height += (size * 0.045 - p.eyes[i].height) * CGFloat(k)
-                p.eyes[i].happy = false
                 p.eyes[i].rotation = (i == 0 ? 22 : -22) * k
-                p.eyes[i].squash = 1
             }
             p.cheeks = max(p.cheeks, 0.75 * k)
         }
@@ -320,7 +377,7 @@ struct NookOrb: View {
             let k = bump(nod / 0.5)
             p.offset.height += CGFloat(5 * k) * u
             p.rotation -= 6 * k
-            p.happy(bump(nod / 1.1) * 1.4, size: size)
+            p.happy(bump(nod / 1.1) * 1.4, to: eyeSize(for: .done))
         }
 
         let inMood = since(moodSince)
@@ -338,13 +395,17 @@ struct NookOrb: View {
             p.eyes[0].dy += 2 * u * CGFloat(wink)
             p.rotation -= 7 * wink
             p.offset.height -= 2 * u * CGFloat(wink)
-            p.happy(ease((inMood - 1.05) / 0.25), size: size)
+            p.happy(ease((inMood - 1.05) / 0.25), to: eyeSize(for: .done))
         case .worry:
             // A quick shake of the head, eyes slanted with concern.
             if inMood < 1 { p.offset.width += 6 * u * CGFloat(sin(inMood * 34) * exp(-5 * inMood)) }
             let k = ease(inMood / 0.2)
-            p.eyes[0].rotation += 14 * k
-            p.eyes[1].rotation -= 14 * k
+            if style.eyes == .bars {
+                p.eyes[0].rotation += 14 * k
+                p.eyes[1].rotation -= 14 * k
+            } else {
+                p.eachEye { $0.lid = CGFloat(k) }
+            }
             p.eachEye { $0.dy += 1.5 * u * CGFloat(k) }
             p.offset.height += 1.5 * u * CGFloat(k)
         case .waiting:
@@ -403,7 +464,7 @@ struct NookOrb: View {
         tracker.pet = OrbTracker.approach(tracker.pet, petting ? 1 : 0, rate: 5, dt: dt)
         let pet = tracker.pet
         if pet > 0.01 {
-            p.happy(Double(pet), size: size)
+            p.happy(Double(pet), to: eyeSize(for: .done))
             p.cheeks = max(p.cheeks, 0.7 * Double(pet))
             p.rotation += sin(t * 2.2) * 6 * Double(pet)
             p.stretch.width *= 1 + 0.04 * pet
@@ -446,12 +507,67 @@ struct NookOrb: View {
             p.sparks = party
         }
 
+        // The mouth: the mood's shape, changed by what just happened, and moving along while Nook reads aloud.
+        var mouth = p.mouth
+        if hello < 1.2 { mouth = MouthPose(width: 0.22, open: 0.08, curve: 0.9) }
+        if pet > 0.5 { mouth = MouthPose(width: 0.2, open: 0.04, curve: 0.9) }
+        if poke >= 0, poke < 0.45 { mouth = MouthPose(width: 0.08, open: 0.07, curve: 0, round: 1) }
+        if giggle >= 0, giggle < 1.6 { mouth = MouthPose(width: 0.2, open: 0.09 + 0.04 * abs(CGFloat(sin(giggle * 18))), curve: 1) }
+        var speaking = false
+        if style.mouth == .expressive, let word = presence.spokenWord, since(presence.spokenWordAt) < 3 {
+            let viseme = NookViseme.during(word, elapsed: since(presence.spokenWordAt)) ?? .rest
+            let shape = viseme.shape
+            mouth = MouthPose(width: shape.width, open: shape.open, curve: max(-0.4, mouth.curve * 0.6), round: shape.round,
+                              teeth: viseme == .teeth)
+            speaking = true
+            // The head lifts a little on open vowels.
+            p.offset.height -= CGFloat(shape.open) * size * 0.12
+        }
+        p.mouth = tracker.smoothMouth(mouth, rate: speaking ? 26 : 10, dt: dt)
+
         return p
+    }
+
+    private func moodMouth(drowsy: Bool) -> MouthPose {
+        if drowsy { return MouthPose(width: 0.06, open: 0.04, curve: 0, round: 1) }
+        switch mood {
+        case .rest: return MouthPose()
+        case .seen: return MouthPose(width: 0.07, open: 0.07, curve: 0, round: 1)
+        case .listen: return MouthPose(width: 0.09, open: 0.045, curve: 0.2, round: 0.8)
+        case .think: return MouthPose(width: 0.09, open: 0, curve: -0.15, shift: 0.05)
+        case .waiting: return MouthPose(width: 0.13, open: 0, curve: 0.08)
+        case .remind: return MouthPose(width: 0.17, open: 0.045, curve: 0.6)
+        case .worry: return MouthPose(width: 0.15, open: 0.02, curve: -0.7)
+        case .done: return MouthPose(width: 0.25, open: 0.12, curve: 1)
+        }
     }
 
     // MARK: Eyes
 
     private func eyeSize(for mood: NookMood) -> CGSize {
+        switch style.eyes {
+        case .bars: return barEyeSize(for: mood)
+        case .round:
+            switch mood {
+            case .seen: return CGSize(width: size * 0.165, height: size * 0.195)
+            case .listen: return CGSize(width: size * 0.155, height: size * 0.205)
+            case .think: return CGSize(width: size * 0.13, height: size * 0.13)
+            case .done: return CGSize(width: size * 0.17, height: size * 0.10)
+            default: return CGSize(width: size * 0.162, height: size * 0.186)
+            }
+        case .dots:
+            switch mood {
+            case .seen: return CGSize(width: size * 0.12, height: size * 0.12)
+            case .listen: return CGSize(width: size * 0.10, height: size * 0.125)
+            case .think: return CGSize(width: size * 0.085, height: size * 0.085)
+            case .done: return CGSize(width: size * 0.15, height: size * 0.08)
+            default: return CGSize(width: size * 0.10, height: size * 0.10)
+            }
+        }
+    }
+
+    /// The original tall capsules.
+    private func barEyeSize(for mood: NookMood) -> CGSize {
         switch mood {
         case .rest, .seen, .remind:
             return CGSize(width: size * 0.11, height: size * 0.30)
@@ -469,7 +585,8 @@ struct NookOrb: View {
     private func baseEye(index: Int, t: Double, lively: Bool) -> EyePose {
         let s = eyeSize(for: mood)
         let offset = thinkingOffset(index: index, t: t)
-        var eye = EyePose(width: s.width, height: s.height, dx: offset.width, dy: offset.height, squash: blinkScale(t))
+        var eye = EyePose(width: s.width, height: s.height, dx: offset.width, dy: offset.height, squash: blinkScale(t),
+                          side: index == 0 ? -1 : 1)
         eye.happy = mood == .done
         if lively { eye.dx += glance(t) }
         return eye
@@ -546,6 +663,8 @@ private final class OrbTracker {
     var reading: CGFloat = 0
     var voice: CGFloat = 0
     var pet: CGFloat = 0
+    /// The mouth as last drawn, eased towards each new shape; nil until the first frame.
+    var mouth: NookOrb.MouthPose?
     private var lastTime: TimeInterval = 0
     private var lastPointer: CGPoint?
     private var stillSince: TimeInterval = 0
@@ -568,6 +687,22 @@ private final class OrbTracker {
         defer { lastTime = t }
         guard lastTime > 0 else { return 1.0 / 60 }
         return CGFloat(min(max(t - lastTime, 0), 0.1))
+    }
+
+    /// Eases the mouth towards `target`: quickly while talking, more softly between moods.
+    func smoothMouth(_ target: NookOrb.MouthPose, rate: CGFloat, dt: CGFloat) -> NookOrb.MouthPose {
+        guard var m = mouth else {
+            mouth = target
+            return target
+        }
+        m.width = Self.approach(m.width, target.width, rate: rate, dt: dt)
+        m.open = Self.approach(m.open, target.open, rate: rate, dt: dt)
+        m.curve = Self.approach(m.curve, target.curve, rate: rate, dt: dt)
+        m.round = Self.approach(m.round, target.round, rate: rate, dt: dt)
+        m.shift = Self.approach(m.shift, target.shift, rate: rate, dt: dt)
+        m.teeth = target.teeth
+        mouth = m
+        return m
     }
 
     /// Moves towards `target` at the same speed whatever the frame rate.
