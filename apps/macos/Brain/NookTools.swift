@@ -147,7 +147,7 @@ final class NookTools {
                 kind: .action,
                 summarize: { input in
                     let title = (input["title"] as? String) ?? "Event"
-                    let start = NookTools.parseDate(input, "start").map(NookDates.short) ?? "?"
+                    let start = NookTools.parseDate(input, "start").map { NookDates.short($0) } ?? "?"
                     let target = ((input["calendar"] as? String).map { " · \($0)" }) ?? ""
                     return "Calendar: \(title) · \(start)\(target)"
                 },
