@@ -29,7 +29,7 @@ Alles hieronder is gelezen in de broncode van Coucou (`NotchBuddy/Sources/App`, 
 | Dicteren in de chat | `MacDictation`: tot drie herkenners tegelijk (je talen), wint die met het meeste vertrouwen; rechtsklik kiest een vaste taal. | Eén herkenner, **vast op nl-NL**. | **Coucou** → deels overgenomen |
 | Overal dicteren | Flow: houd een toets (rechter ⌥, fn…), praat, laat los: tekst wordt geplakt waar je typt, klembord terug. Parakeet (NVIDIA, Neural Engine, 25 talen, offline). Woordenboek, vervangingen, snippets, opschonen per app, promptmodus. | Niet aanwezig. | **Coucou** |
 | Stem | `VoiceSpeaker`: beste geïnstalleerde stem (Premium > Enhanced), geslacht kiesbaar, zin-voor-zin voorlezen terwijl het antwoord binnenkomt, optioneel ElevenLabs. | `AVSpeechSynthesisVoice(language:)`: de standaard (vaak compacte) stem, eerste 600 tekens. | **Coucou** → deels overgenomen |
-| Wake word | "OK Coucou": energie-VAD (adaptieve drempel), herkenning pas als iemand praat, < 1 % CPU, pauze bij vergrendeld scherm. | "Hé Nook" via SFSpeech. | Coucou zuiniger |
+| Wake word | "OK Coucou": energie-VAD (adaptieve drempel), herkenning pas als iemand praat, < 1 % CPU, pauze bij vergrendeld scherm. | "Hé Nook" via SFSpeech. | Coucou zuiniger → overgenomen |
 | Spraakopdrachten | `IntentParser` (deterministisch, FR/EN, 60+ zinnen getest), `EntityResolver` (aliassen, Levenshtein ≤ 2), `ConversationContext` ("en nu Stripe", "maak ongedaan"), Foundation Models als terugval. | `LocalIntent`, `ChatIntent` (nl/en/de), daarna het brein. | Gelijkwaardig; Coucou's vervolgopdrachten zijn slimmer |
 | Gesprekken opnemen | Notetaker: microfoon + systeemgeluid, geen bot, Parakeet + diarisatie (wie zegt wat), samenvatting en to-do's, audio daarna gewist. | Niet aanwezig. | **Coucou** |
 | WhatsApp | Lezen én **versturen** via een lokale gateway (GOWA/OpenWA), webhook op 127.0.0.1 met HMAC, max 6 per minuut, alleen in bestaande chats. | Alleen-lezen uit de database (Volledige schijftoegang). | **Coucou** → overgenomen |
@@ -164,18 +164,53 @@ bronnummers. Staat de antwoordtaal op "Taal van mijn vraag", dan luistert Nook i
 Instellingen › Overzicht: elke globale toets (praten, chat, scherm, schermdeel, opnemen) aanpasbaar of uit te zetten.
 Eén toets doet één ding.
 
+### 13. Ongedaan maken en vervolgopdrachten
+
+"Maak ongedaan" (of "undo", "rückgängig") maakt het laatste wat Nook deed weer ongedaan: een afspraak of herinnering
+wordt verwijderd, een open eindje afgevinkt. Wat bij elkaar hoort (één plan, binnen twee minuten) gaat in één keer. Ook
+dit gaat als plan met Uitvoeren. Na elk uitgevoerd plan staat er een knop *Maak ongedaan* klaar.
+
+### 14. Vage namen
+
+Een naam die bijna klopt ("Viersel" → Vercel, "Spotfy" → Spotify, "Lissa" → Lisa in WhatsApp) wordt gevonden met
+Levenshtein-afstand, net als Coucou's `EntityResolver`, zodat een ingesproken naam niet precies hoeft te kloppen. Apps
+openen zoekt daarnaast in de geïnstalleerde apps.
+
+### 15. De Mac zelf als bron
+
+Bron *Deze Mac*: "waarom is mijn Mac traag?", "hoe vol is mijn schijf?", "hoe vol is mijn batterij?". De tool
+`mac_status` leest processor, geheugendruk, schijf, batterij, warmte en de zwaarste apps, alles op deze Mac.
+
+### 16. Zuiniger wake word
+
+"Hé Nook" luistert nu eerst met een energie-VAD (adaptieve drempel, overgenomen uit Coucou). Pas als iemand praat
+start de spraakherkenning, met een halve seconde terug zodat het begin van het woord niet wegvalt. Bij een vergrendeld
+scherm, slaapstand of energiebesparing pauzeert hij helemaal.
+
+### 17. Nook op een venster slepen
+
+Sleep het figuurtje met ⌥ ingedrukt op een venster: het venster licht op, en bij loslaten krijgt de chat een beeld van
+dat venster als context, net als bij Coucou.
+
+### 18. Parakeet en sprekerherkenning
+
+Instellingen › Stem en geluid › Parakeet: download eenmalig (±650 MB) NVIDIA's Parakeet en een sprekerherkenner (via
+FluidAudio, Apache-2.0). Daarna gebruiken Flow en de Notetaker Parakeet: nauwkeuriger, 25 talen, helemaal offline op de
+Neural Engine. In gesprekken worden de anderen uit elkaar gehouden ("Persoon 2", "Persoon 3"). Hun geluid blijft
+daarvoor alleen in het geheugen en raakt nooit de schijf. Uit te zetten of te verwijderen; dan weer de herkenning van
+de Mac. Alleen op Apple silicon.
+
+### 19. Meer interfacetalen
+
+Naast Nederlands, Engels en Duits nu ook **Frans** en **Spaans** (Instellingen › Weergave). Een nieuwe Mac in het
+Frans of Spaans begint meteen in die taal. Wat nog niet vertaald is, valt terug op het Engels. Een test houdt alle vijf
+gelijk (elke tekst bestaat in elke taal, met dezelfde %@ en %ld).
+
 ## Wat nog volgt
 
-* **Parakeet** (NVIDIA, via FluidAudio, offline en nauwkeuriger, 25 talen) als keuze naast de herkenning van de Mac, voor
-  Flow, de chat en gespreksnotities, met **sprekerherkenning** ("Persoon 2", "Persoon 3") in gesprekken. Vraagt een extra
-  pakket en een download van ±650 MB.
-* **Nook op een venster slepen** als context (nu: ⌥⌘4 en dan spatie om een venster te kiezen).
-* **Vervolgopdrachten en namen** zoals Coucou's `ConversationContext` en `EntityResolver` ("en nu voor Stripe", "maak
-  ongedaan", "Viersel" → Vercel).
-* **Zuiniger wake word** met energie-VAD.
-* **Meer talen** voor de interface (Coucou: tien; Nook: drie).
-* **De Mac zelf als bron** ("waarom is mijn Mac traag?"), zoals Coucou's `MachineVitals`.
 * Telefoon-apps (Coucou heeft iPhone en Android): buiten deze repository.
+* Nog meer interfacetalen (Coucou heeft er tien). De tabellen staan klaar; een nieuwe taal is één blok in
+  `Core/I18n+Languages.swift`.
 
 ## Wat Nook niet overneemt
 
