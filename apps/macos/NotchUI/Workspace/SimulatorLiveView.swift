@@ -117,7 +117,9 @@ struct SimulatorView: View {
                     Task { await hub.shutdown(udid) }
                 }
             } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
             .fixedSize()
         }
     }
