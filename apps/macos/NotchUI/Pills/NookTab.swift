@@ -1034,6 +1034,7 @@ private struct NookRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .help(label)
         .accessibilityLabel(label)
     }
