@@ -69,6 +69,10 @@ final class AutocompleteController: ObservableObject {
     private var readToken = 0
 
     private var proposal: Proposal?
+    /// The read token of a suggestion still being written, word by word.
+    private var streaming: Int?
+    /// The context around the typed text, per field (see `prompt(for:in:)`).
+    private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     private var alternatives: [String]?
     private var refreshWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
@@ -113,7 +117,7 @@ final class AutocompleteController: ObservableObject {
                 CompletionModelLocator.foundModels() + CompletionModelLocator.nookModels(in: folder)
             }.value
             candidates = found
-            brainModels = EmbeddedModel.shared.installedModels
+            brainModels = EmbeddedModel.shared.autocompleteModels
             let preferred = AppSettings.shared.localModel
             let model = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
             if model?.identity != activeModel?.identity { unload() }
@@ -128,7 +132,7 @@ final class AutocompleteController: ObservableObject {
             state = .ready
             // Load it now, so the first suggestion does not wait.
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
-            if case .brain(let id, _) = model { EmbeddedModel.shared.preload(id) }
+            if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }
     }
 
@@ -202,6 +206,7 @@ final class AutocompleteController: ObservableObject {
         if let app { readQueue.async { AutocompleteField.wake(app) } }
         store.offUntilSwitch = nil
         lastSite = nil
+        fieldContext = nil
         commitSample()
         dismiss()
     }
@@ -390,6 +395,7 @@ final class AutocompleteController: ObservableObject {
         selectionWork?.cancel()
         completer?.cancel()
         proposal = nil
+        streaming = nil
         alternatives = nil
         overlay.hide()
     }
@@ -475,22 +481,55 @@ final class AutocompleteController: ObservableObject {
         let options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
         let prompt = self.prompt(for: snapshot, in: app)
         let token = readToken
+        let after = midLine ? snapshot.after : ""
+        // Each finished word is shown as soon as the model has it; the rest follows.
+        let partial: @Sendable (String) -> Void = { [weak self] text in
+            Task { @MainActor in self?.present(text, truncated: true, final: false, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app) }
+        }
         Task {
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
-            let result = await completer.complete(prompt: prompt, options: options)
+            let result = await completer.complete(prompt: prompt, options: options, partial: partial)
             scheduleUnload()
-            guard let result, token == readToken, proposal == nil, alternatives == nil,
-                  let suggestion = CompletionSuggestion.make(raw: result.text, before: snapshot.before, after: midLine ? snapshot.after : "",
-                                                             maxWords: maxWords, truncated: result.truncated) else { return }
-            proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before))
-            show(suggestion, for: snapshot, in: app)
-            store.recordShown()
+            if let result {
+                present(result.text, truncated: result.truncated, final: true, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app)
+            } else if streaming == token {
+                streaming = nil
+            }
         }
     }
 
+    /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
+    /// on screen. A suggestion still being written (`final` false) is replaced by the next part and the final one.
+    private func present(_ text: String, truncated: Bool, final: Bool, token: Int, snapshot: AutocompleteFieldSnapshot, after: String,
+                         maxWords: Int, app: NSRunningApplication) {
+        guard token == readToken, alternatives == nil, proposal == nil || streaming == token else { return }
+        guard let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated) else {
+            if final { streaming = nil }
+            return
+        }
+        let first = proposal == nil
+        if case .completion(let shown) = proposal, shown.suggestion == suggestion {
+            if final { streaming = nil }
+            return
+        }
+        proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before))
+        streaming = final ? nil : token
+        show(suggestion, for: snapshot, in: app)
+        if first { store.recordShown() }
+    }
+
+    /// Builds the prompt. Everything around the typed text (instructions, memory, screen, clipboard, writing samples, where you
+    /// write) is taken once per field and then kept: it comes before the text in the prompt, so if it changed with every key
+    /// the model would have to read the whole prompt again. With it fixed, a key costs only the last few tokens.
     private func prompt(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> String {
         let bundleID = app.bundleIdentifier
-        var input = CompletionContext(before: snapshot.before)
+        let key = [bundleID ?? "", snapshot.site ?? "", snapshot.placeholder ?? "", snapshot.windowTitle ?? ""].joined(separator: "|")
+        if let saved = fieldContext, saved.key == key, Date().timeIntervalSince(saved.made) < 600 {
+            var input = saved.context
+            input.before = snapshot.before
+            return builder.build(input)
+        }
+        var input = CompletionContext(before: "")
         input.instructions = prefs.instructions(app: bundleID, site: snapshot.site)
         if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
         if prefs.windowContext {
@@ -501,7 +540,8 @@ final class AutocompleteController: ObservableObject {
         }
         if prefs.screenContext, let bundleID {
             // Leave out the field's own text: it is already the body of the prompt.
-            input.screenText = screenText(bundleID).map { CompletionPrivacy.sanitize($0.replacingOccurrences(of: snapshot.before, with: "")) }
+            let own = snapshot.before + snapshot.after
+            input.screenText = screenText(bundleID).map { CompletionPrivacy.sanitize(own.isEmpty ? $0 : $0.replacingOccurrences(of: own, with: "")) }
         }
         if prefs.clipboardContext {
             let board = NSPasteboard.general
@@ -510,6 +550,8 @@ final class AutocompleteController: ObservableObject {
             if !concealed { input.clipboard = board.string(forType: .string).map(CompletionPrivacy.sanitize) }
         }
         if prefs.learn, prefs.personalStrength > 0, let bundleID { input.samples = store.samples.relevant(for: bundleID, limit: 2) }
+        fieldContext = (key, Date(), input)
+        input.before = snapshot.before
         return builder.build(input)
     }
 

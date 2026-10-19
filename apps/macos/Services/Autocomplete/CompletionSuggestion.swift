@@ -149,10 +149,10 @@ struct CompletionContext {
 /// and the situation, then the text before the cursor.
 struct PromptBuilder {
     /// Characters of text before the cursor that are kept.
-    var windowLength = 3_000
+    var windowLength = 2_000
     /// The window's start moves only in steps this big, so consecutive prompts share a prefix and the model's cache is reused:
     /// one more letter costs one token, not a whole prompt.
-    var windowStep = 1_000
+    var windowStep = 500
     var maxContextLength = 1_200
     var maxSampleLength = 400
 
@@ -269,5 +269,16 @@ enum CompletionTypography {
             last = result.last
         }
         return result
+    }
+}
+
+enum CompletionStreaming {
+    /// Words in `text` that are finished: all of them when it ends in a space or punctuation, otherwise all but the last
+    /// (the model may still be writing it).
+    static func finishedWords(_ text: String) -> Int {
+        let words = text.completionWordCount
+        guard let last = text.last else { return 0 }
+        if last.isWhitespace || ".,!?;:".contains(last) { return words }
+        return max(0, words - 1)
     }
 }
