@@ -56,7 +56,8 @@ enum ServiceState {
         guard isOn else { return .off }
         switch connector.status.state {
         case .off, .loading: return .busy
-        case .ok: return connector.status.needsAttention ? .needsYou : .working
+        // Items that are waiting for you (a review, a failing check) are content, not a broken link: the link works.
+        case .ok: return .working
         case .error: return (connector.status.errorKind ?? .other).needsReconnect ? .needsYou : .broken
         }
     }
@@ -94,8 +95,22 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
 
     @State private var showSetup = false
     @State private var isOn = true
+    @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+    /// Whether this row started the GitHub sign-in, so only this row reacts to it finishing.
+    @State private var repairing = false
 
     private var health: ConnectionHealth { ServiceState.health(of: connector, configured: true, isOn: isOn) }
+
+    /// GitHub repairs in place: straight to the GitHub login (or the existing gh login), never via a token.
+    private var repairsInPlace: Bool { connector.id == "github" && health == .needsYou }
+
+    private var signingIn: Bool {
+        guard repairing else { return false }
+        switch gitHubSignIn.phase {
+        case .checkingCLI, .waiting, .waitingForCLI: return true
+        case .idle, .done, .failed: return false
+        }
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -104,20 +119,13 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
                     ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30, source: connector.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
-                        Text(ServiceState.summary(of: connector, health: health))
+                        Text(signingIn ? tr("connector.githubFinishLogin") : ServiceState.summary(of: connector, health: health))
                             .font(.caption)
                             .foregroundStyle(health == .broken ? health.color : Color.secondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    if health == .broken || health == .needsYou {
-                        Text(tr("settings2.fix"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(health.color))
-                    } else {
+                    if health != .broken && health != .needsYou {
                         HealthPill(health: health)
                     }
                 }
@@ -125,6 +133,19 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
             }
             .buttonStyle(.plain)
             .help(tr("settings2.service.manageHelp", connector.title))
+            if signingIn {
+                ProgressView().controlSize(.small)
+            } else if health == .broken || health == .needsYou {
+                Button { repair() } label: {
+                    Text(tr("settings2.fix"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(health.color))
+                }
+                .buttonStyle(.plain)
+            }
             Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -139,11 +160,38 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         }) {
             ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
         }
+        .onChange(of: gitHubSignIn.phase) { _, phase in
+            guard repairing else { return }
+            switch phase {
+            case .done:
+                repairing = false
+                refresh()
+            case .failed:
+                // Sign-in couldn't finish on its own: show the sheet, which explains what went wrong.
+                repairing = false
+                showSetup = true
+            case .idle, .checkingCLI, .waiting, .waitingForCLI:
+                break
+            }
+        }
+    }
+
+    private func repair() {
+        guard repairsInPlace else {
+            showSetup = true
+            return
+        }
+        repairing = true
+        gitHubSignIn.reconnect()
     }
 
     private func setOn(_ on: Bool) {
         isOn = on
         ConnectorToggle.set(connector.id, on)
+        refresh()
+    }
+
+    private func refresh() {
         let target = connector
         let done = onChange
         Task { @MainActor in
@@ -306,14 +354,19 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @ViewBuilder
     private var ghCLIButton: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { gitHubSignIn.useGitHubCLI() } label: {
-                Label(tr("connector.useGitHubCLI"), systemImage: "terminal.fill")
+            Button { gitHubSignIn.reconnect() } label: {
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(gitHubSignIn.phase == .checkingCLI)
-            if case .failed(let message) = gitHubSignIn.phase {
+            .disabled(gitHubSignIn.phase == .checkingCLI || gitHubSignIn.phase == .waitingForCLI)
+            if gitHubSignIn.phase == .waitingForCLI {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("connector.githubFinishLogin")).font(.caption)
+                }
+            } else if case .failed(let message) = gitHubSignIn.phase {
                 Text(message).font(.caption).foregroundStyle(.red)
             } else {
                 Text(tr("connector.useGitHubCLIHint")).font(.caption).foregroundStyle(.secondary)
@@ -404,8 +457,14 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("settings2.service.keyTitle")).font(.headline)
-            if replacing || connector.configFields.contains(where: { !$0.secret }) {
-                if isGitHub { if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton } }
+            if replacing && isGitHub {
+                if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton }
+                DisclosureGroup(isExpanded: $showKeySteps) {
+                    fieldsAndPaste.padding(.top, 8)
+                } label: {
+                    Text(tr("settings2.github.useToken")).font(.callout)
+                }
+            } else if replacing || connector.configFields.contains(where: { !$0.secret }) {
                 fieldsAndPaste
             } else {
                 HStack {
@@ -520,7 +579,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     .foregroundStyle(.red)
                 Button(tr("button.tryAgain")) { gitHubSignIn.start() }
             }
-        case .idle, .checkingCLI, .done:
+        case .idle, .checkingCLI, .waitingForCLI, .done:
             Button { gitHubSignIn.start() } label: {
                 Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)

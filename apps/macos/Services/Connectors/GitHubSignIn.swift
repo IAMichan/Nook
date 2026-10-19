@@ -20,6 +20,8 @@ final class GitHubSignIn: ObservableObject {
     enum Phase: Equatable {
         case idle
         case checkingCLI
+        /// GitHub's own login page is open (via `gh auth login --web`); Nook picks up the login once it's done.
+        case waitingForCLI
         /// Waiting for code confirmation on github.com.
         case waiting(code: String, uri: URL)
         case done
@@ -48,30 +50,73 @@ final class GitHubSignIn: ObservableObject {
         cancel()
         phase = .checkingCLI
         task = Task {
-            let result = await Task.detached { Self.cliToken() }.value
-            switch result {
-            case .success(let token):
-                if Keychain.write(token, account: GitHubConnector.tokenAccount) == errSecSuccess {
-                    phase = .done
-                } else {
-                    phase = .failed(tr("connector.keychainDenied"))
-                }
-            case .failure(let error):
-                phase = .failed(error.message)
+            switch await Task.detached { Self.cliToken() }.value {
+            case .success(let token): store(token)
+            case .failure(let error): phase = .failed(error.message)
             }
+        }
+    }
+
+    /// Repair the link without asking for a token. With an OAuth app this is the normal browser sign-in. Otherwise
+    /// Nook first reuses the GitHub CLI login; when gh isn't signed in either, it opens GitHub's own login page via
+    /// `gh auth login --web` and picks up the new login as soon as it's done.
+    func reconnect() {
+        if Self.isAvailable {
+            start()
+            return
+        }
+        cancel()
+        phase = .checkingCLI
+        task = Task {
+            if case .success(let token) = await Task.detached({ Self.cliToken() }).value {
+                store(token)
+                return
+            }
+            guard let gh = Self.ghPath() else {
+                phase = .failed(tr("connector.ghMissing"))
+                return
+            }
+            guard Self.openCLILogin(gh) else {
+                phase = .failed(tr("connector.ghNotLoggedIn"))
+                return
+            }
+            phase = .waitingForCLI
+            let deadline = Date().addingTimeInterval(15 * 60)
+            while Date() < deadline {
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
+                if case .success(let token) = await Task.detached({ Self.cliToken() }).value {
+                    store(token)
+                    return
+                }
+            }
+            phase = .failed(tr("connector.ghNotLoggedIn"))
+        }
+    }
+
+    private func store(_ token: String) {
+        if Keychain.write(token, account: GitHubConnector.tokenAccount) == errSecSuccess {
+            phase = .done
+        } else {
+            phase = .failed(tr("connector.keychainDenied"))
         }
     }
 
     private struct CLIError: Error { let message: String }
 
+    private nonisolated static var cliDirectories: [String] {
+        ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "\(NSHomeDirectory())/.local/bin"]
+    }
+
+    private nonisolated static func ghPath() -> String? {
+        cliDirectories.map { "\($0)/gh" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     private nonisolated static func cliToken() -> Result<String, CLIError> {
-        let home = NSHomeDirectory()
-        let directories = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "\(home)/.local/bin"]
-        guard let gh = directories.map({ "\($0)/gh" }).first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        guard let gh = ghPath() else {
             return .failure(CLIError(message: tr("connector.ghMissing")))
         }
         var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = (directories + [environment["PATH"] ?? ""]).joined(separator: ":")
+        environment["PATH"] = (cliDirectories + [environment["PATH"] ?? ""]).joined(separator: ":")
         environment["GH_PROMPT_DISABLED"] = "1"
         guard let output = try? ProcessRunner.run(gh, ["auth", "token"], environment: environment, timeout: 15),
               output.status == 0 else {
@@ -79,6 +124,20 @@ final class GitHubSignIn: ObservableObject {
         }
         let token = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return token.isEmpty ? .failure(CLIError(message: tr("connector.ghNotLoggedIn"))) : .success(token)
+    }
+
+    /// Opens Terminal with `gh auth login --web`, which sends the user to GitHub's login page in the browser.
+    private static func openCLILogin(_ gh: String) -> Bool {
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent("nook-github-login.command")
+        let quoted = "'" + gh.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let body = "#!/bin/zsh\n\(quoted) auth login --hostname github.com --git-protocol https --web && exit\n"
+        do {
+            try body.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        } catch {
+            return false
+        }
+        return NSWorkspace.shared.open(script)
     }
 
     func start() {
