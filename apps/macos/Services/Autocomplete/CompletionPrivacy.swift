@@ -8,7 +8,8 @@ enum CompletionPrivacy {
 
     private enum Check { case none, luhn, elevenTest }
 
-    private static let patterns: [(NSRegularExpression, Check)] = [
+    // The literal is typed on its own: in one expression with the .map the compiler cannot infer .none/.luhn.
+    private static let sources: [(String, Check)] = [
         (#"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b"#, .none),
         (#"\b\d(?:[ -]?\d){12,18}\b"#, .luhn),
         (#"\b\d{9}\b|\b\d{4}\.\d{2}\.\d{3}\b"#, .elevenTest),
@@ -18,7 +19,9 @@ enum CompletionPrivacy {
         (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"#, .none),
         (#"\b(?=[A-Za-z0-9+/_\-]*\d)(?=[A-Za-z0-9+/_\-]*[A-Za-z])[A-Za-z0-9+/_\-]{32,}={0,2}"#, .none),
         (#"(?i)\b(?:password|passwd|pwd|wachtwoord|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, .none),
-    ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+    ]
+
+    private static let patterns: [(NSRegularExpression, Check)] = sources.map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
 
     static func sanitize(_ text: String) -> String {
         var result = text

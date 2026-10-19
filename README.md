@@ -29,7 +29,7 @@ xcodegen
 open Nook.xcodeproj
 ```
 
-Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./update.sh` (haalt op en draait `xcodegen`), anders klaagt Xcode over iets dat 'not in scope' is.
+Na elke `git pull` kan er een nieuw bestand bij zijn gekomen. Draai dan `./update.sh` in de hoofdmap (haalt op en draait `xcodegen` in `apps/macos` en `apps/ios`), anders klaagt Xcode over iets dat 'not in scope' is.
 
 Wil je Nook niet in de notch? Kies in **Instellingen › Overzicht › Notch › Plek** voor **Zwevend op het scherm**. In rust zie je dan alleen Nook zelf, zonder balk. Sleep hem naar elke plek op elk aangesloten scherm (of aan de bovenrand van het open paneel); positie en scherm worden onthouden.
 
