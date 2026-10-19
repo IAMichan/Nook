@@ -6,12 +6,17 @@ import SwiftUI
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
+    /// Room on the left of the header row for Nook, who sits there in the notch; the content below runs full width.
+    var headerInset: CGFloat = 0
     @EnvironmentObject private var app: AppModel
+
+    /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
+    static let headerHeight: CGFloat = 32
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let sheet = viewModel.sheet {
-                NotchSheetView(sheet: sheet, close: { viewModel.sheet = nil }) {
+                NotchSheetView(sheet: sheet, headerInset: headerInset, close: { viewModel.sheet = nil }) {
                     viewModel.sheet = nil
                     viewModel.show(.idle)
                 }
@@ -19,10 +24,11 @@ struct PanelView: View {
             } else {
                 header
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: viewModel.sheet, hub: app.hub, workspace: app.workspace)
+                    .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
-                    .padding(.top, 16)
+                    .padding(.top, headerInset > 0 ? 20 : 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
@@ -49,6 +55,8 @@ struct PanelView: View {
                     .help(tr("button.close"))
             }
         }
+        .frame(minHeight: Self.headerHeight)
+        .padding(.leading, headerInset)
     }
 
     /// The one filled action in the header; the other buttons stay quiet until hovered.
@@ -161,6 +169,8 @@ struct PanelApprovalBar: View {
 /// back.
 struct NotchSheetView: View {
     let sheet: NotchSheet
+    /// Room on the left of the title row, as in the panel header.
+    var headerInset: CGFloat = 0
     /// Back: returns to the tab.
     let close: () -> Void
     /// The close button: closes the task and whatever holds it.
@@ -168,7 +178,7 @@ struct NotchSheetView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: headerInset > 0 ? 20 : 14) {
             HStack(spacing: 10) {
                 Button(action: close) {
                     HStack(spacing: 5) {
@@ -193,6 +203,8 @@ struct NotchSheetView: View {
                 Spacer()
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: dismiss)
             }
+            .frame(minHeight: PanelView.headerHeight)
+            .padding(.leading, headerInset)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
