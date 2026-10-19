@@ -370,12 +370,25 @@ final class NotchController {
         // A click in another Nook window (Settings) is not treated as a global click by macOS.
         if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             let window = event.windowNumber
+            let eventWindow = event.window
             MainActor.assumeIsolated {
                 guard let self, NSApp.modalWindow == nil, window != self.panel?.windowNumber else { return }
+                // A dropdown (SwiftUI popover) is a window of its own, but it belongs to the notch: a click in it is not outside.
+                if let eventWindow, self.belongsToNotch(eventWindow) { return }
                 self.viewModel.clickedOutside()
             }
             return event
         }) { monitors.append(m) }
+    }
+
+    /// True for a popover or other child window that hangs off a notch panel (the real one or a mirror).
+    private func belongsToNotch(_ window: NSWindow) -> Bool {
+        var parent: NSWindow? = window
+        while let current = parent {
+            if current is NotchPanel { return true }
+            parent = current.parent
+        }
+        return false
     }
 
     private func pointerMoved(force: Bool = false) {
