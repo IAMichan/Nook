@@ -379,7 +379,7 @@ final class WorkspaceManager: ObservableObject {
             info.hasCommits = git.hasCommits(root)
             let branchLists = try? git.branches(root)
             if let branchLists { info.branches = branchLists.local + branchLists.remote }
-            info.defaultBase = git.defaultBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
+            info.defaultBase = git.worktreeBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
             info.dirtyFiles = git.changedFileCount(root) ?? 0
             if let common = git.commonDirectory(for: root) {
                 info.isWorktree = WorkspacePathPolicy.normalize(URL(fileURLWithPath: common).deletingLastPathComponent().path)
