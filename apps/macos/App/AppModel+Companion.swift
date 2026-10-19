@@ -106,6 +106,40 @@ extension AppModel {
     }
 }
 
+/// Autocomplete in the notch's Today: a line when it is on but cannot work, and what it saved you today.
+extension AppModel {
+    func autocompleteAttentionItem() -> TodayItem? {
+        let autocomplete = AutocompleteController.shared
+        guard autocomplete.needsAttention else { return nil }
+        let subtitle: String
+        switch autocomplete.state {
+        case .noAccess: subtitle = tr("autocomplete.today.noAccess")
+        case .noModel: subtitle = tr("autocomplete.today.noModel")
+        case .failed(let message): subtitle = message
+        default: subtitle = ""
+        }
+        return TodayItem(id: "autocomplete-attention", title: tr("autocomplete.today.attention"), subtitle: subtitle,
+                         action: tr("autocomplete.today.fix"), color: NookTheme.amber,
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.general) })
+    }
+
+    func autocompleteTodayItem() -> TodayItem? {
+        let store = AutocompleteStore.shared
+        let today = store.stats.day()
+        guard store.prefs.enabled, today.takes > 0 else { return nil }
+        let minutes = max(1, Int((Double(today.words) / 40).rounded()))
+        return TodayItem(id: "autocomplete-today", title: tr("autocomplete.today.used", today.takes),
+                         subtitle: tr("autocomplete.today.usedSub", today.words, minutes),
+                         action: tr("button.view"), color: NookTheme.mint,
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.stats) })
+    }
+
+    func openAutocompleteSettings(_ tab: AutocompleteSettingsTab) {
+        AutocompleteStore.shared.settingsTab = tab
+        openSettings(section: .autocomplete)
+    }
+}
+
 /// The Notetaker: the summary is written by Nook's brain, the finished note lands in the chat as a new Nook.
 extension AppModel {
     func startNotes() {

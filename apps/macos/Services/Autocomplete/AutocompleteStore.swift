@@ -16,6 +16,8 @@ final class AutocompleteStore: ObservableObject {
     @Published private(set) var appPausedUntil: [String: Date] = [:]
     /// Off in this app until another app comes to the front (Escape setting).
     var offUntilSwitch: String?
+    /// The tab Settings › Autocomplete opens on (the notch's "words today" opens Statistics).
+    @Published var settingsTab: AutocompleteSettingsTab = .general
 
     private let defaults = UserDefaults.standard
     private static let prefsKey = "autocompletePreferences"
@@ -48,8 +50,8 @@ final class AutocompleteStore: ObservableObject {
         saveStatsSoon()
     }
 
-    func recordAccepted(_ text: String, first: Bool) {
-        stats.recordAccepted(text, first: first)
+    func recordAccepted(_ text: String, first: Bool, app: String?) {
+        stats.recordAccepted(text, first: first, app: app)
         saveStatsSoon()
     }
 
@@ -124,6 +126,14 @@ final class AutocompleteStore: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return SafeStorage.load(type, from: folder.appendingPathComponent(name), decoder: decoder).value
     }
+}
+
+/// The tabs of Settings › Autocomplete.
+enum AutocompleteSettingsTab: String, CaseIterable, Identifiable {
+    case general, apps, style, stats
+
+    var id: String { rawValue }
+    var title: String { tr("autocomplete.tab.\(rawValue)") }
 }
 
 /// Downloads a model from the catalog into Nook's models folder, with progress.

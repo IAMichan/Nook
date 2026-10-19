@@ -2,7 +2,14 @@
 
 Terwijl je in een andere app typt, stelt Nook voor hoe je zin verdergaat. Dat gebeurt als grijze tekst achter je cursor, door een model op je eigen Mac. **Tab** neemt het volgende woord, **⇧Tab** neemt alles. Typ je zelf wat er staat, dan blijft de rest staan. Elke andere toets stuurt het voorstel weg.
 
-Aanzetten doe je bij **Instellingen › Aanvullen**.
+Aanzetten doe je bij **Instellingen › Aanvullen**. Dat paneel heeft vier tabbladen:
+
+- **Algemeen**: aan/uit en de status, het model (dat van Cotypist, een eigen bestand of een download), hoe lang en hoe gretig de voorstellen zijn, en de toetsen.
+- **Apps**: al je geïnstalleerde apps met hun icoon en een schakelaar. Zoek een app of filter op Aan of Uit. Klik op een app voor eigen uitleg, Tab aan de app laten, midden in een regel, leren, tekstgrootte, hoogte en pauzeren. Daaronder staan websites: die zet je apart uit of geef je eigen uitleg, ook als de browser aan staat. Terminals, code-editors en wachtwoordmanagers staan standaard uit.
+- **Stijl en context**: wat het model weet (app en venster, je geheugen, je scherm, het klembord), jouw stijl en leren, emoji, typfouten, batterij en andere woorden.
+- **Statistiek**: hoe vaak je aanvullen gebruikte vandaag, deze week en in totaal, een grafiek van 30 dagen, bespaarde typtijd, ingevulde tekens, hoeveel voorstellen je nam, je reeks en in welke apps je het meest aanvult. Een keer is elke Tab die iets invult. Nook bewaart alleen aantallen, nooit wat je typte.
+
+In de notch staat bij Vandaag een regel als aanvullen aan staat maar niet kan werken (geen toegang of geen model), met een knop die het juiste tabblad opent. Heb je vandaag aangevuld en is er ruimte, dan zie je daar ook hoe vaak, met een link naar Statistiek. Het menubalkmenu heeft een knop om te pauzeren met het aantal woorden van vandaag, en in de zijbalk van Instellingen krijgt Aanvullen een badge als er iets moet gebeuren.
 
 ## Nook naast Cotypist
 
@@ -14,6 +21,7 @@ Aanzetten doe je bij **Instellingen › Aanvullen**.
 | Woordlimiet | 100 per dag gratis, daarna abonnement | geen |
 | Eigen instructies | Plus | ✓ |
 | Instructies per app | Pro | ✓, ook per website |
+| Apps uitzetten | ✓ | ✓, met een lijst van al je apps, zoeken en filteren |
 | Klembord als context | Pro | ✓ |
 | Midden in een regel | Pro (Labs) | ✓ |
 | Modelcatalogus | Pro | ✓, met advies voor jouw Mac |
@@ -25,7 +33,7 @@ Aanzetten doe je bij **Instellingen › Aanvullen**.
 | Andere woorden kiezen met een cijfer | – | ✓ (proef) |
 | Batterij: korter of pauzeren | – | ✓ |
 | Slimme aanhalingstekens volgens macOS | ✓ | ✓, met `'s` en `'t` goed |
-| Statistiek | ✓ | ✓, met bespaarde minuten |
+| Statistiek | ✓ | ✓, per dag, per week en per app, met grafiek, reeks en bespaarde tijd |
 
 De kolom Cotypist komt uit openbare reviews en hun prijspagina. Wil je het precies weten? Draai dan `scripts/inspect-cotypist.sh` op een Mac waar Cotypist op staat (zie onder).
 

@@ -225,6 +225,15 @@ final class AutocompleteController: ObservableObject {
 
     var isPausedEverywhere: Bool { store.isPaused(app: nil) }
 
+    /// Turned on but not working: no access, no model, or the model failed. Shown in the notch and as a badge in Settings.
+    var needsAttention: Bool {
+        guard prefs.enabled else { return false }
+        switch state {
+        case .noAccess, .noModel, .failed: return true
+        default: return false
+        }
+    }
+
     func togglePauseEverywhere() {
         if store.isPaused(app: nil) { store.resume() } else { store.pause(minutes: nil); dismiss() }
     }
@@ -333,7 +342,7 @@ final class AutocompleteController: ObservableObject {
                 if acceptWord || acceptAll {
                     dismiss()
                     AutocompleteTyper.replace(last: delete, with: insert)
-                    store.recordAccepted(insert, first: true)
+                    store.recordAccepted(insert, first: true, app: bundleID)
                     scheduleRefresh()
                     return true
                 }
@@ -355,7 +364,7 @@ final class AutocompleteController: ObservableObject {
     private func accept(_ raw: String, leaving rest: Completion) {
         let text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
         AutocompleteTyper.type(text)
-        store.recordAccepted(text, first: rest.fresh)
+        store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
         if rest.suggestion.isEmpty {
             proposal = nil
             overlay.hide()

@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import UniformTypeIdentifiers
 
 /// Settings › Autocomplete: suggestions as you type in any app, with the model of Cotypist or one of Nook's own.
@@ -9,6 +10,16 @@ struct AutocompleteSettingsSection: View {
     @State private var instructions = AutocompleteStore.shared.prefs.instructions
     @State private var editingApp: String?
     @State private var confirmForget = false
+    @State private var confirmReset = false
+    @State private var installed: [InstalledApp] = []
+    @State private var search = ""
+    @State private var filter: AppFilter = .all
+    @State private var newSite = ""
+
+    enum AppFilter: String, CaseIterable, Identifiable {
+        case all, on, off
+        var id: String { rawValue }
+    }
 
     var body: some View {
         Group {
@@ -19,22 +30,36 @@ struct AutocompleteSettingsSection: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
 
             Section {
-                SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
-                              isOn: $store.prefs.enabled)
-                    .onChange(of: store.prefs.enabled) { _, on in
-                        if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
-                        autocomplete.refresh()
-                    }
-                if store.prefs.enabled { status }
+                Picker("", selection: $store.settingsTab) {
+                    ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            if store.prefs.enabled {
+            .listRowBackground(Color.clear)
+
+            switch store.settingsTab {
+            case .general:
+                Section {
+                    SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
+                                  isOn: $store.prefs.enabled)
+                        .onChange(of: store.prefs.enabled) { _, on in
+                            if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
+                            autocomplete.refresh()
+                        }
+                    if store.prefs.enabled { status }
+                }
                 modelSection
                 suggestionsSection
                 keysSection
+            case .apps:
+                appsSection
+                sitesSection
+            case .style:
                 contextSection
                 personalSection
-                appsSection
                 extrasSection
+            case .stats:
                 statsSection
             }
         }
@@ -233,46 +258,104 @@ struct AutocompleteSettingsSection: View {
         }
     }
 
-    // MARK: Apps and sites
+    // MARK: Apps
 
     private var appsSection: some View {
-        Section {
-            SettingToggle(tr("autocomplete.everywhere"), detail: tr("autocomplete.everywhereDetail"), isOn: $store.prefs.enabledByDefault)
-            ForEach(appIDs, id: \.self) { bundleID in
-                DisclosureGroup(isExpanded: Binding(get: { editingApp == bundleID }, set: { editingApp = $0 ? bundleID : nil })) {
-                    appRule(bundleID)
-                } label: {
-                    HStack {
-                        Text(appName(bundleID))
-                        Spacer()
-                        Text(store.prefs.isEnabled(inApp: bundleID) ? tr("autocomplete.app.on") : tr("autocomplete.app.off"))
-                            .font(.caption).foregroundStyle(.secondary)
+        Group {
+            Section {
+                SettingToggle(tr("autocomplete.everywhere"), detail: tr("autocomplete.everywhereDetail"), isOn: $store.prefs.enabledByDefault)
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(tr("autocomplete.apps.search"), text: $search).textFieldStyle(.plain)
+                    Picker("", selection: $filter) {
+                        ForEach(AppFilter.allCases) { Text(tr("autocomplete.apps.filter.\($0.rawValue)")).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            } header: {
+                Text(tr("autocomplete.section.apps"))
+            }
+            Section {
+                if apps.isEmpty {
+                    Text(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch")).foregroundStyle(.secondary)
+                }
+                ForEach(apps) { app in appRow(app) }
+            } footer: {
+                Text(tr("autocomplete.appsFooter"))
+            }
+        }
+        .task { if installed.isEmpty { installed = await InstalledApp.scan() } }
+    }
+
+    /// Installed apps, apps with their own settings and apps typed in, filtered and searched.
+    private var apps: [InstalledApp] {
+        var byID = Dictionary(installed.map { ($0.bundleID, $0) }, uniquingKeysWith: { first, _ in first })
+        for bundleID in Set(store.prefs.apps.keys).union(autocomplete.seenApps.keys) where byID[bundleID] == nil {
+            byID[bundleID] = InstalledApp(bundleID: bundleID, name: autocomplete.seenApps[bundleID] ?? bundleID, url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID))
+        }
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return byID.values
+            .filter { query.isEmpty || $0.name.lowercased().contains(query) || $0.bundleID.lowercased().contains(query) }
+            .filter { app in
+                switch filter {
+                case .all: return true
+                case .on: return isOn(app.bundleID)
+                case .off: return !isOn(app.bundleID)
+                }
+            }
+            // Alphabetical: a row must not jump away while you flip its switch. The Off filter gathers the excluded ones.
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// On or off for one app. Matching the default clears the rule, so a later change of the default still applies.
+    private func enabledBinding(_ bundleID: String) -> Binding<Bool> {
+        Binding(get: { isOn(bundleID) },
+                set: { on in
+                    var rule = store.prefs.app(bundleID)
+                    rule.enabled = on == fallback(bundleID) ? .inherit : (on ? .on : .off)
+                    store.prefs.apps[bundleID] = rule == CompletionAppRule() ? nil : rule
+                })
+    }
+
+    /// Whether suggestions are on in this app, apart from the main switch.
+    private func isOn(_ bundleID: String) -> Bool {
+        store.prefs.app(bundleID).enabled.resolved(fallback(bundleID))
+    }
+
+    private func fallback(_ bundleID: String) -> Bool {
+        store.prefs.enabledByDefault && !CompletionPreferences.offByDefault.contains(bundleID)
+    }
+
+    private func appRow(_ app: InstalledApp) -> some View {
+        DisclosureGroup(isExpanded: Binding(get: { editingApp == app.bundleID }, set: { editingApp = $0 ? app.bundleID : nil })) {
+            appRule(app.bundleID)
+        } label: {
+            HStack(spacing: 10) {
+                AppIcon(url: app.url)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.name)
+                    if let note = note(for: app.bundleID) {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-            }
-            if let site = autocomplete.lastSite {
-                Picker(tr("autocomplete.site", site), selection: siteBinding(site)) {
-                    ForEach(CompletionTriState.allCases) { Text(tr("autocomplete.tri.\($0.rawValue)")).tag($0) }
+                Spacer()
+                if let uses = store.stats.apps[app.bundleID]?.takes, uses > 0 {
+                    Text(tr("autocomplete.stats.timesShort", uses)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
                 }
+                Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
-        } header: {
-            Text(tr("autocomplete.section.apps"))
-        } footer: {
-            Text(tr("autocomplete.appsFooter"))
         }
     }
 
-    /// Apps with their own settings, and apps typed in since Nook started.
-    private var appIDs: [String] {
-        Set(store.prefs.apps.keys).union(autocomplete.seenApps.keys).sorted { appName($0).localizedCaseInsensitiveCompare(appName($1)) == .orderedAscending }
-    }
-
-    private func appName(_ bundleID: String) -> String {
-        if let name = autocomplete.seenApps[bundleID] { return name }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
-        }
-        return bundleID
+    /// Why an app is the way it is: off by default, paused, its own instructions.
+    private func note(for bundleID: String) -> String? {
+        if store.isPaused(app: bundleID) { return tr("autocomplete.apps.paused") }
+        let rule = store.prefs.app(bundleID)
+        if rule.enabled == .inherit, CompletionPreferences.offByDefault.contains(bundleID) { return tr("autocomplete.apps.defaultOff") }
+        if !rule.instructions.isEmpty { return tr("autocomplete.apps.hasInstructions") }
+        return nil
     }
 
     private func rule(_ bundleID: String) -> Binding<CompletionAppRule> {
@@ -281,9 +364,6 @@ struct AutocompleteSettingsSection: View {
 
     @ViewBuilder private func appRule(_ bundleID: String) -> some View {
         let rule = self.rule(bundleID)
-        Picker(tr("autocomplete.app.suggestions"), selection: rule.enabled) {
-            ForEach(CompletionTriState.allCases) { Text(tr("autocomplete.tri.\($0.rawValue)")).tag($0) }
-        }
         Picker(tr("autocomplete.midLine"), selection: rule.midLine) {
             ForEach(CompletionTriState.allCases) { Text(tr("autocomplete.tri.\($0.rawValue)")).tag($0) }
         }
@@ -305,13 +385,58 @@ struct AutocompleteSettingsSection: View {
         }
     }
 
-    private func siteBinding(_ site: String) -> Binding<CompletionTriState> {
-        Binding(get: { store.prefs.sites[site]?.enabled ?? .inherit },
-                set: { value in
-                    var rule = store.prefs.sites[site] ?? CompletionSiteRule()
-                    rule.enabled = value
-                    store.prefs.sites[site] = rule
-                })
+    // MARK: Websites
+
+    private var sitesSection: some View {
+        Section {
+            ForEach(store.prefs.sites.keys.sorted(), id: \.self) { site in
+                DisclosureGroup {
+                    TextField(tr("autocomplete.app.instructions"), text: siteInstructions(site), axis: .vertical).lineLimit(1...4)
+                    Button(tr("autocomplete.apps.removeSite"), role: .destructive) { store.prefs.sites[site] = nil }
+                } label: {
+                    HStack(spacing: 10) {
+                        SiteIcon(domain: site, fallback: "globe", tint: .secondary, size: 18)
+                        Text(site)
+                        Spacer()
+                        Toggle("", isOn: siteEnabled(site)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    }
+                }
+            }
+            HStack {
+                TextField(tr("autocomplete.apps.siteAdd"), text: $newSite).onSubmit(addSite)
+                Button(tr("autocomplete.apps.add"), action: addSite).disabled(cleanedSite(newSite) == nil)
+                if let last = autocomplete.lastSite, store.prefs.sites[last] == nil {
+                    Button(last) { store.prefs.sites[last] = CompletionSiteRule() }.help(tr("autocomplete.apps.addLast"))
+                }
+            }
+        } header: {
+            Text(tr("autocomplete.apps.sites"))
+        } footer: {
+            Text(tr("autocomplete.apps.sitesFooter"))
+        }
+    }
+
+    private func cleanedSite(_ text: String) -> String? {
+        var host = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if let url = URL(string: host.contains("://") ? host : "https://" + host), let found = url.host { host = found }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host.contains(".") && !host.contains(" ") ? host : nil
+    }
+
+    private func addSite() {
+        guard let host = cleanedSite(newSite) else { return }
+        if store.prefs.sites[host] == nil { store.prefs.sites[host] = CompletionSiteRule() }
+        newSite = ""
+    }
+
+    private func siteEnabled(_ site: String) -> Binding<Bool> {
+        Binding(get: { store.prefs.isEnabled(onSite: site) },
+                set: { on in store.prefs.sites[site, default: CompletionSiteRule()].enabled = on ? .inherit : .off })
+    }
+
+    private func siteInstructions(_ site: String) -> Binding<String> {
+        Binding(get: { store.prefs.sites[site]?.instructions ?? "" },
+                set: { store.prefs.sites[site, default: CompletionSiteRule()].instructions = $0 })
     }
 
     // MARK: Emoji, typos, battery, labs
@@ -341,26 +466,155 @@ struct AutocompleteSettingsSection: View {
     // MARK: Statistics
 
     private var statsSection: some View {
-        Section(tr("autocomplete.section.stats")) {
-            let stats = store.stats
-            LabeledContent(tr("autocomplete.stats.today")) { Text("\(stats.day().words)").monospacedDigit() }
-            LabeledContent(tr("autocomplete.stats.total")) {
-                Text(tr("autocomplete.stats.totalValue", stats.totalWords, Int(stats.minutesSaved.rounded()))).foregroundStyle(.secondary)
-            }
-            LabeledContent(tr("autocomplete.stats.acceptance")) { Text("\(Int((stats.acceptance * 100).rounded()))%").monospacedDigit() }
-            let recent = stats.recent(14)
-            let top = max(recent.map(\.day.words).max() ?? 0, 1)
-            HStack(alignment: .bottom, spacing: 4) {
-                ForEach(Array(recent.enumerated()), id: \.offset) { _, entry in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.accentColor.opacity(entry.day.words == 0 ? 0.15 : 0.8))
-                        .frame(width: 12, height: max(3, 50 * CGFloat(entry.day.words) / CGFloat(top)))
-                        .help("\(entry.date.formatted(date: .abbreviated, time: .omitted)): \(entry.day.words)")
+        let stats = store.stats
+        let today = stats.day()
+        let week = stats.week()
+        let recent = stats.recent(30)
+        return Group {
+            Section {
+                HStack(spacing: 10) {
+                    StatTile(title: tr("autocomplete.stats.today"), value: tr("autocomplete.stats.timesShort", today.takes),
+                             detail: tr("autocomplete.stats.words", today.words), symbol: "sun.max.fill")
+                    StatTile(title: tr("autocomplete.stats.week"), value: tr("autocomplete.stats.timesShort", week.takes),
+                             detail: tr("autocomplete.stats.words", week.words), symbol: "calendar")
+                    StatTile(title: tr("autocomplete.stats.total"), value: tr("autocomplete.stats.timesShort", stats.totalTakes),
+                             detail: tr("autocomplete.stats.words", stats.totalWords), symbol: "sum")
                 }
             }
-            .frame(height: 54, alignment: .bottom)
-            Button(tr("autocomplete.stats.reset")) { store.resetStats() }.disabled(stats.totalShown == 0)
+            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+            .listRowBackground(Color.clear)
+
+            Section(tr("autocomplete.stats.chart")) {
+                if stats.totalTakes == 0 {
+                    Text(tr("autocomplete.stats.empty")).foregroundStyle(.secondary)
+                } else {
+                    Chart(recent, id: \.date) { entry in
+                        BarMark(x: .value("Dag", entry.date, unit: .day), y: .value("Keer", entry.day.takes))
+                            .foregroundStyle(SettingsSection.autocomplete.tileColors.1.gradient)
+                            .cornerRadius(3)
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .day, count: 7)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                        }
+                    }
+                    .frame(height: 140)
+                }
+            }
+
+            Section(tr("autocomplete.stats.details")) {
+                LabeledContent(tr("autocomplete.stats.saved")) { Text(duration(stats.minutesSaved)).monospacedDigit() }
+                LabeledContent(tr("autocomplete.stats.characters")) { Text("\(stats.totalCharacters)").monospacedDigit() }
+                LabeledContent(tr("autocomplete.stats.acceptance")) { Text("\(Int((stats.acceptance * 100).rounded()))%").monospacedDigit() }
+                LabeledContent(tr("autocomplete.stats.streakTitle")) { Text(tr("autocomplete.stats.streak", stats.streak())).monospacedDigit() }
+            }
+
+            let top = stats.topApps(6)
+            if !top.isEmpty {
+                Section(tr("autocomplete.stats.topApps")) {
+                    let most = max(top.first?.count.takes ?? 1, 1)
+                    ForEach(top, id: \.bundleID) { entry in
+                        HStack(spacing: 10) {
+                            AppIcon(url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: entry.bundleID))
+                            Text(appName(entry.bundleID)).frame(width: 140, alignment: .leading).lineLimit(1)
+                            ProgressView(value: Double(entry.count.takes), total: Double(most)).tint(SettingsSection.autocomplete.tileColors.1)
+                            Text(tr("autocomplete.stats.timesShort", entry.count.takes)).monospacedDigit().foregroundStyle(.secondary)
+                                .frame(width: 60, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button(tr("autocomplete.stats.reset"), role: .destructive) { confirmReset = true }.disabled(stats.totalShown == 0 && stats.totalTakes == 0)
+                    .confirmationDialog(tr("autocomplete.stats.resetConfirm"), isPresented: $confirmReset) {
+                        Button(tr("autocomplete.stats.reset"), role: .destructive) { store.resetStats() }
+                    }
+            } footer: {
+                Text(tr("autocomplete.stats.footer"))
+            }
         }
+    }
+
+    private func appName(_ bundleID: String) -> String {
+        if let app = installed.first(where: { $0.bundleID == bundleID }) { return app.name }
+        if let name = autocomplete.seenApps[bundleID] { return name }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return bundleID
+    }
+
+    /// "12 min" or "1 h 20 min".
+    private func duration(_ minutes: Double) -> String {
+        let total = Int(minutes.rounded())
+        return total >= 60 ? tr("autocomplete.stats.hours", total / 60, total % 60) : tr("autocomplete.stats.minutes", total)
+    }
+}
+
+/// One number on the statistics tab.
+private struct StatTile: View {
+    let title: String
+    let value: String
+    let detail: String
+    let symbol: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+/// An app's own icon.
+private struct AppIcon: View {
+    let url: URL?
+
+    var body: some View {
+        Group {
+            if let url { Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable() }
+            else { Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary) }
+        }
+        .frame(width: 20, height: 20)
+    }
+}
+
+/// An app on this Mac that you might type in.
+struct InstalledApp: Identifiable, Hashable {
+    let bundleID: String
+    let name: String
+    let url: URL?
+
+    var id: String { bundleID }
+
+    /// The apps in /Applications, /System/Applications and ~/Applications (one folder deep), off the main thread.
+    static func scan() async -> [InstalledApp] {
+        await Task.detached(priority: .utility) {
+            let manager = FileManager.default
+            let roots = ["/Applications", "/System/Applications", manager.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path]
+            var found: [String: InstalledApp] = [:]
+            func add(_ url: URL) {
+                guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier, found[id] == nil else { return }
+                let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                    ?? manager.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+                found[id] = InstalledApp(bundleID: id, name: name, url: url)
+            }
+            for root in roots {
+                for item in (try? manager.contentsOfDirectory(at: URL(fileURLWithPath: root), includingPropertiesForKeys: nil)) ?? [] {
+                    if item.pathExtension == "app" { add(item); continue }
+                    for inner in (try? manager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)) ?? [] where inner.pathExtension == "app" {
+                        add(inner)
+                    }
+                }
+            }
+            return Array(found.values)
+        }.value
     }
 }
 

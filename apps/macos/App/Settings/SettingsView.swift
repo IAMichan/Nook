@@ -137,6 +137,7 @@ struct SettingsView: View {
         case .general: return checklist.filter { !$0.done }.count
         case .connections: return broken.filter { !($0 is MCPConnector) }.count
         case .mcp: return broken.filter { $0 is MCPConnector }.count
+        case .autocomplete: return AutocompleteController.shared.needsAttention ? 1 : 0
         default: return 0
         }
     }

@@ -284,12 +284,38 @@ final class AutocompleteTests: XCTestCase {
         let day = Date(timeIntervalSince1970: 1_800_000_000)
         stats.recordShown(on: day)
         stats.recordShown(on: day)
-        stats.recordAccepted(" see you", first: true, on: day)
-        stats.recordAccepted(" soon", first: false, on: day)
-        XCTAssertEqual(stats.day(day).words, 3)
-        XCTAssertEqual(stats.totalAccepted, 1)
-        XCTAssertEqual(stats.acceptance, 0.5)
+        stats.recordAccepted(" see you", first: true, app: "com.apple.mail", on: day)
+        stats.recordAccepted(" soon", first: false, app: "com.apple.mail", on: day)
+        stats.recordAccepted("😂", first: true, app: "com.tinyspeck.slackmacgap", on: day)
+        XCTAssertEqual(stats.day(day).words, 4)
+        XCTAssertEqual(stats.day(day).takes, 3)
+        XCTAssertEqual(stats.totalAccepted, 2)
+        XCTAssertEqual(stats.acceptance, 1)
         XCTAssertEqual(stats.recent(3, endingAt: day).count, 3)
+        XCTAssertEqual(stats.topApps().map(\.bundleID), ["com.apple.mail", "com.tinyspeck.slackmacgap"])
+        XCTAssertEqual(stats.apps["com.apple.mail"], CompletionStats.AppCount(takes: 2, words: 3))
+        XCTAssertEqual(stats.week(endingAt: day).takes, 3)
+    }
+
+    func testStreak() {
+        var stats = CompletionStats()
+        let calendar = Calendar(identifier: .gregorian)
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        for offset in 1...3 { stats.recordAccepted(" a", first: true, on: calendar.date(byAdding: .day, value: -offset, to: today)!) }
+        XCTAssertEqual(stats.streak(endingAt: today, calendar: calendar), 3, "today has nothing yet, so the streak runs to yesterday")
+        stats.recordAccepted(" b", first: true, on: today)
+        XCTAssertEqual(stats.streak(endingAt: today, calendar: calendar), 4)
+        XCTAssertEqual(CompletionStats().streak(endingAt: today), 0)
+    }
+
+    func testOldStatsFilesStillRead() throws {
+        let old = #"{"days":{"2026-10-19":{"shown":5,"accepted":2,"words":7,"characters":30}}}"#
+        let stats = try JSONDecoder().decode(CompletionStats.self, from: Data(old.utf8))
+        XCTAssertEqual(stats.days["2026-10-19"]?.takes, 2, "older files counted no takes: each accepted suggestion counts once")
+        XCTAssertEqual(stats.totalWords, 7)
+        XCTAssertTrue(stats.apps.isEmpty)
+        let again = try JSONDecoder().decode(CompletionStats.self, from: JSONEncoder().encode(stats))
+        XCTAssertEqual(again, stats)
     }
 
     func testSmartQuotes() {
