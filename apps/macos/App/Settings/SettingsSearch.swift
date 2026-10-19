@@ -71,6 +71,7 @@ enum SettingsSearch {
         ("settings.agents.accounts", .agents),
         ("acp.title", .agents),
         ("settings.agents.usage", .agents),
+        ("settings.agents.weekRecap", .agents),
         ("settings.ws.provider", .workspace),
         ("settings.ws.worktreeRoot", .workspace),
         ("settings.ws.editor", .workspace),

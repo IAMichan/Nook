@@ -55,6 +55,18 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
         return out + Self.keyName(keyCode)
     }
 
+    /// The key as an `NSMenuItem.keyEquivalent`, so a menu can show the shortcut aligned like every other one. Nil for keys a
+    /// menu cannot show (arrows, return …).
+    var menuKey: String? {
+        if keyCode == Self.space { return " " }
+        if let name = Self.functionKeys[keyCode], let number = Int(name.dropFirst()),
+           let scalar = Unicode.Scalar(0xF704 + number - 1) {
+            return String(Character(scalar))   // NSF1FunctionKey …
+        }
+        guard let name = Self.names[keyCode], name.count == 1, name.first?.isASCII == true else { return nil }
+        return name.lowercased()
+    }
+
     /// The key's name on a US layout (the key codes are positions, not letters).
     static func keyName(_ code: UInt32) -> String {
         if let name = names[code] { return name }
