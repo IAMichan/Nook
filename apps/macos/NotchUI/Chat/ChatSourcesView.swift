@@ -210,11 +210,65 @@ private extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
-/// Warnings for an answer, such as a source that could not be read.
+/// A macOS permission a notice says is missing, so the warning can carry the button that grants it.
+enum NoticePermission: Hashable {
+    case system(SystemPermission)
+    case fullDisk
+    case automation
+
+    /// Read from the notice text: the errors name the pane in System Settings (in Dutch or English).
+    static func needed(by notice: String) -> NoticePermission? {
+        let text = notice.lowercased()
+        if text.contains("volledige schijftoegang") || text.contains("full disk access") { return .fullDisk }
+        if text.contains("› toegankelijkheid") || text.contains("› accessibility") { return .system(.accessibility) }
+        if text.contains("schermopname") || text.contains("screen recording") { return .system(.screen) }
+        if text.contains("› automatisering") || text.contains("› automation") { return .automation }
+        return nil
+    }
+
+    @MainActor
+    func isGranted(_ monitor: PermissionMonitor) -> Bool {
+        if case .system(let permission) = self { return monitor.isGranted(permission) }
+        // macOS offers no quiet check for Full Disk Access or Automation: the button stays until the question is asked again.
+        return false
+    }
+
+    @MainActor
+    func grant(app: AppModel) {
+        switch self {
+        case .system(let permission):
+            Task { await PermissionMonitor.shared.request(permission, app: app) }
+        case .fullDisk, .automation:
+            let anchor = self == .fullDisk ? "Privacy_AllFiles" : "Privacy_Automation"
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+                PermissionMonitor.shared.openedSettings = Date()
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+}
+
+/// Warnings for an answer, such as a source that could not be read. A warning about a missing permission gets the button
+/// that grants it, so it can be fixed right from the chat.
 struct NoticeList: View {
     let notices: [String]
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var permissions = PermissionMonitor.shared
+
+    /// The permission each notice asks for; only the first notice per permission shows the button.
+    private var buttons: [String: NoticePermission] {
+        var seen: Set<NoticePermission> = []
+        var result: [String: NoticePermission] = [:]
+        for notice in notices {
+            guard let needed = NoticePermission.needed(by: notice), !seen.contains(needed) else { continue }
+            seen.insert(needed)
+            if !needed.isGranted(permissions) { result[notice] = needed }
+        }
+        return result
+    }
 
     var body: some View {
+        let buttons = buttons
         VStack(alignment: .leading, spacing: 4) {
             ForEach(notices, id: \.self) { notice in
                 HStack(alignment: .top, spacing: 6) {
@@ -222,10 +276,24 @@ struct NoticeList: View {
                         .font(.system(size: 10))
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 2)
-                    Text(notice)
-                        .font(NookTheme.font(12))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(notice)
+                            .font(NookTheme.font(12))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let needed = buttons[notice] {
+                            Button { needed.grant(app: app) } label: {
+                                Label(tr("chat.notice.allow"), systemImage: "lock.open")
+                                    .font(NookTheme.font(11, .semibold))
+                                    .foregroundStyle(NookTheme.ink)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(NookTheme.amber))
+                            }
+                            .buttonStyle(.plain)
+                            .help(tr("chat.notice.allowHelp"))
+                        }
+                    }
                 }
             }
         }
