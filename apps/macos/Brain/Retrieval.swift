@@ -50,7 +50,7 @@ struct RetrievalStep: Codable, Equatable, Identifiable {
 
 struct RetrievalTimeout: LocalizedError {
     let seconds: Double
-    var errorDescription: String? { "No response within \(Int(seconds)) seconds." }
+    var errorDescription: String? { tr("chat.sources.timeout", Int(seconds)) }
 }
 
 /// Tracks what was retrieved for a given answer. Runs on the main actor, matching tools.
@@ -96,8 +96,7 @@ final class RetrievalLedger {
             do {
                 raw = try await Self.withTimeout(timeout) { try await operation(input) }
             } catch {
-                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                step.outcome = .failed(message)
+                step.outcome = .failed(Self.describe(error))
                 steps[index] = step
                 onChange?()
                 throw error
@@ -151,6 +150,17 @@ final class RetrievalLedger {
     }
 
     // MARK: Helpers
+
+    /// A failure as a person reads it: no "Swift.CancellationError error 1" or "The operation couldn't be completed".
+    static func describe(_ error: Error) -> String {
+        if error is CancellationError { return tr("chat.sources.interrupted") }
+        if let message = (error as? LocalizedError)?.errorDescription, !message.isEmpty { return message }
+        let text = error.localizedDescription
+        if text.isEmpty || text.contains("couldn’t be completed") || text.contains("couldn't be completed") {
+            return tr("chat.sources.unknownError")
+        }
+        return text
+    }
 
     static func key(_ tool: String, _ input: [String: Any]) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data()

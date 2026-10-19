@@ -11,6 +11,7 @@ struct SourcesDisclosure: View {
     /// Retry the answer; only given for the latest answer.
     var onRetry: (() -> Void)? = nil
     @EnvironmentObject private var app: AppModel
+    @ObservedObject private var permissions = PermissionMonitor.shared
     @State private var expanded = false
 
     private enum Status { case found, empty, failed(String), running, context }
@@ -42,7 +43,7 @@ struct SourcesDisclosure: View {
             let i = index(title)
             result[i].queries = steps.map(\.query).filter { !$0.isEmpty }
             if steps.contains(where: { $0.outcome == .running }) {
-                result[i].status = .running
+                result[i].status = message.streaming ? .running : .failed(tr("chat.sources.interrupted"))
             } else if !steps.contains(where: { if case .found = $0.outcome { return true }; return false }),
                       let failed = steps.compactMap({ step -> String? in if case .failed(let error) = step.outcome { return error }; return nil }).first {
                 result[i].status = .failed(failed)
@@ -120,25 +121,20 @@ struct SourcesDisclosure: View {
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
                 Spacer(minLength: 6)
-                Text(statusText(group.status))
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(failedColor(group.status))
-                    .lineLimit(1)
-                if case .failed = group.status, let onRetry {
-                    Button(action: onRetry) {
-                        Text(tr("chat.retry"))
-                            .font(NookTheme.font(11, .semibold))
-                            .foregroundStyle(NookTheme.paper)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(NookTheme.smoke))
-                    }
-                    .buttonStyle(.plain)
+                if case .running = group.status {
+                    ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
                 }
+                Text(statusText(group))
+                    .font(NookTheme.font(11, .medium))
+                    .foregroundStyle(statusColor(group.status))
+                    .lineLimit(1)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .help(helpText(group))
+            if case .failed(let reason) = group.status {
+                failureView(reason)
+            }
             if !message.streaming {
                 ForEach(group.references) { reference in
                     ReferenceRow(reference: reference, cited: cited.contains(reference.number)) { app.openReference(reference) }
@@ -146,6 +142,27 @@ struct SourcesDisclosure: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    /// Why a source could not be read, with what fixes it: the permission it misses, or trying again.
+    private func failureView(_ reason: String) -> some View {
+        let needed = NoticePermission.needed(by: reason)
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(reason)
+                .font(NookTheme.font(11))
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if let needed, !needed.isGranted(permissions) {
+                SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
+                    .help(tr("chat.notice.allowHelp"))
+            } else if let onRetry {
+                SourceFixButton(title: tr("chat.retry"), symbol: "arrow.clockwise", prominent: false, action: onRetry)
+            }
+        }
+        .padding(.leading, 27)
+        .padding(.trailing, 6)
+        .padding(.bottom, 3)
     }
 
     /// The source's own icon, with its status as a small dot on the corner.
@@ -182,25 +199,32 @@ struct SourcesDisclosure: View {
         }
     }
 
-    private func failedColor(_ status: Status) -> Color {
-        if case .failed = status { return NookTheme.coralSoft }
-        return NookTheme.textTertiary
+    private func statusColor(_ status: Status) -> Color {
+        switch status {
+        case .found: return NookTheme.mint.opacity(0.85)
+        case .failed: return NookTheme.coralSoft
+        case .running: return NookTheme.iris
+        case .empty, .context: return NookTheme.textTertiary
+        }
     }
 
-    private func statusText(_ status: Status) -> String {
-        switch status {
-        case .found: return ""
+    /// Every source says how it went: found (and how much), nothing found, sent as context, not read, or still searching.
+    private func statusText(_ group: SourceGroup) -> String {
+        switch group.status {
+        case .found:
+            let count = group.references.count
+            if count == 0 { return tr("chat.sources.foundShort") }
+            return count == 1 ? tr("chat.sources.resultsOne") : tr("chat.sources.results", count)
         case .context: return tr("chat.sources.context")
-        case .empty: return tr("chat.sources.nothing")
+        case .empty: return tr("chat.sources.nothing").capitalizedFirst
         case .failed: return tr("chat.sources.notRead")
         case .running: return tr("chat.sources.searching")
         }
     }
 
-    /// The exact queries and, for a failed source, the error as a tooltip.
+    /// The exact queries as a tooltip (a failed source shows its reason in the row itself).
     private func helpText(_ group: SourceGroup) -> String {
         var parts: [String] = []
-        if case .failed(let error) = group.status { parts.append(error) }
         if !group.queries.isEmpty { parts.append(group.queries.map { "\"\($0)\"" }.joined(separator: ", ")) }
         return parts.joined(separator: " · ")
     }
@@ -208,6 +232,26 @@ struct SourcesDisclosure: View {
 
 private extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+/// The button under a source that could not be read: grant the missing permission, or try again.
+private struct SourceFixButton: View {
+    let title: String
+    let symbol: String
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(prominent ? NookTheme.ink : NookTheme.paper)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(prominent ? NookTheme.amber : NookTheme.smoke))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 /// A macOS permission a notice says is missing, so the warning can carry the button that grants it.
@@ -269,35 +313,35 @@ struct NoticeList: View {
 
     var body: some View {
         let buttons = buttons
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(notices, id: \.self) { notice in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11))
                         .foregroundStyle(NookTheme.amber)
-                        .padding(.top, 2)
-                    VStack(alignment: .leading, spacing: 5) {
+                        .padding(.top, 1)
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(notice)
                             .font(NookTheme.font(12))
                             .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         if let needed = buttons[notice] {
-                            Button { needed.grant(app: app) } label: {
-                                Label(tr("chat.notice.allow"), systemImage: "lock.open")
-                                    .font(NookTheme.font(11, .semibold))
-                                    .foregroundStyle(NookTheme.ink)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(NookTheme.amber))
-                            }
-                            .buttonStyle(.plain)
-                            .help(tr("chat.notice.allowHelp"))
+                            SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
+                                .help(tr("chat.notice.allowHelp"))
                         }
                     }
+                    Spacer(minLength: 0)
                 }
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(NookTheme.amber.opacity(0.06))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.18), lineWidth: 1))
+        )
     }
 }
 
