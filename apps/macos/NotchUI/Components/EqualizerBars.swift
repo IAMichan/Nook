@@ -26,6 +26,9 @@ struct EqualizerBars: View {
             .animation(.easeOut(duration: 0.2), value: isPlaying)
         }
         .accessibilityHidden(true)
+        // Real levels are only measured while some equalizer is on screen.
+        .onAppear { AudioLevelMonitor.shared.addViewer() }
+        .onDisappear { AudioLevelMonitor.shared.removeViewer() }
     }
 
     /// Height between 0 and 1: the measured or synthesized level of this band.
