@@ -11,6 +11,7 @@
   import Music from "./services/Music.svelte";
   import { services, serviceEvents, type NowPlaying } from "../lib/services";
   import { listening } from "../lib/listening.svelte";
+  import { attachments } from "../lib/attachments.svelte";
   import { play } from "../lib/sounds";
 
   type Tab = "nook" | "agents" | "workspace" | "music";
@@ -27,12 +28,19 @@
     if (!expanded) {
       expanded = true;
       await api.barExpand(true);
+      // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
+      services.asideHide();
     }
     if (focus === "chat" || focus === "voice" || focus === "lookAlong") {
       tab = "nook";
       pinnedOpen = true;
     }
     if (focus === "voice") listening.start();
+    if (focus?.startsWith("nook:")) {
+      tab = "nook";
+      pinnedOpen = true;
+      await nook.select(focus.slice(5));
+    }
     if (focus === "lookAlong") services.lookAlong().catch((e) => (nook.error = String(e)));
   }
 
@@ -77,6 +85,7 @@
     expanded = false;
     pinnedOpen = false;
     await api.barExpand(false);
+    services.asideShow();
   }
 
   function leave() {
@@ -96,6 +105,7 @@
   }
 
   $effect(() => {
+    attachments.start();
     const un = events.onBarOpen((focus) => open(focus));
     return () => {
       un.then((f) => f());

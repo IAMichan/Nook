@@ -157,6 +157,9 @@ pub struct Nudge {
     pub app: String,
     pub window: String,
     pub actions: Vec<crate::brain::PlannedAction>,
+    /// Een leesbare regel per actie, voor het voorstel naast de balk.
+    #[serde(default)]
+    pub steps: Vec<String>,
     pub offers: Vec<String>,
     /// Unix-seconden.
     pub date: i64,

@@ -84,15 +84,10 @@ pub fn finish(app: &AppHandle, x: f64, y: f64, w: f64, h: f64, copy: bool) -> Re
         return services.platform.system.copy_image(&png);
     }
     let attachment = Attachment { media_type: "image/png".into(), base64: base64::engine::general_purpose::STANDARD.encode(&png) };
-    // Naar de balk; zonder balk (Android) naar het hoofdvenster.
-    #[cfg(desktop)]
-    {
-        use tauri::Emitter;
-        let _ = app.emit_to(crate::platform::desktop::BAR, "attach-image", attachment);
-        crate::platform::desktop::open_bar(app, "chat");
-    }
-    #[cfg(not(desktop))]
+    // Het invoerveld van de balk neemt hem (het hoofdvenster laat hem liggen).
     super::emit(app, "attach-image", attachment);
+    #[cfg(desktop)]
+    crate::platform::desktop::open_bar(app, "chat");
     Ok(())
 }
 

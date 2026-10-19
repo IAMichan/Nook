@@ -658,7 +658,7 @@ pub fn format_dictionary(words: &[String], replacements: &[FlowReplacement], sni
 #[serde(rename_all = "camelCase", default)]
 pub struct FlowSettings {
     pub enabled: bool,
-    /// De toets om vast te houden, als accelerator ("Control+Alt+Space").
+    /// De toets om vast te houden, als accelerator ("Control+Alt+D").
     pub key: String,
     /// Opschonen met Nooks brein voor het plakken.
     pub cleanup: bool,
@@ -675,7 +675,7 @@ impl Default for FlowSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            key: "Control+Alt+Space".into(),
+            key: "Control+Alt+D".into(),
             cleanup: true,
             prompt_mode: false,
             translate_to: String::new(),

@@ -73,8 +73,9 @@ pub async fn continue_in_chat(
     });
     state.save_chat();
     super::emit(app, "nook-updated", id.clone());
+    // De balk opent op deze Nook.
     #[cfg(desktop)]
-    crate::platform::desktop::open_bar(app, "chat");
+    crate::platform::desktop::open_bar(app, &format!("nook:{id}"));
     if run && count > 0 {
         let _ = crate::commands::execute_plan(app.clone(), app.state::<AppState>(), id, message_id, vec![true; count], None).await;
     }
@@ -94,7 +95,7 @@ pub async fn look_along(app: &AppHandle) -> Result<(), String> {
     };
     let snapshot =
         ScreenSnapshot { app_name: front.app.clone(), window_title: front.title.clone(), text: front.text.chars().take(6000).collect() };
-    let saw = format!("Ik zag in {}", front.app);
+    let saw = front.app.clone();
     match ask_brain(app, think_along::LOOK_REQUEST, &snapshot).await? {
         Some((body, offers, plan)) => {
             let text = if body.is_empty() { "Dit is mijn voorstel. Er gebeurt niets tot je op Uitvoeren klikt.".to_string() } else { body };
@@ -168,6 +169,7 @@ async fn run(app: &AppHandle, app_id: &str, app_name: &str, window: &str) {
         body,
         app: app_name.into(),
         window: app_id.into(),
+        steps: plan.actions.iter().map(|a| tools::summarize(&a.tool, &a.input)).collect(),
         actions: plan.actions,
         offers,
         date: chrono::Utc::now().timestamp(),

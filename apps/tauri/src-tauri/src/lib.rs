@@ -118,6 +118,7 @@ pub fn run() {
             commands::services::nudge_answer,
             commands::services::aside_expand,
             commands::services::aside_hide,
+            commands::services::aside_show,
             commands::services::screen_status,
             commands::services::screen_part_begin,
             commands::services::screen_part_image,

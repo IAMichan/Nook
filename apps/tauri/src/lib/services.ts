@@ -110,6 +110,7 @@ export interface Nudge {
   app: string;
   window: string;
   actions: PlannedAction[];
+  steps: string[];
   offers: string[];
   date: number;
 }
@@ -191,6 +192,7 @@ export const services = {
   answerNudge: (id: string, answer: "yes" | "open" | "no" | "mute" | "later") => invoke<void>("nudge_answer", { id, answer }),
   asideExpand: (large: boolean) => invoke<void>("aside_expand", { large }),
   asideHide: () => invoke<void>("aside_hide"),
+  asideShow: () => invoke<void>("aside_show"),
   screenStatus: () => invoke<ScreenStatus>("screen_status"),
 
   partBegin: () => invoke<void>("screen_part_begin"),

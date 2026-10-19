@@ -35,7 +35,7 @@ impl Drop for Recording {
 
 /// Of er een microfoon is.
 pub fn has_microphone() -> bool {
-    cpal::default_host().default_input_device().is_some()
+    cpal::default_host().default_input_device().is_some_and(|d| d.default_input_config().is_ok())
 }
 
 /// Neemt op met de standaardmicrofoon.

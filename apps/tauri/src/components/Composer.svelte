@@ -1,7 +1,7 @@
 <script lang="ts">
   // Het invoerveld: Return verstuurt, Shift+Return is een nieuwe regel. Afbeeldingen plakken of slepen kan ook.
   import { nook } from "../lib/state.svelte";
-  import { serviceEvents } from "../lib/services";
+  import { attachments } from "../lib/attachments.svelte";
   import { listening } from "../lib/listening.svelte";
   import { heard } from "./Orb.svelte";
   import MicButton from "./MicButton.svelte";
@@ -20,17 +20,12 @@
     if (autofocus) field?.focus();
   });
 
-  // Een schermdeel komt als afbeelding bij het invoerveld.
+  // Een schermdeel komt als afbeelding bij het invoerveld van de balk.
   $effect(() => {
-    const un = serviceEvents.onAttachImage(({ mediaType, base64 }) => {
-      // Alleen in de balk (die opent ervoor), niet ook in het hoofdvenster.
-      if (!compact) return;
-      images = [...images, { mediaType, base64, url: `data:${mediaType};base64,${base64}` }];
-      field?.focus();
-    });
-    return () => {
-      un.then((f) => f());
-    };
+    if (!compact || !attachments.pending.length) return;
+    const added = attachments.take().map(({ mediaType, base64 }) => ({ mediaType, base64, url: `data:${mediaType};base64,${base64}` }));
+    images = [...images, ...added];
+    field?.focus();
   });
 
   async function send() {

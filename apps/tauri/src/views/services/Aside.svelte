@@ -78,7 +78,7 @@
           <p>{nudge.body || "Zal ik dit voor je doen?"}</p>
           {#if nudge.actions.length}
             <ul>
-              {#each nudge.actions as a (a.id)}<li>{a.tool.replaceAll("_", " ")}</li>{/each}
+              {#each nudge.steps.length ? nudge.steps : nudge.actions.map((a) => a.tool.replaceAll("_", " ")) as step, i (i)}<li>{step}</li>{/each}
             </ul>
           {/if}
           <div class="buttons">
