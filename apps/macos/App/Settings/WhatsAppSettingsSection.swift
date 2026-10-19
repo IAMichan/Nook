@@ -13,8 +13,6 @@ struct WhatsAppLinkSection: View {
     @State private var autoStart = WhatsAppGOWAProcess.autoStart
     @State private var notify = WhatsAppSettings.notify
     @State private var markRead = WhatsAppSettings.markReadOnReply
-    @State private var testResult = ""
-    @State private var testing = false
 
     var body: some View {
         Section {
@@ -51,16 +49,18 @@ struct WhatsAppLinkSection: View {
                 if link.isConnected {
                     SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: $notify)
                         .onChange(of: notify) { _, value in WhatsAppSettings.notify = value }
-                    SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
-                                  isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
-                    SettingToggle(tr("whatsapp.settings.markRead"), detail: tr("whatsapp.settings.markReadDetail"), isOn: $markRead)
-                        .onChange(of: markRead) { _, value in WhatsAppSettings.markReadOnReply = value }
+                    if notify {
+                        SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
+                                      isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
+                    }
                     if !link.filters.ignored.isEmpty {
                         Button(tr("whatsapp.settings.unmute", link.filters.ignored.count)) { link.filters.ignored = [] }
                     }
                 }
 
                 DisclosureGroup(tr("whatsapp.settings.advanced")) {
+                    SettingToggle(tr("whatsapp.settings.markRead"), detail: tr("whatsapp.settings.markReadDetail"), isOn: $markRead)
+                        .onChange(of: markRead) { _, value in WhatsAppSettings.markReadOnReply = value }
                     Picker(tr("whatsapp.settings.gateway"), selection: $gateway) {
                         ForEach(WAGatewayKind.allCases, id: \.self) { kind in Text(kind.name).tag(kind) }
                     }
@@ -77,19 +77,9 @@ struct WhatsAppLinkSection: View {
                         Toggle(tr("whatsapp.settings.autoStart"), isOn: $autoStart)
                             .onChange(of: autoStart) { _, on in WhatsAppGOWAProcess.autoStart = on; link.settingsChanged() }
                     }
-                    HStack {
-                        Button(testing ? tr("whatsapp.settings.testing") : tr("whatsapp.settings.test")) {
-                            WhatsAppSettings.url = address
-                            WhatsAppSettings.setCredential(credential)
-                            testing = true
-                            Task {
-                                testResult = await link.testConnection()
-                                testing = false
-                            }
-                        }
-                        .disabled(testing)
-                        if !testResult.isEmpty { Text(testResult).font(.caption).foregroundStyle(.secondary) }
-                    }
+                }
+
+                if !webhookLine.isEmpty, webhookNeedsAttention {
                     Text(webhookLine).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -133,6 +123,13 @@ struct WhatsAppLinkSection: View {
         case .installing: return tr("whatsapp.install.installing")
         case .done(let version): return tr("whatsapp.install.done", version)
         case .failed(let why): return why
+        }
+    }
+
+    private var webhookNeedsAttention: Bool {
+        switch link.webhook {
+        case .portBusy, .refused: return true
+        case .off, .listening, .registered: return false
         }
     }
 
