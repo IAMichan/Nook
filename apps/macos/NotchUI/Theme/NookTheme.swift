@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 extension Color {
     /// Creates a color from a hex integer, e.g. `Color(hex: 0x8B7BFF)`.
@@ -66,12 +67,35 @@ enum NookTheme {
     static let close = Animation.spring(duration: 0.3, bounce: 0)
     /// Tab switching within the same panel: tighter and snappier.
     static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
+    /// Hover feedback on buttons and chips: quick, with a hint of spring.
+    static let hover = Animation.spring(duration: 0.2, bounce: 0.1)
     static let spring = open
+}
+
+/// Lifts a control a little while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the
+/// color change alone says that it is live.
+private struct HoverLift: ViewModifier {
+    var hovering: Bool
+    var scale: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering && !reduceMotion ? scale : 1)
+            .animation(NookTheme.hover, value: hovering)
+    }
+}
+
+extension View {
+    /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
+    func hoverLift(_ hovering: Bool, scale: CGFloat = 1.02) -> some View {
+        modifier(HoverLift(hovering: hovering, scale: scale))
+    }
 }
 
 /// Notch content: appears slightly after the shape (snappy fade-in) and dismisses quickly.
 private struct NotchContentFade: ViewModifier {
-    var amount: CGFloat   // 1 = weg, 0 = zichtbaar
+    var amount: CGFloat   // 1 = gone, 0 = visible
     func body(content: Content) -> some View {
         content
             .opacity(1 - Double(amount))
@@ -82,7 +106,12 @@ private struct NotchContentFade: ViewModifier {
 
 extension AnyTransition {
     static var notchContent: AnyTransition {
-        .asymmetric(
+        // Reduce Motion: a plain fade, without the blur and the scale.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return .asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.09)),
+                               removal: .opacity.animation(.easeIn(duration: 0.12)))
+        }
+        return .asymmetric(
             insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
                 .animation(.easeOut(duration: 0.34).delay(0.09)),
             removal: .opacity.animation(.easeIn(duration: 0.12))
