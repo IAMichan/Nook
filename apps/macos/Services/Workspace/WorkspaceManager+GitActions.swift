@@ -6,7 +6,7 @@ import Foundation
 extension WorkspaceManager {
     /// Where the button stands for a session; nil outside a repository.
     func quickGitState(_ id: UUID) async -> GitQuickState? {
-        guard let run = run(id), run.repoRoot != nil, let git = gitService, let status = self.git[id]?.status else { return nil }
+        guard let run = run(id), run.repoRoot != nil, let git = sessionGit(for: run), let status = self.git[id]?.status else { return nil }
         let directory = run.workingDirectory
         let sessionBase = run.baseBranch
         let facts = await Task.detached(priority: .userInitiated) { () -> (base: String?, remote: Bool, ahead: Int, repo: RemoteRepository?) in
@@ -34,7 +34,7 @@ extension WorkspaceManager {
     /// Carries out the action, step by step; `progress` gets each step's label. Returns the pull request, if one opened.
     @discardableResult
     func performQuickGit(_ id: UUID, _ action: GitQuickAction, progress: @escaping (String) -> Void) async throws -> URL? {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let directory = run.workingDirectory
         defer { refreshGit(id) }
@@ -50,7 +50,7 @@ extension WorkspaceManager {
             let context = try await Task.detached(priority: .userInitiated) { try git.commitContext(directory) }.value
             let branch = await currentBranch(id)
             let answer = await generateText(TextGeneration.commitPrompt(branch: branch, files: context.files, patch: context.patch),
-                                            schema: TextGeneration.commitSchema, prefer: run.provider, profileID: run.profileID, cwd: directory)
+                                            schema: TextGeneration.commitSchema, prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : directory)
             let subject = TextGeneration.commitSubject((answer?["subject"] as? String) ?? "")
             let body = (answer?["body"] as? String) ?? ""
             progress(tr("ws.quick.committing"))
@@ -67,7 +67,7 @@ extension WorkspaceManager {
     }
 
     private func proposePullRequest(_ id: UUID, progress: @escaping (String) -> Void) async throws -> URL {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         guard let repo = await remoteRepository(id) else { throw StartError.git(tr("ws.quick.noForge")) }
         guard let branch = await currentBranch(id) else { throw StartError.git(tr("ws.error.detached")) }
@@ -86,7 +86,7 @@ extension WorkspaceManager {
         guard let base = facts.base, base != branch else { throw StartError.git(tr("ws.quick.onBase", branch)) }
         let answer = await generateText(TextGeneration.pullRequestPrompt(base: base, head: branch, commits: facts.commits, stat: facts.stat,
                                                                         patch: facts.patch, template: facts.template),
-                                        schema: TextGeneration.pullRequestSchema, prefer: run.provider, profileID: run.profileID, cwd: directory)
+                                        schema: TextGeneration.pullRequestSchema, prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : directory)
         let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
             String($0.drop { $0 != " " }.dropFirst())
         } ?? ""))

@@ -117,6 +117,8 @@ struct GitWorktree: Equatable, Identifiable, Sendable {
 /// Arguments pass as a list to Git, so branch names or paths can never execute as shell commands.
 struct GitService: Sendable {
     let executable: String
+    /// Set for a session on another machine: every git command runs there, over ssh (see RemoteLaunch.git).
+    var remote: RemoteTarget? = nil
 
     /// Result of `locate()`, resolved once per launch: spawning `git --version` on every call is slow and must never
     /// happen on the main thread (e.g. each time a view creates its model).
@@ -144,7 +146,11 @@ struct GitService: Sendable {
     }
 
     func raw(_ arguments: [String], in directory: String?, timeout: TimeInterval = 60) throws -> ProcessRunner.Output {
-        try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
+        if let remote {
+            return try ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.git(arguments, target: remote, directory: directory),
+                                         environment: ProcessInfo.processInfo.environment, timeout: timeout)
+        }
+        return try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
     }
 
     /// Runs git and throws an error with Git's error output on failure.

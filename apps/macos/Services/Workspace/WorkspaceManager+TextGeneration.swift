@@ -24,7 +24,7 @@ extension WorkspaceManager {
         Task { [weak self] in
             guard let self else { return }
             let answer = await self.generateText(TextGeneration.titlePrompt(message: run.task), schema: TextGeneration.titleSchema,
-                                                 prefer: run.provider, profileID: run.profileID, cwd: run.workingDirectory)
+                                                 prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory)
             guard let raw = answer?["title"] as? String, let title = TextGeneration.title(raw), self.run(id)?.title == seed else { return }
             self.update(id) { $0.title = title }
         }

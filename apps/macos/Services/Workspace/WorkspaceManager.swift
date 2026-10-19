@@ -1423,7 +1423,7 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Git
 
     func refreshGit(_ id: UUID) {
-        guard let run = run(id), let git = gitService, run.repoRoot != nil else { return }
+        guard let run = run(id), let git = sessionGit(for: run), run.repoRoot != nil else { return }
         let directory = run.workingDirectory
         let base = run.baseBranch
         var snapshot = self.git[id] ?? GitSnapshot(status: nil, divergence: nil, error: nil, updated: Date(), loading: true)
@@ -1433,7 +1433,7 @@ final class WorkspaceManager: ObservableObject {
             var status: GitStatus?
             var problem: String?
             var divergence: (ahead: Int, behind: Int)?
-            if FileManager.default.fileExists(atPath: directory) {
+            if git.remote != nil || FileManager.default.fileExists(atPath: directory) {
                 do { status = try git.status(directory) } catch let failure { problem = failure.localizedDescription }
                 if let base { divergence = git.divergence(directory, base: base) }
             } else {
@@ -1459,7 +1459,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func diff(_ id: UUID, file: GitFileChange) async throws -> String {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         return try await Task.detached(priority: .userInitiated) { try git.diff(directory, file: file) }.value
     }
@@ -1467,7 +1467,7 @@ final class WorkspaceManager: ObservableObject {
     /// What one turn (from `start` to `end`) did to a file: between the snapshots around it when the session has them,
     /// otherwise the file against its last commit.
     func turnDiff(_ id: UUID, path: String, start: Date, end: Date) async throws -> String {
-        guard let run = run(id), !run.isRemote, let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
         let from = around?.before.ref ?? "HEAD"
@@ -1476,7 +1476,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func commit(_ id: UUID, message: String, paths: [String]) async throws -> String {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let directory = run.workingDirectory
         let sha = try await Task.detached(priority: .userInitiated) { try git.commit(directory, message: message, paths: paths) }.value
@@ -1487,7 +1487,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func push(_ id: UUID) async throws {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         guard let branch = await Task.detached(operation: { git.currentBranch(directory) }).value else {
             throw StartError.git(tr("ws.error.detached"))
@@ -1500,7 +1500,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// owner/repo from remote URL if it is a GitHub repository.
     func githubRepository(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return url.flatMap(GitHubRemote.repository(from:))
@@ -1508,14 +1508,14 @@ final class WorkspaceManager: ObservableObject {
 
     /// The forge of the session's folder (GitHub, GitLab, Bitbucket…), from its remote; nil without a recognisable remote.
     func remoteRepository(_ id: UUID) async -> RemoteRepository? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return SourceForge.repository(remoteURL: url)
     }
 
     func currentBranch(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         return await Task.detached(operation: { git.currentBranch(directory) }).value
     }

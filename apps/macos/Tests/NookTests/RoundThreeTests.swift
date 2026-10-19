@@ -355,4 +355,23 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertNil(AcpRegistry.binary(["archive": "https://example.com/a.zip", "sha256": sha, "cmd": "/bin/sh"]))
         XCTAssertEqual(AcpRegistry.binary(["archive": "https://example.com/agent", "sha256": sha, "cmd": "agent"])?.kind, .raw)
     }
+
+    func testRemoteGitCommand() {
+        let machine = RemoteMachine(name: "box", host: "me@box", port: 2222)
+        let target = RemoteTarget(machine: machine, directory: "~/code/app")
+        let arguments = RemoteLaunch.git(["-C", "~/code/my app", "commit", "-m", "it's done"], target: target, directory: "~/code/my app")
+        XCTAssertEqual(Array(arguments.suffix(3)).first, "--")
+        XCTAssertEqual(arguments[arguments.count - 2], "me@box")
+        XCTAssertTrue(arguments.contains("2222"))
+        XCTAssertTrue(arguments.contains("BatchMode=yes"))
+        let line = arguments.last ?? ""
+        XCTAssertTrue(line.hasPrefix(#"exec "${SHELL:-/bin/sh}" -lc '"#))
+        // The folder is a cd (tilde left to the remote shell); "-C" is not passed on; the message stays one argument.
+        XCTAssertTrue(line.contains("cd ~/"))
+        XCTAssertFalse(line.contains(" -C "))
+        XCTAssertTrue(line.contains("exec git commit -m"))
+        let plain = RemoteLaunch.git(["status"], target: target, directory: nil).last ?? ""
+        XCTAssertFalse(plain.contains("cd "))
+        XCTAssertTrue(GitService(executable: "git", remote: target).remote != nil)
+    }
 }

@@ -2,8 +2,8 @@ import Foundation
 
 // Sessions on another machine, over SSH. The agent runs
 // there and speaks over the SSH connection exactly as it does locally: Claude Code's stream-json, Codex's app-server and
-// ACP all use stdin and stdout. What needs the folder on this Mac (git, checkpoints, worktrees, the diff, the workspace
-// bridge) is off for such a session. Foundation only, so tests can use it independently.
+// ACP all use stdin and stdout. Git runs there too, over ssh (status, diff, commit, push); what needs the folder on this
+// Mac (checkpoints, worktrees, the workspace bridge) is off for such a session. Foundation only, so tests can use it independently.
 
 /// A machine you can reach with `ssh` without typing a password (a key, or your agent): an alias from ~/.ssh/config or
 /// user@host.
@@ -98,6 +98,23 @@ enum RemoteLaunch {
             .map { "export \($0)=" + CustomAgents.quote(environment[$0] ?? "") + "; " }.joined()
         let inner = exports + "cd " + quotedDirectory(directory) + " && " + agent
         return #"exec "${SHELL:-/bin/sh}" -lc "# + CustomAgents.quote(inner)
+    }
+
+    /// The ssh arguments for one git command on the remote machine, in `directory` there (a leading `-C <folder>` becomes
+    /// the folder). One shared connection per machine (ControlMaster) keeps the many small git calls fast.
+    static func git(_ arguments: [String], target: RemoteTarget, directory: String?) -> [String] {
+        var rest = arguments
+        var folder = directory
+        if rest.count >= 2, rest[0] == "-C" {
+            folder = rest[1]
+            rest.removeFirst(2)
+        }
+        var line = "GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 LC_ALL=C exec git " + rest.map(CustomAgents.quote).joined(separator: " ")
+        if let folder { line = "cd " + quotedDirectory(folder) + " && " + line }
+        var ssh = ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                   "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/nook-ssh-%C", "-o", "ControlPersist=120"]
+        if let port = target.port { ssh += ["-p", String(port)] }
+        return ssh + ["--", target.host, #"exec "${SHELL:-/bin/sh}" -lc "# + CustomAgents.quote(line)]
     }
 
     /// "~/code/app" stays relative to the remote home: the tilde unquoted, the rest quoted.

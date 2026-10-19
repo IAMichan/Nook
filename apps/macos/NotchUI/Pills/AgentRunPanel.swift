@@ -373,7 +373,7 @@ struct AgentRunPanel: View {
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
         let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
-        let turnFiles = run.isRemote ? [:] : TurnChanges.byTurnEnd(events)
+        let turnFiles = TurnChanges.byTurnEnd(events)
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
