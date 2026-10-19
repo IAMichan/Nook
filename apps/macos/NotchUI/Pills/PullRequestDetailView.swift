@@ -33,7 +33,10 @@ struct PullRequestDetailView: View {
             if let detail {
                 summary(detail)
                 tabs(detail)
-                content(detail)
+                // The relative times in the conversation and the commits tick along, once a minute.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    content(detail, now: context.date)
+                }
                 mergeBar(detail)
             } else if let error {
                 VStack(alignment: .leading, spacing: 8) {
@@ -146,13 +149,13 @@ struct PullRequestDetailView: View {
     }
 
     @ViewBuilder
-    private func content(_ detail: PullRequestDetail) -> some View {
+    private func content(_ detail: PullRequestDetail, now: Date) -> some View {
         switch tab {
         case .conversation:
-            ScrollView(showsIndicators: false) { conversation(detail).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView(showsIndicators: false) { conversation(detail, now: now).frame(maxWidth: .infinity, alignment: .leading) }
                 .frame(maxHeight: .infinity)
         case .commits:
-            ScrollView(showsIndicators: false) { commits(detail).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView(showsIndicators: false) { commits(detail, now: now).frame(maxWidth: .infinity, alignment: .leading) }
                 .frame(maxHeight: .infinity)
         case .files:
             if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
@@ -166,7 +169,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Conversation
 
-    private func conversation(_ detail: PullRequestDetail) -> some View {
+    private func conversation(_ detail: PullRequestDetail, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             card {
                 if detail.body.isEmpty {
@@ -185,12 +188,12 @@ struct PullRequestDetailView: View {
             section(tr("agents.pr.conversation")) {
                 if let created = detail.created {
                     activityRow(symbol: "arrow.triangle.pull", color: NookTheme.mint, author: detail.author,
-                                sentence: tr("agents.pr.timeline.opened"), date: created)
+                                sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
                 if detail.events.isEmpty {
                     Text(tr("agents.pr.conversation.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
                 } else {
-                    ForEach(detail.events) { event in timelineRow(event, detail: detail) }
+                    ForEach(detail.events) { event in timelineRow(event, detail: detail, now: now) }
                 }
             }
         }
@@ -229,7 +232,7 @@ struct PullRequestDetailView: View {
 
     /// Commits and events such as a label or the merge take one quiet line; reviews and comments get a card.
     @ViewBuilder
-    private func timelineRow(_ event: PullRequestEvent, detail: PullRequestDetail) -> some View {
+    private func timelineRow(_ event: PullRequestEvent, detail: PullRequestDetail, now: Date) -> some View {
         switch event.kind {
         case .commit(let sha):
             Button {
@@ -242,7 +245,7 @@ struct PullRequestDetailView: View {
                     Spacer(minLength: 4)
                     Text("@" + event.author).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                     if let date = event.date {
-                        Text(AgentFormat.short(Date().timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                        Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -253,13 +256,13 @@ struct PullRequestDetailView: View {
         case .activity(let type, let subject):
             let look = activityLook(type)
             activityRow(symbol: look.symbol, color: look.color, author: event.author,
-                        sentence: tr("agents.pr.timeline." + type.replacingOccurrences(of: "-", with: "_"), subject), date: event.date)
+                        sentence: tr("agents.pr.timeline." + type.replacingOccurrences(of: "-", with: "_"), subject), date: event.date, now: now)
         default:
-            eventRow(event)
+            eventRow(event, now: now)
         }
     }
 
-    private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?) -> some View {
+    private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?, now: Date) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(color).frame(width: 16)
             (Text("@" + author + " ").font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
@@ -268,7 +271,7 @@ struct PullRequestDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             if let date {
-                Text(AgentFormat.short(Date().timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
             }
         }
         .padding(.horizontal, 4)
@@ -295,7 +298,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    private func eventRow(_ event: PullRequestEvent) -> some View {
+    private func eventRow(_ event: PullRequestEvent, now: Date) -> some View {
         let (label, color) = eventLabel(event.kind)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -303,7 +306,7 @@ struct PullRequestDetailView: View {
                 Text(label).font(NookTheme.font(12)).foregroundStyle(color).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if let date = event.date {
-                    Text(AgentFormat.short(Date().timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                    Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
                 }
                 if let url = event.url {
                     Button { NSWorkspace.shared.open(url) } label: {
@@ -340,7 +343,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Commits
 
-    private func commits(_ detail: PullRequestDetail) -> some View {
+    private func commits(_ detail: PullRequestDetail, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if detail.commits.isEmpty {
                 Text(tr("agents.pr.commits.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
@@ -353,7 +356,7 @@ struct PullRequestDetailView: View {
                             Text(commit.subject).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
                             HStack(spacing: 4) {
                                 Text("@" + commit.author)
-                                if let date = commit.date { Text("· " + AgentFormat.short(Date().timeIntervalSince(date))) }
+                                if let date = commit.date { Text("· " + AgentFormat.short(now.timeIntervalSince(date))) }
                             }
                             .font(NookTheme.font(11.5))
                             .foregroundStyle(NookTheme.textTertiary)
