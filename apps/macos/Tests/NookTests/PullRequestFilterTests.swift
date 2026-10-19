@@ -2,8 +2,8 @@ import XCTest
 
 final class PullRequestFilterTests: XCTestCase {
     private func item(_ number: Int, _ title: String, repo: String = "acme/app", author: String = "ada", draft: Bool = false,
-                      ci: PullRequestItem.CI = .unknown) -> PullRequestItem {
-        PullRequestItem(repo: repo, number: number, title: title, url: nil, draft: draft, updated: nil, author: author, ci: ci)
+                      ci: PullRequestItem.CI = .unknown, state: PullRequestItem.State = .open) -> PullRequestItem {
+        PullRequestItem(repo: repo, number: number, title: title, url: nil, draft: draft, updated: nil, author: author, ci: ci, state: state)
     }
 
     func testEmptyFilterShowsEverything() {
@@ -35,9 +35,42 @@ final class PullRequestFilterTests: XCTestCase {
         filter.status = .failing
         XCTAssertTrue(filter.matches(item(1, "A", ci: .failing)))
         XCTAssertFalse(filter.matches(item(1, "A", ci: .passing)))
-        filter.status = .draft
+    }
+
+    func testDraft() {
+        var filter = PullRequestFilter()
+        filter.draft = .drafts
         XCTAssertTrue(filter.matches(item(1, "A", draft: true)))
         XCTAssertFalse(filter.matches(item(1, "A")))
+        filter.draft = .ready
+        XCTAssertFalse(filter.matches(item(1, "A", draft: true)))
+        XCTAssertTrue(filter.matches(item(1, "A")))
+    }
+
+    func testStateShowsOpenByDefault() {
+        var filter = PullRequestFilter()
+        XCTAssertFalse(filter.isActive, "open is the default, not a filter")
+        XCTAssertTrue(filter.matches(item(1, "A")))
+        XCTAssertFalse(filter.matches(item(2, "B", state: .closed)))
+        XCTAssertFalse(filter.matches(item(3, "C", state: .merged)))
+        filter.state = .closed
+        XCTAssertEqual(filter.activeCount, 1)
+        XCTAssertTrue(filter.matches(item(2, "B", state: .closed)))
+        XCTAssertFalse(filter.matches(item(3, "C", state: .merged)), "closed means closed without merging")
+        filter.state = .merged
+        XCTAssertTrue(filter.matches(item(3, "C", state: .merged)))
+        filter.state = .all
+        XCTAssertTrue([item(1, "A"), item(2, "B", state: .closed), item(3, "C", state: .merged)].allSatisfy(filter.matches))
+    }
+
+    func testAuthor() {
+        var filter = PullRequestFilter()
+        filter.author = "Bob"
+        XCTAssertTrue(filter.matches(item(1, "A", author: "bob")))
+        XCTAssertFalse(filter.matches(item(1, "A", author: "ada")))
+        let account = AccountPullRequests(id: "github", name: "Work", login: "ada", mine: [item(1, "A"), item(2, "B")],
+                                          reviews: [item(3, "C", author: "bob"), item(4, "D", author: "")], error: nil)
+        XCTAssertEqual(PullRequestFilter.authors(in: [account]), ["ada", "bob"])
     }
 
     func testScopeAndErrorsSurvive() {
