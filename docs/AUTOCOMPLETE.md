@@ -2,11 +2,12 @@
 
 While you type in any macOS app, Nook suggests how your sentence continues as inline gray ghost text right after your cursor—powered by a local model on your Mac. Press **Tab** to accept the next word, or **⇧Tab** to accept the entire suggestion. If you keep typing matching characters, the ghost text advances smoothly; any other key dismisses it immediately.
 
-Enable it in **Settings › Autocomplete**, which has four tabs:
+Enable it in **Settings › Autocomplete**, which has five tabs:
 
 - **General:** On/off toggle and live status, model selection (your Brain model, a local GGUF model on your Mac, a custom `.gguf` file, or a one-click download), suggestion length and eagerness, and customizable shortcuts.
 - **Apps:** Every installed app with its icon and toggle. Search or filter by Enabled/Disabled. Click any app for custom per-app instructions, whether to leave `Tab` to the app, mid-line suggestions, learning, font size, vertical offset, or pausing. Below the app list, configure per-website rules and instructions inside browsers. Terminals, code editors, and password managers are disabled by default.
 - **Style & Context:** What context the model receives (active app and window title, Nook memory, screen text, clipboard), your writing style and local learning, emoji shortcodes, typo correction, battery behavior, and alternative word suggestions.
+- **Playground:** A text box to try autocomplete without leaving Settings. It uses the same model, accept keys, and suggestion settings as other apps (your instructions and memory included; screen, window, and clipboard are left out), and shows the model's raw answer, what was shown, how long it took, and the full prompt the model read. Nothing typed there is saved or counted in the statistics.
 - **Statistics:** Usage counts for today, this week, and all time, a 30-day chart, estimated typing time saved, characters completed, acceptance rate, daily streak, and top apps. Nook only records aggregate counts—never what you typed.
 
 ## Key Features

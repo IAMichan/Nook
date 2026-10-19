@@ -1057,6 +1057,31 @@ final class AutocompleteController: ObservableObject {
         completer?.setPersonalization(words: vocabulary, strength: prefs.learn ? prefs.personalStrength : 0)
     }
 
+    // MARK: Playground
+
+    /// A suggestion for text typed in Settings › Autocomplete › Playground: the same model, options and personal context as in
+    /// other apps, without a field, the screen or the clipboard. Nil when no model is chosen or the model did not load.
+    /// - Parameter continuing: Right after a whole suggestion was taken (see `CompletionOptions.continuing()`).
+    func playgroundCompletion(before: String, continuing: Bool) async -> CompletionPlaygroundResult? {
+        guard let model = activeModel else { return nil }
+        var input = CompletionContext(before: before)
+        input.instructions = prefs.instructions(app: nil, site: nil)
+        if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
+        let prompt = builder.build(input)
+        var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
+        if continuing { options = options.continuing() }
+        options.heal = Self.midWord(before)
+        guard let completer = await loadedCompleter(for: model) else { return nil }
+        let start = Date()
+        let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+        scheduleUnload()
+        let suggestion = result.flatMap {
+            CompletionSuggestion.make(raw: $0.text, before: before, maxWords: options.maxWords, truncated: $0.truncated, unfinished: $0.unfinished)
+        }
+        return CompletionPlaygroundResult(suggestion: suggestion, raw: result?.text ?? "", prompt: prompt,
+                                          milliseconds: Int(Date().timeIntervalSince(start) * 1000))
+    }
+
     // MARK: The model
 
     private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
@@ -1103,4 +1128,13 @@ final class AutocompleteController: ObservableObject {
         completer?.cancel()
         completer = nil
     }
+}
+
+/// One suggestion in the Playground, with what went into it.
+struct CompletionPlaygroundResult {
+    var suggestion: CompletionSuggestion?
+    /// The model's answer before it was trimmed into a suggestion.
+    var raw: String
+    var prompt: CompletionPrompt
+    var milliseconds: Int
 }
