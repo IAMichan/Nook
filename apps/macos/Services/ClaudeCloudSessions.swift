@@ -122,6 +122,67 @@ enum ClaudeCloudSessions {
         return NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
 
+    // MARK: Conversation
+
+    /// The events of one session: its conversation as Claude Code's stream messages, oldest first.
+    static func eventsEndpoint(_ id: String, after: String? = nil) -> URL {
+        var components = URLComponents(url: endpoint.appendingPathComponent(id).appendingPathComponent("events"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "limit", value: "1000")] + (after.map { [URLQueryItem(name: "after_id", value: $0)] } ?? [])
+        return components.url!
+    }
+
+    /// One page of an events response (`{"data": [...], "has_more": …, "last_id": …}`).
+    static func eventPage(_ data: Data) -> (events: [[String: Any]], hasMore: Bool, lastID: String?)? {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let events = object["data"] as? [[String: Any]] else { return nil }
+        return (events, (object["has_more"] as? Bool) == true, object["last_id"] as? String)
+    }
+
+    /// The conversation in a session's events, read like a Claude Code transcript on this Mac. An event is either a
+    /// stream message (`{"type": "assistant", "message": …}`) or one wrapped under its kind
+    /// (`{"assistant": {"uuid": …, "internal_anthropic_catchall": {"message": …}}}`).
+    static func conversation(_ events: [[String: Any]]) -> [AgentChatMessage] {
+        var seen = Set<String>()
+        var lines: [(date: Date?, line: [String: Any])] = []
+        for event in events {
+            guard let line = transcriptLine(event) else { continue }
+            if let uuid = line["uuid"] as? String, !seen.insert(uuid).inserted { continue }
+            lines.append((AgentTranscript.date(line["timestamp"]), line))
+        }
+        // Oldest first, also when a page came newest first; events without a time keep their place.
+        if lines.allSatisfy({ $0.date != nil }) {
+            lines = lines.enumerated().sorted { ($0.element.date!, $0.offset) < ($1.element.date!, $1.offset) }.map(\.element)
+        }
+        var data = Data()
+        for (_, line) in lines {
+            guard let json = try? JSONSerialization.data(withJSONObject: line) else { continue }
+            data.append(json)
+            data.append(0x0A)
+        }
+        return AgentTranscript.jsonl(data)
+    }
+
+    private static func transcriptLine(_ event: [String: Any]) -> [String: Any]? {
+        var kind = event["type"] as? String ?? ""
+        var body = event
+        if kind != "user" && kind != "assistant" {
+            guard let wrapped = (event["user"] ?? event["assistant"]) as? [String: Any] else { return nil }
+            kind = event["user"] != nil ? "user" : "assistant"
+            body = wrapped
+            if let inner = wrapped["internal_anthropic_catchall"] as? [String: Any] {
+                body = inner.merging(wrapped) { kept, _ in kept }
+            }
+        }
+        guard let message = body["message"] as? [String: Any] else { return nil }
+        var line: [String: Any] = ["type": kind, "message": message]
+        if let uuid = body["uuid"] as? String { line["uuid"] = uuid }
+        if let time = (body["timestamp"] as? String) ?? (event["created_at"] as? String) { line["timestamp"] = time }
+        // A subagent's work (it answers a step of the main conversation) stays out, like sidechains in a transcript.
+        if let parent = body["parent_tool_use_id"] as? String, !parent.isEmpty { line["isSidechain"] = true }
+        return line
+    }
+
     /// The organization the session list belongs to, from Claude Code's own account file.
     static func organizationID(configHome: URL, isDefault: Bool) -> String? {
         var candidates = [configHome.appendingPathComponent(".claude.json"), configHome.appendingPathComponent(".config.json")]
