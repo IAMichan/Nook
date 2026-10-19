@@ -38,13 +38,123 @@ enum CompletionEmojiCatalog {
         return Array((exact + prefix + contains).prefix(limit))
     }
 
-    /// What the picker shows for `query`: right after the colon the ones you used last and then the most used, otherwise the
-    /// matches by name.
-    static func choices(for query: String, recent: [String], limit: Int) -> [CompletionEmoji] {
-        guard query.isEmpty else { return search(query, limit: limit) }
+    /// What the picker shows for `query`: right after the colon the ones that fit what was just written (`context`), then the
+    /// ones you used last and the most used; otherwise the matches by name, those that fit the context first.
+    static func choices(for query: String, recent: [String], limit: Int, context: String = "") -> [CompletionEmoji] {
+        let fitting = contextual(for: context)
+        guard query.isEmpty else {
+            let matches = search(query, limit: limit)
+            return matches.filter { fitting.contains($0) } + matches.filter { !fitting.contains($0) }
+        }
         let used = recent.compactMap { character in all.first { $0.character == character } }
-        return Array((used + all.filter { !recent.contains($0.character) }).prefix(limit))
+        var result: [CompletionEmoji] = []
+        for emoji in fitting + used + all where !result.contains(emoji) {
+            result.append(emoji)
+            if result.count == limit { break }
+        }
+        return result
     }
+
+    /// Emoji that fit the last sentences of `text`, best first: a word that names one, or starts like one of the words in
+    /// `topics` ("verjaardag" for 🎂, "bedankt" for 🙏). Words nearer the end count more.
+    static func contextual(for text: String, limit: Int = 9) -> [CompletionEmoji] {
+        let words = text.suffix(300).lowercased().split { !($0.isLetter || $0.isNumber) }.map(String.init).filter { $0.count >= 2 }
+        guard !words.isEmpty else { return [] }
+        var scores: [String: Double] = [:]
+        for (offset, word) in words.reversed().enumerated() where offset < 40 {
+            let weight = 1 / (1 + Double(offset) / 8)
+            for (character, keys) in topicIndex where keys.contains(where: { matches(word, $0) }) {
+                scores[character, default: 0] += weight
+            }
+        }
+        let ranked = scores.sorted { $0.value != $1.value ? $0.value > $1.value : rank($0.key) < rank($1.key) }
+        return ranked.prefix(limit).compactMap { entry in all.first { $0.character == entry.key } }
+    }
+
+    /// A word fits a topic word when it is that word, or (from four letters) starts with it: "feestje" fits "feest".
+    private static func matches(_ word: String, _ key: String) -> Bool {
+        word == key || (key.count >= 4 && word.hasPrefix(key))
+    }
+
+    private static func rank(_ character: String) -> Int { all.firstIndex { $0.character == character } ?? .max }
+
+    /// Per emoji the words that call for it: its names (whole words, not codes like "+1" or "x") and its `topics`.
+    private static let topicIndex: [(String, [String])] = all.map { emoji in
+        let names = emoji.shortcodes.filter { $0.count >= 3 && $0.allSatisfy(\.isLetter) }
+        return (emoji.character, names + (topics[emoji.character] ?? []))
+    }
+
+    /// Words, or the start of words, in English, Dutch, German, French and Spanish that make an emoji likely.
+    private static let topics: [String: [String]] = [
+        "😂": ["haha", "hihi", "lol", "grappig", "funny", "hilarious", "lustig", "drôle", "gracioso", "jaja", "mdr"],
+        "❤️": ["love", "lieve", "schat", "liebe", "amour", "amor", "miss"],
+        "🥰": ["lief", "schatje", "cute", "sweet", "süß", "mignon"],
+        "👍": ["oké", "goed", "prima", "sure", "deal", "klopt", "akkoord", "gut", "accord", "vale", "bueno"],
+        "😭": ["huil", "verdriet", "cry", "tears", "weinen", "pleur", "llor"],
+        "🙏": ["bedankt", "dank", "thank", "thanks", "thx", "merci", "danke", "gracias", "please", "alsjeblieft", "bitte"],
+        "🎉": ["feest", "gefeliciteerd", "felicit", "congrat", "gratul", "party", "fiesta", "fête", "félicit", "hoera", "geslaagd", "gelukt"],
+        "🥳": ["feest", "party", "jarig", "fiesta"],
+        "🎂": ["verjaardag", "jarig", "birthday", "geburtstag", "anniversaire", "cumpleaños", "taart", "cake"],
+        "🎁": ["cadeau", "gift", "present", "geschenk", "regalo", "kado"],
+        "😅": ["oeps", "oops", "sorry", "pardon", "excuse", "ups", "perdón"],
+        "🤔": ["denk", "think", "vraag", "misschien", "maybe", "vielleicht", "peut", "quizás", "hmm", "twijfel"],
+        "😴": ["slaap", "moe", "sleep", "tired", "müde", "fatigué", "sueño", "cansad", "welterusten", "night", "nacht", "nuit"],
+        "🌙": ["welterusten", "goodnight", "nacht", "night", "nuit", "noche"],
+        "☀️": ["zon", "sun", "zomer", "summer", "sommer", "soleil", "sol", "verano", "warm"],
+        "🌧️": ["regen", "rain", "pluie", "lluvia"],
+        "☔": ["regen", "rain", "pluie", "lluvia", "paraplu"],
+        "❄️": ["sneeuw", "snow", "schnee", "neige", "nieve", "koud", "cold", "kalt", "froid", "frío", "winter"],
+        "☕": ["koffie", "coffee", "kaffee", "café", "ochtend", "morning", "morgen", "matin", "mañana"],
+        "🍺": ["bier", "beer", "biertje", "bière", "cerveza", "borrel", "kroeg", "pub"],
+        "🍻": ["proost", "cheers", "borrel", "prost", "santé", "salud"],
+        "🍷": ["wijn", "wine", "wein", "vin", "vino"],
+        "🍕": ["pizza"],
+        "🍔": ["burger", "eten", "food", "essen", "manger", "comida", "lunch", "dinner", "diner", "honger", "hungry"],
+        "🍽️": ["eten", "dinner", "diner", "lunch", "essen", "manger", "comer", "restaurant"],
+        "💪": ["sterk", "strong", "sport", "gym", "train", "succes", "kracht", "fit", "stark", "fuerte"],
+        "🤞": ["succes", "hopelijk", "hope", "hoop", "luck", "glück", "chance", "suerte", "duim"],
+        "🍀": ["succes", "luck", "glück", "chance", "suerte"],
+        "👋": ["hoi", "hallo", "hello", "hey", "hi", "doei", "bye", "dag", "tschüss", "salut", "bonjour", "hola", "adiós", "groet"],
+        "😘": ["kus", "kiss", "kuss", "bisou", "beso", "xx", "xxx"],
+        "🤗": ["knuffel", "hug", "umarm", "câlin", "abrazo"],
+        "😡": ["boos", "kwaad", "angry", "woedend", "wütend", "fâché", "enfadad", "irritant"],
+        "😢": ["jammer", "sad", "verdrietig", "traurig", "triste", "pity", "dommage", "lástima", "helaas", "unfortunately", "leider"],
+        "😱": ["schrik", "eng", "scary", "omg", "help", "hilfe", "aide", "ayuda"],
+        "😮": ["wow", "really", "serieus", "wirklich", "vraiment", "verdad"],
+        "🔥": ["vet", "lit", "heet", "hot", "geweldig", "awesome", "super", "toll", "génial", "genial", "fire"],
+        "✨": ["mooi", "beautiful", "prachtig", "schön", "beau", "belle", "bonit", "hermos", "magic"],
+        "😍": ["mooi", "prachtig", "beautiful", "gorgeous", "schön", "magnifique", "precios"],
+        "✅": ["klaar", "done", "gedaan", "fertig", "fini", "hecho", "listo", "afgerond", "check", "geregeld", "opgelost", "fixed"],
+        "❌": ["nee", "nein", "cancel", "annul", "fout", "wrong", "falsch", "faux"],
+        "⚠️": ["opgelet", "warning", "achtung", "attention", "cuidado", "risico", "risk"],
+        "🚀": ["launch", "live", "release", "lancering", "deploy", "start", "gestart", "lanc", "snel", "fast"],
+        "💻": ["computer", "laptop", "code"],
+        "📅": ["afspraak", "meeting", "vergadering", "agenda", "morgen", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "monday", "tuesday", "wednesday", "thursday", "friday", "termin", "réunion", "reunión", "datum", "date"],
+        "⏰": ["late", "deadline", "spät", "zeit", "retard", "tarde", "snel", "haast"],
+        "📞": ["bel", "call", "telefoon", "phone", "anruf", "appel", "llam"],
+        "📧": ["mail", "email", "inbox", "correo", "courriel"],
+        "💡": ["idee", "idea", "tip", "slim", "smart", "idée", "einfall"],
+        "💰": ["geld", "money", "betaal", "pay", "prijs", "price", "kosten", "cost", "euro", "dollar", "salaris", "argent", "dinero"],
+        "🏆": ["gewonnen", "won", "winner", "kampioen", "champion", "gewinn", "gagn", "ganad", "prijs"],
+        "🏠": ["thuis", "home", "huis", "house", "zuhause", "maison", "casa"],
+        "✈️": ["vakantie", "holiday", "vacation", "vlucht", "flight", "reis", "travel", "urlaub", "vacances", "vacaciones", "vuelo", "flug"],
+        "🚗": ["auto", "car", "rijden", "drive", "fahr", "voiture", "coche", "traffic"],
+        "🐶": ["hond", "dog", "puppy", "hund", "chien", "perro"],
+        "🐱": ["kat", "cat", "poes", "katze", "gato"],
+        "🎶": ["muziek", "music", "song", "liedje", "concert", "musik", "musique", "música", "festival"],
+        "⚽": ["voetbal", "football", "soccer", "fußball", "foot", "fútbol", "wedstrijd", "match"],
+        "📚": ["studie", "study", "leren", "school", "boek", "book", "tentamen", "exam", "lernen", "étud", "estudi", "libro", "buch", "livre"],
+        "🤒": ["ziek", "sick", "griep", "krank", "malade", "enferm", "koorts", "fever"],
+        "😎": ["cool", "chill", "relax", "nice", "lekker"],
+        "👀": ["kijk", "look", "zien", "check", "schau", "regarde", "mira"],
+        "🙈": ["oeps", "schaam", "embarrass", "gênant", "peinlich"],
+        "💯": ["helemaal", "absoluut", "absolutely", "exactly", "precies", "totally", "genau", "exactement", "exacto"],
+        "👏": ["bravo", "knap", "applaus", "chapeau", "top"],
+        "🌹": ["valentijn", "valentine", "roos", "rose", "rosa"],
+        "🎄": ["kerst", "christmas", "xmas", "weihnacht", "noël", "navidad"],
+        "🎃": ["halloween"],
+        "🥂": ["proost", "cheers", "nieuwjaar", "champagne", "toast", "jubileum"],
+    ]
 
     /// - Parameter tone: 0 for the default, 1…5 light to dark.
     static func render(_ emoji: CompletionEmoji, skinTone tone: Int) -> String {
@@ -339,5 +449,11 @@ enum CompletionEmojiCatalog {
     ✊* fist
     🖐️* raised_hand_with_fingers_splayed hand
     ☝️* point_up
+    🌧️ cloud_with_rain rainy
+    🍽️ plate_with_cutlery
+    ⚽ soccer football voetbal
+    🤒 thermometer_face sick ziek
+    🎄 christmas_tree kerstboom
+    🎃 jack_o_lantern pumpkin pompoen
     """
 }

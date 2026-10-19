@@ -325,6 +325,18 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(CompletionEmojiCatalog.choices(for: "zzzzqq", recent: [], limit: 9).isEmpty)
     }
 
+    func testPickerSuggestsEmojiThatFitTheText() {
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Gefeliciteerd met je verjaardag!").map(\.character), ["🎂", "🎉"])
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Bedankt voor je hulp").first?.character, "🙏")
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Zullen we morgen koffie drinken?").first?.character, "☕")
+        XCTAssertTrue(CompletionEmojiCatalog.contextual(for: "").isEmpty)
+        let opening = CompletionEmojiCatalog.choices(for: "", recent: ["🔥"], limit: 9, context: "Ik ben zo moe, ga slapen")
+        XCTAssertEqual(opening.first?.character, "😴", "what fits the text comes before the recent ones")
+        XCTAssertEqual(opening.dropFirst().first?.character, "🔥")
+        let named = CompletionEmojiCatalog.choices(for: "s", recent: [], limit: 36, context: "welterusten, slaap lekker")
+        XCTAssertEqual(named.first?.character, "😴", "among the matches by name, those that fit the text first")
+    }
+
     func testSkinTone() {
         let thumbs = CompletionEmojiCatalog.search("thumbsup").first!
         XCTAssertEqual(CompletionEmojiCatalog.render(thumbs, skinTone: 0), "👍")
