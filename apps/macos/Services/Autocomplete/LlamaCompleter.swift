@@ -24,6 +24,13 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private let vocabSize: Int
     /// What sequence 0 of the cache holds now.
     private var cached: [llama_token] = []
+    /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
+    /// prompt, to go on from instead of reading the whole prompt again.
+    private var checkpoint: (tokens: [llama_token], data: [UInt8])?
+    private var needsCheckpoints = false
+    /// Checkpoints sit on multiples of this many tokens, at least `checkpointTail` before the end.
+    private static let checkpointStep = 64
+    private static let checkpointTail = 24
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var bias: [llama_token: Float] = [:]
@@ -62,6 +69,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 params.n_ctx = contextLength
                 params.n_batch = contextLength
                 params.no_perf = true
+                // Sliding-window models (Gemma 3 and 4) keep a full cache: otherwise llama.cpp cannot cut it back, and every
+                // key would read the whole prompt again.
+                params.swa_full = true
                 let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
                 params.n_threads = threads
                 params.n_threads_batch = threads
@@ -81,10 +91,12 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private func superseded(_ id: Int) -> Bool { lock.withLock { latest != id } }
 
     /// Continues `prompt`; nil when superseded, not sure enough, or the model failed.
-    func complete(prompt: String, options: CompletionOptions) async -> CompletionResult? {
+    func complete(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
         let id = begin()
         return await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: self.generate(prompt: prompt, options: options) { self.superseded(id) }) }
+            queue.async {
+                continuation.resume(returning: self.generate(prompt: prompt, options: options, partial: partial) { self.superseded(id) })
+            }
         }
     }
 
@@ -128,18 +140,39 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         var shared = min(zip(tokens, cached).prefix { $0 == $1 }.count, tokens.count - 1)
         let memory = llama_get_memory(context)
         if !llama_memory_seq_rm(memory, 0, llama_pos(shared), -1) {
+            // This cache cannot be cut back: go on from the checkpoint when the prompt still starts with it.
             llama_memory_clear(memory, true)
             shared = 0
+            needsCheckpoints = true
+            if let saved = checkpoint, saved.tokens.count < tokens.count, tokens.starts(with: saved.tokens),
+               saved.data.withUnsafeBufferPointer({ llama_state_seq_set_data(context, $0.baseAddress, $0.count, 0) }) > 0 {
+                shared = saved.tokens.count
+            } else {
+                llama_memory_clear(memory, true)
+            }
         }
         cached = Array(tokens[..<shared])
+        // Read up to a new checkpoint first and save it, when this model needs them and the prompt has grown a step.
+        let target = max(0, ((tokens.count - Self.checkpointTail) / Self.checkpointStep) * Self.checkpointStep)
+        if needsCheckpoints, target - shared >= Self.checkpointStep {
+            var head = Array(tokens[shared ..< target])
+            guard decode(&head) else { return nil }
+            let size = llama_state_seq_get_size(context, 0)
+            var data = [UInt8](repeating: 0, count: size)
+            let written = data.withUnsafeMutableBufferPointer { llama_state_seq_get_data(context, $0.baseAddress, size, 0) }
+            checkpoint = written > 0 ? (Array(tokens[..<target]), Array(data.prefix(written))) : nil
+            shared = target
+        }
         var pending = Array(tokens[shared...])
         return decode(&pending) ? tokens.count : nil
     }
 
-    private func generate(prompt: String, options: CompletionOptions, isCancelled: () -> Bool) -> CompletionResult? {
+    private func generate(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
+                          isCancelled: () -> Bool) -> CompletionResult? {
         guard !isCancelled(), prime(prompt, reserve: options.maxTokens) != nil else { return nil }
         var bytes: [UInt8] = []
         var truncated = true
+        var reported = 0
         for step in 0..<options.maxTokens {
             if isCancelled() { return nil }
             guard let logits = llama_get_logits_ith(context, -1) else { return nil }
@@ -156,9 +189,16 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 break
             }
             bytes += piece
-            if String(decoding: bytes, as: UTF8.self).completionWordCount > options.maxWords {
+            let text = String(decoding: bytes, as: UTF8.self)
+            if text.completionWordCount > options.maxWords {
                 truncated = false
                 break
+            }
+            // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
+            let finished = CompletionStreaming.finishedWords(text)
+            if finished > reported, let partial {
+                reported = finished
+                partial(text.replacingOccurrences(of: "\u{FFFD}", with: ""))
             }
             var next = [token]
             guard decode(&next) else { break }

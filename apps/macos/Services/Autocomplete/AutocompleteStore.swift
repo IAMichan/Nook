@@ -38,6 +38,11 @@ final class AutocompleteStore: ObservableObject {
             prefs.modelPath = defaults.string(forKey: "autocompleteModelPath") ?? ""
             if defaults.string(forKey: "autocompleteAcceptKey") == "optionTab" { prefs.acceptWord = .optionTab }
         }
+        // 120 ms was the first default; 70 shows a suggestion sooner, and a stale one is stopped by the next key anyway.
+        if !defaults.bool(forKey: "autocompleteDelayMigrated") {
+            if prefs.delayMilliseconds == 120 { prefs.delayMilliseconds = 70 }
+            defaults.set(true, forKey: "autocompleteDelayMigrated")
+        }
         self.prefs = prefs
         stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()
         samples = Self.load(CompletionSamples.self, "samples.json") ?? CompletionSamples()

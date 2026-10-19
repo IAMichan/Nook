@@ -362,4 +362,23 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionCatalogModel.catalog.first?.url.absoluteString,
                        "https://huggingface.co/mradermacher/Qwen3-0.6B-Base-i1-GGUF/resolve/main/Qwen3-0.6B-Base.i1-Q4_K_M.gguf")
     }
+
+    func testFinishedWordsForStreaming() {
+        XCTAssertEqual(CompletionStreaming.finishedWords(""), 0)
+        XCTAssertEqual(CompletionStreaming.finishedWords(" in"), 0, "the model may still be writing it")
+        XCTAssertEqual(CompletionStreaming.finishedWords(" in de"), 1)
+        XCTAssertEqual(CompletionStreaming.finishedWords(" in de "), 2)
+        XCTAssertEqual(CompletionStreaming.finishedWords(" in de input."), 3)
+        // A part shown while streaming drops the word that is still being written.
+        XCTAssertEqual(CompletionSuggestion.make(raw: " in de inp", before: "eroverheen", maxWords: 8, truncated: true)?.remaining, " in de")
+    }
+
+    func testPromptWindowIsShorterAndSteady() {
+        let builder = PromptBuilder()
+        let text = String(repeating: "woord ", count: 500)
+        let a = builder.window(of: text)
+        let b = builder.window(of: text + "x")
+        XCTAssertLessThanOrEqual(a.count, builder.windowLength + builder.windowStep)
+        XCTAssertTrue(b.hasPrefix(a), "one more letter keeps the same start, so the model's cache still fits")
+    }
 }

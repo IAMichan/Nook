@@ -41,10 +41,21 @@ Velden zonder gewone tekstwaarde, zoals rich-text editors in de browser (Gmail, 
 **Automatisch** kiest in deze volgorde:
 
 1. **Een GGUF-model dat al op je Mac staat.** Andere apps en tools hebben het dan al gedownload. `CompletionModelLocator` zoekt in `~/Library/Application Support`, `~/Library/Caches`, de map van LM Studio en de caches van Hugging Face en llama.cpp. De containers van andere apps slaat het over, want daarvoor vraagt macOS toestemming. Projectoren voor beeld, embedding-modellen en bestanden onder 50 MB tellen niet mee. `GGUFReader` leest van elk bestand alleen de header (naam, architectuur, contextlengte). Nook leest zo'n bestand alleen, op de plek waar het staat: geen kopie, geen wijziging.
-2. **Een GGUF-model dat je in Instellingen downloadde.** Dat doe je bij **Instellingen › Aanvullen › Algemeen › GGUF-modellen downloaden**. Daar staat een lijst basismodellen met hun grootte en het geheugen dat ze vragen. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft. Je kunt ook een eigen link naar een `.gguf`-bestand plakken, zoals een Hugging Face-pagina of een directe link. Je ziet de voortgang in GB en kunt de download annuleren. Is een download klaar, dan controleert Nook of het echt een GGUF-model is en gebruikt het meteen. Gedownloade modellen kun je weer verwijderen. Staat er nog geen enkel model op je Mac, dan zit de knop voor het aanbevolen model direct in de melding "Nog geen model".
-3. **Het model van je brein.** Dat is het MLX-model dat je bij **Instellingen › Brein** installeerde. Je hoeft dan niets te downloaden.
+2. **Een GGUF-model dat je in Instellingen downloadde.** Dat doe je bij **Instellingen › Aanvullen › Algemeen › GGUF-modellen downloaden**. Bovenaan staan de GGUF-modellen die al op je Mac staan, met een vinkje en *In gebruik* of *Gebruik*. Daaronder staat een lijst basismodellen met hun grootte en het geheugen dat ze vragen. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft. Je kunt ook een eigen link naar een `.gguf`-bestand plakken, zoals een Hugging Face-pagina of een directe link. Je ziet de voortgang in GB en kunt de download annuleren. Is een download klaar, dan controleert Nook of het echt een GGUF-model is en gebruikt het meteen. Gedownloade modellen kun je weer verwijderen. Staat er nog geen enkel model op je Mac, dan zit de knop voor het aanbevolen model direct in de melding "Nog geen model".
+3. **Het model van je brein.** Dat is het lokale MLX-model dat het brein gebruikt. Je hoeft dan niets te downloaden. Aanvullen gebruikt alleen dat model en laadt nooit een ander, zodat de chat zijn model in het geheugen houdt.
 
 Je kunt ook zelf een model kiezen, of een `.gguf`-bestand.
+
+### Snelheid
+
+Een voorstel moet er zijn voordat je verder typt. Daarom:
+
+- **Woord voor woord.** Zodra het model één woord af heeft, staat dat woord al in beeld. De rest volgt terwijl het model doorschrijft, en Tab werkt meteen.
+- **Vaste context per veld.** Wat vóór je tekst in de prompt staat (instructies, geheugen, scherm, klembord, waar je schrijft), haalt Nook één keer per veld op, en daarna maximaal elke tien minuten opnieuw. Zo blijft het begin van de prompt gelijk, en een toets kost alleen de laatste paar tokens.
+- **Cache hergebruiken.** llama.cpp zet de cache terug tot het gedeelde begin. Modellen met een rollend venster (Gemma 3 en 4) krijgen daarvoor een volledige cache (`swa_full`). Hybride modellen, waarvan de cache niet terug kan, krijgen checkpoints: elke 64 tokens bewaart Nook een kopie (`llama_state_seq_get_data`), en bij de volgende toets gaat het daar verder. Het model van het brein werkt altijd met zulke checkpoints (`KVCache.copy()`), dus voor elk soort cache.
+- **Kortere prompt:** hoogstens zo'n 2000 tekens tekst, met een begin dat in stappen van 500 opschuift.
+- **Korte wachttijd:** 70 ms na de laatste toets. Een voorstel dat te laat is, stopt bij de volgende toets.
+- **Model blijft geladen.** Gebruikt aanvullen het model van het brein, dan blijft dat tijdens het typen een kwartier in het geheugen in plaats van anderhalve minuut.
 
 ### Het model van je brein
 

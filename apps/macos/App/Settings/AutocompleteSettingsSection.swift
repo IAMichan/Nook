@@ -153,6 +153,10 @@ struct AutocompleteSettingsSection: View {
 
     private var downloadSection: some View {
         Section {
+            // What is already on this Mac comes first: no need to download it again.
+            ForEach(autocomplete.candidates.filter { file in !CompletionCatalogModel.catalog.contains { $0.fileName == file.url.lastPathComponent } }) { file in
+                presentRow(file)
+            }
             ForEach(CompletionCatalogModel.catalog) { model in downloadRow(model) }
             HStack {
                 TextField(tr("autocomplete.download.linkPlaceholder"), text: $customLink)
@@ -170,11 +174,38 @@ struct AutocompleteSettingsSection: View {
         .id(downloads.changes)
     }
 
+    /// A GGUF model that is already here (found on this Mac or in Nook's folder): use it, or see that it is in use.
+    private func presentRow(_ file: CompletionModelFile) -> some View {
+        let inUse = autocomplete.activeModel?.identity == file.url.path
+        return HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green).font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.title)
+                Text("\(file.sizeText) · \(sourceLabel(file.source))").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if inUse {
+                Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
+            }
+        }
+        .help(file.url.path)
+    }
+
+    /// The file of a catalog model when it is here: in Nook's folder, or found elsewhere on this Mac under the same name.
+    private func presentFile(_ model: CompletionCatalogModel) -> URL? {
+        if downloads.isInstalled(model) { return downloads.file(for: model) }
+        return autocomplete.candidates.first { $0.url.lastPathComponent == model.fileName }?.url
+    }
+
     private var recommended: CompletionCatalogModel { CompletionCatalogModel.recommended(memoryGB: EmbeddedModel.memoryGB) }
 
     private func downloadRow(_ model: CompletionCatalogModel) -> some View {
-        let installed = downloads.isInstalled(model)
-        let inUse = installed && autocomplete.activeModel?.identity == downloads.file(for: model).path
+        let here = presentFile(model)
+        let installed = here != nil
+        let ownCopy = downloads.isInstalled(model)
+        let inUse = here.map { autocomplete.activeModel?.identity == $0.path } ?? false
         return HStack(spacing: 10) {
             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
                 .foregroundStyle(installed ? Color.green : Color.secondary)
@@ -203,12 +234,15 @@ struct AutocompleteSettingsSection: View {
             } else if installed {
                 if inUse {
                     Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Button(tr("autocomplete.use")) { store.prefs.modelPath = downloads.file(for: model).path }
+                } else if let here {
+                    Button(tr("autocomplete.use")) { store.prefs.modelPath = here.path }
                 }
-                Button { pendingDelete = model } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
-                    .help(tr("autocomplete.download.delete"))
+                // Only Nook's own copies can be deleted here; a file of another app stays where it is.
+                if ownCopy {
+                    Button { pendingDelete = model } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                        .help(tr("autocomplete.download.delete"))
+                }
             } else {
                 Button(tr("autocomplete.download")) { start(model) }
                     .buttonStyle(.borderedProminent)
