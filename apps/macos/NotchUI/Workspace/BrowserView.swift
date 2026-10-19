@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Security
 
 /// The browser in Nook's window. You browse as usual; Nook can read the open page when you ask (a read tool), and only
 /// navigates on its own after your approval (an action). It keeps no history beyond the session and stores no passwords.
@@ -25,7 +26,43 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var openedBy: String?
     /// Why the last page did not load, if it did not.
     @Published private(set) var lastError: String?
+    /// How many browser pages (notch, workspace window) show the web view now. While one does, a page Nook opens is
+    /// already in sight and needs no popup.
+    var shownInWorkbench = 0
     let webView: WKWebView
+
+    /// Apple's browser entitlement. A build signed with it gets the system's passkeys in this web view: iCloud Keychain,
+    /// a phone nearby (over Bluetooth or a QR code) and security keys, like Safari. Apple grants it on request; see
+    /// docs/BROWSER-PASSKEYS.md.
+    static let passkeyEntitlement = "com.apple.developer.web-browser.public-key-credential"
+
+    /// Whether this build is signed with the browser entitlement, so WebKit can handle passkeys itself.
+    static var hasPasskeyEntitlement: Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, passkeyEntitlement as CFString, nil) else { return false }
+        return (value as? Bool) == true
+    }
+
+    /// Without the entitlement passkeys cannot work here: sites like Google then ask for Bluetooth and a nearby phone
+    /// and stop there. Hiding them makes such sites offer a password, a code or the phone prompt instead. Other
+    /// credential requests pass through.
+    private static let hidePasskeys = """
+    (function () {
+      try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }); } catch (e) {}
+      var credentials = navigator.credentials;
+      if (!credentials) { return; }
+      ['get', 'create'].forEach(function (name) {
+        var original = credentials[name];
+        if (typeof original !== 'function') { return; }
+        credentials[name] = function (options) {
+          if (options && options.publicKey) {
+            return Promise.reject(new DOMException('Passkeys are not available in this browser.', 'NotAllowedError'));
+          }
+          return original.apply(credentials, arguments);
+        };
+      });
+    })();
+    """
 
     /// Collects console errors and warnings (and uncaught errors) of each page, so an agent checking its dev server can
     /// see what went wrong. The list lives in the page itself and starts empty on every load.
@@ -62,6 +99,12 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if !Self.hasPasskeyEntitlement {
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
+        configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
         super.init()
@@ -73,6 +116,13 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     func go(_ input: String) {
         guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
         openedBy = nil
+        webView.load(URLRequest(url: url))
+    }
+
+    /// Opens a page Nook's chat asked for, without waiting for it.
+    func open(_ url: URL) {
+        openedBy = nil
+        lastError = nil
         webView.load(URLRequest(url: url))
     }
 
@@ -160,12 +210,9 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
                     guard let raw = input["url"] as? String, let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
                         throw NookError("Only https addresses can be opened.")
                     }
-                    BrowserStore.shared.webView.load(URLRequest(url: url))
-                    if WorkspaceWindowController.shared.isKey {
-                        AppModel.shared.openMainWindow(.sessions, tool: .browser)
-                    } else {
-                        AppModel.shared.showWorkbench(.browser)
-                    }
+                    BrowserStore.shared.open(url)
+                    // The chat stays where it is; the page shows in a small window to follow along.
+                    BrowserPopup.shared.show()
                     return "Opened \(url.absoluteString) in Nook's browser"
                 }
             )
@@ -191,6 +238,12 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
         if scheme == "mailto", let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
         return .cancel
+    }
+
+    /// The open page in the user's own browser, for what does not work inside an app (passkeys, some sign-ins).
+    func openInDefaultBrowser() {
+        guard let url = webView.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func refresh(loading: Bool) {
@@ -251,6 +304,9 @@ struct BrowserView: View {
                 TextField(tr("workbench.browser.address"), text: $store.address)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { store.go(store.address) }
+                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
+                    .help(tr("browser.openExternal"))
+                    .disabled(store.webView.url == nil)
                 Button {
                     askAboutPage()
                 } label: {
@@ -279,7 +335,13 @@ struct BrowserView: View {
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
         }
         // In view: whatever an agent opens here is seen, also while you watch.
-        .onAppear { bridge.markBrowserSeen() }
+        .onAppear {
+            bridge.markBrowserSeen()
+            store.shownInWorkbench += 1
+            // The web view can only be in one place: here now, so the popup goes.
+            BrowserPopup.shared.close()
+        }
+        .onDisappear { store.shownInWorkbench = max(0, store.shownInWorkbench - 1) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
     }
 
@@ -296,6 +358,105 @@ struct BrowserView: View {
                 app.viewModel.present(app.errorCard(error.localizedDescription))
             }
         }
+    }
+}
+
+/// A small floating window that shows Nook's browser when the chat or an agent opens a page while no browser page is in
+/// view, so you can follow along. It does not take focus from the app you are in.
+@MainActor
+final class BrowserPopup: NSObject, NSWindowDelegate {
+    static let shared = BrowserPopup()
+    private var panel: NSPanel?
+
+    func show() {
+        let store = BrowserStore.shared
+        guard store.shownInWorkbench == 0 else { return }
+        if let panel, panel.isVisible { return }
+        // A fresh window each time: the web view may have moved to a browser page since the last one.
+        let root = BrowserPopupView(store: store, expand: { [weak self] in self?.expand() })
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = []
+        let panel = NSPanel(contentViewController: host)
+        panel.styleMask = [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel, .fullSizeContentView]
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.minSize = NSSize(width: 320, height: 220)
+        panel.setContentSize(NSSize(width: 440, height: 320))
+        panel.delegate = self
+        if !panel.setFrameUsingName("NookBrowserPopup"), let screen = NSScreen.main?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(x: screen.maxX - panel.frame.width - 16, y: screen.maxY - panel.frame.height - 16))
+        }
+        panel.setFrameAutosaveName("NookBrowserPopup")
+        self.panel = panel
+        panel.orderFrontRegardless()
+    }
+
+    func close() {
+        panel?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        panel = nil
+    }
+
+    /// The full browser: in the workspace window when that is in front, otherwise in the notch.
+    private func expand() {
+        close()
+        if WorkspaceWindowController.shared.isKey {
+            AppModel.shared.openMainWindow(.sessions, tool: .browser)
+        } else {
+            AppModel.shared.showWorkbench(.browser)
+        }
+    }
+}
+
+private struct BrowserPopupView: View {
+    @ObservedObject var store: BrowserStore
+    let expand: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                if let agent = store.openedBy {
+                    AgentMark(agent: agent, account: nil, size: 14, ring: .clear)
+                } else {
+                    Image(systemName: "safari")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(store.title.isEmpty ? tr("browser.popup.title") : store.title)
+                        .font(NookTheme.font(12, .semibold))
+                        .lineLimit(1)
+                    Text(store.address)
+                        .font(NookTheme.font(10.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if store.loading { ProgressView().controlSize(.small) }
+                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
+                    .help(tr("browser.openExternal"))
+                    .disabled(store.webView.url == nil)
+                Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                    .help(tr("browser.popup.expand"))
+            }
+            .buttonStyle(.borderless)
+            // Room for the window's own buttons on the left.
+            .padding(.leading, 64)
+            .padding(.trailing, 10)
+            .frame(height: 38)
+            Divider()
+            WebViewHost(webView: store.webView)
+        }
+        .background(NookTheme.field)
+        .ignoresSafeArea()
     }
 }
 

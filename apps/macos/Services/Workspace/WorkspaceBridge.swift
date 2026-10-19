@@ -436,6 +436,8 @@ final class WorkspaceBridge: ObservableObject {
         }
         if case .refuse(let reason) = verdict(.browserOpen, caller) { return .error(Self.refusal(reason)) }
         let browser = BrowserStore.shared
+        // Seen as it opens: a small window to follow along when no browser page is in view.
+        BrowserPopup.shared.show()
         let failure = await browser.load(url, by: caller.agent)
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         audit(.browserOpen, caller, url.absoluteString, failure ?? "geladen")
