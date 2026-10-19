@@ -78,6 +78,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(NookTheme.graphite)
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
         } detail: {
             Form {
@@ -98,9 +100,12 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background(Color(hex: 0x0B0B0E))
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")
         }
         .tint(NookTheme.iris)
+        .preferredColorScheme(.dark)
         .frame(minWidth: 720, minHeight: 480)
         .onAppear {
             refreshTick += 1

@@ -268,6 +268,8 @@ final class BrainService {
                 maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
             )
         }
+        let pictures = ReplyContext.images
+        if !pictures.isEmpty { conversation.attach(pictures.map { PromptImage(mediaType: $0.mediaType, base64: $0.base64) }) }
         return try await runner.run(conversation, onText: onText)
     }
 

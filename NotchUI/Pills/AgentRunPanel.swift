@@ -11,6 +11,7 @@ struct AgentRunPanel: View {
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @State private var images: [ImageAttachment] = []
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
@@ -397,6 +398,7 @@ struct AgentRunPanel: View {
             // While it works, what you type waits in line and goes out when the turn is done.
             .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
                       symbol: steers ? "arrow.turn.down.right" : "text.append")
+            .images($images)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))

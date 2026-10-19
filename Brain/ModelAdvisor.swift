@@ -92,6 +92,11 @@ struct LocalModelOption: Identifiable, Equatable {
     var family: ModelFamily = .other
     /// Can reason before answering (Qwen 3.5 / 3.6): Nook switches that on for hard questions only.
     var canThink = false
+    /// Qwen 3.5 / 3.6 and Gemma 4 are trained on pictures as well as text; the older models are not.
+    var seesImages: Bool {
+        let lower = id.lowercased()
+        return lower.contains("qwen3.5") || lower.contains("qwen3.6") || lower.contains("gemma-4")
+    }
 
     /// The sampling the model makers recommend; far better than one setting for every model (greedy decoding makes
     /// small quantized models repeat themselves, too much randomness makes their tool calls sloppy).

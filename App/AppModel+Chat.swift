@@ -8,13 +8,15 @@ import NaturalLanguage
 extension AppModel {
     // MARK: Asking Nook
 
-    func handleUserText(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+    func handleUserText(_ raw: String, images: [ImageAttachment] = []) {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !images.isEmpty else { return }
+        // A picture without a question: ask what is on it.
+        if text.isEmpty { text = tr("image.defaultQuestion") }
         NookPresence.shared.heard()
 
         // Short deterministic commands handled locally without querying the brain: instant execution.
-        if let intent = LocalIntent.parse(text) {
+        if images.isEmpty, let intent = LocalIntent.parse(text) {
             // In chat mode, keep the flow: music and time queries are replied to inline.
             if (viewModel.state == .panel(.nook) || viewModel.state == .panel(.chat)), let reply = quickReplyInChat(intent) {
                 chat.append(ChatMessage(role: .user, text: text))
@@ -29,7 +31,7 @@ extension AppModel {
             presentSetupCard()
             return
         }
-        ask(text)
+        ask(text, images: images)
     }
 
     // MARK: Chat
@@ -92,13 +94,20 @@ extension AppModel {
     }
 
     /// Submits a query in chat: response streams in real-time.
-    func ask(_ text: String) {
+    func ask(_ text: String, images: [ImageAttachment] = []) {
         let conversation = chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
-        let question = ChatMessage(role: .user, text: text)
+        var question = ChatMessage(role: .user, text: text)
+        question.images = images
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
+        // Only some brains can see pictures; say so instead of answering as if they had.
+        let selection = settings.selection
+        let localModel = ModelAdvisor.catalog.first { $0.id == selection.model }
+        if !images.isEmpty, selection.runtime == .mlx && !(localModel?.seesImages ?? false) {
+            reply.notices.append(tr("image.unsupported"))
+        }
         reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
@@ -111,8 +120,10 @@ extension AppModel {
         let history = chat.history(before: question.id, hiding: settings.privateSources)
         let replyID = reply.id
         chatTasks[conversation] = Task { [weak self] in
-            await ReplyContext.$messageID.withValue(replyID) {
-                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+            await ReplyContext.$images.withValue(images) {
+                await ReplyContext.$messageID.withValue(replyID) {
+                    await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                }
             }
         }
     }

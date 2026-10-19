@@ -14,6 +14,7 @@ struct NewSessionComposer: View {
     let onStarted: (UUID) -> Void
 
     @State private var config = NewRunConfig()
+    @State private var images: [ImageAttachment] = []
     @State private var project: ProjectInfo?
     @State private var inspecting = false
     @State private var starting = false
@@ -114,6 +115,7 @@ struct NewSessionComposer: View {
             ComposerDivider()
             permissionMenu
         }
+        .images($images)
     }
 
     // MARK: Choices in the box

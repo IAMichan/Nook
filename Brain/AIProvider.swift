@@ -145,3 +145,26 @@ enum AIProvider: String, CaseIterable, Identifiable {
             .sorted()
     }
 }
+
+extension AIProvider {
+    /// Whether this model can read a picture, going by its name. Best guess for services that offer text-only models next to
+    /// ones with vision; a model that cannot see ignores the picture or answers with an error.
+    func seesImages(model: String) -> Bool {
+        let name = model.lowercased()
+        func has(_ parts: String...) -> Bool { parts.contains { name.contains($0) } }
+        switch self {
+        case .claude, .claudeCode, .gemini: return true
+        case .openai: return !has("gpt-3", "o1-mini", "o3-mini", "instruct")
+        case .grok: return has("vision", "grok-4", "grok-2-image")
+        case .mistral: return has("pixtral", "small", "medium", "large")
+        case .groq: return has("vision", "scout", "maverick")
+        case .openrouter: return true
+        case .deepseek: return false
+        case .qwen: return has("vl", "omni")
+        case .moonshot: return has("vision", "vl", "k2.5")
+        case .ollama, .lmstudio:
+            return has("vl", "vision", "llava", "gemma3", "gemma-3", "gemma4", "gemma-4", "minicpm-v", "moondream", "pixtral",
+                       "qwen3.5", "qwen3.6", "llama4", "llama-4", "mistral-small3")
+        }
+    }
+}

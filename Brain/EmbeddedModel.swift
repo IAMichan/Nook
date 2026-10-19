@@ -2,6 +2,7 @@ import Foundation
 import MLX
 import MLXLLM
 import MLXLMCommon
+import MLXVLM
 import MLXHuggingFace
 import HuggingFace
 import Tokenizers
@@ -208,7 +209,10 @@ final class EmbeddedModel: ObservableObject {
                 await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
             }
         )
-        var text = ThinkingPolicy.answer(from: try await stream(session, prompt, thinking: thinking, onText: onText), thinking: false)
+        // Pictures go in with the first message only, as files the model's own image reader opens.
+        let pictures: [UserInput.Image] = (option?.seesImages ?? false)
+            ? ReplyContext.images.compactMap { $0.writeToDisk() }.map { UserInput.Image.url($0) } : []
+        var text = ThinkingPolicy.answer(from: try await stream(session, prompt, thinking: thinking, images: pictures, onText: onText), thinking: false)
 
         // Small models sometimes write tool calls as JSON in their answer instead of calling them: run those too, and ask
         // for a natural-language answer.
@@ -233,10 +237,11 @@ final class EmbeddedModel: ObservableObject {
 
     /// Generates one answer and hands the visible part to `onText` while it grows (at most ~20 times a second).
     /// Reasoning in <think> and tool calls written as JSON are never shown.
-    private func stream(_ session: ChatSession, _ prompt: String, thinking: Bool = false, onText: ((String) -> Void)?) async throws -> String {
+    private func stream(_ session: ChatSession, _ prompt: String, thinking: Bool = false, images: [UserInput.Image] = [],
+                        onText: ((String) -> Void)?) async throws -> String {
         var output = ""
         var lastEmit = Date.distantPast
-        for try await chunk in session.streamResponse(to: prompt, role: .user, images: [], videos: [], audios: []) {
+        for try await chunk in session.streamResponse(to: prompt, role: .user, images: images, videos: [], audios: []) {
             try Task.checkCancellation()
             output += chunk
             guard let onText, Date().timeIntervalSince(lastEmit) > 0.05 else { continue }
