@@ -281,6 +281,7 @@ struct NoticeList: View {
                             .font(NookTheme.font(12))
                             .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                         if let needed = buttons[notice] {
                             Button { needed.grant(app: app) } label: {
                                 Label(tr("chat.notice.allow"), systemImage: "lock.open")

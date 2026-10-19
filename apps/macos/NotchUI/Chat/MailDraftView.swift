@@ -87,6 +87,7 @@ struct MailDraftView: View {
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                     .padding(.top, 6)
             }
         }

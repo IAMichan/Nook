@@ -518,6 +518,7 @@ struct AgentRunPanel: View {
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(3)
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 6)
             if let failure = FailureJump.firstFailure(in: events) {

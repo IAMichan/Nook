@@ -49,6 +49,7 @@ struct RunQuestionPanel: View {
                     .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         optionButton(item, option, number: number)
