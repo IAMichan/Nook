@@ -80,7 +80,7 @@ impl ToolSource for Loops {
             "add_open_loop" => {
                 let due = DateTime::parse_from_rfc3339(&text(input, "due")).ok().map(|d| d.with_timezone(&Utc));
                 let lp = ctx.store.add_loop(&text(input, "title"), "chat", due);
-                Some(Ok(format!("Toegevoegd: {}", lp.title)))
+                Some(Ok(format!("Toegevoegd: {} [id {}]", lp.title, &lp.id[..8.min(lp.id.len())])))
             }
             "complete_open_loop" => Some(
                 ctx.store

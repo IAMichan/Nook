@@ -192,7 +192,12 @@ impl AIProvider {
         if self == Self::ClaudeCode {
             return Ok(self.suggested_models().iter().map(|s| s.to_string()).collect());
         }
-        let url = format!("{}/models{}", self.base_url(), if self == Self::Claude { "?limit=100" } else { "" });
+        let base = if self == Self::Ollama {
+            format!("{}/v1", crate::brain::conversations::ollama_base_url())
+        } else {
+            self.base_url().to_string()
+        };
+        let url = format!("{base}/models{}", if self == Self::Claude { "?limit=100" } else { "" });
         let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8)).build()?;
         let mut request = client.get(url);
         if self == Self::Claude {

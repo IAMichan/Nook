@@ -1,6 +1,7 @@
 //! Nook voor Windows, Linux en Android. De kern zit in `nook-core`; hier zitten de vensters, het systeemvak,
 //! de sneltoetsen, de commando's voor de interface en de platformlaag.
 
+mod brain;
 mod commands;
 mod platform;
 mod state;
@@ -29,6 +30,7 @@ pub fn run() {
                 nook_core::paths::set_support_directory(dir);
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
+            brain::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -84,6 +86,30 @@ pub fn run() {
             commands::show_main,
             commands::bar_moved,
             commands::take_route,
+            commands::brain::memory_overview,
+            commands::brain::memory_add,
+            commands::brain::memory_edit,
+            commands::brain::memory_delete,
+            commands::brain::memory_set_pinned,
+            commands::brain::memory_set_local_only,
+            commands::brain::memory_clear,
+            commands::brain::memory_import,
+            commands::brain::brain_advice,
+            commands::brain::pull_model,
+            commands::brain::use_local_model,
+            commands::brain::brain_test,
+            commands::brain::brain_eval,
+            commands::brain::mail_update,
+            commands::brain::mail_send,
+            commands::brain::mail_open,
+            commands::brain::read_attachment,
+            commands::brain::source_choices,
+            commands::brain::set_scope,
+            commands::brain::start_suggestions,
+            commands::brain::retry_last,
+            commands::brain::plan_edit,
+            commands::brain::plan_include,
+            commands::brain::plan_run_again,
         ])
         .run(tauri::generate_context!())
         .expect("Nook kon niet starten");

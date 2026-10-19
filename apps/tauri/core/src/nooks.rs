@@ -121,6 +121,10 @@ pub struct ChatMessage {
     pub action_problems: Vec<Vec<String>>,
     /// Vervolgvoorstellen als knoppen onder het antwoord.
     pub offers: Vec<String>,
+    /// De knop die een fout oplost ("Kies een model", "Hoe start ik Ollama?").
+    pub recovery: Option<serde_json::Value>,
+    /// De bijlage bij een vraag (bestandsnaam).
+    pub attachment: Option<String>,
 }
 
 impl Default for ChatMessage {
@@ -148,6 +152,8 @@ impl Default for ChatMessage {
             action_included: vec![],
             action_problems: vec![],
             offers: vec![],
+            recovery: None,
+            attachment: None,
         }
     }
 }

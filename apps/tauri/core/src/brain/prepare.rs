@@ -64,7 +64,7 @@ pub fn planner_sources(
 }
 
 /// Bronnen die eerder vragen met deze woorden beantwoordden, binnen de toegestane.
-pub type Learned<'a> = &'a dyn Fn(&[String], &HashSet<String>) -> Vec<String>;
+pub type Learned<'a> = &'a (dyn Fn(&[String], &HashSet<String>) -> Vec<String> + Sync);
 
 pub struct ResearchInput<'a> {
     pub text: &'a str,

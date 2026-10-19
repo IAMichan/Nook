@@ -2577,10 +2577,15 @@ name = "nook"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
+ "dirs 6.0.0",
+ "fancy-regex",
+ "iana-time-zone",
  "keyring",
  "log",
  "nook-core",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
@@ -2589,7 +2594,9 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "url",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
