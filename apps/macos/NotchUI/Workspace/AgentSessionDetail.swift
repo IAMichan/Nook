@@ -511,7 +511,8 @@ struct AgentSessionDetail: View {
                 onReply: canContinue ? { answer in
                     perform { try await app.reply(to: session, message: answer) }
                 } : nil,
-                footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts)
+                footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts),
+                directory: session.cwd
             )
             .id("past:" + session.id)
 

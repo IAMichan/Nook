@@ -194,6 +194,8 @@ targets:
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
+      - path: Services/Workspace/AgentProgress.swift
+      - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift

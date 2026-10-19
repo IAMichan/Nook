@@ -16,6 +16,14 @@ struct AgentToolStep: Identifiable, Equatable {
     /// What it was about: the command's description, the file, the pattern.
     var summary: String
     var state: State = .running
+    /// The command line of a shell step, to tell a test run or a build from other commands.
+    var command: String? = nil
+    /// The task list a step set (Claude Code's TodoWrite, Codex's update_plan).
+    var tasks: [RunTaskStep]? = nil
+    /// The file a step wrote or edited, as the agent named it.
+    var path: String? = nil
+    /// The plan a step proposed (Claude Code's ExitPlanMode), in Markdown.
+    var plan: String? = nil
 }
 
 /// A single message from an active session's conversation.
@@ -166,7 +174,11 @@ enum AgentTranscript {
                             let name = (block["name"] as? String) ?? ""
                             let input = (block["input"] as? [String: Any]) ?? [:]
                             append(step: AgentToolStep(id: (block["id"] as? String) ?? blockID, name: toolName(name),
-                                                       summary: toolSummary(name, input)), at: when, to: &messages)
+                                                       summary: toolSummary(name, input), command: ToolSummary.command(input),
+                                                       tasks: SessionOutputs.taskList(tool: name, input: input),
+                                                       path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
+                                                       plan: name == "ExitPlanMode" ? input["plan"] as? String : nil),
+                                   at: when, to: &messages)
                         default:
                             continue
                         }
@@ -210,11 +222,14 @@ enum AgentTranscript {
                     let arguments = (payload["arguments"] as? String).flatMap {
                         (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
                     } ?? [:]
-                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments)), at: when,
-                           to: &messages)
+                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments),
+                                               command: ToolSummary.command(arguments) ?? (arguments["cmd"] as? String),
+                                               tasks: SessionOutputs.taskList(tool: name, input: arguments)),
+                           at: when, to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action)), at: when, to: &messages)
+                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action),
+                                               command: ToolSummary.command(action)), at: when, to: &messages)
                 case "web_search_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
                     append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),

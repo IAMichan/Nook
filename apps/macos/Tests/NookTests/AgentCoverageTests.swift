@@ -59,7 +59,8 @@ final class AgentCoverageTests: XCTestCase {
         ])
         let messages = AgentTranscript.jsonl(data)
         XCTAssertEqual(messages.map(\.kind), [.user, .tools, .assistant])
-        XCTAssertEqual(messages[1].steps, [AgentToolStep(id: "c1", name: "Shell", summary: "swift test", state: .done)])
+        XCTAssertEqual(messages[1].steps, [AgentToolStep(id: "c1", name: "Shell", summary: "swift test", state: .done,
+                                                         command: "swift test\necho klaar")])
     }
 
     func testGeminiChatWithThoughts() {
