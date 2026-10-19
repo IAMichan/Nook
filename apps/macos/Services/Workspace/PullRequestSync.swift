@@ -1,8 +1,9 @@
 import Foundation
 
-/// The pull requests of each session's branch, asked from GitHub at most once a minute per session and kept across
-/// restarts. Feeds the badge on a row and "settle when the pull request is merged". Agents Nook did not start (a
-/// terminal session, an earlier or cloud one) are followed by folder and branch instead.
+/// The pull requests of each session's branch, asked from GitHub on a schedule that follows their state (see
+/// `PullRequestSettlement.syncInterval`) and kept across restarts. Feeds the badge on a row and "settle when the pull
+/// request is merged". Agents Nook did not start (a terminal session, an earlier or cloud one) are followed by folder
+/// and branch instead.
 @MainActor
 final class PullRequestSync: ObservableObject {
     static let shared = PullRequestSync()
@@ -40,36 +41,77 @@ final class PullRequestSync: ObservableObject {
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
-    /// Asks for every session with a feature branch that is due, and for every other agent's folder and branch in
-    /// `folders`. Sequential, so a long list never floods GitHub.
-    func refresh(workspace: WorkspaceManager, folders: [(path: String, branch: String)] = [], now: Date = Date()) {
-        guard !running else { return }
-        let due = workspace.runs.filter { run in
-            guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { return false }
-            return PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now)
+    /// One branch to ask about: a session Nook runs, or another agent's folder.
+    private enum Job {
+        case run(UUID, branch: String)
+        case folder(key: String, path: String, branch: String)
+    }
+
+    /// At most this many branches per round, so one round stays short and never holds up the next.
+    private static let perRound = 8
+    private static let tick: Duration = .seconds(15)
+    private weak var workspace: WorkspaceManager?
+    private var folders: [(path: String, branch: String)] = []
+    private var loop: Task<Void, Never>?
+
+    /// Keeps the badges current from now on, also while the list is off screen: a merged pull request shows as merged
+    /// without opening anything. `folders` are the other agents' folders and branches, replaced on every call.
+    func follow(workspace: WorkspaceManager, folders: [(path: String, branch: String)], now: Date = Date()) {
+        self.workspace = workspace
+        self.folders = folders
+        refresh(now: now)
+        guard loop == nil else { return }
+        loop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.tick)
+                guard let self else { return }
+                self.refresh(now: Date())
+            }
+        }
+    }
+
+    /// Asks for the branches that are due, open requests first and then the longest unasked. Sequential, so a long
+    /// list never floods GitHub.
+    private func refresh(now: Date) {
+        guard !running, let workspace else { return }
+        var due: [(job: Job, open: Bool, last: Date)] = []
+        for run in workspace.runs where !run.archived {
+            guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { continue }
+            let known = links[run.id] ?? []
+            guard PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now,
+                                                  interval: PullRequestSettlement.syncInterval(links: known)) else { continue }
+            due.append((job: .run(run.id, branch: branch), open: PullRequestSettlement.anyOpen(links: known),
+                        last: checked[run.id] ?? .distantPast))
         }
         var seen = Set<String>()
-        let dueFolders = folders.filter { folder in
-            guard !folder.path.isEmpty, !folder.branch.isEmpty, !BranchPolicy.isDefaultBranch(folder.branch) else { return false }
+        for folder in folders {
+            guard !folder.path.isEmpty, !folder.branch.isEmpty, !BranchPolicy.isDefaultBranch(folder.branch) else { continue }
             let key = Self.folderKey(path: folder.path, branch: folder.branch)
-            return seen.insert(key).inserted && PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now)
+            guard seen.insert(key).inserted else { continue }
+            let known = folderLinks[key] ?? []
+            guard PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now,
+                                                  interval: PullRequestSettlement.syncInterval(links: known)) else { continue }
+            due.append((job: .folder(key: key, path: folder.path, branch: folder.branch), open: PullRequestSettlement.anyOpen(links: known),
+                        last: folderChecked[key] ?? .distantPast))
         }
-        guard !due.isEmpty || !dueFolders.isEmpty else { return }
+        guard !due.isEmpty else { return }
+        let round = due.sorted { ($0.open ? 0 : 1, $0.last) < ($1.open ? 0 : 1, $1.last) }.prefix(Self.perRound).map(\.job)
         running = true
         Task {
             defer { running = false }
-            for run in due {
-                checked[run.id] = now
-                guard let branch = run.branch, let repo = await workspace.remoteRepository(run.id),
-                      let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                if found.isEmpty { links[run.id] = nil } else { links[run.id] = found }
-            }
-            for folder in dueFolders {
-                let key = Self.folderKey(path: folder.path, branch: folder.branch)
-                folderChecked[key] = now
-                guard let repo = await Self.repository(path: folder.path),
-                      let found = await SourceForge.requests(repo: repo, branch: folder.branch) else { continue }
-                if found.isEmpty { folderLinks[key] = nil } else { folderLinks[key] = found }
+            for job in round {
+                switch job {
+                case .run(let id, let branch):
+                    checked[id] = now
+                    guard let repo = await workspace.remoteRepository(id),
+                          let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    links[id] = found.isEmpty ? nil : found
+                case .folder(let key, let path, let branch):
+                    folderChecked[key] = now
+                    guard let repo = await Self.repository(path: path),
+                          let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    folderLinks[key] = found.isEmpty ? nil : found
+                }
             }
             save()
         }

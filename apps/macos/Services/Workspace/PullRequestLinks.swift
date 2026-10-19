@@ -245,6 +245,13 @@ enum PullRequestSettlement {
         return latest.state == .closed || (latest.state == .merged && settleOnMerge)
     }
 
+    /// How long a branch's answer stays fresh: an open request can be merged any moment, a branch without one may get
+    /// one soon, and a merged or closed one rarely changes again.
+    static func syncInterval(links: [PullRequestLink]) -> TimeInterval {
+        if anyOpen(links: links) { return 30 }
+        return links.isEmpty ? 60 : 900
+    }
+
     /// Asked at most once a minute; a clock that went backwards counts as due.
     static func needsSync(lastChecked: Date?, now: Date, interval: TimeInterval = 60) -> Bool {
         guard let lastChecked else { return true }
