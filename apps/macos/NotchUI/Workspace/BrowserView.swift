@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Security
 
 /// The browser in Nook's window. You browse as usual; Nook can read the open page when you ask (a read tool), and only
 /// navigates on its own after your approval (an action). It keeps no history beyond the session and stores no passwords.
@@ -30,9 +31,21 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     var shownInWorkbench = 0
     let webView: WKWebView
 
-    /// Passkeys and security keys cannot work in a browser inside an app: macOS only lets real browsers use them.
-    /// Sites like Google then ask for Bluetooth and a nearby phone and stop there. Hiding them makes such sites offer a
-    /// password, a code or the phone prompt instead. Other credential requests pass through.
+    /// Apple's browser entitlement. A build signed with it gets the system's passkeys in this web view: iCloud Keychain,
+    /// a phone nearby (over Bluetooth or a QR code) and security keys, like Safari. Apple grants it on request; see
+    /// docs/BROWSER-PASSKEYS.md.
+    static let passkeyEntitlement = "com.apple.developer.web-browser.public-key-credential"
+
+    /// Whether this build is signed with the browser entitlement, so WebKit can handle passkeys itself.
+    static var hasPasskeyEntitlement: Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, passkeyEntitlement as CFString, nil) else { return false }
+        return (value as? Bool) == true
+    }
+
+    /// Without the entitlement passkeys cannot work here: sites like Google then ask for Bluetooth and a nearby phone
+    /// and stop there. Hiding them makes such sites offer a password, a code or the phone prompt instead. Other
+    /// credential requests pass through.
     private static let hidePasskeys = """
     (function () {
       try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }); } catch (e) {}
@@ -86,8 +99,10 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        if !Self.hasPasskeyEntitlement {
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
