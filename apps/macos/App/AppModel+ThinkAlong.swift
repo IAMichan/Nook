@@ -76,6 +76,8 @@ extension AppModel {
         aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan. Begin je tekst met één korte vraag of tip van hooguit \
         acht woorden, zoals "Zal ik dit in je agenda zetten?" of "Tip: dit kan ook in één keer", daarna hooguit twee zinnen uitleg. \
         Alleen als het hem echt tijd scheelt of voorkomt dat hij iets vergeet; samenvattingen, complimenten of wat hij al doet tellen niet. \
+        Kijk bij datums van herinneringen en afspraken altijd naar het volledige jaartal en vergelijk met de huidige datum ("Nu"): \
+        alleen wat binnen twee dagen valt of al verlopen is, is dichtbij; iets over weken, maanden of een jaar is geen reden om te melden. \
         Twijfel je, antwoord dan alleen NONE.
         """
         let earlier = thinkAlong.recentOffers
