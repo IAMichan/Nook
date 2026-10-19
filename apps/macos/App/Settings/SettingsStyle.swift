@@ -248,16 +248,13 @@ struct GalleryGrid<Content: View>: View {
     }
 }
 
-/// A friendly explanation at the top of a page: one sentence, one symbol.
+/// A friendly explanation at the top of a page, under the header that already shows the section's icon.
 struct IntroCard: View {
-    let symbol: String
-    let colors: (Color, Color)
     let title: String
     let text: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            SettingsTile(symbol: symbol, colors: colors, size: 30)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.callout.weight(.semibold))
                 Text(text)

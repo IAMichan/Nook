@@ -27,8 +27,6 @@ struct MemorySettingsSection: View {
         Group {
             Section {
                 IntroCard(
-                    symbol: "brain.head.profile",
-                    colors: SettingsSection.memory.tileColors,
                     title: tr("memory.hero.title"),
                     text: tr("memory.hero.detail")
                 )
