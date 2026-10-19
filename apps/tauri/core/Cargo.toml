@@ -19,6 +19,11 @@ regex.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
 log.workspace = true
+# Companion: verzegeling zoals CryptoKit op de Mac (HKDF-SHA256 + ChaCha20-Poly1305).
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
