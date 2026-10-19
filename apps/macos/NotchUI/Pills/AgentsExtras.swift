@@ -31,7 +31,7 @@ struct AgentsFooter: View {
             FooterIcon(label: tr("agents.footer.browser"), active: selected == AgentsPage.browser,
                        action: { open(AgentsPage.browser) }) { ToolGlyph(symbol: "safari") }
             FooterIcon(label: tr("agents.footer.worktrees"), active: selected == AgentsPage.worktrees,
-                       action: { open(AgentsPage.worktrees) }) { ToolGlyph(symbol: "arrow.triangle.branch") }
+                       action: { open(AgentsPage.worktrees) }) { WorktreeGlyph() }
             FooterIcon(label: tr("agents.footer.simulator"), active: selected == AgentsPage.simulator,
                        action: { open(AgentsPage.simulator) }) { ToolGlyph(symbol: "iphone") }
             Spacer(minLength: 0)
@@ -142,6 +142,38 @@ struct PullRequestStateGlyph: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+}
+
+/// A branch that leaves the line and ends in a folder: a second checkout of the same repository.
+private struct WorktreeGlyph: View {
+    var body: some View {
+        Canvas { context, size in
+            let unit = min(size.width, size.height) / 16
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }
+            let style = StrokeStyle(lineWidth: 1.3 * unit, lineCap: .round, lineJoin: .round)
+            var lines = Path()
+            lines.move(to: point(4, 5.2)); lines.addLine(to: point(4, 10.8))
+            lines.move(to: point(4, 10.4)); lines.addQuadCurve(to: point(6.6, 7.8), control: point(4, 7.8))
+            lines.addLine(to: point(8, 7.8))
+            var folder = Path()
+            folder.move(to: point(8, 10.4)); folder.addLine(to: point(8, 4.6))
+            folder.addQuadCurve(to: point(9, 3.6), control: point(8, 3.6))
+            folder.addLine(to: point(10.5, 3.6)); folder.addLine(to: point(11.7, 4.9)); folder.addLine(to: point(13.8, 4.9))
+            folder.addQuadCurve(to: point(14.8, 5.9), control: point(14.8, 4.9))
+            folder.addLine(to: point(14.8, 10.4))
+            folder.addQuadCurve(to: point(13.8, 11.4), control: point(14.8, 11.4))
+            folder.addLine(to: point(9, 11.4))
+            folder.addQuadCurve(to: point(8, 10.4), control: point(8, 11.4))
+            folder.closeSubpath()
+            context.stroke(lines, with: .foreground, style: style)
+            context.stroke(folder, with: .foreground, style: style)
+            for center in [point(4, 3.6), point(4, 12.4)] {
+                let node = Path(ellipseIn: CGRect(x: center.x - 1.6 * unit, y: center.y - 1.6 * unit, width: 3.2 * unit, height: 3.2 * unit))
+                context.stroke(node, with: .foreground, style: style)
+            }
+        }
+        .frame(width: 16, height: 16)
     }
 }
 
