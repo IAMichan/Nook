@@ -121,10 +121,13 @@ extension AppModel {
     private var pastNotCovered: [PastSession] {
         let shown = Set(mergedSessions.filter { $0.leading != .transcript }.compactMap(\.conversationKey))
         return history.sessions.filter { past in
-            let key = AgentSessionRecord(id: "", sources: [.transcript], agent: past.agent.name,
-                                         accountHome: accountHome(profileID: past.profileID), conversationID: past.sessionID,
-                                         pid: nil, cwd: "", title: "", phase: .finished, updated: past.ended).conversationKey
-            return key.map { !shown.contains($0) } ?? true
+            // A resumed chat is covered when a running session continues any of its transcripts.
+            ([past.sessionID] + past.earlierIDs).allSatisfy { id in
+                let key = AgentSessionRecord(id: "", sources: [.transcript], agent: past.agent.name,
+                                             accountHome: accountHome(profileID: past.profileID), conversationID: id,
+                                             pid: nil, cwd: "", title: "", phase: .finished, updated: past.ended).conversationKey
+                return key.map { !shown.contains($0) } ?? true
+            }
         }
     }
 

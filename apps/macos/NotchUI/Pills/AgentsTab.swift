@@ -291,7 +291,7 @@ struct AgentsTab: View {
             }
         }
         let conversation = app.conversationID(for: session)
-        let known = transcript ?? conversation.flatMap { id in app.history.sessions.first { $0.sessionID == id } }
+        let known = transcript ?? conversation.flatMap { id in app.history.sessions.first { $0.isConversation(id) } }
         var title = session.project
         if !session.summary.isEmpty { title = AgentFormat.title(session.summary) }
         else if let known, !known.title.isEmpty { title = AgentFormat.title(known.title) }

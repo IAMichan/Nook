@@ -223,6 +223,11 @@ struct PastSession: Identifiable, Equatable {
     var path = ""
     /// A session in Anthropic's cloud (started in the Claude app or on claude.ai): no transcript or folder on this Mac.
     var cloud: CloudSession?
+    /// The ids of earlier transcripts of this same conversation (it was resumed into a new file); `sessionID` is the latest.
+    var earlierIDs: [String] = []
+
+    /// Whether `id` names this conversation: its latest session id or an earlier one.
+    func isConversation(_ id: String) -> Bool { sessionID == id || earlierIDs.contains(id) }
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
@@ -529,6 +534,8 @@ private final class HistoryScanner: @unchecked Sendable {
     struct Parsed {
         var session: PastSession?
         var entries: [UsageEntry]
+        /// What ties this transcript to the other files of the same conversation (`ResumedConversations`).
+        var links: Set<String> = []
     }
 
     private struct CacheKey: Equatable {
@@ -609,9 +616,10 @@ private final class HistoryScanner: @unchecked Sendable {
         codexProgress = codexProgress.filter { fresh[$0.key] != nil }
 
         // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
-        let sessions = parsedAll.compactMap { $0.parsed.session }
-            .filter { $0.prompts > 0 && $0.cwd != ownFolder }
-            .sorted { $0.ended > $1.ended }
+        let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
+            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
+            .sorted { $0.session.ended > $1.session.ended }
+        let sessions = Self.joinResumed(listed)
 
         var usage: [String: AgentUsageSummary] = [:]
         for home in homes where fm.fileExists(atPath: home.url.path) {
@@ -623,6 +631,28 @@ private final class HistoryScanner: @unchecked Sendable {
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
         return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
+    }
+
+    /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
+    /// latest file (newest first in `listed`), with when the chat began and how it was named.
+    private static func joinResumed(_ listed: [(session: PastSession, links: Set<String>)]) -> [PastSession] {
+        let transcripts = listed.map { item in
+            // Only files of the same agent and account can be one conversation.
+            ResumedConversations.Transcript(
+                links: Set(item.links.map { "\(item.session.agent.rawValue)|\(item.session.profileID)|\($0)" })
+            )
+        }
+        return ResumedConversations.groups(transcripts).map { group in
+            var latest = listed[group[0]].session
+            guard group.count > 1 else { return latest }
+            let parts = group.map { listed[$0].session }
+            let first = parts.min { $0.started < $1.started } ?? latest
+            latest.started = first.started
+            if !first.title.isEmpty { latest.title = first.title }
+            latest.prompts = parts.map(\.prompts).max() ?? latest.prompts
+            latest.earlierIDs = parts.dropFirst().map(\.sessionID).filter { $0 != latest.sessionID }
+            return latest
+        }
     }
 
     /// Who is logged in per account. Only reads small config files, so it is fast.
@@ -1080,6 +1110,13 @@ private final class HistoryScanner: @unchecked Sendable {
         var summaryTitle = ""
         var entries: [UsageEntry] = []
         var seenUsage = Set<String>()
+        /// For `ResumedConversations`: the session ids the lines were written under, and the first and last message.
+        var sessionIDs = Set<String>()
+        var firstMessage = ""
+        var firstParent = ""
+        var lastMessage = ""
+        var firstPrompt = ""
+        var firstPromptAt = ""
     }
 
     private struct CodexState {
@@ -1138,7 +1175,11 @@ private final class HistoryScanner: @unchecked Sendable {
         session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
-        return Parsed(session: session, entries: result.entries)
+        let links = ResumedConversations.links(
+            sessionIDs: result.sessionIDs.union([session.sessionID]), firstMessage: result.firstMessage, firstParent: result.firstParent,
+            lastMessage: result.lastMessage, firstPrompt: Self.oneLine(result.firstPrompt, 200), firstPromptAt: result.firstPromptAt
+        )
+        return Parsed(session: session, entries: result.entries, links: links)
     }
 
     private func claudeLine(_ line: Data, into progress: inout ClaudeState) {
@@ -1161,6 +1202,16 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         if let branch = object["gitBranch"] as? String, !branch.isEmpty, branch != "HEAD" { progress.session.branch = branch }
         let message = (object["message"] as? [String: Any]) ?? [:]
+        if (object["isSidechain"] as? Bool) != true {
+            if let id = object["sessionId"] as? String, !id.isEmpty { progress.sessionIDs.insert(id) }
+            if let uuid = object["uuid"] as? String, !uuid.isEmpty {
+                if progress.firstMessage.isEmpty {
+                    progress.firstMessage = uuid
+                    progress.firstParent = (object["parentUuid"] as? String) ?? ""
+                }
+                progress.lastMessage = uuid
+            }
+        }
 
         if isAssistant {
             if let model = message["model"] as? String, !model.hasPrefix("<") { progress.session.model = model }
@@ -1187,6 +1238,10 @@ private final class HistoryScanner: @unchecked Sendable {
             progress.session.prompts += 1
             progress.session.lastPrompt = text
             if progress.session.title.isEmpty { progress.session.title = text }
+            if progress.firstPrompt.isEmpty {
+                progress.firstPrompt = text
+                progress.firstPromptAt = (object["timestamp"] as? String) ?? ""
+            }
         }
     }
 
