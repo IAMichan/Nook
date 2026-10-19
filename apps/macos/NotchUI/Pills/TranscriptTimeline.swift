@@ -182,7 +182,7 @@ struct TranscriptConversation: View {
         let tally = ToolTally(steps: steps)
         return VStack(alignment: .leading, spacing: 2) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
-                               failed: tally.failed, checks: tally.checks, open: open.contains(key)) { toggle(key) }
+                               failed: tally.failed, checks: tally.checks, lines: tally.lines, open: open.contains(key)) { toggle(key) }
             if open.contains(key) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(steps) { step in
@@ -202,6 +202,7 @@ struct TranscriptConversation: View {
         return VStack(alignment: .leading, spacing: 4) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
+                               lines: step.state == .failed ? nil : step.lines,
                                open: tasks == nil ? nil : open.contains(key)) { toggle(key) }
                 .help(step.summary)
             if let tasks, open.contains(key) {
@@ -397,6 +398,8 @@ struct TranscriptWorkLine: View {
     var live = false
     /// The tests, builds and linters it stands for, and how they went.
     var checks: [VerificationCheck] = []
+    /// The lines its edits added and removed.
+    var lines: EditLines? = nil
     /// Nil: the line does not open.
     var open: Bool? = nil
     var action: (() -> Void)? = nil
@@ -423,6 +426,7 @@ struct TranscriptWorkLine: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
+            if let lines { EditLinesLabel(lines: lines, size: 11) }
             if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
         }

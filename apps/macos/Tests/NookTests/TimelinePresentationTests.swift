@@ -138,4 +138,31 @@ final class TimelinePresentationTests: XCTestCase {
                                event(.fileChange, "a.swift", detail: "a.swift")])
         XCTAssertEqual(tally.counts[.edit], 2)
     }
+
+    func testEditLinesCountWhatChanged() {
+        XCTAssertEqual(EditLines.between("a\nb\nc\n", "a\nB\nc\nd\n"), EditLines(added: 2, removed: 1))
+        XCTAssertEqual(EditLines.of(tool: "Write", input: ["content": "one\ntwo\n"]), EditLines(added: 2, removed: 0))
+        XCTAssertEqual(EditLines.of(tool: "MultiEdit", input: ["edits": [["old_string": "x", "new_string": "y"],
+                                                                         ["old_string": "", "new_string": "z"]]]),
+                       EditLines(added: 2, removed: 1))
+        XCTAssertEqual(EditLines.of(patch: "*** Begin Patch\n*** Update File: a.swift\n@@\n-old\n+new\n+more\n keep\n*** End Patch"),
+                       EditLines(added: 2, removed: 1))
+        XCTAssertEqual(EditLines.of(patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b"), EditLines(added: 1, removed: 1),
+                       "file headers are not lines")
+        XCTAssertNil(EditLines.of(tool: "Edit", input: ["old_string": "same", "new_string": "same"]))
+        XCTAssertNil(EditLines.of(tool: "Read", input: ["file_path": "a.swift"]))
+    }
+
+    func testTallySumsTheLinesOfItsEdits() {
+        let tally = ToolTally([
+            event(.tool, "Edit · a.swift", tool: "Edit",
+                  detail: #"{"file_path":"/p/a.swift","old_string":"a\nb","new_string":"a\nc\nd"}"#, state: .done),
+            event(.tool, "Write · b.swift", tool: "Write", detail: #"{"file_path":"/p/b.swift","content":"x\ny\nz"}"#, state: .done),
+            event(.tool, "Edit · c.swift", tool: "Edit",
+                  detail: #"{"file_path":"/p/c.swift","old_string":"q","new_string":"r"}"#, state: .failed),
+            event(.tool, "Bash · ls", tool: "Bash", detail: #"{"command":"ls"}"#, state: .done)
+        ])
+        XCTAssertEqual(tally.lines, EditLines(added: 5, removed: 1), "a failed edit changed nothing")
+        XCTAssertNil(ToolTally([event(.tool, "Bash · ls", tool: "Bash", state: .done)]).lines)
+    }
 }

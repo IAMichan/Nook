@@ -24,6 +24,8 @@ struct AgentToolStep: Identifiable, Equatable {
     var path: String? = nil
     /// The plan a step proposed (Claude Code's ExitPlanMode), in Markdown.
     var plan: String? = nil
+    /// The lines an edit added and removed.
+    var lines: EditLines? = nil
 }
 
 /// A single message from an active session's conversation.
@@ -177,7 +179,8 @@ enum AgentTranscript {
                                                        summary: toolSummary(name, input), command: ToolSummary.command(input),
                                                        tasks: SessionOutputs.taskList(tool: name, input: input),
                                                        path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
-                                                       plan: name == "ExitPlanMode" ? input["plan"] as? String : nil),
+                                                       plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
+                                                       lines: EditLines.of(tool: name, input: input)),
                                    at: when, to: &messages)
                         default:
                             continue
@@ -224,7 +227,12 @@ enum AgentTranscript {
                     } ?? [:]
                     append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments),
                                                command: ToolSummary.command(arguments) ?? (arguments["cmd"] as? String),
-                                               tasks: SessionOutputs.taskList(tool: name, input: arguments)),
+                                               tasks: SessionOutputs.taskList(tool: name, input: arguments),
+                                               // apply_patch arrives as a custom tool call with the patch as its input.
+                                               lines: name == "apply_patch"
+                                                   ? (payload["input"] as? String).flatMap(EditLines.of(patch:))
+                                                       ?? EditLines.of(tool: name, input: arguments)
+                                                   : nil),
                            at: when, to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]

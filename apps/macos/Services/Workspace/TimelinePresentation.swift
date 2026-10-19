@@ -33,12 +33,93 @@ enum ToolCategory: Int, Comparable, Sendable {
     }
 }
 
+/// How many lines an edit added and removed ("+7 −8"), read from the tool's own input.
+struct EditLines: Equatable, Sendable {
+    var added = 0
+    var removed = 0
+
+    static func + (lhs: EditLines, rhs: EditLines) -> EditLines {
+        EditLines(added: lhs.added + rhs.added, removed: lhs.removed + rhs.removed)
+    }
+
+    /// Claude Code's Edit, MultiEdit and Write, Gemini CLI's replace and write_file, and a Codex patch.
+    /// Nil when the input does not say what changed.
+    static func of(tool: String, input: [String: Any]) -> EditLines? {
+        var result = EditLines()
+        switch tool.lowercased() {
+        case "edit", "replace":
+            result = between((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
+        case "multiedit":
+            guard let edits = input["edits"] as? [[String: Any]] else { return nil }
+            for edit in edits {
+                result = result + between((edit["old_string"] as? String) ?? "", (edit["new_string"] as? String) ?? "")
+            }
+        case "write", "write_file":
+            guard let content = input["content"] as? String else { return nil }
+            result.added = lines(content).count
+        case "apply_patch":
+            guard let patch = (input["input"] as? String) ?? (input["patch"] as? String) else { return nil }
+            return of(patch: patch)
+        default:
+            return nil
+        }
+        return result.added + result.removed > 0 ? result : nil
+    }
+
+    /// A tool call in a session's timeline, whose JSON input is in `detail`.
+    static func of(_ event: RunEvent) -> EditLines? {
+        guard event.kind == .tool, let json = event.detail, let data = json.data(using: .utf8),
+              let input = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return of(tool: event.tool ?? "", input: input)
+    }
+
+    /// A unified diff or a Codex patch ("*** Begin Patch"): its "+" and "-" lines, without the file headers.
+    static func of(patch: String) -> EditLines? {
+        var result = EditLines()
+        for line in patch.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("+++") || line.hasPrefix("---") { continue }
+            if line.hasPrefix("+") { result.added += 1 } else if line.hasPrefix("-") { result.removed += 1 }
+        }
+        return result.added + result.removed > 0 ? result : nil
+    }
+
+    /// The lines that differ between two texts: what is not in their longest common run of lines.
+    static func between(_ old: String, _ new: String) -> EditLines {
+        var a = lines(old)[...], b = lines(new)[...]
+        while let x = a.first, let y = b.first, x == y { a.removeFirst(); b.removeFirst() }
+        while let x = a.last, let y = b.last, x == y { a.removeLast(); b.removeLast() }
+        // Very large chunks count as replaced whole, as LineDiff shows them.
+        guard !a.isEmpty, !b.isEmpty, a.count * b.count <= 250_000 else { return EditLines(added: b.count, removed: a.count) }
+        let x = Array(a), y = Array(b)
+        var row = Array(repeating: 0, count: y.count + 1)
+        for i in x.indices {
+            var diagonal = 0
+            for j in y.indices {
+                let above = row[j + 1]
+                row[j + 1] = x[i] == y[j] ? diagonal + 1 : max(row[j + 1], row[j])
+                diagonal = above
+            }
+        }
+        let common = row[y.count]
+        return EditLines(added: y.count - common, removed: x.count - common)
+    }
+
+    private static func lines(_ text: String) -> [String] {
+        guard !text.isEmpty else { return [] }
+        var result = text.components(separatedBy: "\n")
+        if result.last == "" { result.removeLast() }
+        return result
+    }
+}
+
 /// What a group of tool calls did, counted per category. Edits count files, not calls.
 struct ToolTally: Equatable, Sendable {
     var counts: [ToolCategory: Int] = [:]
     var failed = false
     /// The tests, builds and linters among the calls: the latest outcome of each kind.
     var checks: [VerificationCheck] = []
+    /// The lines its edits added and removed; nil when none of them says.
+    var lines: EditLines?
 
     init(_ events: [RunEvent]) {
         var editedFiles: Set<String> = []
@@ -53,6 +134,8 @@ struct ToolTally: Equatable, Sendable {
                 let category = ToolCategory.of(tool: event.tool ?? "")
                 if category == .edit {
                     if let path = Self.path(event.detail) { editedFiles.insert(path) } else { edits += 1 }
+                    // A failed edit changed nothing.
+                    if event.state != .failed, let changed = EditLines.of(event) { lines = (lines ?? EditLines()) + changed }
                 } else {
                     counts[category, default: 0] += 1
                 }

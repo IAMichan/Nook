@@ -47,6 +47,7 @@ extension ToolTally {
             let category = ToolCategory.of(tool: step.name)
             if category == .edit {
                 if step.summary.isEmpty { edits += 1 } else { files.insert(step.summary) }
+                if step.state != .failed, let changed = step.lines { lines = (lines ?? EditLines()) + changed }
             } else {
                 counts[category, default: 0] += 1
             }

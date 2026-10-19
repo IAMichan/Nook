@@ -19,7 +19,8 @@ struct TimelineBlockView: View {
             VStack(alignment: .leading, spacing: 8) {
                 TimelineSummaryRow(symbol: tally.failed ? "exclamationmark.triangle" : Self.symbol(tally),
                                    text: ToolTallyText.sentence(tally), open: expanded.contains(key),
-                                   tint: tally.failed ? NookTheme.coralSoft : nil, checks: tally.checks) { toggle(key) }
+                                   tint: tally.failed ? NookTheme.coralSoft : nil, checks: tally.checks,
+                                   lines: tally.lines) { toggle(key) }
                 if expanded.contains(key) {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(events) { eventRow($0) }
@@ -67,6 +68,8 @@ struct TimelineSummaryRow: View {
     let tint: Color?
     /// The tests, builds and linters among what it summarizes.
     var checks: [VerificationCheck] = []
+    /// The lines its edits added and removed.
+    var lines: EditLines? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -79,6 +82,7 @@ struct TimelineSummaryRow: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .opacity(hovering || open ? 0.9 : 0.5)
+                if let lines { EditLinesLabel(lines: lines) }
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
@@ -90,6 +94,23 @@ struct TimelineSummaryRow: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: open)
         .accessibilityAddTraits(open ? .isSelected : [])
+    }
+}
+
+/// "+7 −8": the lines an edit (or a group of edits) added and removed.
+struct EditLinesLabel: View {
+    let lines: EditLines
+    var size: CGFloat = 10.5
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("+\(lines.added)").foregroundStyle(NookTheme.mint.opacity(0.85))
+            Text("−\(lines.removed)").foregroundStyle(NookTheme.coral.opacity(0.85))
+        }
+        .font(NookTheme.mono(size))
+        .monospacedDigit()
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 }
 

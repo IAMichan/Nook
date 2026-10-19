@@ -108,4 +108,15 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(messages[1].updated?.timeIntervalSince(messages[1].date ?? .distantPast), 55, "a step's result moves its end")
         XCTAssertEqual(TranscriptPresentation.seconds(messages), 63)
     }
+
+    func testTranscriptEditsCarryTheirLines() {
+        let lines = [
+            #"{"type":"assistant","uuid":"a1","timestamp":"2026-10-19T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/p/App.swift","old_string":"a\nb\nc","new_string":"a\nB\nc\nd"}}]}}"#,
+            #"{"type":"user","uuid":"r1","timestamp":"2026-10-19T10:00:06.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        let steps = messages.flatMap(\.steps)
+        XCTAssertEqual(steps.first?.lines, EditLines(added: 2, removed: 1))
+        XCTAssertEqual(ToolTally(steps: steps).lines, EditLines(added: 2, removed: 1))
+    }
 }
