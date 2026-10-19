@@ -49,7 +49,7 @@ enum Undo {
     static func isRequest(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         guard text.split(separator: " ").count <= 8 else { return false }
-        let pattern = #"^((nook|hé nook|hey nook)[ ,]+)?((maak|zet) (dat|dit|het|alles|die|deze)? ?(maar )?(weer )?ongedaan|ongedaan maken|draai (dat|dit|het) (maar )?(weer )?terug|terugdraaien|undo( (that|it|this))?|revert( (that|it))?|cancel (that|it)|mach (das|es) rückgängig|rückgängig( machen)?|doe (dat|het) maar niet|toch niet)( alsjeblieft| please| bitte)?$"#
+        let pattern = #"^((nook|hé nook|hey nook)[ ,]+)?((maak|zet) (dat|dit|het|alles|die|deze)? ?(maar )?(weer )?ongedaan|ongedaan maken|draai (dat|dit|het) (maar )?(weer )?terug|terugdraaien|undo( (that|it|this))?|revert( (that|it))?|cancel (that|it)|mach (das|es) rückgängig|rückgängig( machen)?|doe (dat|het) maar niet|toch niet|annule( (ça|ca|cela))?|annuler( (ça|ca|cela))?|deshaz( eso)?|deshacer( eso)?)( alsjeblieft| please| bitte| stp| por favor)?$"#
         return text.range(of: pattern, options: .regularExpression) != nil
     }
 
