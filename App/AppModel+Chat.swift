@@ -13,6 +13,12 @@ extension AppModel {
         guard !text.isEmpty else { return }
         NookPresence.shared.heard()
 
+        // "Maak ongedaan": the last actions Nook carried out, reversed as a plan to approve.
+        if Undo.isRequest(text) {
+            proposeUndo(asked: text)
+            return
+        }
+
         // Short deterministic commands handled locally without querying the brain: instant execution.
         if let intent = LocalIntent.parse(text) {
             // In chat mode, keep the flow: music and time queries are replied to inline.

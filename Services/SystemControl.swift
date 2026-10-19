@@ -169,7 +169,28 @@ enum SystemControl {
         guard !clean.isEmpty, !clean.hasPrefix("-"), !clean.contains("/") else {
             throw NookError("Invalid app name.")
         }
-        _ = try runProcess("/usr/bin/open", ["-a", clean])
+        if (try? runProcess("/usr/bin/open", ["-a", clean])) != nil { return }
+        // Not by that name: the installed app it is closest to, also by its name in your language ("Rekenmachine").
+        let apps = installedApps()
+        guard let match = Fuzzy.best(clean, in: Array(apps.keys)), let path = apps[match] else {
+            throw NookError("No app named \(clean) found on this Mac.")
+        }
+        _ = try runProcess("/usr/bin/open", [path])
+    }
+
+    /// Installed apps by their shown (localized) name and their file name, to their path.
+    static func installedApps() -> [String: String] {
+        let folders = ["/Applications", "/System/Applications", "/System/Applications/Utilities", "/Applications/Utilities",
+                       FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path]
+        var apps: [String: String] = [:]
+        for folder in folders {
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [] where name.hasSuffix(".app") {
+                let path = folder + "/" + name
+                apps[String(name.dropLast(4))] = path
+                apps[FileManager.default.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")] = path
+            }
+        }
+        return apps
     }
 
     static func openURL(_ string: String) throws {

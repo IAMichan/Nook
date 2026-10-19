@@ -131,9 +131,9 @@ enum SourceCatalog {
 
     /// Tools associated with a source. Tools without a source (charts, open app, music…) are always allowed.
     private static let exactTools: [String: String] = [
-        "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
+        "list_events": "calendar", "create_event": "calendar", "update_event": "calendar", "delete_event": "calendar",
         "check_availability": "calendar",
-        "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
+        "create_reminder": "reminders", "complete_reminder": "reminders", "delete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_messages": "messages", "read_messages": "messages", "messages_open_chats": "messages",
         "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp", "whatsapp_live": "whatsapp", "whatsapp_send": "whatsapp",
@@ -429,8 +429,8 @@ enum SourceRouter {
 enum SourceCapabilities {
     private static let phrases: [String: String] = [
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
-        "create_event": "afspraak maken", "update_event": "afspraak aanpassen",
-        "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
+        "create_event": "afspraak maken", "update_event": "afspraak aanpassen", "delete_event": "afspraak verwijderen",
+        "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken", "delete_reminder": "herinnering verwijderen",
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",

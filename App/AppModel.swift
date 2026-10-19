@@ -194,6 +194,8 @@ final class AppModel: ObservableObject {
         didSet { attachmentIsImage = !attachmentImages.isEmpty }
     }
     @Published private(set) var attachmentIsImage = false
+    /// Actions carried out in the last half hour, for "maak ongedaan".
+    var recentActions: [(item: (tool: String, input: [String: Any], result: String), date: Date)] = []
     /// macOS's selection for "ask about a part of the screen" is open.
     var capturingScreenPart = false
     /// Attachment indicator for the input field: file currently included.

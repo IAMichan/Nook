@@ -216,6 +216,32 @@ final class NookTools {
                 }
             ),
             ToolSpec(
+                name: "delete_event",
+                description: "Removes a calendar event, by the ID from create_event or list_events. Use to undo an event Nook just made or when the user asks to remove one.",
+                schema: object(["id": string("ID of the event."), "title": string("Title of the event, shown in the plan. Optional.")], required: ["id"]),
+                kind: .action,
+                summarize: { input in "Remove from calendar: \((input["title"] as? String) ?? (input["id"] as? String) ?? "event")" },
+                tag: { _ in ("removes", .caution) },
+                run: { [weak self] input in
+                    guard let self, let id = self.text(input, "id") else { throw NookError("Event ID is missing.") }
+                    let title = try await self.calendar.deleteEvent(id: id)
+                    return "Event removed: \(title)"
+                }
+            ),
+            ToolSpec(
+                name: "delete_reminder",
+                description: "Removes a reminder, by the ID from create_reminder. Use to undo a reminder Nook just made.",
+                schema: object(["id": string("ID of the reminder."), "title": string("Title of the reminder, shown in the plan. Optional.")], required: ["id"]),
+                kind: .action,
+                summarize: { input in "Remove reminder: \((input["title"] as? String) ?? (input["id"] as? String) ?? "reminder")" },
+                tag: { _ in ("removes", .caution) },
+                run: { [weak self] input in
+                    guard let self, let id = self.text(input, "id") else { throw NookError("Reminder ID is missing.") }
+                    let title = try await self.calendar.deleteReminder(id: id)
+                    return "Reminder removed: \(title)"
+                }
+            ),
+            ToolSpec(
                 name: "complete_reminder",
                 description: "Marks an active reminder as completed in Reminders. Supply the ID (from create_reminder output) or exact title from context.",
                 schema: object(["reminder": string("ID or exact title of the reminder.")], required: ["reminder"]),

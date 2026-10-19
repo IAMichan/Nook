@@ -737,7 +737,11 @@ enum WhatsAppRecipients {
         let word = chats.filter { fold($0.name).split(separator: " ").contains { String($0) == query } }
         if !word.isEmpty { return unique(word) }
         guard query.count >= 3 else { return nil }
-        return unique(chats.filter { fold($0.name).contains(query) })
+        let partly = chats.filter { fold($0.name).contains(query) }
+        if !partly.isEmpty { return unique(partly) }
+        // A typo ("Lsia"): the one name that is close, never a guess between two.
+        guard let name = Fuzzy.best(wanted, in: chats.map(\.name)) else { return nil }
+        return unique(chats.filter { $0.name == name })
     }
 
     static func label(_ media: WAMedia) -> String? {

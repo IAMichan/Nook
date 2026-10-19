@@ -169,3 +169,33 @@ extension AppModel {
         return displaced
     }
 }
+
+/// "Maak ongedaan": what Nook just did in your calendar, reminders or to-dos, reversed as a plan you approve.
+extension AppModel {
+    func remember(_ step: PlanRunner.Step, result: String) {
+        recentActions.removeAll { Date().timeIntervalSince($0.date) > 1_800 }
+        recentActions.append((item: (tool: step.tool, input: step.input, result: result), date: Date()))
+    }
+
+    func proposeUndo(asked text: String) {
+        let conversation = chat.ensureActive()
+        chat.append(ChatMessage(role: .user, text: text), to: conversation)
+        let batch = Undo.batch(recentActions)
+        let steps = batch.compactMap { Undo.step(tool: $0.tool, input: $0.input, result: $0.result) }
+        var reply = ChatMessage(role: .nook, text: "")
+        if batch.isEmpty {
+            reply.text = tr("undo.nothing")
+        } else if steps.isEmpty {
+            reply.text = tr("undo.cannot")
+        } else {
+            let actions = steps.map { PlannedAction(tool: $0.tool, input: $0.input) }
+            reply.text = steps.count < batch.count ? tr("undo.partly") : tr("undo.ready")
+            reply.actions = actions
+            reply.actionStates = Array(repeating: .pending, count: actions.count)
+            reply.actionIncluded = Array(repeating: true, count: actions.count)
+            reply.actionProblems = actions.map { actionProblems($0, scope: .automatic) }
+        }
+        chat.append(reply, to: conversation)
+        showChat()
+    }
+}

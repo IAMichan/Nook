@@ -63,6 +63,11 @@ extension AppModel {
                 }
             }
             if case .done = outcome, succeeded.count > 1 { NookPresence.shared.celebrate() }
+            // What can be reversed gets a "Maak ongedaan" button under the answer.
+            let undoable = zip(message.actions, states).contains { action, state in
+                state.result.map { Undo.step(tool: action.tool, input: action.input, result: $0) != nil } ?? false
+            }
+            if undoable { chat.update(id) { if !$0.offers.contains(tr("undo.offer")) { $0.offers.append(tr("undo.offer")) } } }
         }
     }
 
@@ -108,7 +113,10 @@ extension AppModel {
                 }
             },
             executedBefore: { [weak self] key in self?.store.executedAction(key, within: ActionGate.duplicateWindow) },
-            recordExecuted: { [weak self] key, step, result in self?.store.recordExecuted(key, tool: step.tool, result: result) },
+            recordExecuted: { [weak self] key, step, result in
+                self?.store.recordExecuted(key, tool: step.tool, result: result)
+                self?.remember(step, result: result)
+            },
             progress: progress,
             verify: { [weak self] step, result in await self?.verify(step, result: result) }
         )

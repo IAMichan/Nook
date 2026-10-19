@@ -148,6 +148,8 @@ targets:
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift
+      - path: Brain/Undo.swift
+      - path: Brain/Fuzzy.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
