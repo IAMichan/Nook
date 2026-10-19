@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "services",
+  "description": "Rechten voor de kleine vensters van de diensten: naast de balk, het opnamebadge en het schermdeel",
+  "windows": ["aside", "recbadge", "screenpart"],
+  "permissions": ["core:default", "core:event:default", "core:window:allow-hide", "core:window:allow-close"]
+}

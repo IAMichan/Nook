@@ -32,6 +32,12 @@ extension SettingsView {
                 promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
                 promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
                 promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
+                Toggle(isOn: $settings.onlineLyrics) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("settings.privacy.onlineLyrics"))
+                        Text(tr("settings.privacy.onlineLyricsDetail")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 LabeledContent(tr("settings.privacy.screenText")) {
                     Button(tr("settings.privacy.forgetScreenText")) {
                         app.screenContext.clear()

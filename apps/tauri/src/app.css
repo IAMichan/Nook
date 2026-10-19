@@ -1,0 +1,103 @@
+/* Nook-ontwerpsysteem, zelfde kleuren als NookTheme op de Mac.
+   iris = Nook zelf, mint = luistert of klaar, amber = wacht op jou, coral = fout. */
+:root {
+  --notch: #000;
+  --graphite: #16161b;
+  --smoke: #22222a;
+  --field: #0f0f13;
+  --line: #1a1a20;
+  --line2: #2c2c36;
+  --paper: #f4f3f7;
+  --ink: #0b0a12;
+  --text2: #9c9aa8;
+  --text3: #6f6d7c;
+  --iris: #f4f3f7;
+  --on-iris: #0b0a12;
+  --mint: #46e0a6;
+  --amber: #ffb84d;
+  --coral: #ff6b6b;
+  --radius: 14px;
+  --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
+  /* Veilige marges op de telefoon (notch, gebarenbalk) en de hoogte van het toetsenbord; Android zet ze precies. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --keyboard: 0px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--paper);
+  background: var(--graphite);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+body.bar { background: transparent; overflow: hidden; }
+
+#app { height: 100%; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--smoke);
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button:hover { background: #2a2a33; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--iris); color: var(--on-iris); border-color: transparent; font-weight: 600; }
+button.ghost { background: transparent; border-color: transparent; color: var(--text2); }
+button.ghost:hover { color: var(--paper); background: var(--smoke); }
+button.danger { color: var(--coral); }
+
+input, textarea, select {
+  font: inherit;
+  color: var(--paper);
+  background: var(--field);
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  padding: 7px 10px;
+  outline: none;
+  user-select: text;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--text3); }
+
+a { color: var(--iris); }
+
+.muted { color: var(--text2); }
+.faint { color: var(--text3); }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.working { background: var(--paper); animation: pulse 1.2s ease-in-out infinite; }
+.dot.waiting { background: var(--amber); }
+.dot.unread { background: var(--mint); }
+.dot.error { background: var(--coral); }
+
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+.markdown { user-select: text; line-height: 1.5; }
+.markdown p { margin: 0 0 8px; }
+.markdown p:last-child { margin-bottom: 0; }
+.markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: 12px 0 6px; font-size: 13px; }
+.markdown ul, .markdown ol { margin: 4px 0 8px; padding-left: 20px; }
+.markdown code { font-family: var(--mono); font-size: 12px; background: var(--field); padding: 1px 5px; border-radius: 5px; }
+.markdown pre { background: var(--field); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; overflow-x: auto; }
+.markdown pre code { background: none; padding: 0; }
+.markdown table { border-collapse: collapse; margin: 6px 0; }
+.markdown th, .markdown td { border: 1px solid var(--line2); padding: 4px 8px; text-align: left; }
+.markdown blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line2); color: var(--text2); }
+.markdown sup.cite { font-size: 10px; background: var(--smoke); border-radius: 4px; padding: 0 4px; margin-left: 2px; color: var(--text2); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }

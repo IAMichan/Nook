@@ -19,7 +19,7 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 >
 > **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (`Settings › General › App language`).
 >
-> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Shared protocol and core packages live in [`packages/`](packages), with scaffolds ready for Android, Windows, and Linux (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
+> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Nook for **Windows, Linux, and Android** is a single Tauri app in [`apps/tauri`](apps/tauri) (Rust core, Svelte UI); see [`docs/TAURI.md`](docs/TAURI.md) for what has been ported so far (its interface is Dutch-only for now). Shared protocol and core packages live in [`packages/`](packages) (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
 
 ---
 
@@ -92,7 +92,7 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 | **Autocomplete Anywhere** | As you type in any macOS app, a local model suggests inline ghost-text completions at your cursor (`Tab` accepts a word, `⇧Tab` accepts all). Powered by your active brain or any local GGUF model via `llama.cpp` (`LlamaSwift`), aware of your screen and memory, with `:emoji` lookup, typo fixes, per-app/per-website instructions, style learning, and strict password-field exclusion (**Settings › Autocomplete**, [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md)). |
 | **Flow Dictation** | Hold a hotkey anywhere on your Mac, speak, and release to paste cleaned text right where you type (double-tap for hands-free, `Esc` to cancel, `⌃⌘V` to paste last dictation). Listens across your languages simultaneously on-device (`MultiDictation`) or offline via **Parakeet** on the Neural Engine (`FluidAudio`), applying your custom dictionary, replacements, and snippets. |
 | **Call Notetaker** | Records microphone and system audio locally during calls (Zoom, Meet, Teams, browser), separates speakers with on-device diarization, and generates a timestamped transcript, summary, key points, and action items. |
-| **Music & Instant Control** | Live Spotify and Apple Music artwork, audio-reactive equalizer, scrubbing, shuffle/repeat, and volume in the notch. Fast local intent recognition handles *"next track"*, *"volume 30"*, *"open Safari"*, Apple Shortcuts, and system toggles immediately without waiting for an LLM. |
+| **Music & Instant Control** | Live Spotify and Apple Music artwork, audio-reactive equalizer, scrubbing, shuffle/repeat, and volume in the notch, plus synced lyrics (from Music or the open [LRCLIB](https://lrclib.net) database, can be turned off in Settings › Privacy), Up Next and playlists for Apple Music, and a Recent list for both players. Fast local intent recognition handles *"next track"*, *"volume 30"*, *"open Safari"*, Apple Shortcuts, and system toggles immediately without waiting for an LLM. |
 | **The Nook Character** | An interactive 3D-shaded orb that follows your cursor, bounces when you send a message, nods when tasks complete, blushes on hover, and wears a live **task ring** showing everything Nook and your coding agents are doing (white = working, amber = waiting for you, coral = error, mint = done). |
 
 ---
@@ -198,9 +198,10 @@ nook/
 │   │   ├── Demo/            # Sample data for previews and Demo Mode
 │   │   └── Tests/           # Unit test suite (NookTests)
 │   ├── ios/                 # Nook Companion for iPhone (SwiftUI, XcodeGen)
-│   ├── android/             # Planned Android companion/app scaffold
-│   ├── windows/             # Planned Windows app scaffold
-│   └── linux/               # Planned Linux app scaffold
+│   ├── tauri/               # Nook for Windows, Linux & Android (Tauri 2: Rust core, Svelte UI)
+│   ├── android/             # Points to tauri/
+│   ├── windows/             # Points to tauri/
+│   └── linux/               # Points to tauri/
 ├── packages/
 │   ├── protocol/            # Shared Companion protocol, ChaCha20-Poly1305 sealing & webhook security
 │   └── core/                # Cross-platform Foundation-only Swift core package

@@ -5,6 +5,9 @@ struct NowPlayingInfo: Equatable {
     var title: String
     var artist: String
     var app: String
+    var album: String = ""
+    /// What the player plays this track by: a Music persistent ID or a Spotify URI. Empty if the player does not say.
+    var trackID: String = ""
     var position: Int
     var duration: Int
     var isPlaying: Bool
@@ -15,6 +18,9 @@ struct NowPlayingInfo: Equatable {
     var repeating: Bool = false
     /// Player volume, 0–100. `nil` if player does not report it.
     var volume: Int? = nil
+    /// Identifies the track (not its playback state): changes when the next track starts.
+    var trackKey: String { trackID.isEmpty ? "\(app)|\(artist)|\(title)" : "\(app)|\(trackID)" }
+
     /// Timestamp when `position` was sampled, allowing smooth interpolation between polls.
     var capturedAt = Date()
 
@@ -28,6 +34,7 @@ struct NowPlayingInfo: Equatable {
     /// `capturedAt` excluded from equality to avoid publishing spurious changes when paused.
     static func == (lhs: NowPlayingInfo, rhs: NowPlayingInfo) -> Bool {
         lhs.title == rhs.title && lhs.artist == rhs.artist && lhs.app == rhs.app
+            && lhs.album == rhs.album && lhs.trackID == rhs.trackID
             && lhs.position == rhs.position && lhs.duration == rhs.duration
             && lhs.isPlaying == rhs.isPlaying && lhs.artworkURL == rhs.artworkURL
             && lhs.shuffle == rhs.shuffle && lhs.repeating == rhs.repeating && lhs.volume == rhs.volume
@@ -43,14 +50,31 @@ final class NowPlayingService: ObservableObject {
         case previous = "previous track"
     }
 
-    @Published private(set) var current: NowPlayingInfo?
+    @Published private(set) var current: NowPlayingInfo? {
+        didSet {
+            // Remember the track that just ended for Recent.
+            guard let old = oldValue, old.trackKey != current?.trackKey else { return }
+            recent.add(MusicTrack(id: old.trackID, title: old.title, artist: old.artist, duration: old.duration, artworkURL: old.artworkURL))
+        }
+    }
+    /// Tracks played before the current one, this session.
+    @Published private(set) var recent = RecentTracks()
+    /// Music: what comes next in the playlist it plays from. `nil` until loaded, or for Spotify.
+    @Published var upNext: MusicQueue?
+    /// Music: the user's playlists.
+    @Published var playlists: [MusicPlaylist] = []
+    /// A library request (queue, playlists, lyrics) is running.
+    @Published var libraryLoading = false
     /// macOS has not granted Nook permission to control Spotify or Music.
     @Published private(set) var permissionDenied = false
 
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var lastPoll = Date.distantPast
-    private let queue = DispatchQueue(label: "nl.imdigital.nook.nowplaying")
+    /// The one queue every Apple Event to the players runs on (also used by `LyricsService`), so the compiled script
+    /// cache is never touched from two threads.
+    nonisolated static let libraryQueue = DispatchQueue(label: "nl.imdigital.nook.nowplaying")
+    var queue: DispatchQueue { Self.libraryQueue }
     /// Increments on local changes (seek, shuffle, volume) so stale inflight polls don't overwrite them.
     private var localGeneration = 0
     /// Pending volume update. Keeps scrubbing to at most one Apple Event in flight.
@@ -176,7 +200,7 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
-    private func poll() {
+    func poll() {
         // Several notifications can arrive together; one Apple Event round trip is enough.
         guard Date().timeIntervalSince(lastPoll) > 0.1 else { return }
         lastPoll = Date()
@@ -202,7 +226,7 @@ final class NowPlayingService: ObservableObject {
             return current != newInfo
         }
         guard old.isPlaying, new.isPlaying,
-              old.title == new.title, old.artist == new.artist, old.app == new.app,
+              old.title == new.title, old.artist == new.artist, old.app == new.app, old.trackID == new.trackID, old.album == new.album,
               old.duration == new.duration, old.artworkURL == new.artworkURL,
               old.shuffle == new.shuffle, old.repeating == new.repeating, old.volume == new.volume else {
             return old != new
@@ -215,9 +239,9 @@ final class NowPlayingService: ObservableObject {
 
     /// Compiled NSAppleScript cache accessed exclusively on `NowPlayingService.queue` so polling never
     /// contends with `SystemControl.scriptQueue` or recompiles AppleScript source every poll.
-    private nonisolated(unsafe) static var compiledPlayerScripts: [String: NSAppleScript] = [:]
+    nonisolated(unsafe) static var compiledPlayerScripts: [String: NSAppleScript] = [:]
 
-    private nonisolated static func runPlayerScript(_ source: String, cacheKey: String? = nil) -> (text: String?, errorNumber: Int?) {
+    nonisolated static func runPlayerScript(_ source: String, cacheKey: String? = nil) -> (text: String?, errorNumber: Int?) {
         let script: NSAppleScript?
         if let cacheKey {
             if let existing = compiledPlayerScripts[cacheKey] {
@@ -240,7 +264,7 @@ final class NowPlayingService: ObservableObject {
         return (output.stringValue, nil)
     }
 
-    private nonisolated static func runningPlayerName() -> String? {
+    nonisolated static func runningPlayerName() -> String? {
         if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty { return "Spotify" }
         if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty { return "Music" }
         return nil
@@ -270,7 +294,7 @@ final class NowPlayingService: ObservableObject {
         let script: String
     }
 
-    /// Both scripts yield: title|||artist|||position|||duration|||artwork|||playing|||shuffle|||repeat|||volume.
+    /// Both scripts yield: title|||artist|||position|||duration|||artwork|||playing|||shuffle|||repeat|||volume|||album|||id.
     /// Volume is -1 if player does not report it.
     /// Optional fields (radio streams, local files, ads) are wrapped in `try` so missing values don't fail parsing.
     private nonisolated static let players: [Player] = [
@@ -309,7 +333,15 @@ final class NowPlayingService: ObservableObject {
             try
                 set v to (sound volume) as integer
             end try
-            return t & "|||" & a & "|||" & ((p div 1) as text) & "|||" & ((d div 1) as text) & "|||" & art & "|||" & ((player state is playing) as text) & "|||" & (sh as text) & "|||" & (rp as text) & "|||" & (v as text)
+            set al to ""
+            set tid to ""
+            try
+                set al to (album of current track) as text
+            end try
+            try
+                set tid to (id of current track) as text
+            end try
+            return t & "|||" & a & "|||" & ((p div 1) as text) & "|||" & ((d div 1) as text) & "|||" & art & "|||" & ((player state is playing) as text) & "|||" & (sh as text) & "|||" & (rp as text) & "|||" & (v as text) & "|||" & al & "|||" & tid
         end tell
         """),
         Player(name: "Music", bundleID: "com.apple.Music", durationInMilliseconds: false, script: """
@@ -348,15 +380,23 @@ final class NowPlayingService: ObservableObject {
             try
                 set v to (sound volume) as integer
             end try
-            return t & "|||" & a & "|||" & ((p div 1) as text) & "|||" & ((d div 1) as text) & "|||" & "" & "|||" & ((player state is playing) as text) & "|||" & (sh as text) & "|||" & (rp as text) & "|||" & (v as text)
+            set al to ""
+            set tid to ""
+            try
+                set al to (album of current track) as text
+            end try
+            try
+                set tid to (persistent ID of current track) as text
+            end try
+            return t & "|||" & a & "|||" & ((p div 1) as text) & "|||" & ((d div 1) as text) & "|||" & "" & "|||" & ((player state is playing) as text) & "|||" & (sh as text) & "|||" & (rp as text) & "|||" & (v as text) & "|||" & al & "|||" & tid
         end tell
         """),
     ]
 
     private nonisolated static func parse(_ raw: String, app: String, durationInMilliseconds: Bool) -> NowPlayingInfo? {
         let parts = raw.components(separatedBy: "|||")
-        // Title itself could contain "|||"; the trailing eight fields have fixed positions.
-        let fixed = 8
+        // Title itself could contain "|||"; the trailing ten fields have fixed positions.
+        let fixed = 10
         guard parts.count >= fixed + 1 else { return nil }
         let tail = Array(parts.suffix(fixed))
         let title = parts.dropLast(fixed).joined(separator: "|||")
@@ -365,10 +405,13 @@ final class NowPlayingService: ObservableObject {
         let duration = durationInMilliseconds ? rawDuration / 1000 : rawDuration
         let position = max(0, Int(tail[1]) ?? 0)
         let rawVolume = Int(tail[7].trimmingCharacters(in: .whitespaces)) ?? -1
+        func clean(_ text: String) -> String { text == "missing value" ? "" : text.trimmingCharacters(in: .whitespacesAndNewlines) }
         return NowPlayingInfo(
             title: title,
-            artist: tail[0] == "missing value" ? "" : tail[0],
+            artist: clean(tail[0]),
             app: app,
+            album: clean(tail[8]),
+            trackID: clean(tail[9]),
             position: duration > 0 ? min(position, duration) : position,
             duration: duration,
             isPlaying: tail[4] == "true",

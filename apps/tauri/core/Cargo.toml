@@ -1,0 +1,53 @@
+[package]
+name = "nook-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platformonafhankelijke kern van Nook: brein, opslag, geheugen, agents en koppelingen."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+# HTTP/2 voor pushmeldingen via APNs (Apple accepteert alleen HTTP/2).
+reqwest = { workspace = true, features = ["http2"] }
+futures-util.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+dirs.workspace = true
+log.workspace = true
+# Companion: verzegeling zoals CryptoKit op de Mac (HKDF-SHA256 + ChaCha20-Poly1305).
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+# Ondertekening (ES256) van het APNs-token met je eigen .p8-sleutel.
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+chrono-tz = "0.10"
+hmac = "0.12"
+rand = "0.8"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+percent-encoding = "2"
+fancy-regex = "0.14"
+unicode-normalization = "0.1"
+quick-xml = "0.37"
+pdf-extract = "0.9"
+iana-time-zone = "0.1"
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

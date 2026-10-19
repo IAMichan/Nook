@@ -402,7 +402,7 @@ final class NotchViewModel: ObservableObject {
             case .agents where workbenchOpen:
                 return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
             case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
-            case .music: return CGSize(width: 640, height: chrome + 196)
+            case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
             case .shelf: return CGSize(width: 640, height: chrome + 180)
             case .connect: return CGSize(width: 820, height: chrome + 330)
             }
