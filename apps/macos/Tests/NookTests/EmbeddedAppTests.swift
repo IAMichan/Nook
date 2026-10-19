@@ -4,7 +4,7 @@ import XCTest
 final class EmbeddedAppTests: XCTestCase {
     /// Without Mac apps, so the web catalog is what is tested whatever is installed on the Mac running the tests.
     private func opened(_ text: String, installed: [EmbeddedApp] = []) -> String? {
-        if case .open(let app) = EmbeddedAppCatalog.command(in: text, installed: installed) { return app.id }
+        if case .open(let app, _) = EmbeddedAppCatalog.command(in: text, installed: installed) { return app.id }
         return nil
     }
 
@@ -25,7 +25,7 @@ final class EmbeddedAppTests: XCTestCase {
     }
 
     func testWebAddressesOpenAsTheirOwnApp() {
-        guard case .open(let app) = EmbeddedAppCatalog.command(in: "@open notion.so/my-page", installed: []) else { return XCTFail("not opened") }
+        guard case .open(let app, _) = EmbeddedAppCatalog.command(in: "@open notion.so/my-page", installed: []) else { return XCTFail("not opened") }
         XCTAssertEqual(app.url.absoluteString, "https://notion.so/my-page")
         XCTAssertEqual(app.title, "notion.so")
         XCTAssertNil(EmbeddedAppCatalog.webApp("http://example.com"), "only https")
@@ -109,6 +109,37 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(opened("@open whatsapp web", installed: macApps), "whatsapp")
         XCTAssertEqual(opened("@open slack web", installed: macApps), "slack")
         XCTAssertEqual(opened("@open word web", installed: macApps), "word")
+    }
+
+    func testOtherWaysToOpen() {
+        let mac = macApps[0], word = macApps[2]
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp web", installed: macApps),
+                       .open(EmbeddedAppCatalog.find("whatsapp", installed: [])!, .web))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp venster", installed: macApps), .open(mac, .window))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open WhatsApp window", installed: macApps), .open(mac, .window))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp mac", installed: macApps), .open(mac, .mirror))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp", installed: macApps), .open(mac, nil), "no way asked for")
+        XCTAssertEqual(opened("@open microsoft word venster", installed: macApps), word.id)
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open gmail venster", installed: macApps),
+                       .open(EmbeddedAppCatalog.find("gmail", installed: [])!, .web), "no Mac app: the web version after all")
+
+        XCTAssertEqual(EmbeddedAppCatalog.modes(for: mac, installed: macApps), [.mirror, .web, .window])
+        XCTAssertEqual(EmbeddedAppCatalog.modes(for: EmbeddedAppCatalog.webVersion(of: mac)!, installed: macApps), [.mirror, .web, .window],
+                       "the web version can switch back to the Mac app")
+        XCTAssertEqual(EmbeddedAppCatalog.modes(for: macApps[1], installed: macApps), [.mirror, .window], "Apple's Calendar has no web version")
+        XCTAssertEqual(EmbeddedAppCatalog.modes(for: EmbeddedAppCatalog.find("gmail", installed: [])!, installed: macApps), [.web])
+        XCTAssertEqual(EmbeddedAppCatalog.family(of: mac), "whatsapp")
+        XCTAssertEqual(EmbeddedAppCatalog.resolve(mac, mode: .web, installed: macApps).app.id, "whatsapp")
+        XCTAssertEqual(EmbeddedAppCatalog.resolve(mac, mode: nil, installed: macApps).mode, .mirror)
+    }
+
+    func testChosenWayIsRemembered() {
+        let defaults = UserDefaults(suiteName: "nook.tests.embedded")!
+        defer { defaults.removePersistentDomain(forName: "nook.tests.embedded") }
+        let mac = macApps[0]
+        XCTAssertNil(EmbeddedAppPreference.mode(for: mac, defaults: defaults))
+        EmbeddedAppPreference.remember(.web, for: EmbeddedAppCatalog.webVersion(of: mac)!, defaults: defaults)
+        XCTAssertEqual(EmbeddedAppPreference.mode(for: mac, defaults: defaults), .web, "one choice for the Mac and web versions")
     }
 
     func testMentionListHasMacAppsWithoutDoubles() {
