@@ -25,9 +25,9 @@ Een kleine iPhone-app die laat zien welke Agents-sessies jou nodig hebben, en wa
 
 ## Waar zit het
 
-- Gedeeld: `Companion/Shared/CompanionModels.swift` (protocol, framing, regels; getest in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit).
-- Mac: `Services/Companion/CompanionServer.swift` (NWListener + Bonjour `_nookcompanion._tcp`), `CompanionStore.swift` (toestellen, koppelvenster), `App/Settings/CompanionSettings.swift`.
-- iPhone: `Companion/iOS/` (target `NookCompanion` in `project.yml`).
+- Gedeeld: `packages/protocol/Sources/CompanionModels.swift` (protocol, framing, regels; getest in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit), `WebhookSecurity.swift` (hashing).
+- Mac: `apps/macos/Services/Companion/CompanionServer.swift` (NWListener + Bonjour `_nookcompanion._tcp`), `CompanionStore.swift` (toestellen, koppelvenster), `apps/macos/App/Settings/CompanionSettings.swift`.
+- iPhone: `apps/ios/NookCompanion/` (eigen project: `apps/ios/project.yml`, zie [apps/ios](../apps/ios)).
 
 ## Pushmeldingen
 

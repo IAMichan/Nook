@@ -1,7 +1,26 @@
 # Nook voor iOS
 
-Nog niet geschreven. Deze map is gereserveerd voor de iOS-app.
+Hier staat **Nook Companion**, de iPhone-app die laat zien welke Agents-sessies jou nodig hebben, met goedkeuren, antwoorden, een bericht sturen en stoppen. Hij praat via je eigen wifi met Nook op je Mac; zie [docs/COMPANION.md](../../docs/COMPANION.md).
 
-- De bestaande iPhone-companion (sessies goedkeuren, antwoorden, stoppen) staat nog in `../macos/Companion/iOS`; zie [docs/COMPANION.md](../../docs/COMPANION.md).
-- Voorstel: SwiftUI, deployment target iOS 17+, de kern uit `packages/core` en het protocol uit `packages/protocol`.
-- Plaats hier straks een eigen `project.yml` (XcodeGen), net als bij macOS, en voeg een CI-job toe (zie [docs/MONOREPO.md](../../docs/MONOREPO.md)).
+## Bouwen
+
+```sh
+brew install xcodegen
+cd apps/ios
+xcodegen
+open NookCompanion.xcodeproj
+```
+
+Kies een iPhone (of simulator) en druk op ⌘R. `NookCompanion.xcodeproj`, `Info.plist` en de entitlements worden gemaakt vanuit [`project.yml`](project.yml) en staan niet in git.
+
+## Opbouw
+
+```
+NookCompanion/   de app (SwiftUI): koppelen, sessielijst, acties, pushmeldingen
+```
+
+Het protocol, de verzegeling en de hashing deelt hij met de Mac via [`packages/protocol`](../../packages/protocol). Code uit `apps/macos` gebruikt hij niet.
+
+## Volgende stap
+
+De companion groeit hier uit tot een volwaardige iOS-versie van Nook. Wat iOS en de Mac allebei nodig hebben, hoort in `packages/`, niet gekopieerd in deze map.

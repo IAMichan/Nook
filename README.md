@@ -10,7 +10,7 @@ Je persoonlijke agent in de notch van je Mac.
 
 > **Status:** vroege versie (0.1). De app compileert, maar is nog weinig in de praktijk getest. Verwacht ruwe randjes.
 
-> **Monorepo:** de macOS-app staat in [`apps/macos`](apps/macos). Voor iOS, Android, Windows en Linux staan de mappen klaar (zie [docs/MONOREPO.md](docs/MONOREPO.md)); die platformen zijn nog niet geschreven.
+> **Monorepo:** de macOS-app staat in [`apps/macos`](apps/macos). De iPhone-companion staat in [`apps/ios`](apps/ios). Voor Android, Windows en Linux staan de mappen klaar (zie [docs/MONOREPO.md](docs/MONOREPO.md)); die platformen zijn nog niet geschreven.
 
 ## Vereisten
 

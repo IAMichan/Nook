@@ -3,9 +3,9 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ['apps/macos/**', '.github/workflows/build.yml']
+    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   pull_request:
-    paths: ['apps/macos/**', '.github/workflows/build.yml']
+    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:

@@ -53,7 +53,8 @@ for folder in (sdir, os.path.join(work, "Tests", "CoreTests")):
     for name in os.listdir(folder):
         os.remove(os.path.join(folder, name))
 for path in sources:
-    os.symlink(os.path.join(root, path), os.path.join(sdir, path.replace("/", "__")))
+    # Paths are relative to apps/macos; shared ones start with ../../packages. Drop the ../ so no name starts with a dot.
+    os.symlink(os.path.normpath(os.path.join(root, path)), os.path.join(sdir, path.replace("../", "").replace("/", "__")))
 PY
 
 cat > "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'

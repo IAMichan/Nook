@@ -5,8 +5,8 @@ DerivedData/
 build/
 .build/
 *.xcworkspace
-App/Info.plist
-App/Nook.entitlements
+apps/macos/App/Info.plist
+apps/macos/App/Nook.entitlements
 .swiftpm/
 *.sqlite
 *.sqlite-*
@@ -18,3 +18,5 @@ node_modules/
 .gradle/
 **/build/
 *.xcuserstate
+apps/ios/NookCompanion/Info.plist
+apps/ios/NookCompanion/*.entitlements
