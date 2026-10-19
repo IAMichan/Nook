@@ -289,7 +289,7 @@ final class AppSettings: ObservableObject {
             NookTheme.accentHex = accentHex
         }
     }
-    /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Display).
+    /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Appearance).
     @Published var nookLook: NookLook {
         didSet {
             UserDefaults.standard.set(nookLook.stored, forKey: "nookLook")

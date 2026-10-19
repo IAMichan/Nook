@@ -23,7 +23,7 @@ extension AppModel {
             ),
             ToolSpec(
                 name: "change_setting",
-                description: "Changes one of Nook's own settings for the user: switch web search, thinking along, reading the screens, reading answers aloud, the \"Hey Nook\" wake word, dictation, agent sounds, memory or lyrics on or off, or change the app language, the answer language or where Nook sits on screen. Only when the user asks for it; the user approves every change with a click. One call per setting.",
+                description: "Changes one of Nook's own settings for the user: switch web search, thinking along, reading the screens, reading answers aloud, the \"Hey Nook\" wake word, dictation, agent sounds, memory or lyrics on or off, or change the app language, the answer language, Nook's style (how it looks) or where Nook sits on screen. Only when the user asks for it; the user approves every change with a click. One call per setting.",
                 schema: SettingsCatalog.changeSchema,
                 kind: .action,
                 summarize: { input in Self.settingPlanLine(input) },
@@ -78,6 +78,8 @@ extension AppModel {
         case "auto": return tr("settings.tool.auto")
         case "notch": return tr("settings.notch.placementNotch")
         case "floating": return tr("settings.notch.placementFloating")
+        case "minimal", "classic", "playful": return SettingsView.presetTitle(value)
+        case "custom": return tr("settings.tool.custom")
         default: return AppLanguage(rawValue: value)?.displayName ?? value
         }
     }
@@ -119,6 +121,7 @@ extension AppModel {
         case "app_language": return settings.appLanguage.rawValue
         case "answer_language": return settings.language
         case "notch_placement": return settings.placement
+        case "nook_style": return NookLook.presets.first { $0.look == settings.nookLook }?.id ?? "custom"
         case "notch_on_all_screens": return SettingsCatalog.value(settings.notchOnAllScreens)
         case "hide_when_idle": return SettingsCatalog.value(settings.hideWhenIdle)
         case "open_on_hover": return SettingsCatalog.value(viewModel.openOnHover)
@@ -143,6 +146,7 @@ extension AppModel {
         case "app_language": if let language = AppLanguage(rawValue: value) { settings.appLanguage = language }
         case "answer_language": settings.language = value
         case "notch_placement": settings.placement = value
+        case "nook_style": if let preset = NookLook.presets.first(where: { $0.id == value }) { settings.nookLook = preset.look }
         case "notch_on_all_screens": settings.notchOnAllScreens = on
         case "hide_when_idle": settings.hideWhenIdle = on
         case "open_on_hover": viewModel.openOnHover = on

@@ -23,7 +23,7 @@ enum NookMouthStyle: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Nook's appearance, chosen in Settings › Display. Its color is the app's accent color, set separately.
+/// Nook's appearance, chosen in Settings › Appearance. Its color is the app's accent color, set separately.
 struct NookLook: Codable, Equatable {
     var eyes: NookEyeStyle
     var mouth: NookMouthStyle

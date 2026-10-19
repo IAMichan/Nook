@@ -13,6 +13,7 @@ extension SettingsSection {
         switch self {
         case .start: return "house.fill"
         case .general: return "gearshape.fill"
+        case .appearance: return "paintpalette.fill"
         case .shortcuts: return "command"
         case .notifications: return "bell.fill"
         case .brain: return "brain"

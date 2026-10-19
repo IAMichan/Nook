@@ -26,6 +26,8 @@ enum SettingsCatalog {
               about: "Language of Nook's own screens and buttons."),
         Entry(id: "answer_language", kind: .choice(["en", "nl", "de", "fr", "es", "auto"]), section: "general",
               about: "Language Nook answers in; auto is the language of the question."),
+        Entry(id: "nook_style", kind: .choice(["minimal", "classic", "playful"]), section: "appearance",
+              about: "How Nook's face looks: minimal (dots, no mouth), classic (the usual look) or playful (round eyes, a talking mouth)."),
         Entry(id: "notch_placement", kind: .choice(["notch", "floating"]), section: "general",
               about: "Nook in the notch, or floating anywhere on screen."),
         Entry(id: "notch_on_all_screens", kind: .toggle, section: "general", about: "A notch on every connected screen."),
@@ -75,7 +77,7 @@ enum SettingsCatalog {
     static let onWords: Set<String> = ["on", "true", "yes", "1", "enable", "enabled", "aan", "ja", "an", "ein", "oui", "activé", "sí", "si"]
     static let offWords: Set<String> = ["off", "false", "no", "0", "disable", "disabled", "uit", "nee", "aus", "nein", "non", "désactivé", "apagado"]
 
-    /// Language names in the five languages, and the two placements.
+    /// Language names in the five languages, the two placements and the three styles.
     static let aliases: [String: String] = [
         "english": "en", "engels": "en", "englisch": "en", "anglais": "en", "inglés": "en", "ingles": "en",
         "dutch": "nl", "nederlands": "nl", "niederländisch": "nl", "néerlandais": "nl", "neerlandés": "nl",
@@ -83,7 +85,10 @@ enum SettingsCatalog {
         "french": "fr", "frans": "fr", "französisch": "fr", "français": "fr", "francais": "fr", "francés": "fr",
         "spanish": "es", "spaans": "es", "spanisch": "es", "espagnol": "es", "español": "es", "espanol": "es",
         "floating": "floating", "zwevend": "floating", "schwebend": "floating", "flottant": "floating", "flotante": "floating",
-        "in the notch": "notch", "in de notch": "notch", "in der notch": "notch"
+        "in the notch": "notch", "in de notch": "notch", "in der notch": "notch",
+        "minimaal": "minimal", "minimaliste": "minimal", "minimalista": "minimal", "minimalistisch": "minimal",
+        "klassiek": "classic", "klassisch": "classic", "classique": "classic", "clásico": "classic", "clasico": "classic",
+        "speels": "playful", "verspielt": "playful", "ludique": "playful", "divertido": "playful", "fun": "playful"
     ]
 
     /// The arguments of `change_setting`.

@@ -6,7 +6,7 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar. Each subject lives in exactly one place.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case start, general, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, agents,
+    case start, general, appearance, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, agents,
          workspace, devices, privacy
 
     /// The sidebar groups: what belongs together sits together.
@@ -19,7 +19,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
         var sections: [SettingsSection] {
             switch self {
-            case .nook: return [.start, .general, .shortcuts, .notifications]
+            case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
             case .intelligence: return [.brain, .assistant, .memory]
             case .input: return [.autocomplete, .dictation]
             case .connect: return [.connections, .agents, .workspace, .devices]
@@ -61,6 +61,8 @@ struct SettingsView: View {
     @State var searchQuery = ""
     /// Usage and costs under Agents, opened on request.
     @State var showUsage = false
+    /// The mood the large preview under Appearance shows.
+    @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
     @ObservedObject var mcpStore = MCPServerStore.shared
     @ObservedObject var mcpSignIn = MCPSignIn.shared
@@ -174,6 +176,7 @@ struct SettingsView: View {
         switch section {
         case .start: startSection
         case .general: generalSection
+        case .appearance: appearanceSection
         case .shortcuts: shortcutsSection
         case .notifications: notificationsSection
         case .brain: brainSection

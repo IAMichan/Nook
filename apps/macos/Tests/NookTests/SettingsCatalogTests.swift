@@ -25,6 +25,10 @@ final class SettingsCatalogTests: XCTestCase {
         let placement = try XCTUnwrap(SettingsCatalog.entry("notch_placement"))
         XCTAssertEqual(SettingsCatalog.value("zwevend", for: placement), "floating")
         XCTAssertNil(SettingsCatalog.value("on", for: placement))
+        let style = try XCTUnwrap(SettingsCatalog.entry("nook_style"))
+        XCTAssertEqual(SettingsCatalog.value("Speels", for: style), "playful")
+        XCTAssertEqual(SettingsCatalog.value("classic", for: style), "classic")
+        XCTAssertNil(SettingsCatalog.value("custom", for: style), "only a style can be chosen, not a mix")
     }
 
     func testNothingThatWidensWhatNookMayDo() {
@@ -40,6 +44,8 @@ final class SettingsCatalogTests: XCTestCase {
         XCTAssertEqual(Undo.step(tool: "change_setting", input: ["setting": "web_search", "value": "on"], result: result),
                        Undo.Step(tool: "change_setting", input: ["setting": "web_search", "value": "off"]))
         XCTAssertNil(Undo.step(tool: "change_setting", input: ["setting": "web_search"], result: "web_search: on"))
+        XCTAssertNil(Undo.step(tool: "change_setting", input: ["setting": "nook_style", "value": "playful"],
+                               result: SettingsCatalog.result("nook_style", value: "playful", old: "custom")))
     }
 
     func testTheSchemaListsEverySetting() {

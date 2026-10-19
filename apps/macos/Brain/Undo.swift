@@ -22,7 +22,9 @@ enum Undo {
             return nil
         case "change_setting":
             // A setting goes back to what it was before.
-            guard let setting = input["setting"] as? String, let old = SettingsCatalog.previous(in: result) else { return nil }
+            // An old value the setting cannot take again (a style that was a mix of its own) is not offered.
+            guard let setting = input["setting"] as? String, let old = SettingsCatalog.previous(in: result),
+                  let entry = SettingsCatalog.entry(setting), SettingsCatalog.value(old, for: entry) != nil else { return nil }
             return Step(tool: "change_setting", input: ["setting": setting, "value": old])
         default:
             return nil
