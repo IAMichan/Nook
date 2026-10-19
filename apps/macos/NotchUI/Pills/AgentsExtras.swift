@@ -310,13 +310,27 @@ private struct PullRequestRow: View {
 
 // MARK: Usage
 
-/// The usage of every connected account at once: the limits that agents report (5 hours and the week), what was used
-/// in tokens today and this week with a small chart of the last seven days, and what Nook itself ran with the account.
+/// The usage of every connected account at once, grouped per AI: one section for all Claude accounts, one for
+/// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), what was used in
+/// tokens today and this week with a small chart of the last seven days, and what Nook itself ran with the account.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
 
     /// Only accounts that are signed in on an installed agent: no cards for services you did not connect.
     private var profiles: [AgentProfile] { app.connectedProfiles }
+
+    /// The accounts per AI, in the order the AIs first appear in the account list.
+    private var groups: [(kind: AgentKind, profiles: [AgentProfile])] {
+        var result: [(kind: AgentKind, profiles: [AgentProfile])] = []
+        for profile in profiles {
+            if let index = result.firstIndex(where: { $0.kind == profile.kind }) {
+                result[index].profiles.append(profile)
+            } else {
+                result.append((profile.kind, [profile]))
+            }
+        }
+        return result
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -329,100 +343,190 @@ struct AgentsUsagePanel: View {
             .frame(height: 30)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 22) {
                     if profiles.isEmpty {
                         Text(tr("agents.noneConnected"))
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
-                    ForEach(profiles) { profile in
-                        card(profile)
+                    ForEach(groups, id: \.kind) { group in
+                        section(group.kind, group.profiles)
                     }
                     Text(tr("agents.usage.note"))
                         .font(NookTheme.font(11.5))
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { app.history.refresh() }
     }
 
-    private func card(_ profile: AgentProfile) -> some View {
+    /// One AI: its logo and name with the number of accounts and the highest limit in use, then all its accounts in
+    /// one card, divided by hairlines.
+    private func section(_ kind: AgentKind, _ profiles: [AgentProfile]) -> some View {
+        let peak = profiles.flatMap { app.quota.limits(for: $0) }.map(\.percent).max()
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                AgentLogo(agent: kind.name, size: 16)
+                Text(kind.name)
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                Text(profiles.count == 1 ? tr("agents.usage.oneAccount") : tr("agents.usage.accounts", profiles.count))
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Spacer(minLength: 0)
+                if let peak {
+                    Text(tr("agents.usage.peak", Int(peak.rounded())))
+                        .font(NookTheme.font(11, .semibold).monospacedDigit())
+                        .foregroundStyle(UsageTone.text(peak))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(UsageTone.fill(peak, accent: kind.color).opacity(0.14)))
+                }
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
+                    if index > 0 {
+                        Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+                    }
+                    account(profile)
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(hex: 0x111114))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+            )
+        }
+    }
+
+    private func account(_ profile: AgentProfile) -> some View {
         let limits = app.quota.limits(for: profile)
         let usage = app.history.profileUsage[profile.id]
         let account = app.history.profileAccounts[profile.id]
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                AgentMark(agent: profile.kind.name, account: AccountKind.of(profile, app: app), size: 22, ring: Color(hex: 0x121214))
-                    .padding(.trailing, 4)
+        let accent = profile.kind.color
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                AccountBadge(kind: AccountKind.of(profile, app: app), size: 20, ring: Color(hex: 0x111114))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(profile.kind.name) · \(AccountLabel.name(profile, app: app))")
-                        .font(NookTheme.font(13.5, .medium))
+                    Text(AccountLabel.name(profile, app: app))
+                        .font(NookTheme.font(13, .medium))
                         .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
                     Text(account.map { $0.plan.isEmpty ? $0.name : "\($0.name) · \($0.plan)" } ?? tr("agents.notLoggedIn"))
                         .font(NookTheme.font(11.5))
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
             }
+
             if limits.isEmpty {
                 Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits")
                      : profile.kind == .antigravity && app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken")
                      : tr("ws.usage.quotaUnavailable"))
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(limits) { limit in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(limit.label).foregroundStyle(NookTheme.textSecondary)
-                            Spacer()
-                            Text("\(Int(limit.percent.rounded()))%").foregroundStyle(AgentFormat.color(percent: limit.percent))
-                            if let note = limit.note {
-                                Text(note).foregroundStyle(NookTheme.textTertiary)
-                            } else if let reset = AgentFormat.reset(limit.resetsAt) {
-                                Text(reset).foregroundStyle(NookTheme.textTertiary)
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(limitGroups(limits), id: \.name) { group in
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !group.name.isEmpty {
+                                Text(group.name)
+                                    .font(NookTheme.font(11, .semibold))
+                                    .foregroundStyle(NookTheme.paper.opacity(0.75))
+                            }
+                            ForEach(group.limits) { limit in
+                                limitRow(limit, title: group.name.isEmpty ? limit.label : limit.window, accent: accent)
                             }
                         }
-                        .font(NookTheme.font(12))
-                        Bar(fraction: limit.percent / 100, color: AgentFormat.color(percent: limit.percent))
                     }
                 }
             }
-            if usage == nil {
-                Text(tr("agents.usage.none"))
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textTertiary)
-            } else if let usage {
-                HStack(alignment: .bottom, spacing: 16) {
+
+            if let usage {
+                HStack(alignment: .bottom, spacing: 18) {
                     stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
                     stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
                     stat(tr("agents.usage.sessions"), "\(usage.sessionsWeek)")
                     Spacer(minLength: 0)
-                    WeekBars(days: usage.perDay, color: profile.kind.color)
+                    WeekBars(days: usage.perDay, color: accent)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.025)))
+            } else {
+                Text(tr("agents.usage.none"))
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textTertiary)
             }
+
             let nook = nookUsage(profile)
             if nook.turns > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 10, weight: .semibold))
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles").font(.system(size: 9.5, weight: .semibold))
                     Text(tr("agents.usage.inNook", nook.turns, TokenTally.format(nook.tokens)))
                     if let cost = nook.cost, cost > 0, WorkspaceSettings.shared.showCost {
                         Text("· " + AgentPathFormat.cost(cost))
                     }
                 }
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.font(11))
                 .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x121214)))
+    }
+
+    /// A limit as one line of text above a slim bar: the bar takes the AI's own color while there is room, and only
+    /// turns amber or coral once the limit comes close.
+    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let note = limit.note {
+                    Text(note).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                } else if let reset = AgentFormat.reset(limit.resetsAt) {
+                    Text(reset).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                }
+                Text("\(Int(limit.percent.rounded()))%")
+                    .font(NookTheme.font(12, .semibold).monospacedDigit())
+                    .foregroundStyle(UsageTone.text(limit.percent))
+                    .frame(minWidth: 34, alignment: .trailing)
+            }
+            .font(NookTheme.font(11.5))
+            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent))
+        }
+    }
+
+    /// Limits per model group ("Claude & GPT", "Gemini") in the order they come; plain windows ("5 hours") share one
+    /// unnamed group.
+    private func limitGroups(_ limits: [QuotaLimit]) -> [(name: String, limits: [QuotaLimit])] {
+        var result: [(name: String, limits: [QuotaLimit])] = []
+        for limit in limits {
+            let name = limit.group ?? ""
+            if let index = result.firstIndex(where: { $0.name == name }) {
+                result[index].limits.append(limit)
+            } else {
+                result.append((name, [limit]))
+            }
+        }
+        return result
     }
 
     /// What sessions Nook ran with this account did in the last seven days: turns, tokens and the cost the agent reported.
@@ -439,10 +543,49 @@ struct AgentsUsagePanel: View {
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
-            Text(value).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
+            Text(value).font(NookTheme.font(13, .semibold).monospacedDigit()).foregroundStyle(NookTheme.paper)
         }
+    }
+}
+
+/// How a usage percentage is colored: calm in the AI's own color while there is room, amber when it gets close, coral
+/// when it is nearly gone. The number stays plain white until then, so only what needs attention stands out.
+private enum UsageTone {
+    static func fill(_ percent: Double, accent: Color) -> Color {
+        switch percent {
+        case ..<75: return accent
+        case ..<90: return NookTheme.amber
+        default: return NookTheme.coral
+        }
+    }
+
+    static func text(_ percent: Double) -> Color {
+        switch percent {
+        case ..<75: return NookTheme.paper
+        case ..<90: return NookTheme.amber
+        default: return NookTheme.coralSoft
+        }
+    }
+}
+
+/// A slim bar on a faint track, its fill fading in from a softer tone of its color.
+private struct UsageBar: View {
+    let fraction: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.06))
+                Capsule()
+                    .fill(LinearGradient(colors: [color.opacity(0.55), color], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: max(4, geo.size.width * CGFloat(min(1, max(0, fraction)))))
+            }
+        }
+        .frame(height: 5)
+        .accessibilityHidden(true)
     }
 }
 
@@ -456,12 +599,12 @@ struct WeekBars: View {
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(Array(days.suffix(7).enumerated()), id: \.offset) { _, day in
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(day.tokens > 0 ? color.opacity(0.85) : NookTheme.line2)
-                    .frame(width: 6, height: max(3, 26 * CGFloat(day.tokens) / CGFloat(peak)))
+                    .fill(day.tokens > 0 ? color.opacity(0.85) : Color.white.opacity(0.08))
+                    .frame(width: 5, height: max(2, 24 * CGFloat(day.tokens) / CGFloat(peak)))
                     .help(AgentFormat.weekdayLetter(day.day) + " · " + TokenTally.format(day.tokens))
             }
         }
-        .frame(height: 26, alignment: .bottom)
+        .frame(height: 24, alignment: .bottom)
         .accessibilityHidden(true)
     }
 }
