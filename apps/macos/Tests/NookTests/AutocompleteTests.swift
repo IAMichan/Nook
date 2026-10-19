@@ -208,11 +208,24 @@ final class AutocompleteTests: XCTestCase {
     func testEmojiQueryAndDutchNames() {
         XCTAssertEqual(CompletionEmojiCatalog.query(in: "haha :lachen"), "lachen")
         XCTAssertNil(CompletionEmojiCatalog.query(in: "om 10:30"))
-        XCTAssertNil(CompletionEmojiCatalog.query(in: "zie :x"))
+        XCTAssertEqual(CompletionEmojiCatalog.query(in: "zie :x"), "x")
+        XCTAssertEqual(CompletionEmojiCatalog.query(in: "zie :"), "", "right after the colon the picker opens")
+        XCTAssertNil(CompletionEmojiCatalog.query(in: "Note:"))
+        XCTAssertNil(CompletionEmojiCatalog.query(in: "zie : x"))
         XCTAssertEqual(CompletionEmojiCatalog.search("lachen").first?.character, "😂")
         XCTAssertEqual(CompletionEmojiCatalog.search("duim").first?.character, "👍")
         XCTAssertEqual(CompletionEmojiCatalog.search("joy").first?.character, "😂")
         XCTAssertTrue(CompletionEmojiCatalog.all.count > 250)
+    }
+
+    func testPickerChoicesStartWithRecentEmoji() {
+        let opening = CompletionEmojiCatalog.choices(for: "", recent: ["🔥", "nonsense"], limit: 9)
+        XCTAssertEqual(opening.count, 9)
+        XCTAssertEqual(opening.first?.character, "🔥")
+        XCTAssertEqual(opening.dropFirst().first?.character, "😂", "then the most used")
+        XCTAssertEqual(opening.filter { $0.character == "🔥" }.count, 1)
+        XCTAssertEqual(CompletionEmojiCatalog.choices(for: "lachen", recent: [], limit: 9).first?.character, "😂")
+        XCTAssertTrue(CompletionEmojiCatalog.choices(for: "zzzzqq", recent: [], limit: 9).isEmpty)
     }
 
     func testSkinTone() {

@@ -59,6 +59,10 @@ Een voorstel moet er zijn voordat je verder typt. Daarom:
 - **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the pause after a key or a new model call.
 - **Model blijft geladen.** Gebruikt aanvullen het model van het brein, dan blijft dat tijdens het typen een kwartier in het geheugen in plaats van anderhalve minuut.
 
+### Emoji picker
+
+Typing `:` at the start of a word opens a picker under the cursor: the emoji you used last, then the most used. Typing on (`:lach`, `:heart`) filters it at once, without reading the field again. Pick with the arrow keys and Tab (or Return, once two letters are typed, so `:D` and Return still sends), with 1–9 for the row with the selection, or with a click: the panel itself takes no clicks, so the key tap hit-tests the card on a mouse down and swallows that click. Escape, a space or punctuation closes it.
+
 ### Quality
 
 What keeps suggestions in line with your sentence, and what keeps out the odd ones:

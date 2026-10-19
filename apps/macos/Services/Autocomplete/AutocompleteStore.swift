@@ -21,6 +21,14 @@ final class AutocompleteStore: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private static let prefsKey = "autocompletePreferences"
+    private static let recentEmojiKey = "autocompleteRecentEmoji"
+
+    /// Emoji taken from the picker, last first (without skin tone), so the picker opens with them.
+    var recentEmoji: [String] { defaults.stringArray(forKey: Self.recentEmojiKey) ?? [] }
+
+    func recordEmoji(_ character: String) {
+        defaults.set(Array(([character] + recentEmoji.filter { $0 != character }).prefix(16)), forKey: Self.recentEmojiKey)
+    }
     private var statsSave: Task<Void, Never>?
 
     static var folder: URL { NookPaths.supportDirectory.appendingPathComponent("Autocomplete", isDirectory: true) }

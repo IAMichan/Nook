@@ -56,9 +56,25 @@ final class AutocompleteController: ObservableObject {
 
     private enum Proposal {
         case completion(Completion)
-        /// Replace the last `delete` characters with `insert` (emoji, typo fix).
+        /// Replace the last `delete` characters with `insert` (typo fix).
         case replacement(delete: Int, insert: String)
+        /// The emoji picker after a colon: the arrow keys move through `choices`, Tab or Return takes the selected one.
+        case emoji(EmojiPicker)
     }
+
+    private struct EmojiPicker {
+        var query: String
+        var choices: [CompletionEmoji]
+        var selected = 0
+        var anchor: CGRect
+    }
+
+    /// Emoji per row in the picker: 1 to 9 pick from the row with the selection.
+    private static let emojiColumns = 9
+    /// Marks which emoji a stretch of the picker's text belongs to, for clicks.
+    private static let emojiIndexKey = NSAttributedString.Key("nookEmojiIndex")
+    /// A click that took an emoji: its mouse up does not reach the app either.
+    private var swallowMouseUp = false
 
     private let store = AutocompleteStore.shared
     private let overlay = GhostOverlay()
@@ -288,9 +304,16 @@ final class AutocompleteController: ObservableObject {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         case .leftMouseDown, .rightMouseDown:
+            if type == .leftMouseDown, case .emoji(let picker) = proposal,
+               let index = overlay.cardValue(at: NSEvent.mouseLocation, key: Self.emojiIndexKey), picker.choices.indices.contains(index) {
+                take(index, from: picker)
+                swallowMouseUp = true
+                return true
+            }
             dismiss()
             return false
         case .leftMouseUp:
+            if swallowMouseUp { swallowMouseUp = false; return true }
             scheduleSelectionCheck()
             return false
         case .keyDown:
@@ -371,6 +394,41 @@ final class AutocompleteController: ObservableObject {
                     store.recordAccepted(insert, first: true, app: bundleID)
                     scheduleRefresh()
                     return true
+                }
+            case .emoji(var picker):
+                if plainEscape { dismiss(); return true }
+                if key.modifiers == 0, let step = emojiStep(key.code) {
+                    picker.selected = min(max(picker.selected + step, 0), picker.choices.count - 1)
+                    self.proposal = .emoji(picker)
+                    showEmojiPicker(picker)
+                    return true
+                }
+                // Return too, once a name is typed: ":D" and Return still sends the message.
+                if acceptWord || acceptAll || (key.code == kVK_Return && key.modifiers == 0 && picker.query.count >= 2) {
+                    take(picker.selected, from: picker)
+                    return true
+                }
+                // 1 to 9: the emoji with that number in the row with the selection. Shift is allowed: some layouts need it for digits.
+                if !commandLike, !key.flags.contains(.maskAlternate), let number = Int(key.characters), (1...Self.emojiColumns).contains(number) {
+                    let index = picker.selected / Self.emojiColumns * Self.emojiColumns + number - 1
+                    if picker.choices.indices.contains(index) { take(index, from: picker) }
+                    return true
+                }
+                // Typing on in the name, or taking a letter back: filter right away, without reading the field again.
+                if !commandLike, let query = emojiQuery(picker.query, after: key) {
+                    readToken += 1
+                    refreshWork?.cancel()
+                    let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4)
+                    if choices.isEmpty {
+                        dismiss()
+                    } else {
+                        picker.query = query
+                        picker.choices = choices
+                        picker.selected = 0
+                        self.proposal = .emoji(picker)
+                        showEmojiPicker(picker)
+                    }
+                    return false
                 }
             }
             dismiss()
@@ -466,11 +524,13 @@ final class AutocompleteController: ObservableObject {
         if snapshot.hasSelection { return }
         if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
 
-        if prefs.emoji, let caret = snapshot.caret, let query = CompletionEmojiCatalog.query(in: snapshot.before),
-           let emoji = CompletionEmojiCatalog.search(query, limit: 1).first {
-            let rendered = CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone)
-            proposal = .replacement(delete: query.count + 1, insert: rendered)
-            overlay.showCard(card("\(rendered)  :\(emoji.shortcodes[0]):"), below: caret)
+        if prefs.emoji, let anchor = snapshot.caret ?? snapshot.fieldFrame, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
+            let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4)
+            // A colon with no emoji by that name is just a colon.
+            guard !choices.isEmpty else { return }
+            let picker = EmojiPicker(query: query, choices: choices, anchor: anchor)
+            proposal = .emoji(picker)
+            showEmojiPicker(picker)
             return
         }
 
@@ -703,6 +763,63 @@ final class AutocompleteController: ObservableObject {
             proposal = nil
             overlay.hide()
         }
+    }
+
+    /// Types the emoji at `index` in place of the colon and the name.
+    private func take(_ index: Int, from picker: EmojiPicker) {
+        let emoji = picker.choices[index]
+        let rendered = CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone)
+        dismiss()
+        AutocompleteTyper.replace(last: picker.query.count + 1, with: rendered)
+        store.recordAccepted(rendered, first: true, app: frontApp?.bundleIdentifier)
+        store.recordEmoji(emoji.character)
+        scheduleRefresh()
+    }
+
+    /// The picker's name after `key`: one more letter, or one fewer for Delete. Nil when the key ends the name (a space,
+    /// punctuation, or Delete right after the colon, which takes the colon away).
+    private func emojiQuery(_ query: String, after key: Key) -> String? {
+        if key.code == kVK_Delete { return query.isEmpty || key.modifiers != 0 ? nil : String(query.dropLast()) }
+        guard key.characters.count == 1, let character = key.characters.first, character.isASCII,
+              character.isLetter || character.isNumber || "_+-".contains(character), query.count < 30 else { return nil }
+        return query + key.characters
+    }
+
+    /// How far an arrow key moves through the picker: one to the side, a row up or down. Nil for other keys.
+    private func emojiStep(_ code: Int) -> Int? {
+        switch code {
+        case kVK_LeftArrow: return -1
+        case kVK_RightArrow: return 1
+        case kVK_UpArrow: return -Self.emojiColumns
+        case kVK_DownArrow: return Self.emojiColumns
+        default: return nil
+        }
+    }
+
+    /// The picker as a card under the cursor: rows of emoji with the selected one marked, the numbers 1 to 9 over the row
+    /// with the selection, and the selected one's name below.
+    private func showEmojiPicker(_ picker: EmojiPicker) {
+        let text = NSMutableAttributedString()
+        let big = NSFont.systemFont(ofSize: 20)
+        let small = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+        let row = picker.selected / Self.emojiColumns
+        for (index, emoji) in picker.choices.enumerated() {
+            if index > 0 { text.append(NSAttributedString(string: index % Self.emojiColumns == 0 ? "\n" : "  ", attributes: [.font: big])) }
+            // Every emoji has its number; only the row with the selection shows it, so the rows stay in line.
+            let numbered = index / Self.emojiColumns == row
+            text.append(NSAttributedString(string: "\(index % Self.emojiColumns + 1)", attributes: [
+                .font: small, .foregroundColor: numbered ? NSColor.secondaryLabelColor : NSColor.clear, Self.emojiIndexKey: index,
+            ]))
+            var attributes: [NSAttributedString.Key: Any] = [.font: big, Self.emojiIndexKey: index]
+            if index == picker.selected { attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.35) }
+            text.append(NSAttributedString(string: CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone), attributes: attributes))
+        }
+        let name = picker.choices[picker.selected].shortcodes[0]
+        text.append(NSAttributedString(string: "\n:\(name):", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]))
+        text.append(NSAttributedString(string: "   1–9  ←→↑↓  " + prefs.acceptWord.label + " ↩", attributes: [
+            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.tertiaryLabelColor,
+        ]))
+        overlay.showCard(text, below: picker.anchor)
     }
 
     private func card(_ text: String) -> NSAttributedString {
