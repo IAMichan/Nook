@@ -146,7 +146,7 @@ private struct AcpRegistrySheet: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } else if let chosen, let binary = chosen.binary {
-                Text(tr("acp.registry.downloads", binary.archive.absoluteString, binary.sha256.prefix(12) + "…"))
+                Text(tr("acp.registry.downloads", binary.archive.absoluteString, String(binary.sha256.prefix(12)) + "…"))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

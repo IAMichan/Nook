@@ -10,6 +10,8 @@ struct SimulatorView: View {
     @State private var image: NSImage?
     @State private var png: Data?
     @State private var looked = false
+    /// Simulator.app wherever Xcode is; nil without Xcode.
+    private let simulatorApp = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iphonesimulator")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -28,11 +30,12 @@ struct SimulatorView: View {
                     Button(tr("sim.copy")) { copy() }.controlSize(.small)
                     Button(tr("sim.save")) { save() }.controlSize(.small)
                 }
-                Button(tr("sim.openApp")) {
-                    NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app"),
-                                                       configuration: NSWorkspace.OpenConfiguration())
+                if let simulatorApp {
+                    Button(tr("sim.openApp")) {
+                        NSWorkspace.shared.openApplication(at: simulatorApp, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
             }
             Group {
                 if let image {
