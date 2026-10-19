@@ -246,8 +246,12 @@ struct EmbeddedAppPane: View {
     }
 }
 
-/// The line between the chat and the app: drag it to give one more room than the other, double-click to reset.
+/// The line between the chat and the app, or beside any panel that can be resized: drag it to give one side more room
+/// than the other, double-click to reset. With `divider` it stands in for a thin dividing line and only shows its grip
+/// while you point at it.
 struct EmbeddedSplitHandle: View {
+    var divider = false
+    var help = "embedded.resize"
     /// The horizontal distance dragged since the drag began.
     let onDrag: (Double) -> Void
     let onEnd: () -> Void
@@ -256,9 +260,13 @@ struct EmbeddedSplitHandle: View {
     @State private var dragging = false
 
     var body: some View {
-        Capsule()
-            .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
-            .frame(width: 4, height: 36)
+        ZStack {
+            if divider { Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1) }
+            Capsule()
+                .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
+                .frame(width: 4, height: 36)
+                .opacity(!divider || hovering || dragging ? 1 : 0)
+        }
         .frame(width: EmbeddedSplit.handle)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -280,7 +288,7 @@ struct EmbeddedSplitHandle: View {
                 }
         )
         .onTapGesture(count: 2) { onReset() }
-        .help(tr("embedded.resize"))
-        .accessibilityLabel(tr("embedded.resize"))
+        .help(tr(help))
+        .accessibilityLabel(tr(help))
     }
 }

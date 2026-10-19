@@ -405,7 +405,8 @@ final class NotchController {
         }
         lastCheckedMouseLocation = mouse
         followMouseIfNeeded()
-        let inside = surfaceRect().insetBy(dx: -4, dy: -4).contains(mouse)
+        // While you drag an edge to resize, the pointer can run a little ahead of it: it still counts as inside.
+        let inside = viewModel.resizing || surfaceRect().insetBy(dx: -4, dy: -4).contains(mouse)
         // Over a Mac app open next to the chat, the pointer falls through onto the real app window lying under it.
         let ignores = !inside || MacAppMirror.shared.passesThrough(at: mouse)
         if panel.ignoresMouseEvents != ignores {

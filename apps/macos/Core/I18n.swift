@@ -600,6 +600,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.savedInKeychain": "Bewaard in je Keychain",
 
         "notch.agentsActive": "%lld agents actief",
+        "notch.resize": "Sleep om Nook groter of kleiner te maken; dubbelklik om terug te zetten",
         "notch.goToHome": "Ga naar startpagina",
         "notch.taskRing": "Waar Nook en je agents mee bezig zijn",
         "notch.nudgeProposal": "Nook stelt voor: %@",
@@ -1364,6 +1365,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.savedInKeychain": "Saved in your Keychain",
 
         "notch.agentsActive": "%lld agents active",
+        "notch.resize": "Drag to make Nook larger or smaller; double-click to reset",
         "notch.goToHome": "Go to home page",
         "notch.taskRing": "What Nook and your agents are working on",
         "notch.nudgeProposal": "Nook suggests: %@",
@@ -2128,6 +2130,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connector.savedInKeychain": "Im Schlüsselbund gespeichert",
 
         "notch.agentsActive": "%lld Agents aktiv",
+        "notch.resize": "Ziehen, um Nook größer oder kleiner zu machen; Doppelklick setzt zurück",
         "notch.goToHome": "Zur Startseite gehen",
         "notch.taskRing": "Woran Nook und deine Agents arbeiten",
         "notch.nudgeProposal": "Nook schlägt vor: %@",

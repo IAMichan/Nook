@@ -64,6 +64,16 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 500), EmbeddedSplit.minimumChat, "too small for both: the chat keeps its minimum")
     }
 
+    func testPanelSplitKeepsBothSidesUsable() {
+        XCTAssertEqual(PanelSplit.width(320, minimum: 220, available: 1000, rest: 400), 320)
+        XCTAssertEqual(PanelSplit.width(100, minimum: 220, available: 1000, rest: 400), 220, "never narrower than its minimum")
+        XCTAssertEqual(PanelSplit.width(900, minimum: 220, available: 1000, rest: 400), 600, "leaves the rest its room")
+        XCTAssertEqual(PanelSplit.width(900, minimum: 220, available: 0, rest: 400), 900, "width not known yet")
+        XCTAssertEqual(PanelSplit.width(300, minimum: 220, available: 500, rest: 400), 220, "too small for both: the panel keeps its minimum")
+        XCTAssertEqual(PanelSplit.dragged(from: 400, offset: -50, handleOnLeading: true), 450, "a right-hand panel widens to the left")
+        XCTAssertEqual(PanelSplit.dragged(from: 280, offset: 40, handleOnLeading: false), 320, "a left-hand panel widens to the right")
+    }
+
     func testManyAppsOpenByName() {
         XCTAssertEqual(opened("@open trello"), "trello")
         XCTAssertEqual(opened("@open ChatGPT"), "chatgpt")

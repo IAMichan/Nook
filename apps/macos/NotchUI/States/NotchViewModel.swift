@@ -440,24 +440,74 @@ final class NotchViewModel: ObservableObject {
         case .card(let card):
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
-            let big = AppSettings.shared.panelLarge
-            if sheet != nil {
-                // A task in the notch gets room to breathe, whatever the size setting.
-                return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
-            }
-            switch tab {
-            case .nook where embeddedAppOpen, .chat where embeddedAppOpen:
-                return CGSize(width: NotchController.panelSize.width - 40, height: min(chrome + 680, NotchController.panelSize.height))
-            case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
-            case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
-            case .agents where workbenchOpen:
-                return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
-            case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
-            case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
-            case .shelf: return CGSize(width: 640, height: chrome + 180)
-            case .connect: return CGSize(width: 820, height: chrome + 330)
-            }
+            return NotchResize.size(base: panelBase(tab), extra: panelExtra, maximum: panelMaximum)
         }
+    }
+
+    /// The size a tab of the open panel starts at, before your own resize.
+    private func panelBase(_ tab: PanelTab) -> CGSize {
+        let nh = geometry.notchHeight
+        let chrome = nh + 14 + 22   // spacing below notch and bottom margin
+        let big = AppSettings.shared.panelLarge
+        if sheet != nil {
+            // A task in the notch gets room to breathe, whatever the size setting.
+            return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
+        }
+        switch tab {
+        case .nook where embeddedAppOpen, .chat where embeddedAppOpen:
+            return CGSize(width: NotchController.panelSize.width - 40, height: min(chrome + 680, NotchController.panelSize.height))
+        case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
+        case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
+        case .agents where workbenchOpen:
+            return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
+        case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
+        case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
+        case .shelf: return CGSize(width: 640, height: chrome + 180)
+        case .connect: return CGSize(width: 820, height: chrome + 330)
+        }
+    }
+
+    // MARK: Resizing the open panel
+
+    /// Your own size for the open panel, on top of what each tab starts at: drag its sides or bottom corners, double-click
+    /// one to go back. Remembered.
+    private var panelExtra = NotchResize.load()
+    private var resizeStart: CGSize?
+    /// While you drag an edge the pointer counts as over the notch, also when it runs ahead of the edge for a moment.
+    private(set) var resizing = false
+
+    /// As large as the panel window and the screen allow.
+    private var panelMaximum: CGSize {
+        let screen = geometry.screenFrame.size
+        let width = NotchController.panelSize.width - 40
+        let height = NotchController.panelSize.height
+        return CGSize(width: screen.width > 0 ? min(width, screen.width - 40) : width,
+                      height: screen.height > 0 ? min(height, screen.height - 40) : height)
+    }
+
+    func resize(_ edge: NotchResize.Edge, translation: CGSize) {
+        guard case .panel(let tab) = state else { return }
+        resizing = true
+        autoCloseTask?.cancel()
+        let start = resizeStart ?? panelExtra
+        resizeStart = start
+        panelExtra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
+                                         base: panelBase(tab), maximum: panelMaximum)
+        // Follows the pointer: no animation.
+        size = layoutSize(for: state)
+    }
+
+    func endResize() {
+        resizing = false
+        resizeStart = nil
+        NotchResize.save(panelExtra)
+        scheduleAutoClose()
+    }
+
+    func resetPanelSize() {
+        panelExtra = .zero
+        NotchResize.save(panelExtra)
+        withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
     }
 
     /// Floating and idle: the area around Nook (the orb plus room for its glow and a badge).
