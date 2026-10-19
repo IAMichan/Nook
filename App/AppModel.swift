@@ -341,7 +341,9 @@ final class AppModel: ObservableObject {
             BearConnector(),
             ThingsConnector(),
             // Calls the Notetaker recorded.
-            CallNotesConnector()
+            CallNotesConnector(),
+            // The Mac itself: processor, memory, battery, disk.
+            SystemConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
         // The crypto portfolio (PortfolioConnector) is switched off for now: not registered, not in Settings.

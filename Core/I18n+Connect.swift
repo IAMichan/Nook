@@ -189,7 +189,9 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.nothing": "Ik heb het afgelopen half uur niets gedaan dat ik ongedaan kan maken.",
         "undo.cannot": "Wat ik net deed (een bericht of mail versturen, iets aanpassen) kan ik niet ongedaan maken.",
         "undo.partly": "Dit kan ik terugdraaien; de rest (een verstuurd bericht of een aanpassing) niet:",
-        "undo.ready": "Dit draai ik terug. Klik op Uitvoeren:"
+        "undo.ready": "Dit draai ik terug. Klik op Uitvoeren:",
+        "system.connector.headline": "Processor, geheugen, batterij en schijf",
+        "system.connector.detail": "Alleen gelezen als je ernaar vraagt"
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -376,7 +378,9 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.nothing": "I did nothing in the last half hour that I can undo.",
         "undo.cannot": "What I just did (sending a message or mail, changing something) cannot be undone.",
         "undo.partly": "This I can reverse; the rest (a sent message or a change) not:",
-        "undo.ready": "This is what I'll reverse. Click Run:"
+        "undo.ready": "This is what I'll reverse. Click Run:",
+        "system.connector.headline": "Processor, memory, battery and disk",
+        "system.connector.detail": "Only read when you ask"
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -563,6 +567,8 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.nothing": "Ich habe in der letzten halben Stunde nichts getan, was ich rückgängig machen kann.",
         "undo.cannot": "Was ich gerade getan habe (eine Nachricht oder Mail senden, etwas ändern), kann ich nicht rückgängig machen.",
         "undo.partly": "Das kann ich rückgängig machen; den Rest (eine gesendete Nachricht oder eine Änderung) nicht:",
-        "undo.ready": "Das mache ich rückgängig. Klicke auf Ausführen:"
+        "undo.ready": "Das mache ich rückgängig. Klicke auf Ausführen:",
+        "system.connector.headline": "Prozessor, Speicher, Akku und Festplatte",
+        "system.connector.detail": "Nur gelesen, wenn du fragst"
     ]
 ]
