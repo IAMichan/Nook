@@ -26,7 +26,9 @@ extension WorkspaceManager {
         var cursors = run.handoffCursors ?? [:]
         let leaving = ProviderInstance.key(run.provider, run.profileID)
         let arriving = ProviderInstance.key(provider, profileID)
-        if let session = run.providerSessionID { sessions[leaving] = session }
+        // A conversation still waiting for its first turn as a copy (`--fork-session`) is not this session's own yet:
+        // switching back starts from a summary instead of writing to the original.
+        if let session = run.providerSessionID, !forkNext.contains(id) { sessions[leaving] = session }
         // The agent we leave has taken part in everything so far.
         cursors[leaving] = events.count
 

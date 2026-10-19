@@ -21,6 +21,8 @@ struct AgentSessionDetail: View {
     @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
+    /// Another agent, account or model picked in the composer; the next message continues the conversation with it.
+    @State private var choice: AgentChoice?
     /// An action is in progress (sending, ending a process).
     @State private var working = false
     /// Progress through a multi-part question from the agent.
@@ -42,6 +44,7 @@ struct AgentSessionDetail: View {
         .onChange(of: selectionID) { _, _ in
             actionError = nil
             draft = ""
+            choice = nil
         }
     }
 
@@ -238,9 +241,11 @@ struct AgentSessionDetail: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canSend else { return }
             let outgoing = composerModel.outgoing(text).send
+            let picked = choice
             perform {
-                try await app.reply(to: session, message: outgoing)
+                try await app.reply(to: session, message: outgoing, choice: picked)
                 draft = ""
+                choice = nil
             }
         }
         if app.demoMode {
@@ -251,13 +256,15 @@ struct AgentSessionDetail: View {
         } else {
             SessionComposer(
                 text: $draft,
-                prompt: canSend ? tr("agents.reply.followUp", session.name) : tr("agents.reply.unsupported", session.name),
+                prompt: canSend ? tr("agents.reply.followUp", choice?.provider.displayName ?? session.name)
+                    : tr("agents.reply.unsupported", session.name),
                 canSend: canSend,
                 sending: working,
                 onSend: send
             ) {
                 sessionMenu(session)
-                agentPill(name: session.name, profile: app.profile(for: session))
+                agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
+                          canSwitch: app.canTakeOver(session))
             }
             .rich(composerModel, composerConfig(folder: session.cwd, tint: NookTheme.iris))
             .images($images)
@@ -265,7 +272,39 @@ struct AgentSessionDetail: View {
         }
     }
 
-    /// The agent and account the conversation runs with; fixed for a session that exists.
+    /// The agent, account and model to continue with. The session runs outside Nook, so a pick waits for the next
+    /// message: sending continues the conversation in Nook with it (another agent or account starts from a summary of
+    /// what happened, a model counts from that message on). Without a way to continue in Nook the pill stays fixed.
+    @ViewBuilder
+    private func agentMenu(name: String, kind: AgentKind?, profile: AgentProfile?, canSwitch: Bool) -> some View {
+        if canSwitch, let own = app.nookProvider(for: kind) {
+            let original = AgentChoice(provider: own, profileID: profile?.id ?? own.kind.rawValue, model: "")
+            let current = choice ?? original
+            let shown = app.profiles.profile(id: current.profileID)
+            let account = shown.map { AccountLabel.name($0, app: app) }
+            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider)
+            let providers = app.connectedProviders
+            ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
+                ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
+                             text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+            } content: {
+                AgentModelPicker(providers: providers, provider: current.provider, profileID: current.profileID,
+                                 model: current.model, showsAccounts: true) { provider, accountID, option in
+                    let same = provider == current.provider
+                    let next = AgentChoice(
+                        provider: provider,
+                        profileID: accountID ?? (same ? current.profileID : app.connectedProfiles(for: provider).first?.id ?? current.profileID),
+                        model: option ?? (same ? current.model : app.workspace.settings.model(for: provider)))
+                    choice = next == original ? nil : next
+                }
+            }
+            .help(tr("agents.reply.switchHelp"))
+        } else {
+            agentPill(name: name, profile: profile)
+        }
+    }
+
+    /// The agent and account the conversation runs with, when Nook cannot continue it with another one.
     private func agentPill(name: String, profile: AgentProfile?) -> some View {
         let label = profile.map { AccountLabel.name($0, app: app) }
         return ComposerPill(agent: name, account: profile.map { AccountKind.of($0, app: app) },
@@ -455,9 +494,11 @@ struct AgentSessionDetail: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canContinue else { return }
             let outgoing = composerModel.outgoing(text).send
+            let picked = choice
             perform {
-                try await app.reply(to: session, message: outgoing)
+                try await app.reply(to: session, message: outgoing, choice: picked)
                 draft = ""
+                choice = nil
             }
         }
         return VStack(alignment: .leading, spacing: 12) {
@@ -485,7 +526,8 @@ struct AgentSessionDetail: View {
             ) {
                 // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
                 pastMenu(session, canContinue: app.canContinueInNook(session))
-                agentPill(name: session.agent.name, profile: app.profile(for: session))
+                agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
+                          canSwitch: app.canContinueInNook(session))
             }
             .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.color))
             .images($images)
