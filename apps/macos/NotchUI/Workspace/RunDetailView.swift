@@ -355,7 +355,13 @@ private struct RunComposer: View {
         .padding(.bottom, 14)
         .frame(maxWidth: 956)
         .frame(maxWidth: .infinity)
-        .onAppear { focused = true }
+        // The composer gives way to an agent's question and comes back after it: the draft is kept in the shared draft
+        // store (the same one the notch uses for this session), so nothing typed is lost meanwhile.
+        .onAppear {
+            if draft.isEmpty, let saved = ComposerDraftStore.shared.draft(for: runID.uuidString) { draft = saved }
+            focused = true
+        }
+        .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
     }
 
     private func queueOrSteer() {

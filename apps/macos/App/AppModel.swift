@@ -437,8 +437,6 @@ final class AppModel: ObservableObject {
     // MARK: Stored state used by the extensions
     // Extensions cannot hold stored properties, so state that belongs to a feature lives here.
 
-    /// `todayCount` and when it was worked out (not published: it is derived, and only read while drawing).
-    var todayCountCache: (count: Int, at: Date)?
     /// The agent session open in the main window that Nook does not run itself ("live:<id>" or "past:<id>"), if any.
     @Published var selectedExternalSession: String?
     /// The first-run flow is showing in the main window.

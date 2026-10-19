@@ -31,8 +31,6 @@ final class DeviceHubService: ObservableObject {
     private var startedAt = Date()
     private var restartDelay: TimeInterval = 0
     private var stopping = false
-    /// `start()` is between its first check and starting the process (it waits for work off the main thread).
-    private var launching = false
     private var node: String?
     private var npm: String?
 
@@ -124,9 +122,7 @@ final class DeviceHubService: ObservableObject {
 
     /// Starts the hub and waits for `/readyz` (at most 30 s).
     func start() async {
-        guard process == nil, !launching, let node else { return }
-        launching = true
-        defer { launching = false }
+        guard process == nil, let node else { return }
         state = .starting
         stopping = false
         // A `ps` (up to 5 s) and the login shell (up to 15 s): never on the main thread, which they used to block on every
@@ -136,6 +132,7 @@ final class DeviceHubService: ObservableObject {
             Self.stopStaleHub(file: stateFile)
             return Self.loginEnvironment()
         }.value
+        // Stopped meanwhile, or another start got there first (everything from here to `self.process` runs without waiting).
         guard !stopping, process == nil else { return }
         let port = Self.freePort()
         let entry = DeviceHub.hubEntry(hubFolder).path

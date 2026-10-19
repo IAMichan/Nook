@@ -194,7 +194,7 @@ struct NotchRootView: View {
     private var idleBadge: some View {
         let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
         // Built from every source and session: worked out once per redraw.
-        let today = waiting > 0 ? 0 : app.todayCount
+        let today = waiting > 0 ? 0 : app.todayItems.count
         if waiting > 0 {
             HStack(spacing: 4) {
                 Circle().fill(NookTheme.amber).frame(width: 6, height: 6)

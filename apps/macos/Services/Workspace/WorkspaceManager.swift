@@ -205,6 +205,7 @@ final class WorkspaceManager: ObservableObject {
     private var timelineUse: [UUID: Date] = [:]
     private var evictedTimelines: Set<UUID> = []
     private static let timelineLimit = 16
+    private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
     private var quietEvents = false
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
@@ -336,8 +337,11 @@ final class WorkspaceManager: ObservableObject {
     /// Releases the longest unused timelines beyond `timelineLimit`, of sessions with nothing running or left to save.
     private func evictTimelines() {
         guard events.count > Self.timelineLimit else { return }
+        // Unused for minutes: a save scheduled for it has long been written, so reading it back gets everything.
+        let unusedSince = Date().addingTimeInterval(-Self.timelineIdleSeconds)
         let idle = events.keys.filter { id in
-            eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
+            (timelineUse[id] ?? .distantPast) < unusedSince
+                && eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
                 && claudeIdle[id] == nil && acpClients[id] == nil && !(run(id)?.status.isActive ?? false)
         }
         .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
