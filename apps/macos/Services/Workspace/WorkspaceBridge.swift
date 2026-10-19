@@ -272,8 +272,8 @@ final class WorkspaceBridge: ObservableObject {
 
         lines.append("")
         lines.append("## Browser")
-        let browser = BrowserStore.shared
-        if let url = browser.webView.url {
+        // Describing the browser must not start it: never opened means nothing open.
+        if let browser = BrowserStore.existing, let url = browser.webView.url {
             lines.append("- \(browser.webView.title ?? "") · \(url.absoluteString)" + (browser.openedBy.map { " (opened by \($0))" } ?? ""))
         } else {
             lines.append("- nothing open")

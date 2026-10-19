@@ -96,7 +96,7 @@ final class CodexUsage: ObservableObject {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         refresh()
@@ -167,7 +167,11 @@ final class CodexUsage: ObservableObject {
                 state.lastSessionDate = result.newestSessionDate ?? state.lastSessionDate
                 if result.askedAppServer { state.lastAppServerFetch = Date() }
                 self.states[key] = state
-                if let fresh = result.snapshot, fresh != self.snapshots[key] { self.snapshots[key] = fresh }
+                if var fresh = result.snapshot {
+                    // A session log does not always name the plan; keep the one the app-server reported.
+                    if fresh.planType == nil, fresh.source == .sessionLog { fresh.planType = self.snapshots[key]?.planType }
+                    if fresh != self.snapshots[key] { self.snapshots[key] = fresh }
+                }
             }
         }
     }
@@ -198,8 +202,15 @@ final class CodexUsage: ObservableObject {
         let sessionChanged = newest != nil && newest != previousSessionDate
         var result = WorkResult(snapshot: nil, newestSessionDate: newest, askedAppServer: false)
 
+        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval } ?? true
+        // A running session rewrites its log every minute, and each response in it carries the same limits the app-server
+        // reports. Read those instead of starting a whole `codex app-server` each minute; it still runs when due.
+        if hasSnapshot, sessionChanged, !due, let latest = sessions.first,
+           let usage = readSessionLog(latest.url, fileDate: latest.date) {
+            result.snapshot = usage
+            return result
+        }
         if let codex = codexExecutable() {
-            let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval } ?? true
             if !hasSnapshot || sessionChanged || due {
                 result.askedAppServer = true
                 if let usage = readRateLimits(codex: codex, home: home) {
@@ -403,10 +414,6 @@ final class CodexUsage: ObservableObject {
     }
 
     private nonisolated static func parseTimestamp(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: string) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: string)
+        NookDates.isoFractional.date(from: string) ?? NookDates.isoPlain.date(from: string)
     }
 }

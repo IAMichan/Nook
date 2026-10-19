@@ -323,9 +323,7 @@ extension NoteBuilder {
 
     /// One line per note for the brain: id, date, title and summary.
     static func overview(_ note: Note) -> String {
-        let format = DateFormatter()
-        format.locale = Locale(identifier: "en_US_POSIX")
-        format.dateFormat = "yyyy-MM-dd HH:mm"
+        let format = NookDates.formatter("yyyy-MM-dd HH:mm", locale: "en_US_POSIX")
         let minutes = max(1, Int((note.duration / 60).rounded()))
         var line = "- [\(note.id.uuidString)] \(format.string(from: note.start)) (\(minutes) min) \(note.title)"
         if let summary = note.summary, !summary.isEmpty { line += ": " + summary }

@@ -24,7 +24,7 @@ final class ClaudeUsage {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 180) { [weak self] _ in
             Task { @MainActor in self?.refreshNow() }
         }
         refreshNow()
@@ -99,11 +99,7 @@ final class ClaudeUsage {
     }
 
     private nonisolated static func parseDate(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
 
     // MARK: Token

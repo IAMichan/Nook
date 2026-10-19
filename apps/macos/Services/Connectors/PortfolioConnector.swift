@@ -524,43 +524,52 @@ enum PortfolioFormat {
 
     /// "€ 1.234,56", from one thousand without cents.
     static func eur(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = dutch
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "EUR"
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = abs(value) >= 1000 ? 0 : (abs(value) >= 1 || value == 0 ? 2 : 4)
-        if abs(value) < 1000 && abs(value) >= 1 { formatter.minimumFractionDigits = 2 }
+        let maximum = abs(value) >= 1000 ? 0 : (abs(value) >= 1 || value == 0 ? 2 : 4)
+        let minimum = abs(value) < 1000 && abs(value) >= 1 ? 2 : 0
+        let formatter = NookDates.cached("eur|\(minimum)|\(maximum)") { () -> NumberFormatter in
+            let formatter = NumberFormatter()
+            formatter.locale = dutch
+            formatter.numberStyle = .currency
+            formatter.currencyCode = "EUR"
+            formatter.minimumFractionDigits = minimum
+            formatter.maximumFractionDigits = maximum
+            return formatter
+        }
         return formatter.string(from: NSNumber(value: value)) ?? String(format: "€ %.2f", value)
     }
 
     /// "+2,3%"
     static func percent(_ value: Double) -> String {
+        return (percentFormatter.string(from: NSNumber(value: value)) ?? String(format: "%+.1f", value)) + "%"
+    }
+
+    /// "0,12345678", "1,2345" or "12.345"
+    static func amount(_ value: Double) -> String {
+        let maximum = value >= 1000 ? 0 : (value >= 1 ? 4 : 8)
+        let formatter = NookDates.cached("amount|\(maximum)") { () -> NumberFormatter in
+            let formatter = NumberFormatter()
+            formatter.locale = dutch
+            formatter.numberStyle = .decimal
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = maximum
+            return formatter
+        }
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    static func time(_ date: Date) -> String {
+        NookDates.formatter("HH:mm").string(from: date)
+    }
+
+    private static let percentFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.locale = dutch
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 1
         formatter.maximumFractionDigits = 1
         formatter.positivePrefix = "+"
-        return (formatter.string(from: NSNumber(value: value)) ?? String(format: "%+.1f", value)) + "%"
-    }
-
-    /// "0,12345678", "1,2345" or "12.345"
-    static func amount(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = dutch
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = value >= 1000 ? 0 : (value >= 1 ? 4 : 8)
-        return formatter.string(from: NSNumber(value: value)) ?? String(value)
-    }
-
-    static func time(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = dutch
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 
     /// "0,1234 BTC · 24h +2,3%"
     static func subtitle(_ holding: PortfolioHolding) -> String {

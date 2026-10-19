@@ -141,11 +141,11 @@ final class AgentHub: ObservableObject {
         } catch {
             Log.agents.error("Hook socket: \(error.localizedDescription, privacy: .public)")
         }
-        pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        pruneTimer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
             Task { @MainActor in self?.prune() }
         }
         refreshDetected()
-        scanTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        scanTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
             Task { @MainActor in self?.refreshDetected() }
         }
     }
