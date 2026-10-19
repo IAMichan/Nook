@@ -901,7 +901,7 @@ struct AgentRunPanel: View {
 
     private func permissionMenu(_ run: WorkspaceRun) -> some View {
         ComposerDropdown(width: 300) {
-            ComposerPill(symbol: run.permission == .bypass ? "lock.open" : "lock",
+            ComposerPill(symbol: run.mode == .plan ? "lock" : run.permission.symbol,
                          text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
                          tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
         } content: {
