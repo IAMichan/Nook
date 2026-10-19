@@ -23,6 +23,10 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case sessionRead = "session_read"
     case sessionList = "session_list"
     case sessionSend = "session_send"
+    case deviceList = "device_list"
+    case deviceOpen = "device_open"
+    case deviceScreenshot = "device_screenshot"
+    case deviceClose = "device_close"
 
     /// The MCP server name, in the agent's configuration and in its tool names.
     static let serverName = "nook"
@@ -35,8 +39,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
     var effect: Effect {
         switch self {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
-             .orchestratorCapabilities, .taskStatus, .sessionRead, .sessionList: return .read
-        case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend: return .local
+             .orchestratorCapabilities, .taskStatus, .sessionRead, .sessionList, .deviceList, .deviceScreenshot: return .read
+        case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose: return .local
         case .pullRequestCreate: return .outward
         }
     }
@@ -69,12 +73,16 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionRead: return "Read session"
         case .sessionList: return "Nook sessions"
         case .sessionSend: return "Message session"
+        case .deviceList: return "Simulators"
+        case .deviceOpen: return "Open simulator"
+        case .deviceScreenshot: return "Simulator screenshot"
+        case .deviceClose: return "Close simulator"
         }
     }
 
     /// The most telling argument of a call, for the timeline: the command, the address, the title or the terminal.
     static func detail(_ input: [String: Any]) -> String? {
-        for key in ["command", "url", "title", "terminal_id", "task", "task_id", "session_id", "message"] {
+        for key in ["command", "url", "title", "terminal_id", "task", "task_id", "session_id", "message", "device_id"] {
             if let value = input[key] as? String, !value.isEmpty { return value }
         }
         return nil
@@ -112,6 +120,14 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read or to message with session_send."
         case .sessionSend:
             return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
+        case .deviceList:
+            return "Lists the iOS Simulators on this Mac, whether each is booted, and which ones this session has open in Nook's Simulator page. Call it before device_open when you do not know a device id."
+        case .deviceOpen:
+            return "Opens an iOS Simulator in Nook's Simulator page, where the user watches it live (booting it if needed), and returns the agent-device command with the exact flags to drive it (snapshot, click, fill, open, install), plus a quick start. Without device_id it takes the booted simulator, otherwise the first one."
+        case .deviceScreenshot:
+            return "Takes a screenshot (PNG) of the simulator this session opened most recently, or of device_id."
+        case .deviceClose:
+            return "Stops following a simulator in this session. With shutdown: true the simulator is also shut down."
         case .sessionRead:
             return "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed. Use it when the user points you at a session with a link like [title](nook-context://v1/session/<id>) or an @-mention; the id is in the <nook_context> record."
         }
@@ -175,6 +191,15 @@ enum BridgeTool: String, CaseIterable, Sendable {
             ], required: ["session_id", "message"])
         case .sessionRead:
             return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."]], required: ["session_id"])
+        case .deviceList:
+            return object([:])
+        case .deviceOpen, .deviceScreenshot:
+            return object(["device_id": ["type": "string", "description": "The simulator's UDID from device_list. Optional."]])
+        case .deviceClose:
+            return object([
+                "device_id": ["type": "string", "description": "The simulator's UDID. Defaults to the one opened most recently."],
+                "shutdown": ["type": "boolean", "description": "Also shut the simulator down. Default false."]
+            ])
         case .taskStatus:
             return object(["task_id": ["type": "string", "description": "The task id from delegate_task."]], required: ["task_id"])
         case .taskCancel:
@@ -333,7 +358,8 @@ struct BridgeLaunch: Equatable, Sendable {
     with pull_request_create (the user approves it in Nook). Short commands whose output you need right away can still run \
     in your own shell. For work that can run on its own (research, a review, a side task) you can hand it to another agent \
     session with delegate_task: it sees only the brief you write, never has more rights than you, and its result comes back \
-    through task_status (or Nook tells you when it has finished).
+    through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \
+    Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because

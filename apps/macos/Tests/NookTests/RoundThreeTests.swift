@@ -571,4 +571,77 @@ final class RoundThreeTests: XCTestCase {
                        [.embedded(name: "a.txt", mimeType: "application/octet-stream", data: Data("hi".utf8))])
         XCTAssertNil(McpAppHost.downloads([["type": "image"]]))
     }
+
+    func testDeviceHubFramesAndCoordinates() {
+        let touch = DeviceHub.touchFrame(.begin, x: 1.4, y: 0.25)
+        XCTAssertEqual(touch.first, 0x03)
+        XCTAssertEqual(String(decoding: touch.dropFirst(), as: UTF8.self), #"{"type":"begin","x":1,"y":0.25}"#)
+        XCTAssertEqual(DeviceHub.buttonFrame(.appSwitcher).first, 0x04)
+        XCTAssertEqual(String(decoding: DeviceHub.keyFrame(down: true, usage: 4).dropFirst(), as: UTF8.self), #"{"type":"down","usage":4}"#)
+        XCTAssertEqual(String(decoding: DeviceHub.orientationFrame(.landscapeLeft).dropFirst(), as: UTF8.self), #"{"orientation":"landscape_left"}"#)
+
+        var config = Data([0x82])
+        config.append(Data(#"{"width":1179,"height":2556,"orientation":"landscape_left"}"#.utf8))
+        guard case .config(let screen) = DeviceHub.serverMessage(config) else { return XCTFail("config") }
+        XCTAssertEqual(screen.orientation, .landscapeLeft)
+        XCTAssertEqual(DeviceHub.serverMessage(Data([0x83])), .admitted)
+        XCTAssertGreaterThan(screen.aspect, 1)
+        let point = DeviceHub.devicePoint(x: 0.2, y: 0.7, config: screen)
+        XCTAssertEqual(point.x, 0.7, accuracy: 0.0001)
+        XCTAssertEqual(point.y, 0.8, accuracy: 0.0001)
+        var upside = screen
+        upside.orientation = .portraitUpsideDown
+        XCTAssertEqual(DeviceHub.devicePoint(x: 0.2, y: 0.7, config: upside).x, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(DeviceHub.Orientation.landscapeRight.next, .portrait)
+
+        XCTAssertEqual(DeviceHub.hidUsage[0x00], 0x04, "A")
+        XCTAssertEqual(DeviceHub.hidUsage[0x1D], 0x27, "0")
+        XCTAssertEqual(DeviceHub.hidUsage[0x24], 0x28, "Return")
+        XCTAssertTrue(DeviceHub.forwardsKey(keyCode: 0x0F, command: true), "⌘R reloads")
+        XCTAssertFalse(DeviceHub.forwardsKey(keyCode: 0x08, command: true), "⌘C stays with the Mac")
+        XCTAssertFalse(DeviceHub.forwardsKey(keyCode: 0x7A, command: false), "F1 is not sent")
+
+        let devices = DeviceHub.devices(Data(#"{"simulators":[{"id":"U1","name":"iPhone 16","version":"18.2","platform":"ios","booted":true,"physical":false}],"emulators":[],"errors":[{"message":"one"},{"message":"two"}]}"#.utf8))
+        XCTAssertEqual(devices.devices, [DeviceHub.Device(id: "U1", name: "iPhone 16", version: "18.2", booted: true)])
+        XCTAssertEqual(devices.problem, "one\ntwo")
+        XCTAssertEqual(DeviceHub.bootFailure("No space left on device"), .diskSpace)
+        XCTAssertEqual(DeviceHub.bootFailure("Operation timed out"), .timeout)
+        XCTAssertEqual(DeviceHub.restartDelay(previous: 0, upFor: 5), 1)
+        XCTAssertEqual(DeviceHub.restartDelay(previous: 16, upFor: 5), 30)
+        XCTAssertEqual(DeviceHub.restartDelay(previous: 16, upFor: 120), 1)
+        XCTAssertEqual(DeviceHub.hubArguments(entry: "/e.mjs", port: 4000), ["/e.mjs", "--port", "4000", "--host", "127.0.0.1", "--hide-sidebar", "--hide-boot-device"])
+        XCTAssertEqual(DeviceHub.mjpegPath(udid: "AB-12"), "/vendor/serve-sim/helper/AB-12/stream.mjpeg")
+        XCTAssertEqual(DeviceHub.daemon(Data(#"{"httpPort":5123,"token":"t"}"#.utf8))?.port, 5123)
+        XCTAssertTrue(DeviceHub.quickStart(device: "iPhone 16", version: "18.2", command: "/x/agent-device", targetArgs: ["--udid", "U 1"]).contains("'U 1'"))
+        XCTAssertTrue(DeviceHub.launcherScript(node: "/n", entry: "/e").contains("Call device_open first"))
+        XCTAssertEqual(DeviceHub.stableID("local"), DeviceHub.stableID("local"))
+        var png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
+        png.append(contentsOf: [0, 0, 4, 0x9B, 0, 0, 9, 0xFC])
+        XCTAssertEqual(DeviceHub.pngSize(png)?.width, 1179)
+        XCTAssertEqual(DeviceHub.pngSize(png)?.height, 2556)
+    }
+
+    func testMjpegParserAndSimulatorActions() {
+        var parser = MjpegParser()
+        let first = Data([0xFF, 0xD8, 1, 2, 0xFF, 0xD9])
+        let second = Data([0xFF, 0xD8, 3, 0xFF, 0xD9])
+        var stream = Data("--frame\r\nContent-Type: image/jpeg\r\n\r\n".utf8) + first + Data("\r\n--frame\r\n\r\n".utf8) + second
+        let split = stream.count - 3
+        XCTAssertEqual(parser.feed(stream.prefix(split)), [first])
+        XCTAssertEqual(parser.feed(stream.suffix(from: split)), [second])
+        stream = Data()
+        XCTAssertEqual(parser.feed(Data([0xFF])), [])
+        XCTAssertEqual(parser.feed(Data([0xD8, 9, 0xFF, 0xD9])), [Data([0xFF, 0xD8, 9, 0xFF, 0xD9])])
+
+        XCTAssertEqual(SimulatorAction.appearance(dark: true).arguments(udid: "U"), ["ui", "U", "appearance", "dark"])
+        XCTAssertEqual(SimulatorAction.textSize(.standard).arguments(udid: "U"), ["ui", "U", "content_size", "large"])
+        XCTAssertEqual(SimulatorAction.location(latitude: 52.5, longitude: 4.5).arguments(udid: "U"), ["location", "U", "set", "52.5,4.5"])
+        XCTAssertEqual(SimulatorAction.permission(.photos, decision: .grant, bundleID: "com.a").arguments(udid: "U"), ["privacy", "U", "grant", "photos", "com.a"])
+        XCTAssertTrue(SimulatorAction.isValidBundleID("com.example.app"))
+        XCTAssertFalse(SimulatorAction.isValidBundleID("--help"))
+        XCTAssertTrue(SimulatorAction.isValidPushPayload(#"{"aps":{"alert":"hi"}}"#))
+        XCTAssertFalse(SimulatorAction.isValidPushPayload(#"{"alert":"hi"}"#))
+        let all = Simulators.parseAll(Data(#"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-2":[{"udid":"A","name":"iPhone","state":"Shutdown","isAvailable":true},{"udid":"B","name":"iPad","state":"Booted","isAvailable":true}],"com.apple.CoreSimulator.SimRuntime.watchOS-11-0":[{"udid":"W","name":"Watch","state":"Booted"}]}}"#.utf8))
+        XCTAssertEqual(all.map(\.udid), ["B", "A"])
+    }
 }

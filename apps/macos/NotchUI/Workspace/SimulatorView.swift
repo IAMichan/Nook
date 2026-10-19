@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// The iOS Simulator as a page in the Agents tab: pick a running simulator and watch its screen while an agent builds
-/// your app; copy or save the picture to show it to a session. Refreshes only while the page is open.
-struct SimulatorView: View {
+/// The simulator without the device tools (no Node.js, or not installed yet): its screen as a picture from
+/// `simctl io screenshot`, refreshed about once a second while the page is open, to copy or save.
+struct SimulatorSnapshotView: View {
     @State private var devices: [SimulatorDevice] = []
     @State private var chosen: String?
     @State private var image: NSImage?

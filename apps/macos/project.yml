@@ -187,6 +187,7 @@ targets:
       - path: Services/Workspace/McpUI.swift
       - path: Services/Workspace/McpApps.swift
       - path: Services/Workspace/Simulators.swift
+      - path: Services/Workspace/DeviceHub.swift
       - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
