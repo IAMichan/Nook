@@ -86,7 +86,9 @@ struct AgentSessionDetail: View {
 
     /// The transcript behind a session Nook only sees as a process (it was running before Nook started), or matching history.
     private func transcript(for session: AgentSession) -> PastSession? {
-        if let transcript = app.detectedTranscripts()[session.id] { return transcript }
+        // Only processes Nook merely sees have one, and working it out merges every session list: not for the others,
+        // and this runs several times per redraw (and per keystroke in the reply field).
+        if session.isDetected, let transcript = app.detectedTranscripts()[session.id] { return transcript }
         if let id = app.conversationID(for: session), let past = app.history.sessions.first(where: { $0.isConversation(id) }) {
             return past
         }

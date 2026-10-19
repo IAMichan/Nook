@@ -6,13 +6,11 @@ struct RunDetailView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     let runID: UUID
-    @State private var draft = ""
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @State private var expanded: Set<UUID> = []
     @State private var followTail = true
     @State private var diffFile: GitFileChange?
-    @FocusState private var composerFocused: Bool
     @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
@@ -53,14 +51,13 @@ struct RunDetailView: View {
                             .padding(.horizontal, 18)
                             .padding(.top, 10)
                     }
-                    composer(run)
+                    RunComposer(run: run, runID: runID) { followTail = true }
                 }
             }
             .onAppear {
                 workspace.loadTimeline(runID)
                 workspace.refreshGit(runID)
                 workspace.prewarm(runID)
-                composerFocused = true
             }
             .sheet(item: $diffFile) { file in
                 ChangesSheet(runID: runID, initialFile: file)
@@ -272,9 +269,22 @@ struct RunDetailView: View {
             ?? GitFileChange(path: relative, oldPath: nil, kind: .modified, staged: false, unstaged: true)
     }
 
-    // MARK: Input
+}
 
-    private func composer(_ run: WorkspaceRun) -> some View {
+// MARK: Input
+
+/// The input field of a session, with its own draft: typing redraws only this, not the whole timeline above it (which
+/// is laid out in full, and re-renders every message's Markdown when its view redraws).
+private struct RunComposer: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    let run: WorkspaceRun
+    let runID: UUID
+    /// A message went out: the timeline follows the newest again.
+    let onSent: () -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
         let active = run.status.isActive
         return VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topLeading) {
@@ -289,7 +299,7 @@ struct RunDetailView: View {
                 TextEditor(text: $draft)
                     .font(NookTheme.font(13))
                     .scrollContentBackground(.hidden)
-                    .focused($composerFocused)
+                    .focused($focused)
                     .frame(minHeight: 44, maxHeight: 160)
                     .fixedSize(horizontal: false, vertical: true)
                     .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -300,7 +310,7 @@ struct RunDetailView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(RoundedRectangle(cornerRadius: 10).fill(WS.surface))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(composerFocused ? NookTheme.iris.opacity(0.5) : WS.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? NookTheme.iris.opacity(0.5) : WS.border, lineWidth: 1))
 
             HStack(spacing: 8) {
                 Text(active ? tr("ws.composer.hintBusy") : tr("ws.composer.hint"))
@@ -345,13 +355,14 @@ struct RunDetailView: View {
         .padding(.bottom, 14)
         .frame(maxWidth: 956)
         .frame(maxWidth: .infinity)
+        .onAppear { focused = true }
     }
 
     private func queueOrSteer() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
-        followTail = true
+        onSent()
         if !workspace.steer(runID, text: text) { workspace.enqueue(runID, text: text) }
     }
 
@@ -359,7 +370,7 @@ struct RunDetailView: View {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         draft = ""
-        followTail = true
+        onSent()
         workspace.send(runID, text: text)
     }
 

@@ -26,11 +26,14 @@ struct AgentsTab: View {
     }
 
     var body: some View {
-        let transcripts = app.demoMode ? [:] : app.detectedTranscripts()
+        // Both come from merging every session list: worked out together, once per redraw.
+        let lists: (transcripts: [String: PastSession], past: [PastSession]) = app.demoMode
+            ? (transcripts: [:], past: []) : app.detectedTranscriptsAndPast()
+        let transcripts = lists.transcripts
         // A process Nook only sees is shown when its conversation can be read; agents are linked in Settings › Agents.
         let live = app.agentSessions.filter { app.demoMode || !$0.isDetected || transcripts[$0.id] != nil }
         // Earlier sessions only of accounts that are still connected, so the list stays about what you actually use.
-        let past = app.demoMode ? [] : Array(app.pastSessionsOutsideWorkspace
+        let past = app.demoMode ? [] : Array(lists.past
             .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
         HStack(alignment: .top, spacing: 0) {

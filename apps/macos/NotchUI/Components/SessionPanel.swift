@@ -2,6 +2,23 @@ import SwiftUI
 import SystemConfiguration
 import AppKit
 
+/// App and file icons by path. `NSWorkspace.icon(forFile:)` asks Launch Services each time, and the menus and settings
+/// rows that show icons redraw often.
+enum FileIcons {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    static func icon(_ path: String) -> NSImage {
+        if let known = cache.object(forKey: path as NSString) { return known }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        cache.setObject(icon, forKey: path as NSString)
+        return icon
+    }
+}
+
 /// Where "Open in" opens a session's folder: Finder, Nook's terminal, an installed terminal app or an editor.
 struct OpenInTarget: Identifiable, Hashable {
     static let finder = "com.apple.finder"
@@ -27,7 +44,7 @@ struct OpenInTarget: Identifiable, Hashable {
     @ViewBuilder
     var icon: some View {
         if let appURL {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+            Image(nsImage: FileIcons.icon(appURL.path))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 18, height: 18)

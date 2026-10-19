@@ -712,7 +712,8 @@ private struct NookList: View {
             }
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
+                    LazyVStack(alignment: .leading, spacing: 2) {
                         if items.isEmpty && (archived.isEmpty || !showArchived) {
                             Text(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"))
                                 .font(NookTheme.font(12.5))

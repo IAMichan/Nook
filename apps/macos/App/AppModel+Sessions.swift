@@ -92,8 +92,16 @@ extension AppModel {
     /// Earlier sessions from transcripts, without the ones that are also a running session or a session Nook runs
     /// (those are listed there, in more detail).
     var pastSessionsOutsideWorkspace: [PastSession] {
-        let linked = Set(detectedTranscripts().values.map(\.id))
-        return pastNotCovered.filter { !linked.contains($0.id) }
+        detectedTranscriptsAndPast().past
+    }
+
+    /// `detectedTranscripts()` and `pastSessionsOutsideWorkspace` together. Merging every session list is the costly
+    /// part of both: this does it once, for a view that needs the two.
+    func detectedTranscriptsAndPast() -> (transcripts: [String: PastSession], past: [PastSession]) {
+        let free = pastNotCovered
+        let transcripts = detectedTranscripts(free: free)
+        let linked = Set(transcripts.values.map(\.id))
+        return (transcripts, free.filter { !linked.contains($0.id) })
     }
 
     /// The transcript behind each process Nook only sees (started before Nook opened, or without hooks), by session id: the
@@ -101,7 +109,12 @@ extension AppModel {
     /// turn, newest process first. With it such a session shows its conversation straight away.
     func detectedTranscripts() -> [String: PastSession] {
         guard !hub.detected.isEmpty else { return [:] }
-        let free = pastNotCovered
+        return detectedTranscripts(free: pastNotCovered)
+    }
+
+    /// `detectedTranscripts()` with the earlier sessions not covered elsewhere (`pastNotCovered`) already worked out.
+    private func detectedTranscripts(free: [PastSession]) -> [String: PastSession] {
+        guard !hub.detected.isEmpty else { return [:] }
         var result: [String: PastSession] = [:]
         let groups = Dictionary(grouping: hub.detected) { "\($0.name)|\($0.cwd)|\($0.home)" }
         for group in groups.values {
