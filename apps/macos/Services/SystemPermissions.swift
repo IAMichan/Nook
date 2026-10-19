@@ -13,10 +13,11 @@ import Speech
 /// Nook restarts, which macOS asks for after changing the switch anyway.
 @MainActor
 enum ScreenAccess {
-    private(set) static var refused = false
+    /// Only written on the main actor; a stale read from elsewhere only delays the stop by one check.
+    nonisolated(unsafe) private(set) static var refused = false
 
-    /// True when an automatic read may call ScreenCaptureKit.
-    static var isUsable: Bool { !refused && CGPreflightScreenCaptureAccess() }
+    /// True when an automatic read may call ScreenCaptureKit. Nonisolated: `SystemPermission.isGranted` asks from any thread.
+    nonisolated static var isUsable: Bool { !refused && CGPreflightScreenCaptureAccess() }
 
     /// Called with the error of a failed capture: a refusal turns automatic reads off for this launch.
     static func note(_ error: Error) {
