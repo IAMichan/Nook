@@ -8,11 +8,12 @@ protocol CompletionEngine: AnyObject, Sendable {
     var identity: String { get }
     /// Makes the running request stop at its next token.
     func cancel()
-    /// Continues `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far each time
-    /// another word is finished, so the suggestion can show before the model is done.
-    func complete(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult?
+    /// Continues the text of `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far
+    /// each time another word is finished, so the suggestion can show before the model is done. A chat model reads the prompt
+    /// as a request with its answer already begun (`CompletionChat`), a base model as a document.
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult?
     /// Words that could come next, most likely first, each with the space before it when the model would put one there.
-    func alternatives(prompt: String, excluding: String, count: Int) async -> [String]
+    func alternatives(prompt: CompletionPrompt, excluding: String, count: Int) async -> [String]
     /// Leans generation toward words the user writes often. Strength 0 turns it off.
     func setPersonalization(words: [String: Double], strength: Double)
 }
