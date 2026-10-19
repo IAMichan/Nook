@@ -1,105 +1,49 @@
 import SwiftUI
 
-/// The two parts of Nook's main window: the chat and the agents. Terminals, the browser and worktrees are tools of the
-/// agents. (Usage moved to Settings › Usage, so every function has one place.)
-enum WorkspacePane: String, CaseIterable, Identifiable {
-    case chat, sessions
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .chat: return tr("main.chat")
-        case .sessions: return tr("main.agents")
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .chat: return "bubble.left.and.bubble.right"
-        case .sessions: return "person.2.wave.2"
-        }
-    }
-}
-
-/// What the Agents part of the window shows next to the session list: the selected session, or one of its tools.
-/// The terminal opens on the selected session's folder; the browser and worktrees are shared.
-enum WindowTool: String, CaseIterable, Identifiable {
-    case conversation, terminal, browser, worktrees
-    var id: String { rawValue }
-    var title: String { tr("ws.tool." + rawValue) }
-    var symbol: String {
-        switch self {
-        case .conversation: return "text.bubble"
-        case .terminal: return "terminal"
-        case .browser: return "safari"
-        case .worktrees: return "arrow.triangle.branch"
-        }
-    }
-
-    init(_ tool: WorkbenchTool) {
-        switch tool {
-        case .terminals: self = .terminal
-        case .browser: self = .browser
-        case .worktrees: self = .worktrees
-        }
-    }
-}
-
-/// Nook's main window. Chat: all conversations. Agents: sidebar of sessions, then the session with its inspector, or
-/// one of its tools: a terminal in its folder, the browser, the worktrees.
+/// Nook's main window: the same tabs as the notch (Nook with home and chat, Agents with every session and its tools,
+/// Music while something plays), each with the room of a window. A sidebar on the left switches between them; tasks
+/// such as reviewing changes open over the tab, as they do in the notch. While the window is in front, anything that
+/// asks for a tab or a task opens here (see `NotchViewModel.routesToWindow`).
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
-    @EnvironmentObject private var workspace: WorkspaceManager
-    @State private var pane: WorkspacePane = .sessions
-    @State private var showInspector = true
-    @State private var showNewSession = false
-    @State private var tool: WindowTool = .conversation
-    /// A terminal was just opened on request: keep it in front instead of the selected session's.
-    @State private var keepOpenedTerminal = false
+    @ObservedObject private var viewModel = AppModel.shared.viewModel
 
     var body: some View {
-        // Plain stacks instead of NavigationSplitView + .inspector: the split view's child controllers kept reporting a new
-        // min/max size to each other on every constraints pass, which aborts with "needing another Update Constraints in
-        // Window pass" when switching pane or opening a sheet.
         HStack(spacing: 0) {
-            if pane == .sessions {
-                WorkspaceSidebar(pane: $pane, showNewSession: $showNewSession)
-                    .frame(width: 264)
-                WSHairline()
+            WindowSidebar(viewModel: viewModel, tabs: tabs)
+                .frame(width: 216)
+            WSHairline()
+            VStack(alignment: .leading, spacing: 0) {
+                PanelApprovalBar(viewModel: viewModel, tab: viewModel.windowTab, sheet: viewModel.windowSheet,
+                                 hub: app.hub, workspace: app.workspace)
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, 12)
             }
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(WS.background)
-            if showInspector, pane == .sessions, tool == .conversation, let run = workspace.run(workspace.selectedRunID) {
-                WSHairline()
-                RunInspector(runID: run.id)
-                    .frame(width: 320)
-            }
+            .padding(.horizontal, 24)
+            // Below the title bar, which the content runs under.
+            .padding(.top, 40)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(WS.background)
         }
-        .toolbar { toolbar }
+        .ignoresSafeArea(.container, edges: .top)
         .background {
-            // ⌘N starts a session from anywhere in the window; the visible button is in the sidebar.
-            Button("") {
-                pane = .sessions
-                showNewSession = true
+            // ⌘1, ⌘2, ⌘3 switch tabs; ⌘N starts a session.
+            Group {
+                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                    Button("") { select(tab) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+                Button("") { newSession() }
+                    .keyboardShortcut("n", modifiers: .command)
             }
-            .keyboardShortcut("n", modifiers: .command)
             .opacity(0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
-        // Presented as a native AppKit sheet: SwiftUI's own `.sheet` re-negotiates its presentation window on every layout
-        // pass here and aborts with "needing another Update Constraints in Window pass".
-        .onChange(of: showNewSession) { _, show in
-            guard show else { return }
-            WorkspaceWindowController.shared.presentSheet(size: NSSize(width: 660, height: 720), onClosed: { showNewSession = false }) { close in
-                NewSessionSheet(onStarted: { id in
-                    pane = .sessions
-                    workspace.selectedRunID = id
-                }, close: close)
-                .environmentObject(app)
-                .environmentObject(workspace)
-                .environmentObject(workspace.settings)
-            }
-        }
+        .animation(NookTheme.swap, value: viewModel.windowTab)
+        .animation(NookTheme.swap, value: viewModel.windowSheet)
         .sheet(isPresented: $app.showOnboarding) {
             OnboardingView {
                 app.settings.onboardingDone = true
@@ -108,136 +52,150 @@ struct WorkspaceView: View {
         }
         .tint(NookTheme.iris)
         .id(app.settings.accentHex)
-        .frame(minWidth: 760, minHeight: 520)
-        .onReceive(NotificationCenter.default.publisher(for: .nookWorkspaceNewSession)) { _ in
-            pane = .sessions
-            showNewSession = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nookMainWindowPane)) { note in
-            // "workspace" was the third part before its tools moved to Agents.
-            if let raw = note.object as? String, let target = WorkspacePane(rawValue: raw == "workspace" ? "sessions" : raw) { pane = target }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nookWorkbenchTool)) { note in
-            guard let raw = note.object as? String, let target = WorkbenchTool(rawValue: raw) else { return }
-            pane = .sessions
-            let next = WindowTool(target)
-            if next == .terminal && tool != .terminal { keepOpenedTerminal = true }
-            tool = next
-        }
-        .onChange(of: tool) { _, new in
-            if new == .terminal && !keepOpenedTerminal { showSessionTerminal() }
-            keepOpenedTerminal = false
-        }
-        .onChange(of: app.selectedExternalSession) { _, key in
-            if tool == .terminal { showSessionTerminal() } else if key != nil { tool = .conversation }
-        }
-        .onAppear {
-            app.history.refresh()
-            if workspace.selectedRunID == nil {
-                workspace.selectedRunID = workspace.runs.first { !$0.archived }?.id
-            }
-        }
-        .onChange(of: workspace.selectedRunID) { _, id in
-            if id != nil { app.selectedExternalSession = nil }
-            // Picking a session shows it; on the terminal tool, its terminal.
-            if tool == .terminal { showSessionTerminal() } else if id != nil { tool = .conversation }
-        }
+        .frame(minWidth: 900, minHeight: 580)
+    }
+
+    /// The notch's tabs: Music only while a player is open (or while you are on it).
+    private var tabs: [PanelTab] {
+        PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || viewModel.windowTab == .music)
     }
 
     @ViewBuilder
-    private var detail: some View {
-        switch pane {
-        case .sessions where tool == .terminal:
-            TerminalsView()
-        case .sessions where tool == .browser:
-            BrowserView()
-        case .sessions where tool == .worktrees:
-            WorktreesView()
-        case .sessions:
-            if let id = workspace.selectedRunID, workspace.run(id) != nil {
-                RunDetailView(runID: id)
-                    .id(id)
-            } else if let key = app.selectedExternalSession, let selection = app.sessionSelection(key) {
-                AgentSessionDetail(selection: selection)
-                    .id(key)
-                    .padding(20)
-            } else {
-                WSEmptyState(
-                    symbol: "sparkles.rectangle.stack",
-                    title: workspace.runs.isEmpty ? tr("ws.empty.first.title") : tr("ws.empty.none.title"),
-                    message: workspace.runs.isEmpty ? tr("ws.empty.first.message") : tr("ws.empty.none.message"),
-                    action: (tr("ws.newSession"), { showNewSession = true })
-                )
-            }
-        case .chat:
-            NookChatView(viewModel: app.viewModel, chat: app.chat, compact: false)
-                .padding(20)
-                .background(NookTheme.notch)
-        }
-    }
-
-    /// The folder the selected session works in: its worktree for a session Nook runs, the session's folder otherwise.
-    private var selectedDirectory: String? {
-        if let run = workspace.run(workspace.selectedRunID) { return run.workingDirectory }
-        guard let key = app.selectedExternalSession, let selection = app.sessionSelection(key) else { return nil }
-        switch selection {
-        case .live(let session): return session.cwd.isEmpty ? nil : session.cwd
-        case .past(let session): return session.cwd.isEmpty ? nil : session.cwd
-        }
-    }
-
-    /// On the terminal tool, the selected session's terminal is the one in front: an existing one in its folder, or a
-    /// new one there.
-    private func showSessionTerminal() {
-        guard let directory = selectedDirectory else { return }
-        let store = TerminalStore.shared
-        if let existing = store.sessions(in: directory).last {
-            if !store.sessions(in: directory).contains(where: { $0.id == store.selected }) { store.selected = existing.id }
+    private var content: some View {
+        if let sheet = viewModel.windowSheet {
+            NotchSheetView(sheet: sheet, close: { viewModel.windowSheet = nil }) { viewModel.windowSheet = nil }
+                .transition(.opacity.combined(with: .offset(y: 6)))
         } else {
-            store.open(in: directory)
+            Group {
+                switch viewModel.windowTab {
+                case .agents: AgentsTab(viewModel: viewModel)
+                case .music: MusicTab()
+                default: NookChatView(viewModel: viewModel, chat: app.chat, compact: false)
+                }
+            }
+            .id(viewModel.windowTab)
+            .transition(.opacity.combined(with: .offset(y: 6)))
         }
     }
 
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker(tr("ws.pane.label"), selection: $pane) {
-                ForEach(WorkspacePane.allCases) { pane in
-                    Label(pane.title, systemImage: pane.symbol).tag(pane)
+    private func select(_ tab: PanelTab) {
+        viewModel.windowSheet = nil
+        viewModel.windowTab = tab
+    }
+
+    private func newSession() {
+        viewModel.windowSheet = nil
+        viewModel.selectedAgentID = "new"
+        viewModel.windowTab = .agents
+    }
+}
+
+/// The window's sidebar: Nook's name under the traffic lights, the tabs, and at the bottom talking and Settings.
+private struct WindowSidebar: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let tabs: [PanelTab]
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Nook")
+                .font(NookTheme.font(15, .semibold))
+                .foregroundStyle(WS.text)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 14)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(tabs) { tab in
+                WindowNavRow(title: tab.title, symbol: symbol(tab), badge: badge(tab),
+                             selected: viewModel.windowTab == tab && viewModel.windowSheet == nil && !startingSession(tab)) {
+                    viewModel.windowSheet = nil
+                    viewModel.windowTab = tab
                 }
             }
-            .pickerStyle(.segmented)
-            .labelStyle(.titleOnly)
-            .frame(width: 330)
-            .background {
-                // ⌘1, ⌘2, ⌘3 switch views.
-                ForEach(Array(WorkspacePane.allCases.enumerated()), id: \.element) { index, item in
-                    Button("") { pane = item }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                        .opacity(0)
-                }
+            WindowNavRow(title: tr("agents.newSession"), symbol: "square.and.pencil", badge: 0,
+                         selected: viewModel.windowTab == .agents && viewModel.selectedAgentID == "new" && viewModel.windowSheet == nil) {
+                viewModel.windowSheet = nil
+                viewModel.selectedAgentID = "new"
+                viewModel.windowTab = .agents
+            }
+            .padding(.top, 10)
+            Spacer(minLength: 12)
+            WindowNavRow(title: tr("button.talkShort"), symbol: "mic", badge: 0, selected: false) {
+                viewModel.startListening()
+            }
+            .help(tr("button.talk"))
+            WindowNavRow(title: tr("button.settings"), symbol: "gearshape", badge: 0, selected: false) {
+                app.openSettings()
             }
         }
-        ToolbarItemGroup(placement: .primaryAction) {
-            if pane == .sessions {
-                Picker(tr("ws.tool.label"), selection: $tool) {
-                    ForEach(WindowTool.allCases) { item in
-                        Label(item.title, systemImage: item.symbol).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.iconOnly)
-                .help(tr("ws.tool.label"))
-            }
-            Button {
-                showInspector.toggle()
-            } label: {
-                Label(tr("ws.inspector.toggle"), systemImage: "sidebar.right")
-            }
-            .keyboardShortcut("i", modifiers: [.command, .option])
-            .help(tr("ws.inspector.toggle"))
-            .disabled(pane != .sessions || tool != .conversation)
+        .padding(.horizontal, 10)
+        // Clear of the traffic lights: the sidebar runs up under the title bar.
+        .padding(.top, 46)
+        .padding(.bottom, 14)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(WS.sidebar)
+    }
+
+    /// The new-session line is the selected one while a session is being started.
+    private func startingSession(_ tab: PanelTab) -> Bool {
+        tab == .agents && viewModel.selectedAgentID == "new"
+    }
+
+    private func symbol(_ tab: PanelTab) -> String {
+        switch tab {
+        case .agents: return "person.2.wave.2"
+        case .music: return "music.note"
+        default: return "bubble.left.and.bubble.right"
         }
+    }
+
+    /// Agents that wait for you, on the Agents tab.
+    private func badge(_ tab: PanelTab) -> Int {
+        guard tab == .agents else { return 0 }
+        return app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
+    }
+}
+
+/// One line in the window's sidebar: symbol, name and, when something waits, a count.
+private struct WindowNavRow: View {
+    let title: String
+    let symbol: String
+    let badge: Int
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(selected ? WS.text : WS.secondary)
+                    .frame(width: 18)
+                Text(title)
+                    .font(NookTheme.font(13.5, selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? WS.text : WS.text.opacity(0.85))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(NookTheme.font(10.5, .bold))
+                        .foregroundStyle(NookTheme.ink)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(Capsule().fill(NookTheme.amber))
+                        .help(tr("ws.sidebar.pendingHelp"))
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected ? WS.selected : (hovering ? WS.hover : .clear)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

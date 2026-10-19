@@ -212,8 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuild(menu)
     }
 
-    @objc private func openChat() { model.viewModel.focusChat = true; model.viewModel.show(.panel(.chat)) }
-    @objc private func openAgents() { model.viewModel.show(.panel(.agents)) }
+    @objc private func openChat() { model.viewModel.focusChat = true; model.viewModel.show(.panel(.chat), inNotch: true) }
+    @objc private func openAgents() { model.viewModel.show(.panel(.agents), inNotch: true) }
     @objc private func playPause() { model.nowPlaying.control(.playPause) }
     @objc private func nextTrack() { model.nowPlaying.control(.next) }
     @objc private func talk() { model.toggleVoice() }

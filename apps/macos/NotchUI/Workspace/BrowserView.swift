@@ -353,7 +353,7 @@ struct BrowserView: View {
             do {
                 let page = try await store.pageText()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
-                if WorkspaceWindowController.shared.isKey { app.openMainWindow(.chat) } else { app.showChat() }
+                app.showChat()
             } catch {
                 app.viewModel.present(app.errorCard(error.localizedDescription))
             }
@@ -404,14 +404,10 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
         panel = nil
     }
 
-    /// The full browser: in the workspace window when that is in front, otherwise in the notch.
+    /// The full browser: in the main window when that is in front, otherwise in the notch.
     private func expand() {
         close()
-        if WorkspaceWindowController.shared.isKey {
-            AppModel.shared.openMainWindow(.sessions, tool: .browser)
-        } else {
-            AppModel.shared.showWorkbench(.browser)
-        }
+        AppModel.shared.showWorkbench(.browser)
     }
 }
 
