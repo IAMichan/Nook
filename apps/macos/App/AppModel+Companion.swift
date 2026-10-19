@@ -16,7 +16,7 @@ extension AppModel {
     func presentWhatsApp(_ chat: String) {
         let link = WhatsAppLink.shared
         guard WhatsAppSettings.notify, let conversation = link.inbox.conversations[chat],
-              let last = conversation.messages.last(where: { !$0.fromMe }) else { return }
+              conversation.messages.contains(where: { !$0.fromMe }) else { return }
         let token = Self.whatsAppCardPrefix + chat
         viewModel.register("\(token)#read") { link.markRead(chat) }
         viewModel.register("\(token)#nook") { [weak self] in
@@ -26,28 +26,25 @@ extension AppModel {
         }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // The lines before the newest one, as small facts above it; each label is unique (time and who).
-        var earlier: [Fact] = []
+        // The last lines of the chat as bubbles, the newest at the bottom; in a group each says who wrote it.
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
-        for message in conversation.messages.dropLast().suffix(3) {
-            let who = message.fromMe ? tr("whatsapp.you") : (message.senderName.isEmpty ? conversation.name : message.senderName)
-            var label = "\(time.string(from: message.date)) · \(who)"
-            while earlier.contains(where: { $0.label == label }) { label += "\u{200B}" }
-            earlier.append(Fact(label: label, value: Self.whatsAppText(message)))
+        let bubbles = conversation.messages.suffix(4).map { message in
+            ChatBubble(id: message.id, text: Self.whatsAppText(message), time: time.string(from: message.date),
+                       sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
+                       fromMe: message.fromMe)
         }
-        let sender = conversation.isGroup && !last.senderName.isEmpty ? "\(conversation.name) · \(last.senderName)" : conversation.name
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
-        let title = Self.whatsAppText(last)
         let card = NookCard(
             id: token,
             mood: .remind,
-            context: "WhatsApp · \(sender)\(unread)",
-            title: title,
-            detail: earlier.isEmpty ? .none : .facts(earlier),
+            context: "WhatsApp\(unread)",
+            appIcon: "whatsapp",
+            title: conversation.name,
+            detail: .chat(bubbles),
             primary: CardAction(label: tr("whatsapp.card.read"), outcome: .callback("\(token)#read", "")),
             secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
-            contentHeight: 150 + CGFloat(earlier.count) * 22 + CGFloat(min(title.count / 46, 4)) * 22,
+            contentHeight: Self.whatsAppCardHeight(bubbles),
             input: true,
             inputPrompt: tr("whatsapp.card.answer", conversation.name),
             extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", "")),
@@ -72,6 +69,17 @@ extension AppModel {
                 self.viewModel.present(self.errorCard(error.localizedDescription))
             }
         }
+    }
+
+    /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
+    /// characters per line and at most 5 lines; what does not fit in the bubbles' maximum height scrolls.
+    static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
+        let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38
+        let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
+            let lines = min(5, max(1, (bubble.text.count + 47) / 48))
+            return total + 16 + CGFloat(lines) * 18 + (bubble.sender.isEmpty ? 0 : 16) + 5
+        }
+        return chrome + min(stack, 230)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
