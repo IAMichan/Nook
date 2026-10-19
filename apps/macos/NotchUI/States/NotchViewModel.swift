@@ -13,15 +13,19 @@ final class NotchViewModel: ObservableObject {
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
             // Another session starts on its conversation; the terminal or browser was for the one you left.
             sessionTool = .conversation
+            bottomTool = .conversation
             resizeForWorkbench()
         }
     }
 
     /// What the selected session shows in the Agents tab: its conversation, or a terminal or the browser next to it.
-    /// A tool that opens gets its own tab in the side panel.
+    /// A tool that opens gets its own tab in the side panel, and leaves the bottom panel if it was open there.
     @Published var sessionTool: SessionTool = .conversation {
         didSet {
-            if SessionTool.panelTools.contains(sessionTool), !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
+            if SessionTool.panelTools.contains(sessionTool) {
+                if !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
+                take(sessionTool, from: \.bottomTool, tabs: \.bottomTabs)
+            }
             if sessionTool != oldValue { resizeForWorkbench() }
         }
     }
@@ -33,10 +37,40 @@ final class NotchViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(sessionTabs.map(\.rawValue), forKey: "nook.agents.sideTabs") }
     }
 
-    /// A terminal or the browser is open in the Agents tab: the panel gets the room the old Workspace tab had, and
+    /// What the bottom panel under the selected session's conversation shows: nothing (closed), the list of tools, or
+    /// a tool, the terminal at first. A tool that opens here gets its own tab, and leaves the side panel.
+    @Published var bottomTool: SessionTool = .conversation {
+        didSet {
+            if SessionTool.panelTools.contains(bottomTool) {
+                if !bottomTabs.contains(bottomTool) { bottomTabs.append(bottomTool) }
+                take(bottomTool, from: \.sessionTool, tabs: \.sessionTabs)
+            }
+            if bottomTool != oldValue { resizeForWorkbench() }
+        }
+    }
+
+    /// The tools open as tabs in the bottom panel, like `sessionTabs`; never one that is open in the side panel.
+    @Published var bottomTabs: [SessionTool] = {
+        let side = UserDefaults.standard.stringArray(forKey: "nook.agents.sideTabs") ?? []
+        return (UserDefaults.standard.stringArray(forKey: "nook.agents.bottomTabs") ?? [])
+            .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) && !side.contains($0.rawValue) }
+    }() {
+        didSet { UserDefaults.standard.set(bottomTabs.map(\.rawValue), forKey: "nook.agents.bottomTabs") }
+    }
+
+    /// A tool is open in one panel at a time (a terminal or the web view can only be in one place): opening it in one
+    /// closes its tab in the other, which then shows its next tab or the list of tools.
+    private func take(_ tool: SessionTool, from shown: ReferenceWritableKeyPath<NotchViewModel, SessionTool>,
+                      tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>) {
+        guard self[keyPath: tabs].contains(tool) else { return }
+        self[keyPath: tabs].removeAll { $0 == tool }
+        if self[keyPath: shown] == tool { self[keyPath: shown] = self[keyPath: tabs].first ?? .picker }
+    }
+
+    /// A terminal or the browser is open in the Agents tab (beside or under a session): the panel gets the room the old Workspace tab had, and
     /// does not close by itself while you work in it.
     var workbenchOpen: Bool {
-        sessionTool != .conversation || AgentsPage.tools.contains(selectedAgentID)
+        sessionTool != .conversation || bottomTool != .conversation || AgentsPage.tools.contains(selectedAgentID)
     }
 
     /// An app is open next to the chat ("@open whatsapp"): the chat gets the room for it, and does not close by itself

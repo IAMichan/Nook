@@ -30,22 +30,25 @@ enum SessionTool: String {
     var help: String { tr("agents.tool." + rawValue) }
 }
 
-/// The side panel's quiet icons in a session's header: the terminal, the browser and a button that opens (or closes)
-/// the side panel on what it showed last, or on the list of tools when no tab is open. A tool's icon opens the panel
-/// on it; on the tool the panel shows, it closes the panel again. When the agent started a process or opened a page there that you have not looked at yet, the icon
-/// carries a small dot.
+/// The panels' quiet icons in a session's header: the terminal, the browser, and buttons that open (or close) the
+/// bottom panel and the side panel. A tool's icon opens the side panel on it; on the tool the panel shows, it closes
+/// the panel again. The bottom panel opens on what it showed last, the terminal by default; the side panel on what it
+/// showed last, or on the list of tools when no tab is open. When the agent started a process or opened a page there
+/// that you have not looked at yet, the icon carries a small dot.
 struct SessionToolSwitch: View {
     @ObservedObject var viewModel: NotchViewModel
     /// The session's folder; empty means no terminal and no changes, only the browser.
     let directory: String
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
+    @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
 
     var body: some View {
         HStack(spacing: 2) {
             if !directory.isEmpty { icon(.terminal) }
             icon(.browser)
             ToolbarGroupDivider()
+            bottomToggle
             panelToggle
         }
         .toolbarGroup()
@@ -53,7 +56,7 @@ struct SessionToolSwitch: View {
 
     private func icon(_ tool: SessionTool) -> some View {
         let active = viewModel.sessionTool == tool
-        let fresh = !active && bridge.hasUnseen(directory, tool.rawValue)
+        let fresh = !active && viewModel.bottomTool != tool && bridge.hasUnseen(directory, tool.rawValue)
         let help = fresh ? tool.help + " · " + tr("bridge.tool.unseen") : tool.help
         return Button {
             viewModel.sessionTool = active ? .conversation : tool
@@ -65,6 +68,33 @@ struct SessionToolSwitch: View {
         .help(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    /// Opens the bottom panel on the tool it showed last (the terminal at first), or closes it.
+    private var bottomToggle: some View {
+        let open = viewModel.bottomTool != .conversation
+        let help = open ? tr("agents.tool.closeBottom") : tr("agents.tool.bottom")
+        return Button {
+            if open {
+                viewModel.bottomTool = .conversation
+            } else {
+                let tabs = viewModel.bottomTabs.filter { $0.available(in: directory) }
+                let last = SessionTool(rawValue: lastBottomTool) ?? .terminal
+                if tabs.contains(last) {
+                    viewModel.bottomTool = last
+                } else if let first = tabs.first {
+                    viewModel.bottomTool = first
+                } else {
+                    viewModel.bottomTool = SessionTool.terminal.available(in: directory) ? .terminal : .picker
+                }
+            }
+        } label: {
+            SessionToolIcon(symbol: "rectangle.bottomthird.inset.filled", active: open, fresh: false)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(open ? .isSelected : [])
     }
 
     /// Opens the side panel on the tool it showed last, or closes it.
@@ -135,9 +165,20 @@ struct ToolbarGroupDivider: View {
     }
 }
 
+/// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
+private struct SessionPanelSlot {
+    let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
+    let tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>
+    let closeHelp: String
+
+    static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
+    static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom")
+}
+
 /// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
-/// browser or the changes open in a side panel on its right, each in a tab you open with + and close with its cross.
-/// With no tab open the panel lists the tools. Drag the line beside the panel to make it wider or narrower.
+/// browser or the changes open in a side panel on its right or a bottom panel under it, each in a tab you open with +
+/// and close with its cross. A tool is open in one of the two at a time. With no tab open a panel lists the tools.
+/// Drag the line beside (or above) a panel to make it wider (or taller).
 struct SessionWorkbench<Conversation: View>: View {
     @ObservedObject var viewModel: NotchViewModel
     let directory: String
@@ -146,20 +187,46 @@ struct SessionWorkbench<Conversation: View>: View {
     @ViewBuilder var conversation: (AnyView) -> Conversation
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
+    @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
+    @AppStorage("nook.agents.bottomHeight") private var bottomHeight = BottomPanelLayout.standard
     @State private var totalWidth: Double = 0
+    @State private var totalHeight: Double = 0
+    @State private var dragStart: Double?
 
-    /// The open tabs this session can show.
-    private var tabs: [SessionTool] { viewModel.sessionTabs.filter { $0.available(in: directory) } }
+    /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
+    private func shown(_ slot: SessionPanelSlot) -> SessionTool {
+        let selected = viewModel[keyPath: slot.tool]
+        if selected == .conversation { return .conversation }
+        return selected.available(in: directory) ? selected : .picker
+    }
+
+    /// The open tabs this session can show in a panel.
+    private func tabs(_ slot: SessionPanelSlot) -> [SessionTool] {
+        viewModel[keyPath: slot.tabs].filter { $0.available(in: directory) }
+    }
 
     var body: some View {
-        let selected = viewModel.sessionTool
-        let tool = selected == .picker || selected.available(in: directory) ? selected : .conversation
+        let side = shown(.side)
+        let bottom = shown(.bottom)
         HStack(alignment: .top, spacing: 0) {
-            conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if tool != .conversation {
-                sidePanel(tool)
+            VStack(spacing: 0) {
+                conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if bottom != .conversation {
+                    VStack(spacing: 0) {
+                        BottomSplitHandle(onDrag: dragBottom, onEnd: { dragStart = nil },
+                                          onReset: { bottomHeight = BottomPanelLayout.standard })
+                        panel(.bottom, tool: bottom)
+                    }
+                    .frame(height: CGFloat(BottomPanelLayout.height(bottomHeight, available: totalHeight)))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
+            if side != .conversation {
+                panel(.side, tool: side)
                     .padding(.leading, 6)
                     .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
                                     available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
@@ -169,16 +236,115 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
-        .animation(.easeInOut(duration: 0.2), value: tool == .conversation)
-        .onChange(of: tool) { _, next in
+        .animation(.easeInOut(duration: 0.2), value: side == .conversation)
+        .animation(.easeInOut(duration: 0.2), value: bottom == .conversation)
+        .onChange(of: side) { _, next in
             if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
+        }
+        .onChange(of: bottom) { _, next in
+            if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
         }
     }
 
-    /// The panel sits flat on the notch, set apart from the conversation by the line you drag, not as a card.
-    private func sidePanel(_ tool: SessionTool) -> some View {
+    /// Dragging the line above the bottom panel up makes it taller.
+    private func dragBottom(_ offset: Double) {
+        let start = dragStart ?? BottomPanelLayout.height(bottomHeight, available: totalHeight)
+        dragStart = start
+        bottomHeight = BottomPanelLayout.height(start - offset, available: totalHeight)
+    }
+
+    private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
+        SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), closeHelp: tr(slot.closeHelp),
+                         show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
+                         closeTab: { closeTab($0, in: slot) },
+                         close: { viewModel[keyPath: slot.tool] = .conversation })
+    }
+
+    /// Closes a tab; when it was the one in view, the tab next to it takes its place, or the list of tools.
+    private func closeTab(_ item: SessionTool, in slot: SessionPanelSlot) {
+        let visible = tabs(slot)
+        guard let index = visible.firstIndex(of: item) else { return }
+        let rest = visible.filter { $0 != item }
+        withAnimation(NookTheme.swap) {
+            viewModel[keyPath: slot.tabs].removeAll { $0 == item }
+            if viewModel[keyPath: slot.tool] == item {
+                viewModel[keyPath: slot.tool] = rest.isEmpty ? .picker : rest[min(index, rest.count - 1)]
+            }
+        }
+    }
+}
+
+/// How tall the bottom panel under a conversation is: what you dragged it to, leaving the conversation room.
+enum BottomPanelLayout {
+    static let standard: Double = 240
+    static let minimum: Double = 120
+    /// Room the conversation (its header and composer) keeps above the bottom panel.
+    static let conversation: Double = 200
+
+    static func height(_ wanted: Double, available: Double) -> Double {
+        let most = max(minimum, available - conversation)
+        return min(max(wanted, minimum), most)
+    }
+}
+
+/// The line above the bottom panel: drag it to make the panel taller or shorter, double-click for its usual height.
+private struct BottomSplitHandle: View {
+    let onDrag: (Double) -> Void
+    let onEnd: () -> Void
+    let onReset: () -> Void
+    @State private var hovering = false
+    @State private var dragging = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color(hex: 0x19191B)).frame(height: 1)
+            Capsule()
+                .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
+                .frame(width: 36, height: 4)
+                .opacity(hovering || dragging ? 1 : 0)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 9)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            hovering = inside
+            if inside { NSCursor.resizeUpDown.push() } else if !dragging { NSCursor.pop() }
+        }
+        .gesture(
+            // Global coordinates: the line itself moves while you drag it.
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    dragging = true
+                    onDrag(Double(value.translation.height))
+                }
+                .onEnded { _ in
+                    dragging = false
+                    if !hovering { NSCursor.pop() }
+                    onEnd()
+                }
+        )
+        .onTapGesture(count: 2) { onReset() }
+        .help(tr("panel.resize"))
+        .accessibilityLabel(tr("panel.resize"))
+    }
+}
+
+/// A tool panel beside or under a session: its open tools as tabs, + to open another, the button that closes it, and
+/// the tool in view (or the list of tools while none is open). It sits flat on the notch, not as a card.
+private struct SessionToolPanel: View {
+    let directory: String
+    let runID: UUID?
+    let tool: SessionTool
+    let tabs: [SessionTool]
+    let closeHelp: String
+    let show: (SessionTool) -> Void
+    let closeTab: (SessionTool) -> Void
+    let close: () -> Void
+    @ObservedObject private var bridge = WorkspaceBridge.shared
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            header(tool)
+            header
             if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
@@ -203,26 +369,8 @@ struct SessionWorkbench<Conversation: View>: View {
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
     }
 
-    private func close() { viewModel.sessionTool = .conversation }
-
-    /// Shows `item`, in a new tab when it has none yet.
-    private func show(_ item: SessionTool) {
-        withAnimation(NookTheme.swap) { viewModel.sessionTool = item }
-    }
-
-    /// Closes a tab; when it was the one in view, the tab next to it takes its place, or the list of tools.
-    private func closeTab(_ item: SessionTool) {
-        let visible = tabs
-        guard let index = visible.firstIndex(of: item) else { return }
-        let rest = visible.filter { $0 != item }
-        withAnimation(NookTheme.swap) {
-            viewModel.sessionTabs.removeAll { $0 == item }
-            if viewModel.sessionTool == item { viewModel.sessionTool = rest.isEmpty ? .picker : rest[min(index, rest.count - 1)] }
-        }
-    }
-
     /// The open tabs, + to open another, and the button that closes the panel.
-    private func header(_ tool: SessionTool) -> some View {
+    private var header: some View {
         HStack(spacing: 4) {
             if !tabs.isEmpty {
                 NookTabBar(items: tabs.map { item in
@@ -247,8 +395,8 @@ struct SessionWorkbench<Conversation: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tr("agents.tool.close"))
-            .accessibilityLabel(tr("agents.tool.close"))
+            .help(closeHelp)
+            .accessibilityLabel(closeHelp)
         }
         .frame(height: 34)
     }
@@ -275,7 +423,7 @@ struct SessionWorkbench<Conversation: View>: View {
     }
 }
 
-/// The open side panel before any tab: the tools, one row each, to open in a tab. A tool the session cannot use
+/// An open panel before any tab: the tools, one row each, to open in a tab. A tool the session cannot use
 /// (a terminal or changes without a folder) is shown dimmed.
 private struct SessionToolPicker: View {
     let directory: String
