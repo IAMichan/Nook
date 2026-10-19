@@ -76,6 +76,10 @@ final class AutocompleteController: ObservableObject {
     private var upcoming: (app: String?, before: String, task: Task<CompletionResult?, Never>)?
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
+    /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
+    /// `fieldContext`). For when Nook's own screen reading has nothing for this app.
+    private var windowText: (key: String, text: String?)?
+    private let windowQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.window", qos: .utility)
     private var alternatives: [String]?
     private var refreshWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
@@ -210,6 +214,7 @@ final class AutocompleteController: ObservableObject {
         store.offUntilSwitch = nil
         lastSite = nil
         fieldContext = nil
+        windowText = nil
         upcoming = nil
         commitSample()
         dismiss()
@@ -600,7 +605,14 @@ final class AutocompleteController: ObservableObject {
         if prefs.screenContext, let bundleID {
             // Leave out the field's own text: it is already the body of the prompt.
             let own = snapshot.before + snapshot.after
-            input.screenText = screenText(bundleID).map { CompletionPrivacy.sanitize(own.isEmpty ? $0 : $0.replacingOccurrences(of: own, with: "")) }
+            let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            if let seen {
+                input.screenText = CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: ""))
+            } else if let read = windowText, read.key == key {
+                input.screenText = read.text
+            } else {
+                readWindow(key: key, app: app, own: own)
+            }
         }
         if prefs.clipboardContext {
             let board = NSPasteboard.general
@@ -612,6 +624,28 @@ final class AutocompleteController: ObservableObject {
         fieldContext = (key, Date(), input)
         input.before = snapshot.before
         return builder.build(input)
+    }
+
+    /// Reads the text of the window being written in, off the main thread, once per field. The prompt takes it from the next
+    /// key on; until then suggestions go on without it, so a slow app never holds up the first one.
+    private func readWindow(key: String, app: NSRunningApplication, own: String) {
+        guard windowText?.key != key else { return }
+        windowText = (key, nil)
+        let pid = app.processIdentifier
+        let limit = builder.maxContextLength * 3
+        windowQueue.async {
+            let text = AppTextReader.focusedWindowText(pid: pid, limit: limit).map { text in
+                CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: ""))
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.windowText?.key == key, let text else { return }
+                    self.windowText = (key, text)
+                    // Build the field's context again with the window in it.
+                    if self.fieldContext?.key == key { self.fieldContext = nil }
+                }
+            }
+        }
     }
 
     /// After typing or taking part of a suggestion: waits until the app's text is what the rest continues, then moves the
