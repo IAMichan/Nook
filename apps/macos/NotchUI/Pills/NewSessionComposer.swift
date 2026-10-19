@@ -58,8 +58,7 @@ struct NewSessionComposer: View {
             Text(tr("compose.heading"))
                 .foregroundStyle(NookTheme.paper)
             ComposerDropdown(width: 320) {
-                Text(remoteMachine.map { $0.name + ":" + (remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent) }
-                     ?? project?.name ?? tr("compose.pickProject"))
+                Text(projectLabel)
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
             } content: {
@@ -107,6 +106,15 @@ struct NewSessionComposer: View {
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { showClone = false }
         }
         .frame(maxWidth: 640)
+    }
+
+    /// "app", "buildbox:app", or the invitation to pick one.
+    private var projectLabel: String {
+        if let remoteMachine {
+            let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
+            return remoteMachine.name + ":" + folder
+        }
+        return project?.name ?? tr("compose.pickProject")
     }
 
     /// The folder on the remote machine, typed: there is no folder panel for another machine.

@@ -21,13 +21,18 @@ struct CodeRenderView: NSViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
-        load(view)
+        load(view, context.coordinator)
         return view
     }
 
-    func updateNSView(_ view: WKWebView, context: Context) {}
+    /// A block that is still being written (the agent streams it) shows its latest version.
+    func updateNSView(_ view: WKWebView, context: Context) {
+        guard context.coordinator.shown != code else { return }
+        load(view, context.coordinator)
+    }
 
-    private func load(_ view: WKWebView) {
+    private func load(_ view: WKWebView, _ coordinator: Coordinator) {
+        coordinator.shown = code
         switch language.lowercased() {
         case "mermaid":
             let escaped = code.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
@@ -47,6 +52,9 @@ struct CodeRenderView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        /// The code on screen, so an update only reloads when it changed.
+        var shown = ""
+
         /// Only the page itself (loaded as about:blank); links and redirects go nowhere.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             navigationAction.request.url?.absoluteString == "about:blank" ? .allow : .cancel

@@ -23,7 +23,7 @@ struct RemoteMachinesSection: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                         if let result = results[machine.id] {
-                            Text(result).font(.caption).foregroundStyle(result == tr("remote.test.ok") ? .green : .orange)
+                            Text(result).font(.caption).foregroundStyle(result == tr("remote.test.ok") ? Color.green : Color.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }

@@ -109,7 +109,7 @@ private struct AcpRegistrySheet: View {
                 } else if let error {
                     Text(error).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(shown, selection: Binding(get: { chosen?.id }, set: { id in chosen = entries.first { $0.id == id } })) { entry in
+                    List(shown, selection: Binding<String?>(get: { chosen?.id }, set: { id in chosen = entries.first { $0.id == id } })) { entry in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(entry.name).font(.body.weight(.medium))
