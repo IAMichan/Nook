@@ -202,6 +202,13 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertFalse(PullRequestSettlement.needsSync(lastChecked: now.addingTimeInterval(-100), now: now, interval: 300))
     }
 
+    func testSyncIntervalFollowsTheState() {
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1)]), 30)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1, state: .merged), link(2, state: .draft)]), 30)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: []), 60)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(1, state: .merged)]), 900)
+    }
+
     // MARK: BranchPolicy
 
     func testDefaultBranches() {

@@ -79,9 +79,11 @@ struct AgentInboxList: View {
         return pullRequests.badge(path: item.path, branch: item.branch)
     }
 
-    /// Folder and branch of every agent Nook did not start, for `PullRequestSync`.
+    /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
+    /// ones of the last three days (older ones keep the state they had).
     private var pullRequestFolders: [(path: String, branch: String)] {
-        (items + past).compactMap { item in
+        let recent = past.filter { ($0.started ?? .distantPast) > now.addingTimeInterval(-3 * 24 * 3600) }
+        return (items + recent).compactMap { item in
             guard runID(item) == nil, let branch = item.branch else { return nil }
             return (path: item.path, branch: branch)
         }
@@ -129,7 +131,7 @@ struct AgentInboxList: View {
         }
         .onChange(of: shown) { _, current in selection.keep(only: current) }
         .onAppear {
-            pullRequests.refresh(workspace: app.workspace, folders: pullRequestFolders, now: now)
+            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
             store.undoSnooze = { ids in
                 for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.unsnooze(uuid) } }
             }
@@ -139,7 +141,7 @@ struct AgentInboxList: View {
         }
         .onChange(of: now) { _, current in
             autoSettle(rows: rows, byID: byID, now: current)
-            pullRequests.refresh(workspace: app.workspace, folders: pullRequestFolders, now: current)
+            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: current)
         }
     }
 
