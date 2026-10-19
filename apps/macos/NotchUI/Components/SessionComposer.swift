@@ -272,11 +272,13 @@ struct SessionComposer<Controls: View>: View {
             }
             withKeys(field(focused: focused))
                 .frame(minHeight: minHeight, alignment: .topLeading)
-            // When the box gets narrow (the chat beside an open app), the choices drop their words and keep their icons,
-            // so the row shrinks with the box instead of running out of it.
+            // When the box gets narrow (the chat beside an open app), the choices give up their words step by step,
+            // so the row shrinks with the box instead of running out of it while keeping as much text as fits.
             ViewThatFits(in: .horizontal) {
-                controlRow.environment(\.composerCompact, false)
-                controlRow.environment(\.composerCompact, true)
+                controlRow.environment(\.composerDensity, .full)
+                controlRow.environment(\.composerDensity, .short)
+                controlRow.environment(\.composerDensity, .marks)
+                controlRow.environment(\.composerDensity, .icons)
             }
         }
         .padding(.leading, 16)
@@ -404,13 +406,26 @@ struct ComposerPill: View {
     /// Shows this brand's mark in front of the text (a model's maker).
     var brand: BrandLogo? = nil
     let text: String
+    /// A shorter text for a narrower composer (the model alone instead of agent, account and model).
+    var short: String? = nil
     var tint: Color? = nil
     var showsChevron = true
-    @Environment(\.composerCompact) private var compact
+    @Environment(\.composerDensity) private var density
     @State private var hovering = false
 
-    /// In a narrow composer only a pill with an icon drops its text (and chevron); one without keeps its words.
-    private var iconOnly: Bool { compact && (agent != nil || brand != nil || dot != nil || symbol != nil) }
+    private var hasMark: Bool { agent != nil || brand != nil }
+
+    /// Only a pill with an icon ever drops its text; one without keeps its words. A logo already says who, so those go
+    /// first; a symbol alone says too little, so those keep their words until nothing else fits.
+    private var iconOnly: Bool {
+        switch density {
+        case .full, .short: return false
+        case .marks: return hasMark
+        case .icons: return hasMark || dot != nil || symbol != nil
+        }
+    }
+
+    private var shown: String { density == .full ? text : short ?? text }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -425,9 +440,9 @@ struct ComposerPill: View {
                 Image(systemName: symbol).font(.system(size: 11, weight: .medium))
             }
             if !iconOnly {
-                Text(text).lineLimit(1)
+                Text(shown).lineLimit(1)
             }
-            if showsChevron && !iconOnly {
+            if showsChevron && density == .full {
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
             }
         }
@@ -441,15 +456,27 @@ struct ComposerPill: View {
     }
 }
 
-private struct ComposerCompactKey: EnvironmentKey {
-    static let defaultValue = false
+/// How much of each choice the composer's row has room for, from everything down to icons only.
+enum ComposerDensity {
+    /// Every word and the chevrons.
+    case full
+    /// Short texts (the model alone), no chevrons.
+    case short
+    /// Pills with a logo show only it; pills with a symbol keep their short text.
+    case marks
+    /// Only icons.
+    case icons
+}
+
+private struct ComposerDensityKey: EnvironmentKey {
+    static let defaultValue = ComposerDensity.full
 }
 
 extension EnvironmentValues {
-    /// The composer is too narrow for its full row of choices: pills show only their icon.
-    var composerCompact: Bool {
-        get { self[ComposerCompactKey.self] }
-        set { self[ComposerCompactKey.self] = newValue }
+    /// How much room the composer's row of choices has.
+    var composerDensity: ComposerDensity {
+        get { self[ComposerDensityKey.self] }
+        set { self[ComposerDensityKey.self] = newValue }
     }
 }
 

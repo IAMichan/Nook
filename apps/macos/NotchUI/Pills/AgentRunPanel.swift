@@ -876,7 +876,8 @@ struct AgentRunPanel: View {
         let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
+                         short: model ?? run.provider.displayName)
         } content: {
             AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: idle) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)

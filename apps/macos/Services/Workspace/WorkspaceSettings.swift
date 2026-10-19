@@ -15,6 +15,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultModels: [String: String] {
         didSet { defaults.set(defaultModels, forKey: "ws.defaultModels") }
     }
+    /// The account last chosen per agent, so a new session starts with it again.
+    @Published var defaultProfiles: [String: String] {
+        didSet { defaults.set(defaultProfiles, forKey: "ws.defaultProfiles") }
+    }
     @Published var defaultMode: ExecutionMode {
         didSet { defaults.set(defaultMode.rawValue, forKey: "ws.defaultMode") }
     }
@@ -93,6 +97,7 @@ final class WorkspaceSettings: ObservableObject {
     private init() {
         defaultProvider = RunProvider(rawValue: defaults.string(forKey: "ws.defaultProvider") ?? "") ?? .claude
         defaultModels = (defaults.dictionary(forKey: "ws.defaultModels") as? [String: String]) ?? [:]
+        defaultProfiles = (defaults.dictionary(forKey: "ws.defaultProfiles") as? [String: String]) ?? [:]
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
@@ -131,6 +136,10 @@ final class WorkspaceSettings: ObservableObject {
     func model(for provider: RunProvider) -> String { defaultModels[provider.rawValue] ?? "" }
 
     func setModel(_ model: String, for provider: RunProvider) { defaultModels[provider.rawValue] = model }
+
+    func profile(for provider: RunProvider) -> String? { defaultProfiles[provider.rawValue] }
+
+    func setProfile(_ profileID: String, for provider: RunProvider) { defaultProfiles[provider.rawValue] = profileID }
 
     /// A safe default that the agent actually supports.
     func permission(for provider: RunProvider) -> PermissionPolicy {
