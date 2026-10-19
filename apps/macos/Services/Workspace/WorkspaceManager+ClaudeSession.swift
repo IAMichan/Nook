@@ -52,6 +52,23 @@ extension WorkspaceManager {
         return true
     }
 
+    /// Work Claude Code started in the background (a command or subagent run in the background) finished after the turn,
+    /// and Claude Code carries on by itself: the waiting process becomes a turn
+    /// again, so what it does shows up live and ends like any other turn.
+    func wakeParkedClaude(_ id: UUID) {
+        guard processes[id] == nil, var run = run(id), let idle = claudeIdle[id], idle.process.isRunning else { return }
+        claudeIdleClose[id]?.cancel()
+        claudeIdleClose[id] = nil
+        claudeIdle[id] = nil
+        processes[id] = idle.process
+        turns[id] = TurnState()
+        append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
+        if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
+        run.move(to: .running)
+        run.turnStartedAt = Date()
+        replace(run)
+    }
+
     /// A process started ahead of your first message (see `prewarm`): it waits like one parked after a turn.
     func parkWarmClaude(_ id: UUID, _ process: AgentProcess, key: String) {
         closeClaudeProcess(id)

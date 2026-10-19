@@ -320,4 +320,16 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertNil(last?.after)
         XCTAssertNil(TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 5), end: Date(timeIntervalSince1970: 8)))
     }
+
+    func testBackgroundWakeStartsATurn() {
+        let user = RunEvent(kind: .user, text: "run the tests in the background")
+        let end = RunEvent(kind: .result, text: "started")
+        let wake = RunEvent(kind: .system, text: "woke", tool: "wake")
+        let answer = RunEvent(kind: .assistant, text: "Tests passed")
+        let turns = TimelinePresentation.split([user, end, wake, answer, RunEvent(kind: .result, text: "done")])
+        XCTAssertEqual(turns.count, 2)
+        XCTAssertEqual(turns[1].first, wake)
+        XCTAssertTrue(ClaudeStreamEvent.isWork(.text("hi")))
+        XCTAssertFalse(ClaudeStreamEvent.isWork(.notice("compacting")))
+    }
 }

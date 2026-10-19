@@ -226,6 +226,8 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                // Codex started a turn on its own (background work it waited for finished): the session works again.
+                if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
             case .approval(let request):
                 presentCodexApproval(id, request)
             case .question(let rpcID, let items):
@@ -400,6 +402,18 @@ extension WorkspaceManager {
         scheduleGitRefresh(id, delay: 0.5)
         sendQueued(id)
         scheduleCodexIdleClose(id)
+    }
+
+    private func wakeCodexServer(_ id: UUID) {
+        guard var run = run(id) else { return }
+        codexIdleClose[id]?.cancel()
+        codexIdleClose[id] = nil
+        turns[id] = TurnState()
+        append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
+        if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
+        run.move(to: .running)
+        run.turnStartedAt = Date()
+        replace(run)
     }
 
     private func scheduleCodexIdleClose(_ id: UUID) {

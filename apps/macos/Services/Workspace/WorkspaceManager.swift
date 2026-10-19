@@ -859,6 +859,7 @@ final class WorkspaceManager: ObservableObject {
         switch run.provider {
         case .claude:
             let parsed = ClaudeStreamParser.parse(line)
+            if processes[id] == nil, claudeIdle[id] != nil, parsed.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
             for event in parsed { handleClaude(event, id: id) }
         case .codex:
             let parsed = CodexStreamParser.parse(line)

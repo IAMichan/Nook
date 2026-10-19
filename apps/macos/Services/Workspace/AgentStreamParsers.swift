@@ -60,6 +60,16 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case rateLimits(UsageLimits.ClaudeEvent?)
 }
 
+extension ClaudeStreamEvent {
+    /// The agent is working: it writes, thinks, uses a tool or asks permission (not a notice, usage or limits).
+    static func isWork(_ event: ClaudeStreamEvent) -> Bool {
+        switch event {
+        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .permissionRequest: return true
+        default: return false
+        }
+    }
+}
+
 struct ClaudeTurnResult: Equatable, Sendable {
     var isError: Bool
     var subtype: String

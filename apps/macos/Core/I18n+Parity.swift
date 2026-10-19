@@ -82,6 +82,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.turnChanges.help": "Wat deze beurt aan je bestanden veranderde",
         "ws.turnChanges.none": "Geen verschil meer: het bestand is weer zoals het was",
         "ws.turnChanges.pick": "Kies een bestand",
+        "ws.wake.background": "Werk op de achtergrond is klaar: de agent gaat verder",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -160,6 +161,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.turnChanges.help": "What this turn changed in your files",
         "ws.turnChanges.none": "No difference left: the file is back as it was",
         "ws.turnChanges.pick": "Pick a file",
+        "ws.wake.background": "Background work finished: the agent continues",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -238,6 +240,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.turnChanges.help": "Was dieser Zug an deinen Dateien geändert hat",
         "ws.turnChanges.none": "Kein Unterschied mehr: die Datei ist wieder wie vorher",
         "ws.turnChanges.pick": "Wähle eine Datei",
+        "ws.wake.background": "Arbeit im Hintergrund ist fertig: der Agent macht weiter",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -316,6 +319,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.turnChanges.help": "Ce que ce tour a changé dans vos fichiers",
         "ws.turnChanges.none": "Plus de différence : le fichier est revenu à son état",
         "ws.turnChanges.pick": "Choisissez un fichier",
+        "ws.wake.background": "Le travail en arrière-plan est terminé : l’agent continue",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -394,5 +398,6 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.turnChanges.help": "Lo que este turno cambió en tus archivos",
         "ws.turnChanges.none": "Ya no hay diferencia: el archivo vuelve a estar como antes",
         "ws.turnChanges.pick": "Elige un archivo",
+        "ws.wake.background": "El trabajo en segundo plano terminó: el agente continúa",
     ],
 ]

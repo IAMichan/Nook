@@ -157,11 +157,12 @@ enum TimelinePresentation {
 
     // MARK: Turns
 
-    /// A turn starts at each message of yours; anything before the first one is a turn of its own.
+    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
+    /// before the first one is a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
         for event in events {
-            if event.kind == .user || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
+            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
         }
         return turns
     }
