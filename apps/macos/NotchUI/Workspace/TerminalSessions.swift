@@ -75,7 +75,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
 
     nonisolated func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        Task { @MainActor in if !title.isEmpty { self.title = title } }
+        Task { @MainActor in if !title.isEmpty { self.title = TerminalTitle.display(title) } }
     }
 
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
