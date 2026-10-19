@@ -179,6 +179,8 @@ struct SimulatorScreen: NSViewRepresentable {
         view.stream = stream
         stream.onVideo = { [weak view] chunk in view?.decode(chunk) }
         stream.onVideoReset = { [weak view] in view?.resetVideo() }
+        // A new view on a stream already running has missed its setup: a fresh subscription sends it again.
+        if stream.usesH264 { stream.resubscribeVideo() }
         return view
     }
 
@@ -302,6 +304,11 @@ final class SimulatorScreenView: NSView {
             self.format = format
             let dimensions = CMVideoFormatDescriptionGetDimensions(format)
             if dimensions.width > 0, dimensions.height > 0 { imageSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height)) }
+            // New dimensions (after a rotation): the layers follow at once.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layoutPicture()
+            CATransaction.commit()
             awaitingKeyframe = true
         case .keyframe, .delta:
             guard let format else { return }
