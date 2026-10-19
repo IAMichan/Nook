@@ -20,6 +20,8 @@ struct CustomAgent: Codable, Equatable, Identifiable, Sendable {
     var command: String
     var arguments: [String] = []
     var environment: [String: String] = [:]
+    /// The folder Nook downloaded the agent into (a registry download); removed with the agent.
+    var installedAt: String? = nil
 
     var id: String { profileID }
 
@@ -93,8 +95,8 @@ enum CustomAgents {
     }
 }
 
-/// The ACP registry (agentclientprotocol.com): the agents that speak ACP, with how to start each one. Nook takes the
-/// entries it can start without downloading a program (npx and uvx, at an exact version) checks them.
+/// The ACP registry (agentclientprotocol.com): the agents that speak ACP, with how to start each one: npx and uvx at an
+/// exact version (as checks them), or a download for this Mac that Nook installs after checking its SHA-256.
 enum AcpRegistry {
     static let url = URL(string: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json")!
     static let maxBytes = 1024 * 1024
@@ -105,12 +107,48 @@ enum AcpRegistry {
         var version: String
         var description: String
         var website: String?
-        /// How Nook starts it; nil when the registry only offers a download (not supported in Nook yet).
+        /// How Nook starts it; nil when the registry only offers a download.
         var command: String?
         var arguments: [String]
         var environment: [String: String]
+        /// The download for this Mac, when there is no npx or uvx way to start it.
+        var binary: Binary? = nil
 
-        var isSupported: Bool { command != nil }
+        var isSupported: Bool { command != nil || binary != nil }
+    }
+
+    /// A program to download: an archive (or the program itself), its checksum, and what to run from it.
+    struct Binary: Equatable, Sendable {
+        var archive: URL
+        var sha256: String
+        /// Relative to the unpacked folder ("./bin/agent").
+        var command: String
+        var arguments: [String]
+        var environment: [String: String]
+
+        enum Kind: Equatable, Sendable { case zip, tar, raw }
+
+        var kind: Kind {
+            let name = archive.lastPathComponent.lowercased()
+            if name.hasSuffix(".zip") { return .zip }
+            if [".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".tar"].contains(where: name.hasSuffix) { return .tar }
+            return .raw
+        }
+    }
+
+    /// The registry's name for this Mac's platform.
+    static var platform: String {
+        #if arch(arm64)
+        return "darwin-aarch64"
+        #else
+        return "darwin-x86_64"
+        #endif
+    }
+
+    /// A path inside the unpacked folder: relative, without "..", never a way out.
+    static func isSafeRelativePath(_ path: String) -> Bool {
+        guard !path.isEmpty, path.count <= 512, !path.hasPrefix("/"), !path.hasPrefix("~"), !path.contains("\0") else { return false }
+        return !path.split(separator: "/").contains("..")
     }
 
     private static let runnerVersion = #"v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"#
@@ -144,8 +182,28 @@ enum AcpRegistry {
             result.command = "uvx"
             result.arguments = [package] + strings(uvx["args"])
             result.environment = environment(uvx["env"])
+        } else if let binaries = distribution["binary"] as? [String: Any] {
+            result.binary = binary(binaries[platform] as? [String: Any])
         }
         return result
+    }
+
+    /// A download Nook accepts: over HTTPS, with a SHA-256 to check it against, and a program inside the folder.
+    static func binary(_ raw: [String: Any]?) -> Binary? {
+        guard let raw, let text = raw["archive"] as? String, isHTTPS(text), let archive = URL(string: text),
+              let sha = (raw["sha256"] as? String)?.lowercased(), sha.count == 64, sha.allSatisfy(\.isHexDigit),
+              let command = raw["cmd"] as? String, isSafeRelativePath(command) else { return nil }
+        return Binary(archive: archive, sha256: sha, command: command, arguments: strings(raw["args"]), environment: environment(raw["env"]))
+    }
+
+    /// The installed download as an agent of this account: its program in `folder`.
+    static func agent(from entry: Entry, installedIn folder: String, profileID: String) -> CustomAgent? {
+        guard let binary = entry.binary else { return nil }
+        var relative = binary.command
+        while relative.hasPrefix("./") { relative.removeFirst(2) }
+        let program = (folder as NSString).appendingPathComponent(relative)
+        return CustomAgent(profileID: profileID, name: entry.name, registryID: entry.id, version: entry.version, command: program,
+                           arguments: binary.arguments, environment: binary.environment, installedAt: folder)
     }
 
     /// The registry entry as an agent of this account. Nil when Nook cannot start it.

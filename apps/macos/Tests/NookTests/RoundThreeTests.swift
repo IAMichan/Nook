@@ -332,4 +332,27 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertTrue(ClaudeStreamEvent.isWork(.text("hi")))
         XCTAssertFalse(ClaudeStreamEvent.isWork(.notice("compacting")))
     }
+
+    func testAcpRegistryBinaryDownload() {
+        let sha = String(repeating: "ab", count: 32)
+        let raw: [String: Any] = [
+            "id": "kiro", "name": "Kiro", "version": "1.2.3",
+            "distribution": ["binary": [AcpRegistry.platform: [
+                "archive": "https://example.com/kiro-1.2.3.tar.gz", "sha256": sha.uppercased(), "cmd": "./bin/kiro", "args": ["acp"]]]]]
+        let entry = AcpRegistry.entry(raw)
+        XCTAssertNil(entry?.command)
+        XCTAssertEqual(entry?.binary?.sha256, sha)
+        XCTAssertEqual(entry?.binary?.kind, .tar)
+        XCTAssertTrue(entry?.isSupported == true)
+        let agent = entry.flatMap { AcpRegistry.agent(from: $0, installedIn: "/apps/kiro/1.2.3", profileID: "acp-kiro") }
+        XCTAssertEqual(agent?.command, "/apps/kiro/1.2.3/bin/kiro")
+        XCTAssertEqual(agent?.arguments, ["acp"])
+        XCTAssertEqual(agent?.installedAt, "/apps/kiro/1.2.3")
+        // No checksum, plain HTTP or a way out of the folder: not installable.
+        XCTAssertNil(AcpRegistry.binary(["archive": "https://example.com/a.zip", "cmd": "a"]))
+        XCTAssertNil(AcpRegistry.binary(["archive": "http://example.com/a.zip", "sha256": sha, "cmd": "a"]))
+        XCTAssertNil(AcpRegistry.binary(["archive": "https://example.com/a.zip", "sha256": sha, "cmd": "../../bin/sh"]))
+        XCTAssertNil(AcpRegistry.binary(["archive": "https://example.com/a.zip", "sha256": sha, "cmd": "/bin/sh"]))
+        XCTAssertEqual(AcpRegistry.binary(["archive": "https://example.com/agent", "sha256": sha, "cmd": "agent"])?.kind, .raw)
+    }
 }

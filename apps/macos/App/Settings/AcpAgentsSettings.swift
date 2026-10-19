@@ -51,7 +51,12 @@ struct AcpAgentsSection: View {
             Text(tr("acp.footer"))
         }
         .sheet(isPresented: $showRegistry) {
-            AcpRegistrySheet { entry in add(name: entry.name) { AcpRegistry.agent(from: entry, profileID: $0) } }
+            AcpRegistrySheet { entry, folder in
+                add(name: entry.name) { profile in
+                    if let folder { return AcpRegistry.agent(from: entry, installedIn: folder, profileID: profile) }
+                    return AcpRegistry.agent(from: entry, profileID: profile)
+                }
+            }
         }
         .sheet(isPresented: $showManual) {
             AcpManualSheet { name, command, arguments in
@@ -73,6 +78,7 @@ struct AcpAgentsSection: View {
     }
 
     private func remove(_ agent: CustomAgent) {
+        if let folder = agent.installedAt { AcpInstaller.uninstall(folder) }
         CustomAgents.remove(profileID: agent.profileID)
         app.profiles.remove(agent.profileID)
         agents = CustomAgents.load()
@@ -80,10 +86,13 @@ struct AcpAgentsSection: View {
     }
 }
 
-/// The ACP registry: search, then add. Agents the registry only offers as a download are shown but cannot be added yet.
+/// The ACP registry: search, then add. An agent the registry offers only as a download is installed first (checked
+/// against its SHA-256); the folder it was installed in comes along with it.
 private struct AcpRegistrySheet: View {
     @Environment(\.dismiss) private var dismiss
-    let add: (AcpRegistry.Entry) -> Void
+    let add: (AcpRegistry.Entry, String?) -> Void
+    @State private var installing = false
+    @State private var installError: String?
     @State private var entries: [AcpRegistry.Entry] = []
     @State private var loading = true
     @State private var error: String?
@@ -114,8 +123,10 @@ private struct AcpRegistrySheet: View {
                             HStack {
                                 Text(entry.name).font(.body.weight(.medium))
                                 Text(entry.version).font(.caption).foregroundStyle(.secondary)
-                                if !entry.isSupported {
-                                    Text(tr("acp.registry.downloadOnly")).font(.caption).foregroundStyle(.orange)
+                                if entry.command == nil, entry.binary != nil {
+                                    Text(tr("acp.registry.download")).font(.caption).foregroundStyle(.secondary)
+                                } else if !entry.isSupported {
+                                    Text(tr("acp.registry.unavailable")).font(.caption).foregroundStyle(.orange)
                                 }
                             }
                             if !entry.description.isEmpty {
@@ -134,20 +145,30 @@ private struct AcpRegistrySheet: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+            } else if let chosen, let binary = chosen.binary {
+                Text(tr("acp.registry.downloads", binary.archive.absoluteString, binary.sha256.prefix(12) + "…"))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            if let installError {
+                Text(installError).font(.caption).foregroundStyle(.orange)
             }
             HStack {
+                if installing {
+                    ProgressView().controlSize(.small)
+                    Text(tr("acp.install.busy")).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button(tr("button.cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(tr("acp.add")) {
-                    if let chosen { add(chosen) }
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!(chosen?.isSupported ?? false))
+                Button(chosen?.command == nil && chosen?.binary != nil ? tr("acp.install") : tr("acp.add")) { confirm() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!(chosen?.isSupported ?? false) || installing)
             }
         }
         .padding(20)
         .frame(width: 520, height: 520)
+        .interactiveDismissDisabled(installing)
         .task {
             do {
                 entries = try await AcpRegistry.fetch()
@@ -156,6 +177,28 @@ private struct AcpRegistrySheet: View {
                 error = tr("acp.registry.failed", failure.localizedDescription)
             }
             loading = false
+        }
+    }
+
+    /// npx and uvx agents are added at once; a download is installed first, and the sheet stays until that is done.
+    private func confirm() {
+        guard let chosen else { return }
+        guard chosen.command == nil, chosen.binary != nil else {
+            add(chosen, nil)
+            dismiss()
+            return
+        }
+        installing = true
+        installError = nil
+        Task {
+            do {
+                let folder = try await AcpInstaller.install(chosen)
+                add(chosen, folder)
+                dismiss()
+            } catch {
+                installError = error.localizedDescription
+            }
+            installing = false
         }
     }
 }
