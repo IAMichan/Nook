@@ -99,6 +99,11 @@ class AgentsStore {
     }
   }
 
+  /// Telt als gezien: wat de sessie afmaakte is niet meer nieuw.
+  visit(id: string) {
+    agentApi.visit(id).catch(() => {});
+  }
+
   approvalFor(sessionKey: string): AgentApproval | undefined {
     return this.approvals.find((a) => a.sessionKey === sessionKey);
   }

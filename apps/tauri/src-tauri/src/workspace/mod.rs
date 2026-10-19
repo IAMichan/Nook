@@ -2,7 +2,13 @@
 //! Events naar de interface: `workspace-changed`, `workspace-timeline` (run-id), en via de agents-events
 //! `agent-approval`, `agent-approval-gone`, `agent-question`, `agent-question-gone` en `agent-attention`.
 
+#[cfg(desktop)]
+pub mod bridge;
 pub mod bridge_cli;
+#[cfg(desktop)]
+pub mod browser;
+#[cfg(desktop)]
+pub mod terminals;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -24,6 +30,12 @@ use crate::state::AppState;
 pub struct WorkspaceState {
     pub manager: Arc<Manager>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
+    #[cfg(desktop)]
+    pub terminals: terminals::Terminals,
+    #[cfg(desktop)]
+    pub browser: browser::Browser,
+    #[cfg(desktop)]
+    pub bridge: bridge::Bridge,
 }
 
 #[derive(Clone, Serialize)]
@@ -40,6 +52,7 @@ pub fn setup(app: &AppHandle) {
     let env_app = app.clone();
     let bridge_settings = settings.clone();
     let root_settings = settings.clone();
+    let resume_settings = settings.clone();
     let hooks = Hooks {
         executable: Box::new(move |provider| {
             if !desktop {
@@ -55,11 +68,26 @@ pub fn setup(app: &AppHandle) {
             Some(BridgeLaunch { script: bridge_script().to_string_lossy().into_owned() })
         }),
         worktree_root: Box::new(move || lock(&root_settings).worktree_root()),
+        auto_resume_limited: Box::new(move || lock(&resume_settings).auto_resume_limited),
     };
     let handle = app.clone();
+    let archive_settings = settings.clone();
     let directory = nook_core::paths::support_directory().join("workspace");
     let manager = Manager::new(directory, hooks, runtime, move |event| on_event(&handle, event));
-    app.manage(WorkspaceState { manager: manager.clone(), settings });
+    app.manage(WorkspaceState {
+        manager: manager.clone(),
+        settings,
+        #[cfg(desktop)]
+        terminals: Default::default(),
+        #[cfg(desktop)]
+        browser: Default::default(),
+        #[cfg(desktop)]
+        bridge: Default::default(),
+    });
+    #[cfg(desktop)]
+    if desktop {
+        bridge::listen(app);
+    }
     // Wegschrijven als er iets veranderde, en de worktrees af en toe opnieuw lezen.
     tauri::async_runtime::spawn(async move {
         let mut tick = 0u64;
@@ -70,6 +98,18 @@ pub fn setup(app: &AppHandle) {
             if tick % 60 == 5 {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;
+            }
+            // Sessies die zo lang niet gebruikt zijn, gaan vanzelf naar het archief (als je dat instelde).
+            if tick % 600 == 30 {
+                let days = lock(&archive_settings).auto_archive_days;
+                if days > 0 {
+                    let limit = chrono::Utc::now() - chrono::Duration::days(days.into());
+                    for run in manager.runs() {
+                        if !run.archived && !run.status.is_active() && run.updated_at < limit {
+                            manager.set_archived(run.id, true);
+                        }
+                    }
+                }
             }
         }
     });
@@ -84,6 +124,8 @@ pub fn bridge_script() -> std::path::PathBuf {
 pub fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<WorkspaceState>() {
         state.manager.shutdown();
+        #[cfg(desktop)]
+        state.terminals.close_all();
     }
 }
 
@@ -181,16 +223,27 @@ fn manager(app: &AppHandle) -> Option<Arc<Manager>> {
 
 /// Toestemmingsvragen van sessies die Nook draait en van de werkruimte-brug.
 pub fn pending_approvals(app: &AppHandle) -> Vec<AgentApproval> {
-    manager(app).map(|m| m.pending_approvals()).unwrap_or_default()
+    let mut list = manager(app).map(|m| m.pending_approvals()).unwrap_or_default();
+    #[cfg(desktop)]
+    if let Some(ws) = app.try_state::<WorkspaceState>() {
+        list.extend(ws.bridge.pending().iter().map(bridge::Bridge::approval));
+    }
+    list
 }
 
 pub fn pending_questions(app: &AppHandle) -> Vec<QuestionRequest> {
     manager(app).map(|m| m.pending_questions()).unwrap_or_default()
 }
 
-/// `run-<verzoek>`: een vraag van een sessie die Nook draait.
+/// `run-<verzoek>`: een vraag van een sessie die Nook draait; `bridge-<verzoek>`: een verzoek via de werkruimte-brug.
 pub fn decide_approval(app: &AppHandle, id: &str, decision: ApprovalDecision) -> Result<(), String> {
     let gone = || "Deze vraag bestaat niet meer.".to_string();
+    #[cfg(desktop)]
+    if let Some(request) = id.strip_prefix("bridge-") {
+        let ws = app.try_state::<WorkspaceState>().ok_or_else(gone)?;
+        let allow = matches!(decision, ApprovalDecision::Allow | ApprovalDecision::Always);
+        return if ws.bridge.decide(app, request, allow) { Ok(()) } else { Err(gone()) };
+    }
     let request = id.strip_prefix("run-").ok_or_else(gone)?;
     let manager = manager(app).ok_or_else(gone)?;
     let run = manager

@@ -3,6 +3,7 @@
 
 pub mod agents;
 pub mod workspace;
+pub mod workspace_tools;
 
 use std::time::{Duration, Instant};
 

@@ -27,6 +27,8 @@ pub struct WorkspaceSettings {
     pub agent_tools: bool,
     /// Een bericht terwijl een agent werkt, stuurt de beurt bij (Ctrl+Enter zet het in de wachtrij); uit: andersom.
     pub steer_by_default: bool,
+    /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard uit).
+    pub auto_resume_limited: bool,
     pub last_project: String,
     /// Eerder gekozen projecten, nieuwste eerst.
     pub recent_projects: Vec<String>,
@@ -45,6 +47,7 @@ impl Default for WorkspaceSettings {
             show_cost: true,
             agent_tools: true,
             steer_by_default: true,
+            auto_resume_limited: false,
             last_project: String::new(),
             recent_projects: vec![],
         }

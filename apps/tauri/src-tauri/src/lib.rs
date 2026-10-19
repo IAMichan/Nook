@@ -22,7 +22,8 @@ pub fn run() {
             .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
                 platform::desktop::show_main(app, platform::desktop::route_from_args(&args).unwrap_or("chat"))
             }))
-            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_dialog::init());
     }
 
     builder
@@ -136,6 +137,7 @@ pub fn run() {
             commands::workspace::workspace_stop,
             commands::workspace::workspace_retry,
             commands::workspace::workspace_rename,
+            commands::workspace::workspace_set_auto_resume,
             commands::workspace::workspace_archive,
             commands::workspace::workspace_mark_reviewed,
             commands::workspace::workspace_delete,
@@ -148,6 +150,28 @@ pub fn run() {
             commands::workspace::workspace_revert,
             commands::workspace::workspace_worktrees,
             commands::workspace::workspace_remove_worktree,
+            commands::workspace::workspace_continue_live,
+            commands::workspace::workspace_quick,
+            commands::workspace::workspace_clone,
+            commands::workspace::workspace_pull,
+            commands::workspace::workspace_commit_all,
+            commands::workspace::workspace_pull_request_draft,
+            commands::workspace::workspace_create_pull_request,
+            commands::workspace::workspace_continue_past,
+            commands::workspace_tools::terminal_list,
+            commands::workspace_tools::terminal_open,
+            commands::workspace_tools::terminal_write,
+            commands::workspace_tools::terminal_resize,
+            commands::workspace_tools::terminal_replay,
+            commands::workspace_tools::terminal_interrupt,
+            commands::workspace_tools::terminal_close,
+            commands::workspace_tools::workspace_folder_tools,
+            commands::workspace_tools::browser_state,
+            commands::workspace_tools::workspace_link_bridge,
+            commands::workspace_tools::browser_go,
+            commands::workspace_tools::browser_step,
+            commands::workspace_tools::browser_read,
+            commands::workspace_tools::browser_close,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")

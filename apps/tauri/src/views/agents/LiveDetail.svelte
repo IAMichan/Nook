@@ -23,7 +23,7 @@
 
   const approval = $derived(agents.approvalFor(session.id));
   const question = $derived(agents.questionFor(session.id));
-  const canNook = $derived(["Claude Code", "Claude (app)", "Codex"].includes(session.name) && !!session.cwd);
+  const canNook = $derived(["Claude Code", "Claude (app)", "Codex", "Gemini CLI"].includes(session.name) && !!session.cwd);
   const busy = $derived(session.status === "running" || session.status === "waiting");
 
   async function end() {

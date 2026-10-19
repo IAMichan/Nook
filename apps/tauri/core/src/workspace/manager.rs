@@ -21,6 +21,7 @@ use uuid::Uuid;
 use super::bridge::BridgeLaunch;
 use super::command::{self, CommandInput};
 use super::git::{self, Git, GitStatus, Worktree};
+use super::limits;
 use super::models::*;
 use super::parsers::{self, ClaudeEvent, CodexEvent, GeminiEvent, TokenCounts};
 use super::paths::{self, Verdict};
@@ -126,6 +127,8 @@ pub struct Hooks {
     pub bridge: Box<dyn Fn() -> Option<BridgeLaunch> + Send + Sync>,
     /// Waar nieuwe worktrees komen (`~/.nook/worktrees`).
     pub worktree_root: Box<dyn Fn() -> String + Send + Sync>,
+    /// "Hervat bij reset" staat standaard aan voor sessies die op een gebruikslimiet stopten.
+    pub auto_resume_limited: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 enum Input {
@@ -157,6 +160,8 @@ struct TurnState {
     streamed_thinking: Vec<Option<Uuid>>,
     steered: bool,
     steered_usage: Vec<TurnUsage>,
+    /// Geblokkeerde limietvensters uit `rate_limit_event`, en wanneer elk vrijkomt.
+    limit_windows: BTreeMap<String, Option<DateTime<Utc>>>,
 }
 
 #[derive(Default)]
@@ -175,6 +180,10 @@ struct Inner {
     dirty_runs: bool,
     dirty_events: HashSet<Uuid>,
     dirty_queues: bool,
+    /// Beurten die op een gebruikslimiet stopten, met de reset als die bekend is.
+    limited: HashMap<Uuid, Option<DateTime<Utc>>>,
+    /// Het lopende "hervat bij reset" per sessie (een teller, zodat een oud wachten niets meer doet).
+    limit_resumes: HashMap<Uuid, u64>,
 }
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
@@ -208,7 +217,13 @@ impl Manager {
         let store = RunStore::new(directory);
         let mut inner = Inner { runs: store.load_runs(Utc::now()), queues: store.load_queues(), ..Default::default() };
         inner.dirty_runs = inner.runs.iter().any(|r| r.status_detail.as_deref() == Some("interrupted"));
-        Arc::new(Self { inner: Mutex::new(inner), store, notify: Box::new(notify), hooks, git: Git::locate(), runtime })
+        let manager = Arc::new(Self { inner: Mutex::new(inner), store, notify: Box::new(notify), hooks, git: Git::locate(), runtime });
+        // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
+        let waiting: Vec<Uuid> = manager.runs().iter().filter(|r| r.auto_resume && r.limit_reset_at.is_some()).map(|r| r.id).collect();
+        for id in waiting {
+            manager.arm_limit_resume(id);
+        }
+        manager
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -783,6 +798,8 @@ impl Manager {
             if s.processes.contains_key(&id) {
                 return;
             }
+            // Een nieuwe beurt beëindigt elk wachten op een gebruikslimiet (van jou of het automatische).
+            Self::clear_usage_limit(&mut s, id);
             Self::load_timeline(&self.store, &mut s, id);
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
             let input = CommandInput {
@@ -1265,6 +1282,25 @@ impl Manager {
                     }
                 }
                 let steered: Vec<TurnUsage> = turn.map(|t| t.steered_usage.clone()).unwrap_or_default();
+                // Gestopt op een gebruikslimiet: onthoud wanneer hij vrijkomt, voor "Hervat bij reset".
+                if !stopping {
+                    let windows = turn.map(|t| t.limit_windows.clone()).unwrap_or_default();
+                    let evidence = limits::FailureEvidence {
+                        result_subtype: Some(result.subtype.clone()),
+                        terminal_reason: result.terminal_reason.clone(),
+                        api_error_status: result.api_error_status,
+                        is_error: result.is_error,
+                        rate_limit_rejected: !windows.is_empty(),
+                        rate_limit_resets: windows,
+                        message_text: Some(result.text.clone()),
+                        ..Default::default()
+                    };
+                    if let limits::FailureClass::UsageLimit(reset) = limits::classify(&evidence) {
+                        if result.is_error {
+                            s.limited.insert(id, reset);
+                        }
+                    }
+                }
                 if let Some(t) = s.turns.get_mut(&id) {
                     t.finished = true;
                 }
@@ -1320,7 +1356,11 @@ impl Manager {
                     );
                 }
             }
-            ClaudeEvent::RateLimits(_) => {}
+            ClaudeEvent::RateLimits(info) => {
+                if let Some(event) = limits::claude_event(&info) {
+                    Self::note_claude_limit(s, id, event, out);
+                }
+            }
         }
         (false, false)
     }
@@ -1413,7 +1453,9 @@ impl Manager {
                 }
                 Self::append(s, id, RunEvent::new(EventKind::Error, message), out);
             }
-            CodexEvent::UsageLimited => {}
+            CodexEvent::UsageLimited => {
+                s.limited.insert(id, None);
+            }
         }
         false
     }
@@ -1569,6 +1611,7 @@ impl Manager {
 
     /// Een beurt is klaar: momentopname (in een eigen worktree), wachtrij, git, en de app laten weten.
     fn turn_did_finish(self: &Arc<Self>, id: Uuid) {
+        self.check_usage_limit(id);
         let mut out = Out::default();
         let run = {
             let mut s = self.lock();
@@ -1822,8 +1865,119 @@ impl Manager {
             return;
         }
         Self::update(&mut s, id, |r| r.archived = archived);
+        if archived {
+            Self::clear_usage_limit(&mut s, id);
+        }
         drop(s);
         self.emit(Out(vec![ManagerEvent::Changed]));
+    }
+
+    // MARK: Gebruikslimieten
+
+    /// Claude Code meldde een limiet tijdens de beurt: een geblokkeerd venster komt (één keer) in de tijdlijn.
+    fn note_claude_limit(s: &mut Inner, id: Uuid, event: limits::ClaudeLimitEvent, out: &mut Out) {
+        let Some(turn) = s.turns.get_mut(&id) else { return };
+        if event.blocked {
+            let first = turn.limit_windows.is_empty();
+            turn.limit_windows.insert(event.window, event.resets_at);
+            if first {
+                Self::append(s, id, RunEvent::new(EventKind::System, limits::limit_text(event.resets_at, Utc::now())), out);
+            }
+        } else {
+            turn.limit_windows.remove(&event.window);
+        }
+    }
+
+    /// Na een beurt: stopte een gebruikslimiet hem? Dan wacht de sessie op de reset (en gaat dan door, als dat aan staat).
+    fn check_usage_limit(self: &Arc<Self>, id: Uuid) {
+        {
+            let mut s = self.lock();
+            let Some(known) = s.limited.remove(&id) else { return };
+            if s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.status != RunStatus::Failed) {
+                return;
+            }
+            let auto = (self.hooks.auto_resume_limited)() && known.is_some();
+            Self::update(&mut s, id, |r| {
+                r.limited_at = Some(Utc::now());
+                r.limit_reset_at = known;
+                r.auto_resume = auto;
+            });
+        }
+        self.arm_limit_resume(id);
+        self.emit(Out(vec![ManagerEvent::Changed]));
+    }
+
+    /// "Hervat bij reset" aan of uit voor deze sessie.
+    pub fn set_auto_resume(self: &Arc<Self>, id: Uuid, on: bool) {
+        {
+            let mut s = self.lock();
+            if s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.limited_at.is_none() || r.limit_reset_at.is_none()) {
+                return;
+            }
+            Self::update(&mut s, id, |r| r.auto_resume = on);
+        }
+        self.arm_limit_resume(id);
+        self.emit(Out(vec![ManagerEvent::Changed]));
+    }
+
+    fn clear_usage_limit(s: &mut Inner, id: Uuid) {
+        s.limit_resumes.remove(&id);
+        s.limited.remove(&id);
+        if s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.limited_at.is_some()) {
+            Self::update(s, id, |r| {
+                r.limited_at = None;
+                r.limit_reset_at = None;
+                r.auto_resume = false;
+            });
+        }
+    }
+
+    fn arm_limit_resume(self: &Arc<Self>, id: Uuid) {
+        let (token, wait) = {
+            let mut s = self.lock();
+            s.limit_resumes.remove(&id);
+            let Some(run) = s.runs.iter().find(|r| r.id == id) else { return };
+            let (true, Some(reset)) = (run.auto_resume, run.limit_reset_at) else { return };
+            // Even na de reset, zodat de limiet echt weer vrij is.
+            let wait = (reset - Utc::now()).num_milliseconds().max(0) as u64 + 20_000;
+            s.generation += 1;
+            let token = s.generation;
+            s.limit_resumes.insert(id, token);
+            (token, wait)
+        };
+        let manager = self.clone();
+        self.runtime.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(wait)).await;
+            manager.resume_after_limit(id, token);
+        });
+    }
+
+    /// Vlak voor het versturen opnieuw gecontroleerd: nog steeds aan het wachten, nog steeds gewild, niets open, niet
+    /// gearchiveerd.
+    fn resume_after_limit(self: &Arc<Self>, id: Uuid, token: u64) {
+        {
+            let mut s = self.lock();
+            if s.limit_resumes.get(&id) != Some(&token) {
+                return;
+            }
+            s.limit_resumes.remove(&id);
+            let Some(run) = s.runs.iter().find(|r| r.id == id) else { return };
+            let ready = run.auto_resume
+                && run.limited_at.is_some()
+                && run.limit_reset_at.is_some_and(|r| r <= Utc::now())
+                && !run.archived
+                && !run.status.is_active()
+                && s.approvals.get(&id).is_none_or(Vec::is_empty)
+                && s.questions.get(&id).is_none_or(Vec::is_empty);
+            if !ready {
+                return;
+            }
+            let mut out = Out::default();
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, "De gebruikslimiet is vrij: de sessie gaat verder."), &mut out);
+            drop(s);
+            self.emit(out);
+        }
+        let _ = self.send(id, limits::RESUME_MESSAGE);
     }
 
     pub fn mark_reviewed(&self, id: Uuid) {
@@ -1944,6 +2098,30 @@ impl Manager {
         self.emit(out);
         self.refresh_git(id);
         Ok(branch)
+    }
+
+    /// Alleen fast-forward, nooit terwijl de agent werkt.
+    pub fn pull(self: &Arc<Self>, id: Uuid) -> Result<(), String> {
+        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        if run.status.is_active() {
+            return Err("Kan niet terwijl de agent werkt.".into());
+        }
+        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        git.pull_fast_forward(&run.working_directory).map_err(|e| e.0)?;
+        self.note(id, "Gepulld (alleen fast-forward)");
+        self.refresh_git(id);
+        Ok(())
+    }
+
+    /// Een systeemregel in de tijdlijn (bijvoorbeeld "Pull request geopend: …").
+    pub fn note(&self, id: Uuid, text: &str) {
+        let mut out = Out::default();
+        Self::append(&mut self.lock(), id, RunEvent::new(EventKind::System, text), &mut out);
+        self.emit(out);
+    }
+
+    pub fn git(&self) -> Option<&Git> {
+        self.git.as_ref()
     }
 
     /// Haalt de worktree van een sessie weg. Nooit terwijl de sessie loopt; niet-vastgelegd werk vraagt `force`.
@@ -2298,6 +2476,7 @@ read rest
             account_environment: Box::new(|_| BTreeMap::new()),
             bridge: Box::new(|| None),
             worktree_root: Box::new(|| "/tmp".into()),
+            auto_resume_limited: Box::new(|| false),
         };
         let manager = Manager::new(root.join("store"), hooks(), tokio::runtime::Handle::current(), move |e| {
             let name = match e {

@@ -27,7 +27,7 @@
       </div>
       <div class="faint small">
         {#if r.id.startsWith("claude")}
-          {planLabel(r.id === "claude" ? agents.overview?.planUsage : null) || "limieten niet beschikbaar"}
+          {planLabel(agents.overview?.profilePlanUsage[r.id] ?? (r.id === "claude" ? agents.overview?.planUsage : null)) || "limieten niet beschikbaar"}
         {:else}
           limieten niet beschikbaar
         {/if}

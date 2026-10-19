@@ -24,7 +24,7 @@ impl std::fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
-type Result<T> = std::result::Result<T, GitError>;
+pub type Result<T> = std::result::Result<T, GitError>;
 
 pub struct Output {
     pub status: i32,
