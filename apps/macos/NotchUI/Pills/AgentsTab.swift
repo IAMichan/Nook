@@ -256,6 +256,11 @@ struct AgentsTab: View {
         return AccountKind.of(profile, app: app)
     }
 
+    private func accountName(_ profile: AgentProfile?) -> String {
+        guard !app.demoMode, let profile else { return "" }
+        return AccountLabel.name(profile, app: app)
+    }
+
     private func item(_ run: WorkspaceRun) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
         let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
@@ -283,7 +288,10 @@ struct AgentsTab: View {
             finishKey: FinishedSessions.key(run: run),
             unseen: attention == .ready,
             snoozedUntil: run.snoozedUntil,
-            snoozedAt: run.snoozedAt
+            snoozedAt: run.snoozedAt,
+            machine: run.remote?.name ?? MachineName.local,
+            model: run.resolvedModel ?? run.model,
+            accountName: accountName(app.profile(for: run))
         )
     }
 
@@ -317,7 +325,10 @@ struct AgentsTab: View {
                 : (session.turnStarted ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
-            unseen: session.status == .done && unseen(session.id, session.updated)
+            unseen: session.status == .done && unseen(session.id, session.updated),
+            machine: MachineName.local,
+            model: known?.model ?? "",
+            accountName: accountName(app.profile(for: session))
         )
     }
 
@@ -339,7 +350,10 @@ struct AgentsTab: View {
             status: status,
             started: session.cloud?.isActive == true ? session.started : session.ended,
             path: session.cwd,
-            finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id)
+            finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id),
+            machine: session.cloud == nil ? MachineName.local : tr("agents.hover.cloud"),
+            model: session.cloud?.model ?? session.model,
+            accountName: accountName(app.profile(for: session))
         )
     }
 
@@ -406,13 +420,18 @@ struct AgentListItem: Identifiable {
     /// Snoozed by you: out of the way until the snooze ends or the session needs you.
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
+    /// For the hover card: the machine it runs on, the model, and the account's name.
+    var machine = ""
+    var model = ""
+    var accountName = ""
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
 
     func markedFinished() -> AgentListItem {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
-                      started: started, path: path, finishKey: finishKey)
+                      started: started, path: path, finishKey: finishKey,
+                      machine: machine, model: model, accountName: accountName)
     }
 }
 
@@ -446,6 +465,9 @@ struct AgentListRow: View {
     var pullRequest: PullRequestBadge? = nil
     let action: () -> Void
     @State private var hovering = false
+    /// The hover card opens after the pointer rests on the row a moment, so sweeping over the list stays quiet.
+    @State private var showCard = false
+    @State private var cardDelay: Task<Void, Never>?
 
     private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
     private var dimmed: Bool { item.status == .finished || slim }
@@ -453,7 +475,10 @@ struct AgentListRow: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button(action: action) { content }
+            Button {
+                hover(false)
+                action()
+            } label: { content }
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
@@ -463,8 +488,25 @@ struct AgentListRow: View {
                     .allowsHitTesting(hovering)
             }
         }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            hover(inside)
+        }
+        .onDisappear { cardDelay?.cancel() }
+        .popover(isPresented: $showCard, arrowEdge: .trailing) { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
+    }
+
+    private func hover(_ inside: Bool) {
+        cardDelay?.cancel()
+        guard inside else {
+            showCard = false
+            return
+        }
+        cardDelay = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            if !Task.isCancelled, hovering { showCard = true }
+        }
     }
 
     private var content: some View {
@@ -563,6 +605,7 @@ struct AgentListRow: View {
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
+            .pointerStyle(.link)
             .help(label)
             .accessibilityLabel(label)
     }
@@ -595,6 +638,62 @@ struct AgentListRow: View {
                     .fixedSize()
             }
         }
+    }
+}
+
+/// What a row shows on hover, as in the Claude app: the session's name, then its project, the machine it runs on, its
+/// branch, and the model with the account it runs on.
+struct AgentHoverCard: View {
+    let item: AgentListItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(item.title)
+                .font(NookTheme.font(13.5, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 2)
+            row("folder", item.folder, help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
+            if !item.machine.isEmpty {
+                row(item.agent == AppModel.cloudAgentName ? "cloud" : "laptopcomputer", item.machine)
+            }
+            row("arrow.triangle.branch", item.branch ?? tr("agents.noBranch"))
+            HStack(spacing: 8) {
+                AgentMark(agent: item.agent, account: item.account, size: 14, ring: DropdownStyle.panel)
+                    .frame(width: 16)
+                Text(modelLine)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(NookTheme.font(12.5))
+            .foregroundStyle(NookTheme.textTertiary)
+        }
+        .padding(14)
+        .frame(minWidth: 220, maxWidth: 320, alignment: .leading)
+        .background(DropdownStyle.panel)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "Claude Sonnet 5.5 · Personal"; the agent's name when the model is not known.
+    private var modelLine: String {
+        let model = AgentFormat.model(item.model)
+        let first = model.isEmpty ? item.agent : model
+        return item.accountName.isEmpty ? first : "\(first) · \(item.accountName)"
+    }
+
+    private func row(_ symbol: String, _ text: String, help: String? = nil) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 16)
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(NookTheme.font(12.5))
+        .foregroundStyle(NookTheme.textSecondary)
+        .help(help ?? "")
     }
 }
 
@@ -724,6 +823,20 @@ enum AgentFormat {
         return text
     }
 
+    /// A model id as a name: "claude-sonnet-5-5" and "claude-3-5-sonnet-20241022" read "Claude Sonnet 5.5" and
+    /// "Claude Sonnet 3.5"; other agents' models stay as they are.
+    static func model(_ raw: String) -> String {
+        var id = raw.trimmingCharacters(in: .whitespaces)
+        if let bracket = id.firstIndex(of: "[") { id = String(id[..<bracket]) }
+        guard id.lowercased().hasPrefix("claude-") else { return id }
+        var parts = id.split(separator: "-").map(String.init)
+        // A release date at the end ("20241022").
+        if let last = parts.last, last.count == 8, Int(last) != nil { parts.removeLast() }
+        let words = parts.filter { Int($0) == nil }.map(\.capitalized)
+        let numbers = parts.filter { Int($0) != nil }
+        return (words + (numbers.isEmpty ? [] : [numbers.joined(separator: ".")])).joined(separator: " ")
+    }
+
     static func count(_ count: Int, _ one: String, _ many: String) -> String {
         "\(count) \(count == 1 ? one : many)"
     }
@@ -843,6 +956,8 @@ struct Message: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
+    /// The outputs panel next to the conversation; its button sits in the header above.
+    var outputsOpen: Binding<Bool> = .constant(false)
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
 
@@ -858,7 +973,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd)
+                               directory: session.cwd, outputsOpen: outputsOpen)
             .id(session.id)
     }
 }

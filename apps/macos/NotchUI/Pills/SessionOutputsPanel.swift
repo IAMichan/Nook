@@ -280,3 +280,36 @@ struct TaskListRows: View {
         }
     }
 }
+
+/// The button in a session's header that opens or closes the outputs panel: a quiet icon like the terminal and branch
+/// buttons next to it, with how many outputs there are while the panel is closed and a dot when something is new.
+struct SessionOutputsButton: View {
+    let open: Bool
+    var count = 0
+    var fresh = false
+    var tint: Color = NookTheme.iris
+    let toggle: () -> Void
+
+    var body: some View {
+        let showCount = !open && count > 0
+        let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
+        Button { withAnimation(.easeInOut(duration: 0.2)) { toggle() } } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "sidebar.right").font(.system(size: 12, weight: .medium))
+                if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }
+            }
+            .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
+            .padding(.horizontal, showCount ? 7 : 0)
+            .frame(height: 26)
+            .frame(minWidth: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(open ? NookTheme.smoke : Color.clear))
+            .overlay(alignment: .topTrailing) {
+                if fresh { Circle().fill(tint).frame(width: 6, height: 6).offset(x: -3, y: 3) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(open || fresh ? label : tr("ws.outputs.show"))
+        .accessibilityLabel(label)
+    }
+}

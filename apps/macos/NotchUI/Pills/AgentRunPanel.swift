@@ -174,24 +174,10 @@ struct AgentRunPanel: View {
     /// Opens or closes the outputs panel; opening it marks everything seen.
     private func outputsButton(_ run: WorkspaceRun, _ outputs: [SessionOutput]) -> some View {
         let fresh = !outputsOpen && SessionOutputs.hasNew(outputs, seen: seenOutputs ?? [])
-        let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
-        return Button {
-            withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.toggle() }
+        return SessionOutputsButton(open: outputsOpen, fresh: fresh, tint: run.provider.color) {
+            outputsOpen.toggle()
             seenOutputs = Set(outputs.map(SessionOutputs.signature))
-        } label: {
-            Image(systemName: "sidebar.right")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(outputsOpen ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(outputsOpen ? NookTheme.smoke : Color.clear))
-                .overlay(alignment: .topTrailing) {
-                    if fresh { Circle().fill(run.provider.color).frame(width: 6, height: 6).offset(x: -3, y: 3) }
-                }
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.

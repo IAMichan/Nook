@@ -25,8 +25,9 @@ struct TranscriptConversation: View {
     var directory: String? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
-    /// The panel next to the conversation with what the agent produced.
-    @State private var outputsOpen = false
+    /// The panel next to the conversation with what the agent produced; its button sits in the header of the view
+    /// that shows the conversation (see SessionOutputsButton), which reads the count from TranscriptOutputCount.
+    var outputsOpen: Binding<Bool> = .constant(false)
     @State private var outputSelection: String?
     /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
@@ -73,30 +74,9 @@ struct TranscriptConversation: View {
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                // What the agent produced, a click away once there is something.
-                if !outputsOpen, !outputs.isEmpty {
-                    Button { withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = true } } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "sidebar.right").font(.system(size: 11, weight: .medium))
-                            Text(tr("ws.outputs.title")).font(NookTheme.font(11.5, .medium))
-                            Text("\(outputs.count)").font(NookTheme.mono(10.5, .medium)).foregroundStyle(NookTheme.textTertiary)
-                        }
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .padding(.horizontal, 9)
-                        .frame(height: 24)
-                        .background(Capsule().fill(NookTheme.smoke))
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help(tr("ws.outputs.show"))
-                    .padding(.top, 4)
-                    .padding(.trailing, 8)
-                }
-            }
-            if outputsOpen {
+            if outputsOpen.wrappedValue {
                 SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
+                    withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.wrappedValue = false }
                 }
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                 available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
@@ -104,6 +84,7 @@ struct TranscriptConversation: View {
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .preference(key: TranscriptOutputCount.self, value: outputs.count)
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
                 let path = self.path
@@ -256,6 +237,12 @@ struct TranscriptConversation: View {
         guard !shown.isEmpty || footer != nil else { return }
         proxy.scrollTo("bottom", anchor: .bottom)
     }
+}
+
+/// How many outputs the conversation found, for the button in the header above it.
+struct TranscriptOutputCount: PreferenceKey {
+    static let defaultValue = 0
+    static func reduce(value: inout Int, nextValue: () -> Int) { value = max(value, nextValue()) }
 }
 
 // MARK: Messages
