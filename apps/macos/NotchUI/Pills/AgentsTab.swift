@@ -900,6 +900,9 @@ struct TranscriptConversation: View {
     private func bubble(_ message: AgentChatMessage) -> some View {
         if message.isThinking {
             ThinkingBubble(text: message.text)
+        } else if message.isTools {
+            // The step still without a result is the one the agent works on now.
+            ToolStepsList(steps: message.steps, live: working && message.id == shown.last?.id)
         } else {
             let open = !message.fromUser && message.id == shown.last?.id && !working
             ConversationMessage(fromUser: message.fromUser, text: message.text, author: author, accent: accent,
@@ -939,7 +942,8 @@ private extension AgentSession {
     }
 }
 
-/// A collapsible bubble displaying internal model reasoning / thoughts.
+/// A collapsible bubble displaying internal model reasoning / thoughts. Without text (the agent kept its reasoning to
+/// itself) it only says that it thought, like the agent's own app.
 struct ThinkingBubble: View {
     let text: String
     @State private var isExpanded = false
@@ -947,6 +951,7 @@ struct ThinkingBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
+                guard !text.isEmpty else { return }
                 withAnimation(.easeInOut(duration: 0.18)) {
                     isExpanded.toggle()
                 }
@@ -955,14 +960,16 @@ struct ThinkingBubble: View {
                     Image(systemName: "brain")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(NookTheme.iris)
-                    Text(tr("ws.event.thinking"))
+                    Text(text.isEmpty ? tr("agents.thought") : tr("ws.event.thinking"))
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    if !text.isEmpty {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -992,6 +999,73 @@ struct ThinkingBubble: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+/// The steps an agent took between its messages, one line each: the tool's name and what it was about, as the agent's own
+/// app shows them. A long run folds to its last few; the step still going shimmers.
+struct ToolStepsList: View {
+    let steps: [AgentToolStep]
+    /// The agent is working on the last of these steps right now.
+    var live = false
+    @State private var expanded = false
+
+    private static let folded = 6
+
+    var body: some View {
+        let hidden = expanded ? 0 : max(0, steps.count - Self.folded)
+        VStack(alignment: .leading, spacing: 5) {
+            if hidden > 0 {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { expanded = true }
+                } label: {
+                    Text(tr("agents.steps.more", hidden))
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            ForEach(steps.suffix(steps.count - hidden)) { step in
+                row(step, current: live && step.id == steps.last?.id && step.state == .running)
+            }
+        }
+        .padding(.leading, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ step: AgentToolStep, current: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(color(step, current: current))
+                .frame(width: 6, height: 6)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            Text(step.name)
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .fixedSize()
+            if current {
+                ShimmerText(text: step.summary.isEmpty ? tr("agents.steps.busy") : step.summary)
+                    .font(NookTheme.font(12))
+            } else if !step.summary.isEmpty {
+                Text(step.summary)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .help(step.summary)
+    }
+
+    private func color(_ step: AgentToolStep, current: Bool) -> Color {
+        if current { return NookTheme.iris }
+        switch step.state {
+        case .failed: return NookTheme.coral
+        case .done: return NookTheme.mint
+        case .running: return NookTheme.textTertiary
+        }
+    }
+}
+
 /// A dot that gently pulses while the agent is running.
 struct PulseDot: View {
     let color: Color

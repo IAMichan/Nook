@@ -144,11 +144,13 @@ extension AppModel {
     private func earlierConversation(path: String, prompt: String, reply: String) async -> [(kind: RunEvent.Kind, text: String)] {
         let messages = path.isEmpty ? [] : await Task.detached(priority: .userInitiated) { AgentTranscript.recent(path: path) }.value
         if !messages.isEmpty {
-            return messages.map { message in
+            // The steps and thinking without text are what happened, not what was said: the conversation goes along without them.
+            return messages.compactMap { message -> (kind: RunEvent.Kind, text: String)? in
                 switch message.kind {
                 case .user: return (kind: .user, text: message.text)
                 case .assistant: return (kind: .assistant, text: message.text)
-                case .thinking: return (kind: .thinking, text: message.text)
+                case .thinking: return message.text.isEmpty ? nil : (kind: .thinking, text: message.text)
+                case .tools: return nil
                 }
             }
         }
