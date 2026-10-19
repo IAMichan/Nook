@@ -5,7 +5,7 @@ import Foundation
 
 /// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, opencode, cursor, grok, antigravity
+    case claude, codex, gemini, opencode, cursor, grok, antigravity, acp
 
     var id: String { rawValue }
 
@@ -18,13 +18,15 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cursor: return "Cursor"
         case .grok: return "Grok"
         case .antigravity: return "Antigravity"
+        // An ACP agent you added; its own name is the account's (see CustomAgents).
+        case .acp: return "ACP"
         }
     }
 
     /// Runs over ACP (Agent Client Protocol).
     var usesACP: Bool {
         switch self {
-        case .gemini, .opencode, .cursor, .grok, .antigravity: return true
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return true
         case .claude, .codex: return false
         }
     }
@@ -46,7 +48,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
-        case .opencode, .cursor, .grok, .antigravity:
+        case .opencode, .cursor, .grok, .antigravity, .acp:
             // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
@@ -61,7 +63,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return ["", "gpt-5-codex", "gpt-5"]
         case .gemini: return ["", "gemini-2.5-pro", "gemini-2.5-flash"]
         // These agents choose their model in their own settings; Nook passes a name only when you type one.
-        case .opencode, .cursor, .grok, .antigravity: return [""]
+        case .opencode, .cursor, .grok, .antigravity, .acp: return [""]
         }
     }
 }
@@ -274,11 +276,21 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
+    /// The agent's own task list, as it last reported it.
+    var tasks: [RunTaskStep]? = nil
+    /// The pull request this session watches: what it last saw, so only news wakes it.
+    var prWatch: PullRequestWatch? = nil
+    /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
+    var remote: RemoteTarget? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        return name.isEmpty ? projectPath : name
+        let folder = name.isEmpty ? projectPath : name
+        // A session on another machine says which: "buildbox:app".
+        return remote.map { $0.name + ":" + folder } ?? folder
     }
+
+    var isRemote: Bool { remote != nil }
 
     var hasUnreviewedChanges: Bool {
         guard let changed = lastChangeAt, (changedFiles ?? 1) > 0 else { return false }
@@ -298,6 +310,149 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         if next == .running, turnStartedAt == nil { turnStartedAt = now }
         if !next.isActive { turnStartedAt = nil }
         return true
+    }
+}
+
+/// One step of the task list an agent keeps while it works: Claude Code's TodoWrite, Codex's `turn/plan/updated`,
+/// an ACP `plan` update.
+struct RunTaskStep: Codable, Equatable, Sendable {
+    enum Status: String, Codable, Sendable { case pending, active, done }
+    var text: String
+    var status: Status
+}
+
+enum RunTasks {
+    static func status(_ raw: String?) -> RunTaskStep.Status {
+        switch raw {
+        case "completed", "done": return .done
+        case "in_progress", "inProgress", "running", "active": return .active
+        default: return .pending
+        }
+    }
+
+    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`.
+    static func claude(_ input: [String: Any]) -> [RunTaskStep]? {
+        guard let todos = input["todos"] as? [[String: Any]] else { return nil }
+        return todos.compactMap { todo in
+            let state = Self.status(todo["status"] as? String)
+            let active = (todo["activeForm"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String), !text.isEmpty else { return nil }
+            return RunTaskStep(text: text, status: state)
+        }
+    }
+
+    /// Codex's `turn/plan/updated`: `plan` with `step` and `status`.
+    static func codex(_ params: [String: Any]) -> [RunTaskStep]? {
+        guard let plan = params["plan"] as? [[String: Any]] else { return nil }
+        return plan.enumerated().map { index, step in
+            let text = ((step["step"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return RunTaskStep(text: text.isEmpty ? "Step \(index + 1)" : text, status: Self.status(step["status"] as? String))
+        }
+    }
+
+    /// An ACP `plan` update: `entries` with `content` and `status`.
+    static func acp(_ update: [String: Any]) -> [RunTaskStep] {
+        ((update["entries"] as? [[String: Any]]) ?? []).compactMap { entry in
+            guard let text = entry["content"] as? String, !text.isEmpty else { return nil }
+            return RunTaskStep(text: text, status: Self.status(entry["status"] as? String))
+        }
+    }
+
+    /// How far the list is, and the step that matters now: the running one, else the next, else the last.
+    static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
+        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending } ?? steps.last
+        return (steps.filter { $0.status == .done }.count, steps.count, current?.text ?? "")
+    }
+
+    static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
+        guard let steps, !steps.isEmpty else { return true }
+        return steps.allSatisfy { $0.status == .done }
+    }
+}
+
+/// What a watched pull request last looked like. A change in it is news for the session.
+struct PullRequestWatch: Codable, Equatable, Sendable {
+    /// A GitHub pull request or a GitLab merge request: the two Nook can read.
+    static func canWatch(_ url: URL) -> Bool {
+        let parts = url.path.split(separator: "/")
+        let github = url.host?.hasSuffix("github.com") == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
+        return github || url.absoluteString.contains("/-/merge_requests/")
+    }
+
+    var url: String
+    /// "open", "merged", "closed".
+    var state: String = "open"
+    /// "success", "failure", "pending", or empty when there are no checks.
+    var checks: String = ""
+    /// Reviews and comments seen so far.
+    var reviewCount: Int = 0
+    var commentCount: Int = 0
+    /// Send news to the agent as a message (otherwise it only shows in the timeline).
+    var wakeAgent: Bool = true
+    var checkedAt: Date? = nil
+}
+
+/// How a pull request looks right now, as fetched for a watch.
+struct PullRequestSnapshot: Equatable, Sendable {
+    struct Note: Equatable, Sendable {
+        var author: String
+        /// A review's verdict ("APPROVED", "CHANGES_REQUESTED", "COMMENTED"), empty for a comment.
+        var verdict: String
+        var text: String
+    }
+    var state: String
+    var checks: String
+    var failedChecks: [String]
+    /// All reviews and comments, oldest first.
+    var reviews: [Note]
+    var comments: [Note]
+}
+
+/// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.
+enum PullRequestNews {
+    static func lines(old: PullRequestWatch, new: PullRequestSnapshot) -> [String] {
+        var lines: [String] = []
+        if new.state != old.state {
+            lines.append(new.state == "merged" ? "The pull request was merged." : new.state == "closed" ? "The pull request was closed." : "The pull request was reopened.")
+        }
+        if new.checks != old.checks {
+            switch new.checks {
+            case "failure":
+                lines.append("CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."))
+            case "success" where !old.checks.isEmpty: lines.append("CI passed.")
+            default: break
+            }
+        }
+        for review in new.reviews.dropFirst(min(old.reviewCount, new.reviews.count)) {
+            let text = review.text.isEmpty ? "" : ": " + ToolSummary.oneLine(review.text, 600)
+            lines.append("Review from @\(review.author) (\(review.verdict.lowercased().replacingOccurrences(of: "_", with: " ")))" + text)
+        }
+        for comment in new.comments.dropFirst(min(old.commentCount, new.comments.count)) {
+            lines.append("Comment from @\(comment.author): " + ToolSummary.oneLine(comment.text, 600))
+        }
+        return lines
+    }
+
+    /// Worth waking the agent for: something it can act on (failed CI, reviews, comments), not a merge or a pass.
+    static func needsAgent(old: PullRequestWatch, new: PullRequestSnapshot) -> Bool {
+        guard new.state == "open" else { return false }
+        return (new.checks == "failure" && old.checks != "failure") || new.reviews.count > old.reviewCount
+            || new.comments.count > old.commentCount
+    }
+
+    static func message(url: String, lines: [String]) -> String {
+        "Update on your pull request \(url):\n" + lines.map { "- " + $0 }.joined(separator: "\n")
+            + "\n\nLook into this and fix what is needed; push when done."
+    }
+
+    static func updated(_ watch: PullRequestWatch, with snapshot: PullRequestSnapshot, at date: Date) -> PullRequestWatch {
+        var next = watch
+        next.state = snapshot.state
+        next.checks = snapshot.checks
+        next.reviewCount = snapshot.reviews.count
+        next.commentCount = snapshot.comments.count
+        next.checkedAt = date
+        return next
     }
 }
 
@@ -342,8 +497,12 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// Long tool output clipped; the full version is stored in the agent's own transcript.
     static let outputLimit = 16_000
 
+    /// An MCP app's page (see McpUI) is shown, not read: it has to arrive whole.
+    static let appOutputLimit = 256_000
+
     static func clip(_ text: String, _ limit: Int = outputLimit) -> String {
-        text.count > limit ? String(text.prefix(limit)) + "\n…" : text
+        let limit = limit == outputLimit && text.contains(McpUI.fence) ? appOutputLimit : limit
+        return text.count > limit ? String(text.prefix(limit)) + "\n…" : text
     }
 }
 
@@ -364,10 +523,20 @@ struct NewRunConfig: Equatable, Sendable {
     var instructions = ""
     /// Set for a task that another session delegated.
     var delegation: DelegationLink? = nil
+    /// Run on another machine over SSH, in this folder there (or a new worktree of it there).
+    var remote: RemoteTarget? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {
         if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .missingTask }
+        if let remote {
+            guard RemoteMachines.isValidHost(remote.host), RemoteMachines.isValidDirectory(remote.directory),
+                  provider != .antigravity else { return .invalidRemote }
+            if !provider.capabilities.policies.contains(permission) { return .unsupportedPolicy }
+            // A worktree there starts from the branch the folder is on unless you name one.
+            if isolation == .worktree, !WorktreeNaming.isPlausibleBranchName(branchName) { return .invalidBranchName }
+            return nil
+        }
         if projectPath.isEmpty { return .missingWorkspace }
         if !provider.capabilities.policies.contains(permission) { return .unsupportedPolicy }
         if isolation == .worktree {
@@ -379,7 +548,7 @@ struct NewRunConfig: Equatable, Sendable {
 }
 
 enum ConfigProblem: String, Equatable, Sendable {
-    case missingTask, missingWorkspace, unsupportedPolicy, missingBaseBranch, invalidBranchName
+    case missingTask, missingWorkspace, unsupportedPolicy, missingBaseBranch, invalidBranchName, invalidRemote
 }
 
 /// Names for sessions, branches, and worktree directories derived from the task prompt.

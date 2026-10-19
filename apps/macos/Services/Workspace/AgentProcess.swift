@@ -47,6 +47,8 @@ enum AgentCommand {
         var bridge: BridgeLaunch? = nil
         /// Claude Code knows `--thinking-display`: ask for summarized thinking, so newer models show it.
         var thinkingDisplay = false
+        /// An ACP agent you added: its command, run by `executable` (your login shell).
+        var customAgent: CustomAgent? = nil
     }
 
     static func spec(_ input: Input) -> LaunchSpec {
@@ -120,7 +122,7 @@ enum AgentCommand {
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
 
-        case .opencode, .cursor, .grok, .antigravity:
+        case .opencode, .cursor, .grok, .antigravity, .acp:
             return acpSpec(input)
         }
     }
@@ -129,6 +131,12 @@ enum AgentCommand {
     static func acpSpec(_ input: Input) -> LaunchSpec {
         var environment = input.accountEnvironment
         environment["NOOK_RUN_ID"] = input.runID.uuidString
+        // An ACP agent you added: your login shell runs its command line, so npx, uvx, nvm and asdf work as in Terminal.
+        if input.provider == .acp, let agent = input.customAgent {
+            environment.merge(agent.environment) { _, new in new }
+            return LaunchSpec(executable: input.executable, arguments: ["-ilc", agent.shellLine], extraEnvironment: environment,
+                              workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: true)
+        }
         return LaunchSpec(executable: input.executable, arguments: AcpLaunch.arguments(input.provider, permission: input.permission),
                           extraEnvironment: environment, workingDirectory: input.workingDirectory, initialInput: [],
                           keepsInputOpen: true)

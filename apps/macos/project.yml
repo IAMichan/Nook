@@ -181,6 +181,15 @@ targets:
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
+      - path: Services/Workspace/ReviewComments.swift
+      - path: Services/Workspace/SessionExport.swift
+      - path: Services/Workspace/CustomAgents.swift
+      - path: Services/Workspace/BrowserSearch.swift
+      - path: Services/Workspace/McpUI.swift
+      - path: Services/Workspace/McpApps.swift
+      - path: Services/Workspace/Simulators.swift
+      - path: Services/Workspace/DeviceHub.swift
+      - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/CodexAppServer.swift

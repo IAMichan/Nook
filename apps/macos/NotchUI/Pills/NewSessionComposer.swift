@@ -24,6 +24,9 @@ struct NewSessionComposer: View {
     @State private var cloneURL = ""
     @State private var cloning = false
     @State private var pendingID = UUID()
+    /// On another machine over SSH (see RemoteMachines): which one, and the folder there.
+    @State private var remoteMachine: RemoteMachine?
+    @State private var remoteFolder = ""
     @StateObject private var composerModel = ComposerModel()
     @ObservedObject private var promptLinks = PromptLinkInbox.shared
     @State private var linkNotice: String?
@@ -34,6 +37,7 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
             heading
             if showClone { cloneRow }
+            if remoteMachine != nil { remoteRow }
             VStack(alignment: .leading, spacing: 8) {
                 box
                 belowBox
@@ -54,7 +58,7 @@ struct NewSessionComposer: View {
             Text(tr("compose.heading"))
                 .foregroundStyle(NookTheme.paper)
             ComposerDropdown(width: 320) {
-                Text(project?.name ?? tr("compose.pickProject"))
+                Text(projectLabel)
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
             } content: {
@@ -68,6 +72,16 @@ struct NewSessionComposer: View {
                 }
                 DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
                 DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
+                // Another machine over SSH (Settings › Agents › Workspace › Machines).
+                let machines = RemoteMachines.load()
+                if !machines.isEmpty {
+                    DropdownDivider()
+                    DropdownHeader(title: tr("ws.remote.header"))
+                    ForEach(machines) { machine in
+                        DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
+                                    chosen: remoteMachine?.id == machine.id) { chooseMachine(machine) }
+                    }
+                }
             }
             .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             Text("?").foregroundStyle(NookTheme.paper)
@@ -91,6 +105,32 @@ struct NewSessionComposer: View {
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { showClone = false }
         }
+        .frame(maxWidth: 640)
+    }
+
+    /// "app", "buildbox:app", or the invitation to pick one.
+    private var projectLabel: String {
+        if let remoteMachine {
+            let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
+            return remoteMachine.name + ":" + folder
+        }
+        return project?.name ?? tr("compose.pickProject")
+    }
+
+    /// The folder on the remote machine, typed: there is no folder panel for another machine.
+    private var remoteRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
+            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary).fixedSize()
+            TextField("~/code/app", text: $remoteFolder)
+                .textFieldStyle(.plain)
+                .font(NookTheme.mono(12))
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+            NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
+        }
+        .font(NookTheme.font(12.5))
         .frame(maxWidth: 640)
     }
 
@@ -190,35 +230,56 @@ struct NewSessionComposer: View {
 
     private var belowBox: some View {
         HStack(spacing: 6) {
-            ComposerDropdown(width: 300) {
-                ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
-                     text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
-            } content: {
-                DropdownHeader(title: tr("compose.whereWorks"))
-                DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
-                            chosen: config.isolation == .folder) {
-                    config.isolation = .folder
+            if let remoteMachine {
+                // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
+                ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
+                    .help(tr("ws.remote.limits"))
+                isolationDropdown(worktreeAllowed: true, reason: "")
+                Spacer(minLength: 8)
+                if config.isolation == .worktree {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10.5)).foregroundStyle(NookTheme.textTertiary)
+                    TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.font(12))
+                        .frame(width: 150)
+                        .help(tr("ws.remote.baseHelp"))
                 }
-                DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
-                            chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : worktreeBlockedReason) {
-                    config.isolation = .worktree
-                }
-            }
-            .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : worktreeBlockedReason)
+            } else {
+                isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
-                ComposerDropdown(width: 280) {
-                    ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
-                } content: {
-                    BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
+                if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
+                    ComposerDropdown(width: 280) {
+                        ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
+                    } content: {
+                        BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
+                    }
+                } else if let branch = project?.currentBranch {
+                    ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
                 }
-            } else if let branch = project?.currentBranch {
-                ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
             }
         }
         .padding(.horizontal, 6)
+    }
+
+    /// Where the agent works: the folder as it is, or a new worktree.
+    private func isolationDropdown(worktreeAllowed: Bool, reason: String) -> some View {
+        ComposerDropdown(width: 300) {
+            ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
+                 text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
+        } content: {
+            DropdownHeader(title: tr("compose.whereWorks"))
+            DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
+                        chosen: config.isolation == .folder) {
+                config.isolation = .folder
+            }
+            DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
+                        chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : reason) {
+                config.isolation = .worktree
+            }
+        }
+        .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
     }
 
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
@@ -234,6 +295,13 @@ struct NewSessionComposer: View {
             Text(linkNotice)
                 .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.amber)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        } else if let remoteMachine {
+            // On another machine the agent uses that machine's own login; what needs this Mac stays off.
+            Text(tr("ws.remote.notice", remoteMachine.name))
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
         } else if config.provider == .antigravity, antigravity.installed == nil {
@@ -296,6 +364,8 @@ struct NewSessionComposer: View {
 
     private var blockingReason: String? {
         if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
+        // On another machine the agent is looked up there, not on this Mac.
+        if remoteMachine != nil { return nil }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
         if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
         if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
@@ -310,6 +380,10 @@ struct NewSessionComposer: View {
     private var checkedConfig: NewRunConfig {
         var copy = config
         copy.branchName = WorktreeNaming.branchName(task: config.task, id: pendingID)
+        if let remoteMachine {
+            copy.remote = RemoteTarget(machine: remoteMachine, directory: remoteFolder.trimmingCharacters(in: .whitespaces))
+            copy.baseBranch = config.baseBranch.trimmingCharacters(in: .whitespaces)
+        }
         return copy
     }
 
@@ -364,7 +438,17 @@ struct NewSessionComposer: View {
         config.profileID = account
     }
 
+    private func chooseMachine(_ machine: RemoteMachine) {
+        remoteMachine = machine
+        remoteFolder = UserDefaults.standard.string(forKey: "agents.remoteFolder." + machine.id) ?? "~"
+        config.isolation = .folder
+        // The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one.
+        config.baseBranch = ""
+        error = nil
+    }
+
     private func select(_ path: String) {
+        remoteMachine = nil
         config.projectPath = path
         inspecting = true
         error = nil
@@ -436,6 +520,9 @@ struct NewSessionComposer: View {
         Task {
             do {
                 let id = try await workspace.start(finalConfig, allowSharedFolder: shared)
+                if let remote = finalConfig.remote {
+                    UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
+                }
                 settings.defaultProvider = config.provider
                 settings.setModel(config.model, for: config.provider)
                 settings.defaultMode = config.mode

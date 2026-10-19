@@ -8,7 +8,9 @@ struct AccountsSettingsSection: View {
     @State private var editingProfile: AgentProfile?
 
     var body: some View {
-        ForEach(AgentKind.allCases) { kind in
+        // ACP agents you added have a section of their own (pick from the registry, or enter a command).
+        AcpAgentsSection()
+        ForEach(AgentKind.allCases.filter { $0 != .acp }) { kind in
             Section {
                 let profiles = app.profiles.profiles(for: kind)
                 ForEach(profiles) { profile in

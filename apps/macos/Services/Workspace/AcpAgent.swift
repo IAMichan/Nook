@@ -15,6 +15,8 @@ enum AcpLaunch {
         case .grok: return permission == .bypass ? ["agent", "--always-approve", "stdio"] : ["agent", "stdio"]
         // Antigravity's server takes no arguments on the Mac; its account and harness come from the environment.
         case .antigravity, .claude, .codex: return []
+        // An ACP agent you added starts with its own command line (see CustomAgents).
+        case .acp: return []
         }
     }
 }
@@ -25,11 +27,24 @@ enum AcpEvent: Equatable, Sendable {
     case thoughtChunk(String)
     case toolCall(AcpToolCall)
     case toolCallUpdate(AcpToolCall)
-    case plan([String])
+    case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
     /// A request Nook does not handle (`fs/…`, `terminal/…` are not advertised): answered with an error.
     case unsupportedRequest(RPCID)
+}
+
+extension AcpEvent {
+    /// After a turn, a sign the agent is really working again: text it writes, a tool call that
+    /// finished, or a question for you; not an empty chunk, usage or a stray notice.
+    var isWakeEvidence: Bool {
+        switch self {
+        case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
+        case .permission: return true
+        default: return false
+        }
+    }
 }
 
 struct AcpToolCall: Equatable, Sendable {
@@ -189,12 +204,8 @@ enum AcpMapper {
         case "tool_call_update":
             return [.toolCallUpdate(toolCall(update))]
         case "plan":
-            let entries = ((update["entries"] as? [[String: Any]]) ?? []).compactMap { entry -> String? in
-                guard let content = entry["content"] as? String else { return nil }
-                let done = (entry["status"] as? String) == "completed"
-                return (done ? "☑ " : "☐ ") + content
-            }
-            return entries.isEmpty ? [] : [.plan(entries)]
+            let steps = RunTasks.acp(update)
+            return steps.isEmpty ? [] : [.plan(steps)]
         case "usage_update":
             let cost = (update["cost"] as? [String: Any]).flatMap { cost -> Double? in
                 guard (cost["currency"] as? String)?.uppercased() ?? "USD" == "USD" else { return nil }
@@ -212,7 +223,8 @@ enum AcpMapper {
         var paths: [String] = []
         for item in (raw["content"] as? [[String: Any]]) ?? [] {
             switch item["type"] as? String {
-            case "content": if let text = text(item["content"]) { output.append(text) }
+            case "content":
+                if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
             case "diff": if let path = item["path"] as? String { paths.append(path) }
             default: break
             }

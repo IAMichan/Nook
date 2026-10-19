@@ -95,12 +95,14 @@ extension AgentKind {
         switch self {
         case .claude: return "CLAUDE_CONFIG_DIR"
         case .codex: return "CODEX_HOME"
-        case .gemini, .antigravity, .opencode, .cursor, .grok: return nil
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return nil
         }
     }
 
     /// Suggested location for a profile directory: ~/.claude-work.
     func suggestedHome(slug: String) -> URL {
+        // Each ACP agent gets a folder of its own under Nook's; the agent may keep its state there.
+        if self == .acp { return defaultHome.appendingPathComponent(slug, isDirectory: true) }
         let base = self == .claude ? ".claude" : (self == .codex ? ".codex" : ".gemini")
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(base)-\(slug)", isDirectory: true)
     }

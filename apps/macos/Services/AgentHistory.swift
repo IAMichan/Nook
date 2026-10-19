@@ -5,7 +5,7 @@ import SQLite3
 /// Which agent a past session or account belongs to. Nook reads the sessions of Claude Code, Codex, Gemini CLI and
 /// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP and knows by their login.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, gemini, antigravity, opencode, cursor, grok
+    case claude, codex, gemini, antigravity, opencode, cursor, grok, acp
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "OpenCode"
         case .cursor: return "Cursor"
         case .grok: return "Grok"
+        case .acp: return "ACP"
         }
     }
 
@@ -31,6 +32,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "opencode"
         case .cursor: return "cursor-agent"
         case .grok: return "grok"
+        // Each ACP agent has its own command (see CustomAgents); they start through your login shell.
+        case .acp: return "npx"
         }
     }
 
@@ -44,6 +47,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "OpenCode"
         case .cursor: return "Cursor"
         case .grok: return "Grok"
+        case .acp: return "ACP"
         }
     }
 
@@ -56,6 +60,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return Color(hex: 0xF5A742)
         case .cursor: return Color(hex: 0x9AA4B2)
         case .grok: return Color(hex: 0xD9D9DE)
+        case .acp: return Color(hex: 0xB59CF5)
         }
     }
 
@@ -68,7 +73,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .antigravity: return .antigravity
         case .opencode: return .openCode
         case .cursor: return .cursor
-        case .grok: return nil
+        case .grok, .acp: return nil
         }
     }
 
@@ -81,7 +86,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .antigravity: return [.antigravity]
         case .opencode: return [.openCode]
         case .cursor: return [.cursor]
-        case .grok: return []
+        case .grok, .acp: return []
         }
     }
 
@@ -102,6 +107,9 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
             return "curl https://cursor.com/install -fsS | bash"
         case .grok:
             return "npm install -g @xai-official/grok"
+        // Registry agents run with npx or uvx, which come with Node.js and uv.
+        case .acp:
+            return "brew install node uv"
         }
     }
 
@@ -115,6 +123,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "opencode auth login"
         case .cursor: return "cursor-agent login"
         case .grok: return "grok"
+        // ACP agents sign in themselves during the first session.
+        case .acp: return ""
         }
     }
 
@@ -146,6 +156,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode", isDirectory: true)
         case .cursor: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor", isDirectory: true)
         case .grok: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
+        case .acp: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/acp", isDirectory: true)
         }
     }
 
@@ -241,6 +252,8 @@ struct PastSession: Identifiable, Equatable {
         case .antigravity: return ["--resume", sessionID]
         case .opencode: return ["--session", sessionID]
         case .cursor, .grok: return ["--resume", sessionID]
+        // ACP agents load their sessions over the protocol (session/load), not from the command line.
+        case .acp: return []
         }
     }
 }
@@ -533,7 +546,7 @@ private final class HistoryScanner: @unchecked Sendable {
             case .gemini: found = geminiFiles(home.url, since: since)
             case .antigravity: found = antigravityFiles(home.url, since: since)
             // Run over ACP: their history comes from the agent itself (session/load), not from files.
-            case .opencode, .cursor, .grok: found = []
+            case .opencode, .cursor, .grok, .acp: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -554,7 +567,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 case .codex: parsed = parseCodex(file.url, key: file.key)
                 case .gemini: parsed = parseGemini(file.url)
                 case .antigravity: parsed = parseAntigravity(file.url, summaries: antigravitySummaries)
-                case .opencode, .cursor, .grok: parsed = Parsed(session: nil, entries: [])
+                case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                 }
             }
             parsed.session?.profileID = file.profile
@@ -603,6 +616,11 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let account = antigravityAccount(home.url) { accounts[home.id] = account }
             case .opencode, .cursor, .grok:
                 if let account = acpAgentAccount(home.kind, home.url) { accounts[home.id] = account }
+            case .acp:
+                // An ACP agent you added: its account is there as long as the agent is configured.
+                if let agent = CustomAgents.agent(for: home.id) {
+                    accounts[home.id] = AgentAccount(agent: .acp, name: agent.name, organization: "", plan: "ACP")
+                }
             }
         }
         return accounts
@@ -643,9 +661,10 @@ private final class HistoryScanner: @unchecked Sendable {
         defer { lock.unlock() }
         let fm = FileManager.default
         var found = foundExecutables
-        for kind in AgentKind.allCases where found[kind] == nil {
+        for kind in AgentKind.allCases where found[kind] == nil && kind != .acp {
             if let hit = kind.executableCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) { found[kind] = hit }
         }
+        found[.acp] = Self.acpLauncher()
         return (readAccounts(homes), found)
     }
 
@@ -660,6 +679,10 @@ private final class HistoryScanner: @unchecked Sendable {
         let fm = FileManager.default
         var missing: [AgentKind] = []
         for kind in AgentKind.allCases {
+            if kind == .acp {
+                foundExecutables[.acp] = Self.acpLauncher()
+                continue
+            }
             if let known = foundExecutables[kind], fm.isExecutableFile(atPath: known) { continue }
             foundExecutables[kind] = nil
             if let hit = kind.executableCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) {
@@ -683,6 +706,13 @@ private final class HistoryScanner: @unchecked Sendable {
             }
         }
         return foundExecutables
+    }
+
+    /// ACP agents you added start through your login shell (see CustomAgents): that is their program, once there is one.
+    static func acpLauncher() -> String? {
+        guard !CustomAgents.load().isEmpty else { return nil }
+        let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
+        return FileManager.default.isExecutableFile(atPath: shell) ? shell : "/bin/zsh"
     }
 
     private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval) -> String? {

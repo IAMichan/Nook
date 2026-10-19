@@ -79,4 +79,66 @@ enum GitLabAPI {
         }
         return nil
     }
+
+    // MARK: Watching a merge request
+
+    /// The repository and number of a merge request link ("https://gitlab.com/group/app/-/merge_requests/12").
+    static func mergeRequest(_ url: URL) -> (repo: RemoteRepository, iid: Int)? {
+        let text = url.absoluteString
+        guard let marker = text.range(of: "/-/merge_requests/") else { return nil }
+        let digits = text[marker.upperBound...].prefix { $0.isNumber }
+        guard let iid = Int(digits), let repo = RemoteRepository.detect(remoteURL: String(text[..<marker.lowerBound])),
+              repo.host == .gitlab else { return nil }
+        return (repo, iid)
+    }
+
+    /// `/projects/:id/merge_requests/:iid` plus `suffix` ("/notes", "/approvals"), with the project id kept encoded.
+    static func mergeRequestURL(_ repo: RemoteRepository, iid: Int, suffix: String = "", query: String = "") -> URL? {
+        guard let base = apiBase(repo), var components = URLComponents(string: base) else { return nil }
+        components.percentEncodedPath = "/api/v4/projects/\(projectID(repo))/merge_requests/\(iid)" + suffix
+        if !query.isEmpty { components.percentEncodedQuery = query }
+        return components.url
+    }
+
+    static func failedJobsURL(_ repo: RemoteRepository, pipeline: Int) -> URL? {
+        guard let base = apiBase(repo), var components = URLComponents(string: base) else { return nil }
+        components.percentEncodedPath = "/api/v4/projects/\(projectID(repo))/pipelines/\(pipeline)/jobs"
+        components.percentEncodedQuery = "scope%5B%5D=failed&per_page=50"
+        return components.url
+    }
+
+    /// GitLab's answers as one snapshot: state, the head pipeline, approvals as reviews, and comments (system notes
+    /// such as "added 1 commit" left out).
+    static func snapshot(mergeRequest: [String: Any], notes: [[String: Any]], approvals: [String: Any]?,
+                         failedJobs: [[String: Any]]) -> PullRequestSnapshot {
+        let state: String
+        switch self.state(mergeRequest) {
+        case .merged: state = "merged"
+        case .closed: state = "closed"
+        case .open, .draft: state = "open"
+        }
+        var checks = ""
+        if let pipeline = mergeRequest["head_pipeline"] as? [String: Any], let status = pipeline["status"] as? String {
+            switch status {
+            case "success": checks = "success"
+            case "failed", "canceled": checks = "failure"
+            case "skipped", "manual": checks = ""
+            default: checks = "pending"
+            }
+        }
+        func author(_ item: [String: Any]) -> String {
+            ((item["author"] as? [String: Any])?["username"] as? String) ?? ((item["user"] as? [String: Any])?["username"] as? String) ?? "?"
+        }
+        let reviews = ((approvals?["approved_by"] as? [[String: Any]]) ?? []).map {
+            PullRequestSnapshot.Note(author: author($0), verdict: "APPROVED", text: "")
+        }
+        let comments = notes.filter { ($0["system"] as? Bool) != true }.map { note -> PullRequestSnapshot.Note in
+            var text = (note["body"] as? String) ?? ""
+            if let path = (note["position"] as? [String: Any])?["new_path"] as? String { text = path + ": " + text }
+            return PullRequestSnapshot.Note(author: author(note), verdict: "", text: text)
+        }
+        return PullRequestSnapshot(state: state, checks: checks, failedChecks: failedJobs.compactMap { $0["name"] as? String },
+                                   reviews: reviews, comments: comments)
+    }
 }
+

@@ -2206,6 +2206,56 @@ enum GitHubPullRequests {
         AccountRegistry.shared.accounts(for: "github").compactMap { CloudHelp.secret($0.key("token")) }
     }
 
+    /// "owner/repo" and the number of a pull request link ("https://github.com/owner/repo/pull/12").
+    static func parse(_ url: URL) -> (repo: String, number: Int)? {
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard url.host?.hasSuffix("github.com") == true, parts.count >= 4, parts[2] == "pull", let number = Int(parts[3]) else { return nil }
+        return (parts[0] + "/" + parts[1], number)
+    }
+
+    /// A pull request's state, checks, reviews and comments, for a session that watches it. Nil when
+    /// no connected account can read it.
+    static func snapshot(url: URL) async -> PullRequestSnapshot? {
+        guard isAvailable, let target = parse(url) else { return nil }
+        let repo = target.repo, number = target.number
+        for token in tokens {
+            let auth = ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
+            let base = "https://api.github.com/repos/\(repo)"
+            func get(_ path: String) async -> Any? {
+                guard let url = URL(string: base + path) else { return nil }
+                return try? await ConnectorHTTP.json(url, headers: auth)
+            }
+            guard let pull = await get("/pulls/\(number)") as? [String: Any] else { continue }
+            let merged = (pull["merged"] as? Bool) ?? false
+            let state = merged ? "merged" : ((pull["state"] as? String) == "open" ? "open" : "closed")
+            var checks = ""
+            var failed: [String] = []
+            if let sha = (pull["head"] as? [String: Any])?["sha"] as? String,
+               let runs = (await get("/commits/\(sha)/check-runs?per_page=100") as? [String: Any])?["check_runs"] as? [[String: Any]],
+               !runs.isEmpty {
+                failed = runs.filter { ["failure", "timed_out", "cancelled", "action_required"].contains(($0["conclusion"] as? String) ?? "") }
+                    .compactMap { $0["name"] as? String }
+                let pending = runs.contains { ($0["status"] as? String) != "completed" }
+                checks = !failed.isEmpty ? "failure" : pending ? "pending" : "success"
+            }
+            func author(_ item: [String: Any]) -> String { ((item["user"] as? [String: Any])?["login"] as? String) ?? "?" }
+            let reviews = ((await get("/pulls/\(number)/reviews?per_page=100")) as? [[String: Any]] ?? [])
+                .filter { ($0["state"] as? String) != "PENDING" }
+                .map { PullRequestSnapshot.Note(author: author($0), verdict: ($0["state"] as? String) ?? "", text: ($0["body"] as? String) ?? "") }
+            let issueComments = (await get("/issues/\(number)/comments?per_page=100")) as? [[String: Any]] ?? []
+            let lineComments = (await get("/pulls/\(number)/comments?per_page=100")) as? [[String: Any]] ?? []
+            let comments = (issueComments + lineComments)
+                .sorted { (($0["created_at"] as? String) ?? "") < (($1["created_at"] as? String) ?? "") }
+                .map { item -> PullRequestSnapshot.Note in
+                    var text = (item["body"] as? String) ?? ""
+                    if let path = item["path"] as? String { text = path + ": " + text }
+                    return PullRequestSnapshot.Note(author: author(item), verdict: "", text: text)
+                }
+            return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments)
+        }
+        return nil
+    }
+
     /// Tries the accounts in order: the first one with access to the repository opens the pull request.
     static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool) async throws -> URL {
         let available = tokens

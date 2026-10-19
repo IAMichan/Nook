@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// A session that Nook runs itself, inside the Agents tab: the whole conversation, approvals, stop, follow-up
 /// messages, and the settings for the next turn (mode, permissions, model). Everything you would otherwise do in a
@@ -138,14 +139,25 @@ struct AgentRunPanel: View {
                     .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
                     .help(tr("ws.header.contextHelp"))
             }
-            if let headerAccessory { headerAccessory }
-            FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
-                workspace.markReviewed(runID)
-                app.viewModel.open(.changes(runID, file: nil))
-            }, onChange: {
-                workspace.refreshGit(runID)
-            })
-            .id(run.workingDirectory)
+            if let remote = run.remote {
+                // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
+                Button { openRemoteTerminal(remote) } label: {
+                    Label(remote.name, systemImage: "server.rack")
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.remote.terminal", remote.host))
+            } else {
+                if let headerAccessory { headerAccessory }
+                FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
+                    workspace.markReviewed(runID)
+                    app.viewModel.open(.changes(runID, file: nil))
+                }, onChange: {
+                    workspace.refreshGit(runID)
+                })
+                .id(run.workingDirectory)
+            }
         }
         .font(NookTheme.font(13.5))
         .frame(height: 30)
@@ -190,9 +202,26 @@ struct AgentRunPanel: View {
                 }
                 .disabled(!workspace.canTransfer(runID))
             }
+            // PR watch: CI, reviews and comments on the session's pull request wake the agent.
+            if run.prWatch != nil {
+                Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
+            } else {
+                Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
+                    .disabled(watchablePullRequest() == nil)
+            }
+            // Kept local: copy it, or save it where you want.
+            Button(tr("ws.export.copy")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(SessionExport.markdown(run, events: workspace.timeline(runID)), forType: .string)
+            }
+            Button(tr("ws.export.save")) { saveMarkdown(run) }
+            // Terminal context: the last lines of this session's terminal go with your message.
+            Button(tr("ws.context.terminal")) { addTerminalOutput(run) }
+                .disabled(TerminalStore.shared.sessions(in: run.workingDirectory).isEmpty)
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
+            .disabled(run.isRemote)
             Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
                 .disabled(run.repoRoot == nil)
             Divider()
@@ -204,6 +233,42 @@ struct AgentRunPanel: View {
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
         }
+    }
+
+    /// A terminal on the session's machine, in its folder (ssh -t, then your login shell there).
+    private func openRemoteTerminal(_ remote: RemoteTarget) {
+        var parts = ["ssh", "-t"]
+        if let port = remote.port { parts += ["-p", String(port)] }
+        let inner = "cd " + RemoteLaunch.quotedDirectory(remote.directory) + #" && exec "${SHELL:-/bin/sh}" -l"#
+        parts += ["--", remote.host, inner]
+        let command = parts.map(CustomAgents.quote).joined(separator: " ")
+        _ = TerminalStore.shared.open(in: NSHomeDirectory(), command: command, title: remote.name)
+        app.viewModel.selectedAgentID = AgentsPage.terminals
+    }
+
+    private func saveMarkdown(_ run: WorkspaceRun) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = SessionExport.fileName(run)
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? SessionExport.markdown(run, events: workspace.timeline(runID)).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func addTerminalOutput(_ run: WorkspaceRun) {
+        guard let terminal = TerminalStore.shared.sessions(in: run.workingDirectory).last else { return }
+        let output = terminal.output(lines: 80).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty else { return }
+        draft = "<terminal_context title=\"\(terminal.title)\">\n\(output)\n</terminal_context>\n\n" + draft
+        focused = true
+    }
+
+    /// The session's open GitHub pull request or GitLab merge request, from the git button or the pull request list.
+    private func watchablePullRequest() -> URL? {
+        if let url = workspace.openPullRequests[runID], PullRequestWatch.canWatch(url) { return url }
+        return PullRequestSync.shared.links[runID]?
+            .first { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }
+            .flatMap { URL(string: $0.url) }
     }
 
     private func saveQueuedEdit() {
@@ -308,6 +373,7 @@ struct AgentRunPanel: View {
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
         let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
+        let turnFiles = TurnChanges.byTurnEnd(events)
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
@@ -322,9 +388,16 @@ struct AgentRunPanel: View {
                     ForEach(blocks) { block in
                         TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
                             AnyView(
-                                eventRow(event)
-                                    .padding(.vertical, current == event.id ? 4 : 0)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                VStack(alignment: .leading, spacing: 6) {
+                                    eventRow(event)
+                                    if let turn = turnFiles[event.id] {
+                                        TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
+                                            try await workspace.turnDiff(runID, path: path, start: turn.start, end: turn.end)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, current == event.id ? 4 : 0)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
                             )
                         }
                         .id(block.id)
@@ -370,6 +443,17 @@ struct AgentRunPanel: View {
                                     close: closeFind)
                         .padding(.horizontal, 4)
                         .padding(.top, 4)
+                }
+            }
+            // A mark per message of yours, to jump through a long session.
+            .overlay(alignment: .topTrailing) {
+                let turns = events.filter { $0.kind == .user }
+                if turns.count >= 4, !finding {
+                    TurnMinimap(turns: turns) { id in
+                        scroll.userScrolled()
+                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                    .padding(.top, 8)
                 }
             }
             .background {
@@ -487,6 +571,11 @@ struct AgentRunPanel: View {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
                         .disabled(!workspace.canTransfer(runID))
+                    // Quote the agent's words in your next message.
+                    Button(tr("ws.review.quote")) {
+                        draft = ReviewComments.quote(event.text, into: draft)
+                        focused = true
+                    }
                 }
         } else {
             eventView(event)
@@ -625,6 +714,13 @@ struct AgentRunPanel: View {
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
+            // The subagents the agent started this turn, and its task list.
+            let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
+            if !subagents.isEmpty { SubagentBar(agents: subagents) }
+            if let tasks = run.tasks, !tasks.isEmpty { TasksStrip(steps: tasks) }
+            if let watch = run.prWatch {
+                PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
+            }
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
                 QueuedMessagesStrip(
                     queue: waiting, editing: editingQueued,

@@ -11,6 +11,7 @@ extension RunProvider {
         case .cursor: return .cursor
         case .grok: return .grok
         case .antigravity: return .antigravity
+        case .acp: return .acp
         }
     }
 
@@ -25,6 +26,7 @@ extension RunProvider {
         case .cursor: self = .cursor
         case .grok: self = .grok
         case .antigravity: self = .antigravity
+        case .acp: self = .acp
         }
     }
 }
@@ -118,6 +120,11 @@ extension AppModel {
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
+        // GitHub, or a GitLab merge request (with its token from Settings).
+        workspace.pullRequestSnapshot = { url in
+            if GitHubPullRequests.parse(url) != nil { return await GitHubPullRequests.snapshot(url: url) }
+            return await GitLabMergeRequests.snapshot(url: url)
+        }
         workspace.pullRequestLookup = { repo, branch in
             guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return nil }
             return found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }
@@ -243,6 +250,8 @@ extension AppModel {
         case .gemini: command = "gemini"
         case .antigravity: command = "agy"
         case .opencode, .cursor, .grok: command = profile.kind.loginCommand
+        // ACP agents sign in themselves, in their first session.
+        case .acp: return
         }
         let intro = "echo " + TerminalLauncher.shellQuote(tr("accounts.reauthIntro", profile.kind.name))
         do {
@@ -272,7 +281,7 @@ extension AppModel {
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /logout"
         case .codex: command = profile.environmentPrefixOnly + "codex logout"
-        case .gemini, .antigravity, .opencode, .cursor, .grok: return
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return
         }
         do {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
@@ -308,7 +317,7 @@ extension AppModel {
                 try Self.pipeKey(clean, to: executable, arguments: ["login", "--with-api-key"], environment: environment)
             }.value
             profiles.setAuth(profile.id, .apiKey)
-        case .gemini, .antigravity, .opencode, .cursor, .grok:
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
             return
         }
         history.refresh(minimumInterval: 0)

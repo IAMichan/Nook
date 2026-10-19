@@ -109,6 +109,14 @@ final class WorkspaceManager: ObservableObject {
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption])] = [:]
     var acpFallback: Set<String> = []
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
+    var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
+    /// ACP: ends a turn the agent started by itself, once it has been quiet for a moment.
+    var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
+    /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
+    var backgroundWork: Set<UUID> = []
+    /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
+    var mcpAppContexts: [UUID: [String: String]] = [:]
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -124,6 +132,13 @@ final class WorkspaceManager: ObservableObject {
     /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
     var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
     var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    /// A watched pull request as it is now (GitHub, with your connected accounts).
+    var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
+    var watchesInFlight: Set<UUID> = []
+    /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
+    var codexSubagents: [UUID: [String: UUID]] = [:]
+    /// Comments on a session's diff, waiting to go to the agent together.
+    @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -209,6 +224,8 @@ final class WorkspaceManager: ObservableObject {
         var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
+        /// A turn the agent started by itself after background work, with no message of yours to answer.
+        var unprompted = false
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -218,6 +235,13 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in runs where run.autoResume == true { armLimitResume(run.id) }
+        // Watched pull requests are looked at every half minute (each at most every two minutes).
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                self?.checkPullRequestWatches()
+            }
+        }
         Task.detached(priority: .utility) {
             let service = GitService.shared
             await MainActor.run { [weak self] in
@@ -320,6 +344,8 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
+        // On another machine: no folder, git or worktree to prepare here.
+        if let remote = config.remote { return try await startRemote(config, on: remote) }
         let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
         let verdict = WorkspacePathPolicy.verdict(for: projectPath)
         guard verdict == .ok else { throw StartError.workspace(verdict) }
@@ -415,6 +441,14 @@ final class WorkspaceManager: ObservableObject {
                 runScript?(worktreePath, script.command, script.name)
                 append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
             }
+        } else if repoRoot != nil, let git {
+            // In your own folder too, a snapshot before the agent starts: what each turn changed can then be shown on
+            // its own. Taking it changes nothing: not the files, the index or a branch.
+            let ref = GitService.checkpointRef(session: id, index: 0)
+            let directory = workingDirectory
+            if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(directory, ref: ref) }.value) != nil {
+                update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
+            }
         }
         let visibleTask = ContextRefs.visible(config.task)
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
@@ -490,6 +524,8 @@ final class WorkspaceManager: ObservableObject {
         }
         append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
         scheduleSave()
+        // The starting point for what the next turns change.
+        captureCheckpoint(id)
         return id
     }
 
@@ -513,6 +549,13 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: text, shown: false)
     }
 
+    /// A message from Nook rather than from you (the result of background work): it goes to the agent without a bubble
+    /// of yours in the timeline.
+    @discardableResult
+    func sendHidden(_ id: UUID, text: String) -> Bool {
+        send(id, text: text, shown: true)
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -532,11 +575,12 @@ final class WorkspaceManager: ObservableObject {
             }
             return true
         }
-        guard let executable = executable(run.provider) else {
+        guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false
         }
-        guard WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
+        // A folder on another machine cannot be checked from here; ssh and the agent there report what is wrong.
+        guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
         }
@@ -545,7 +589,10 @@ final class WorkspaceManager: ObservableObject {
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
-        launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable, showPrompt: !shown)
+        // What MCP apps told the agent goes with this turn: Codex takes it as context of its own, the others ahead of it.
+        let appContext = run.provider == .codex ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
+                   showPrompt: !shown)
         return true
     }
 
@@ -553,6 +600,12 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        // Before open work is settled: what still runs is what keeps the session open.
+        if BackgroundWork.pending(after: timeline(id), before: backgroundWork.contains(id)) {
+            backgroundWork.insert(id)
+        } else {
+            backgroundWork.remove(id)
+        }
         displayPrompt[id] = nil
         stopCoordinators[id] = nil
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
@@ -566,9 +619,10 @@ final class WorkspaceManager: ObservableObject {
         captureCheckpoint(id)
     }
 
-    /// Only for sessions in their own worktree: restoring there can never touch your own checkout.
+    /// A snapshot after each turn, for every session in a repository: it shows what each turn changed. Putting files back
+    /// stays for sessions in their own worktree (see canRevert): restoring there can never touch your own checkout.
     func captureCheckpoint(_ id: UUID) {
-        guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
+        guard let run = run(id), run.repoRoot != nil, let git = sessionGit(for: run), canSnapshot(run) else { return }
         let directory = run.workingDirectory
         let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
         // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
@@ -603,7 +657,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). The conversation stays.
     func revertFiles(_ id: UUID, before date: Date) async throws {
-        guard canRevert(id, before: date), let run = run(id), let git = gitService,
+        guard canRevert(id, before: date), let run = run(id), let git = sessionGit(for: run),
               let checkpoint = run.checkpoints?.last(where: { $0.date <= date }) else {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
@@ -726,6 +780,8 @@ final class WorkspaceManager: ObservableObject {
         guard processes[id] == nil else { return }
         // A new turn ends any wait for a usage limit (yours or the automatic one).
         clearUsageLimit(id)
+        // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
+        if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
@@ -752,11 +808,12 @@ final class WorkspaceManager: ObservableObject {
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
-            bridge: bridgeLaunch(),
+            bridge: bridge(for: id),
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true
         )
-        if run.provider == .claude, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-        let spec = AgentCommand.spec(input)
+        // The flag probe runs Claude Code on this Mac: not for a session on another machine.
+        if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+        let spec = placed(AgentCommand.spec(input), for: run)
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
@@ -795,17 +852,17 @@ final class WorkspaceManager: ObservableObject {
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
         guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
-              run.providerSessionID != nil, !forkNext.contains(id), let executable = executable(run.provider),
-              WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
+              run.providerSessionID != nil, !forkNext.contains(id), let executable = launchExecutable(run),
+              run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
         switch run.provider {
         case .claude:
             guard claudeIdle[id] == nil else { return }
-            if claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-            var spec = AgentCommand.spec(AgentCommand.Input(
+            if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+            var spec = placed(AgentCommand.spec(AgentCommand.Input(
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
                 instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
-                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridgeLaunch(),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true))
+                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
+                thinkingDisplay: claudeThinkingDisplay[executable] == true)), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -823,7 +880,7 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
-        case .gemini, .opencode, .cursor, .grok:
+        case .gemini, .opencode, .cursor, .grok, .acp:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
         case .antigravity:
@@ -839,6 +896,7 @@ final class WorkspaceManager: ObservableObject {
         switch run.provider {
         case .claude:
             let parsed = ClaudeStreamParser.parse(line)
+            if processes[id] == nil, claudeIdle[id] != nil, parsed.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
             for event in parsed { handleClaude(event, id: id) }
         case .codex:
             let parsed = CodexStreamParser.parse(line)
@@ -846,7 +904,7 @@ final class WorkspaceManager: ObservableObject {
         case .gemini:
             let parsed = GeminiStreamParser.parse(line)
             for event in parsed { handleGemini(event, id: id) }
-        case .opencode, .cursor, .grok, .antigravity:
+        case .opencode, .cursor, .grok, .antigravity, .acp:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }
@@ -973,6 +1031,8 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.toolInputs[callID] = input
             recap?.toolUse(name)
             append(id, event)
+            // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
+            if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
             if let eventID = turns[id]?.toolEvents[callID] {
                 mutateEvent(id, eventID) {
@@ -1099,7 +1159,7 @@ final class WorkspaceManager: ObservableObject {
             append(id, event)
         case .commandFinished(let callID, let command, let output, let exitCode):
             let failed = (exitCode ?? 0) != 0
-            if let eventID = turns[id]?.toolEvents[callID] {
+            if let eventID = turns[id]?.toolEvents[callID] ?? timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })?.id {
                 mutateEvent(id, eventID) {
                     $0.output = RunEvent.clip(output)
                     $0.state = failed ? .failed : .done
@@ -1289,10 +1349,78 @@ final class WorkspaceManager: ObservableObject {
         update(id) { $0.reviewedAt = Date() }
     }
 
+    /// The agent's latest task list. An empty list clears it.
+    func setTasks(_ id: UUID, _ steps: [RunTaskStep]) {
+        update(id) { $0.tasks = steps.isEmpty ? nil : steps }
+    }
+
+    // MARK: Review comments
+
+    func addReviewComment(_ id: UUID, _ comment: ReviewComment) {
+        reviewComments[id, default: []].append(comment)
+    }
+
+    func removeReviewComment(_ id: UUID, _ commentID: UUID) {
+        reviewComments[id]?.removeAll { $0.id == commentID }
+    }
+
+    /// All comments in one message: now if the session is free, otherwise after the turn.
+    func sendReviewComments(_ id: UUID) {
+        guard let comments = reviewComments[id], !comments.isEmpty, let run = run(id) else { return }
+        let message = ReviewComments.message(comments)
+        reviewComments[id] = nil
+        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
+    }
+
+    // MARK: Watching pull requests
+
+    /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
+    /// what the agent can act on goes to it as a message.
+    func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
+        update(id) { $0.prWatch = url.map { PullRequestWatch(url: $0.absoluteString, wakeAgent: wakeAgent) } }
+        if url != nil { checkPullRequestWatches(force: true) }
+    }
+
+    /// Looks at each watched pull request at most every two minutes.
+    func checkPullRequestWatches(force: Bool = false) {
+        guard let fetch = pullRequestSnapshot else { return }
+        let now = Date()
+        for run in runs {
+            guard let watch = run.prWatch, watch.state == "open", !run.archived, !watchesInFlight.contains(run.id),
+                  force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                  let url = URL(string: watch.url) else { continue }
+            let id = run.id
+            watchesInFlight.insert(id)
+            Task { [weak self] in
+                let snapshot = await fetch(url)
+                self?.watchesInFlight.remove(id)
+                guard let self, let snapshot, let current = self.run(id)?.prWatch, current.url == watch.url else { return }
+                self.pullRequestChanged(id, old: current, new: snapshot)
+            }
+        }
+    }
+
+    private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
+        let now = Date()
+        // The first look only sets what counts as seen.
+        guard old.checkedAt != nil else {
+            update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+            return
+        }
+        let lines = PullRequestNews.lines(old: old, new: new)
+        let wake = old.wakeAgent && PullRequestNews.needsAgent(old: old, new: new)
+        update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+        guard !lines.isEmpty else { return }
+        append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
+        guard wake, let run = run(id) else { return }
+        let message = PullRequestNews.message(url: old.url, lines: lines)
+        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
+    }
+
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     func delete(_ id: UUID) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
-        if let root = run.repoRoot, let git = gitService, run.checkpoints != nil {
+        if let root = run.repoRoot, let git = sessionGit(for: run), run.checkpoints != nil {
             Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
         }
         runs.removeAll { $0.id == id }
@@ -1308,6 +1436,10 @@ final class WorkspaceManager: ObservableObject {
         awaitingCheckpoint[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
+        backgroundWork.remove(id)
+        mcpAppContexts[id] = nil
+        let appFolder = Self.mcpAppFolder(id)
+        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil
@@ -1332,7 +1464,7 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Git
 
     func refreshGit(_ id: UUID) {
-        guard let run = run(id), let git = gitService, run.repoRoot != nil else { return }
+        guard let run = run(id), let git = sessionGit(for: run), run.repoRoot != nil else { return }
         let directory = run.workingDirectory
         let base = run.baseBranch
         var snapshot = self.git[id] ?? GitSnapshot(status: nil, divergence: nil, error: nil, updated: Date(), loading: true)
@@ -1342,7 +1474,7 @@ final class WorkspaceManager: ObservableObject {
             var status: GitStatus?
             var problem: String?
             var divergence: (ahead: Int, behind: Int)?
-            if FileManager.default.fileExists(atPath: directory) {
+            if git.remote != nil || FileManager.default.fileExists(atPath: directory) {
                 do { status = try git.status(directory) } catch let failure { problem = failure.localizedDescription }
                 if let base { divergence = git.divergence(directory, base: base) }
             } else {
@@ -1368,13 +1500,24 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func diff(_ id: UUID, file: GitFileChange) async throws -> String {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         return try await Task.detached(priority: .userInitiated) { try git.diff(directory, file: file) }.value
     }
 
+    /// What one turn (from `start` to `end`) did to a file: between the snapshots around it when the session has them,
+    /// otherwise the file against its last commit.
+    func turnDiff(_ id: UUID, path: String, start: Date, end: Date) async throws -> String {
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
+        let directory = run.workingDirectory
+        let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
+        let from = around?.before.ref ?? "HEAD"
+        let to = around?.after?.ref
+        return try await Task.detached(priority: .userInitiated) { try git.diff(directory, path: path, from: from, to: to) }.value
+    }
+
     func commit(_ id: UUID, message: String, paths: [String]) async throws -> String {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let directory = run.workingDirectory
         let sha = try await Task.detached(priority: .userInitiated) { try git.commit(directory, message: message, paths: paths) }.value
@@ -1385,7 +1528,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func push(_ id: UUID) async throws {
-        guard let run = run(id), let git = gitService else { throw StartError.noGit }
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         guard let branch = await Task.detached(operation: { git.currentBranch(directory) }).value else {
             throw StartError.git(tr("ws.error.detached"))
@@ -1398,7 +1541,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// owner/repo from remote URL if it is a GitHub repository.
     func githubRepository(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return url.flatMap(GitHubRemote.repository(from:))
@@ -1406,21 +1549,21 @@ final class WorkspaceManager: ObservableObject {
 
     /// The forge of the session's folder (GitHub, GitLab, Bitbucket…), from its remote; nil without a recognisable remote.
     func remoteRepository(_ id: UUID) async -> RemoteRepository? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return SourceForge.repository(remoteURL: url)
     }
 
     func currentBranch(_ id: UUID) async -> String? {
-        guard let run = run(id), let git = gitService else { return nil }
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
         let directory = run.workingDirectory
         return await Task.detached(operation: { git.currentBranch(directory) }).value
     }
 
     /// Deletes a session's worktree. Never while the session is running; uncommitted changes require `force`.
     func removeWorktree(_ id: UUID, force: Bool) async throws {
-        guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = gitService else { return }
+        guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = sessionGit(for: run) else { return }
         guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let others = runs.filter { $0.id != id && $0.status.isActive && $0.workingDirectory == worktree }
         guard others.isEmpty else { throw StartError.git(tr("ws.error.busy")) }
@@ -1431,8 +1574,16 @@ final class WorkspaceManager: ObservableObject {
         refreshWorktrees()
     }
 
+    /// The session's files are there to snapshot: its worktree, or its folder.
+    func canSnapshot(_ run: WorkspaceRun) -> Bool {
+        // On another machine git there answers for itself (a folder that is gone fails the snapshot, nothing more).
+        if run.isRemote { return true }
+        return run.isolation == .worktree ? worktreeExists(run) : FileManager.default.fileExists(atPath: run.workingDirectory)
+    }
+
     func worktreeExists(_ run: WorkspaceRun) -> Bool {
         guard let path = run.worktreePath else { return false }
+        if run.isRemote { return true }
         return FileManager.default.fileExists(atPath: path)
     }
 

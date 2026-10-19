@@ -39,6 +39,8 @@ final class WorkspaceBridge: ObservableObject {
 
     private let server = UnixSocketServer(path: NookPaths.bridgeSocketURL.path)
     private var waiters: [String: CheckedContinuation<Bool, Never>] = [:]
+    /// Simulators each session opened with device_open, most recent last.
+    private var openDevices: [String: [String]] = [:]
     private var installed = false
     private var started = false
 
@@ -215,6 +217,7 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionRead: return sessionRead(arguments)
             case .sessionList: return sessionList(arguments)
             case .sessionSend: return await sessionSend(arguments, caller, context)
+            case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return try await device(tool, arguments, caller)
             }
         } catch {
             return .error(error.localizedDescription)
@@ -458,6 +461,68 @@ final class WorkspaceBridge: ObservableObject {
         let address = browser.webView.url?.absoluteString ?? ""
         return BridgeRPC.ToolResult(text: "Screenshot of \(address)", imageBase64: image.base64EncodedString(),
                                     imageMimeType: "image/jpeg")
+    }
+
+    // MARK: Simulator
+
+    /// The device tools: the simulators, one opened in Nook's Simulator page with an agent-device command to drive
+    /// it, its screenshot, and closing it.
+    private func device(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
+        if case .refuse(let reason) = verdict(tool, caller) { return .error(Self.refusal(reason)) }
+        let hub = DeviceHubService.shared
+        await hub.prepare()
+        guard hub.state == .ready else { return .error(Self.hubProblem(hub.state)) }
+        await hub.refreshDevices()
+        let key = caller.directory + "|" + caller.agent
+        let requested = ((arguments["device_id"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+        switch tool {
+        case .deviceList:
+            let devices = hub.devices.map { ["id": $0.id, "name": $0.name, "version": $0.version, "booted": $0.booted] as [String: Any] }
+            let object: [String: Any] = ["devices": devices, "open": openDevices[key] ?? [], "problem": hub.problem ?? ""]
+            return BridgeRPC.ToolResult(text: McpApp.json(object) ?? "{}")
+        case .deviceOpen:
+            let device = requested.isEmpty ? (hub.devices.first { $0.booted } ?? hub.devices.first) : hub.devices.first { $0.id == requested }
+            guard let device else { return .error(requested.isEmpty ? "There is no iOS Simulator on this Mac. Create one in Xcode first." : "No simulator with id \(requested). Call device_list.") }
+            try await hub.open(device.id)
+            let runKey: String = { if case .run(let id) = caller.kind { return id.uuidString } else { return key } }()
+            let target = try await hub.agentTarget(runID: runKey, udid: device.id)
+            openDevices[key, default: []].removeAll { $0 == device.id }
+            openDevices[key, default: []].append(device.id)
+            NotificationCenter.default.post(name: .nookOpenSimulator, object: device.id)
+            audit(.deviceOpen, caller, device.name, "open")
+            let object: [String: Any] = [
+                "device": ["id": device.id, "name": device.name, "version": device.version],
+                "agentDevice": ["command": target.command, "targetArgs": target.targetArgs],
+                "quickStart": DeviceHub.quickStart(device: device.name, version: device.version, command: target.command, targetArgs: target.targetArgs),
+            ]
+            return BridgeRPC.ToolResult(text: McpApp.json(object) ?? "{}")
+        case .deviceScreenshot:
+            guard let udid = requested.isEmpty ? openDevices[key]?.last : requested else {
+                return .error("No device is open in this session. Call device_open first.")
+            }
+            let png = try await hub.screenshot(udid)
+            let size = DeviceHub.pngSize(png)
+            let name = hub.devices.first { $0.id == udid }?.name ?? udid
+            return BridgeRPC.ToolResult(text: "Screenshot of \(name)" + (size.map { " (\($0.width)×\($0.height))" } ?? ""),
+                                        imageBase64: png.base64EncodedString(), imageMimeType: "image/png")
+        case .deviceClose:
+            guard let udid = requested.isEmpty ? openDevices[key]?.last : requested else { return BridgeRPC.ToolResult(text: "{}") }
+            openDevices[key]?.removeAll { $0 == udid }
+            if (arguments["shutdown"] as? Bool) == true { await hub.shutdown(udid) }
+            return BridgeRPC.ToolResult(text: "{}")
+        default:
+            return .error("Unknown device tool.")
+        }
+    }
+
+    private static func hubProblem(_ state: DeviceHubService.State) -> String {
+        switch state {
+        case .unavailable(let reason): return reason
+        case .needsInstall: return "Nook's simulator tools are not installed yet. Ask the user to install them on the Simulator page in Nook (Agents › Simulator)."
+        case .installing, .starting: return "Nook's simulator tools are starting. Try again in a moment."
+        case .failed(let message): return "Nook's simulator tools failed: \(message)"
+        default: return "Nook's simulator tools are not running."
+        }
     }
 
     // MARK: Pull request

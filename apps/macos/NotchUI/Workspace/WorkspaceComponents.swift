@@ -200,25 +200,110 @@ struct WSEmptyState: View {
 /// Syntax-colored diff view. Performant for large diffs using LazyVStack.
 struct DiffText: View {
     let text: String
+    /// Review comments on this file: shown under their line. With `onComment`, hovering a line
+    /// offers a comment button.
+    var comments: [ReviewComment] = []
+    var onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil
+    var onRemoveComment: ((UUID) -> Void)? = nil
+    @State private var hovered: Int?
+    @State private var editing: Int?
+    @State private var commentDraft = ""
 
     var body: some View {
         let lines = text.components(separatedBy: "\n")
+        let numbers = ReviewComments.newLineNumbers(lines)
         ScrollView([.vertical, .horizontal]) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(lines.indices, id: \.self) { index in
                     let line = lines[index]
-                    Text(line.isEmpty ? " " : line)
-                        .font(NookTheme.mono(11.5))
-                        .foregroundStyle(color(line))
-                        .padding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(background(line))
+                    let commentable = onComment != nil && (line.hasPrefix("+") || line.hasPrefix("-") || line.hasPrefix(" "))
+                        && !line.hasPrefix("+++") && !line.hasPrefix("---")
+                    HStack(spacing: 0) {
+                        Text(line.isEmpty ? " " : line)
+                            .font(NookTheme.mono(11.5))
+                            .foregroundStyle(color(line))
+                            .padding(.horizontal, 10)
+                        Spacer(minLength: 0)
+                        if commentable && hovered == index && editing != index {
+                            Button {
+                                commentDraft = ""
+                                editing = index
+                            } label: {
+                                Image(systemName: "text.bubble")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(NookTheme.paper)
+                                    .padding(.horizontal, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .help(tr("ws.review.add"))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(background(line))
+                    .onHover { inside in if inside { hovered = index } else if hovered == index { hovered = nil } }
+                    ForEach(comments.filter { $0.code == line && $0.line == numbers[index] }) { comment in
+                        commentRow(comment)
+                    }
+                    if editing == index {
+                        editor(line: numbers[index], code: line)
+                    }
                 }
             }
             .padding(.vertical, 8)
             .textSelection(.enabled)
         }
         .background(WS.code)
+    }
+
+    private func commentRow(_ comment: ReviewComment) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "text.bubble.fill").font(.system(size: 10)).foregroundStyle(NookTheme.amber)
+            Text(comment.text)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.paper)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            if let onRemoveComment {
+                Button { onRemoveComment(comment.id) } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.review.remove"))
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.amber.opacity(0.08)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: 520, alignment: .leading)
+    }
+
+    private func editor(line: Int?, code: String) -> some View {
+        HStack(spacing: 8) {
+            TextField("", text: $commentDraft, prompt: Text(tr("ws.review.placeholder")).foregroundStyle(NookTheme.textTertiary),
+                      axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1...4)
+                .onSubmit { save(line: line, code: code) }
+                .onExitCommand { editing = nil }
+            SmallGhostButton(title: tr("button.cancel")) { editing = nil }
+            SmallGhostButton(title: tr("ws.review.save")) { save(line: line, code: code) }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: 520, alignment: .leading)
+    }
+
+    private func save(line: Int?, code: String) {
+        let clean = commentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        onComment?(line, code, clean)
+        commentDraft = ""
+        editing = nil
     }
 
     private func color(_ line: String) -> Color {

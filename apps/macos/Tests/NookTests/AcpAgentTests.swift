@@ -82,7 +82,7 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual(done.status, "completed")
         XCTAssertEqual(done.output, "ok")
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Tests","status":"completed","priority":"high"},{"content":"Fix","status":"pending","priority":"high"}]}}}"#),
-                       [.plan(["☑ Tests", "☐ Fix"])])
+                       [.plan([RunTaskStep(text: "Tests", status: .done), RunTaskStep(text: "Fix", status: .pending)])])
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":53000,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}}}"#),
                        [.usage(used: 53000, size: 200000, costUSD: 0.42)])
     }

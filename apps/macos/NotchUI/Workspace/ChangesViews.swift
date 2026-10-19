@@ -48,10 +48,32 @@ struct ChangesSheet: View {
                     } else if diff.isEmpty {
                         WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("ws.changes.noDiff"), message: tr("ws.changes.noDiffDetail"))
                     } else {
-                        DiffText(text: diff)
+                        DiffText(text: diff, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == selected },
+                                 onComment: { line, code, text in
+                                     guard let path = selected else { return }
+                                     workspace.addReviewComment(runID, ReviewComment(path: path, line: line, code: code, text: text))
+                                 },
+                                 onRemoveComment: { workspace.removeReviewComment(runID, $0) })
                     }
                 }
                 .frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // Comments on the diff go to the agent together.
+            if let comments = workspace.reviewComments[runID], !comments.isEmpty {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
+                    Text(tr("ws.review.count", comments.count))
+                        .font(NookTheme.font(12.5))
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Spacer()
+                    SmallGhostButton(title: tr("ws.review.discard")) { workspace.reviewComments[runID] = nil }
+                    NookPrimaryButton(title: tr("ws.review.send")) {
+                        workspace.sendReviewComments(runID)
+                        close()
+                    }
+                }
+                .padding(10)
             }
         }
         .frame(minWidth: embedded ? nil : 820, idealWidth: embedded ? nil : 1040, maxWidth: embedded ? CGFloat.infinity : nil,

@@ -157,11 +157,12 @@ enum TimelinePresentation {
 
     // MARK: Turns
 
-    /// A turn starts at each message of yours; anything before the first one is a turn of its own.
+    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
+    /// before the first one is a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
         for event in events {
-            if event.kind == .user || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
+            if event.kind == .user || event.kind == .system && event.tool == "wake" || turns.isEmpty { turns.append([event]) } else { turns[turns.count - 1].append(event) }
         }
         return turns
     }
@@ -212,5 +213,119 @@ enum TimelinePresentation {
         }
         flush()
         return blocks
+    }
+}
+
+/// A subagent the agent started (Claude Code's Task or Agent tool)'s subagent bar shows it.
+struct SubagentInfo: Identifiable, Equatable, Sendable {
+    var id: UUID
+    /// "Explore", "general-purpose"…
+    var kind: String
+    var title: String
+    var prompt: String
+    var state: RunEvent.State?
+    var output: String?
+
+    var isRunning: Bool { state == nil || state == .running || state == .pending }
+}
+
+enum Subagents {
+    static let tools: Set<String> = ["Task", "Agent"]
+
+    /// The subagents of the latest turn, in the order they started.
+    static func latest(_ events: [RunEvent]) -> [SubagentInfo] {
+        list(TimelinePresentation.split(events).last ?? [])
+    }
+
+    static func list(_ events: [RunEvent]) -> [SubagentInfo] {
+        events.compactMap { event in
+            guard event.kind == .tool, let tool = event.tool, tools.contains(tool), !event.text.hasPrefix("↳") else { return nil }
+            let input = event.detail.flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let kind = (input["subagent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
+            let title = (input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? event.text
+            return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
+                                state: event.state, output: event.output)
+        }
+    }
+}
+
+/// What one turn changed: the files, from the turn's own edits and file changes, and
+/// the snapshots around it when the session has them.
+enum TurnChanges {
+    struct Turn: Equatable, Sendable {
+        var start: Date
+        var end: Date
+        var files: [String]
+    }
+
+    /// Per finished turn, keyed by the id of the event that ends it (its result): when it ran and the files it touched,
+    /// in order.
+    static func byTurnEnd(_ events: [RunEvent]) -> [UUID: Turn] {
+        var result: [UUID: Turn] = [:]
+        for turn in TimelinePresentation.split(events) {
+            guard let first = turn.first, let end = turn.last(where: { $0.kind == .result }) else { continue }
+            let files = self.files(turn)
+            if !files.isEmpty { result[end.id] = Turn(start: first.date, end: end.date, files: files) }
+        }
+        return result
+    }
+
+    /// The files of a turn: file changes by path, edit tools by the path in their input.
+    static func files(_ turn: [RunEvent]) -> [String] {
+        var seen: [String] = []
+        for event in turn {
+            var path: String?
+            switch event.kind {
+            case .fileChange:
+                path = event.detail ?? event.text
+            case .tool where ToolCategory.of(tool: event.tool ?? "") == .edit:
+                path = event.detail.flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                    .flatMap(ToolSummary.path)
+            default:
+                continue
+            }
+            if let path, !path.isEmpty, !seen.contains(path) { seen.append(path) }
+        }
+        return seen
+    }
+
+    /// The snapshots around a turn that started at `start` and ended at `end`: the last one made before it, and the first
+    /// one made after it (nil: compare with the files as they are now).
+    static func checkpoints(_ checkpoints: [RunCheckpoint], start: Date, end: Date) -> (before: RunCheckpoint, after: RunCheckpoint?)? {
+        guard let before = checkpoints.last(where: { $0.date <= start }) else { return nil }
+        return (before, checkpoints.first { $0.date >= end && $0.date > before.date })
+    }
+}
+
+/// Work an agent left running in the background, finished after its turn.
+enum BackgroundWork {
+    /// The session still has work running in the background after its turn, so it should stay open (up to four hours
+    /// instead of thirty minutes): from the latest turn, a tool still running when it ended, or one started
+    /// to run in the background. It ends with a turn the agent woke up for by itself. `before` is what was known.
+    static func pending(after events: [RunEvent], before: Bool) -> Bool {
+        guard let turn = TimelinePresentation.split(events).last else { return before }
+        let started = turn.contains { event in
+            guard event.kind == .tool else { return false }
+            if event.state == .running { return true }
+            guard let detail = event.detail, detail.contains("run_in_background") else { return false }
+            let input = detail.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            return (input?["run_in_background"] as? Bool) == true
+        }
+        if started { return true }
+        if turn.first?.kind == .system, turn.first?.tool == "wake" { return false }
+        return before
+    }
+
+    /// What Codex gets when a background command finished: the command, its exit code and the end of its output.
+    static func codexMessage(command: String, exitCode: Int?, output: String) -> String {
+        let exit = exitCode.map(String.init) ?? "unknown"
+        var message = "Background command completed (exit \(exit)): \(command)"
+        let lines = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        var tail = lines.suffix(40).joined(separator: "\n")
+        if tail.count > 4000 { tail = String(tail.suffix(4000)) }
+        if !tail.isEmpty { message += "\n\nOutput tail:\n" + tail }
+        return message
     }
 }

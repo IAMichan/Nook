@@ -117,6 +117,8 @@ struct GitWorktree: Equatable, Identifiable, Sendable {
 /// Arguments pass as a list to Git, so branch names or paths can never execute as shell commands.
 struct GitService: Sendable {
     let executable: String
+    /// Set for a session on another machine: every git command runs there, over ssh (see RemoteLaunch.git).
+    var remote: RemoteTarget? = nil
 
     /// Result of `locate()`, resolved once per launch: spawning `git --version` on every call is slow and must never
     /// happen on the main thread (e.g. each time a view creates its model).
@@ -144,7 +146,11 @@ struct GitService: Sendable {
     }
 
     func raw(_ arguments: [String], in directory: String?, timeout: TimeInterval = 60) throws -> ProcessRunner.Output {
-        try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
+        if let remote {
+            return try ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.git(arguments, target: remote, directory: directory),
+                                         environment: ProcessInfo.processInfo.environment, timeout: timeout)
+        }
+        return try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
     }
 
     /// Runs git and throws an error with Git's error output on failure.
@@ -286,6 +292,14 @@ struct GitService: Sendable {
         return try run(arguments, in: directory)
     }
 
+    /// One file between two snapshots (`to` nil: the files as they are now), for what a single turn changed.
+    func diff(_ directory: String, path: String, from: String, to: String?) throws -> String {
+        var arguments = ["diff", "--no-color", "-M", from]
+        if let to { arguments.append(to) }
+        arguments += ["--", path]
+        return try run(arguments, in: directory)
+    }
+
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     // MARK: Worktrees
@@ -300,11 +314,14 @@ struct GitService: Sendable {
         guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
         guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is not a valid branch name.") }
         guard !localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' already exists. Choose a different name.") }
-        guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
-        try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        if remote == nil {
+            guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+        }
         do {
-            try run(["worktree", "add", "-b", branch, path, base], in: repo, timeout: 180)
+            // On another machine git makes the folders on the way itself.
+            try run(["worktree", "add", "-b", branch, "--", path, base], in: repo, timeout: 180)
         } catch {
             throw Self.friendlyWorktreeError(error, base: base)
         }

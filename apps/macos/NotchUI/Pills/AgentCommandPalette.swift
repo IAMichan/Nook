@@ -26,6 +26,7 @@ struct AgentCommandPalette: View {
             Entry(id: "act:usage", symbol: "chart.bar", title: tr("agents.footer.usage"), detail: "") { viewModel.selectedAgentID = AgentsPage.usage },
             Entry(id: "act:terminals", symbol: "terminal", title: tr("agents.footer.terminals"), detail: "") { viewModel.selectedAgentID = AgentsPage.terminals },
             Entry(id: "act:browser", symbol: "globe", title: tr("agents.footer.browser"), detail: "") { viewModel.selectedAgentID = AgentsPage.browser },
+            Entry(id: "act:simulator", symbol: "iphone", title: tr("agents.footer.simulator"), detail: "") { viewModel.selectedAgentID = AgentsPage.simulator },
             Entry(id: "act:worktrees", symbol: "arrow.triangle.branch", title: tr("agents.footer.worktrees"), detail: "") { viewModel.selectedAgentID = AgentsPage.worktrees },
             Entry(id: "act:settings", symbol: "gearshape", title: tr("agents.footer.settings"), detail: "") { app.openSettings() },
         ]

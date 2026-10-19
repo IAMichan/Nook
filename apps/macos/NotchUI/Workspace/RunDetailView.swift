@@ -539,12 +539,16 @@ struct ToolRow: View {
             .accessibilityLabel(event.text)
             .accessibilityHint(tr("ws.tool.expandHint"))
 
+            // An MCP app is there to be used: shown whether or not the call is open.
+            if let app = McpUI.resource(in: event.output) {
+                McpAppBlock(resource: app, event: event).padding(.leading, 22)
+            }
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
                     if let detail = event.detail, !detail.isEmpty, detail != "{}" {
                         CodeBlock(title: tr("ws.tool.input"), text: detail)
                     }
-                    if let output = event.output, !output.isEmpty {
+                    if let output = event.output.map(McpUI.stripped), !output.isEmpty {
                         CodeBlock(title: tr("ws.tool.output"), text: output, failed: event.state == .failed)
                     } else if event.state == .running {
                         Text(tr("ws.tool.running")).font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)

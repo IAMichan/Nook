@@ -60,6 +60,16 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case rateLimits(UsageLimits.ClaudeEvent?)
 }
 
+extension ClaudeStreamEvent {
+    /// The agent is working: it writes, thinks, uses a tool or asks permission (not a notice, usage or limits).
+    static func isWork(_ event: ClaudeStreamEvent) -> Bool {
+        switch event {
+        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .permissionRequest: return true
+        default: return false
+        }
+    }
+}
+
 struct ClaudeTurnResult: Equatable, Sendable {
     var isError: Bool
     var subtype: String
@@ -216,7 +226,7 @@ enum ClaudeStreamParser {
             return blocks.compactMap { block -> String? in
                 if let text = block["text"] as? String { return text }
                 if (block["type"] as? String) == "image" { return "[image]" }
-                return nil
+                return McpUI.encode(block)
             }.joined(separator: "\n")
         }
         return ""
@@ -306,6 +316,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case commandFinished(id: String, command: String, output: String, exitCode: Int?)
     case fileChanges(id: String, changes: [CodexFileChange])
     case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool)
+    /// An MCP tool call that finished with an app (`ui://` page) to show (codex app-server): arguments and result as JSON.
+    case mcpApp(id: String, server: String, tool: String, arguments: String?, result: String?, resourceUri: String)
     case turnCompleted(TurnUsage)
     case failed(String)
     // `codex app-server` only (see CodexAppServer.swift).
@@ -322,10 +334,25 @@ enum CodexStreamEvent: Equatable, Sendable {
     /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
     case unsupportedRequest(RPCID)
     case plan(String)
+    /// The agent's task list (`turn/plan/updated`).
+    case tasks([RunTaskStep])
+    /// Codex started subagents (`collabAgentToolCall` with `spawnAgent`): the call, its task and the threads they run on.
+    case subagentSpawned(id: String, prompt: String, model: String?, threads: [String], failed: Bool)
+    /// How Codex's subagents are doing, per thread (from any `collabAgentToolCall`, `wait` above all).
+    case subagentStates([String: CodexAgentState])
     case notice(String)
     case rateLimits(JSONBox)
     /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).
     case usageLimited
+}
+
+/// One Codex subagent's state: pendingInit, running, interrupted, completed, errored, shutdown, notFound.
+struct CodexAgentState: Equatable, Sendable {
+    var status: String
+    var message: String?
+
+    var isFinished: Bool { !["pendingInit", "running"].contains(status) }
+    var isFailure: Bool { ["errored", "interrupted", "notFound"].contains(status) }
 }
 
 struct CodexFileChange: Equatable, Sendable {

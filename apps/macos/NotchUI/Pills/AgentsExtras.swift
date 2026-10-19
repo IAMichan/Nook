@@ -9,8 +9,9 @@ enum AgentsPage {
     static let terminals = "terminals"
     static let browser = "browser"
     static let worktrees = "worktrees"
+    static let simulator = "simulator"
     /// The pages that are a tool you work in: the panel widens for them and stays open.
-    static let tools: Set<String> = [terminals, browser, worktrees]
+    static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
 /// Pull requests and usage as quiet icons under the list, then the tools.
@@ -31,6 +32,8 @@ struct AgentsFooter: View {
                        action: { open(AgentsPage.browser) }) { ToolGlyph(symbol: "safari") }
             FooterIcon(label: tr("agents.footer.worktrees"), active: selected == AgentsPage.worktrees,
                        action: { open(AgentsPage.worktrees) }) { ToolGlyph(symbol: "arrow.triangle.branch") }
+            FooterIcon(label: tr("agents.footer.simulator"), active: selected == AgentsPage.simulator,
+                       action: { open(AgentsPage.simulator) }) { ToolGlyph(symbol: "iphone") }
             Spacer(minLength: 0)
         }
         .padding(.leading, 4)

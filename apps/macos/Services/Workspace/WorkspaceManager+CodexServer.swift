@@ -36,8 +36,8 @@ extension WorkspaceManager {
         guard let run = run(id) else { return }
         var environment = accountEnvironment(run.profileID)
         environment["NOOK_RUN_ID"] = id.uuidString
-        let spec = LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
-                              workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true)
+        let spec = placed(LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
+                                     workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
             Task { @MainActor in self?.handleCodexServer(id, client, message, events) }
@@ -58,9 +58,9 @@ extension WorkspaceManager {
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridgeLaunch() == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let thread = CodexRPC.threadParams(cwd: run.workingDirectory, model: run.model,
-                                           mcpServers: bridgeLaunch()?.codexMCPServers(runID: id),
+                                           mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)
         let method = run.providerSessionID == nil ? "thread/start" : "thread/resume"
         client.request("initialize", CodexRPC.initializeParams()) { [weak self] result in
@@ -103,9 +103,14 @@ extension WorkspaceManager {
         // Without a model name Codex's own plan mode is unavailable: the read-only sandbox and this line keep it to a plan.
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]
-        let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
+        var params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
                                               mode: run.mode, permission: run.permission, planModel: planModel,
                                               effort: run.effort)
+        // What MCP apps told the agent: text an MCP server wrote, so it goes in as untrusted context.
+        let appContexts = takeMcpAppContexts(id)
+        if !appContexts.isEmpty {
+            params["additionalContext"] = Dictionary(uniqueKeysWithValues: appContexts.map { ($0.key, ["kind": "untrusted", "value": $0.text]) })
+        }
         client.request("turn/start", params) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -226,6 +231,8 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                // Codex started a turn on its own (background work it waited for finished): the session works again.
+                if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
             case .approval(let request):
                 presentCodexApproval(id, request)
             case .question(let rpcID, let items):
@@ -238,6 +245,20 @@ extension WorkspaceManager {
             case .rateLimits(let limits):
                 codexLimitSnapshots[id] = limits
                 onRateLimits?()
+            case .mcpApp(let callID, let server, let tool, let arguments, let result, let uri):
+                captureMcpApp(id, client, callID: callID, server: server, tool: tool, arguments: arguments, result: result, resourceUri: uri)
+            case .commandFinished(let callID, let command, let output, let exitCode)
+                where turns[id] == nil && run(id)?.status.isActive != true:
+                // A command left running in the background finished after the turn: its result goes to Codex as a new
+                // turn, so Codex can act on it.
+                handleCodex(event, id: id)
+                append(id, RunEvent(kind: .system, text: tr("ws.wake.command", ToolSummary.oneLine(command, 80)), tool: "wake"))
+                let message = BackgroundWork.codexMessage(command: command, exitCode: exitCode, output: output)
+                if let run = run(id), run.canContinue, processes[id] == nil, !run.status.isActive {
+                    sendHidden(id, text: message)
+                } else {
+                    enqueue(id, text: message)
+                }
             default:
                 handleCodex(event, id: id)
             }
@@ -330,6 +351,28 @@ extension WorkspaceManager {
         case .plan(let text):
             finishLiveText(id)
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
+        case .tasks(let steps):
+            setTasks(id, steps)
+        case .subagentSpawned(let callID, let prompt, let model, let threads, let failed):
+            // The same shape as Claude Code's Agent call, so the subagent bar shows Codex's subagents too.
+            guard turns[id]?.toolEvents[callID] == nil else { return }
+            finishLiveText(id)
+            let input: [String: Any] = ["description": TimelinePresentation.headline(prompt, limit: 80), "prompt": prompt,
+                                        "subagent_type": model ?? "codex"]
+            let event = RunEvent(kind: .tool, text: "Agent · " + TimelinePresentation.headline(prompt, limit: 80), tool: "Agent",
+                                 callID: callID, detail: ToolSummary.json(input), state: failed ? .failed : .running)
+            turns[id]?.toolEvents[callID] = event.id
+            for thread in threads { codexSubagents[id, default: [:]][thread] = event.id }
+            append(id, event)
+        case .subagentStates(let states):
+            for (thread, state) in states where state.isFinished {
+                guard let eventID = codexSubagents[id]?[thread] else { continue }
+                mutateEvent(id, eventID) { event in
+                    event.state = state.isFailure ? .failed : .done
+                    if let message = state.message, !message.isEmpty { event.output = RunEvent.clip(message) }
+                }
+                codexSubagents[id]?[thread] = nil
+            }
         case .notice(let text):
             append(id, RunEvent(kind: .system, text: text == "compact" ? tr("ws.event.compacted") : text))
         default:
@@ -380,10 +423,23 @@ extension WorkspaceManager {
         scheduleCodexIdleClose(id)
     }
 
+    private func wakeCodexServer(_ id: UUID) {
+        guard var run = run(id) else { return }
+        codexIdleClose[id]?.cancel()
+        codexIdleClose[id] = nil
+        turns[id] = TurnState()
+        append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
+        if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
+        run.move(to: .running)
+        run.turnStartedAt = Date()
+        replace(run)
+    }
+
     private func scheduleCodexIdleClose(_ id: UUID) {
         codexIdleClose[id]?.cancel()
+        let seconds = idleSeconds(id, Self.codexIdleSeconds)
         codexIdleClose[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.codexIdleSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled, let self, self.run(id)?.status.isActive != true else { return }
             self.closeCodexServer(id)
         }

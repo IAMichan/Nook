@@ -231,11 +231,11 @@ struct WorkspaceSettingsSection: View {
     private var defaults: some View {
         Section {
             Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
-                ForEach(RunProvider.allCases) { provider in
+                ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
                     Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
                 }
             }
-            ForEach(RunProvider.allCases) { provider in
+            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
                 Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
                     get: { ws.model(for: provider) },
                     set: { ws.setModel($0, for: provider) }
@@ -274,6 +274,7 @@ struct WorkspaceSettingsSection: View {
             Picker(tr("settings.ws.terminal"), selection: $ws.terminalBundleID) {
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates)) { Text($0.name).tag($0.bundleID) }
             }
+            BrowserSearchPicker()
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)
                 Text(tr("settings.ws.days", 7)).tag(7)
@@ -335,6 +336,17 @@ struct WorkspaceSettingsSection: View {
                                name: "nook-bridge-\(provider.rawValue)", title: tr("settings.bridge.terminalTitle", provider.displayName))
         } catch {
             app.viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+        }
+    }
+}
+
+/// The workspace browser's search engine (see BrowserSearchEngine).
+private struct BrowserSearchPicker: View {
+    @AppStorage(BrowserSearchEngine.defaultsKey) private var engine = BrowserSearchEngine.duckDuckGo.rawValue
+
+    var body: some View {
+        Picker(tr("settings.ws.browserSearch"), selection: $engine) {
+            ForEach(BrowserSearchEngine.allCases) { Text($0.name).tag($0.rawValue) }
         }
     }
 }
