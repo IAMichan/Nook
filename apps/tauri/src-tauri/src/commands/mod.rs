@@ -1,10 +1,14 @@
 //! De commando's die de interface aanroept (`invoke`). Lange taken (een vraag aan het brein) draaien op de
 //! achtergrond en melden zich met events: `nook-stream` (tekst terwijl hij geschreven wordt) en `nook-updated`.
 
+pub mod agents;
 pub mod brain;
 pub mod chat;
 pub mod companion;
 pub mod plans;
+pub mod workspace;
+pub mod workspace_tools;
+
 
 use nook_core::brain::PromptImage;
 use nook_core::nooks::{Conversation, ConversationSummary};

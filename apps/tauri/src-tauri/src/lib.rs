@@ -1,7 +1,9 @@
 //! Nook voor Windows, Linux en Android. De kern zit in `nook-core`; hier zitten de vensters, het systeemvak,
 //! de sneltoetsen, de commando's voor de interface en de platformlaag.
 
+mod agents;
 mod brain;
+pub mod cli;
 mod commands;
 mod companion;
 mod connectors;
@@ -9,6 +11,7 @@ mod platform;
 mod services;
 mod state;
 mod tools;
+mod workspace;
 
 use tauri::Manager;
 
@@ -23,7 +26,8 @@ pub fn run() {
             .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
                 platform::desktop::show_main(app, platform::desktop::route_from_args(&args).unwrap_or("chat"))
             }))
-            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_dialog::init());
     }
 
     #[cfg(mobile)]
@@ -43,6 +47,8 @@ pub fn run() {
             connectors::setup(app.handle());
             services::setup(app.handle());
             brain::setup(app.handle());
+            agents::setup(app.handle());
+            workspace::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -215,12 +221,96 @@ pub fn run() {
             commands::brain::plan_edit,
             commands::brain::plan_include,
             commands::brain::plan_run_again,
+            commands::agents::agents_overview,
+            commands::agents::agents_decide,
+            commands::agents::agents_decide_in_terminal,
+            commands::agents::agents_answer,
+            commands::agents::agents_answer_in_terminal,
+            commands::agents::agents_end,
+            commands::agents::agents_forget,
+            commands::agents::agents_can_end,
+            commands::agents::agents_transcript,
+            commands::agents::agents_history,
+            commands::agents::agents_integrations,
+            commands::agents::agents_prepare_link,
+            commands::agents::agents_apply_link,
+            commands::agents::agents_discard_link,
+            commands::agents::agents_profiles,
+            commands::agents::agents_profile_add,
+            commands::agents::agents_profile_rename,
+            commands::agents::agents_profile_remove,
+            commands::agents::agents_profile_prefer,
+            commands::agents::agents_profile_auth,
+            commands::agents::agents_profile_key,
+            commands::agents::agents_mark_finished,
+            commands::agents::agents_visit,
+            commands::agents::agents_activate_terminal,
+            commands::agents::agents_run_in_terminal,
+            commands::agents::agents_terminal_name,
+            commands::agents::agents_sound,
+            commands::workspace::workspace_overview,
+            commands::workspace::workspace_save_settings,
+            commands::workspace::workspace_forget_project,
+            commands::workspace::workspace_timeline,
+            commands::workspace::workspace_queue,
+            commands::workspace::workspace_inspect,
+            commands::workspace::workspace_start,
+            commands::workspace::workspace_adopt,
+            commands::workspace::workspace_configure,
+            commands::workspace::workspace_send,
+            commands::workspace::workspace_steer,
+            commands::workspace::workspace_enqueue,
+            commands::workspace::workspace_queue_remove,
+            commands::workspace::workspace_queue_move,
+            commands::workspace::workspace_queue_edit,
+            commands::workspace::workspace_queue_send_now,
+            commands::workspace::workspace_queue_steer,
+            commands::workspace::workspace_stop,
+            commands::workspace::workspace_retry,
+            commands::workspace::workspace_rename,
+            commands::workspace::workspace_set_auto_resume,
+            commands::workspace::workspace_archive,
+            commands::workspace::workspace_mark_reviewed,
+            commands::workspace::workspace_delete,
+            commands::workspace::workspace_usage,
+            commands::workspace::workspace_git,
+            commands::workspace::workspace_diff,
+            commands::workspace::workspace_commit,
+            commands::workspace::workspace_push,
+            commands::workspace::workspace_can_revert,
+            commands::workspace::workspace_revert,
+            commands::workspace::workspace_worktrees,
+            commands::workspace::workspace_remove_worktree,
+            commands::workspace::workspace_continue_live,
+            commands::workspace::workspace_quick,
+            commands::workspace::workspace_clone,
+            commands::workspace::workspace_pull,
+            commands::workspace::workspace_commit_all,
+            commands::workspace::workspace_pull_request_draft,
+            commands::workspace::workspace_create_pull_request,
+            commands::workspace::workspace_continue_past,
+            commands::workspace_tools::terminal_list,
+            commands::workspace_tools::terminal_open,
+            commands::workspace_tools::terminal_write,
+            commands::workspace_tools::terminal_resize,
+            commands::workspace_tools::terminal_replay,
+            commands::workspace_tools::terminal_interrupt,
+            commands::workspace_tools::terminal_close,
+            commands::workspace_tools::workspace_folder_tools,
+            commands::workspace_tools::browser_state,
+            commands::workspace_tools::workspace_link_bridge,
+            commands::workspace_tools::browser_go,
+            commands::workspace_tools::browser_step,
+            commands::workspace_tools::browser_read,
+            commands::workspace_tools::browser_close,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                // Bij afsluiten: de WhatsApp-gateway en lopende agents van de werkruimte netjes stoppen.
                 connectors::shutdown(app);
+                workspace::shutdown(app);
             }
         });
 }

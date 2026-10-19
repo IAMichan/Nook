@@ -4,5 +4,5 @@
   "description": "Alleen op Windows, Linux en macOS",
   "platforms": ["windows", "linux", "macOS"],
   "windows": ["main", "bar"],
-  "permissions": ["global-shortcut:default"]
+  "permissions": ["global-shortcut:default", "dialog:allow-open"]
 }

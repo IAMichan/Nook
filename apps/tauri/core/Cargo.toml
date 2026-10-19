@@ -38,6 +38,13 @@ unicode-normalization = "0.1"
 quick-xml = "0.37"
 pdf-extract = "0.9"
 iana-time-zone = "0.1"
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

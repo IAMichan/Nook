@@ -1,5 +1,6 @@
 <script lang="ts">
   // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Nook, Agents en Werkruimte.
+  import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { api, events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
@@ -13,12 +14,16 @@
   import { listening } from "../lib/listening.svelte";
   import { attachments } from "../lib/attachments.svelte";
   import { play } from "../lib/sounds";
+  import { agents } from "../lib/agents.svelte";
+  import AgentAlerts from "./agents/AgentAlerts.svelte";
+  import AgentDots from "./agents/AgentDots.svelte";
 
   type Tab = "nook" | "agents" | "workspace" | "music";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let inside = false;
 
   const mood = $derived(nook.waiting ? "waiting" : nook.working ? "working" : "idle");
   const floating = $derived(nook.settings?.placement === "floating");
@@ -33,6 +38,9 @@
     }
     if (focus === "chat" || focus === "voice" || focus === "lookAlong") {
       tab = "nook";
+      pinnedOpen = true;
+    } else if (focus === "agents") {
+      tab = "agents";
       pinnedOpen = true;
     }
     if (focus === "voice") listening.start();
@@ -89,7 +97,8 @@
   }
 
   function leave() {
-    if (pinnedOpen || nook.busy) return;
+    inside = false;
+    if (pinnedOpen || nook.busy || agents.pending) return;
     closeTimer = setTimeout(close, 450);
   }
 
@@ -104,6 +113,24 @@
     await api.barMoved();
   }
 
+  // Agents: geluiden in de balk, en het kaartje "klaar" klapt hem even open (tot je ernaar wijst).
+  $effect(() => {
+    agents.sounds = true;
+    agents.start();
+  });
+  $effect(() => {
+    const card = agents.attention;
+    if (!card || untrack(() => expanded)) return;
+    untrack(() => open());
+    const timer = setTimeout(() => {
+      if (agents.attention === card && !inside && !pinnedOpen) {
+        agents.attention = null;
+        close();
+      }
+    }, 5200);
+    return () => clearTimeout(timer);
+  });
+
   $effect(() => {
     attachments.start();
     const un = events.onBarOpen((focus) => open(focus));
@@ -113,15 +140,16 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && close()} onblur={() => !nook.busy && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && close()} onblur={() => !nook.busy && !agents.pending && close()} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => open()} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; open(); }} onmouseleave={leave}>
   {#if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill" onmousedown={drag}>
       <Orb size={20} {mood} />
       {#if nook.working}<span class="dot working"></span>{/if}
       {#if nook.waiting}<span class="dot waiting"></span>{/if}
+      <AgentDots onhover={() => open("agents")} />
     </div>
   {:else}
     <div class="panel">
@@ -130,7 +158,7 @@
         <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
         <nav>
           <button class:on={tab === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
-          <button class:on={tab === "agents"} onclick={() => select("agents")}>Agents</button>
+          <button class:on={tab === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={tab === "workspace"} onclick={() => select("workspace")}>Werkruimte</button>
           {/if}
@@ -142,6 +170,7 @@
         <button class="ghost icon" title="Open in venster" onclick={() => api.showMain("chat")}>⧉</button>
         <button class="ghost icon" title="Instellingen" onclick={() => api.showMain("settings")}>⚙</button>
       </header>
+      <AgentAlerts requests={tab !== "agents"} onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }} />
       <div class="body">
         {#if tab === "nook"}
           <div class="nooktab">
