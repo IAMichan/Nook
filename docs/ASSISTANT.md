@@ -150,7 +150,7 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 | External Calendars (ICS) | URL | ✅ via `check_availability` | ❌ read-only |
 | Apple Reminders | On your Mac | ✅ open reminders in context | ✅ `create_reminder`, `complete_reminder` |
 | Nook Open Loops | Nook | ✅ `list_open_loops` | ✅ `add_open_loop`, `complete_open_loop` |
-| Apple Mail | On your Mac | ✅ unread in context, `search_mail` (Inbox + Sent, message links), `read_mail` | ⚠️ `compose_mail`: drafts in chat and opens in Mail.app where you click Send |
+| Apple Mail | On your Mac | ✅ unread in context, `search_mail` (Inbox + Sent, message links), `read_mail` | ⚠️ `compose_mail`: drafts in chat and opens in Mail.app where you click Send; ✅ `trash_mail` (to Trash, at most 200 per action, needs ids or a sender/subject filter), `mark_mail` (read, unread, flagged) |
 | Browser | Mac & Nook | ✅ open tabs with URLs; `read_nook_browser` | ✅ `open_in_nook_browser` |
 | Terminal | In Nook | – | ✅ `run_command`: full command in plan, dangerous commands blocked, runs in visible workspace terminal |
 | MCP Servers | stdio or HTTP | ✅ server read tools | ✅ server write tools, always gated by approval |
@@ -161,6 +161,7 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 | Files (Spotlight) | On your Mac | ✅ `search_files`, `read_file` (PDF, Word, RTF, plain text) | – |
 | Clipboard | On your Mac | ✅ off by default | – |
 | Screen | On your Mac | ✅ OCR of open windows (requires permission) | – |
+| Any Mac app (menu bar) | On your Mac (Accessibility) | ✅ `list_app_menu`: the app's menu commands | ✅ `app_menu_command`: runs one menu command (e.g. Finder › File › New Folder) after approval |
 | GitHub | OAuth Device Flow (`repo read:user`) or PAT | ✅ PR list, `github_pr_details`, `github_search`, `github_issue_details` | ✅ PR review, comment, merge, close; `github_create_issue`, `github_comment_issue`, `github_update_issue` |
 | Notion | API token | ✅ `notion_search`, `notion_read_page` | ❌ (use Notion MCP for writes) |
 | Stripe, Vercel, Cal.com, n8n, Resend | API token | ✅ read summaries | ❌ read-only |
@@ -170,6 +171,6 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 ## Known Limitations
 
 - Keyword-based source fallback uses a curated stop-word list when `QueryPlanner` times out; the manual source picker always overrides automatic detection.
-- `search_mail` searches subject, sender, and recipient via AppleScript (full-body AppleScript search across large mailboxes is too slow), then reads top matches in full via `read_mail`.
+- `search_mail` searches subject, sender, and recipient via AppleScript (full-body AppleScript search across large mailboxes is too slow), then reads top matches in full via `read_mail`. When Mail is too slow to return message text, it searches again with headers only.
 - Messages, WhatsApp, Bear, and Things are read from their local SQLite databases; if an app changes its internal schema in an update, queries fail gracefully and report the error on the source chip.
 - Gmail/Google Drive and Microsoft Teams/OneDrive require custom OAuth app registrations and are not built in directly; connect them via an **MCP server** in **Settings › Integrations & Models**, or use Mail.app / Finder sync.
