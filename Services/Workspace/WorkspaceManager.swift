@@ -78,8 +78,9 @@ struct ProjectInfo: Equatable {
 /// This ensures no orphaned processes linger, and resuming after relaunching Nook works identically.
 @MainActor
 final class WorkspaceManager: ObservableObject {
-    @Published private(set) var runs: [WorkspaceRun] = []
-    @Published private(set) var events: [UUID: [RunEvent]] = [:]
+    /// Settable within the module: the stop and handoff extensions settle open work and add forked sessions.
+    @Published var runs: [WorkspaceRun] = []
+    @Published var events: [UUID: [RunEvent]] = [:]
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
