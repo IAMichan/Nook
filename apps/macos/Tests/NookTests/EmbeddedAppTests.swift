@@ -49,4 +49,12 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
         XCTAssertEqual(EmbeddedAppCatalog.storeID(for: "whatsapp"), EmbeddedAppCatalog.storeID(for: "whatsapp"), "the same every launch")
     }
+
+    func testSplitKeepsBothSidesUsable() {
+        XCTAssertEqual(EmbeddedSplit.chatWidth(500, total: 1200), 500)
+        XCTAssertEqual(EmbeddedSplit.chatWidth(100, total: 1200), EmbeddedSplit.minimumChat, "the chat never gets too narrow")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(5000, total: 1200), 1200 - EmbeddedSplit.minimumApp - EmbeddedSplit.handle, "nor does the app")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 0), 400, "width not known yet")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 500), EmbeddedSplit.minimumChat, "too small for both: the chat keeps its minimum")
+    }
 }
