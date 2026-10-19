@@ -97,32 +97,10 @@ struct MarkdownView: View {
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
             paragraph(text)
-        case .bullets(let items):
+        case .list(let items):
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let task = MarkdownBlock.task(item) {
-                            Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                                .font(.system(size: size - 1))
-                                .foregroundStyle(task.done ? NookTheme.mint : NookTheme.textTertiary)
-                            paragraph(task.text, color: task.done ? NookTheme.textSecondary : NookTheme.paper)
-                        } else {
-                            Text("•").foregroundStyle(NookTheme.iris)
-                            paragraph(item)
-                        }
-                    }
-                }
-            }
-        case .numbered(let items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(item.number)
-                            .font(NookTheme.font(size, .semibold))
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .frame(minWidth: 16, alignment: .trailing)
-                        paragraph(item.text)
-                    }
+                    listItem(item)
                 }
             }
         case .code(let language, let code):
@@ -159,6 +137,33 @@ struct MarkdownView: View {
             Rectangle().fill(NookTheme.line2).frame(height: 1).padding(.vertical, 4)
         }
     }
+
+    /// A list item, indented by its depth; nested bullets get a lighter glyph so the hierarchy reads at a glance.
+    private func listItem(_ item: MarkdownListItem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let task = MarkdownBlock.task(item.text) {
+                Image(systemName: task.done ? "checkmark.square.fill" : "square")
+                    .font(.system(size: size - 1))
+                    .foregroundStyle(task.done ? NookTheme.mint : NookTheme.textTertiary)
+                paragraph(task.text, color: task.done ? NookTheme.textSecondary : NookTheme.paper)
+            } else {
+                if let number = item.number {
+                    Text(number)
+                        .font(NookTheme.font(size, .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(minWidth: 16, alignment: .trailing)
+                } else {
+                    Text(Self.bullets[min(item.level, Self.bullets.count - 1)])
+                        .foregroundStyle(item.level == 0 ? NookTheme.iris : NookTheme.textTertiary)
+                        .frame(minWidth: 8, alignment: .center)
+                }
+                paragraph(item.text, color: item.level == 0 ? NookTheme.paper : NookTheme.textSecondary)
+            }
+        }
+        .padding(.leading, CGFloat(item.level) * (size + 4))
+    }
+
+    private static let bullets = ["•", "◦", "▪"]
 
     private func paragraph(_ text: String, color: Color = NookTheme.paper) -> some View {
         Text(MarkdownBlock.inline(text, size: size))
