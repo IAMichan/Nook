@@ -31,6 +31,11 @@
   async function load(refresh: boolean) {
     try {
       view = await workspaceApi.git(run.id, refresh);
+      // Een bestand dat niet meer gewijzigd is (na een commit), heeft geen diff meer.
+      if (selected && !(view.snapshot?.status?.files ?? []).some((f) => f.path === selected)) {
+        selected = null;
+        diff = null;
+      }
       if (refresh) setTimeout(() => load(false), 600);
     } catch (e) {
       error = String(e);

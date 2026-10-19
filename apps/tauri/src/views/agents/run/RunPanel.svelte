@@ -155,7 +155,7 @@
   .spacer { flex: 1; }
   .ctx { font-family: var(--mono); font-size: 11px; color: var(--amber); }
   .ctx.crit { color: var(--coral); }
-  .branch { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+  .branch { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; max-width: 45%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
   .branch.on { background: var(--smoke); color: var(--paper); }
   .confirm { display: flex; gap: 8px; align-items: center; padding: 12px; border-radius: 12px; }
   .confirm.amber { background: rgba(255, 184, 77, 0.08); }

@@ -127,7 +127,7 @@
   .card { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 10px; background: var(--graphite); font-size: 12px; }
   .card strong { font-size: 17px; }
   .chart { display: flex; gap: 4px; align-items: flex-end; height: 90px; }
-  .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 2px; }
+  .bar { flex: 0 1 48px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 2px; }
   .bar span { width: 100%; background: var(--text2); border-radius: 3px 3px 0 0; min-height: 2px; }
   .bar em { font-size: 9.5px; color: var(--text3); font-style: normal; }
   .table { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }

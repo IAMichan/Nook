@@ -47,7 +47,13 @@ pub fn run(args: &[String]) -> i32 {
         };
         match handle_rpc(&message) {
             RpcAction::Ignore => {}
-            RpcAction::Reply(reply) => write(&out, &reply),
+            RpcAction::Reply(mut reply) => {
+                // Een schermafbeelding van de browser kan Nook hier (nog) niet maken: die tool biedt hij niet aan.
+                if let Some(tools) = reply.pointer_mut("/result/tools").and_then(Value::as_array_mut) {
+                    tools.retain(|t| t.get("name").and_then(Value::as_str) != Some("browser_screenshot"));
+                }
+                write(&out, &reply)
+            }
             RpcAction::Call { id, .. } => {
                 // Een aanroep kan lang op jouw OK wachten: in een eigen draad, zodat andere berichten doorgaan.
                 let envelope = json!({"agent": agent, "cwd": cwd, "env": env, "message": message}).to_string() + "\n";

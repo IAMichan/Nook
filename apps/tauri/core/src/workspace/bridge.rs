@@ -340,7 +340,7 @@ pub fn terminal_tail(text: &str, lines: usize, limit: usize) -> String {
 }
 
 /// De toelichting voor de agent, na je eigen instructies.
-pub const INSTRUCTIONS: &str = "You are running inside Nook, a desktop app the user is watching while you work. Nook's workspace is available through the `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open and verify them with browser_read or browser_screenshot, and when the work is committed and ready, propose a pull request with pull_request_create (the user approves it in Nook). Short commands whose output you need right away can still run in your own shell.";
+pub const INSTRUCTIONS: &str = "You are running inside Nook, a desktop app the user is watching while you work. Nook's workspace is available through the `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open and verify them with browser_read (its text and console), and when the work is committed and ready, propose a pull request with pull_request_create (the user approves it in Nook). Short commands whose output you need right away can still run in your own shell.";
 
 /// Hoe een sessie die Nook draait de brug krijgt: de MCP-server op de opdrachtregel van de agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
