@@ -30,15 +30,37 @@ struct CloudSession: Equatable {
     var isActive: Bool { status == .running || status == .needsYou }
 }
 
+/// Why an account's cloud sessions could not be read, so the list can say so instead of staying silently empty.
+enum CloudSessionProblem: Equatable, Sendable {
+    /// No Claude subscription login from Claude Code on this Mac.
+    case notSignedIn
+    /// The login ran out; Claude Code renews it the next time it runs.
+    case loginExpired
+    /// Anthropic refused the request (HTTP status).
+    case refused(Int)
+    /// No answer: offline or timed out.
+    case unreachable
+}
+
 enum ClaudeCloudSessions {
     /// The session list endpoint Claude Code itself uses for `--teleport` and remote sessions.
     static let endpoint = URL(string: "https://api.anthropic.com/v1/sessions")!
     static let beta = "ccr-byoc-2025-07-29"
+    /// Who is signed in, with their organization; Claude Code falls back to it when its account file has no organization.
+    static let profileEndpoint = URL(string: "https://api.anthropic.com/api/oauth/profile")!
+
+    /// The organization in a profile response (`{"organization": {"uuid": …}}`).
+    static func organization(fromProfile data: Data) -> String? {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let org = (object["organization"] as? [String: Any])?["uuid"] as? String, !org.isEmpty else { return nil }
+        return org
+    }
 
     /// The sessions in a list response (`{"data": [...]}`), newest first. Archived sessions are left out.
     static func parse(_ data: Data) -> [CloudSession] {
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
-        let items = (object["data"] as? [[String: Any]]) ?? (object["sessions"] as? [[String: Any]]) ?? []
+        let root = try? JSONSerialization.jsonObject(with: data)
+        let object = (root as? [String: Any]) ?? [:]
+        let items = (object["data"] as? [[String: Any]]) ?? (object["sessions"] as? [[String: Any]]) ?? (root as? [[String: Any]]) ?? []
         return items.compactMap(session).filter { $0.status != .archived }.sorted { $0.updated > $1.updated }
     }
 

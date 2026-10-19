@@ -197,9 +197,17 @@ struct AgentsTab: View {
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
         let earlier = past.filter { $0.cloud?.isActive != true }
 
-        return TimelineView(.periodic(from: .now, by: 30)) { context in
-            AgentInboxList(items: running, past: earlier.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
-                           current: current, now: context.date) { viewModel.selectedAgentID = $0 }
+        return VStack(alignment: .leading, spacing: 6) {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                AgentInboxList(items: running, past: earlier.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+                               current: current, now: context.date) { viewModel.selectedAgentID = $0 }
+            }
+            if let note = cloudNote {
+                Text(note)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
@@ -329,6 +337,24 @@ struct AgentsTab: View {
     private func unseen(_ id: String, _ finished: Date?) -> Bool {
         guard !app.demoMode, let finished, id != viewModel.selectedAgentID else { return false }
         return visits.isUnseen(id, finished: finished)
+    }
+
+    /// Why the sessions in the Claude app's cloud are missing, for a connected Claude account whose list could not be read.
+    /// Being offline is not worth a line: the list is simply read again later.
+    private var cloudNote: String? {
+        guard !app.demoMode else { return nil }
+        let problems = app.profiles.all
+            .filter { $0.kind == .claude && !$0.usesAPIKey && app.isConnected($0) }
+            .compactMap { app.history.cloudProblems[$0.id] }
+        for problem in problems {
+            switch problem {
+            case .loginExpired: return tr("agents.cloud.loginExpired")
+            case .notSignedIn: return tr("agents.cloud.notSignedIn")
+            case .refused(let status): return String(format: tr("agents.cloud.refused"), String(status))
+            case .unreachable: continue
+            }
+        }
+        return nil
     }
 
     /// Sample data only: nothing to start.

@@ -317,6 +317,8 @@ final class AgentHistory: ObservableObject {
     /// Agents whose executable exists on this Mac.
     @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
+    /// Per Claude account (`AgentProfile.id`): why its cloud sessions could not be read the last time; absent when they could.
+    @Published private(set) var cloudProblems: [String: CloudSessionProblem] = [:]
 
     /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
     var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
@@ -396,9 +398,11 @@ final class AgentHistory: ObservableObject {
         lastCloudRefresh = Date()
         Task.detached(priority: .utility) { [weak self] in
             var found: [String: [PastSession]] = [:]
+            var problems: [String: CloudSessionProblem] = [:]
             for account in accounts {
-                if let list = CloudSessionFetch.sessions(home: account.home, isDefault: account.isDefault) {
-                    found[account.id] = list.map { CloudSessionFetch.pastSession($0, profileID: account.id) }
+                switch CloudSessionFetch.sessions(home: account.home, isDefault: account.isDefault) {
+                case .success(let list): found[account.id] = list.map { CloudSessionFetch.pastSession($0, profileID: account.id) }
+                case .failure(let problem): problems[account.id] = problem
                 }
             }
             await MainActor.run {
@@ -407,6 +411,7 @@ final class AgentHistory: ObservableObject {
                 // An account that could not be read (offline, token just expired) keeps what it had, so rows don't flicker away.
                 for (id, list) in found { self.cloudSessions[id] = list }
                 for id in self.cloudSessions.keys where !accounts.contains(where: { $0.id == id }) { self.cloudSessions[id] = nil }
+                if self.cloudProblems != problems { self.cloudProblems = problems }
                 self.publishSessions()
             }
         }
@@ -439,16 +444,41 @@ enum CloudSessionFetch {
     /// How far back cloud sessions are listed, like the transcripts on this Mac.
     static let days = 30
 
-    /// nil when the account is not signed in with a subscription, or the list could not be read.
-    static func sessions(home: URL, isDefault: Bool) -> [CloudSession]? {
-        guard let token = ClaudeUsage.accessToken(home: home, isDefault: isDefault),
-              let org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault) else { return nil }
-        var request = URLRequest(url: ClaudeCloudSessions.endpoint)
+    /// The account's recent cloud sessions, or why they could not be read.
+    static func sessions(home: URL, isDefault: Bool) -> Result<[CloudSession], CloudSessionProblem> {
+        let token: String
+        switch ClaudeUsage.login(home: home, isDefault: isDefault) {
+        case .valid(let value): token = value
+        case .expired: return .failure(.loginExpired)
+        case .missing: return .failure(.notSignedIn)
+        }
+        // Claude Code keeps the organization in its account file; without it, ask Anthropic who is signed in, like Claude Code does.
+        var org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault)
+        if org == nil, case (200, let data?) = get(ClaudeCloudSessions.profileEndpoint, token: token, beta: "oauth-2025-04-20") {
+            org = ClaudeCloudSessions.organization(fromProfile: data)
+        }
+        var (status, payload) = get(ClaudeCloudSessions.endpoint, token: token, beta: ClaudeCloudSessions.beta, org: org)
+        // Earlier Claude Code versions list sessions without a beta header: should Anthropic stop accepting this one, ask that way.
+        if status == 400 || status == 404 {
+            (status, payload) = get(ClaudeCloudSessions.endpoint, token: token, beta: nil, org: org)
+        }
+        guard status == 200, let payload else {
+            Log.agents.error("Cloud sessions: HTTP \(status, privacy: .public)")
+            if status == 401 { return .failure(.loginExpired) }
+            return .failure(status == 0 ? .unreachable : .refused(status))
+        }
+        let since = Date().addingTimeInterval(-Double(days) * 86_400)
+        return .success(ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since })
+    }
+
+    /// A read-only request with the account's login; the status is 0 without an answer.
+    private static func get(_ url: URL, token: String, beta: String?, org: String? = nil) -> (Int, Data?) {
+        var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.setValue(ClaudeCloudSessions.beta, forHTTPHeaderField: "anthropic-beta")
-        request.setValue(org, forHTTPHeaderField: "x-organization-uuid")
+        if let beta { request.setValue(beta, forHTTPHeaderField: "anthropic-beta") }
+        if let org { request.setValue(org, forHTTPHeaderField: "x-organization-uuid") }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -459,9 +489,8 @@ enum CloudSessionFetch {
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
             semaphore.signal()
         }.resume()
-        guard semaphore.wait(timeout: .now() + 20) == .success, status == 200, let payload else { return nil }
-        let since = Date().addingTimeInterval(-Double(days) * 86_400)
-        return ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since }
+        guard semaphore.wait(timeout: .now() + 20) == .success else { return (0, nil) }
+        return (status, payload)
     }
 
     static func pastSession(_ cloud: CloudSession, profileID: String) -> PastSession {
