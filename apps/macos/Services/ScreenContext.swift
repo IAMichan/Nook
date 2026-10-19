@@ -55,7 +55,7 @@ final class ScreenContext: ObservableObject {
     func start() {
         guard timer == nil else { return }
         isRunning = true
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: interval) { [weak self] _ in
             Task { @MainActor in await self?.tick() }
         }
         let center = NSWorkspace.shared.notificationCenter
@@ -222,31 +222,38 @@ final class ScreenContext: ObservableObject {
             }
         }
 
-        // Window capture is GPU-accelerated and fast; OCR runs concurrently and only when pixels actually change.
-        var captured: [(window: SCWindow, isFront: Bool, accurate: Bool, image: CGImage, print: UInt64)] = []
+        // A tiny probe of each window decides whether anything changed. Only changed windows are captured at full size and
+        // read by OCR, so a quiet screen costs a few thumbnails instead of megapixels of readback per window.
+        var captured: [(window: SCWindow, isFront: Bool, image: CGImage?, print: UInt64)] = []
         for job in jobs {
+            let probe = SCStreamConfiguration()
+            probe.width = 64
+            probe.height = 64
+            probe.showsCursor = false
+            let filter = SCContentFilter(desktopIndependentWindow: job.window)
+            guard let small = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: probe) else { continue }
+            // The window size is part of the print: the probe has a fixed size, but a resized window reflows its text.
+            let size = UInt64(Int(job.window.frame.width)) << 16 | UInt64(Int(job.window.frame.height))
+            let print = Self.fingerprint(small) ^ size
+            if let old = cache[job.window.windowID], old.fingerprint == print {
+                captured.append((job.window, job.isFront, nil, print))
+                continue
+            }
             let configuration = SCStreamConfiguration()
             let scale: CGFloat = job.accurate ? 1.5 : 1.0
             configuration.width = min(Int(job.window.frame.width * scale), 2400)
             configuration.height = min(Int(job.window.frame.height * scale), 2400)
             configuration.showsCursor = false
-            let filter = SCContentFilter(desktopIndependentWindow: job.window)
             guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else { continue }
-            captured.append((job.window, job.isFront, job.accurate, image, Self.fingerprint(image)))
-        }
-
-        let toRead = captured.filter { item in
-            guard let old = cache[item.window.windowID] else { return true }
-            // Identical pixels: skip OCR. Re-read if the frontmost window previously used fast recognition.
-            return old.fingerprint != item.print
+            captured.append((job.window, job.isFront, image, print))
         }
 
         var texts: [CGWindowID: String] = [:]
         await withTaskGroup(of: (CGWindowID, String?).self) { group in
-            for item in toRead {
+            for item in captured {
+                guard let image = item.image else { continue }
                 let id = item.window.windowID
-                let image = item.image
-                let fast = !item.accurate
+                let fast = !(item.isFront && accurateFront)
                 group.addTask {
                     let text = try? await ScreenReader.recognize(image, fast: fast)
                     return (id, text)

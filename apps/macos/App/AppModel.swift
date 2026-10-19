@@ -265,7 +265,7 @@ final class AppModel: ObservableObject {
         // Load agents, accounts and past sessions up front and keep them fresh in the background, so the Agents tab is
         // already filled the moment the notch opens instead of loading only then.
         history.refresh(minimumInterval: 0)
-        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.adoptAccounts()
@@ -403,13 +403,13 @@ final class AppModel: ObservableObject {
         }
 
         Task { await refreshUpcoming() }
-        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        Timer.scheduledCoalesced(withTimeInterval: 300) { [weak self] _ in
             Task { @MainActor in await self?.refreshUpcoming() }
         }
 
         // ThinkAlong: evaluates dwell time periodically. Zero cost; model is only
         // invoked when ThinkAlong determines assistance is genuinely helpful.
-        watchTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
             Task { @MainActor in self?.thinkAlongTick() }
         }
     }

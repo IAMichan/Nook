@@ -12,7 +12,7 @@ struct EqualizerBars: View {
     var isPlaying: Bool = true
 
     var body: some View {
-        TimelineView(.animation(paused: !isPlaying)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isPlaying)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
             HStack(alignment: .bottom, spacing: 3) {

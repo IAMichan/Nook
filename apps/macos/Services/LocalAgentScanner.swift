@@ -191,6 +191,8 @@ enum LocalAgentScanner {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = Pipe()
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return nil }
 
         let readGroup = DispatchGroup()
@@ -201,15 +203,11 @@ enum LocalAgentScanner {
             readGroup.leave()
         }
 
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-        if process.isRunning {
+        // Sleep until the process ends instead of polling every 10 ms.
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
             return nil
         }
-        process.waitUntilExit()
         _ = readGroup.wait(timeout: .now() + 0.5)
         return String(data: outData, encoding: .utf8)
     }

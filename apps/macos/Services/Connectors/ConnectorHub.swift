@@ -61,7 +61,7 @@ final class ConnectorHub: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
         Task { _ = await ContactDirectory.entries() }

@@ -96,7 +96,7 @@ final class CodexUsage: ObservableObject {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         refresh()

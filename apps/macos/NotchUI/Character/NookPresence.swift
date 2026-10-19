@@ -35,7 +35,7 @@ final class NookPresence: ObservableObject {
     private var timer: Timer?
 
     private init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
             Task { @MainActor in self?.checkDrowsy() }
         }
     }

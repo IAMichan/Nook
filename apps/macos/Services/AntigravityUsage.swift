@@ -27,7 +27,7 @@ final class AntigravityUsage: ObservableObject {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 180) { [weak self] _ in
             Task { @MainActor in self?.refreshNow() }
         }
         refreshNow()
