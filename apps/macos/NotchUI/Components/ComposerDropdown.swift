@@ -2,8 +2,8 @@ import SwiftUI
 
 // Composer dropdowns in Nook: the quiet pill as trigger, and instead of a system menu a dark panel with rows.
 // A section header, rows with an icon or logo, a title and a description, a faint fill on the chosen row (no check
-// mark), disabled rows that say why, and a search field for long lists. The model picker layout shows the
-// agents in a narrow rail on the left, their models with a search field on the right.
+// mark), disabled rows that say why, and a search field for long lists. The model pickers (agents, and Nook's own
+// brain in the chat) share one split layout: a narrow rail of places on the left, their models on the right.
 
 /// A composer choice that opens a custom dropdown panel under its pill.
 struct ComposerDropdown<Trigger: View, Content: View>: View {
@@ -155,8 +155,126 @@ struct DropdownSearch: View {
     }
 }
 
-/// Model picker: the connected agents in a narrow rail on the left, and on the right the chosen agent's
-/// accounts and its models, with a search field. Picking an account or model keeps the panel open until you pick a model.
+/// The split panel behind the model pickers: a narrow rail of places on the left (the agents, or this Mac and the
+/// external AIs) and the shown place's choices on the right. Groups in the rail are split by a short line, and the place
+/// in use gets a dot while you look at another one. The rail hides when there is only one place and no footer.
+struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: View {
+    let groups: [[Place]]
+    /// The place in use; the panel opens on it.
+    let chosen: Place
+    var maxHeight: CGFloat
+    let help: (Place) -> String
+    /// Called when you switch to another place in the rail (to clear a search, say).
+    let onShow: (Place) -> Void
+    let icon: (Place) -> Icon
+    /// Sits at the bottom of the rail (an "add" button).
+    let footer: () -> Footer
+    let detail: (Place) -> Detail
+    private var hasFooter = true
+    @State private var shown: Place?
+
+    init(groups: [[Place]], chosen: Place, maxHeight: CGFloat = 320,
+         help: @escaping (Place) -> String, onShow: @escaping (Place) -> Void,
+         @ViewBuilder icon: @escaping (Place) -> Icon,
+         @ViewBuilder footer: @escaping () -> Footer,
+         @ViewBuilder detail: @escaping (Place) -> Detail) {
+        self.groups = groups
+        self.chosen = chosen
+        self.maxHeight = maxHeight
+        self.help = help
+        self.onShow = onShow
+        self.icon = icon
+        self.footer = footer
+        self.detail = detail
+    }
+
+    private var current: Place { shown ?? chosen }
+    private var filledGroups: [[Place]] { groups.filter { !$0.isEmpty } }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if hasFooter || filledGroups.joined().count > 1 { rail }
+            VStack(alignment: .leading, spacing: 0) { detail(current) }
+                .padding(.horizontal, 4)
+        }
+        .frame(maxHeight: maxHeight)
+    }
+
+    private var rail: some View {
+        VStack(spacing: 4) {
+            ForEach(Array(filledGroups.enumerated()), id: \.offset) { index, group in
+                if index > 0 {
+                    Rectangle().fill(NookTheme.line2).frame(width: 18, height: 1).padding(.vertical, 2)
+                }
+                ForEach(group, id: \.self) { place in railButton(place) }
+            }
+            Spacer(minLength: 0)
+            footer()
+        }
+        .padding(6)
+        .frame(width: 44)
+        .background(NookTheme.paper.opacity(0.03))
+        .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
+    }
+
+    private func railButton(_ place: Place) -> some View {
+        Button {
+            shown = place
+            onShow(place)
+        } label: {
+            icon(place)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(place == current ? DropdownStyle.chosen : .clear))
+                .overlay(alignment: .bottomTrailing) {
+                    if place == chosen && place != current {
+                        Circle().fill(NookTheme.paper.opacity(0.7)).frame(width: 4, height: 4).padding(4)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help(place))
+    }
+}
+
+extension RailDropdown where Footer == EmptyView {
+    init(groups: [[Place]], chosen: Place, maxHeight: CGFloat = 320,
+         help: @escaping (Place) -> String, onShow: @escaping (Place) -> Void,
+         @ViewBuilder icon: @escaping (Place) -> Icon,
+         @ViewBuilder detail: @escaping (Place) -> Detail) {
+        self.init(groups: groups, chosen: chosen, maxHeight: maxHeight, help: help, onShow: onShow,
+                  icon: icon, footer: { EmptyView() }, detail: detail)
+        hasFooter = false
+    }
+}
+
+/// A scrolling list of choices under a header or search field, with a note when there is nothing to show.
+struct DropdownList<Rows: View>: View {
+    var maxHeight: CGFloat = 260
+    /// Shown instead of rows (nothing matches, nothing installed).
+    var emptyNote: String? = nil
+    @ViewBuilder let rows: () -> Rows
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if let emptyNote {
+                    Text(emptyNote)
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .padding(10)
+                }
+                rows()
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: maxHeight)
+    }
+}
+
+/// Model picker: the connected agents in the rail on the left, and on the right the shown agent's accounts and its
+/// models, with a search field. Picking an account or model keeps the panel open until you pick a model.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
     /// The agents you can pick from; one agent hides the rail (a running session keeps its agent).
@@ -166,79 +284,44 @@ struct AgentModelPicker: View {
     let model: String
     var showsAccounts = false
     let choose: (RunProvider, String?, String?) -> Void
-    @State private var shown: RunProvider?
     @State private var query = ""
-    @Environment(\.closeDropdown) private var close
-
-    private var current: RunProvider { shown ?? provider }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if providers.count > 1 {
-                VStack(spacing: 4) {
-                    ForEach(providers) { option in
-                        Button {
-                            shown = option
-                            query = ""
-                        } label: {
-                            AgentMark(agent: option.displayName, account: nil, size: 18, ring: DropdownStyle.panel)
-                                .frame(width: 32, height: 32)
-                                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(option == current ? DropdownStyle.chosen : .clear))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(option.displayName)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(6)
-                .frame(width: 44)
-                .background(NookTheme.paper.opacity(0.03))
-                .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                let accounts = app.connectedProfiles(for: current)
-                // A running session keeps its account: only a new session shows the choice.
-                if providers.count > 1 || showsAccounts, accounts.count > 1 {
-                    DropdownHeader(title: current.displayName)
-                    ForEach(accounts) { account in
-                        DropdownRow(agent: current.displayName, account: AccountKind.of(account, app: app),
-                                    title: AccountLabel.line(account, app: app),
-                                    chosen: current == provider && account.id == profileID, staysOpen: true) {
-                            choose(current, account.id, nil)
-                        }
-                    }
-                    DropdownDivider()
-                }
-                DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        let models = filtered
-                        if models.isEmpty {
-                            Text(tr("compose.noModels"))
-                                .font(NookTheme.font(12))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .padding(10)
-                        }
-                        ForEach(models, id: \.self) { option in
-                            let name = app.modelName(option, for: current)
-                            DropdownRow(title: name, detail: option.isEmpty || name == option ? nil : option,
-                                        chosen: current == provider && option == model) {
-                                choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, option)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(maxHeight: 260)
-            }
-            .padding(.horizontal, 4)
+        RailDropdown(groups: [providers], chosen: provider, help: { $0.displayName }, onShow: { _ in query = "" },
+                     icon: { AgentMark(agent: $0.displayName, account: nil, size: 18, ring: DropdownStyle.panel) }) { current in
+            models(of: current)
         }
-        .frame(maxHeight: 320)
     }
 
-    private var filtered: [String] {
+    @ViewBuilder
+    private func models(of current: RunProvider) -> some View {
+        let accounts = app.connectedProfiles(for: current)
+        // A running session keeps its account: only a new session shows the choice.
+        if providers.count > 1 || showsAccounts, accounts.count > 1 {
+            DropdownHeader(title: current.displayName)
+            ForEach(accounts) { account in
+                DropdownRow(agent: current.displayName, account: AccountKind.of(account, app: app),
+                            title: AccountLabel.line(account, app: app),
+                            chosen: current == provider && account.id == profileID, staysOpen: true) {
+                    choose(current, account.id, nil)
+                }
+            }
+            DropdownDivider()
+        }
+        DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
+        let shownModels = filtered(current)
+        DropdownList(emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil) {
+            ForEach(shownModels, id: \.self) { option in
+                let name = app.modelName(option, for: current)
+                DropdownRow(title: name, detail: option.isEmpty || name == option ? nil : option,
+                            chosen: current == provider && option == model) {
+                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, option)
+                }
+            }
+        }
+    }
+
+    private func filtered(_ current: RunProvider) -> [String] {
         let all = app.models(for: current)
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return all }
@@ -272,20 +355,13 @@ struct BranchPicker: View {
 
     var body: some View {
         DropdownSearch(placeholder: tr("compose.searchBranches"), text: $query)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-                let shown = needle.isEmpty ? branches : branches.filter { $0.lowercased().contains(needle) }
-                if shown.isEmpty {
-                    Text(tr("compose.noBranches")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary).padding(10)
-                }
-                ForEach(shown, id: \.self) { branch in
-                    DropdownRow(symbol: "arrow.triangle.branch", title: branch, chosen: branch == selected) { choose(branch) }
-                }
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let shown = needle.isEmpty ? branches : branches.filter { $0.lowercased().contains(needle) }
+        DropdownList(emptyNote: shown.isEmpty ? tr("compose.noBranches") : nil) {
+            ForEach(shown, id: \.self) { branch in
+                DropdownRow(symbol: "arrow.triangle.branch", title: branch, chosen: branch == selected) { choose(branch) }
             }
-            .padding(.vertical, 4)
         }
-        .frame(maxHeight: 260)
     }
 }
 
