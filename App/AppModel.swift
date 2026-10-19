@@ -355,6 +355,11 @@ final class AppModel: ObservableObject {
         }
         codex.start()
         antigravityUsage.home = { [weak self] in self?.profiles.profiles(for: .antigravity).first?.homeURL ?? AgentKind.antigravity.defaultHome }
+        // Signing in during an Antigravity session in Nook leaves its token in that account's profile folder.
+        antigravityUsage.sessionProfiles = { [weak self] in
+            let paths = AntigravityPaths(support: NookPaths.supportDirectory)
+            return (self?.profiles.profiles(for: .antigravity) ?? []).map { paths.profile($0.id) }
+        }
         antigravityUsage.start()
         claudeUsage.start()
 

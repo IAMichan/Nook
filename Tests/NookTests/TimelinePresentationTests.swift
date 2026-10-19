@@ -66,15 +66,23 @@ final class TimelinePresentationTests: XCTestCase {
             event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed),
             event(.thinking, "volgende stap")
         ])
-        XCTAssertEqual(blocks.count, 4)
-        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1],
-              case .tools(_, let tools, let tally) = blocks[2], case .event(let thought) = blocks[3] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(blocks.count, 6)
+        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1], case .event(let grep) = blocks[2],
+              case .event(let hmm) = blocks[3], case .event(let shell) = blocks[4], case .event(let thought) = blocks[5]
+        else { return XCTFail("\(blocks)") }
         XCTAssertEqual(read.text, "Read · a", "a single tool stands alone")
         XCTAssertEqual(error.kind, .error)
-        XCTAssertEqual(tools.count, 3, "thinking between tools stays in the group")
+        XCTAssertEqual(grep.kind, .tool)
+        XCTAssertEqual(hmm.text, "hmm", "thinking stays readable in the chat, never inside a group")
+        XCTAssertEqual(shell.state, .failed)
+        XCTAssertEqual(thought.text, "volgende stap")
+
+        let grouped = TimelinePresentation.group([event(.tool, "Grep · x", tool: "Grep"),
+                                                  event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed)])
+        guard case .tools(_, let tools, let tally)? = grouped.first, grouped.count == 1 else { return XCTFail("\(grouped)") }
+        XCTAssertEqual(tools.count, 2)
         XCTAssertTrue(tally.failed)
         XCTAssertEqual(tally.parts.map(\.category), [.command, .search])
-        XCTAssertEqual(thought.text, "volgende stap", "thinking after the last tool is not part of the group")
     }
 
     func testLiveActivity() {

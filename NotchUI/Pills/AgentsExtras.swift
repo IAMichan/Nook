@@ -117,9 +117,8 @@ private struct UsageGlyph: View {
 /// opens the pull request on GitHub.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel
-    @State private var accounts: [AccountPullRequests] = []
-    @State private var loading = true
-    @State private var loadedOnce = false
+    @ObservedObject private var store = PullRequestStore.shared
+    private var accounts: [AccountPullRequests] { store.accounts }
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
 
     var body: some View {
@@ -129,16 +128,16 @@ struct PullRequestsPanel: View {
                     .font(NookTheme.font(14, .semibold))
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
-                if loading { ProgressView().controlSize(.small) }
-                NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await reload() } }
+                if store.loading { ProgressView().controlSize(.small) }
+                NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
             .frame(height: 30)
 
-            if !GitHubPullRequestList.isAvailable {
+            if store.loaded && !store.available && accounts.isEmpty {
                 empty(title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
                     app.openSettings(section: .connections)
                 }))
-            } else if loadedOnce && accounts.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
+            } else if store.loaded && accounts.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
                 empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
                 ScrollView(showsIndicators: false) {
@@ -152,28 +151,16 @@ struct PullRequestsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The last list shows at once; a stale one refreshes in the background, and again every minute while open.
         .task {
             while !Task.isCancelled {
-                await reload()
-                try? await Task.sleep(nanoseconds: 90_000_000_000)
+                await store.refresh()
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
         .onChange(of: gitHubSignIn.phase) { _, phase in
-            if phase == .done { Task { await reload() } }
+            if phase == .done { Task { await store.refresh(force: true) } }
         }
-    }
-
-    private func reload() async {
-        guard GitHubPullRequestList.isAvailable else {
-            loading = false
-            loadedOnce = true
-            return
-        }
-        loading = true
-        let fresh = await GitHubPullRequestList.load()
-        accounts = fresh
-        loading = false
-        loadedOnce = true
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {

@@ -202,6 +202,8 @@ extension AppModel {
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
         recap.turnEnded(session: "run-" + run.id.uuidString)
+        // An agent may have pushed or opened a pull request: the list refreshes when you look next.
+        PullRequestStore.shared.markStale()
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)
