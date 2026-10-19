@@ -99,8 +99,6 @@ struct MCPSettingsSection: View {
         Group {
             Section {
                 IntroCard(
-                    symbol: "puzzlepiece.extension.fill",
-                    colors: (Color(hex: 0x5ED6EE), Color(hex: 0x1FA2C6)),
                     title: tr("mcp.hero.title"),
                     text: tr("mcp.hero.detail")
                 )

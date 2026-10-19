@@ -29,8 +29,7 @@ struct AutocompleteSettingsSection: View {
     var body: some View {
         Group {
             Section {
-                IntroCard(symbol: "text.cursor", colors: SettingsSection.autocomplete.tileColors,
-                          title: tr("autocomplete.hero.title"), text: tr("autocomplete.hero.detail"))
+                IntroCard(title: tr("autocomplete.hero.title"), text: tr("autocomplete.hero.detail"))
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
 
