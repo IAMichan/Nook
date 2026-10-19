@@ -164,10 +164,17 @@ final class AutocompleteController: ObservableObject {
         if !trusted { waitForTrust() }
     }
 
+    /// The "Allow" button. Asking macOS first is what puts Nook in the list in System Settings; opening the pane alone shows a
+    /// list without Nook in it. With Accessibility granted and still no key tap, the missing one is Input Monitoring.
     func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
+        if AXIsProcessTrusted() {
+            if !CGRequestListenEventAccess() { SystemPermission.inputMonitoring.openSettings() }
+        } else {
+            trusted = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            if !trusted { SystemPermission.accessibility.openSettings() }
         }
+        PermissionMonitor.shared.refresh()
+        if prefs.enabled { waitForTrust() }
     }
 
     /// Writes the last field's text as a sample (at quit).

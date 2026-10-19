@@ -47,6 +47,7 @@ struct SettingsView: View {
     /// The category chip on Connected services; nil shows all of them.
     @State var connectionCategory: ServiceCategory?
     @ObservedObject var local = EmbeddedModel.shared
+    @ObservedObject var permissions = PermissionMonitor.shared
     @State var installing: String?
     @State var installFraction: Double = 0
     @State var testing = false

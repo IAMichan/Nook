@@ -6,6 +6,7 @@ import CoreGraphics
 struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var permissions = PermissionMonitor.shared
     let onFinish: () -> Void
 
     @State private var step = 0
@@ -103,15 +104,16 @@ struct OnboardingView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Text(tr("onboarding.permissions.title")).font(.headline)
             Text(tr("onboarding.permissions.detail")).foregroundStyle(.secondary)
-            permissionRow(tr("settings.checklist.screen"), granted: CGPreflightScreenCaptureAccess()) {
-                _ = CGRequestScreenCaptureAccess()
+            permissionRow(tr("settings.checklist.screen"), granted: permissions.isGranted(.screen)) {
+                await permissions.request(.screen, app: app)
             }
-            permissionRow(tr("settings.checklist.calendar"), granted: app.calendar.hasEventAccess) {
-                _ = await app.calendar.requestEvents()
-                app.connectors.refreshAll()
+            permissionRow(tr("settings.checklist.calendar"), granted: permissions.isGranted(.calendar)) {
+                await permissions.request(.calendar, app: app)
             }
             Spacer(minLength: 0)
         }
+        .onAppear { permissions.watch() }
+        .onDisappear { permissions.unwatch() }
     }
 
     private func permissionRow(_ title: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {

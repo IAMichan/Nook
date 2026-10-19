@@ -71,6 +71,8 @@ struct FlowSettingsSection: View {
         } footer: {
             Text(tr("flow.settings.footer"))
         }
+        .onAppear { PermissionMonitor.shared.watch() }
+        .onDisappear { PermissionMonitor.shared.unwatch() }
     }
 }
 

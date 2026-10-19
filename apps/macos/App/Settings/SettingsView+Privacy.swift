@@ -8,24 +8,18 @@ extension SettingsView {
     var privacySection: some View {
         Group {
             Section {
-                permissionRow(tr("settings.privacy.screenReading"), detail: tr("settings.privacy.screenReadingDetail"), granted: CGPreflightScreenCaptureAccess()) {
-                    _ = CGRequestScreenCaptureAccess()
-                }
-                permissionRow(tr("settings.privacy.calendar"), detail: tr("settings.privacy.calendarDetail"), granted: app.calendar.hasEventAccess) {
-                    _ = await app.calendar.requestEvents(); app.connectors.refreshAll()
-                }
-                permissionRow(tr("settings.privacy.reminders"), detail: tr("settings.privacy.remindersDetail"), granted: app.calendar.hasReminderAccess) {
-                    await app.calendar.requestReminders(); app.connectors.refreshAll()
-                }
-                permissionRow(tr("settings.privacy.micSpeech"), detail: tr("settings.privacy.micSpeechDetail"), granted: VoiceService.permissionsGranted) {
-                    _ = await app.voice.requestPermissions()
+                ForEach(SystemPermission.allCases) { permission in
+                    permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
+                        await permissions.request(permission, app: app)
+                    }
                 }
             } header: {
                 Text(tr("settings.privacy.permissions"))
             } footer: {
                 Text(tr("settings.privacy.permissionsFooter"))
             }
-            .id(refreshTick)
+            .onAppear { permissions.watch() }
+            .onDisappear { permissions.unwatch() }
             AuditLogSection()
             Section(tr("settings.privacy.whatLeavesMac")) {
                 promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))

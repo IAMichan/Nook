@@ -137,6 +137,8 @@ extension AppModel {
     func requestPermission(_ request: @escaping @MainActor () async -> Void) {
         Task { @MainActor in
             await request()
+            // Nook just opened System Settings for this permission: the user has to flip the switch there.
+            if let opened = PermissionMonitor.shared.openedSettings, Date().timeIntervalSince(opened) < 3 { return }
             NSApp.activate(ignoringOtherApps: true)
             settingsWindow?.makeKeyAndOrderFront(nil)
         }
