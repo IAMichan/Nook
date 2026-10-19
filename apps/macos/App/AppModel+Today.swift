@@ -30,14 +30,15 @@ extension AppModel {
                 target: .action { [weak self] in
                     self?.missedNudge = nil
                     self?.viewModel.show(.card(missed.card))
-                }
+                },
+                logo: .symbol("sparkles")
             ))
         }
 
         if let attention = autocompleteAttentionItem() { items.append(attention) }
 
         for session in hub.sessions where session.status == .waiting || session.status == .failed {
-            let title = session.status == .waiting ? "\(session.name) wacht op je" : "\(session.name) heeft een fout"
+            let title = session.status == .waiting ? tr("app.today.agentWaiting", session.name) : tr("app.today.agentFailed", session.name)
             items.append(TodayItem(
                 id: "agent-\(session.id)",
                 title: title,
@@ -86,7 +87,8 @@ extension AppModel {
                 subtitle: tr("app.today.openSince", NookDates.short(loop.created)),
                 action: tr("app.today.finish"),
                 color: NookTheme.amber,
-                target: .action { [weak self] in self?.presentLoop(loop) }
+                target: .action { [weak self] in self?.presentLoop(loop) },
+                logo: .symbol("checklist")
             ))
         }
         var shown = Array(items.prefix(5))

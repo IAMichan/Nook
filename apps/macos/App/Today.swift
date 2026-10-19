@@ -12,7 +12,8 @@ struct TodayItem: Identifiable {
     /// What the item is about, shown as its real icon instead of the colored dot.
     var logo: Logo? = nil
 
-    enum Logo { case source(String), agent(String) }
+    /// A connection's icon, an agent's logo, or an SF Symbol for Nook's own items.
+    enum Logo: Hashable { case source(String), agent(String), symbol(String) }
 }
 
 enum Greeting {
