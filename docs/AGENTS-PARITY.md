@@ -103,6 +103,24 @@ Verschillen die bewust blijven: de chat heeft geen modus of rechten (het brein v
 
 Nog niet: `#` zoekt geen pull requests (je typt het nummer), de inspanning-stapper, `/goal`, "Implement in a new thread" bij een plan en een eigen plek voor het contextvenster.
 
+## Derde ronde
+
+Aanvullingen op de tweede ronde, voor wat daar nog ontbrak:
+
+| | In Nook | Waar |
+|---|---|---|
+| Takenlijst boven het invoerveld (ComposerTasksBadge) | **Taken · huidige stap · 3/7** met een streepje per stap, open te klappen. Uit Claude Code's `TodoWrite` (niet van subagents), Codex' `turn/plan/updated` en ACP's `plan`. Een lijst die af is verdwijnt bij de volgende beurt. | `RunTasks`, `TasksStrip` |
+| Subagent-balk | Claude Code's `Task`/`Agent`-aanroepen van de lopende beurt: soort, opdracht, status en antwoord | `Subagents`, `SubagentBar` |
+| PR volgen en wekken | ⋯ › **Volg pull request** (vanzelf voor een PR die Nook opende): CI, reviews, opmerkingen en de merge als nieuws in de tijdlijn; mislukte CI, een review of een opmerking gaat als bericht naar de agent. Hooguit eens per twee minuten, alleen GitHub. | `PullRequestNews`, `GitHubPullRequests.snapshot` |
+| Opmerkingen bij de diff | In de wijzigingen: beweeg over een regel › opmerking. Alle opmerkingen gaan samen als `<review_comment>` naar de agent. | `ReviewComments`, `DiffText` |
+| Citeren | Rechtsklik op een antwoord › **Citeer in je bericht** | `ReviewComments.quote` |
+| Terminal-context | ⋯ › **Voeg terminaluitvoer toe**: de laatste regels als `<terminal_context>` | `AgentRunPanel` |
+| Minimap | Een streepje per eigen bericht naast een lang gesprek; klik springt erheen | `TurnMinimap` |
+| HTML en Mermaid | Codeblokken `html`, `svg` en `mermaid` met **Bekijk**: een webweergave zonder opslag, zonder JavaScript voor HTML van de agent en zonder navigatie | `CodeRenderView` |
+| Delen | ⋯ › **Kopieer gesprek als Markdown** of **Bewaar als Markdown…** (lokaal, niets online) | `SessionExport` |
+
+Nog niet: extra agents (Pi, Muse, elke ACP-agent uit het register) en sessies op een andere machine (SSH). Een nieuwe agent raakt de accountlaag (elke sessie hoort bij een account van een bekende agentsoort), logo's, gebruik en het starten; een externe machine raakt alles wat aanneemt dat de map lokaal bestaat (git, checkpoints, worktrees, diffs). Dat bouwen we pas als de macOS-build weer draait.
+
 ## Bewust anders dan 
 
 - **Sessietitels opnieuw laten schrijven** halverwege een gesprek zit er niet in; je kunt een sessie altijd zelf hernoemen.
