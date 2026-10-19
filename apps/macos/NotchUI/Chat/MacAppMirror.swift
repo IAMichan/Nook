@@ -40,7 +40,8 @@ final class MacAppMirror: ObservableObject {
     private(set) var app: EmbeddedApp?
     private var pid: pid_t?
     private var windowID: CGWindowID?
-    /// The window's whole frame, and the part of it on its display that the picture shows. Top-left origin.
+    /// The window's whole frame, and the part of the screen the picture shows: the screen under the pane once the window
+    /// lies there, else the window itself. Top-left origin.
     private var fullFrame: CGRect = .zero
     private var shownFrame: CGRect = .zero
     private var displayID: CGDirectDisplayID?
@@ -270,19 +271,15 @@ final class MacAppMirror: ObservableObject {
         }
         let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
         if frame != fullFrame {
-            let display = CGDisplayBounds(displayID)
-            let shown = frame.intersection(display)
-            guard !shown.isEmpty, shown.width > 40, shown.height > 40 else {
+            let onDisplay = frame.intersection(CGDisplayBounds(displayID))
+            guard !onDisplay.isEmpty, onDisplay.width > 40, onDisplay.height > 40 else {
                 // On another display now (the pane is there): capture that one.
                 findAgain()
                 return
             }
             // Moved away from under the pane (dragged by its title bar): it may go back.
-            if aligned { alignTries = 0 }
+            if underPane { alignTries = 0 }
             fullFrame = frame
-            shownFrame = shown
-            let configuration = configuration(for: shown, on: display)
-            Task { try? await stream.updateConfiguration(configuration) }
         }
         // The pane moved or resized, or the window left it: put the window back under the pane. A few tries per spot,
         // so an app that refuses (a minimum size larger than the pane) is not pushed forever.
@@ -290,6 +287,20 @@ final class MacAppMirror: ObservableObject {
             if target != alignTarget { alignTries = 0 }
             if alignTries < 3 { alignWindow() }
         }
+        updateCapture(stream)
+    }
+
+    /// Points the capture at what the picture should show. With the window under the pane that is exactly the screen
+    /// under the pane, 1:1, so every pixel of the picture is the pixel a click falls through to, even when the app is
+    /// larger than the pane (a minimum size) and part of it sticks out. Otherwise it is the window, scaled into the pane.
+    private func updateCapture(_ stream: SCStream) {
+        guard let displayID else { return }
+        let display = CGDisplayBounds(displayID)
+        let shown = ((underPane ? holeTarget : nil) ?? fullFrame).intersection(display)
+        guard !shown.isNull, shown.width > 2, shown.height > 2, shown != shownFrame else { return }
+        shownFrame = shown
+        let configuration = configuration(for: shown, on: display)
+        Task { try? await stream.updateConfiguration(configuration) }
     }
 
     private func findAgain() {
@@ -314,8 +325,15 @@ final class MacAppMirror: ObservableObject {
                       width: hole.width.rounded(), height: hole.height.rounded())
     }
 
-    /// True when the real window lies exactly under the picture.
-    var aligned: Bool {
+    /// True when the real window starts at the pane's top-left corner. Its size may differ (an app with a minimum size
+    /// larger than the pane): the picture then shows the part under the pane, and the pointer still lands right.
+    var underPane: Bool {
+        guard let target = holeTarget else { return false }
+        return abs(fullFrame.minX - target.minX) < 2 && abs(fullFrame.minY - target.minY) < 2
+    }
+
+    /// True when the real window lies exactly under the picture, size included.
+    private var aligned: Bool {
         guard let target = holeTarget else { return false }
         return abs(fullFrame.minX - target.minX) < 2 && abs(fullFrame.minY - target.minY) < 2
             && abs(fullFrame.width - target.width) < 2 && abs(fullFrame.height - target.height) < 2
@@ -343,6 +361,11 @@ final class MacAppMirror: ObservableObject {
         Self.set(element, size: target.size)
         Self.set(element, position: target.origin)
         raise(activating: false)
+        // Pick up the new frame right away instead of at the next tick, so the pointer can fall through sooner.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            self?.checkWindow()
+        }
     }
 
     private func restoreFrame() {
@@ -365,7 +388,7 @@ final class MacAppMirror: ObservableObject {
     /// Whether the notch should let the pointer through at `mouse` (Cocoa coordinates): over the picture, with the real
     /// window right under it and in front. If another app's window is in the way, the real window is raised first.
     func passesThrough(at mouse: NSPoint) -> Bool {
-        guard status == .showing, aligned, let pid, let hole, hole.contains(mouse), let main = NSScreen.screens.first else { return false }
+        guard status == .showing, underPane, let pid, let hole, hole.contains(mouse), let main = NSScreen.screens.first else { return false }
         if Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y)) { return true }
         raise(activating: false)
         return false
@@ -436,14 +459,17 @@ final class MacAppMirror: ObservableObject {
     /// A click that reached the picture instead of the window under it. With the window under the pane, another app's
     /// window was in the way: bring the app forward, the next click lands. Otherwise send it as an event.
     func pressed(_ event: NSEvent, at local: CGPoint, in size: CGSize) {
-        if aligned { raise(activating: true) } else { forward(event, at: local, in: size) }
+        if underPane { raise(activating: true) } else { forward(event, at: local, in: size) }
     }
 
     /// A mouse or scroll event on the picture, at `local` (top-left origin) in a pane of `size`, sent to the app at the
     /// same spot in its window: the fallback without Accessibility. Moving the pointer is sent `quietly`: without
     /// permission it is dropped without a word.
     func forward(_ event: NSEvent, at local: CGPoint, in size: CGSize, quietly: Bool = false) {
-        guard status == .showing, !aligned, let pid,
+        // The window lies under the pane but something is in front of it there: raise it, so the next move, scroll or
+        // click falls through onto it.
+        if status == .showing, underPane { return raise(activating: false) }
+        guard status == .showing, let pid,
               let point = MirrorGeometry.screenPoint(local, view: size, window: shownFrame),
               mayControl(quietly: quietly), let copy = event.cgEvent?.copy() else { return }
         copy.location = point
@@ -459,7 +485,7 @@ final class MacAppMirror: ObservableObject {
 
     /// A key typed while the picture has focus, sent to the app as is (shortcuts included).
     func forwardKey(_ event: NSEvent) {
-        guard status == .showing, !aligned, let pid, mayControl(quietly: false), let copy = event.cgEvent?.copy() else { return }
+        guard status == .showing, !underPane, let pid, mayControl(quietly: false), let copy = event.cgEvent?.copy() else { return }
         copy.postToPid(pid)
     }
 
