@@ -56,28 +56,37 @@ enum ClaudeCloudSessions {
         return org
     }
 
+    /// A session that says it runs or waits for you but has not changed for this long is not active any more: the list
+    /// keeps reporting "running" or "requires_action" for sessions left behind days ago, which would bring them back
+    /// on top of the Agents list.
+    static let staleAfter: TimeInterval = 6 * 3600
+
     /// The sessions in a list response (`{"data": [...]}`), newest first. Archived sessions are left out.
-    static func parse(_ data: Data) -> [CloudSession] {
+    static func parse(_ data: Data, now: Date = Date()) -> [CloudSession] {
         let root = try? JSONSerialization.jsonObject(with: data)
         let object = (root as? [String: Any]) ?? [:]
         let items = (object["data"] as? [[String: Any]]) ?? (object["sessions"] as? [[String: Any]]) ?? (root as? [[String: Any]]) ?? []
-        return items.compactMap(session).filter { $0.status != .archived }.sorted { $0.updated > $1.updated }
+        return items.compactMap { session($0, now: now) }.filter { $0.status != .archived }.sorted { $0.updated > $1.updated }
     }
 
-    static func session(_ item: [String: Any]) -> CloudSession? {
+    static func session(_ item: [String: Any], now: Date = Date()) -> CloudSession? {
         guard let id = item["id"] as? String, !id.isEmpty else { return nil }
         let context = (item["session_context"] as? [String: Any]) ?? [:]
         let created = date(item["created_at"]) ?? .distantPast
+        let changed = date(item["updated_at"]) ?? date(item["created_at"])
+        var state = status(item["session_status"] as? String ?? item["status"] as? String ?? "")
+        // Without any date there is nothing to tell its age by: the status is taken as it is.
+        if state == .running || state == .needsYou, let changed, now.timeIntervalSince(changed) > staleAfter { state = .idle }
         return CloudSession(
             id: id,
             title: ((item["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-            status: status(item["session_status"] as? String ?? item["status"] as? String ?? ""),
+            status: state,
             origin: (item["origin"] as? String) ?? "",
             repository: repository(context["sources"]),
             branch: branch(context["outcomes"]),
             model: (context["model"] as? String) ?? "",
             created: created,
-            updated: date(item["updated_at"]) ?? created
+            updated: changed ?? created
         )
     }
 

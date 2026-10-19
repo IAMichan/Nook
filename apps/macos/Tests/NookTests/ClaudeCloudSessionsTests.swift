@@ -2,8 +2,10 @@ import XCTest
 
 /// Sessions in Anthropic's cloud (Claude app, claude.ai/code) read from the account's session list.
 final class ClaudeCloudSessionsTests: XCTestCase {
-    private func parse(_ json: String) -> [CloudSession] {
-        ClaudeCloudSessions.parse(Data(json.utf8))
+    private static let now = NookDates.isoPlain.date(from: "2026-10-19T09:00:00Z")!
+
+    private func parse(_ json: String, now: Date = now) -> [CloudSession] {
+        ClaudeCloudSessions.parse(Data(json.utf8), now: now)
     }
 
     func testASessionFromTheDesktopAppIsRead() {
@@ -51,6 +53,22 @@ final class ClaudeCloudSessionsTests: XCTestCase {
         ]}
         """#)
         XCTAssertEqual(sessions.map(\.id), ["new", "old"])
+    }
+
+    func testASessionLeftRunningOrWaitingLongAgoIsNotActive() {
+        let json = #"""
+        {"data": [
+          {"id": "waits", "session_status": "requires_action", "updated_at": "2026-10-14T08:00:00Z"},
+          {"id": "runs", "session_status": "running", "updated_at": "2026-10-19T00:00:00Z"},
+          {"id": "fresh", "session_status": "requires_action", "updated_at": "2026-10-19T08:30:00Z"}
+        ]}
+        """#
+        let sessions = Dictionary(uniqueKeysWithValues: parse(json).map { ($0.id, $0) })
+        XCTAssertEqual(sessions["waits"]?.status, .idle)
+        XCTAssertEqual(sessions["runs"]?.status, .idle)
+        XCTAssertEqual(sessions["fresh"]?.status, .needsYou)
+        XCTAssertFalse(sessions["waits"]?.isActive ?? true)
+        XCTAssertTrue(sessions["fresh"]?.isActive ?? false)
     }
 
     func testStatuses() {
