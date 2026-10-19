@@ -74,13 +74,14 @@ extension AppModel {
         Je kijkt ongevraagd mee. Is er één concreet ding dat jij nu voor hem kunt overnemen met een actie-tool (iets inplannen, \
         een herinnering of open punt, een concept schrijven, een app of link openen), of weet je een duidelijk slimmere of snellere \
         aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan; bied nooit iets aan ("Zal ik…?") zonder die tool aan te roepen. \
-        Begin je tekst met één korte vraag of tip van hooguit acht woorden, zoals "Zal ik hem herinneren aan de deadline van vrijdag?" \
+        Begin je tekst met één korte vraag of tip van hooguit acht woorden, zoals "Zal ik dit antwoord voor je opstellen?" \
         of "Tip: dit kan ook in één keer", daarna hooguit twee zinnen uitleg. \
         Alleen als het hem echt tijd scheelt of voorkomt dat hij iets vergeet; samenvattingen, complimenten of wat hij al doet tellen niet. \
         Plan of herinner alleen iets als er op het scherm een concrete datum, tijd, deadline of afspraak met iemand staat. \
         Gewoon bezig zijn met werk (code, een pull request, een document, een tool of app) is nooit een reden voor een agendapunt of herinnering. \
         Kijk bij datums van herinneringen en afspraken altijd naar het volledige jaartal en vergelijk met de huidige datum ("Nu"): \
         alleen wat binnen twee dagen valt of al verlopen is, is dichtbij; iets over weken, maanden of een jaar is geen reden om te melden. \
+        Bied nooit aan om te herinneren aan iets dat al in Nooks herinneringen, open punten of agenda staat. \
         Twijfel je, antwoord dan alleen NONE.
         """
         let earlier = thinkAlong.recentOffers
@@ -110,8 +111,10 @@ extension AppModel {
         if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }
         guard !body.isEmpty || !plan.actions.isEmpty else { return }
 
-        let line = Self.nudgeLine(body: body, fallback: planSteps(plan.actions).first.map { tr("app.nudge.shall", $0.text) })
+        let line = NudgeFilter.line(body: body, fallback: planSteps(plan.actions).first.map { tr("app.nudge.shall", $0.text) })
         guard !line.isEmpty, !thinkAlong.alreadyOffered(line) else { return }
+        // Something that is weeks or a year away (a domain renewal next September) is no reason to interrupt now.
+        guard !NudgeFilter.isFarOff(Self.mentionedDates(in: body)) else { return }
         // An offer ("Shall I…?") without an action would do nothing when accepted; only plain tips may go without one.
         guard !plan.actions.isEmpty || !line.hasSuffix("?") else { return }
 
@@ -122,23 +125,17 @@ extension AppModel {
         missedNudge = (line, card, appName, Date())
     }
 
-    /// Concise teaser beside notch: first sentence of the offer, max ~60 characters.
-    static func nudgeLine(body: String, fallback: String?) -> String {
-        let first = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        var line = first
-        if let end = first.firstIndex(where: { $0 == "?" || $0 == "." || $0 == "!" }) {
-            line = String(first[...end])
-        }
-        line = line.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
-        if line.isEmpty { line = fallback ?? "" }
-        return line.count > 64 ? String(line.prefix(62)) + "…" : line
+    /// Dates the offer talks about ("2027-09-20", "next Friday"), as the system's date detector reads them.
+    static func mentionedDates(in text: String) -> [Date] {
+        guard !text.isEmpty, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else { return [] }
+        return detector.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap(\.date)
     }
 
     /// Full proposal: what Nook observed, suggested action, with Accept, Dismiss, or Mute in App.
     func nudgeCard(_ plan: BrainPlan, offers: [String], bundleID: String, appName: String) -> NookCard {
         let token = "nudge-" + UUID().uuidString
         let title = plan.text.isEmpty ? tr("app.nudge.title") : String(plan.text.prefix(600))
-        let topic = Self.nudgeLine(body: plan.text, fallback: tr("app.nudge.title"))
+        let topic = NudgeFilter.line(body: plan.text, fallback: tr("app.nudge.title"))
         // Accepted, the proposal goes on in the chat: the outcome shows there and can be adjusted with a follow-up.
         let shown = BrainPlan(text: title, actions: plan.actions)
         viewModel.register("\(token)#yes") { [weak self] in
@@ -149,7 +146,7 @@ extension AppModel {
             if !plan.actions.isEmpty { self.continueInChat(shown, title: topic, sources: [appName], offers: offers) }
         }
         viewModel.register("\(token)#no") { [weak self] in
-            self?.thinkAlong.declined()
+            self?.thinkAlong.declined(topic)
             self?.missedNudge = nil
             self?.cardReplies[token] = nil
         }
