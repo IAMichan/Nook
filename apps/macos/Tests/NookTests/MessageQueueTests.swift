@@ -36,6 +36,17 @@ final class MessageQueueTests: XCTestCase {
         XCTAssertEqual(q.messages.map(\.text), ["b"])
     }
 
+    func testRequeueFirstGoesInFrontEvenWhenFull() {
+        var q = queue("a")
+        q.requeueFirst(" back ")
+        q.requeueFirst("  ")
+        XCTAssertEqual(q.messages.map(\.text), ["back", "a"])
+        for i in 0..<60 { q.enqueue("m\(i)") }
+        q.requeueFirst("first")
+        XCTAssertEqual(q.messages.first?.text, "first")
+        XCTAssertEqual(q.count, MessageQueue.limit + 1)
+    }
+
     func testMoveClampsAndReverses() {
         var q = queue("a", "b", "c")
         let a = q.messages[0].id

@@ -102,6 +102,14 @@ struct MessageQueue: Codable, Equatable, Sendable {
         return messages.remove(at: index).text
     }
 
+    /// Puts a message that could not go out back at the front. It was shown already, so the limit does not apply:
+    /// it waits instead of getting lost.
+    mutating func requeueFirst(_ text: String, now: Date = Date()) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        messages.insert(QueuedMessage(text: trimmed, createdAt: now), at: 0)
+    }
+
     mutating func clear() {
         messages.removeAll()
         editSession = nil

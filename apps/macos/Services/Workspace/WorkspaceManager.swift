@@ -586,7 +586,7 @@ final class WorkspaceManager: ObservableObject {
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
             // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
             if !send(id, text: waiting, shown: true) {
-                queued[id, default: []].insert(waiting, at: 0)
+                queued[id, default: MessageQueue()].requeueFirst(waiting)
                 sendQueued(id)
             }
         } else {
