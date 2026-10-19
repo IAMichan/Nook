@@ -24,11 +24,11 @@ extension AgentDisplayState {
     var tone: StatusTone { AgentStatusStyle.tone(self) }
 }
 
-/// A status as a small neutral capsule that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
+/// A status as a small neutral badge that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
 /// Only the symbol (or the live dot) carries the status color; the word stays in the row's own greys, and turns
 /// paper-white when the agent waits on you. That keeps a list of badges calm instead of a row of colored blocks.
-/// 16pt high like `PullRequestPill`, so a row with a badge is as tall as one without. `detail` follows a middle dot
-/// in tabular digits, such as "3m" or "tot 9:00".
+/// It wears `RowBadgeBackground`, like `PullRequestPill`, so a row with a badge is as tall as one without.
+/// `detail` follows a middle dot in tabular digits, such as "3m" or "tot 9:00".
 struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
@@ -60,13 +60,25 @@ struct AgentStatusBadge: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 6)
-        .frame(height: 16)
-        .background(Capsule().fill(Color.white.opacity(0.055)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
-        .fixedSize()
+        .modifier(RowBadgeBackground())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
+    }
+}
+
+/// The ground every small badge in a row stands on (status, pull request): the app's own subtle fill and hairline,
+/// in the same 5pt corner as `Chip`, 16pt high so it fits a 12pt text line without making the row taller.
+struct RowBadgeBackground: ViewModifier {
+    var horizontal: CGFloat = 6
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        content
+            .padding(.horizontal, horizontal)
+            .frame(height: 16)
+            .background(shape.fill(WS.subtle))
+            .overlay(shape.strokeBorder(WS.border, lineWidth: 0.5))
+            .fixedSize()
     }
 }
 
