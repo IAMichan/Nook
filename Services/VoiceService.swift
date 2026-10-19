@@ -56,7 +56,7 @@ final class VoiceService: ObservableObject {
     }
 
     /// "Taal van mijn vraag": Nook listens in your languages at once (up to three, on-device) and keeps the one it was
-    /// surest of, like Coucou's dictation. Otherwise one recognizer in the chosen language.
+    /// surest of. Otherwise one recognizer in the chosen language.
     private var multi: MultiDictation?
     private var multiPoll: Task<Void, Never>?
 

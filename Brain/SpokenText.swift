@@ -1,7 +1,7 @@
 import Foundation
 
 /// An answer as it is read aloud: no Markdown, links, code or source numbers, and said sentence by sentence while it is
-/// still being written (Coucou's voice does the same), so Nook starts talking right away. Tested in SpokenTextTests.
+/// still being written, so Nook starts talking right away. Tested in SpokenTextTests.
 enum SpokenText {
     /// The words of a Markdown answer, the way a person would read them out.
     static func plain(_ markdown: String) -> String {

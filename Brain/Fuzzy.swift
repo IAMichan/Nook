@@ -1,7 +1,7 @@
 import Foundation
 
 /// Names as people say or type them: "spotfy" is Spotify, "lsia" is Lisa, "rekenmachine" is the Calculator's Dutch name.
-/// After Coucou's EntityResolver (aliases, exact, words, then Levenshtein ≤ 2; MIT, © 2026 Louis Raillé).
+/// After open-source code (aliases, exact, words, then Levenshtein ≤ 2; MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 /// Tested in FuzzyTests.
 enum Fuzzy {
     /// Lowercase, without accents, separators or a trailing ".app".

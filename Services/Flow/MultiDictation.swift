@@ -1,5 +1,4 @@
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/MacDictation.swift),
-// MIT License, Copyright (c) 2026 Louis Raillé.
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 import AVFoundation
 import Carbon

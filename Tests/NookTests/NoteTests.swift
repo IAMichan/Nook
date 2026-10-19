@@ -1,6 +1,6 @@
 import XCTest
 
-/// The Notetaker's transcript, summary and search. Partly after Coucou's tests/NoteModelsTests.swift (MIT, © 2026 Louis Raillé).
+/// The Notetaker's transcript, summary and search. Partly after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 final class NoteTests: XCTestCase {
     private func words(_ text: String, from start: Double, step: Double = 0.3) -> [TimedWord] {
         text.split(separator: " ").enumerated().map { index, word in

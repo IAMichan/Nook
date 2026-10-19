@@ -7,7 +7,7 @@ import os
 /// The Notetaker: records a call (your microphone, and what the Mac plays for the other people), writes the transcript
 /// while you talk, and afterwards the summary, key points and to-dos with your own brain (on this Mac by default).
 ///
-/// Unlike Coucou, the audio never touches the disk: each stretch is transcribed on the Mac as soon as it ends on a pause
+/// The audio never touches the disk: each stretch is transcribed on the Mac as soon as it ends on a pause
 /// and then forgotten. With Parakeet the others' side also stays in memory during the call, only so the diarizer can
 /// tell the people apart at the end. Notes are kept as JSON in Application Support/Nook/Notes, and Nook can search them in the chat
 /// ("wat spraken we af met Lisa?"). No bot joins the call: tell the other people that you take notes.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// "Maak ongedaan": what reverses an action Nook just carried out. Coucou's voice can undo its own pill changes; Nook
+/// "Maak ongedaan": what reverses an action Nook just carried out. Nook
 /// undoes what it did in your calendar, reminders and to-dos, as a plan you approve like any other (tested in UndoTests).
 enum Undo {
     struct Step: Equatable {

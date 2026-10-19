@@ -9,8 +9,7 @@ import os
 /// then everything runs on this Mac. Used for Flow dictation and the Notetaker, which then also tells the other people
 /// in a call apart.
 ///
-/// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/ParakeetEngine.swift), MIT License,
-/// Copyright (c) 2026 Louis Raillé.
+/// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 @MainActor
 final class Parakeet: ObservableObject {
     static let shared = Parakeet()

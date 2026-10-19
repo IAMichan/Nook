@@ -3,7 +3,7 @@ import ScreenCaptureKit
 import SwiftUI
 
 /// Hold ⌥ and drag Nook onto any window: a halo shows which one, and when you let go a picture of that window (and the
-/// text in it) is attached to the chat, so you can ask about it. Coucou does this with Mochi; in Nook the orb does it.
+/// text in it) is attached to the chat, so you can ask about it. In Nook the orb does it.
 @MainActor
 final class WindowAttach {
     static let shared = WindowAttach()

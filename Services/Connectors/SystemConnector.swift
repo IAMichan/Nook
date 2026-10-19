@@ -2,7 +2,7 @@ import SwiftUI
 import IOKit.ps
 
 /// "Deze Mac" as a source for the chat: processor, memory, temperature, battery, disk and the heaviest apps, read on
-/// the Mac when asked (nothing runs in the background). Coucou turns the same readings into Mochi's mood.
+/// the Mac when asked (nothing runs in the background).
 @MainActor
 final class SystemConnector: ContextSource {
     let id = "system"

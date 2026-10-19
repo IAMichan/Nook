@@ -1,7 +1,7 @@
 import XCTest
 
 /// Flow, dictation anywhere: the key, the dictionary, the merging of recognizer results and the clean-up's checks.
-/// Partly after Coucou's tests/FlowKeyLogicTests.swift and FlowTextTests.swift (MIT, © 2026 Louis Raillé).
+/// Partly after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 final class FlowTests: XCTestCase {
     func testHoldToDictateAndDoubleTapForHandsFree() {
         var logic = FlowKeyLogic()

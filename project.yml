@@ -22,7 +22,7 @@ packages:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.0
   FluidAudio:
-    # Parakeet speech-to-text and speaker diarization on the Neural Engine (Apache-2.0), the same version Coucou ships.
+    # Parakeet speech-to-text and speaker diarization on the Neural Engine (Apache-2.0).
     url: https://github.com/FluidInference/FluidAudio
     exactVersion: 0.17.7
   SwiftTerm:

@@ -5,8 +5,7 @@ import SwiftUI
 // A part of the screen, after ⌥⌘4: ask Nook about it, paste it where you were (⌃V in a terminal, so Claude Code takes
 // the image), copy it, or mark it up first with arrows, boxes and a pen.
 //
-// The paste and the annotation window are adapted from Coucou (github.com/Louis-CFM/coucou,
-// NotchBuddy/Sources/App/ScreenCapture.swift), MIT License, Copyright (c) 2026 Louis Raillé.
+// The paste and the annotation window are adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 enum ScreenPartPaste {
     /// Terminals take an image with ⌃V (Claude Code reads the clipboard itself), other apps with ⌘V.

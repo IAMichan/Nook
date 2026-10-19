@@ -1,8 +1,7 @@
 // Flow, dictation anywhere: the key logic, what Nook does to the words before pasting them, and the merging of the
 // recognizer's results. Foundation only, tested in Tests/NookTests/FlowTests.swift.
 //
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/FlowKeyLogic.swift, FlowText.swift,
-// DictationTranscript.swift and FlowCleanup.swift), MIT License, Copyright (c) 2026 Louis Raillé.
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 import Foundation
 
@@ -337,7 +336,7 @@ struct DictationTranscript: Equatable {
         return p[0].lowercased() != n[0].lowercased()
     }
 
-    /// Lowercase letters and digits, single spaces: "Salut, Nook !" → "salut coucou".
+    /// Lowercase letters and digits, single spaces: "Salut, Nook !" → "salut nook".
     static func normalized(_ s: String) -> String {
         let kept = s.lowercased().map { $0.isLetter || $0.isNumber ? $0 : " " }
         return String(kept).split(whereSeparator: \.isWhitespace).joined(separator: " ")

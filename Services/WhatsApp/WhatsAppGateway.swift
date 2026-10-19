@@ -2,8 +2,7 @@
 // what the gateways send and answer. Pure Foundation (and CryptoKit for the webhook's signature), tested without the app
 // in Tests/NookTests/WhatsAppTests.swift. Nothing parsed here is ever written to disk or to a log.
 //
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/WhatsAppModels.swift and
-// WhatsAppGateway.swift), MIT License, Copyright (c) 2026 Louis Raillé. The gateway field names come from their docs:
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md). The gateway field names come from their docs:
 //   GOWA   — github.com/aldinokemal/go-whatsapp-web-multidevice (docs/webhook-payload.md, docs/openapi.yaml)
 //   OpenWA — github.com/rmyndharis/OpenWA (docs/06-api-specification.md)
 

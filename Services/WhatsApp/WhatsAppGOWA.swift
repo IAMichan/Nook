@@ -1,8 +1,7 @@
 // GOWA, the local WhatsApp gateway, run by Nook: installed with one click from GOWA's own GitHub releases (SHA-256
 // checked), started as a child of Nook on 127.0.0.1 only, stopped when Nook quits.
 //
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/WhatsAppGOWAProcess.swift and
-// WhatsAppGOWAInstaller.swift), MIT License, Copyright (c) 2026 Louis Raillé.
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 import Foundation
 import Combine

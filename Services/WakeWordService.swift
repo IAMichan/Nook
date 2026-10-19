@@ -6,7 +6,7 @@ import Speech
 /// Listens in the background for "Hey Nook" and triggers active listening.
 /// Disabled by default and requires on-device speech recognition: audio never leaves your Mac.
 ///
-/// Frugal, like Coucou's "OK Coucou": the microphone only measures loudness until someone speaks (EnergyVAD); speech
+/// Frugal: the microphone only measures loudness until someone speaks (EnergyVAD); speech
 /// recognition runs for that stretch only, with the half second before it, and stops in the silence after. Listening
 /// pauses while the screen is locked or asleep and in Low Power Mode, and comes back by itself.
 @MainActor

@@ -3,8 +3,7 @@ import Foundation
 // Energy-based voice-activity detection for the wake word: speech recognition only runs while someone speaks, so the
 // microphone costs almost nothing in silence. Pure Foundation, tested in EnergyVADTests.
 //
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/Voice/EnergyVAD.swift), MIT License,
-// Copyright (c) 2026 Louis Raillé.
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 //
 // Algorithm:
 //   - Calibration phase (~0.5 s): fast noise-floor learning, no triggers.

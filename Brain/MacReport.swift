@@ -2,7 +2,7 @@ import Foundation
 
 /// How the Mac is doing, in words the brain can use: "waarom is mijn Mac traag?", "hoe vol is mijn schijf?", "wat slurpt
 /// mijn batterij?". The numbers come from MacStatus (on the Mac); this part reads `ps` and writes the text (tested in
-/// MacReportTests). Coucou shows the same readings as Mochi's mood (MachineVitals); Nook answers questions with them.
+/// MacReportTests). Nook answers questions with the readings.
 struct MacReport: Equatable {
     struct App: Equatable {
         var name: String

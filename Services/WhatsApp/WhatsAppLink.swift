@@ -89,7 +89,7 @@ enum WhatsAppSettings {
 /// WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
-/// The lifecycle follows Coucou's WhatsAppController (github.com/Louis-CFM/coucou, MIT, © 2026 Louis Raillé).
+/// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 @MainActor
 final class WhatsAppLink: ObservableObject {
     static let shared = WhatsAppLink()

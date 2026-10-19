@@ -1,9 +1,9 @@
 import XCTest
 import CoreGraphics
 
-/// What Nook took over from Coucou: the weather without a key, images for brains that can see, and model lists without
+/// The weather without a key, images for brains that can see, and model lists without
 /// models that cannot chat.
-final class CoucouLessonsTests: XCTestCase {
+final class ExtrasTests: XCTestCase {
     // MARK: Weather
 
     func testDefaultPlaceIsTheCityOfTheTimeZone() {

@@ -10,7 +10,7 @@ import SwiftUI
 /// and cleans the words with your own brain, on this Mac by default, so the words never leave it unless you chose an
 /// external brain. Watching the key and pasting need the Accessibility permission. Off until you turn it on.
 ///
-/// The flow follows Coucou's FlowDictation (github.com/Louis-CFM/coucou, MIT, © 2026 Louis Raillé).
+/// The flow after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 @MainActor
 final class FlowDictation: ObservableObject {
     static let shared = FlowDictation()
@@ -287,7 +287,7 @@ final class FlowDictation: ObservableObject {
 // MARK: - Paste
 
 /// Puts the words where the cursor is: on the clipboard, then ⌘V, then the clipboard gets back what it held.
-/// After Coucou's FlowPaste (MIT, © 2026 Louis Raillé).
+/// after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 enum FlowPaste {
     /// Marks the words as passing through, so clipboard managers leave them out of their history (nspasteboard.org).
     static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")

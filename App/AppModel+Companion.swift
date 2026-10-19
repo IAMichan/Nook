@@ -1,4 +1,4 @@
-// What Nook took over from Coucou and does better: WhatsApp, Flow, the Notetaker, shortcuts, undo and attaching a window.
+// WhatsApp, Flow, the Notetaker, shortcuts, undo and attaching a window.
 import SwiftUI
 import Combine
 

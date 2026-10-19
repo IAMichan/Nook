@@ -1,7 +1,7 @@
 import XCTest
 
 /// WhatsApp through a local gateway: conversations in memory, what the gateways send, the webhook's signature, and who a
-/// recipient means. Partly after Coucou's tests/WhatsAppTests.swift (MIT, © 2026 Louis Raillé).
+/// recipient means. Partly after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
 final class WhatsAppTests: XCTestCase {
     private func message(_ id: String, chat: String, from: String? = nil, text: String = "hoi", at: Double = 0,
                          fromMe: Bool = false, mention: Bool = false, name: String = "Lisa") -> WAMessage {

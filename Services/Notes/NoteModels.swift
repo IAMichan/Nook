@@ -1,8 +1,7 @@
 // The Notetaker's notes: a call's transcript, summary, key points and to-dos, and how the transcript is built from the two
 // recordings. Foundation only, tested in Tests/NookTests/NoteTests.swift.
 //
-// Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/NoteModels.swift), MIT License,
-// Copyright (c) 2026 Louis Raillé. Without Parakeet the microphone is you and the Mac's sound is "the others"; with it, the diarizer tells the others apart.
+// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md). Without Parakeet the microphone is you and the Mac's sound is "the others"; with it, the diarizer tells the others apart.
 
 import Foundation
 

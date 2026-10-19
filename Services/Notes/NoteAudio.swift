@@ -1,8 +1,7 @@
 // The Notetaker's audio: your microphone and what the Mac plays (the other people of a call), as 16 kHz mono samples,
 // kept in memory only until they are transcribed. Nothing is written to disk.
 //
-// MicCapture, SystemAudioTap and Resampler16k are adapted from Coucou (github.com/Louis-CFM/coucou,
-// NotchBuddy/Sources/App/NoteAudio.swift and ParakeetEngine.swift), MIT License, Copyright (c) 2026 Louis Raillé.
+// MicCapture, SystemAudioTap and Resampler16k are adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 import AudioToolbox
 import AVFoundation

@@ -9,7 +9,7 @@ import FoundationModels
 /// The model has a small window (about 4k tokens), so Nook gives it the smallest profile: a few tools, its own lookups
 /// done first (Research), and a narrow second try for actions. Tools are described in the instructions and called as one
 /// JSON object, the same way Nook already reads tool calls that small local models write as text; the shared ToolRunner
-/// and ActionGate check them as for every brain. Coucou uses the same model for its voice commands.
+/// and ActionGate check them as for every brain.
 enum AppleIntelligence {
     enum Status: Equatable {
         case available
