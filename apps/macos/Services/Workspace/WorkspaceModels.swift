@@ -497,8 +497,12 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// Long tool output clipped; the full version is stored in the agent's own transcript.
     static let outputLimit = 16_000
 
+    /// An MCP app's page (see McpUI) is shown, not read: it has to arrive whole.
+    static let appOutputLimit = 256_000
+
     static func clip(_ text: String, _ limit: Int = outputLimit) -> String {
-        text.count > limit ? String(text.prefix(limit)) + "\n…" : text
+        let limit = limit == outputLimit && text.contains(McpUI.fence) ? appOutputLimit : limit
+        return text.count > limit ? String(text.prefix(limit)) + "\n…" : text
     }
 }
 

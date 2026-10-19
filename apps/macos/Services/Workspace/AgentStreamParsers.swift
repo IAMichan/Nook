@@ -226,7 +226,7 @@ enum ClaudeStreamParser {
             return blocks.compactMap { block -> String? in
                 if let text = block["text"] as? String { return text }
                 if (block["type"] as? String) == "image" { return "[image]" }
-                return nil
+                return McpUI.encode(block)
             }.joined(separator: "\n")
         }
         return ""

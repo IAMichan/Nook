@@ -210,7 +210,8 @@ enum AcpMapper {
         var paths: [String] = []
         for item in (raw["content"] as? [[String: Any]]) ?? [] {
             switch item["type"] as? String {
-            case "content": if let text = text(item["content"]) { output.append(text) }
+            case "content":
+                if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
             case "diff": if let path = item["path"] as? String { paths.append(path) }
             default: break
             }

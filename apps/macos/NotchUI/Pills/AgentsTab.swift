@@ -21,6 +21,7 @@ struct AgentsTab: View {
         case terminals
         case browser
         case worktrees
+        case simulator
         case new
     }
 
@@ -69,6 +70,7 @@ struct AgentsTab: View {
                 case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
                 case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
                 case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
+                case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
                 case .new:
                     if app.demoMode {
                         nothingRunning
@@ -148,6 +150,7 @@ struct AgentsTab: View {
         if id == AgentsPage.terminals && !app.demoMode { return .terminals }
         if id == AgentsPage.browser && !app.demoMode { return .browser }
         if id == AgentsPage.worktrees && !app.demoMode { return .worktrees }
+        if id == AgentsPage.simulator && !app.demoMode { return .simulator }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
             if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
@@ -172,6 +175,7 @@ struct AgentsTab: View {
         case .terminals: return AgentsPage.terminals
         case .browser: return AgentsPage.browser
         case .worktrees: return AgentsPage.worktrees
+        case .simulator: return AgentsPage.simulator
         case .new: return "new"
         }
     }

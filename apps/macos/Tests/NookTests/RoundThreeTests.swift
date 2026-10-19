@@ -374,4 +374,50 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertFalse(plain.contains("cd "))
         XCTAssertTrue(GitService(executable: "git", remote: target).remote != nil)
     }
+
+    func testBrowserSearchEngine() {
+        XCTAssertEqual(BrowserSearchEngine.address("example.com", engine: .google)?.absoluteString, "https://example.com")
+        XCTAssertEqual(BrowserSearchEngine.address("localhost:3000", engine: .google)?.absoluteString, "http://localhost:3000")
+        XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .google)?.absoluteString,
+                       "https://www.google.com/search?q=swift%20actors")
+        XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .duckDuckGo)?.host, "duckduckgo.com")
+        XCTAssertNil(BrowserSearchEngine.address("   ", engine: .bing))
+        XCTAssertNil(BrowserSearchEngine.address("file:///etc/passwd", engine: .bing).flatMap { $0.isFileURL ? $0 : nil })
+        let defaults = UserDefaults(suiteName: "browser-search-\(UUID().uuidString)")!
+        XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .duckDuckGo)
+        defaults.set("kagi", forKey: BrowserSearchEngine.defaultsKey)
+        XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .kagi)
+    }
+
+    func testMcpUIResource() {
+        let html = "<html><body>```not the end```<button>Go</button></body></html>"
+        let block: [String: Any] = ["type": "resource", "resource": ["uri": "ui://chart/1", "mimeType": "text/html", "text": html]]
+        let output = ClaudeStreamParser.resultText([["type": "text", "text": "Here is the chart"], block])
+        XCTAssertEqual(McpUI.resource(in: output), McpUI.Resource(uri: "ui://chart/1", html: html, link: nil))
+        XCTAssertEqual(McpUI.stripped(output), "Here is the chart")
+        let link: [String: Any] = ["type": "resource", "resource": ["uri": "ui://dash", "mimeType": "text/uri-list",
+                                                                   "text": "# comment\nhttps://example.com/dash"]]
+        XCTAssertEqual(McpUI.resource(in: McpUI.encode(link)), McpUI.Resource(uri: "ui://dash", html: nil, link: URL(string: "https://example.com/dash")))
+        let blob: [String: Any] = ["type": "resource", "resource": ["uri": "ui://b", "mimeType": "text/html",
+                                                                   "blob": Data("<p>hi</p>".utf8).base64EncodedString()]]
+        XCTAssertEqual(McpUI.resource(in: McpUI.encode(blob))?.html, "<p>hi</p>")
+        // Not a UI resource, or a page that was clipped: nothing to show.
+        XCTAssertNil(McpUI.encode(["type": "resource", "resource": ["uri": "file:///a", "mimeType": "text/html", "text": "x"]]))
+        XCTAssertNil(McpUI.resource(in: "```mcp-ui ui://x\n<html>…"))
+        XCTAssertEqual(RunEvent.clip(String(repeating: "a", count: 20_000)).count, RunEvent.outputLimit + 2)
+        XCTAssertEqual(RunEvent.clip(McpUI.fence + String(repeating: "a", count: 20_000)).count, 20_000 + McpUI.fence.count)
+    }
+
+    func testSimulatorParsing() {
+        let json = #"""
+        {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-2":[
+          {"udid":"B","name":"iPhone 16","state":"Booted"},{"udid":"C","name":"iPad","state":"Shutdown"}],
+          "com.apple.CoreSimulator.SimRuntime.watchOS-11-0":[{"udid":"A","name":"Apple Watch","state":"Booted"}]}}
+        """#
+        let devices = Simulators.parse(Data(json.utf8))
+        XCTAssertEqual(devices.map(\.udid), ["A", "B"])
+        XCTAssertEqual(devices.last?.runtime, "iOS 18.2")
+        XCTAssertEqual(Simulators.runtimeName("com.apple.CoreSimulator.SimRuntime.xrOS-2-0"), "xrOS 2.0")
+        XCTAssertTrue(Simulators.parse(Data("nope".utf8)).isEmpty)
+    }
 }

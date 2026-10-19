@@ -71,17 +71,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Opens what the user typed: an address, or otherwise a search.
     func go(_ input: String) {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        let url: URL?
-        if text.contains("."), !text.contains(" "), let parsed = URL(string: text.hasPrefix("http") ? text : "https://" + text) {
-            url = parsed
-        } else {
-            var components = URLComponents(string: "https://duckduckgo.com/")
-            components?.queryItems = [URLQueryItem(name: "q", value: text)]
-            url = components?.url
-        }
-        guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
         openedBy = nil
         webView.load(URLRequest(url: url))
     }

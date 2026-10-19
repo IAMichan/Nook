@@ -183,6 +183,9 @@ targets:
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
+      - path: Services/Workspace/BrowserSearch.swift
+      - path: Services/Workspace/McpUI.swift
+      - path: Services/Workspace/Simulators.swift
       - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
