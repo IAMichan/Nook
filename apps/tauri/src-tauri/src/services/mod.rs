@@ -68,6 +68,9 @@ pub fn setup(app: &AppHandle) {
     let mut capabilities = platform::capabilities();
     platform::service_capabilities(&platform, &mut capabilities);
     platform::set_measured(capabilities);
+    // De snelle opdrachten in de chat zoeken muziek en systeem als losse diensten.
+    app.manage(platform.media.clone());
+    app.manage(platform.system.clone());
     app.manage(Services {
         platform,
         prefs: RwLock::new(ServicePrefs::load()),

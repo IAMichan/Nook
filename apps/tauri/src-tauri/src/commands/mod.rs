@@ -1,13 +1,13 @@
 //! De commando's die de interface aanroept (`invoke`). Lange taken (een vraag aan het brein) draaien op de
 //! achtergrond en melden zich met events: `nook-stream` (tekst terwijl hij geschreven wordt) en `nook-updated`.
 
+pub mod brain;
+pub mod chat;
 pub mod companion;
+pub mod plans;
 
-use std::time::{Duration, Instant};
-
-use nook_core::brain::service::{self, BrainEnv, BrainRequest};
 use nook_core::brain::PromptImage;
-use nook_core::nooks::{ChatMessage, Conversation, ConversationSummary, PlanState, StepState};
+use nook_core::nooks::{Conversation, ConversationSummary};
 use nook_core::platform::Capabilities;
 use nook_core::provider::{AIProvider, ProviderInfo};
 use nook_core::secrets::mask;
@@ -18,7 +18,6 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::state::AppState;
-use crate::tools;
 
 pub mod connectors;
 pub mod services;
@@ -32,6 +31,10 @@ pub struct AppInfo {
     capabilities: Capabilities,
     brain_label: String,
     brain_local: bool,
+    /// Het geheugen van deze computer in GB, voor het modeladvies.
+    memory_gb: u64,
+    /// Het gekozen brein kan denken (sleutel, model of programma aanwezig).
+    brain_ready: bool,
 }
 
 #[tauri::command]
@@ -42,6 +45,8 @@ pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         capabilities: crate::platform::capabilities(),
         brain_label: s.brain_label(),
         brain_local: s.is_local_brain(),
+        memory_gb: crate::brain::memory_gb(),
+        brain_ready: nook_core::brain::service::brain_ready(&s, state.key_for(s.provider).is_some_and(|k| !k.is_empty())),
     }
 }
 
@@ -163,227 +168,39 @@ pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pi
     updated(&app, &id);
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StreamEvent<'a> {
-    nook_id: &'a str,
-    message_id: &'a str,
-    text: String,
-}
-
-/// Stelt een vraag in deze Nook. Geeft meteen het id van het antwoordbericht terug; de rest komt via events.
+/// Stelt een vraag in deze Nook. Geeft meteen het id van het antwoord terug (niets bij een snelle opdracht); de rest
+/// komt via events.
 #[tauri::command]
-pub fn ask(app: AppHandle, state: State<'_, AppState>, nook_id: String, text: String, images: Option<Vec<PromptImage>>) -> Res<String> {
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return Err("Lege vraag".into());
-    }
-    let images = images.unwrap_or_default();
-    let mut answer = ChatMessage::nook("");
-    answer.streaming = true;
-    answer.status = "Denkt na…".into();
-    let message_id = answer.id.clone();
-    let history = state.with_chat(|c| {
-        let history = c.get(&nook_id).map(|conv| conv.history(12)).unwrap_or_default();
-        let mut question = ChatMessage::user(&text);
-        question.images = images.iter().map(|i| format!("data:{};base64,{}", i.media_type, i.base64)).collect();
-        c.push(&nook_id, question);
-        c.push(&nook_id, answer);
-        if let Some(conv) = c.get_mut(&nook_id) {
-            conv.busy = true;
-        }
-        history
-    });
-    updated(&app, &nook_id);
-
-    let settings = state.settings();
-    let ctx = tools::ToolCtx::new(&app, &text).in_nook(&nook_id);
-    let env = BrainEnv { key: state.key_for(settings.provider), memory_gb: 16, country: None, timezone: None };
-    let task_app = app.clone();
-    let (nid, mid) = (nook_id.clone(), message_id.clone());
-    let handle = tauri::async_runtime::spawn(async move {
-        let app = task_app;
-        let request = BrainRequest {
-            text: text.clone(),
-            history,
-            context: tools::context(&ctx).await,
-            screen: crate::services::screen::for_question(&app, &nid, &mid, &text).await,
-            images,
-            tools: tools::tools(&ctx),
-        };
-        let last = std::sync::Mutex::new(Instant::now() - Duration::from_secs(1));
-        let emit = |partial: String| {
-            let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
-            if guard.elapsed() < Duration::from_millis(40) {
-                return;
-            }
-            *guard = Instant::now();
-            let _ = app.emit("nook-stream", StreamEvent { nook_id: &nid, message_id: &mid, text: partial });
-        };
-        let result = service::run(&settings, &env, request, Some(&emit)).await;
-        let state = app.state::<AppState>();
-        state.with_chat(|c| {
-            let is_active = c.active_id.as_deref() == Some(nid.as_str());
-            let Some(conv) = c.get_mut(&nid) else { return };
-            conv.busy = false;
-            if !is_active {
-                conv.unread = true;
-            }
-            let Some(msg) = conv.messages.iter_mut().find(|m| m.id == mid) else { return };
-            msg.streaming = false;
-            msg.status.clear();
-            match result {
-                Ok(plan) => {
-                    let (body, offers) = service::split_offers(&plan.text);
-                    msg.text = body;
-                    msg.offers = offers;
-                    if !plan.actions.is_empty() {
-                        msg.action_included = vec![true; plan.actions.len()];
-                        msg.action_states = vec![StepState::Pending; plan.actions.len()];
-                        msg.plan_state = Some(PlanState::Pending);
-                        msg.actions = plan.actions;
-                        if msg.text.is_empty() {
-                            msg.text = "Dit is mijn voorstel. Er gebeurt niets tot je op Uitvoeren klikt.".into();
-                        }
-                    }
-                    if msg.text.is_empty() {
-                        msg.text = "Ik heb hier geen antwoord op gekregen. Probeer het nog eens of kies een ander brein.".into();
-                        msg.is_error = true;
-                    }
-                }
-                Err(e) => {
-                    msg.text = e.0;
-                    msg.is_error = true;
-                }
-            }
-        });
-        state.running.lock().unwrap_or_else(|e| e.into_inner()).remove(&nid);
-        state.save_chat();
-        updated(&app, &nid);
-    });
-    state.running.lock().unwrap_or_else(|e| e.into_inner()).insert(nook_id, handle.inner().abort_handle());
-    Ok(message_id)
+pub fn ask(
+    app: AppHandle,
+    nook_id: String,
+    text: String,
+    images: Option<Vec<PromptImage>>,
+    attachment: Option<chat::Attachment>,
+) -> Res<Option<String>> {
+    chat::ask(&app, &nook_id, &text, images.unwrap_or_default(), attachment)
 }
 
 /// Stopt de lopende vraag in deze Nook.
 #[tauri::command]
-pub fn stop(app: AppHandle, state: State<'_, AppState>, nook_id: String) {
-    if let Some(handle) = state.running.lock().unwrap_or_else(|e| e.into_inner()).remove(&nook_id) {
-        handle.abort();
-    }
-    state.with_chat(|c| {
-        if let Some(conv) = c.get_mut(&nook_id) {
-            conv.busy = false;
-            for m in conv.messages.iter_mut().filter(|m| m.streaming) {
-                m.streaming = false;
-                m.status.clear();
-                if m.text.is_empty() {
-                    m.text = "Gestopt.".into();
-                }
-            }
-        }
-    });
-    state.save_chat();
-    updated(&app, &nook_id);
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanStep {
-    tool: String,
-    summary: String,
+pub fn stop(app: AppHandle, nook_id: String) {
+    chat::stop(&app, &nook_id);
 }
 
 #[tauri::command]
-pub fn plan_steps(state: State<'_, AppState>, nook_id: String, message_id: String) -> Vec<PlanStep> {
-    state.with_chat(|c| {
-        c.get(&nook_id)
-            .and_then(|conv| conv.messages.iter().find(|m| m.id == message_id))
-            .map(|m| m.actions.iter().map(|a| PlanStep { tool: a.tool.clone(), summary: tools::summarize(&a.tool, &a.input) }).collect())
-            .unwrap_or_default()
-    })
+pub fn plan_steps(app: AppHandle, nook_id: String, message_id: String) -> Vec<plans::PlanStep> {
+    plans::plan_steps(&app, &nook_id, &message_id)
 }
 
 /// Voert de goedgekeurde stappen van een plan uit. Een stap die al eerder gelukt is, wordt niet herhaald.
 #[tauri::command]
-pub async fn execute_plan(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    nook_id: String,
-    message_id: String,
-    included: Vec<bool>,
-    inputs: Option<Vec<Value>>,
-) -> Res<()> {
-    let actions = state.with_chat(|c| {
-        let msg = c.get_mut(&nook_id)?.messages.iter_mut().find(|m| m.id == message_id)?;
-        if let Some(inputs) = &inputs {
-            for (a, input) in msg.actions.iter_mut().zip(inputs) {
-                a.input = input.clone();
-            }
-        }
-        msg.action_included = included.clone();
-        msg.plan_state = Some(PlanState::Running);
-        Some(msg.actions.clone())
-    });
-    let Some(actions) = actions else { return Err("Dit plan bestaat niet meer.".into()) };
-    updated(&app, &nook_id);
-    let store = state.store.clone();
-    let ctx = tools::ToolCtx::new(&app, "").in_nook(&nook_id);
-    let mut failed = None;
-    for (index, action) in actions.iter().enumerate() {
-        let step = if !included.get(index).copied().unwrap_or(true) {
-            StepState::Skipped
-        } else {
-            let key = format!("{}:{}", action.tool, action.input);
-            if let Some(when) = store.executed_action(&key, 600) {
-                StepState::Duplicate(when.with_timezone(&chrono::Local).format("%H:%M").to_string())
-            } else {
-                match tools::execute(&ctx, &action.tool, &action.input).await {
-                    Ok(result) => {
-                        store.record_executed(&key, &action.tool, &result);
-                        store.audit(&action.tool, &action.input.to_string(), &result);
-                        StepState::Done(result)
-                    }
-                    Err(e) => {
-                        store.audit(&action.tool, &action.input.to_string(), &format!("fout: {e}"));
-                        failed.get_or_insert(e.clone());
-                        StepState::Failed(e)
-                    }
-                }
-            }
-        };
-        state.with_chat(|c| {
-            if let Some(m) = c.get_mut(&nook_id).and_then(|conv| conv.messages.iter_mut().find(|m| m.id == message_id)) {
-                if m.action_states.len() < actions.len() {
-                    m.action_states.resize(actions.len(), StepState::Pending);
-                }
-                m.action_states[index] = step;
-            }
-        });
-        updated(&app, &nook_id);
-    }
-    state.with_chat(|c| {
-        if let Some(m) = c.get_mut(&nook_id).and_then(|conv| conv.messages.iter_mut().find(|m| m.id == message_id)) {
-            m.plan_state = Some(match &failed {
-                Some(e) => PlanState::Failed(e.clone()),
-                None => PlanState::Done("Klaar".into()),
-            });
-        }
-    });
-    state.save_chat();
-    updated(&app, &nook_id);
-    Ok(())
+pub async fn execute_plan(app: AppHandle, nook_id: String, message_id: String, included: Vec<bool>, inputs: Option<Vec<Value>>) -> Res<()> {
+    plans::run_plan(&app, &nook_id, &message_id, &included, inputs, &[]).await
 }
 
 #[tauri::command]
-pub fn cancel_plan(app: AppHandle, state: State<'_, AppState>, nook_id: String, message_id: String) {
-    state.with_chat(|c| {
-        if let Some(m) = c.get_mut(&nook_id).and_then(|conv| conv.messages.iter_mut().find(|m| m.id == message_id)) {
-            m.plan_state = Some(PlanState::Cancelled);
-        }
-    });
-    state.save_chat();
-    updated(&app, &nook_id);
+pub fn cancel_plan(app: AppHandle, nook_id: String, message_id: String) {
+    plans::cancel(&app, &nook_id, &message_id);
 }
 
 #[tauri::command]

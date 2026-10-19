@@ -46,6 +46,8 @@ pub struct ToolRunner {
     cache: HashMap<String, String>,
     /// Namen van aangeroepen tools, in volgorde (voor tests en diagnose).
     pub trace: Vec<String>,
+    /// Tools die tijdens het gesprek vrijkomen (`use_source`); ze doen vanaf de volgende aanroep mee.
+    pub unlocked: std::sync::Arc<std::sync::Mutex<Vec<LoopTool>>>,
 }
 
 impl ToolRunner {
@@ -54,7 +56,28 @@ impl ToolRunner {
     }
 
     pub fn with(tools: Vec<LoopTool>, limits: Limits, validate: Validator, normalize: Normalizer) -> Self {
-        Self { tools, limits, validate, normalize, actions: vec![], call_count: 0, repairs_used: 0, cache: HashMap::new(), trace: vec![] }
+        Self {
+            tools,
+            limits,
+            validate,
+            normalize,
+            actions: vec![],
+            call_count: 0,
+            repairs_used: 0,
+            cache: HashMap::new(),
+            trace: vec![],
+            unlocked: Default::default(),
+        }
+    }
+
+    /// Neemt de vrijgekomen tools op.
+    fn absorb(&mut self) {
+        let extra: Vec<LoopTool> = std::mem::take(&mut *self.unlocked.lock().unwrap_or_else(|e| e.into_inner()));
+        for tool in extra {
+            if !self.tools.iter().any(|t| t.name == tool.name) {
+                self.tools.push(tool);
+            }
+        }
     }
 
     pub fn tools(&self) -> &[LoopTool] {
@@ -75,6 +98,7 @@ impl ToolRunner {
 
     /// Behandelt één aanroep en geeft terug wat het model te zien krijgt.
     pub async fn handle(&mut self, name: &str, input: &Value) -> (String, bool) {
+        self.absorb();
         self.call_count += 1;
         self.trace.push(name.to_string());
         if self.call_count > self.limits.calls {
@@ -129,6 +153,7 @@ impl ToolRunner {
                     cb(format!("{before}{partial}"));
                 }
             };
+            self.absorb();
             let mut turn = conversation.next(&self.tools, Some(&prefixed)).await?;
 
             // Kleine modellen schrijven een tool-aanroep vaak als JSON in hun tekst in plaats van hem aan te roepen.
@@ -169,7 +194,7 @@ impl ToolRunner {
     }
 }
 
-fn sorted(value: &Value) -> Value {
+pub fn sorted(value: &Value) -> Value {
     match value {
         Value::Object(map) => {
             let mut keys: Vec<&String> = map.keys().collect();

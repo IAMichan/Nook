@@ -12,12 +12,13 @@ use crate::{nook_err, Result};
 pub async fn complete(settings: &Settings, key: Option<String>, system: &str, prompt: &str, max_tokens: u32) -> Result<String> {
     let provider = settings.provider;
     let model = settings.active_model();
+    let memory = crate::brain::profile::system_memory_gb().unwrap_or(16);
     let mut conversation: Box<dyn ModelConversation> = match provider {
         AIProvider::Claude => {
             let key = key.filter(|k| !k.is_empty()).ok_or_else(|| nook_err!("Er is nog geen Anthropic API-sleutel."))?;
             Box::new(AnthropicConversation::new(&model, &key, system, &[], prompt, &[], None, max_tokens))
         }
-        AIProvider::Ollama => Box::new(OllamaConversation::new(&model, system, &[], prompt, &[], profile_for(settings), 16)),
+        AIProvider::Ollama => Box::new(OllamaConversation::new(&model, system, &[], prompt, &[], profile_for(settings, memory), memory)),
         AIProvider::ClaudeCode => return Err(nook_err!("Claude Code als brein kan hier (nog) niet herschrijven.")),
         other => {
             if other.needs_key() && key.as_deref().unwrap_or("").is_empty() {

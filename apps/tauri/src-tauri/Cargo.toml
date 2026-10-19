@@ -34,6 +34,10 @@ tauri-plugin-notification = "2"
 base64 = "0.22"
 percent-encoding = "2"
 dirs.workspace = true
+reqwest.workspace = true
+fancy-regex = "0.14"
+url = "2"
+iana-time-zone = "0.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
@@ -81,6 +85,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+windows-sys = { version = "0.59", features = ["Win32_System_SystemInformation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

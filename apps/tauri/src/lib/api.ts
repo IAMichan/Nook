@@ -22,8 +22,8 @@ export const api = {
   deleteNook: (id: string) => invoke<void>("nook_delete", { id }),
   setNookFlags: (id: string, flags: { pinned?: boolean; archived?: boolean }) => invoke<void>("nook_set_flags", { id, ...flags }),
 
-  ask: (nookId: string, text: string, images?: { mediaType: string; base64: string }[]) =>
-    invoke<string>("ask", { nookId, text, images }),
+  ask: (nookId: string, text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) =>
+    invoke<string | null>("ask", { nookId, text, images, attachment }),
   stop: (nookId: string) => invoke<void>("stop", { nookId }),
   planSteps: (nookId: string, messageId: string) => invoke<PlanStep[]>("plan_steps", { nookId, messageId }),
   executePlan: (nookId: string, messageId: string, included: boolean[], inputs?: unknown[]) =>

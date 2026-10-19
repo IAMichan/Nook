@@ -33,8 +33,9 @@
     const id = nook.activeId ?? (await api.activeNook());
     nook.activeId = id;
     try {
+      // Een snelle opdracht heeft meteen een antwoord en geen bericht om te volgen.
       const messageId = await api.ask(id, text);
-      await services.voiceFollow(id, messageId);
+      if (messageId) await services.voiceFollow(id, messageId);
     } catch (e) {
       nook.error = String(e);
     }

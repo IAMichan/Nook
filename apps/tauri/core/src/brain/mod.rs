@@ -1,10 +1,47 @@
 //! Het brein: één tool-loop voor elk model (Anthropic, OpenAI-compatibel, Ollama, Claude Code), net als op de Mac.
 
+/// Een reguliere expressie die één keer gebouwd wordt (met lookaround, zoals de patronen op de Mac).
+macro_rules! rx {
+    ($pattern:expr) => {{
+        static R: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
+        R.get_or_init(|| fancy_regex::Regex::new($pattern).expect("geldig patroon"))
+    }};
+}
+
+/// Of het patroon ergens in de tekst voorkomt.
+pub(crate) fn matches(re: &fancy_regex::Regex, text: &str) -> bool {
+    re.is_match(text).unwrap_or(false)
+}
+
+pub mod action_gate;
+pub mod chart;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod claude_code;
+pub mod command_risk;
 pub mod conversations;
+pub mod dates;
+pub mod follow_ups;
+pub mod fuzzy;
 pub mod http;
+pub mod intent;
+pub mod local_intent;
+pub mod memory;
+pub mod model_download;
+pub mod network_guard;
+pub mod prepare;
+pub mod profile;
+pub mod quality;
+pub mod query_plan;
+pub mod research;
+pub mod retrieval;
 pub mod service;
+pub mod sources;
+pub mod suggestions;
 pub mod text;
 pub mod tool_loop;
+pub mod undo;
+pub mod weather;
+pub mod web;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -65,6 +102,8 @@ pub struct LoopTool {
     pub schema: Value,
     pub kind: ToolKind,
     pub run: ToolFn,
+    /// De bron waar deze tool bij hoort (`calendar`, `web`, …); het register vult dit in.
+    pub source: Option<String>,
 }
 
 impl LoopTool {
@@ -73,7 +112,14 @@ impl LoopTool {
         F: Fn(Value) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = crate::Result<String>> + Send + 'static,
     {
-        Self { name: name.into(), description: description.into(), schema, kind: ToolKind::Read, run: Arc::new(move |v| Box::pin(run(v))) }
+        Self {
+            name: name.into(),
+            description: description.into(),
+            schema,
+            kind: ToolKind::Read,
+            run: Arc::new(move |v| Box::pin(run(v))),
+            source: None,
+        }
     }
 
     /// Een actie draait nooit in de loop; hij wordt een voorstel.
@@ -84,7 +130,19 @@ impl LoopTool {
             schema,
             kind: ToolKind::Action,
             run: Arc::new(|_| Box::pin(async { Ok(String::new()) })),
+            source: None,
         }
+    }
+
+    /// Dezelfde tool, als onderdeel van een bron.
+    pub fn in_source(mut self, source: &str) -> Self {
+        self.source = Some(source.to_string());
+        self
+    }
+
+    /// De velden die de tool verplicht nodig heeft.
+    pub fn required(&self) -> Vec<String> {
+        self.schema["required"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect()
     }
 }
 

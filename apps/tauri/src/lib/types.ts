@@ -1,4 +1,5 @@
 // Dezelfde vormen als de Rust-structs in nook-core (serde, camelCase).
+import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, SourceScope } from "./brain";
 
 export type ProviderId =
   | "claude" | "claudeCode" | "openai" | "gemini" | "grok" | "mistral" | "groq"
@@ -75,11 +76,13 @@ export interface AppInfo {
   capabilities: Capabilities;
   brainLabel: string;
   brainLocal: boolean;
+  memoryGb: number;
+  brainReady: boolean;
 }
 
 export type Tagged<K extends string> = { kind: K; detail?: string };
 export type PlanState = Tagged<"pending" | "running" | "done" | "cancelled" | "failed">;
-export type StepState = Tagged<"pending" | "running" | "done" | "failed" | "skipped" | "duplicate">;
+export type StepState = Tagged<"pending" | "approved" | "running" | "done" | "verified" | "failed" | "notRun" | "skipped" | "duplicate">;
 
 export interface PlannedAction {
   id: string;
@@ -89,6 +92,7 @@ export interface PlannedAction {
 
 export interface SourceReference {
   number: number;
+  sourceId: string;
   title: string;
   detail: string;
   url?: string | null;
@@ -104,14 +108,21 @@ export interface ChatMessage {
   status: string;
   images: string[];
   sources: string[];
+  retrieval: RetrievalStep[];
   references: SourceReference[];
+  contextSources: string[];
+  scopeLabel: string;
   notices: string[];
+  charts: ChatChart[];
+  mails: MailDraft[];
   actions: PlannedAction[];
   planState: PlanState | null;
   actionStates: StepState[];
   actionIncluded: boolean[];
   actionProblems: string[][];
   offers: string[];
+  recovery: Recovery | null;
+  attachment: string | null;
 }
 
 export type ConversationStatus = "working" | "waiting" | "unread" | "idle";
@@ -125,6 +136,7 @@ export interface Conversation {
   unread: boolean;
   pinned: boolean;
   archived: boolean;
+  scope: SourceScope | null;
 }
 
 export interface ConversationSummary {
@@ -156,6 +168,8 @@ export interface AuditEntry {
 export interface PlanStep {
   tool: string;
   summary: string;
+  fields: ActionField[];
+  tag: string;
 }
 
 export interface StreamEvent {

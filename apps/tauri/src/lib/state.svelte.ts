@@ -61,11 +61,17 @@ class NookState {
     await this.select(id);
   }
 
-  async ask(text: string, images?: { mediaType: string; base64: string }[]) {
+  /// De actieve Nook (maakt er een als er nog geen is).
+  async ensureActive(): Promise<string> {
     if (!this.activeId) this.activeId = await api.activeNook();
+    return this.activeId;
+  }
+
+  async ask(text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) {
+    await this.ensureActive();
     this.error = null;
     try {
-      await api.ask(this.activeId!, text, images);
+      await api.ask(this.activeId!, text, images, attachment);
     } catch (e) {
       this.error = String(e);
     }

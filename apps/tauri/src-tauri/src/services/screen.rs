@@ -156,7 +156,7 @@ pub struct LiveSummary {
 pub async fn for_question(app: &AppHandle, nook_id: &str, message_id: &str, text: &str) -> Option<(String, String)> {
     let settings = app.state::<AppState>().settings();
     let explicit = screen::refers_to_screen(text);
-    let small = settings.provider.is_local_server() && nook_core::brain::service::profile_for(&settings).max_tools <= 16;
+    let small = settings.provider.is_local_server() && nook_core::brain::service::profile_for(&settings, crate::brain::memory_gb()).max_tools <= 16;
     let services = app.state::<Services>();
     if !services.platform.screen.available() || !allowed(app) {
         return None;

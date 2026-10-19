@@ -77,7 +77,7 @@ pub async fn continue_in_chat(
     #[cfg(desktop)]
     crate::platform::desktop::open_bar(app, &format!("nook:{id}"));
     if run && count > 0 {
-        let _ = crate::commands::execute_plan(app.clone(), app.state::<AppState>(), id, message_id, vec![true; count], None).await;
+        let _ = crate::commands::execute_plan(app.clone(), id, message_id, vec![true; count], None).await;
     }
 }
 

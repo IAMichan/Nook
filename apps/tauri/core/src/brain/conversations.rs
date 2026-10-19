@@ -538,33 +538,7 @@ impl ModelConversation for OpenAIConversation {
 
 // MARK: Ollama
 
-/// Hoeveel context en uitvoer een model krijgt. Ollama's standaardcontext is klein en zou Nooks prompt stilletjes afknippen.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ModelProfile {
-    pub context_tokens: u32,
-    pub max_output_tokens: u32,
-    pub max_tools: usize,
-    pub rounds: usize,
-}
-
-impl ModelProfile {
-    pub const CLOUD: Self = Self { context_tokens: 200_000, max_output_tokens: 4096, max_tools: 64, rounds: 6 };
-    pub const LOCAL_SMALL: Self = Self { context_tokens: 8192, max_output_tokens: 1024, max_tools: 8, rounds: 3 };
-    pub const LOCAL_MEDIUM: Self = Self { context_tokens: 16_384, max_output_tokens: 2048, max_tools: 16, rounds: 4 };
-    pub const LOCAL_LARGE: Self = Self { context_tokens: 32_768, max_output_tokens: 3072, max_tools: 32, rounds: 6 };
-
-    /// Een lokaal servermodel, afgaand op het aantal parameters in de naam ("qwen2.5:7b", "llama3.1:70b").
-    pub fn for_server_model(name: &str) -> Self {
-        static R: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let re = R.get_or_init(|| regex::Regex::new(r"(?i)(\d+(?:\.\d+)?)\s*b\b").unwrap());
-        let size = re.captures(name).and_then(|c| c[1].parse::<f64>().ok()).unwrap_or(7.0);
-        match size {
-            s if s >= 30.0 => Self::LOCAL_LARGE,
-            s if s >= 10.0 => Self::LOCAL_MEDIUM,
-            _ => Self::LOCAL_SMALL,
-        }
-    }
-}
+pub use super::profile::ModelProfile;
 
 /// Ollama via zijn eigen `/api/chat`, zodat de context ingesteld kan worden (`num_ctx`).
 pub struct OllamaConversation {
@@ -572,8 +546,18 @@ pub struct OllamaConversation {
     model: String,
     profile: ModelProfile,
     base_url: String,
+    thinking: bool,
     keep_alive: String,
     client: reqwest::Client,
+}
+
+/// Het adres van Ollama: `OLLAMA_HOST` als die gezet is (zoals Ollama zelf), anders deze computer.
+pub fn ollama_base_url() -> String {
+    match std::env::var("OLLAMA_HOST").ok().map(|h| h.trim().trim_end_matches('/').to_string()).filter(|h| !h.is_empty()) {
+        Some(host) if host.starts_with("http://") || host.starts_with("https://") => host,
+        Some(host) => format!("http://{host}"),
+        None => OllamaConversation::BASE_URL.into(),
+    }
 }
 
 impl OllamaConversation {
@@ -594,7 +578,8 @@ impl OllamaConversation {
             messages,
             model: model.into(),
             profile,
-            base_url: Self::BASE_URL.into(),
+            base_url: ollama_base_url(),
+            thinking: false,
             // Met geheugen over blijft het model geladen, zodat een vervolgvraag niet opnieuw op het laden wacht.
             keep_alive: if memory_gb >= 24 { "30m".into() } else { "5m".into() },
             client: http::client(AIProvider::Ollama),
@@ -607,6 +592,27 @@ impl OllamaConversation {
         self.base_url = base.trim_end_matches('/').into();
         self
     }
+
+    /// Een model dat kan redeneren, doet dat alleen bij moeilijke vragen.
+    pub fn with_thinking(mut self, thinking: bool) -> Self {
+        self.thinking = thinking;
+        self
+    }
+
+    /// Context, uitvoer en de sampling die de makers van het model aanraden.
+    fn options(&self) -> Value {
+        let sampling = super::profile::ModelFamily::of(&self.model).sampling(self.thinking);
+        let mut options = json!({
+            "num_ctx": self.profile.context_tokens,
+            "num_predict": if self.thinking { self.profile.thinking_output_tokens() } else { self.profile.max_output_tokens },
+            "temperature": sampling.temperature,
+            "top_p": sampling.top_p,
+        });
+        if sampling.top_k > 0 {
+            options["top_k"] = json!(sampling.top_k);
+        }
+        options
+    }
 }
 
 #[async_trait::async_trait]
@@ -616,7 +622,7 @@ impl ModelConversation for OllamaConversation {
             "model": self.model,
             "messages": self.messages,
             "stream": true,
-            "options": {"num_ctx": self.profile.context_tokens, "num_predict": self.profile.max_output_tokens, "temperature": 0.2},
+            "options": self.options(),
             "keep_alive": self.keep_alive,
         });
         if !tools.is_empty() {
@@ -693,13 +699,6 @@ impl ModelConversation for OllamaConversation {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn profiles_follow_model_size() {
-        assert_eq!(ModelProfile::for_server_model("qwen2.5:7b"), ModelProfile::LOCAL_SMALL);
-        assert_eq!(ModelProfile::for_server_model("qwen2.5:14b"), ModelProfile::LOCAL_MEDIUM);
-        assert_eq!(ModelProfile::for_server_model("llama3.1:70b"), ModelProfile::LOCAL_LARGE);
-    }
 
     #[test]
     fn images_go_with_the_question() {
