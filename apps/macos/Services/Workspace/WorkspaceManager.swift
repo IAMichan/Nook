@@ -127,6 +127,8 @@ final class WorkspaceManager: ObservableObject {
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
     var watchesInFlight: Set<UUID> = []
+    /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
+    var codexSubagents: [UUID: [String: UUID]] = [:]
     /// Comments on a session's diff, waiting to go to the agent together (review comments).
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]

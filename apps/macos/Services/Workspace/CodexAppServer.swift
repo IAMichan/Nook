@@ -299,6 +299,21 @@ enum CodexAppServerMapper {
                               finished: finished, failed: (item["success"] as? Bool) == false)]
         case "webSearch":
             return [.toolCall(id: id, name: "web_search", detail: (item["query"] as? String) ?? "", finished: finished, failed: false)]
+        case "collabAgentToolCall":
+            // Codex's subagents: spawning one, and every report of their state.
+            var events: [CodexStreamEvent] = []
+            if (item["tool"] as? String) == "spawnAgent" {
+                events.append(.subagentSpawned(id: id, prompt: (item["prompt"] as? String) ?? "", model: item["model"] as? String,
+                                               threads: (item["receiverThreadIds"] as? [String]) ?? [],
+                                               failed: (item["status"] as? String) == "failed"))
+            }
+            var states: [String: CodexAgentState] = [:]
+            for (thread, raw) in (item["agentsStates"] as? [String: Any]) ?? [:] {
+                guard let state = raw as? [String: Any], let status = state["status"] as? String else { continue }
+                states[thread] = CodexAgentState(status: status, message: state["message"] as? String)
+            }
+            if !states.isEmpty { events.append(.subagentStates(states)) }
+            return events
         case "plan":
             guard finished, let text = item["text"] as? String, !text.isEmpty else { return [] }
             return [.plan(text)]

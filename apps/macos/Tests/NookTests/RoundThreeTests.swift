@@ -247,4 +247,17 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertEqual(run.projectName, "box:app")
         XCTAssertTrue(run.isRemote)
     }
+
+    // MARK: Codex subagents
+
+    func testCodexSpawnAgent() {
+        let spawn = #"{"method":"item/started","params":{"item":{"type":"collabAgentToolCall","id":"c1","tool":"spawnAgent","status":"inProgress","prompt":"Find the login code","model":"gpt-5","senderThreadId":"t0","receiverThreadIds":["t1"],"agentsStates":{}}}}"#
+        XCTAssertEqual(CodexAppServerMapper.events(CodexRPC.parse(spawn)!),
+                       [.subagentSpawned(id: "c1", prompt: "Find the login code", model: "gpt-5", threads: ["t1"], failed: false)])
+        let wait = #"{"method":"item/completed","params":{"item":{"type":"collabAgentToolCall","id":"c2","tool":"wait","status":"completed","senderThreadId":"t0","receiverThreadIds":["t1"],"agentsStates":{"t1":{"status":"completed","message":"Found it in Auth.swift"}}}}}"#
+        XCTAssertEqual(CodexAppServerMapper.events(CodexRPC.parse(wait)!),
+                       [.subagentStates(["t1": CodexAgentState(status: "completed", message: "Found it in Auth.swift")])])
+        XCTAssertTrue(CodexAgentState(status: "errored").isFailure)
+        XCTAssertFalse(CodexAgentState(status: "running").isFinished)
+    }
 }

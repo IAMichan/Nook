@@ -332,6 +332,26 @@ extension WorkspaceManager {
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
         case .tasks(let steps):
             setTasks(id, steps)
+        case .subagentSpawned(let callID, let prompt, let model, let threads, let failed):
+            // The same shape as Claude Code's Agent call, so the subagent bar shows Codex's subagents too.
+            guard turns[id]?.toolEvents[callID] == nil else { return }
+            finishLiveText(id)
+            let input: [String: Any] = ["description": TimelinePresentation.headline(prompt, limit: 80), "prompt": prompt,
+                                        "subagent_type": model ?? "codex"]
+            let event = RunEvent(kind: .tool, text: "Agent · " + TimelinePresentation.headline(prompt, limit: 80), tool: "Agent",
+                                 callID: callID, detail: ToolSummary.json(input), state: failed ? .failed : .running)
+            turns[id]?.toolEvents[callID] = event.id
+            for thread in threads { codexSubagents[id, default: [:]][thread] = event.id }
+            append(id, event)
+        case .subagentStates(let states):
+            for (thread, state) in states where state.isFinished {
+                guard let eventID = codexSubagents[id]?[thread] else { continue }
+                mutateEvent(id, eventID) { event in
+                    event.state = state.isFailure ? .failed : .done
+                    if let message = state.message, !message.isEmpty { event.output = RunEvent.clip(message) }
+                }
+                codexSubagents[id]?[thread] = nil
+            }
         case .notice(let text):
             append(id, RunEvent(kind: .system, text: text == "compact" ? tr("ws.event.compacted") : text))
         default:

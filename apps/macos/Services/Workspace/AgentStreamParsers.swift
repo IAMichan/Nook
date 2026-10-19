@@ -324,10 +324,23 @@ enum CodexStreamEvent: Equatable, Sendable {
     case plan(String)
     /// The agent's task list (`turn/plan/updated`).
     case tasks([RunTaskStep])
+    /// Codex started subagents (`collabAgentToolCall` with `spawnAgent`): the call, its task and the threads they run on.
+    case subagentSpawned(id: String, prompt: String, model: String?, threads: [String], failed: Bool)
+    /// How Codex's subagents are doing, per thread (from any `collabAgentToolCall`, `wait` above all).
+    case subagentStates([String: CodexAgentState])
     case notice(String)
     case rateLimits(JSONBox)
     /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).
     case usageLimited
+}
+
+/// One Codex subagent's state: pendingInit, running, interrupted, completed, errored, shutdown, notFound.
+struct CodexAgentState: Equatable, Sendable {
+    var status: String
+    var message: String?
+
+    var isFinished: Bool { !["pendingInit", "running"].contains(status) }
+    var isFailure: Bool { ["errored", "interrupted", "notFound"].contains(status) }
 }
 
 struct CodexFileChange: Equatable, Sendable {
