@@ -601,6 +601,7 @@ struct AgentListRow: View {
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
+            .pointerStyle(.link)
             .help(label)
             .accessibilityLabel(label)
     }
