@@ -302,7 +302,12 @@ struct BrowserView: View {
                     Image(systemName: store.loading ? "xmark" : "arrow.clockwise")
                 }
                 TextField(tr("workbench.browser.address"), text: $store.address)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.04)))
                     .onSubmit { store.go(store.address) }
                 Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
                     .help(tr("browser.openExternal"))
@@ -315,7 +320,9 @@ struct BrowserView: View {
                 .disabled(store.webView.url == nil || asking)
             }
             .buttonStyle(.borderless)
-            .padding(10)
+            .foregroundStyle(NookTheme.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             if let agent = store.openedBy {
                 HStack(spacing: 6) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
@@ -327,7 +334,9 @@ struct BrowserView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 6)
             }
-            Divider()
+            // A line only above a page; the empty browser runs on into the background.
+            Rectangle().fill(NookTheme.line).frame(height: 1)
+                .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
             if store.webView.url == nil && !store.loading {
                 WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)
             }
