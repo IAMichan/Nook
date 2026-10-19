@@ -199,6 +199,14 @@ final class WorkspaceManager: ObservableObject {
     private var eventsDirty = false
     /// At most this often a view redraws for a changing timeline: about 20 times a second, smooth for streaming text.
     private static let eventsPublishInterval: UInt64 = 50_000_000
+    /// When each timeline in memory was last used. Every timeline ever opened used to stay in memory until Nook quit;
+    /// beyond `timelineLimit` the longest unused ones of idle sessions are released (`evictTimelines`) and read back from
+    /// disk when anything asks for them again (`evictedTimelines`).
+    private var timelineUse: [UUID: Date] = [:]
+    private var evictedTimelines: Set<UUID> = []
+    private static let timelineLimit = 16
+    /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
+    private var quietEvents = false
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
@@ -259,7 +267,8 @@ final class WorkspaceManager: ObservableObject {
         Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
-                self?.checkPullRequestWatches()
+                guard let self else { return }
+                self.checkPullRequestWatches()
             }
         }
         Task.detached(priority: .utility) {
@@ -301,14 +310,42 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func timeline(_ id: UUID) -> [RunEvent] {
-        if let loaded = events[id] { return loaded }
-        return []
+        if let loaded = events[id] {
+            timelineUse[id] = Date()
+            return loaded
+        }
+        guard evictedTimelines.contains(id) else { return [] }
+        // Released while unused: back from disk as if it had never left.
+        evictedTimelines.remove(id)
+        quietEvents = true
+        events[id] = store.loadEvents(id)
+        quietEvents = false
+        timelineUse[id] = Date()
+        return events[id] ?? []
     }
 
     /// Loads timeline from disk if not yet in memory.
     func loadTimeline(_ id: UUID) {
+        timelineUse[id] = Date()
         guard events[id] == nil else { return }
+        evictedTimelines.remove(id)
         events[id] = store.loadEvents(id)
+        evictTimelines()
+    }
+
+    /// Releases the longest unused timelines beyond `timelineLimit`, of sessions with nothing running or left to save.
+    private func evictTimelines() {
+        guard events.count > Self.timelineLimit else { return }
+        let idle = events.keys.filter { id in
+            eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
+                && claudeIdle[id] == nil && acpClients[id] == nil && !(run(id)?.status.isActive ?? false)
+        }
+        .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
+        for id in idle.prefix(events.count - Self.timelineLimit) {
+            events[id] = nil
+            timelineUse[id] = nil
+            evictedTimelines.insert(id)
+        }
     }
 
     var activeRuns: [WorkspaceRun] { runs.filter { $0.status.isActive } }
@@ -1470,6 +1507,8 @@ final class WorkspaceManager: ObservableObject {
         }
         runs.removeAll { $0.id == id }
         events[id] = nil
+        timelineUse[id] = nil
+        evictedTimelines.remove(id)
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
@@ -1753,7 +1792,11 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func append(_ id: UUID, _ event: RunEvent) {
-        if events[id] == nil { events[id] = store.loadEvents(id) }
+        timelineUse[id] = Date()
+        if events[id] == nil {
+            evictedTimelines.remove(id)
+            events[id] = store.loadEvents(id)
+        }
         events[id]?.append(event)
         if event.kind != .system || event.tool != "launch" {
             update(id, save: false) { $0.updatedAt = Date() }
@@ -1770,6 +1813,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Announces a changed timeline: the first change at once, later ones within the same short window together.
     private func eventsDidChange() {
+        guard !quietEvents else { return }
         if eventsThrottled {
             eventsDirty = true
             return

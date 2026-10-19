@@ -115,6 +115,9 @@ private struct MusicPlayerView: View {
         }
         .task(id: "\(info.trackKey)|\(section.rawValue)") { load() }
         .onChange(of: info.shuffle) { if section == .upNext { service.refreshUpNext() } }
+        // The position and volume shown here need the player polled every couple of seconds; nothing else does.
+        .onAppear { service.addViewer() }
+        .onDisappear { service.removeViewer() }
     }
 
     private func load() {

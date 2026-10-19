@@ -89,12 +89,32 @@ enum SessionLiveness {
 
     /// The last turn of the transcript at `path` and when it was last written; nil when it cannot be read.
     static func readTurn(path: String) -> (turn: Turn, modified: Date?)? {
-        guard !path.isEmpty, let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        guard !path.isEmpty else { return nil }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        let modified = attributes?[.modificationDate] as? Date
+        let size = (attributes?[.size] as? NSNumber)?.uint64Value
+        // Asked every ten seconds per working session: the tail is only read again when the file changed.
+        if let modified, let size {
+            turnLock.lock()
+            let hit = turnCache[path]
+            turnLock.unlock()
+            if let hit, hit.modified == modified, hit.size == size { return (hit.turn, modified) }
+        }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
-        let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
         guard let end = try? handle.seekToEnd() else { return nil }
         try? handle.seek(toOffset: end > tailBytes ? end - tailBytes : 0)
         guard let data = try? handle.readToEnd() else { return nil }
-        return (lastTurn(in: data), modified)
+        let turn = lastTurn(in: data)
+        if let modified, let size {
+            turnLock.lock()
+            if turnCache.count > 64 { turnCache.removeAll() }
+            turnCache[path] = (modified, size, turn)
+            turnLock.unlock()
+        }
+        return (turn, modified)
     }
+
+    private static let turnLock = NSLock()
+    private nonisolated(unsafe) static var turnCache: [String: (modified: Date, size: UInt64, turn: Turn)] = [:]
 }

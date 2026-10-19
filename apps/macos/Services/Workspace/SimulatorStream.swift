@@ -31,6 +31,10 @@ final class SimulatorStream: ObservableObject {
     private var socketOpened = false
     private var video: ByteStreamReceiver?
     private var videoStall: Task<Void, Never>?
+    /// When video data last arrived, and for which stream the stall watch runs: data only moves the time, instead of
+    /// a new timer task for every chunk (30 to 60 a second).
+    private var lastVideoData = Date()
+    private var stallGeneration: Int?
     /// This device's H.264 could not be decoded here: MJPEG from now on.
     private var h264Failed = false
 
@@ -156,6 +160,7 @@ final class SimulatorStream: ObservableObject {
         video = nil
         videoStall?.cancel()
         videoStall = nil
+        stallGeneration = nil
     }
 
     private func received(_ chunks: [AvccChunk], _ generation: Int) {
@@ -177,12 +182,21 @@ final class SimulatorStream: ObservableObject {
 
     /// An H.264 body can stay open after the helper stops producing frames: 15 s without data reconnects.
     private func armStall(_ generation: Int) {
+        lastVideoData = Date()
+        guard videoStall == nil || stallGeneration != generation else { return }
         videoStall?.cancel()
+        stallGeneration = generation
         videoStall = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            guard !Task.isCancelled, let self, self.generation == generation else { return }
-            self.problem = tr("sim.stream.stalled")
-            self.dropped(generation)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled, let self, self.generation == generation else { return }
+                guard Date().timeIntervalSince(self.lastVideoData) >= 15 else { continue }
+                self.videoStall = nil
+                self.stallGeneration = nil
+                self.problem = tr("sim.stream.stalled")
+                self.dropped(generation)
+                return
+            }
         }
     }
 

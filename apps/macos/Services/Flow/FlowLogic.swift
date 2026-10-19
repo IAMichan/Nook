@@ -181,12 +181,23 @@ enum FlowText {
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
+    /// Compiled patterns by phrase: every dictation runs one per dictionary word, snippet and replacement, and those
+    /// lists hardly ever change.
+    private static let patterns: NSCache<NSString, NSRegularExpression> = {
+        let cache = NSCache<NSString, NSRegularExpression>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
     private static func pattern(for phrase: String) -> NSRegularExpression? {
+        if let known = patterns.object(forKey: phrase as NSString) { return known }
         let parts = tokens(phrase)
         guard !parts.isEmpty else { return nil }
         let body = parts.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "[^\\p{L}\\p{N}]+")
-        return try? NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}])" + body + "(?![\\p{L}\\p{N}])",
-                                        options: [.caseInsensitive])
+        guard let regex = try? NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}])" + body + "(?![\\p{L}\\p{N}])",
+                                                   options: [.caseInsensitive]) else { return nil }
+        patterns.setObject(regex, forKey: phrase as NSString)
+        return regex
     }
 
     /// Only words made of letters, digits, spaces, hyphens and apostrophes get their spelling fixed:

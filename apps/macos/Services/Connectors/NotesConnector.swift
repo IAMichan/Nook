@@ -30,7 +30,19 @@ final class NotesConnector: ContextSource {
     private var recentNotes: [NoteSummary] = []
     private var totalCount = 0
     private var loadedAt: Date?
-    private static var bodyCache: [String: CachedNote] = [:]
+    private static var bodyCache: [String: CachedNote] = [:] {
+        didSet { if bodyCache.count > cacheLimit { trimBodyCache() } }
+    }
+    /// Bodies are only reused shortly after they were read; beyond this many entries the old ones go, so note bodies
+    /// do not pile up in memory for as long as Nook runs.
+    private static let cacheLimit = 400
+
+    private static func trimBodyCache() {
+        let cutoff = Date().addingTimeInterval(-600)
+        var kept = bodyCache.filter { $0.value.cachedAt > cutoff }
+        if kept.count > cacheLimit { kept = [:] }
+        bodyCache = kept
+    }
 
     var isActive: Bool { ConnectorToggle.isOn(id) && (ScriptText.isRunning("com.apple.Notes") || !recentNotes.isEmpty) }
     var canLookUp: Bool { ConnectorToggle.isOn(id) }

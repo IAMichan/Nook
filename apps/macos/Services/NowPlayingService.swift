@@ -69,6 +69,8 @@ final class NowPlayingService: ObservableObject {
     @Published private(set) var permissionDenied = false
 
     private var timer: Timer?
+    /// Views showing the playing track in full (position, volume): while there is one, the player is polled every tick.
+    private var viewers = 0
     private var observers: [NSObjectProtocol] = []
     private var lastPoll = Date.distantPast
     private var startedAt = Date()
@@ -101,11 +103,25 @@ final class NowPlayingService: ObservableObject {
                 // launch it keeps checking every tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.
                 let settling = self.current == nil && Date().timeIntervalSince(self.startedAt) < 20
-                if self.current?.isPlaying != true, !settling, Date().timeIntervalSince(self.lastPoll) < 10 { return }
+                // Playing and on screen: every tick, for the position and volume. Playing but out of sight: the players'
+                // notifications announce every track and play/pause change, and the position is estimated, so a check
+                // every fifteen seconds is enough (each one is an Apple Event round trip to the player).
+                let interval: TimeInterval = self.current?.isPlaying == true ? (self.viewers > 0 ? 0 : 15) : 10
+                if !settling, Date().timeIntervalSince(self.lastPoll) < interval { return }
                 self.poll()
             }
         }
         poll()
+    }
+
+    func addViewer() {
+        viewers += 1
+        // Possibly a while since the last poll: bring position and volume up to date right away.
+        if viewers == 1 { poll() }
+    }
+
+    func removeViewer() {
+        viewers = max(0, viewers - 1)
     }
 
     func control(_ command: Command) {

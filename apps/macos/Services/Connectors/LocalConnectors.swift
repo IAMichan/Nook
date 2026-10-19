@@ -229,7 +229,19 @@ final class MailConnector: ContextSource {
     private var recent: [MailStats.InboxRow] = []
     /// Bodies already read, by message key, so each refresh only reads new mail.
     private var bodies: [String: String] = [:]
-    private static var messageCache: [String: CachedMail] = [:]
+    private static var messageCache: [String: CachedMail] = [:] {
+        didSet { if messageCache.count > cacheLimit { trimMessageCache() } }
+    }
+    /// Bodies are reused for two minutes (`readMessage`); beyond this many, the old ones go, so full mail bodies do not
+    /// pile up in memory for as long as Nook runs.
+    private static let cacheLimit = 300
+
+    private static func trimMessageCache() {
+        let cutoff = Date().addingTimeInterval(-600)
+        var kept = messageCache.filter { $0.value.cachedAt > cutoff }
+        if kept.count > cacheLimit { kept = [:] }
+        messageCache = kept
+    }
     private var loadedAt: Date?
     private var loading: Task<Void, Never>?
 

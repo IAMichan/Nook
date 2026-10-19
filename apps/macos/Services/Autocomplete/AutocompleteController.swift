@@ -121,8 +121,17 @@ final class AutocompleteController: ObservableObject {
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
     /// Words (lowercased) the typo check leaves alone: the user's own vocabulary, and fixes turned down with Escape.
-    private var knownWords: Set<String> = []
-    private var ignoredTypos: Set<String> = []
+    private var knownWords: Set<String> = [] { didSet { typoVocabulary = nil } }
+    private var ignoredTypos: Set<String> = [] { didSet { typoVocabulary = nil } }
+    /// `knownWords` and `ignoredTypos` together for the typo check: built again only when one of them changed, not on
+    /// every keystroke (the vocabulary can hold tens of thousands of words).
+    private var typoVocabulary: Set<String>?
+    private var typoKnown: Set<String> {
+        if let typoVocabulary { return typoVocabulary }
+        let union = knownWords.union(ignoredTypos)
+        typoVocabulary = union
+        return union
+    }
     private var batteryCheck: (date: Date, onBattery: Bool)?
 
     private var tap: CFMachPort?
@@ -602,7 +611,7 @@ final class AutocompleteController: ObservableObject {
         }
 
         // Text Nook just typed itself is the model's own spelling: no need to check it.
-        if prefs.typos, !continuing, let fix = AutocompleteTypos.fix(for: snapshot.before, known: knownWords.union(ignoredTypos)),
+        if prefs.typos, !continuing, let fix = AutocompleteTypos.fix(for: snapshot.before, known: typoKnown),
            prefs.showTypoFixes || !fix.typedOn {
             // Never build a suggestion on a likely typo.
             if prefs.showTypoFixes, let caret = snapshot.caret {

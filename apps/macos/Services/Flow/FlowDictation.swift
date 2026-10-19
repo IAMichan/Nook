@@ -209,7 +209,9 @@ final class FlowDictation: ObservableObject {
         // Live words in the pill while you speak.
         Task { @MainActor [weak self] in
             while let self, self.current === listen, !listen.cancelled {
-                self.pill.words = listen.transcript
+                // Only a change redraws the pill: it is published, and you often pause while speaking.
+                let words = listen.transcript
+                if self.pill.words != words { self.pill.words = words }
                 try? await Task.sleep(nanoseconds: 120_000_000)
             }
         }

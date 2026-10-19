@@ -62,6 +62,13 @@ final class ScreenContext: ObservableObject {
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
     private let failureCooldown: TimeInterval = 60
+    /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
+    /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
+    /// instead of a full capture and OCR every seven seconds; a question still reads it fresh (`snapshot`).
+    private var changeStreak: [CGWindowID: Int] = [:]
+    private var lastRead: [CGWindowID: Date] = [:]
+    private let volatileAfter = 3
+    private let volatileReadInterval: TimeInterval = 30
 
     var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
@@ -99,6 +106,8 @@ final class ScreenContext: ObservableObject {
     /// Clears all captured screen text.
     func clear() {
         cache = [:]
+        changeStreak = [:]
+        lastRead = [:]
         windows = []
         lastUpdate = nil
         lastFailure = nil
@@ -120,7 +129,7 @@ final class ScreenContext: ObservableObject {
         // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
-        await refresh(frontOnly: false, accurateFront: false)
+        await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }
 
     // MARK: Query Snapshot
@@ -183,7 +192,9 @@ final class ScreenContext: ObservableObject {
 
     // MARK: Reading
 
-    private func refresh(frontOnly: Bool, accurateFront: Bool) async {
+    /// `periodic`: the timer's own read, which may leave a window that keeps changing for later; a read for a question,
+    /// an app switch or a snapshot never does.
+    private func refresh(frontOnly: Bool, accurateFront: Bool, periodic: Bool = false) async {
         guard !busy, hasPermission else { return }
         busy = true
         defer { busy = false }
@@ -243,10 +254,13 @@ final class ScreenContext: ObservableObject {
         // A tiny probe of each window decides whether anything changed. Only changed windows are captured at full size and
         // read by OCR, so a quiet screen costs a few thumbnails instead of megapixels of readback per window.
         var captured: [(window: SCWindow, isFront: Bool, image: CGImage?, print: UInt64)] = []
+        // Windows whose text was kept although their picture changed: their capture time stays, so a question reads them.
+        var behind: Set<CGWindowID> = []
         for job in jobs {
             let probe = SCStreamConfiguration()
-            probe.width = 256
-            probe.height = 256
+            // Enough for the 32×32 fingerprint below; a quarter of the pixels of 256×256.
+            probe.width = 128
+            probe.height = 128
             probe.showsCursor = false
             let filter = SCContentFilter(desktopIndependentWindow: job.window)
             guard let small = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: probe) else { continue }
@@ -254,9 +268,21 @@ final class ScreenContext: ObservableObject {
             // the recognition level, so a window read fast is read again when an accurate read is asked for.
             let size = UInt64(Int(job.window.frame.width)) << 16 | UInt64(Int(job.window.frame.height))
             let print = Self.fingerprint(small, side: 32) ^ size ^ (job.accurate ? 1 << 63 : 0)
-            if let old = cache[job.window.windowID], old.fingerprint == print {
+            let id = job.window.windowID
+            if let old = cache[id], old.fingerprint == print {
+                changeStreak[id] = 0
                 captured.append((job.window, job.isFront, nil, print))
                 continue
+            }
+            if periodic {
+                let streak = (changeStreak[id] ?? 0) + 1
+                changeStreak[id] = streak
+                // Keeps changing: keep the text read last time (and its print, so it still counts as changed) for a while.
+                if streak > volatileAfter, let old = cache[id], let read = lastRead[id], now.timeIntervalSince(read) < volatileReadInterval {
+                    behind.insert(id)
+                    captured.append((job.window, job.isFront, nil, old.fingerprint))
+                    continue
+                }
             }
             let configuration = SCStreamConfiguration()
             let scale: CGFloat = job.accurate ? 1.5 : 1.0
@@ -264,6 +290,7 @@ final class ScreenContext: ObservableObject {
             configuration.height = min(Int(job.window.frame.height * scale), 2400)
             configuration.showsCursor = false
             guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else { continue }
+            lastRead[id] = Date()
             captured.append((job.window, job.isFront, image, print))
         }
 
@@ -295,7 +322,7 @@ final class ScreenContext: ObservableObject {
                 display: Self.display(for: window.frame, in: content.displays, names: names),
                 text: text,
                 isFront: item.isFront,
-                captured: Date(),
+                captured: behind.contains(window.windowID) ? (old?.captured ?? Date()) : Date(),
                 fingerprint: item.print,
                 frame: window.frame
             )
@@ -304,6 +331,8 @@ final class ScreenContext: ObservableObject {
         // Only retain windows that are still present, in current z-order.
         let order = ordered.map(\.windowID)
         cache = kept
+        changeStreak = changeStreak.filter { kept[$0.key] != nil }
+        lastRead = lastRead.filter { kept[$0.key] != nil }
         windows = order.compactMap { kept[$0] }.filter { !$0.text.isEmpty }
         lastUpdate = Date()
     }
