@@ -70,7 +70,7 @@ final class ScreenContext: ObservableObject {
     private let volatileAfter = 3
     private let volatileReadInterval: TimeInterval = 30
 
-    var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
+    var hasPermission: Bool { ScreenAccess.isUsable }
 
     /// Number of displays containing visible windows.
     var displayCount: Int { Set(windows.map(\.display)).count }
@@ -204,6 +204,7 @@ final class ScreenContext: ObservableObject {
             content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             lastFailure = nil
         } catch {
+            ScreenAccess.note(error)
             lastFailure = Date()
             return
         }

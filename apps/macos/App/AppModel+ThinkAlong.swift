@@ -49,7 +49,7 @@ extension AppModel {
     func thinkAlongTick() {
         guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode,
               !settings.privateSources.contains(SourceCatalog.screen),
-              CGPreflightScreenCaptureAccess(), viewModel.state.isResting else { return }
+              ScreenAccess.isUsable, viewModel.state.isResting else { return }
         // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy. With the
         // model on this Mac each look is a full run on the GPU, so it looks less often (`ThinkAlong.localLookGap`).
         guard !SystemLoad.isConstrained else { return }
