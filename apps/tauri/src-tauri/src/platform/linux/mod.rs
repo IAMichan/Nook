@@ -53,10 +53,6 @@ impl LinuxScreen {
         self.with_atspi(|_| ()).is_some()
     }
 
-    pub fn has_x11(&self) -> bool {
-        self.x11.is_some()
-    }
-
     pub fn has_ocr(&self) -> bool {
         self.ocr.is_some() && self.x11.is_some()
     }
@@ -157,12 +153,21 @@ impl ScreenReader for LinuxScreen {
             let front = active.filter(|a| windows.iter().any(|w| w.id == *a)).or(windows.first().map(|w| w.id));
             return windows
                 .into_iter()
-                .map(|w| SeenWindow { id: format!("x11:{}", w.id), app: w.class, title: w.title, display: "1".into(), frontmost: Some(w.id) == front })
+                .map(|w| SeenWindow {
+                    id: format!("x11:{}", w.id),
+                    app: w.class,
+                    title: w.title,
+                    display: "1".into(),
+                    frontmost: Some(w.id) == front,
+                })
                 .collect();
         }
         let mut frames: Vec<atspi::Frame> = self.frames().into_iter().filter(|f| f.showing).collect();
         frames.sort_by_key(|f| !f.active);
-        frames.into_iter().map(|f| SeenWindow { id: f.id(), app: f.app.clone(), title: f.title.clone(), display: "1".into(), frontmost: f.active }).collect()
+        frames
+            .into_iter()
+            .map(|f| SeenWindow { id: f.id(), app: f.app.clone(), title: f.title.clone(), display: "1".into(), frontmost: f.active })
+            .collect()
     }
 
     fn read_window(&self, id: &str) -> Option<(String, u64)> {
@@ -194,8 +199,12 @@ impl ScreenReader for LinuxScreen {
             return Err("Welke app wil je lezen?".into());
         }
         let Some(name) = fuzzy::best(wanted, &self.app_names()) else {
-            if let Some(app) = fuzzy::best(wanted, &apps::installed().into_iter().map(|a| a.local_name.unwrap_or(a.name)).collect::<Vec<_>>()) {
-                return Err(format!("{app} staat geïnstalleerd maar is nu niet geopend. Vraag Nook \"open {app}\", dan kan hij daarna meelezen."));
+            if let Some(app) =
+                fuzzy::best(wanted, &apps::installed().into_iter().map(|a| a.local_name.unwrap_or(a.name)).collect::<Vec<_>>())
+            {
+                return Err(format!(
+                    "{app} staat geïnstalleerd maar is nu niet geopend. Vraag Nook \"open {app}\", dan kan hij daarna meelezen."
+                ));
             }
             return Err(format!("Ik kan geen app genaamd \"{wanted}\" vinden op deze computer."));
         };
@@ -233,7 +242,12 @@ impl ScreenReader for LinuxScreen {
 
     fn active_app(&self) -> Option<RunningApp> {
         let front = self.windows().into_iter().find(|w| w.frontmost)?;
-        let pid = front.id.strip_prefix("x11:").and_then(|id| id.parse::<u32>().ok()).and_then(|id| self.x_windows().into_iter().find(|w| w.id == id)).map(|w| w.pid);
+        let pid = front
+            .id
+            .strip_prefix("x11:")
+            .and_then(|id| id.parse::<u32>().ok())
+            .and_then(|id| self.x_windows().into_iter().find(|w| w.id == id))
+            .map(|w| w.pid);
         Some(RunningApp { name: front.app.clone(), id: front.app, pid: pid.unwrap_or(0), frontmost: true, title: front.title })
     }
 
@@ -242,7 +256,13 @@ impl ScreenReader for LinuxScreen {
         let mut apps: Vec<RunningApp> = Vec::new();
         for w in self.x_windows() {
             if !apps.iter().any(|a| a.id == w.class) {
-                apps.push(RunningApp { name: w.class.clone(), id: w.class.clone(), pid: w.pid, frontmost: front.as_deref() == Some(&w.class), title: w.title });
+                apps.push(RunningApp {
+                    name: w.class.clone(),
+                    id: w.class.clone(),
+                    pid: w.pid,
+                    frontmost: front.as_deref() == Some(&w.class),
+                    title: w.title,
+                });
             }
         }
         for f in self.frames() {
@@ -299,10 +319,13 @@ impl MediaControl for LinuxMedia {
     fn set_volume(&self, percent: u8) -> Result<(), String> {
         let percent = percent.min(100);
         let t = Duration::from_secs(4);
-        if process::which("wpctl") && process::run_text("wpctl", &["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{:.2}", percent as f64 / 100.0)], t).is_ok() {
+        if process::which("wpctl")
+            && process::run_text("wpctl", &["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{:.2}", percent as f64 / 100.0)], t).is_ok()
+        {
             return Ok(());
         }
-        if process::which("pactl") && process::run_text("pactl", &["set-sink-volume", "@DEFAULT_SINK@", &format!("{percent}%")], t).is_ok() {
+        if process::which("pactl") && process::run_text("pactl", &["set-sink-volume", "@DEFAULT_SINK@", &format!("{percent}%")], t).is_ok()
+        {
             return Ok(());
         }
         if process::which("amixer") && process::run_text("amixer", &["-q", "sset", "Master", &format!("{percent}%")], t).is_ok() {
@@ -380,7 +403,11 @@ impl SystemControl for LinuxSystem {
         let found = fuzzy::best(clean, &names).ok_or_else(|| format!("Geen app met de naam {clean} gevonden op deze computer."))?;
         let app = installed
             .iter()
-            .find(|a| a.local_name.as_deref() == Some(found.as_str()) || a.name == found || a.id.trim_end_matches(".desktop").rsplit('.').next() == Some(found.as_str()))
+            .find(|a| {
+                a.local_name.as_deref() == Some(found.as_str())
+                    || a.name == found
+                    || a.id.trim_end_matches(".desktop").rsplit('.').next() == Some(found.as_str())
+            })
             .ok_or_else(|| format!("Geen app met de naam {clean} gevonden op deze computer."))?;
         apps::launch(app)
     }
@@ -410,11 +437,8 @@ impl SystemControl for LinuxSystem {
         let previous = self.clipboard(|c| c.get_text()).ok();
         self.clipboard(|c| c.set_text(text.to_string()))?;
         let Some(x11) = x11::X11::connect() else { return Ok(false) };
-        let terminal = x11
-            .active()
-            .and_then(|id| x11.windows().into_iter().find(|w| w.id == id))
-            .map(|w| is_terminal(&w.class))
-            .unwrap_or(false);
+        let terminal =
+            x11.active().and_then(|id| x11.windows().into_iter().find(|w| w.id == id)).map(|w| is_terminal(&w.class)).unwrap_or(false);
         std::thread::sleep(Duration::from_millis(80));
         x11.paste_keys(terminal)?;
         // Even later zetten we terug wat er op het klembord stond.
@@ -474,13 +498,4 @@ impl SystemControl for LinuxSystem {
         let path = path.to_string_lossy().to_string();
         process::run_text("pdftotext", &["-layout", "-enc", "UTF-8", "--", &path, "-"], Duration::from_secs(20))
     }
-}
-
-/// Of de muziekbediening via D-Bus kan.
-pub fn has_session_bus() -> bool {
-    std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some() || Path::new(&format!("/run/user/{}/bus", user_id())).exists()
-}
-
-fn user_id() -> u32 {
-    std::fs::metadata("/proc/self").map(|m| std::os::unix::fs::MetadataExt::uid(&m)).unwrap_or(0)
 }

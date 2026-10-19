@@ -145,7 +145,11 @@ fn resolve_link(path: &Path) -> Option<PathBuf> {
 
 /// Alleen letters, cijfers en spaties: de zoekwoorden komen in een SQL-zin van Windows Search.
 fn clean_words(query: &str) -> Vec<String> {
-    files::words(query).into_iter().map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>()).filter(|w| w.len() >= 2).collect()
+    files::words(query)
+        .into_iter()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+        .filter(|w| w.len() >= 2)
+        .collect()
 }
 
 impl SystemControl for WindowsSystem {
@@ -201,7 +205,9 @@ impl SystemControl for WindowsSystem {
         let image = image::load_from_memory(png).map_err(|e| e.to_string())?.to_rgba8();
         let (w, h) = image.dimensions();
         let mut board = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-        board.set_image(arboard::ImageData { width: w as usize, height: h as usize, bytes: image.into_raw().into() }).map_err(|e| e.to_string())
+        board
+            .set_image(arboard::ImageData { width: w as usize, height: h as usize, bytes: image.into_raw().into() })
+            .map_err(|e| e.to_string())
     }
 
     fn search_index(&self, query: &str, limit: usize) -> Option<Vec<PathBuf>> {
@@ -213,7 +219,10 @@ impl SystemControl for WindowsSystem {
         let scope = home.display().to_string().replace('\\', "/").replace('\'', "");
         let names = words.iter().map(|w| format!("System.FileName LIKE '%{w}%'")).collect::<Vec<_>>().join(" AND ");
         let contents = words.iter().map(|w| format!("\"{w}*\"")).collect::<Vec<_>>().join(" AND ");
-        let sql = format!("SELECT TOP {} System.ItemPathDisplay FROM SYSTEMINDEX WHERE SCOPE='file:{scope}' AND (({names}) OR CONTAINS(*, '{contents}'))", limit.max(10) * 2);
+        let sql = format!(
+            "SELECT TOP {} System.ItemPathDisplay FROM SYSTEMINDEX WHERE SCOPE='file:{scope}' AND (({names}) OR CONTAINS(*, '{contents}'))",
+            limit.max(10) * 2
+        );
         let script = format!(
             "$c=New-Object -ComObject ADODB.Connection; $c.Open(\"Provider=Search.CollatorDSO;Extended Properties='Application=Windows';\"); $r=$c.Execute(\"{}\"); while(-not $r.EOF){{ $r.Fields.Item(0).Value; $r.MoveNext() }}",
             sql.replace('"', "`\"")

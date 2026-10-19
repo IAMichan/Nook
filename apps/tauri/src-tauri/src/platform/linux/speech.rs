@@ -44,14 +44,6 @@ impl LinuxSpeech {
         }
         Self { engine, shared }
     }
-
-    pub fn engine_name(&self) -> Option<&'static str> {
-        self.engine.map(|e| match e {
-            Engine::EspeakNg => "espeak-ng",
-            Engine::Espeak => "espeak",
-            Engine::SpdSay => "speech-dispatcher",
-        })
-    }
 }
 
 fn command(engine: Engine, text: &str, language: &str) -> Command {

@@ -17,7 +17,8 @@ pub struct DesktopEntry {
 
 fn dirs() -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
-    let mut out = vec![std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share")).join("applications")];
+    let mut out =
+        vec![std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share")).join("applications")];
     let data = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
     out.extend(data.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join("applications")));
     out.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
@@ -111,10 +112,11 @@ pub fn command_line(exec: &str) -> Vec<String> {
                     has = false;
                 }
             }
-            '%' => match chars.next() {
-                Some('%') => current.push('%'),
-                Some(_) | None => {}
-            },
+            '%' => {
+                if chars.next() == Some('%') {
+                    current.push('%');
+                }
+            }
             other => current.push(other),
         }
     }

@@ -4,7 +4,11 @@
 //!
 //! Een nieuwe bron: een module met een type dat [`ToolSource`] implementeert, en één regel in [`sources`].
 
+mod calls;
+mod clipboard;
+mod files;
 mod loops;
+mod screen;
 mod system;
 
 use std::sync::Arc;
@@ -58,7 +62,14 @@ pub trait ToolSource: Send + Sync {
 
 /// Alle bronnen, in de volgorde waarin hun context in de prompt komt.
 pub fn sources() -> Vec<Box<dyn ToolSource>> {
-    vec![Box::new(loops::Loops), Box::new(system::System)]
+    vec![
+        Box::new(loops::Loops),
+        Box::new(system::System),
+        Box::new(screen::Screen),
+        Box::new(files::Files),
+        Box::new(clipboard::Clipboard),
+        Box::new(calls::Calls),
+    ]
 }
 
 /// Bronnen die het actieve brein niet mag zien (alleen-lokaal bij een extern brein) vallen af.

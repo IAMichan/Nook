@@ -168,4 +168,5 @@ pub fn register_shortcuts(app: &AppHandle) {
             log::warn!("Sneltoets {accelerator} kon niet worden vastgelegd: {e}");
         }
     }
+    crate::services::register_shortcuts(app);
 }

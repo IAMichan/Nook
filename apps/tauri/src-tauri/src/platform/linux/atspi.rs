@@ -114,7 +114,13 @@ impl Atspi {
 
     fn pid(&self, bus_name: &str) -> u32 {
         self.bus
-            .call_method(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", Some("org.freedesktop.DBus"), "GetConnectionUnixProcessID", &(bus_name,))
+            .call_method(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                Some("org.freedesktop.DBus"),
+                "GetConnectionUnixProcessID",
+                &(bus_name,),
+            )
             .ok()
             .and_then(|r| r.body().deserialize::<u32>().ok())
             .unwrap_or(0)
@@ -154,10 +160,6 @@ impl Atspi {
         frames
     }
 
-    pub fn frame(&self, id: &str) -> Option<Frame> {
-        self.frames().into_iter().find(|f| f.id() == id)
-    }
-
     /// De tekst van een venster, binnen `chars` tekens en `elements` elementen.
     pub fn text(&self, frame: &Frame, chars: usize, elements: usize) -> String {
         let mut lines: Vec<String> = Vec::new();
@@ -168,7 +170,16 @@ impl Atspi {
         lines.join("\n").trim().to_string()
     }
 
-    fn collect(&self, node: &Node, depth: usize, lines: &mut Vec<String>, budget: &mut usize, count: &mut usize, chars: usize, deadline: Instant) {
+    fn collect(
+        &self,
+        node: &Node,
+        depth: usize,
+        lines: &mut Vec<String>,
+        budget: &mut usize,
+        count: &mut usize,
+        chars: usize,
+        deadline: Instant,
+    ) {
         if depth > 60 || *budget == 0 || *count >= chars || Instant::now() > deadline {
             return;
         }

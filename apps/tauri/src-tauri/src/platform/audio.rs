@@ -74,7 +74,8 @@ fn spawn_cpal(loopback: bool, mut sink: Sink) -> Result<Recording, String> {
             let host = cpal::default_host();
             let device = if loopback { host.default_output_device() } else { host.default_input_device() };
             let Some(device) = device else {
-                let _ = ready_tx.send(Err(if loopback { "Geen geluidsuitgang gevonden.".into() } else { "Geen microfoon gevonden.".into() }));
+                let _ =
+                    ready_tx.send(Err(if loopback { "Geen geluidsuitgang gevonden.".into() } else { "Geen microfoon gevonden.".into() }));
                 return;
             };
             let config = if loopback { device.default_output_config() } else { device.default_input_config() };

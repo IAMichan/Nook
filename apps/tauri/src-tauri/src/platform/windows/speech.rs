@@ -170,16 +170,23 @@ impl Dictation for WindowsDictation {
     fn start(&self, language: &str) -> Result<(), String> {
         self.cancel();
         let recognizer = recognizer(language).map_err(explain)?;
-        let constraint = SpeechRecognitionTopicConstraint::Create(SpeechRecognitionScenario::Dictation, &HSTRING::from("dictation")).map_err(explain)?;
+        let constraint =
+            SpeechRecognitionTopicConstraint::Create(SpeechRecognitionScenario::Dictation, &HSTRING::from("dictation")).map_err(explain)?;
         recognizer.Constraints().and_then(|c| c.Append(&constraint)).map_err(explain)?;
         let compiled = recognizer.CompileConstraintsAsync().and_then(|o| o.join()).map_err(explain)?;
         if compiled.Status().map_err(explain)? != SpeechRecognitionResultStatus::Success {
-            return Err("De spraakherkenning van Windows kon niet starten. Staat Online spraakherkenning aan (Instellingen › Privacy › Spraak)?".into());
+            return Err(
+                "De spraakherkenning van Windows kon niet starten. Staat Online spraakherkenning aan (Instellingen › Privacy › Spraak)?"
+                    .into(),
+            );
         }
         *self.heard.lock().unwrap_or_else(|e| e.into_inner()) = Heard::default();
         let heard = self.heard.clone();
         recognizer
-            .HypothesisGenerated(&TypedEventHandler::<SpeechRecognizer, windows::Media::SpeechRecognition::SpeechRecognitionHypothesisGeneratedEventArgs>::new(move |_, args| {
+            .HypothesisGenerated(&TypedEventHandler::<
+                SpeechRecognizer,
+                windows::Media::SpeechRecognition::SpeechRecognitionHypothesisGeneratedEventArgs,
+            >::new(move |_, args| {
                 if let Some(args) = args.as_ref() {
                     let args: &windows::Media::SpeechRecognition::SpeechRecognitionHypothesisGeneratedEventArgs = args;
                     if let Ok(text) = args.Hypothesis().and_then(|h| h.Text()) {
@@ -192,7 +199,10 @@ impl Dictation for WindowsDictation {
         let session = recognizer.ContinuousRecognitionSession().map_err(explain)?;
         let heard = self.heard.clone();
         session
-            .ResultGenerated(&TypedEventHandler::<SpeechContinuousRecognitionSession, windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs>::new(move |_, args| {
+            .ResultGenerated(&TypedEventHandler::<
+                SpeechContinuousRecognitionSession,
+                windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs,
+            >::new(move |_, args| {
                 if let Some(args) = args.as_ref() {
                     let args: &windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs = args;
                     if let Ok(text) = args.Result().and_then(|r| r.Text()) {
@@ -271,7 +281,10 @@ impl WakeWord for WindowsWake {
         let session = recognizer.ContinuousRecognitionSession().map_err(|e| e.message().to_string())?;
         let on_wake = Arc::new(on_wake);
         session
-            .ResultGenerated(&TypedEventHandler::<SpeechContinuousRecognitionSession, windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs>::new(move |_, args| {
+            .ResultGenerated(&TypedEventHandler::<
+                SpeechContinuousRecognitionSession,
+                windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs,
+            >::new(move |_, args| {
                 if let Some(args) = args.as_ref() {
                     let args: &windows::Media::SpeechRecognition::SpeechContinuousRecognitionResultGeneratedEventArgs = args;
                     let confident = args

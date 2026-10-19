@@ -18,6 +18,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::state::AppState;
 use crate::tools;
 
+pub mod services;
+
 type Res<T> = Result<T, String>;
 
 #[derive(Serialize)]
@@ -201,7 +203,7 @@ pub fn ask(app: AppHandle, state: State<'_, AppState>, nook_id: String, text: St
             text: text.clone(),
             history,
             context: tools::context(&ctx).await,
-            screen: None,
+            screen: crate::services::screen::for_question(&app, &nid, &mid, &text).await,
             images,
             tools: tools::tools(&ctx),
         };

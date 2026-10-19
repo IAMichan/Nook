@@ -71,12 +71,16 @@ impl Mpris {
 
     fn call(&self, method: &str) -> Result<(), String> {
         let player = self.active().or_else(|| self.players().into_iter().next()).ok_or("Er is geen muziekspeler open.")?;
-        self.bus.call_method(Some(player.name.as_str()), PATH, Some(PLAYER), method, &()).map(|_| ()).map_err(|e| format!("De speler weigerde: {e}"))
+        self.bus
+            .call_method(Some(player.name.as_str()), PATH, Some(PLAYER), method, &())
+            .map(|_| ())
+            .map_err(|e| format!("De speler weigerde: {e}"))
     }
 
     pub fn now_playing(&self) -> Option<NowPlaying> {
         let player = self.active()?;
-        let metadata: HashMap<String, OwnedValue> = self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
+        let metadata: HashMap<String, OwnedValue> =
+            self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
         let text = |key: &str| metadata.get(key).and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default();
         let artist = metadata
             .get("xesam:artist")
@@ -91,13 +95,17 @@ impl Mpris {
         let identity = self.get(&player.name, ROOT, "Identity").and_then(|v| String::try_from(v).ok());
         let boolean = |prop: &str| self.get(&player.name, PLAYER, prop).and_then(|v| bool::try_from(v).ok());
         let loop_status = self.get(&player.name, PLAYER, "LoopStatus").and_then(|v| String::try_from(v).ok());
-        let volume = self.get(&player.name, PLAYER, "Volume").and_then(|v| f64::try_from(v).ok()).map(|v| (v * 100.0).round().clamp(0.0, 100.0) as u8);
+        let volume = self
+            .get(&player.name, PLAYER, "Volume")
+            .and_then(|v| f64::try_from(v).ok())
+            .map(|v| (v * 100.0).round().clamp(0.0, 100.0) as u8);
         let title = text("xesam:title");
         if title.is_empty() && artist.is_empty() {
             return None;
         }
         Some(NowPlaying {
-            app: identity.unwrap_or_else(|| player.name.trim_start_matches("org.mpris.MediaPlayer2.").split('.').next().unwrap_or("").to_string()),
+            app: identity
+                .unwrap_or_else(|| player.name.trim_start_matches("org.mpris.MediaPlayer2.").split('.').next().unwrap_or("").to_string()),
             title,
             artist,
             album: text("xesam:album"),
@@ -122,7 +130,8 @@ impl Mpris {
 
     pub fn seek(&self, seconds: f64) -> Result<(), String> {
         let player = self.active().ok_or("Er speelt nu niets.")?;
-        let metadata: HashMap<String, OwnedValue> = self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
+        let metadata: HashMap<String, OwnedValue> =
+            self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
         let track = metadata
             .get("mpris:trackid")
             .and_then(|v| zbus::zvariant::OwnedObjectPath::try_from(v.clone()).ok())

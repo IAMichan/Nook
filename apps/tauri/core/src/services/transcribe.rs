@@ -14,7 +14,7 @@ pub fn endpoint(engine: SpeechEngine) -> Option<(&'static str, &'static str, AIP
     match engine {
         SpeechEngine::Openai => Some(("https://api.openai.com/v1/audio/transcriptions", "whisper-1", AIProvider::Openai)),
         SpeechEngine::Groq => Some(("https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo", AIProvider::Groq)),
-        SpeechEngine::Local => None,
+        SpeechEngine::Local | SpeechEngine::Windows => None,
     }
 }
 

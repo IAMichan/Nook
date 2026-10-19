@@ -59,7 +59,11 @@ fn artwork(session: &Session) -> Option<String> {
     let mut bytes = vec![0u8; size as usize];
     reader.ReadBytes(&mut bytes).ok()?;
     let mime = stream.ContentType().map(|c| c.to_string()).unwrap_or_else(|_| "image/png".into());
-    Some(format!("data:{};base64,{}", if mime.is_empty() { "image/png" } else { &mime }, base64::engine::general_purpose::STANDARD.encode(bytes)))
+    Some(format!(
+        "data:{};base64,{}",
+        if mime.is_empty() { "image/png" } else { &mime },
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 /// Nu in 100-nanoseconde-eenheden sinds 1601, zoals `DateTime.UniversalTime`.

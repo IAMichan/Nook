@@ -12,12 +12,12 @@ pub mod imaging;
 #[cfg(desktop)]
 pub mod process;
 
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub mod android;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub mod android;
 
 use std::sync::Arc;
 
@@ -42,7 +42,9 @@ pub fn services(app: &AppHandle) -> Platform {
         media: Arc::new(linux::LinuxMedia::new()),
         system: Arc::new(linux::LinuxSystem::new(app)),
         speech: Arc::new(linux::speech::LinuxSpeech::new()),
-        dictation: Arc::new(Unavailable("Spraakherkenning op deze computer zelf kan op Linux met whisper.cpp; kies anders een externe dienst.")),
+        dictation: Arc::new(Unavailable(
+            "Spraakherkenning op deze computer zelf kan op Linux met whisper.cpp; kies anders een externe dienst.",
+        )),
         wake: Arc::new(Unavailable("\"Hé Nook\" kan op Linux niet: er is geen zuinige spraakherkenning op de computer zelf.")),
     }
 }
@@ -73,6 +75,7 @@ pub fn notify(app: &AppHandle, title: &str, body: &str) {
 }
 
 /// Voor wat op een platform niet kan: elke aanroep zegt waarom.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub struct Unavailable(pub &'static str);
 
 impl Dictation for Unavailable {
@@ -117,7 +120,17 @@ impl SpeechOutput for Unavailable {
     }
 }
 
+static MEASURED: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
+
+/// Bewaart wat de diensten bij de start maten; daarna geeft [`capabilities`] dat terug.
+pub fn set_measured(capabilities: Capabilities) {
+    let _ = MEASURED.set(capabilities);
+}
+
 pub fn capabilities() -> Capabilities {
+    if let Some(measured) = MEASURED.get() {
+        return measured.clone();
+    }
     let os = if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "android") {
@@ -171,10 +184,16 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
             notes.insert("microphone".into(), "Geen microfoon gevonden.".into());
         }
         if !base.system_audio {
-            notes.insert("systemAudio".into(), "Het geluid van de computer opnemen kan hier niet; de Notetaker neemt alleen je microfoon op.".into());
+            notes.insert(
+                "systemAudio".into(),
+                "Het geluid van de computer opnemen kan hier niet; de Notetaker neemt alleen je microfoon op.".into(),
+            );
         }
         if !base.screen_part {
-            notes.insert("screenPart".into(), "Een schermdeel kan hier niet: er is geen schermafbeelding (Wayland laat dat apps niet toe).".into());
+            notes.insert(
+                "screenPart".into(),
+                "Een schermdeel kan hier niet: er is geen schermafbeelding (Wayland laat dat apps niet toe).".into(),
+            );
         }
     }
     if !base.wake_word {

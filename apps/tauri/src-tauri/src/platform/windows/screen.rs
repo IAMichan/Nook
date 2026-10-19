@@ -97,7 +97,9 @@ fn display_name(path: &str) -> Option<String> {
         GetFileVersionInfoW(&wide, None, size, data.as_mut_ptr() as *mut _).ok()?;
         let mut pointer = std::ptr::null_mut();
         let mut len = 0u32;
-        if !VerQueryValueW(data.as_ptr() as *const _, &HSTRING::from("\\VarFileInfo\\Translation"), &mut pointer, &mut len).as_bool() || len < 4 {
+        if !VerQueryValueW(data.as_ptr() as *const _, &HSTRING::from("\\VarFileInfo\\Translation"), &mut pointer, &mut len).as_bool()
+            || len < 4
+        {
             return None;
         }
         let words = std::slice::from_raw_parts(pointer as *const u16, 2);
@@ -114,7 +116,8 @@ fn display_name(path: &str) -> Option<String> {
 fn cloaked(hwnd: HWND) -> bool {
     let mut value = 0u32;
     unsafe {
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut value as *mut u32 as *mut _, std::mem::size_of::<u32>() as u32).is_ok() && value != 0
+        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut value as *mut u32 as *mut _, std::mem::size_of::<u32>() as u32).is_ok()
+            && value != 0
     }
 }
 
@@ -159,7 +162,8 @@ impl WindowsScreen {
                 return None;
             }
             // De shell zelf (bureaublad, taakbalk) is geen venster om te lezen.
-            if ["explorer", "applicationframehost", "textinputhost", "shellexperiencehost", "searchhost", "startmenuexperiencehost"].contains(&exe.to_lowercase().as_str())
+            if ["explorer", "applicationframehost", "textinputhost", "shellexperiencehost", "searchhost", "startmenuexperiencehost"]
+                .contains(&exe.to_lowercase().as_str())
                 && (title == "Program Manager" || exe.eq_ignore_ascii_case("textinputhost"))
             {
                 return None;
@@ -208,7 +212,14 @@ fn uia_text(hwnd: HWND, limit: usize) -> windows::core::Result<String> {
         cache.AddProperty(UIA_IsPasswordPropertyId)?;
         let condition = automation.CreateTrueCondition()?;
         let all = root.FindAllBuildCache(TreeScope_Descendants, &condition, &cache)?;
-        let skip = [UIA_MenuBarControlTypeId, UIA_MenuControlTypeId, UIA_MenuItemControlTypeId, UIA_ToolBarControlTypeId, UIA_ScrollBarControlTypeId, UIA_TitleBarControlTypeId];
+        let skip = [
+            UIA_MenuBarControlTypeId,
+            UIA_MenuControlTypeId,
+            UIA_MenuItemControlTypeId,
+            UIA_ToolBarControlTypeId,
+            UIA_ScrollBarControlTypeId,
+            UIA_TitleBarControlTypeId,
+        ];
         let mut lines: Vec<String> = Vec::new();
         let mut count = 0usize;
         let mut documents = 0;
@@ -334,7 +345,13 @@ impl ScreenReader for WindowsScreen {
         let list = self.list();
         let front = front.filter(|f| list.iter().any(|w| w.hwnd == *f)).or(list.first().map(|w| w.hwnd));
         list.into_iter()
-            .map(|w| SeenWindow { id: format!("hwnd:{}", w.hwnd), app: w.name, title: w.title, display: "1".into(), frontmost: Some(w.hwnd) == front })
+            .map(|w| SeenWindow {
+                id: format!("hwnd:{}", w.hwnd),
+                app: w.name,
+                title: w.title,
+                display: "1".into(),
+                frontmost: Some(w.hwnd) == front,
+            })
             .collect()
     }
 
@@ -414,7 +431,12 @@ impl ScreenReader for WindowsScreen {
 
     fn capture_screen(&self) -> Result<Capture, String> {
         let (x, y, w, h) = unsafe {
-            (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN))
+            (
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                GetSystemMetrics(SM_CYVIRTUALSCREEN),
+            )
         };
         let (rgba, width, height) = grab(None, x, y, w, h).ok_or("De schermafbeelding mislukte.")?;
         Ok(Capture { png: imaging::png(&rgba, width, height)?, width, height })

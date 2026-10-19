@@ -9,6 +9,7 @@ pub mod fuzzy;
 pub mod notes;
 pub mod prefs;
 pub mod recap;
+pub mod rewrite;
 pub mod screen;
 pub mod sounds;
 pub mod spoken;

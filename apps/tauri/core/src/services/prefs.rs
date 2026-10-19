@@ -12,9 +12,11 @@ use crate::paths;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SpeechEngine {
-    /// Wat op dit apparaat kan: Windows-spraakherkenning, of whisper.cpp als dat geïnstalleerd is.
+    /// Op deze computer: whisper.cpp (`whisper-cli`) met een model dat de gebruiker koos.
     #[default]
     Local,
+    /// De spraakherkenning van Windows. Vrije tekst gaat daarbij via de online spraakherkenning van Microsoft.
+    Windows,
     /// OpenAI (`audio/transcriptions`, met de OpenAI-sleutel uit de kluis).
     Openai,
     /// Groq (zelfde API, met de Groq-sleutel).
@@ -27,7 +29,7 @@ pub struct ServicePrefs {
     /// Klembord lezen, standaard uit zoals op de Mac.
     pub clipboard: bool,
     pub speech_engine: SpeechEngine,
-    /// Het model van whisper.cpp (`ggml-*.bin`) voor lokale herkenning op Linux.
+    /// Het model van whisper.cpp (`ggml-*.bin`) voor herkenning op deze computer.
     pub whisper_model: String,
     /// Apps waarin Nook niet meedenkt (id → naam).
     pub think_along_muted: BTreeMap<String, String>,
