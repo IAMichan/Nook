@@ -688,13 +688,13 @@ extension WAJID {
 enum WADate {
     static func rfc3339(_ s: String?) -> Date? {
         guard let s, !s.isEmpty else { return nil }
-        let f = ISO8601DateFormatter()
-        if let d = f.date(from: s) { return d }
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.date(from: s)
+        return standard.date(from: s) ?? NookDates.isoFractional.date(from: s)
     }
 
-    static func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+    static func iso(_ date: Date) -> String { standard.string(from: date) }
+
+    /// Default options, UTC; never changed, so one serves every message.
+    private static let standard = ISO8601DateFormatter()
 
     /// Epoch seconds, as a number or a numeric string.
     static func epoch(_ v: Any?) -> Date? {

@@ -1,19 +1,42 @@
 import Foundation
 
+/// One thing the agent did between its messages: a command, a file it read or changed, a search, a subagent.
+struct AgentToolStep: Identifiable, Equatable {
+    enum State: Equatable {
+        /// No result in the transcript yet: still going, or cut off.
+        case running
+        case done
+        case failed
+    }
+
+    /// The agent's own call id, to match the result.
+    let id: String
+    /// "Bash", "Read", "Edit", or the bare tool name of an MCP tool.
+    var name: String
+    /// What it was about: the command's description, the file, the pattern.
+    var summary: String
+    var state: State = .running
+}
+
 /// A single message from an active session's conversation.
 struct AgentChatMessage: Identifiable, Equatable {
     enum Kind: Equatable {
         case user
         case assistant
+        /// The agent's reasoning. Empty text when the agent keeps it to itself (Claude Code may store only that it thought).
         case thinking
+        /// Steps in a row, between the messages.
+        case tools
     }
 
     let id: String
     let kind: Kind
     let text: String
+    var steps: [AgentToolStep] = []
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
+    var isTools: Bool { kind == .tools }
 
     init(id: String, fromUser: Bool, text: String) {
         self.id = id
@@ -21,15 +44,17 @@ struct AgentChatMessage: Identifiable, Equatable {
         self.text = text
     }
 
-    init(id: String, kind: Kind, text: String) {
+    init(id: String, kind: Kind, text: String, steps: [AgentToolStep] = []) {
         self.id = id
         self.kind = kind
         self.text = text
+        self.steps = steps
     }
 }
 
-/// Reads a session's conversation from the agent's own transcript: user prompts, agent responses, and thinking/reasoning
-/// blocks. Tool invocations and system prompts are excluded. Understands Claude Code, Codex and Antigravity (JSONL) and
+/// Reads a session's conversation from the agent's own transcript: user prompts, agent responses, thinking/reasoning
+/// blocks and the steps in between (commands, files, searches), as the agent's own app shows them. System prompts and
+/// tool output are excluded. Understands Claude Code, Codex and Antigravity (JSONL) and
 /// Gemini CLI (one JSON file per chat).
 enum AgentTranscript {
     /// Number of bytes to read from the end of a JSONL file: enough for the whole conversation of nearly every session.
@@ -107,12 +132,33 @@ enum AgentTranscript {
                       let message = object["message"] as? [String: Any] else { continue }
 
                 if type == "user" {
+                    // Results of the agent's steps come back as user lines: they only mark a step done or failed.
+                    for block in (message["content"] as? [[String: Any]]) ?? [] where block["type"] as? String == "tool_result" {
+                        guard let callID = block["tool_use_id"] as? String else { continue }
+                        finish(step: callID, failed: (block["is_error"] as? Bool) == true, in: &messages)
+                    }
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty, isTypedPrompt(text) else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
                 } else {
-                    append(thinking: thinkingText(message["content"]), id: id, to: &messages)
-                    append(reply: text(message["content"]), id: id, to: &messages)
+                    // One line can hold several blocks; keep their order (thinking, text, steps).
+                    for (offset, block) in ((message["content"] as? [[String: Any]]) ?? []).enumerated() {
+                        let blockID = "\(id)-\(offset)"
+                        switch block["type"] as? String {
+                        case "thinking", "redacted_thinking":
+                            append(thinking: (block["thinking"] as? String) ?? "", id: blockID, to: &messages, allowEmpty: true)
+                        case "text":
+                            append(reply: (block["text"] as? String) ?? "", id: blockID, to: &messages)
+                        case "tool_use", "server_tool_use":
+                            let name = (block["name"] as? String) ?? ""
+                            let input = (block["input"] as? [String: Any]) ?? [:]
+                            append(step: AgentToolStep(id: (block["id"] as? String) ?? blockID, name: toolName(name),
+                                                       summary: toolSummary(name, input)), to: &messages)
+                        default:
+                            continue
+                        }
+                    }
+                    if let content = message["content"] as? String { append(reply: content, id: id, to: &messages) }
                 }
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
@@ -137,6 +183,31 @@ enum AgentTranscript {
                     append(reply: (payload["message"] as? String) ?? "", id: id, to: &messages)
                 case "agent_reasoning":
                     append(thinking: (payload["text"] as? String) ?? "", id: id, to: &messages)
+                default:
+                    continue
+                }
+            }
+            // Codex (response_item): the commands and tools it runs.
+            else if type == "response_item", let payload = object["payload"] as? [String: Any],
+                    let ptype = payload["type"] as? String {
+                let callID = (payload["call_id"] as? String) ?? (payload["id"] as? String) ?? "\(id)-call"
+                switch ptype {
+                case "function_call", "custom_tool_call":
+                    let name = (payload["name"] as? String) ?? ""
+                    let arguments = (payload["arguments"] as? String).flatMap {
+                        (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+                    } ?? [:]
+                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments)), to: &messages)
+                case "local_shell_call":
+                    let action = (payload["action"] as? [String: Any]) ?? [:]
+                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action)), to: &messages)
+                case "web_search_call":
+                    let action = (payload["action"] as? [String: Any]) ?? [:]
+                    append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),
+                           to: &messages)
+                    finish(step: callID, failed: false, in: &messages)
+                case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
+                    finish(step: callID, failed: false, in: &messages)
                 default:
                     continue
                 }
@@ -173,12 +244,15 @@ enum AgentTranscript {
         return messages
     }
 
-    /// Thinking right after thinking joins one bubble.
-    private static func append(thinking raw: String, id: String, to messages: inout [AgentChatMessage]) {
+    /// Thinking right after thinking joins one bubble. With `allowEmpty`, thinking the agent kept to itself still shows
+    /// that it thought (as its own app does), without text.
+    private static func append(thinking raw: String, id: String, to messages: inout [AgentChatMessage], allowEmpty: Bool = false) {
         let thinking = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !thinking.isEmpty else { return }
+        guard !thinking.isEmpty || allowEmpty else { return }
         if let last = messages.last, last.isThinking {
-            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(last.text + "\n\n" + thinking))
+            guard !thinking.isEmpty else { return }
+            let joined = last.text.isEmpty ? thinking : last.text + "\n\n" + thinking
+            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(joined))
         } else {
             messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
         }
@@ -188,11 +262,94 @@ enum AgentTranscript {
     private static func append(reply raw: String, id: String, to messages: inout [AgentChatMessage]) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if let last = messages.last, !last.fromUser && !last.isThinking {
+        if let last = messages.last, last.kind == .assistant {
             messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
         } else {
             messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
         }
+    }
+
+    /// Steps right after steps join one list.
+    private static func append(step: AgentToolStep, to messages: inout [AgentChatMessage]) {
+        if let last = messages.last, last.isTools {
+            var steps = last.steps
+            steps.append(step)
+            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .tools, text: "", steps: Array(steps.suffix(maxSteps)))
+        } else {
+            messages.append(AgentChatMessage(id: "\(step.id)-steps", kind: .tools, text: "", steps: [step]))
+        }
+    }
+
+    /// Marks the step with this call id done or failed. Results follow their call closely, so only recent lists are searched.
+    private static func finish(step callID: String, failed: Bool, in messages: inout [AgentChatMessage]) {
+        for index in messages.indices.reversed().prefix(12) where messages[index].isTools {
+            guard let position = messages[index].steps.lastIndex(where: { $0.id == callID }) else { continue }
+            var message = messages[index]
+            message.steps[position].state = failed ? .failed : .done
+            messages[index] = message
+            return
+        }
+    }
+
+    /// A long run of steps keeps its newest ones.
+    private static let maxSteps = 200
+
+    /// "mcp__github__create_issue" reads as "create_issue"; built-in tools keep their name.
+    static func toolName(_ raw: String) -> String {
+        guard raw.hasPrefix("mcp__") else { return raw.isEmpty ? "Tool" : raw }
+        return raw.components(separatedBy: "__").last.flatMap { $0.isEmpty ? nil : $0 } ?? raw
+    }
+
+    /// What a Claude Code step was about, the way the Claude app shows it next to the tool's name.
+    static func toolSummary(_ name: String, _ input: [String: Any]) -> String {
+        func string(_ key: String) -> String? {
+            guard let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return value
+        }
+        let fileName = string("file_path").map { URL(fileURLWithPath: $0).lastPathComponent }
+            ?? string("notebook_path").map { URL(fileURLWithPath: $0).lastPathComponent }
+        let summary: String?
+        switch name {
+        case "Bash": summary = string("description") ?? string("command")
+        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": summary = fileName
+        case "Grep", "Glob": summary = string("pattern")
+        case "WebFetch": summary = string("url")
+        case "WebSearch", "web_search": summary = string("query")
+        case "Task", "Agent": summary = string("description")
+        case "Skill": summary = string("skill") ?? string("command")
+        default:
+            summary = ["description", "command", "query", "url", "pattern", "path", "title", "name", "prompt"]
+                .lazy.compactMap { string($0) }.first ?? fileName
+        }
+        return oneLine(summary ?? "")
+    }
+
+    private static func codexToolName(_ raw: String) -> String {
+        switch raw {
+        case "shell", "exec_command", "shell_command", "container.exec": return "Shell"
+        case "apply_patch": return "Edit"
+        case "update_plan": return "Plan"
+        default: return toolName(raw)
+        }
+    }
+
+    /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
+    private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
+        if let command = arguments["command"] as? [String] {
+            if command.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: command[0]).lastPathComponent),
+               command[1].hasPrefix("-") { return oneLine(command[2]) }
+            return oneLine(command.joined(separator: " "))
+        }
+        for key in ["cmd", "command", "query", "path", "explanation"] {
+            if let value = arguments[key] as? String, !value.isEmpty { return oneLine(value) }
+        }
+        return ""
+    }
+
+    /// The first line, shortened: a step reads on one line.
+    private static func oneLine(_ text: String) -> String {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first ?? ""
+        return line.count > 160 ? String(line.prefix(159)) + "…" : line
     }
 
     private static func geminiText(_ content: Any?) -> String {
@@ -223,11 +380,6 @@ enum AgentTranscript {
         if let string = content as? String { return string }
         guard let blocks = content as? [[String: Any]] else { return "" }
         return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
-    }
-
-    private static func thinkingText(_ content: Any?) -> String {
-        guard let blocks = content as? [[String: Any]] else { return "" }
-        return blocks.compactMap { $0["type"] as? String == "thinking" ? $0["thinking"] as? String : nil }.joined(separator: "\n")
     }
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.

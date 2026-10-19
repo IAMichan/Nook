@@ -421,7 +421,7 @@ private struct TypingIndicator: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TimelineView(.animation) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 HStack(spacing: 4) {
                     ForEach(0..<3, id: \.self) { i in

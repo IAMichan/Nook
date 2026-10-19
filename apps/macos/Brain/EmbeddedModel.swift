@@ -27,6 +27,8 @@ final class EmbeddedModel: ObservableObject {
     private var busy = false
     private var idleTask: Task<Void, Never>?
     private var pressureSource: DispatchSourceMemoryPressure?
+    /// When autocomplete last used the model.
+    private var lastAutocomplete: Date?
 
     /// Unload model from memory after this many seconds of inactivity. High RAM: longer, keeping the next query instant.
     private static let idleSeconds: UInt64 = memoryGB >= 24 ? 300 : 90
@@ -63,8 +65,11 @@ final class EmbeddedModel: ObservableObject {
 
     private func scheduleUnload() {
         idleTask?.cancel()
+        // While autocomplete is in use the model stays longer: loading it again costs seconds, at the moment you type.
+        let typing = lastAutocomplete.map { Date().timeIntervalSince($0) < 30 * 60 } ?? false
+        let seconds = typing ? max(Self.idleSeconds, 15 * 60) : Self.idleSeconds
         idleTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled else { return }
             self?.unload()
         }
@@ -148,6 +153,34 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
+    // MARK: Autocomplete
+
+    /// Autocomplete's way in to the brain's model: loaded (and kept a while longer), without taking the one-question lock, so
+    /// a suggestion of a few words never makes a chat answer wait for it. Nil while an answer is being written (that goes
+    /// first), when the model is not installed, or when it is not the brain's own model: autocomplete never pushes the chat's
+    /// model out of memory for another one. When nothing is loaded, it may load the brain's model, which the chat then shares.
+    func completionContainer(_ id: String) async throws -> ModelContainer? {
+        guard installed.contains(id), !busy, loadedID == id || (container == nil && id == AppSettings.shared.localModel) else { return nil }
+        lastAutocomplete = Date()
+        idleTask?.cancel()
+        let loaded = try await load(id)
+        scheduleUnload()
+        return loaded
+    }
+
+    /// Loads the brain's model ahead of the first suggestion, under the same rule as `completionContainer`.
+    func preloadForAutocomplete(_ id: String) {
+        guard loadedID == id || (container == nil && id == AppSettings.shared.localModel) else { return }
+        lastAutocomplete = Date()
+        preload(id)
+    }
+
+    /// The model autocomplete can use: the brain's own local model, when it is installed.
+    var autocompleteModels: [(id: String, title: String)] {
+        let id = AppSettings.shared.localModel
+        return Self.options.filter { $0.id == id && installed.contains($0.id) }.map { ($0.id, $0.title) }
+    }
+
     // MARK: Inference
 
     /// Small test query without tools.
@@ -191,6 +224,11 @@ final class EmbeddedModel: ObservableObject {
             ] as MLXLMCommon.ToolSpec
         }
 
+        // Typed on its own: inside the `? nil :` ternary the closure was not inferred as @Sendable.
+        let dispatch: (@Sendable (ToolCall) async throws -> String)? = specs.isEmpty ? nil : { call in
+            await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
+        }
+
         let session = ChatSession(
             container,
             instructions: system,
@@ -205,9 +243,7 @@ final class EmbeddedModel: ObservableObject {
             // easy ones slow, so Nook only allows it when the question calls for it. The reasoning is never shown.
             additionalContext: ["enable_thinking": thinking],
             tools: specs.isEmpty ? nil : specs,
-            toolDispatch: specs.isEmpty ? nil : { call in
-                await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
-            }
+            toolDispatch: dispatch
         )
         // Pictures go in with the first message only, as files the model's own image reader opens.
         let pictures: [UserInput.Image] = (option?.seesImages ?? false)

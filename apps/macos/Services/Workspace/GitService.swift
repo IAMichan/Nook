@@ -28,12 +28,12 @@ enum ProcessRunner {
         let group = DispatchGroup()
         try process.run()
         group.enter()
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             outData.data = out.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
         group.enter()
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             errData.data = err.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
@@ -310,7 +310,7 @@ struct GitService: Sendable {
         }
     }
 
-    /// Git's "already checked out" refusal in words you can act on (the check does on the same message).
+    /// Git's "already checked out" refusal in words you can act on.
     static func friendlyWorktreeError(_ error: Error, base: String) -> Error {
         let text = error.localizedDescription
         guard text.range(of: #"is already (used by worktree at|checked out at)"#, options: [.regularExpression, .caseInsensitive]) != nil else {

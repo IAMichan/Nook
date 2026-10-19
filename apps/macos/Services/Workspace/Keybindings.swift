@@ -307,7 +307,7 @@ enum Keybindings {
         "session.undo", "session.interrupt",
     ]
 
-    /// Adapted from chat defaults. `session.interrupt` stays unbound on purpose.
+    /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose.
     static let defaults: [KeybindingRule] = [
         KeybindingRule(key: "mod+enter", command: "composer.send", when: "composerFocus && !turnRunning"),
         KeybindingRule(key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning"),

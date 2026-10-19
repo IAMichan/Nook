@@ -21,7 +21,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Runs over ACP (Agent Client Protocol) for these agents.
+    /// Runs over ACP (Agent Client Protocol).
     var usesACP: Bool {
         switch self {
         case .gemini, .opencode, .cursor, .grok, .antigravity: return true
@@ -37,7 +37,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
         case .codex:
-            // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
+            // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true)
@@ -198,6 +198,12 @@ struct TurnUsage: Equatable, Sendable {
     var contextTokens: Int?
     var contextWindow: Int?
     var durationSeconds: Double?
+
+    /// What this turn cost in tokens: new input, what went into the cache, and output. Cache reads are left out: every
+    /// call in a turn reads the whole context again, so counting them shows hundreds of thousands for one short question.
+    var ownTokens: Int {
+        (inputTokens ?? 0) + (cacheWriteTokens ?? 0) + (outputTokens ?? 0)
+    }
 }
 
 /// A single session in the workspace. Stored in `RunStore`, persisted across restarts.
@@ -244,10 +250,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
-    /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
+    /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
-    /// on by itself ("Resume at reset").
+    /// on by itself.
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil

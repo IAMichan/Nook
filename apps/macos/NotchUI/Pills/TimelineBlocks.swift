@@ -237,7 +237,7 @@ enum ToolTallyText {
 struct PlanCard: View {
     let text: String
     let canAct: Bool
-    /// "Implement in a new session" (split button): the plan goes to a fork, this session stays as it is.
+    /// "Implement in a new session": the plan goes to a fork, this session stays as it is.
     var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
     @State private var open = false

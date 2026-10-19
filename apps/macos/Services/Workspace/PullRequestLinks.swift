@@ -33,7 +33,7 @@ struct PullRequestRef: Equatable, Sendable {
         return n
     }
 
-    /// Path shapes follow `parseChangeRequestUrl` (packages/shared/src/changeRequestUrl.ts).
+    /// Parses GitHub pull request and GitLab merge request URLs.
     private static func shape(_ kind: SourceControlHost, _ s: [String]) -> (repo: [String], number: Int)? {
         func at(_ i: Int) -> String? { i < s.count ? s[i] : nil }
         switch kind {
@@ -211,8 +211,7 @@ enum PullRequestMatch {
     }
 }
 
-/// Settling follows ThreadSettlementService: an unresolved PR holds the session open, and the newest
-/// merged/closed one decides. `settleOnMerge` is autoSettleOnMerge.
+/// An unresolved PR holds the session open, and the newest merged/closed one decides.
 enum PullRequestSettlement {
     static func allMerged(links: [PullRequestLink]) -> Bool { !links.isEmpty && links.allSatisfy { $0.state == .merged } }
 

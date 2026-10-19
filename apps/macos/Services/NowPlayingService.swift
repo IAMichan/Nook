@@ -68,8 +68,13 @@ final class NowPlayingService: ObservableObject {
                 })
             }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // Nothing playing: the players' notifications announce a start, so the safety net can be slow.
+                if self.current?.isPlaying != true, Date().timeIntervalSince(self.lastPoll) < 10 { return }
+                self.poll()
+            }
         }
         poll()
     }

@@ -24,7 +24,7 @@ final class ClaudeUsage {
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 180) { [weak self] _ in
             Task { @MainActor in self?.refreshNow() }
         }
         refreshNow()
@@ -99,17 +99,13 @@ final class ClaudeUsage {
     }
 
     private nonisolated static func parseDate(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
 
     // MARK: Token
 
     /// The OAuth access token of this account, if it is signed in with a subscription and the token is still valid.
-    private nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
+    nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
         var candidates: [Data] = []
         // Claude Code keeps the login in the Keychain; every extra account directory has its own entry, named after a hash of the path.
         var services = [isDefault ? "Claude Code-credentials" : "Claude Code-credentials-" + hash(home.path)]

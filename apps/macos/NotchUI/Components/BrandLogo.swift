@@ -3,8 +3,7 @@ import AppKit
 
 // The real marks of the AI brands Nook talks to (Claude, OpenAI, Gemini, Mistral, Ollama, Grok, Groq, OpenRouter, DeepSeek,
 // Qwen, Kimi, LM Studio, Meta, Gemma), as vector paths so they stay sharp at any size and need no image assets.
-// The paths come from the open-source LobeHub icon set (MIT); the marks themselves belong to their owners and are used
-// here only to say which model or agent is meant.
+// The marks belong to their owners and are used here only to say which model or agent is meant.
 
 enum BrandLogo: String, CaseIterable {
     case claude, openai, gemini, mistral, ollama, grok, groq, openrouter, deepseek, qwen, kimi, lmstudio, meta, gemma

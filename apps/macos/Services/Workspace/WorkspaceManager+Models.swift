@@ -1,6 +1,6 @@
 import Foundation
 
-/// The models each agent offers, asked asks: Codex lists them over app-server (`model/list`, page by
+/// The models each agent offers, asked: Codex lists them over app-server (`model/list`, page by
 /// page), Grok names them in its `initialize` reply, and the other ACP agents report them when a session opens.
 /// The lists are kept on disk, so the menus show the agent's own models from the start.
 extension WorkspaceManager {
@@ -55,7 +55,7 @@ extension WorkspaceManager {
         closeProbe(after: 30) { client.stop() }
     }
 
-    /// Only `initialize`: never `authenticate` or `session/new` (Grok probe).
+    /// Only `initialize`: never `authenticate` or `session/new`.
     private func probeAcpModels(_ provider: RunProvider, _ executable: String, environment: [String: String]) {
         let spec = LaunchSpec(executable: executable, arguments: AcpLaunch.arguments(provider, permission: .ask),
                               extraEnvironment: environment, workingDirectory: NSHomeDirectory(), initialInput: [], keepsInputOpen: true)

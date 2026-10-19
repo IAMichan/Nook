@@ -1,6 +1,6 @@
 import Foundation
 
-/// A turn that stopped on a usage limit handles it: Nook remembers when the limit resets, shows it
+/// A turn that stopped on a usage limit: Nook remembers when the limit resets, shows it
 /// above the composer, and with "Resume at reset" sends "Continue where you left off." once it has. Any message of
 /// your own, archiving, or turning it off cancels that.
 extension WorkspaceManager {
@@ -60,7 +60,7 @@ extension WorkspaceManager {
         }
     }
 
-    /// Checked again right before sending (rule): still waiting, still wanted, nothing pending, not archived.
+    /// Checked again right before sending: still waiting, still wanted, nothing pending, not archived.
     private func resumeAfterLimit(_ id: UUID) {
         limitResumes[id] = nil
         guard let run = run(id), run.autoResume == true, run.limitedAt != nil, let reset = run.limitResetAt, reset <= Date(),

@@ -1,6 +1,6 @@
 import XCTest
 
-/// nook.json: the same schema, read leniently.
+/// nook.json: project script definitions, read leniently.
 final class ProjectScriptsTests: XCTestCase {
     func testParse() {
         let json = #"{"scripts":[{"id":"dev","name":"Dev server","command":"pnpm dev","previewUrl":"http://localhost:5173","autoOpenPreview":true},{"name":"Install","command":"pnpm install","runOnWorktreeCreate":true},{"name":"Leeg"},{"command":"make test"}]}"#

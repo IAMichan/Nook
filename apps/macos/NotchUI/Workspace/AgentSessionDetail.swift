@@ -35,7 +35,8 @@ struct AgentSessionDetail: View {
         Group {
             switch selection {
             case .live(let session): liveDetail(session)
-            case .past(let session): pastDetail(session)
+            case .past(let session):
+                if let cloud = session.cloud { cloudDetail(session, cloud) } else { pastDetail(session) }
             }
         }
         .onChange(of: selectionID) { _, _ in
@@ -491,6 +492,59 @@ struct AgentSessionDetail: View {
             .trailing { ComposerMic(text: $draft) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: Cloud session
+
+    /// A session in Anthropic's cloud (Claude app, claude.ai/code). Its conversation lives there, not on this Mac: Nook
+    /// shows where it stands and opens it in Claude.
+    private func cloudDetail(_ session: PastSession, _ cloud: CloudSession) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(folder: session.project, title: AgentFormat.title(session.title), directory: "", agentWorking: false)
+            VStack(alignment: .leading, spacing: 8) {
+                Label(cloudStatus(cloud), systemImage: "cloud")
+                    .font(NookTheme.font(13.5, .medium))
+                    .foregroundStyle(cloud.status == .needsYou ? NookTheme.amber : NookTheme.paper)
+                Text(tr("agents.cloud.explain"))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                let details = [cloudOrigin(cloud.origin), cloud.repository, cloud.branch, cloud.model].filter { !$0.isEmpty }
+                if !details.isEmpty {
+                    Text(details.joined(separator: " · "))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+                Text(tr("agents.cloud.updated", NookDates.ago(cloud.updated)))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Button(tr("agents.cloud.open")) {
+                    if let url = URL(string: cloud.url) { NSWorkspace.shared.open(url) }
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+            .font(NookTheme.font(12.5))
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func cloudStatus(_ cloud: CloudSession) -> String {
+        switch cloud.status {
+        case .running: return tr("agents.cloud.running")
+        case .needsYou: return tr("agents.cloud.needsYou")
+        case .failed: return tr("agents.cloud.failed")
+        case .idle, .archived: return tr("agents.cloud.idle")
+        }
+    }
+
+    private func cloudOrigin(_ origin: String) -> String {
+        switch origin {
+        case "desktop_app": return tr("agents.cloud.fromDesktop")
+        case "mobile_app", "ios_app", "android_app": return tr("agents.cloud.fromPhone")
+        case "web": return tr("agents.cloud.fromWeb")
+        default: return ""
+        }
     }
 
     /// Without a readable transcript: the last prompt and reply the history scan kept.

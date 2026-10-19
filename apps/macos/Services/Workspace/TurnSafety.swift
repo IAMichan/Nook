@@ -13,7 +13,7 @@ struct EventSettlement: Equatable, Sendable {
 }
 
 /// Every path that ends a turn (done, Stop, failure, process exit) must leave no event spinning or awaiting an
-/// answer (docs/internals/adding-a-provider.md: every eventual path closes its items).
+/// answer.
 enum OpenWork {
     static func settle(events: [RunEvent], reason: SettleReason) -> [EventSettlement] {
         events.compactMap { event in
@@ -167,7 +167,7 @@ struct SessionApprovals: Equatable, Sendable {
 // MARK: - Background work
 
 /// Background work of one session (sub-agents, monitors, background commands). While any is running the session
-/// is neither "done" nor idle-released.: packages/shared/src/orchestrationV2PendingBackgroundWork.ts.
+/// is neither "done" nor idle-released.
 struct BackgroundRoster: Equatable, Sendable {
     enum Kind: String, Codable, Sendable { case subagent, monitor, command, other }
     enum CancelReason: String, Codable, Sendable { case stopped, processExited, sessionClosed }

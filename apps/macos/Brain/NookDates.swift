@@ -4,39 +4,85 @@ enum NookDates {
     /// Parses ISO 8601 with or without timezone. Without timezone, the Mac's current timezone is used.
     static func parse(_ string: String) -> Date? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        if let date = iso.date(from: trimmed) { return date }
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: trimmed) { return date }
+        if let date = isoPlain.date(from: trimmed) { return date }
+        if let date = isoFractional.date(from: trimmed) { return date }
 
-        let local = DateFormatter()
-        local.locale = Locale(identifier: "en_US_POSIX")
-        local.timeZone = .current
         for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
-            local.dateFormat = format
-            if let date = local.date(from: trimmed) { return date }
+            if let date = formatter(format, locale: "en_US_POSIX").date(from: trimmed) { return date }
         }
         return nil
     }
 
     static func iso(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = .current
-        formatter.formatOptions = [.withInternetDateTime]
+        let zone = TimeZone.current
+        let formatter = cached("iso|\(zone.identifier)") { () -> ISO8601DateFormatter in
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = zone
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter
+        }
         return formatter.string(from: date)
     }
 
-    private static func formatter(_ format: String) -> DateFormatter {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "nl_NL")
-        f.dateFormat = format
-        return f
+    /// Parsing only: the input names its own time zone, so these never change.
+    static let isoPlain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    // MARK: Formatter cache
+
+    /// Building a formatter loads locale data and costs far more than using one, and these run for every row of every
+    /// list on each redraw. Formatters are kept per format, locale and time zone (so a changed zone still gets a fresh one)
+    /// and never changed after creation, which makes sharing them across threads safe.
+    private static let cacheLock = NSLock()
+    private nonisolated(unsafe) static var formatters: [String: AnyObject] = [:]
+
+    static func cached<F: AnyObject>(_ key: String, make: () -> F) -> F {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let hit = formatters[key] as? F { return hit }
+        let made = make()
+        formatters[key] = made
+        return made
     }
 
-    /// "Fri 16 Oct 14:00"
-    static func short(_ date: Date) -> String {
-        formatter("EEE d MMM HH:mm").string(from: date)
+    /// A date formatter for `format` in `locale`, in the Mac's current time zone.
+    static func formatter(_ format: String, locale: String = "nl_NL") -> DateFormatter {
+        let zone = TimeZone.current
+        return cached("date|\(format)|\(locale)|\(zone.identifier)") { () -> DateFormatter in
+            let f = DateFormatter()
+            f.locale = Locale(identifier: locale)
+            f.timeZone = zone
+            f.dateFormat = format
+            return f
+        }
+    }
+
+    /// "Fri 16 Oct 14:00", with the year ("Fri 16 Oct 2027 14:00") when it is not this year.
+    static func short(_ date: Date, now: Date = Date()) -> String {
+        let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
+        return formatter(sameYear ? "EEE d MMM HH:mm" : "EEE d MMM yyyy HH:mm").string(from: date)
+    }
+
+    /// How far a date is from now in whole calendar days, for the brain: "today", "tomorrow", "in 365 days", "3 days ago".
+    /// Spelled out so a reminder a year away is never read as one coming up soon.
+    static func distance(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+        switch days {
+        case 0: return "today"
+        case 1: return "tomorrow"
+        case -1: return "yesterday"
+        case 2...: return "in \(days) days"
+        default: return "\(-days) days ago"
+        }
     }
 
     static func time(_ date: Date) -> String {

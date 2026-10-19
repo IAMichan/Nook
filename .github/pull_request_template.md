@@ -1,9 +1,9 @@
-## Wat verandert er
+## Summary
 
-## Waarom
+## Why
 
-## Getest
+## Testing
 
-- [ ] De build slaagt (`xcodegen && xcodebuild ... build`)
-- [ ] Getest in de app op macOS
-- [ ] Acties namens de gebruiker lopen via een bevestigingskaart
+- [ ] Build succeeds (`xcodegen && xcodebuild ... build` / `./scripts/core-tests.sh`)
+- [ ] Verified in the macOS app
+- [ ] User-facing actions require explicit confirmation via an approval card/plan

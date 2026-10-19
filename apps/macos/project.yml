@@ -4,7 +4,7 @@ options:
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
-  developmentLanguage: nl
+  developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -25,6 +25,10 @@ packages:
     # Parakeet speech-to-text and speaker diarization on the Neural Engine (Apache-2.0).
     url: https://github.com/FluidInference/FluidAudio
     exactVersion: 0.17.7
+  LlamaSwift:
+    # llama.cpp as a ready-built xcframework (MIT): runs the GGUF model that autocomplete uses (one on this Mac or one you pick).
+    url: https://github.com/mattt/llama.swift
+    exactVersion: 2.10549.0
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     # The built-in terminal (Workspace › Terminals). Pinned: a stable release whose API matches TerminalSessions.swift.
@@ -57,6 +61,8 @@ targets:
         product: Tokenizers
       - package: SwiftTerm
         product: SwiftTerm
+      - package: LlamaSwift
+        product: LlamaSwift
       - package: FluidAudio
         product: FluidAudio
     info:
@@ -94,7 +100,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
         # Hardened runtime: other programs cannot inject code into Nook and inherit its screen, microphone and automation access.
         ENABLE_HARDENED_RUNTIME: YES
-        DEVELOPMENT_TEAM: 35SMNHP9K7
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
@@ -126,7 +133,10 @@ targets:
       - path: App/ConversationList.swift
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
+      - path: Services/LocalAgentScanner.swift
+      - path: Services/ClaudeCloudSessions.swift
       - path: Services/FinishedSessions.swift
+      - path: Services/SessionLiveness.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
@@ -194,6 +204,13 @@ targets:
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/Flow/FlowLogic.swift
+      - path: Services/Autocomplete/GGUFReader.swift
+      - path: Services/Autocomplete/CompletionModels.swift
+      - path: Services/Autocomplete/CompletionSuggestion.swift
+      - path: Services/Autocomplete/CompletionPreferences.swift
+      - path: Services/Autocomplete/CompletionEmoji.swift
+      - path: Services/Autocomplete/CompletionPrivacy.swift
+      - path: Services/Autocomplete/CompletionLearning.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift

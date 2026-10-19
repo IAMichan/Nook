@@ -1,6 +1,6 @@
 import Foundation
 
-// Stop that always ends (: interrupt is a race, so wait for the process to close, then finalize by force), and a
+// Stop that always ends, and a
 // turn that never leaves anything open. The decisions are in `StopCoordinator` and `OpenWork`; this carries them out.
 
 extension WorkspaceManager {

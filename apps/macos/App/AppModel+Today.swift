@@ -34,6 +34,8 @@ extension AppModel {
             ))
         }
 
+        if let attention = autocompleteAttentionItem() { items.append(attention) }
+
         for session in hub.sessions where session.status == .waiting || session.status == .failed {
             let title = session.status == .waiting ? "\(session.name) wacht op je" : "\(session.name) heeft een fout"
             items.append(TodayItem(
@@ -87,7 +89,10 @@ extension AppModel {
                 target: .action { [weak self] in self?.presentLoop(loop) }
             ))
         }
-        return Array(items.prefix(5))
+        var shown = Array(items.prefix(5))
+        // What autocomplete saved you today: last, and only when there is room.
+        if shown.count < 5, let used = autocompleteTodayItem() { shown.append(used) }
+        return shown
     }
 
     func reloadLoops() {

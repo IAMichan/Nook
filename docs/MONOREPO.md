@@ -1,48 +1,45 @@
-# Monorepo
+# Monorepo Structure
 
-Nook is één repo voor alle platformen. De macOS-app en de iPhone-companion zijn in Swift geschreven; Windows, Linux en Android delen één Tauri-app in `apps/tauri` (kern in Rust, interface in Svelte).
+Nook is organized as a single multi-platform repository. The macOS app and the iPhone companion are written in Swift; Windows, Linux, and Android share one Tauri app in `apps/tauri` (Rust core, Svelte UI).
 
-```
+```text
 apps/
-  macos/     de huidige app (Swift, AppKit/SwiftUI, XcodeGen) — gebouwd en getest in CI
-  ios/       Nook Companion voor iPhone (SwiftUI, XcodeGen) — groeit uit tot de iOS-app
-  tauri/     Nook voor Windows, Linux en Android (Tauri 2: Rust-kern in core/, Svelte-interface in src/)
-  android/   verwijst naar tauri/
-  windows/   verwijst naar tauri/
-  linux/     verwijst naar tauri/
+  macos/     Native macOS app (Swift, AppKit/SwiftUI, XcodeGen) — built and tested in CI
+  ios/       Nook Companion for iPhone (SwiftUI, XcodeGen) — companion app & foundation for Nook on iOS
+  tauri/     Nook for Windows, Linux, and Android (Tauri 2: Rust core in core/, Svelte UI in src/)
+  android/   points to tauri/
+  windows/   points to tauri/
+  linux/     points to tauri/
 packages/
-  core/      Swift-pakket voor de platformonafhankelijke kern (Foundation-only), nu leeg op een placeholder na
-  protocol/  gedeeld protocol tussen apps (Companion-protocol, verzegeling, hashing), gebruikt door macos en ios
-docs/        ontwerp en plannen, gelden voor alle platformen
-scripts/     hulpscripts (o.a. core-tests.sh)
+  core/      Platform-independent Swift core package (Foundation-only)
+  protocol/  Shared Companion protocol, ChaCha20-Poly1305 sealing, and HMAC/SHA-256 verification (used by macOS and iOS)
+docs/        Architecture and subsystem documentation
+scripts/     Helper scripts (including core-tests.sh and local model fine-tuning)
 ```
 
-## Regels
+## Architectural Rules
 
-- Elke app staat in `apps/<platform>` en heeft zijn eigen build, project en tests. De CI bouwt een app alleen als er iets in zijn map (of in een pakket waar hij van afhangt) verandert.
-- Wat meer dan één platform nodig heeft, hoort in `packages/`, niet gekopieerd in een app. Een pakket mag nooit van een app afhangen.
-- Een pakket gebruikt alleen Foundation (geen AppKit, UIKit, CryptoKit, Combine) zodat het op Linux, Windows en Android bouwt. Enige uitzondering nu: `CompanionSeal.swift` in `packages/protocol` (CryptoKit), zie de README daar.
-- Platformgebonden dingen (notch, menubalk, AppleScript, ScreenCaptureKit, Keychain) blijven in de app van dat platform, achter een protocol dat het pakket definieert.
+- Every app lives in `apps/<platform>` with its own build configuration, project file, and tests. CI workflows use path filters so each platform job runs only when files in its directory (or a shared package it depends on) change.
+- Logic shared across more than one platform belongs in `packages/`, never duplicated across app targets. A package must never depend on an app target.
+- Shared packages rely strictly on `Foundation` (no `AppKit`, `UIKit`, or `Combine`) so they compile cleanly on macOS, iOS, Linux, Windows, and Android. The only platform-conditional file is `CompanionSeal.swift` in `packages/protocol` (which uses `CryptoKit` on Apple platforms).
+- Platform-specific capabilities (notch UI, menu bar, AppleScript, `ScreenCaptureKit`, Keychain) remain in the platform app behind clean protocols.
 
-## Wat er nu staat
+## Current State
 
-- **De macOS-app** is ongewijzigd verplaatst naar `apps/macos`. De paden in `apps/macos/project.yml` zijn onderling hetzelfde gebleven; bouwen gaat vanuit die map (`cd apps/macos && xcodegen`).
-- **De iPhone-companion** staat in `apps/ios` met een eigen `project.yml` (`cd apps/ios && xcodegen`). Wat hij met de Mac deelt (protocol, verzegeling, hashing) staat in `packages/protocol`; beide projecten nemen die bestanden rechtstreeks op. Zie [COMPANION.md](COMPANION.md).
-- **De portable kern** staat nog in `apps/macos` (`Core/`, `Brain/`, `Services/Workspace/`, …). `scripts/core-tests.sh` bouwt die al op Linux. De volgende stap voor ieder ander platform is deze bestanden naar `packages/core` te verhuizen, zodat de macOS-app er ook gewoon van afhangt.
+- **macOS App (`apps/macos`):** Generated via XcodeGen (`cd apps/macos && xcodegen`).
+- **iPhone Companion (`apps/ios`):** Generated via XcodeGen (`cd apps/ios && xcodegen`). Shares `packages/protocol` with the macOS app; see [`docs/COMPANION.md`](COMPANION.md).
+- **Portable Core (`packages/core` & `scripts/core-tests.sh`):** Over 850 unit tests in `apps/macos/Tests/NookTests` are already pure `Foundation` and run via `./scripts/core-tests.sh` (`swift test`). As additional desktop/mobile platforms are implemented, those Foundation-only modules move into `packages/core`.
 
-## Volgorde voor een nieuw platform
+## Adding a New Platform
 
-1. Verhuis de Foundation-only bestanden van de kern naar `packages/core`. Laat `apps/macos` er via Swift Package Manager van afhangen en kijk dat CI groen blijft.
-2. Kies de UI-techniek van het platform en zet het project in `apps/<platform>` (zie de README daar).
-3. Implementeer de platformdiensten achter de protocollen uit de kern (opslag, geheimen, scherm lezen, agenda, hotkeys).
-4. Voeg een eigen CI-job toe in `.github/workflows/`, met een `paths:`-filter op `apps/<platform>/**` en `packages/**`.
-5. Zet de platformregel in de README en in `THIRD-PARTY-NOTICES.md` als er nieuwe afhankelijkheden zijn.
+1. Move the required Foundation-only modules into `packages/core` and link `apps/macos` against it via Swift Package Manager.
+2. Set up the native UI project in `apps/<platform>` (see the `README.md` in each platform folder).
+3. Implement platform adapters for storage, secrets, screen reading, calendar, and global shortcuts.
+4. Add a dedicated CI workflow in `.github/workflows/` with `paths:` filters for `apps/<platform>/**` and `packages/**`.
+5. Document any new dependencies in `README.md` and `THIRD-PARTY-NOTICES.md`.
 
-## Gekozen: Tauri voor Windows, Linux en Android
+## Chosen: Tauri for Windows, Linux, and Android
 
-- **Eén app, drie platformen.** `apps/tauri` is een Tauri 2-app: de kern in Rust (`apps/tauri/core`, zonder Tauri te testen), de interface in Svelte 5. Windows, Linux en Android delen alles behalve de platformlaag (`src-tauri/src/platform`). De Swift-kern wordt daarvoor niet gedeeld maar geport; de macOS-app blijft de specificatie. Zie [TAURI.md](TAURI.md) voor wat er al geport is.
-- **De Mac blijft Swift.** De notch, ScreenCaptureKit, AppleScript en MLX horen bij de Mac; de Tauri-app kan later ook op macOS draaien, maar dat is geen doel.
-- **Het lokale model.** De MLX-pakketten bestaan alleen voor Apple Silicon. De Tauri-app denkt lokaal met Ollama of LM Studio, of met een externe AI die de gebruiker zelf kiest.
-
-## Open keuzes
-- **Releasekanalen** (notarisatie, TestFlight, Play Store, MSIX, Flatpak/AppImage) staan hier nog niet in.
+- **One app, three platforms.** `apps/tauri` is a Tauri 2 app: the core in Rust (`apps/tauri/core`, testable without Tauri), the UI in Svelte 5. Windows, Linux, and Android share everything except the platform layer (`src-tauri/src/platform`). The Swift core is ported rather than shared; the macOS app remains the specification. See [TAURI.md](TAURI.md) for what has been ported.
+- **The Mac stays Swift.** The notch, ScreenCaptureKit, AppleScript, and MLX belong to the Mac.
+- **The local model.** MLX only exists for Apple Silicon. The Tauri app thinks locally with Ollama or LM Studio, or with an external AI the user chooses.

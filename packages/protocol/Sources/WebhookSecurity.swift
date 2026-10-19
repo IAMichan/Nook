@@ -148,7 +148,7 @@ struct DeliveryLog: Codable, Equatable, Sendable {
     }
 }
 
-/// At most `limit` accepted deliveries per window (: 60 per minute per task, also behind the relay because the
+/// At most `limit` accepted deliveries per window (default: 60 per minute per task, also behind the relay because the
 /// tunnel hostname is public). The clock is passed in.
 struct RateWindow: Equatable, Sendable {
     static let defaultLimit = 60

@@ -34,7 +34,7 @@ final class CompanionStore: ObservableObject {
         enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
         push = UserDefaults.standard.data(forKey: Self.pushKey).flatMap { try? JSONDecoder().decode(PushSettings.self, from: $0) } ?? PushSettings()
         apnsKeyID = UserDefaults.standard.string(forKey: Self.keyIDKey) ?? ""
-        apnsTeamID = UserDefaults.standard.string(forKey: Self.teamIDKey) ?? "35SMNHP9K7"
+        apnsTeamID = UserDefaults.standard.string(forKey: Self.teamIDKey) ?? ""
         if let data = UserDefaults.standard.data(forKey: Self.listKey),
            let list = try? JSONDecoder().decode([PairedDevice].self, from: data) {
             devices = list.filter { Self.key(for: $0.id) != nil }

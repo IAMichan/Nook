@@ -1,6 +1,6 @@
 import Foundation
 
-/// A model an agent offers itself, read reads it: Codex from `model/list`, ACP agents from what
+/// A model an agent offers itself: Codex from `model/list`, ACP agents from what
 /// `session/new` (or Grok's `initialize`) reports. Nook shows these instead of a fixed list once it has seen them.
 struct AgentModel: Codable, Equatable, Hashable, Sendable {
     var id: String
@@ -21,7 +21,7 @@ enum AgentModelCatalog {
         return (models, nonEmpty(response["nextCursor"]))
     }
 
-    /// "gpt-5.1-codex-max" reads "GPT-5.1-Codex-Max" (formatCodexModelName).
+    /// "gpt-5.1-codex-max" reads "GPT-5.1-Codex-Max".
     static func codexName(_ name: String) -> String {
         var text = name
         if text.lowercased().hasPrefix("gpt") { text = "GPT" + text.dropFirst(3) }

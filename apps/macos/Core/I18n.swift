@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Supported languages for the app interface.
 public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
-    case nl = "nl"
     case en = "en"
+    case nl = "nl"
     case de = "de"
     case fr = "fr"
     case es = "es"
@@ -13,8 +13,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .nl: return "Nederlands"
         case .en: return "English"
+        case .nl: return "Nederlands"
         case .de: return "Deutsch"
         case .fr: return "Français"
         case .es: return "Español"
@@ -51,10 +51,9 @@ public final class I18n: ObservableObject, @unchecked Sendable {
            let lang = AppLanguage(rawValue: saved) {
             initial = lang
         } else {
-            let preferred = Locale.preferredLanguages.first?.prefix(2).lowercased() ?? "nl"
-            if preferred == "en" { initial = .en }
-            else if let lang = AppLanguage(rawValue: preferred) { initial = lang }
-            else { initial = .nl }
+            let preferred = Locale.preferredLanguages.first?.prefix(2).lowercased() ?? "en"
+            if let lang = AppLanguage(rawValue: preferred) { initial = lang }
+            else { initial = .en }
         }
         self.cachedLanguage = initial
         self.language = initial
@@ -62,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [languageTranslations, memoryTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {

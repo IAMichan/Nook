@@ -66,12 +66,12 @@ final class QueryPlanTests: XCTestCase {
     // MARK: Files worth showing
 
     func testBuildOutputIsLeftOutAndDocumentsComeFirst() {
-        let paths = ["/Users/m/Code/PulseGuard/apps/app/dist/assets/index-BRcVVYD8.js",
-                     "/Users/m/Code/Nook/Services/Connectors/AppConnectors.swift",
-                     "/Users/m/Documents/Offerte keuken.pdf",
-                     "/Users/m/Code/Nook/docs/ASSISTANT.md"]
-        XCTAssertEqual(Research.rankFiles(paths), ["/Users/m/Documents/Offerte keuken.pdf", "/Users/m/Code/Nook/docs/ASSISTANT.md",
-                                                   "/Users/m/Code/Nook/Services/Connectors/AppConnectors.swift"])
-        XCTAssertEqual(Research.rankFiles(paths, codeFirst: true).first, "/Users/m/Code/Nook/Services/Connectors/AppConnectors.swift")
+        let paths = ["/Users/dev/Code/ExampleApp/apps/app/dist/assets/index-BRcVVYD8.js",
+                     "/Users/dev/Code/Nook/Services/Connectors/AppConnectors.swift",
+                     "/Users/dev/Documents/Project Proposal.pdf",
+                     "/Users/dev/Code/Nook/docs/ASSISTANT.md"]
+        XCTAssertEqual(Research.rankFiles(paths), ["/Users/dev/Documents/Project Proposal.pdf", "/Users/dev/Code/Nook/docs/ASSISTANT.md",
+                                                   "/Users/dev/Code/Nook/Services/Connectors/AppConnectors.swift"])
+        XCTAssertEqual(Research.rankFiles(paths, codeFirst: true).first, "/Users/dev/Code/Nook/Services/Connectors/AppConnectors.swift")
     }
 }

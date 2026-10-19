@@ -343,7 +343,7 @@ struct AgentRunPanel: View {
             }
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // Scrolling away from the end stops the following until you come back (scroll anchoring).
+            // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
             } action: { _, nowAtEnd in
@@ -471,7 +471,7 @@ struct AgentRunPanel: View {
         } else if event.kind == .user {
             eventView(event)
                 .contextMenu {
-                    // "edit from here": the worktree's files go back to how they were before this message.
+                    // "Edit from here": the worktree's files go back to how they were before this message.
                     Button(tr("ws.revert.menu")) {
                         revertError = nil
                         revertTarget = event
@@ -606,7 +606,7 @@ struct AgentRunPanel: View {
             workspace.send(runID, text: outgoing.send)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
-        // Return does what you chose in Settings, Cmd+Return the other (queue / steer).
+        // Return does what you chose in Settings, Cmd+Return the other.
         let canSteer = active && workspace.canSteer(runID)
         let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
         func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
@@ -678,7 +678,7 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account and the model (model picker). A model counts from the next turn; another account
+    /// The agent with its account and the model. A model counts from the next turn; another account
     /// or agent moves the session there with a summary of what happened (shown in the timeline).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)

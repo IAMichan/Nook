@@ -4,6 +4,7 @@ import SwiftUI
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
+    @State private var ringHovered: String?
 
     var body: some View {
         let size = viewModel.size
@@ -30,7 +31,7 @@ struct NotchRootView: View {
             .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
             .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
-            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating && !bare ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
+            .shadow(color: Color.black.opacity(floating ? (isExpanded ? 0.45 : (bare ? 0 : 0.3)) : 0), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
             .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
@@ -213,7 +214,7 @@ struct NotchRootView: View {
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
-            NookOrb(mood: mood, size: 24, animated: animated)
+            NookOrb(mood: mood, size: 24, animated: animated, glow: viewModel.geometry.isFloating)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()
@@ -229,7 +230,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             // Left wing: Nook pinned to the far left, album cover beside it
             HStack(spacing: 8) {
-                NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true)
+                NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true, glow: viewModel.geometry.isFloating)
                 TrackCover(artworkURL: app.nowPlaying.current?.artworkURL)
                 Spacer(minLength: 0)
             }
@@ -272,7 +273,7 @@ struct NotchRootView: View {
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .done, size: 24)
+                NookOrb(mood: .done, size: 24, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -302,7 +303,7 @@ struct NotchRootView: View {
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .seen, size: 24, animated: true, curious: true)
+                NookOrb(mood: .seen, size: 24, animated: true, curious: true, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -347,14 +348,17 @@ struct NotchRootView: View {
                 NookPresence.shared.poke()
                 viewModel.show(.panel(.nook))
             } label: {
-                NookOrb(mood: mood, size: 46)
+                NookOrb(mood: mood, size: 46, glow: viewModel.geometry.isFloating)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("notch.goToHome"))
             .background {
                 if ring {
-                    NookTaskRing(items: ringItems, orbSize: 46) { openRingItem($0) }
+                    NookTaskRing(items: ringItems, orbSize: 46, hovered: $ringHovered) { openRingItem($0) }
                 }
+            }
+            .overlay {
+                if ring { NookTaskRingLabel(items: ringItems, hovered: ringHovered, orbSize: 46) }
             }
             .zIndex(1)
             inner()

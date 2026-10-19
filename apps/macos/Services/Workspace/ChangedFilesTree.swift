@@ -1,6 +1,6 @@
 import Foundation
 
-// The "changed files" tree under a turn (`buildTurnDiffTree`): directories aggregate their children's numbers,
+// The "changed files" tree under a turn: directories aggregate their children's numbers,
 // chains of single-child directories collapse into one row ("src/app"), and every row has a stable id (its path) so
 // expansion state survives rebuilds.
 

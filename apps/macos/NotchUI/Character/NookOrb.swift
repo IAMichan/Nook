@@ -18,6 +18,8 @@ struct NookOrb: View {
     var animated: Bool = true
     /// Noticed something it can help with: tilts its head and raises one eye, as if lifting an eyebrow.
     var curious: Bool = false
+    /// Soft light around the orb. Off when docked in the notch, where the glow only smudges the black.
+    var glow: Bool = true
 
     @ObservedObject private var presence = NookPresence.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -25,7 +27,7 @@ struct NookOrb: View {
     @State private var moodSince = Date()
 
     var body: some View {
-        TimelineView(.animation(paused: !animated)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)
@@ -42,7 +44,7 @@ struct NookOrb: View {
         return ZStack {
             Circle()
                 .fill(mood.color)
-                .shadow(color: mood.color.opacity(p.glowOpacity), radius: p.glowRadius)
+                .shadow(color: mood.color.opacity(glow ? p.glowOpacity : 0), radius: p.glowRadius)
             Circle()
                 .fill(RadialGradient(
                     gradient: Gradient(stops: [

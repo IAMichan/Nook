@@ -97,7 +97,7 @@ final class WorkspaceManager: ObservableObject {
     /// The latest token totals per Codex session, so a turn's own usage is the difference.
     var codexTotals: [UUID: TokenCounts] = [:]
     var codexIdleClose: [UUID: Task<Void, Never>] = [:]
-    /// Claude Code processes kept alive after a turn (way): the next message goes to the same process, as long
+    /// Claude Code processes kept alive after a turn: the next message goes to the same process, as long
     /// as model, mode and rights are unchanged. With the settings they were started with, and when they close.
     var claudeIdle: [UUID: (process: AgentProcess, key: String)] = [:]
     var claudeIdleClose: [UUID: Task<Void, Never>] = [:]
@@ -566,7 +566,7 @@ final class WorkspaceManager: ObservableObject {
         captureCheckpoint(id)
     }
 
-    /// Only for sessions in their own worktree (as): restoring there can never touch your own checkout.
+    /// Only for sessions in their own worktree: restoring there can never touch your own checkout.
     func captureCheckpoint(_ id: UUID) {
         guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
         let directory = run.workingDirectory
@@ -613,7 +613,7 @@ final class WorkspaceManager: ObservableObject {
         refreshGit(id)
     }
 
-    /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
+    /// Keeps a message for when the current turn is done: you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
@@ -727,12 +727,12 @@ final class WorkspaceManager: ObservableObject {
         // A new turn ends any wait for a usage limit (yours or the automatic one).
         clearUsageLimit(id)
         guard var run = run(id) else { return }
-        // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
+        // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }
-        // Gemini CLI, OpenCode, Cursor and Grok speak ACP (way); Gemini falls back to its headless mode.
+        // Gemini CLI, OpenCode, Cursor and Grok speak ACP; Gemini falls back to its headless mode.
         if run.provider.usesACP, !acpFallback.contains(executable) {
             launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
@@ -991,7 +991,7 @@ final class WorkspaceManager: ObservableObject {
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
             finishLiveText(id)
-            // A question is answered, not approved (way): the answers go back as the tool's input.
+            // A question is answered, not approved: the answers go back as the tool's input.
             if tool == "AskUserQuestion" {
                 let items = ClaudeStreamParser.questions(from: input)
                 if !items.isEmpty {
@@ -1023,7 +1023,7 @@ final class WorkspaceManager: ObservableObject {
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
             finishLiveText(id)
-            // A steering message cut this segment short: the turn goes on with the new message (rule).
+            // A steering message cut this segment short: the turn goes on with the new message.
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
                 // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
@@ -1033,7 +1033,7 @@ final class WorkspaceManager: ObservableObject {
             }
             turns[id]?.steered = false
             closeThinking(id)
-            // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
+            // Stopped by a usage limit: remember when it resets, for "Resume at reset".
             if turns[id]?.stopping != true {
                 let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
                                                isError: result.isError, rateLimitRejected: !(turns[id]?.limitWindows.isEmpty ?? true),
@@ -1074,7 +1074,7 @@ final class WorkspaceManager: ObservableObject {
             questions[id] = nil
             turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
-            // Turn finished: keep Claude Code waiting for the next message instead of closing it (way).
+            // Turn finished: keep Claude Code waiting for the next message instead of closing it.
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
@@ -1200,7 +1200,7 @@ final class WorkspaceManager: ObservableObject {
     func resultLine(_ usage: TurnUsage, denials: Int) -> String {
         var parts: [String] = []
         if let seconds = usage.durationSeconds { parts.append(AgentPathFormat.duration(seconds)) }
-        let tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+        let tokens = usage.ownTokens
         if tokens > 0 { parts.append(TokenTally.format(tokens) + " tokens") }
         if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }

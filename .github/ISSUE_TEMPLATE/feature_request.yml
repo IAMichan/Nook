@@ -1,14 +1,14 @@
-name: Idee
-description: Stel een nieuwe functie of verbetering voor
+name: Feature Request
+description: Suggest a new feature or improvement
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Welk probleem lost het op?
+      label: What problem does this solve?
     validations:
       required: true
   - type: textarea
     id: idea
     attributes:
-      label: Hoe zou het moeten werken?
+      label: How should it work?

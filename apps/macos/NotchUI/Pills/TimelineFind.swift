@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Which closed block (group, fold) hides which event, so a match inside one can open it (opens the work group
-/// and the plan of a match). An event maps to the keys of every block around it, outermost first.
+/// Which closed block (group, fold) hides which event, so a match inside one can open it.
+/// An event maps to the keys of every block around it, outermost first.
 enum TimelineContainers {
     static func keys(_ blocks: [TimelineBlock]) -> [UUID: [String]] {
         var result: [UUID: [String]] = [:]

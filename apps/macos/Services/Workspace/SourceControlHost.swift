@@ -1,7 +1,6 @@
 import Foundation
 
-/// Which forge a git remote lives on. Detection follows `detectSourceControlProviderFromRemoteUrl`
-/// (packages/shared/src/sourceControl.ts): well-known hosts first, then a DNS label or name hint for
+/// Which forge a git remote lives on: well-known hosts first, then a DNS label or name hint for
 /// self-hosted installs, and anything else stays `unknown` instead of being guessed as GitHub.
 enum SourceControlHost: Hashable, Sendable, Codable {
     case github, gitlab, bitbucket, gitea, forgejo, azureDevOps, gitcafe

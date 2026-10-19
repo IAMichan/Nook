@@ -1,4 +1,4 @@
-# Nook voor Android
+# Nook for Android
 
-Nook voor Android wordt gebouwd in [`apps/tauri`](../tauri): één Tauri-app voor Windows, Linux en Android. Deze map
-blijft leeg; zie de README daar.
+Nook for Android is built in [`apps/tauri`](../tauri): one Tauri app for Windows, Linux, and Android. This directory
+stays empty; see the README there and [`docs/TAURI.md`](../../docs/TAURI.md).
