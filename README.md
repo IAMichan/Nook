@@ -10,6 +10,8 @@ Je persoonlijke agent in de notch van je Mac.
 
 > **Status:** vroege versie (0.1). De app compileert, maar is nog weinig in de praktijk getest. Verwacht ruwe randjes.
 
+> **Monorepo:** de macOS-app staat in [`apps/macos`](apps/macos). Voor iOS, Android, Windows en Linux staan de mappen klaar (zie [docs/MONOREPO.md](docs/MONOREPO.md)); die platformen zijn nog niet geschreven.
+
 ## Vereisten
 
 - macOS 15 of nieuwer, het liefst een Mac met notch
@@ -22,7 +24,7 @@ Je persoonlijke agent in de notch van je Mac.
 ```sh
 brew install xcodegen
 git clone https://github.com/IAMichan/nook.git
-cd nook
+cd nook/apps/macos
 xcodegen
 open Nook.xcodeproj
 ```
@@ -120,6 +122,7 @@ Een beveiligingsprobleem gevonden? Zie [SECURITY.md](SECURITY.md).
 ## Mappen
 
 ```
+(in apps/macos/)
 App/       start, menubalk, AppModel (alleen samenstelling; elk onderdeel in een eigen AppModel+….swift), instellingen
 NotchUI/   thema, karakter, kaarten, notch-tabs, hoofdvenster, werkruimte (terminal, browser), gedeelde onderdelen
 Services/  agenda, muziek, agent-hub, sessieregister, goedkeuringen, limieten, werkruimte, koppelingen (met MCP)
@@ -129,7 +132,7 @@ Demo/      voorbeelddata (alleen in debug-builds en bij Voorbeelddata in Instell
 Tests/     unit-tests (xcodebuild test)
 ```
 
-`Nook.xcodeproj`, `Info.plist` en de entitlements worden door XcodeGen gemaakt vanuit [`project.yml`](project.yml) en staan niet in git.
+`Nook.xcodeproj`, `Info.plist` en de entitlements worden door XcodeGen gemaakt vanuit [`apps/macos/project.yml`](apps/macos/project.yml) en staan niet in git.
 
 ## Bekende beperkingen
 

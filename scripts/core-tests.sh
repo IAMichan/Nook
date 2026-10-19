@@ -1,7 +1,7 @@
 #!/bin/bash
-# Runs Nook's Foundation-only core and its tests without Xcode, with a Swift toolchain (Linux or macOS).
+# Runs the macOS app's Foundation-only core and its tests without Xcode, with a Swift toolchain (Linux or macOS).
 #
-# It builds a throwaway Swift package from the sources the NookTests target lists in project.yml (minus the few that need
+# It builds a throwaway Swift package from the sources the NookTests target lists in apps/macos/project.yml (minus the few that need
 # Apple-only frameworks), copies the tests next to them, and runs `swift test`. Everything it needs is generated under a
 # temporary folder; nothing in the repository changes.
 #
@@ -11,7 +11,7 @@
 # Extra arguments go to `swift test`.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../apps/macos" && pwd)"
 WORK="${NOOK_CORE_TESTS_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/nook-core-tests.XXXXXX")}"
 mkdir -p "$WORK/Sources/Core" "$WORK/Tests/CoreTests"
 

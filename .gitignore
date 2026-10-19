@@ -12,3 +12,9 @@ App/Nook.entitlements
 *.sqlite-*
 .env
 .env.*
+
+# Other platforms (build output)
+node_modules/
+.gradle/
+**/build/
+*.xcuserstate
