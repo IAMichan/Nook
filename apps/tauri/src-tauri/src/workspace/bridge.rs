@@ -374,7 +374,7 @@ async fn workspace_info(app: &AppHandle, caller: &BridgeCaller) -> Result<ToolRe
     lines.push(String::new());
     lines.push("## Pull requests".into());
     match git.and_then(|g| g.2).and_then(|u| RemoteRepository::detect(&u)) {
-        Some(repo) if repo.host == SourceControlHost::Github && !github_tokens(app).is_empty() => lines.push(format!(
+        Some(repo) if repo.host == SourceControlHost::Github && !super::github_tokens(app, &repo.display_name()).is_empty() => lines.push(format!(
             "- {}: pull_request_create pushes the branch and opens the pull request with the user's GitHub connection, after their approval.",
             repo.display_name()
         )),
@@ -623,11 +623,6 @@ async fn browser_read(app: &AppHandle) -> Result<ToolResult, String> {
 
 // MARK: Pull request
 
-fn github_tokens(app: &AppHandle) -> Vec<String> {
-    let Some(state) = app.try_state::<AppState>() else { return vec![] };
-    state.secrets.read("connector.github.token").map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).into_iter().collect()
-}
-
 async fn pull_request_create(
     app: &AppHandle,
     a: &Map<String, Value>,
@@ -680,7 +675,7 @@ async fn pull_request_create(
     if base == branch {
         return Err(format!("You are on {branch} itself. Work on a separate branch, then propose the pull request."));
     }
-    let tokens = github_tokens(app);
+    let tokens = super::github_tokens(app, &repo.display_name());
     let via_connector = repo.host == SourceControlHost::Github && !tokens.is_empty();
     let word = if repo.host.uses_merge_requests() { "merge request" } else { "pull request" };
     let mut detail =

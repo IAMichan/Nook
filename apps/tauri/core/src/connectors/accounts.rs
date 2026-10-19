@@ -213,9 +213,42 @@ pub fn allowed_names(all: &[ServiceAccount], excluded: &BTreeSet<String>) -> Vec
     all.iter().filter(|a| !excluded.contains(&a.id)).map(ServiceAccount::name).collect()
 }
 
+/// De accounts in de volgorde waarin Nook ze voor een repository van `owner` probeert: eerst het account dat die
+/// eigenaar is, dan het hoofdaccount, dan de rest. Het eerste account met toegang wint (een lid van een organisatie
+/// dus ook), zoals `GitHubConnector.tokens` op de Mac.
+pub fn ordered_for_owner(mut list: Vec<ServiceAccount>, owner: &str) -> Vec<ServiceAccount> {
+    let owner = owner.trim().trim_start_matches('@').to_lowercase();
+    let rank = |a: &ServiceAccount| {
+        let login = a.identity.as_deref().unwrap_or_default().trim().trim_start_matches('@').to_lowercase();
+        if !owner.is_empty() && login == owner {
+            0
+        } else if a.is_primary() {
+            1
+        } else {
+            2
+        }
+    };
+    list.sort_by_key(rank);
+    list
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_owner_goes_first_then_the_main_account() {
+        let main = ServiceAccount { identity: Some("@michan".into()), ..ServiceAccount::primary("github") };
+        let work =
+            ServiceAccount { id: "github.werk".into(), service: "github".into(), label: "Werk".into(), identity: Some("@m-acme".into()) };
+        let club = ServiceAccount { id: "github.club".into(), service: "github".into(), label: "Club".into(), identity: None };
+        let list = vec![main.clone(), work.clone(), club.clone()];
+        let ids = |l: Vec<ServiceAccount>| l.into_iter().map(|a| a.id).collect::<Vec<_>>();
+        assert_eq!(ids(ordered_for_owner(list.clone(), "M-Acme")), ["github.werk", "github", "github.club"]);
+        // Een organisatie: niemand is eigenaar, dus het hoofdaccount eerst en dan de rest op volgorde.
+        assert_eq!(ids(ordered_for_owner(list.clone(), "acme-corp")), ["github", "github.werk", "github.club"]);
+        assert_eq!(ids(ordered_for_owner(vec![club, work, main], "")), ["github", "github.club", "github.werk"]);
+    }
 
     #[test]
     fn primary_account_uses_the_original_key_names() {

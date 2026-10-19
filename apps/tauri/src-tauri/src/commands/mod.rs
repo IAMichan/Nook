@@ -9,7 +9,6 @@ pub mod plans;
 pub mod workspace;
 pub mod workspace_tools;
 
-
 use nook_core::brain::PromptImage;
 use nook_core::nooks::{Conversation, ConversationSummary};
 use nook_core::platform::Capabilities;

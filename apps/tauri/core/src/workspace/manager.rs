@@ -31,6 +31,7 @@ use crate::agents::models::{
     approval_title, AgentApproval, ApprovalDecision, ApprovalOrigin, QuestionItem, QuestionOption, QuestionRequest,
 };
 use crate::agents::risk::{self, RiskLevel};
+use crate::services::recap::RecapSink;
 
 /// Een toestemmingsvraag van een sessie die Nook draait.
 #[derive(Debug, Clone, PartialEq)]
@@ -195,6 +196,8 @@ pub struct Manager {
     hooks: Hooks,
     git: Option<Git>,
     runtime: tokio::runtime::Handle,
+    /// Het weekoverzicht: prompts, tools, beslissingen en beurten.
+    pub recap: RecapSink,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -217,7 +220,15 @@ impl Manager {
         let store = RunStore::new(directory);
         let mut inner = Inner { runs: store.load_runs(Utc::now()), queues: store.load_queues(), ..Default::default() };
         inner.dirty_runs = inner.runs.iter().any(|r| r.status_detail.as_deref() == Some("interrupted"));
-        let manager = Arc::new(Self { inner: Mutex::new(inner), store, notify: Box::new(notify), hooks, git: Git::locate(), runtime });
+        let manager = Arc::new(Self {
+            inner: Mutex::new(inner),
+            store,
+            notify: Box::new(notify),
+            hooks,
+            git: Git::locate(),
+            runtime,
+            recap: RecapSink::default(),
+        });
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
         let waiting: Vec<Uuid> = manager.runs().iter().filter(|r| r.auto_resume && r.limit_reset_at.is_some()).map(|r| r.id).collect();
         for id in waiting {
@@ -313,6 +324,22 @@ impl Manager {
             session_key: format!("run:{}", run.id),
             created: p.created,
         }
+    }
+
+    /// De toestemmingsvragen van één sessie, zoals de agent ze stuurde (voor de companion).
+    pub fn permissions(&self, id: Uuid) -> Vec<PendingPermission> {
+        self.lock().approvals.get(&id).cloned().unwrap_or_default()
+    }
+
+    pub fn questions(&self, id: Uuid) -> Vec<PendingQuestion> {
+        self.lock().questions.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Het laatste antwoord van de agent in een sessie.
+    pub fn last_answer(&self, id: Uuid) -> String {
+        let mut s = self.lock();
+        Self::load_timeline(&self.store, &mut s, id);
+        s.events.get(&id).and_then(|l| l.iter().rev().find(|e| e.kind == EventKind::Assistant)).map(|e| e.text.clone()).unwrap_or_default()
     }
 
     pub fn pending_questions(&self) -> Vec<QuestionRequest> {
@@ -879,6 +906,8 @@ impl Manager {
                 }
                 run.move_to(RunStatus::Running, None, now);
                 run.turn_started_at = Some(now);
+                let (project, agent) = (run.project_name(), run.provider.display_name());
+                self.recap.note(|r, now| r.prompt(&format!("run-{id}"), &project, agent, now));
             }
             s.dirty_runs = true;
             let mut launch = RunEvent::new(EventKind::System, spec.display_command());
@@ -966,11 +995,12 @@ impl Manager {
         let mut out = Out::default();
         let mut finished = false;
         let mut close_input = false;
-        {
+        let tools: Vec<String> = {
             let mut s = self.lock();
             if s.processes.get(&id).map(|p| p.generation) != Some(generation) {
                 return;
             }
+            let before = s.events.get(&id).map_or(0, Vec::len);
             let Some(provider) = s.runs.iter().find(|r| r.id == id).map(|r| r.provider) else { return };
             match provider {
                 RunProvider::Claude => {
@@ -999,6 +1029,12 @@ impl Manager {
                     }
                 }
             }
+            // Elke nieuwe tool-regel in de tijdlijn is een tool die de agent gebruikte.
+            let events = s.events.get(&id).map(Vec::as_slice).unwrap_or_default();
+            events[before.min(events.len())..].iter().filter(|e| e.kind == EventKind::Tool).filter_map(|e| e.tool.clone()).collect()
+        };
+        for tool in tools {
+            self.recap.note(|r, now| r.tool_use(&tool, now));
         }
         self.emit(out);
         if finished {
@@ -1612,6 +1648,7 @@ impl Manager {
     /// Een beurt is klaar: momentopname (in een eigen worktree), wachtrij, git, en de app laten weten.
     fn turn_did_finish(self: &Arc<Self>, id: Uuid) {
         self.check_usage_limit(id);
+        self.recap.note(|r, now| r.turn_ended(&format!("run-{id}"), now));
         let mut out = Out::default();
         let run = {
             let mut s = self.lock();
@@ -1761,6 +1798,7 @@ impl Manager {
                 return Err("De agent draait niet meer; de vraag is verlopen.".into());
             };
             let allow = decision != ApprovalDecision::Deny && decision != ApprovalDecision::Terminal;
+            self.recap.note(|r, now| r.decision(allow, now));
             let rules = (decision == ApprovalDecision::Always && pending.can_always()).then_some(pending.suggestions.clone()).flatten();
             let _ = input.send(Input::Line(parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), "")));
             if let Some(l) = s.approvals.get_mut(&run_id) {
@@ -2486,6 +2524,8 @@ read rest
             };
             log.lock().unwrap().push(name);
         });
+        let recap = Arc::new(Mutex::new(crate::services::recap::RecapStore::default()));
+        manager.recap.set(recap.clone());
         let config = NewRunConfig { task: "Ruim op".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
         let id = manager.start(config, false).unwrap();
         let mut asked = false;
@@ -2500,6 +2540,12 @@ read rest
         let approval = manager.pending_approvals()[0].clone();
         assert!(approval.danger, "rm -rf is riskant");
         assert_eq!(manager.run(id).unwrap().status, RunStatus::WaitingApproval);
+        // Zo ziet de telefoon het: een goedkeuring die alleen op de computer kan.
+        let phone =
+            crate::companion::sessions::run_session(&manager.run(id).unwrap(), &manager.permissions(id), &manager.questions(id), "");
+        assert_eq!(phone.digest.attention, "approval");
+        assert_eq!((phone.digest.items[0].id.as_str(), phone.digest.items[0].detail.as_str()), ("r1", "Bash"));
+        assert!(!phone.digest.items[0].can_allow);
         manager.decide(id, "r1", ApprovalDecision::Allow).unwrap();
         assert!(manager.wait_idle(id, Duration::from_secs(10)).await);
         let run = manager.run(id).unwrap();
@@ -2514,6 +2560,10 @@ read rest
             .any(|e| e.kind == EventKind::Tool && e.state == Some(EventState::Done) && e.output.as_deref() == Some("weg")));
         assert!(timeline.iter().any(|e| e.kind == EventKind::Approval && e.state == Some(EventState::Allowed)));
         assert!(events.lock().unwrap().iter().any(|e| e.starts_with("finished:Completed:Ik kijk even.")));
+        assert_eq!(manager.last_answer(id), "Ik kijk even.");
+        let week = recap.lock().unwrap().summary(chrono::Local::now().date_naive());
+        assert_eq!((week.sessions, week.prompts, week.commands, week.allowed), (1, 1, 1, 1));
+        assert_eq!(week.top_project.as_deref(), Some("project"));
         manager.flush();
 
         // Na een herstart staat alles er nog.

@@ -12,7 +12,7 @@ pub mod think;
 pub mod voice;
 pub mod windows;
 
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use nook_core::services::flow::FlowStore;
@@ -35,7 +35,8 @@ pub struct Services {
     pub nudge: Mutex<Option<Nudge>>,
     pub flow: Mutex<FlowStore>,
     pub notes: Mutex<NoteStore>,
-    pub recap: Mutex<RecapStore>,
+    /// Gedeeld met de hub en de werkruimte, die het weekoverzicht voeden.
+    pub recap: Arc<Mutex<RecapStore>>,
     pub voice: voice::VoiceState,
     pub speech: speech::SpeechState,
     pub flow_state: flow::FlowState,
@@ -79,7 +80,7 @@ pub fn setup(app: &AppHandle) {
         nudge: Mutex::new(None),
         flow: Mutex::new(FlowStore::open_default()),
         notes: Mutex::new(NoteStore::open_default()),
-        recap: Mutex::new(RecapStore::open_default()),
+        recap: Arc::new(Mutex::new(RecapStore::open_default())),
         voice: Default::default(),
         speech: Default::default(),
         flow_state: Default::default(),

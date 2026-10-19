@@ -49,6 +49,9 @@ pub fn setup(app: &AppHandle) {
     let support = nook_core::paths::support_directory();
     let handle = app.clone();
     let hub = Arc::new(AgentHub::new(Some(support.clone()), move |event| on_hub_event(&handle, event)));
+    if let Some(services) = app.try_state::<crate::services::Services>() {
+        hub.recap.set(services.recap.clone());
+    }
     app.manage(AgentsState {
         hub: hub.clone(),
         profiles: Mutex::new(ProfileStore::load(Some(support.join("agent-profiles.json")))),
@@ -111,6 +114,8 @@ pub async fn scan(app: &AppHandle) {
 }
 
 fn on_hub_event(app: &AppHandle, event: HubEvent) {
+    #[cfg(desktop)]
+    crate::companion::backend::on_hub_event(app, &event);
     match event {
         HubEvent::Changed => {
             let _ = app.emit("agents-changed", ());

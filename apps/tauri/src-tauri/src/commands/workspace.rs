@@ -21,7 +21,6 @@ use tauri::{AppHandle, Emitter, Manager as _, State};
 use uuid::Uuid;
 
 use crate::agents::{lock, AgentsState};
-use crate::state::AppState;
 use crate::workspace::WorkspaceState;
 
 type Res<T> = Result<T, String>;
@@ -360,12 +359,6 @@ pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near
 
 // MARK: De git-knop en pull requests
 
-/// De GitHub-tokens uit de kluis (het hoofdaccount van de koppeling GitHub). Nooit uit een bestand.
-fn github_tokens(app: &AppHandle) -> Vec<String> {
-    let secrets = app.state::<AppState>().secrets.clone();
-    ["connector.github.token"].iter().filter_map(|k| secrets.read(k)).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect()
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickView {
@@ -415,7 +408,7 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
     })
     .await?
     .ok_or("Git kon de stand van deze map niet lezen.")?;
-    let tokens = github_tokens(&app);
+    let tokens = repository.as_ref().map(|r| crate::workspace::github_tokens(&app, &r.display_name())).unwrap_or_default();
     let mut pull_request = None;
     if let (Some(repo), Some(branch)) = (&repository, &state.branch) {
         if repo.host == SourceControlHost::Github && !tokens.is_empty() {
@@ -526,7 +519,7 @@ pub async fn workspace_create_pull_request(
     })
     .await?
     .ok_or("Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.")?;
-    let tokens = github_tokens(&app);
+    let tokens = crate::workspace::github_tokens(&app, &repository.display_name());
     if repository.host == SourceControlHost::Github && !tokens.is_empty() {
         let url =
             source_control::create_github_pull_request(&tokens, &repository.display_name(), &title, &body, &head, &base, draft).await?;

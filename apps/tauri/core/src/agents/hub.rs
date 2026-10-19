@@ -20,6 +20,7 @@ use super::models::*;
 use super::risk::{self, CommandAssessment, RiskLevel};
 use super::scanner::DetectedAgent;
 use super::text::{one_line, project_name, short_path, shorten};
+use crate::services::recap::RecapSink;
 
 /// Na zoveel seconden zonder antwoord vraagt de agent het zelf (de hook-limiet is 120 s).
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(110);
@@ -144,6 +145,8 @@ pub struct AgentHub {
     launched_at: DateTime<Utc>,
     /// De standaardmappen van Claude Code en Codex, om een accountmap als "standaard" te herkennen.
     default_homes: (String, String),
+    /// Het weekoverzicht: prompts, tools, wijzigingen, beslissingen en beurten.
+    pub recap: RecapSink,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -163,6 +166,7 @@ impl AgentHub {
             usage_file: support.as_ref().map(|d| d.join("plan-usage.json")),
             launched_at: Utc::now(),
             default_homes: (normalize_home(&claude.to_string_lossy()), normalize_home(&codex.to_string_lossy())),
+            recap: RecapSink::default(),
         };
         hub.restore();
         hub
@@ -469,6 +473,7 @@ impl AgentHub {
                         record.last_message.clear();
                         push(&mut record, StepMark::Done, format!("opdracht: {}", shorten(prompt, 60)));
                     }
+                    self.recap.note(|r, now| r.prompt(&key, &record.project, &record.agent, now));
                 }
                 "PreToolUse" => {
                     record.status = AgentStatus::Running;
@@ -479,12 +484,14 @@ impl AgentHub {
                         record.diff = edit.0;
                     }
                     push(&mut record, StepMark::Running, describe(&tool, &input));
+                    self.recap.note(|r, now| r.tool_use(&tool, now));
                 }
                 "PostToolUse" => {
                     complete(&mut record, StepMark::Done);
                     if let Some((_, added, removed)) = edit_diff(&tool, &input) {
                         record.lines_added += added;
                         record.lines_removed += removed;
+                        self.recap.note(|r, now| r.edit(added as u32, removed as u32, now));
                     }
                 }
                 "PostToolUseFailure" => complete(&mut record, StepMark::Failed),
@@ -513,6 +520,7 @@ impl AgentHub {
                     complete(&mut record, StepMark::Done);
                     push(&mut record, StepMark::Done, "klaar");
                     attention = true;
+                    self.recap.note(|r, now| r.turn_ended(&key, now));
                 }
                 "StopFailure" => {
                     record.status = AgentStatus::Failed;
@@ -520,6 +528,7 @@ impl AgentHub {
                     complete(&mut record, StepMark::Failed);
                     push(&mut record, StepMark::Failed, shorten(&error, 70));
                     attention = true;
+                    self.recap.note(|r, now| r.turn_ended(&key, now));
                 }
                 "SubagentStart" => {
                     let kind = text(&event, "agent_type").or_else(|| text(&event, "subagent_type")).unwrap_or("");
@@ -534,6 +543,7 @@ impl AgentHub {
                     record.status = AgentStatus::Done;
                     complete(&mut record, StepMark::Failed);
                     push(&mut record, StepMark::Failed, "onderbroken");
+                    self.recap.note(|r, now| r.turn_ended(&key, now));
                 }
                 _ => {}
             }
@@ -627,6 +637,9 @@ impl AgentHub {
             let Some(pending) = s.pending_approvals.get(id) else { return };
             response_for(decision, &pending.kind)
         };
+        if decision != ApprovalDecision::Terminal {
+            self.recap.note(|r, now| r.decision(decision != ApprovalDecision::Deny, now));
+        }
         match decision {
             ApprovalDecision::Allow => self.close_approval(
                 id,
@@ -694,6 +707,7 @@ impl AgentHub {
                 "updatedInput": {"questions": pending.raw_questions, "answers": answers}}})
             .to_string()
         };
+        self.recap.note(|r, now| r.question_answered(now));
         let summary = selections.iter().flatten().cloned().collect::<Vec<_>>().join(", ");
         let step = format!("je koos: {}", shorten(&summary, 50));
         self.close_question(id, Some(response), Some(AgentStatus::Running), Some((StepMark::Done, &step)), Some("Antwoord verstuurd"));
@@ -1358,6 +1372,8 @@ mod tests {
     #[test]
     fn prompt_tool_and_stop_make_steps() {
         let (hub, log) = hub();
+        let recap = Arc::new(Mutex::new(crate::services::recap::RecapStore::default()));
+        hub.recap.set(recap.clone());
         hub.handle(
             &msg(
                 "claude-code",
@@ -1395,11 +1411,17 @@ mod tests {
         let texts: Vec<_> = s.steps.iter().map(|x| (x.mark, x.text.as_str())).collect();
         assert_eq!(texts, vec![(StepMark::Done, "opdracht: hallo"), (StepMark::Done, "Bash: npm test"), (StepMark::Done, "klaar")]);
         assert!(log.lock().unwrap().contains(&"attention".to_string()));
+        // Het weekoverzicht telt mee.
+        let week = recap.lock().unwrap().summary(chrono::Local::now().date_naive());
+        assert_eq!((week.sessions, week.prompts, week.commands), (1, 1, 1));
+        assert_eq!(week.top_agent.as_deref(), Some("Claude Code"));
     }
 
     #[tokio::test]
     async fn permission_waits_and_allow_replies() {
         let (hub, _) = hub();
+        let recap = Arc::new(Mutex::new(crate::services::recap::RecapStore::default()));
+        hub.recap.set(recap.clone());
         let (responder, rx) = Responder::new();
         let wait = hub.handle(
             &msg(
@@ -1422,6 +1444,8 @@ mod tests {
         assert_eq!(reply["hookSpecificOutput"]["decision"]["updatedPermissions"][0]["type"], "addRules");
         assert!(hub.approvals().is_empty());
         assert_eq!(hub.sessions()[0].status, AgentStatus::Running);
+        let week = recap.lock().unwrap().summary(chrono::Local::now().date_naive());
+        assert_eq!((week.allowed, week.denied), (1, 0));
     }
 
     #[tokio::test]

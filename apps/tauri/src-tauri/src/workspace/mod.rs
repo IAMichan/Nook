@@ -74,6 +74,9 @@ pub fn setup(app: &AppHandle) {
     let archive_settings = settings.clone();
     let directory = nook_core::paths::support_directory().join("workspace");
     let manager = Manager::new(directory, hooks, runtime, move |event| on_event(&handle, event));
+    if let Some(services) = app.try_state::<crate::services::Services>() {
+        manager.recap.set(services.recap.clone());
+    }
     app.manage(WorkspaceState {
         manager: manager.clone(),
         settings,
@@ -145,6 +148,8 @@ fn account_environment(app: &AppHandle, profile_id: &str) -> BTreeMap<String, St
 }
 
 fn on_event(app: &AppHandle, event: ManagerEvent) {
+    #[cfg(desktop)]
+    crate::companion::backend::on_workspace_event(app, &event);
     match event {
         ManagerEvent::Changed => {
             let _ = app.emit("workspace-changed", ());
@@ -215,6 +220,21 @@ pub fn attention_card(run: &WorkspaceRun, last: &str) -> AgentSession {
         updated: Some(run.updated_at),
         pid: None,
     }
+}
+
+/// De GitHub-tokens voor een repository ("eigenaar/naam") uit de kluis, nooit uit een bestand: alle accounts van de
+/// koppeling GitHub, het account van de eigenaar eerst (het eerste met toegang wint). Leeg als GitHub uit staat.
+pub fn github_tokens(app: &AppHandle, repo: &str) -> Vec<String> {
+    use nook_core::connectors::accounts;
+    let Some(c) = app.try_state::<crate::connectors::Connectors>() else { return vec![] };
+    if !c.env.store.is_on("github") {
+        return vec![];
+    }
+    let owner = repo.split('/').next().unwrap_or_default();
+    accounts::ordered_for_owner(accounts::accounts(&c.env.store, "github"), owner)
+        .iter()
+        .filter_map(|a| c.env.secret(&a.key("token")))
+        .collect()
 }
 
 fn manager(app: &AppHandle) -> Option<Arc<Manager>> {

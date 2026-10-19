@@ -14,6 +14,7 @@ pub mod models;
 pub mod push;
 pub mod seal;
 pub mod server;
+pub mod sessions;
 pub mod store;
 
 pub use backend::{BackendSession, CompanionBackend, NoSessions};

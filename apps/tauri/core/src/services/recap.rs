@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{DateTime, Datelike, Days, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -199,6 +200,23 @@ impl RecapStore {
         result.top_project = projects.into_iter().max_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k);
         result.top_agent = agents.into_iter().max_by_key(|(_, v)| *v).map(|(k, _)| k);
         result
+    }
+}
+
+/// Waar de hub en de werkruimte hun werk melden (`hub.recap = recap` op de Mac). Leeg tot de app er een overzicht
+/// in zet; dan (en in tests) gebeurt er niets.
+#[derive(Default)]
+pub struct RecapSink(OnceLock<Arc<Mutex<RecapStore>>>);
+
+impl RecapSink {
+    pub fn set(&self, store: Arc<Mutex<RecapStore>>) {
+        let _ = self.0.set(store);
+    }
+
+    pub fn note(&self, change: impl FnOnce(&mut RecapStore, DateTime<Utc>)) {
+        if let Some(store) = self.0.get() {
+            change(&mut store.lock().unwrap_or_else(|e| e.into_inner()), Utc::now());
+        }
     }
 }
 
