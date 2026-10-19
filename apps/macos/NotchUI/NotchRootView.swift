@@ -184,7 +184,7 @@ struct NotchRootView: View {
             }
         case .panel(let tab):
             expanded(nh: nh, mood: viewModel.mood(for: tab), ring: true) {
-                PanelView(viewModel: viewModel, tab: tab)
+                PanelView(viewModel: viewModel, tab: tab, headerInset: Self.panelHeaderInset)
             }
         }
     }
@@ -348,37 +348,35 @@ struct NotchRootView: View {
 
     // MARK: Expanded: Nook on the left, content on the right
 
-    /// `ring`: the open panel shows Nook's task ring around him; a card does not.
+    /// Nook's size in the open panel, where he sits in the header row next to the tabs.
+    private static let panelOrbSize: CGFloat = 40
+    /// The room the header row leaves for Nook and his task ring.
+    private static var panelHeaderInset: CGFloat { panelOrbSize + 30 }
+
+    /// `ring`: the open panel shows Nook's task ring around him, in the header row so the panel's content runs the
+    /// full width below him; a card keeps him in a column of his own.
     private func expanded<Inner: View>(
         nh: CGFloat,
         mood: NookMood,
         ring: Bool = false,
         @ViewBuilder inner: () -> Inner
     ) -> some View {
-        // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
-        let items = ring ? ringItems : []
-        return HStack(alignment: .top, spacing: ring ? 34 : 20) {
-            Button {
-                NookPresence.shared.poke()
-                viewModel.show(.panel(.nook), inNotch: true)
-            } label: {
-                NookOrb(mood: mood, size: 46, glow: viewModel.geometry.isFloating)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(tr("notch.goToHome"))
-            .background {
-                if ring {
-                    NookTaskRing(items: items, orbSize: 46, hovered: $ringHovered) { openRingItem($0) }
+        Group {
+            if ring {
+                ZStack(alignment: .topLeading) {
+                    inner()
+                    expandedOrb(mood: mood, size: Self.panelOrbSize, ring: true)
+                        .offset(y: (PanelView.headerHeight - Self.panelOrbSize) / 2)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 20) {
+                    expandedOrb(mood: mood, size: 46, ring: false)
+                    inner()
                 }
             }
-            .overlay {
-                if ring { NookTaskRingLabel(items: items, hovered: ringHovered, orbSize: 46) }
-            }
-            .zIndex(1)
-            inner()
         }
         .padding(.top, nh + 14)
-        .padding(.leading, ring ? 32 : 28)
+        .padding(.leading, 28)
         .padding(.trailing, 28)
         .padding(.bottom, 22)
         .overlay(alignment: .top) {
@@ -390,6 +388,29 @@ struct NotchRootView: View {
                     .floatingDrag(viewModel)
             }
         }
+    }
+
+    /// Nook in the expanded notch; tap him to go home. In the open panel the task ring circles him.
+    private func expandedOrb(mood: NookMood, size: CGFloat, ring: Bool) -> some View {
+        // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
+        let items = ring ? ringItems : []
+        return Button {
+            NookPresence.shared.poke()
+            viewModel.show(.panel(.nook), inNotch: true)
+        } label: {
+            NookOrb(mood: mood, size: size, glow: viewModel.geometry.isFloating)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tr("notch.goToHome"))
+        .background {
+            if ring {
+                NookTaskRing(items: items, orbSize: size, hovered: $ringHovered) { openRingItem($0) }
+            }
+        }
+        .overlay {
+            if ring { NookTaskRingLabel(items: items, hovered: ringHovered, orbSize: size) }
+        }
+        .zIndex(1)
     }
 }
 
