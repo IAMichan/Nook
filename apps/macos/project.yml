@@ -209,6 +209,7 @@ targets:
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/AgentTranscript.swift
+      - path: Services/TranscriptPresentation.swift
       - path: Services/AntigravityClient.swift
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
