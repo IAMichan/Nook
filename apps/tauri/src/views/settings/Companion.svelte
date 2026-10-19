@@ -3,6 +3,7 @@
   // (Instellingen › iPhone-metgezel). Aanzetten, een code tonen die vijf minuten en één keer werkt, toestellen weghalen.
   import { companion, type CompanionInfo } from "../../lib/companion";
   import { relativeTime } from "../../lib/state.svelte";
+  import CompanionPush from "./CompanionPush.svelte";
 
   let info = $state<CompanionInfo | null>(null);
   let error = $state<string | null>(null);
@@ -116,14 +117,8 @@
       firewall of Nook verbindingen mag ontvangen, sta dat dan toe voor je privénetwerk.
     </p>
 
-    <h3>Pushmeldingen</h3>
-    <div class="group">
-      <p class="note muted">
-        Pushmeldingen naar de iPhone kan deze computer nog niet sturen: daarvoor is je eigen Apple-sleutel (APNs) nodig, en dat
-        stuk zit voorlopig alleen in Nook voor de Mac. Zolang de app op je telefoon openstaat, ziet hij alles meteen; Nook op
-        Android meldt zelf wat er nieuw is zolang de app in het geheugen staat.
-      </p>
-    </div>
+    <h3>Meldingen op de iPhone</h3>
+    {#if info.push}<CompanionPush {info} onchange={(i) => (info = i)} />{/if}
   {/if}
 {/if}
 {#if error}<p class="err">{error}</p>{/if}

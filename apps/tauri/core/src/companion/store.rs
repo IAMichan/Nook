@@ -22,6 +22,9 @@ struct Stored {
     port: Option<u16>,
     devices: Vec<PairedDevice>,
     push: PushSettings,
+    /// Het sleutel-id en team-id van je APNs-sleutel (Apple Developer); de .p8 zelf staat in de kluis.
+    apns_key_id: String,
+    apns_team_id: Option<String>,
 }
 
 struct Pending {
@@ -35,6 +38,10 @@ pub struct CompanionStore {
     stored: Mutex<Stored>,
     pending: Mutex<Option<Pending>>,
 }
+
+const APNS_KEY_ACCOUNT: &str = "companion.apns.key";
+/// Het team van Nook Companion in de App Store (zelfde standaard als op de Mac).
+const DEFAULT_TEAM: &str = "35SMNHP9K7";
 
 fn account(id: &str) -> String {
     format!("companion.key.{id}")
@@ -92,6 +99,39 @@ impl CompanionStore {
 
     pub fn set_push_settings(&self, push: PushSettings) {
         self.with(|s| s.push = push, true);
+    }
+
+    pub fn apns_ids(&self) -> (String, String) {
+        self.with(|s| (s.apns_key_id.clone(), s.apns_team_id.clone().unwrap_or_else(|| DEFAULT_TEAM.into())), false)
+    }
+
+    pub fn set_apns_ids(&self, key_id: &str, team_id: &str) {
+        self.with(
+            |s| {
+                s.apns_key_id = key_id.trim().into();
+                s.apns_team_id = Some(team_id.trim().into());
+            },
+            true,
+        );
+    }
+
+    pub fn apns_pem(&self) -> Option<String> {
+        self.secrets.read(APNS_KEY_ACCOUNT)
+    }
+
+    /// Bewaart de inhoud van het .p8-bestand in de kluis; onwaar als het geen geldige sleutel is.
+    pub fn save_apns_pem(&self, pem: &str) -> bool {
+        super::apns::valid_pem(pem) && self.secrets.write(APNS_KEY_ACCOUNT, pem.trim()).is_ok()
+    }
+
+    pub fn remove_apns_pem(&self) {
+        let _ = self.secrets.remove(APNS_KEY_ACCOUNT);
+    }
+
+    /// Sleutel, sleutel-id en team-id zijn er: meldingen sturen kan.
+    pub fn can_push(&self) -> bool {
+        let (key_id, team_id) = self.apns_ids();
+        self.apns_pem().is_some() && super::push::valid_identifier(&key_id) && super::push::valid_identifier(&team_id)
     }
 
     pub fn key(&self, id: &str) -> Option<Vec<u8>> {

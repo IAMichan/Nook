@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use nook_core::companion::client::ClientSnapshot;
+use nook_core::companion::push::PushSettings;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -40,6 +41,18 @@ pub struct CompanionInfo {
     hosts: Vec<String>,
     devices: Vec<DeviceView>,
     pairing: Option<PairingView>,
+    push: Option<PushView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushView {
+    settings: PushSettings,
+    key_id: String,
+    team_id: String,
+    has_key: bool,
+    can_push: bool,
+    last_result: Option<String>,
 }
 
 #[cfg(desktop)]
@@ -85,6 +98,14 @@ fn info(c: &Companion) -> CompanionInfo {
             .map(|d| DeviceView { id: d.id, name: d.name, paired_at: d.paired_at, last_seen: d.last_seen, push: d.push_token.is_some() })
             .collect(),
         pairing,
+        push: Some(PushView {
+            settings: store.push(),
+            key_id: store.apns_ids().0,
+            team_id: store.apns_ids().1,
+            has_key: store.apns_pem().is_some(),
+            can_push: store.can_push(),
+            last_result: c.server.last_push(),
+        }),
     }
 }
 
@@ -99,6 +120,7 @@ fn info(_: &Companion) -> CompanionInfo {
         hosts: Vec::new(),
         devices: Vec::new(),
         pairing: None,
+        push: None,
     }
 }
 
@@ -160,6 +182,71 @@ pub fn companion_remove_device(companion: State<'_, Companion>, id: String) -> C
     #[cfg(not(desktop))]
     let _ = id;
     info(&companion)
+}
+
+/// Welke meldingen en wanneer (Instellingen › Companion › Pushmeldingen).
+#[tauri::command]
+pub fn companion_set_push(companion: State<'_, Companion>, settings: PushSettings) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        companion.server.store().set_push_settings(settings);
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, settings);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// Sleutel-id, team-id en eventueel de inhoud van het .p8-bestand (dat gaat naar de kluis en wordt niet teruggegeven).
+#[tauri::command]
+pub fn companion_set_apns(
+    companion: State<'_, Companion>,
+    key_id: String,
+    team_id: String,
+    pem: Option<String>,
+) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        let store = companion.server.store();
+        store.set_apns_ids(&key_id, &team_id);
+        if let Some(pem) = pem.filter(|p| !p.trim().is_empty()) {
+            if !store.save_apns_pem(&pem) {
+                return Err("Dat is geen geldige .p8-sleutel.".into());
+            }
+        }
+        companion.server.forget_apns_token();
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (companion, key_id, team_id, pem);
+        Err(NO_SERVER.into())
+    }
+}
+
+#[tauri::command]
+pub fn companion_remove_apns_key(companion: State<'_, Companion>) -> CompanionInfo {
+    #[cfg(desktop)]
+    {
+        companion.server.store().remove_apns_pem();
+        companion.server.forget_apns_token();
+    }
+    info(&companion)
+}
+
+#[tauri::command]
+pub async fn companion_push_test(companion: State<'_, Companion>) -> Result<String, String> {
+    #[cfg(desktop)]
+    {
+        Ok(companion.server.send_test().await)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = companion;
+        Err(NO_SERVER.into())
+    }
 }
 
 // De telefoonkant

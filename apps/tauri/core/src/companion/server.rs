@@ -38,8 +38,10 @@ pub struct CompanionServer {
     audit: Option<Arc<NookStore>>,
     /// De naam die de telefoon ziet ("Michaels pc").
     name: String,
-    /// Of deze computer zelf pushmeldingen kan sturen (APNs ingesteld).
-    push_ready: RwLock<bool>,
+    apns: super::apns::ApnsClient,
+    ledger: Mutex<push::PushLedger>,
+    /// Hoe de laatste melding afliep, per toestel; voor Instellingen.
+    last_push: Mutex<Option<String>>,
     guards: Mutex<HashMap<String, RequestGuard>>,
     state: Mutex<ServerState>,
     task: Mutex<Option<tokio::task::AbortHandle>>,
@@ -53,7 +55,9 @@ impl CompanionServer {
             backend: RwLock::new(backend),
             audit,
             name,
-            push_ready: RwLock::new(false),
+            apns: Default::default(),
+            ledger: Mutex::new(Default::default()),
+            last_push: Mutex::new(None),
             guards: Mutex::new(HashMap::new()),
             state: Mutex::new(ServerState::Stopped),
             task: Mutex::new(None),
@@ -74,8 +78,13 @@ impl CompanionServer {
         *self.backend.write().unwrap_or_else(|e| e.into_inner()) = backend;
     }
 
-    pub fn set_push_ready(&self, ready: bool) {
-        *self.push_ready.write().unwrap_or_else(|e| e.into_inner()) = ready;
+    /// Vergeet het ondertekende token, bv. na een nieuwe sleutel.
+    pub fn forget_apns_token(&self) {
+        self.apns.forget_token();
+    }
+
+    pub fn last_push(&self) -> Option<String> {
+        self.last_push.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn backend(&self) -> Arc<dyn CompanionBackend> {
@@ -251,7 +260,7 @@ impl CompanionServer {
                 };
                 self.store.set_push_token(device_id, Some(token.to_lowercase()), Some(request.item.as_deref() != Some("development")));
                 self.audit("push_registered", &self.store.device(device_id).map(|d| d.name).unwrap_or_default());
-                let ready = *self.push_ready.read().unwrap_or_else(|e| e.into_inner()) && self.store.push().enabled;
+                let ready = self.store.can_push() && self.store.push().enabled;
                 CompanionResponse {
                     mac_name: Some(self.name.clone()),
                     message: Some(if ready { "push" } else { "nopush" }.into()),
@@ -328,6 +337,101 @@ impl CompanionServer {
                 with_sessions(digests(backend.sessions().await))
             }
         }
+    }
+}
+
+// Pushmeldingen (`CompanionNotifier.swift`)
+
+impl CompanionServer {
+    /// Een gebeurtenis in de werkruimte (toestemming nodig, een vraag, een klare of mislukte beurt) als melding naar de
+    /// gekoppelde iPhones, binnen de regels van de gebruiker. `turn` maakt een klare beurt uniek (bv. de tijd van de
+    /// laatste wijziging); `away` = de gebruiker is niet bij de computer. Geeft de reden terug als er niets ging.
+    pub async fn notify(&self, event: push::PushEvent, turn: i64, away: bool) -> Option<push::PushSkip> {
+        let settings = self.store.push();
+        if !self.store.enabled() || !self.store.can_push() {
+            return Some(push::PushSkip::Disabled);
+        }
+        let targets: Vec<PairedDevice> = self.store.devices().into_iter().filter(|d| d.push_token.is_some()).collect();
+        if targets.is_empty() {
+            return Some(push::PushSkip::NoDevices);
+        }
+        if let Some(skip) = push::skip_reason(&event, &settings, away, push::local_hour()) {
+            return Some(skip);
+        }
+        if !self.ledger.lock().unwrap_or_else(|e| e.into_inner()).admit(&event, turn) {
+            return Some(push::PushSkip::Duplicate);
+        }
+        self.deliver(&event, turn, &targets, false).await;
+        None
+    }
+
+    /// Een testmelding naar elke gekoppelde telefoon, zonder de regels, om sleutel en instellingen te controleren.
+    pub async fn send_test(&self) -> String {
+        let event = push::PushEvent {
+            kind: push::PushKind::Finished,
+            session: "test".into(),
+            item: None,
+            agent: "Nook".into(),
+            title: String::new(),
+            can_allow: false,
+        };
+        let targets: Vec<PairedDevice> = self.store.devices().into_iter().filter(|d| d.push_token.is_some()).collect();
+        if targets.is_empty() {
+            return "Nog geen telefoon die meldingen toestaat.".into();
+        }
+        self.deliver(&event, Utc::now().timestamp(), &targets, true).await;
+        self.last_push().unwrap_or_default()
+    }
+
+    fn words(&self, event: &push::PushEvent, test: bool) -> (String, String) {
+        if test {
+            return ("Nook".into(), "Testmelding: de pushmeldingen werken.".into());
+        }
+        let title = if self.store.push().include_title && !event.title.is_empty() {
+            format!("{} · {}", event.agent, event.title)
+        } else {
+            event.agent.clone()
+        };
+        let body = match event.kind {
+            push::PushKind::Approval => "Wacht op jouw toestemming.",
+            push::PushKind::Question => "Heeft een vraag voor je.",
+            push::PushKind::Failed => "Is mislukt.",
+            push::PushKind::Limited => "Heeft de limiet bereikt.",
+            push::PushKind::Finished => "Is klaar.",
+        };
+        (title, body.into())
+    }
+
+    async fn deliver(&self, event: &push::PushEvent, turn: i64, devices: &[PairedDevice], test: bool) {
+        let Some(pem) = self.store.apns_pem() else { return };
+        let (key_id, team_id) = self.store.apns_ids();
+        let (title, body) = self.words(event, test);
+        let badge = digests(self.backend().sessions().await).iter().filter(|s| !s.items.is_empty()).count() as i64;
+        let payload = push::apns_payload(event, &title, &body, badge);
+        let collapse = push::collapse_id(event, turn);
+        let mut summary = Vec::new();
+        for device in devices {
+            let Some(token) = &device.push_token else { continue };
+            let production = device.push_production.unwrap_or(true);
+            let result = self.apns.send(&pem, &key_id, &team_id, &payload, token, production, &collapse).await;
+            summary.push(match result.outcome {
+                push::Outcome::Delivered => format!("{}: ok", device.name),
+                push::Outcome::DropToken => {
+                    self.store.set_push_token(&device.id, None, None);
+                    format!("{}: toestel meldt zich af; open de app om opnieuw te registreren", device.name)
+                }
+                push::Outcome::RetryLater => format!("{}: Apple is bezet, later opnieuw", device.name),
+                push::Outcome::Configuration => {
+                    format!("{}: {}", device.name, result.reason.unwrap_or_else(|| result.status.to_string()))
+                }
+            });
+        }
+        let summary = summary.join(" · ");
+        if let Some(store) = &self.audit {
+            let tool = if test { "companion_push_test" } else { "companion_push" };
+            store.audit(tool, &format!("{} · {}", event.kind.raw(), devices.len()), &summary);
+        }
+        *self.last_push.lock().unwrap_or_else(|e| e.into_inner()) = Some(summary);
     }
 }
 

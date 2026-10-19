@@ -5,8 +5,9 @@
 //!
 //! - [`models`]: berichten, framing en regels; [`seal`]: verzegeling (HKDF-SHA256 + ChaCha20-Poly1305).
 //! - [`server`] en [`store`]: de computerkant; de sessies komen uit een [`backend::CompanionBackend`].
-//! - [`client`]: de telefoonkant. [`push`]: wanneer en wat een pushmelding zegt.
+//! - [`client`]: de telefoonkant. [`push`]: wanneer en wat een pushmelding zegt; [`apns`]: versturen via Apple.
 
+pub mod apns;
 pub mod backend;
 pub mod client;
 pub mod models;
@@ -202,6 +203,39 @@ mod tests {
 
         server.stop();
         assert_eq!(server.state(), ServerState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn push_follows_the_rules_before_anything_leaves() {
+        use super::push::{PushEvent, PushKind, PushSettings, PushSkip};
+        use p256::pkcs8::{EncodePrivateKey, LineEnding};
+        let store = Arc::new(CompanionStore::load(temp_file(), Arc::new(MemorySecrets::default())));
+        let server = CompanionServer::new(store.clone(), Arc::new(NoSessions), None, "pc".into());
+        let event = PushEvent {
+            kind: PushKind::Approval,
+            session: "S1".into(),
+            item: Some("P1".into()),
+            agent: "Claude Code".into(),
+            title: "geheim".into(),
+            can_allow: false,
+        };
+        store.set_enabled(true);
+        assert_eq!(server.notify(event.clone(), 0, true).await, Some(PushSkip::Disabled), "geen sleutel");
+        assert!(!store.save_apns_pem("geen sleutel"));
+        let pem = p256::ecdsa::SigningKey::from_slice(&[7u8; 32]).unwrap().to_pkcs8_pem(LineEnding::LF).unwrap();
+        assert!(store.save_apns_pem(&pem));
+        store.set_apns_ids("ABC123DEFG", "35SMNHP9K7");
+        assert!(store.can_push());
+        assert_eq!(server.notify(event.clone(), 0, true).await, Some(PushSkip::NoDevices));
+        let now = chrono::Utc::now();
+        store.begin_pairing(now);
+        let device = store.complete_pairing("iPhone", now).unwrap();
+        store.set_push_token(&device.id, Some("ab".repeat(32)), Some(true));
+        assert_eq!(server.notify(event.clone(), 0, true).await, Some(PushSkip::Disabled), "meldingen staan uit");
+        store.set_push_settings(PushSettings { enabled: true, ..Default::default() });
+        assert_eq!(server.notify(event.clone(), 0, false).await, Some(PushSkip::AtTheComputer));
+        let limited = PushEvent { kind: PushKind::Limited, ..event };
+        assert_eq!(server.notify(limited, 0, true).await, Some(PushSkip::KindOff));
     }
 
     #[tokio::test]

@@ -29,6 +29,18 @@ export type ServerState =
   | { state: "listening"; port: number }
   | { state: "failed"; message: string };
 
+export type PushKind = "approval" | "question" | "failed" | "finished" | "limited";
+
+export interface PushSettings {
+  enabled: boolean;
+  kinds: PushKind[];
+  onlyWhenAway: boolean;
+  includeTitle: boolean;
+  quietFrom?: number | null;
+  quietTo?: number | null;
+  quietAllowsUrgent: boolean;
+}
+
 export interface CompanionInfo {
   server: boolean;
   client: boolean;
@@ -38,6 +50,7 @@ export interface CompanionInfo {
   hosts: string[];
   devices: { id: string; name: string; pairedAt: string; lastSeen: string | null; push: boolean }[];
   pairing: { url: string; qrSvg: string; host: string; until: string } | null;
+  push: { settings: PushSettings; keyId: string; teamId: string; hasKey: boolean; canPush: boolean; lastResult: string | null } | null;
 }
 
 export interface ClientView {
@@ -56,6 +69,10 @@ export const companion = {
   beginPairing: (host?: string) => invoke<CompanionInfo>("companion_begin_pairing", { host }),
   cancelPairing: () => invoke<CompanionInfo>("companion_cancel_pairing"),
   removeDevice: (id: string) => invoke<CompanionInfo>("companion_remove_device", { id }),
+  setPush: (settings: PushSettings) => invoke<CompanionInfo>("companion_set_push", { settings }),
+  setApns: (keyId: string, teamId: string, pem?: string) => invoke<CompanionInfo>("companion_set_apns", { keyId, teamId, pem }),
+  removeApnsKey: () => invoke<CompanionInfo>("companion_remove_apns_key"),
+  pushTest: () => invoke<string>("companion_push_test"),
 
   client: () => invoke<ClientView>("companion_client"),
   pair: (link: string, name: string) => invoke<ClientView>("companion_client_pair", { link, name }),
