@@ -55,18 +55,18 @@ struct AgentsTab: View {
             Group {
                 switch selection {
                 case .live(let session):
-                    SessionWorkbench(viewModel: viewModel, title: liveTitle(session), directory: session.cwd) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
                         AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                     }
                     .id(session.id)
                 case .past(let session):
-                    SessionWorkbench(viewModel: viewModel, title: AgentFormat.title(session.title), directory: session.cwd) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
                         AgentSessionDetail(selection: .past(session), headerAccessory: tools)
                     }
                     .id("past:" + session.id)
                 case .run(let id):
                     let run = app.workspace.run(id)
-                    SessionWorkbench(viewModel: viewModel, title: run?.title ?? "", directory: run?.workingDirectory ?? "") { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id) { tools in
                         AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
                     }
                     // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
@@ -185,11 +185,6 @@ struct AgentsTab: View {
         case .simulator: return AgentsPage.simulator
         case .new: return "new"
         }
-    }
-
-    /// The name a live session goes by in its tools' header.
-    private func liveTitle(_ session: AgentSession) -> String {
-        session.summary.isEmpty ? session.name : AgentFormat.title(session.summary)
     }
 
     // MARK: List

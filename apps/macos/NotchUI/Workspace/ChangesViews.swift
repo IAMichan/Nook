@@ -8,6 +8,8 @@ struct ChangesSheet: View {
     let initialFile: GitFileChange?
     /// Set when shown inside the notch: closes it there (and the notch shows the title).
     var onClose: (() -> Void)? = nil
+    /// In a narrow side panel: the file list above the diff instead of beside it.
+    var stacked = false
     private var embedded: Bool { onClose != nil }
     private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var selected: String?
@@ -31,32 +33,16 @@ struct ChangesSheet: View {
                 .padding(14)
                 Divider()
             }
-            HSplitView {
-                List(selection: $selected) {
-                    ForEach(files) { file in
-                        FileChangeRow(file: file).tag(file.path)
-                    }
+            if stacked {
+                VSplitView {
+                    fileList.frame(minHeight: 90, idealHeight: 160, maxHeight: 320)
+                    diffView.frame(maxWidth: .infinity, minHeight: 160, maxHeight: .infinity)
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(embedded ? .hidden : .automatic)
-                .frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
-                Group {
-                    if loading {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if let error {
-                        WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
-                    } else if diff.isEmpty {
-                        WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("ws.changes.noDiff"), message: tr("ws.changes.noDiffDetail"))
-                    } else {
-                        DiffText(text: diff, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == selected },
-                                 onComment: { line, code, text in
-                                     guard let path = selected else { return }
-                                     workspace.addReviewComment(runID, ReviewComment(path: path, line: line, code: code, text: text))
-                                 },
-                                 onRemoveComment: { workspace.removeReviewComment(runID, $0) })
-                    }
+            } else {
+                HSplitView {
+                    fileList.frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
+                    diffView.frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
             }
             // Comments on the diff go to the agent together.
             if let comments = workspace.reviewComments[runID], !comments.isEmpty {
@@ -85,6 +71,34 @@ struct ChangesSheet: View {
         }
         .onChange(of: selected) { _, path in load(path) }
         .task { load(selected) }
+    }
+
+    private var fileList: some View {
+        List(selection: $selected) {
+            ForEach(files) { file in
+                FileChangeRow(file: file).tag(file.path)
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(embedded ? .hidden : .automatic)
+    }
+
+    @ViewBuilder
+    private var diffView: some View {
+        if loading {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error {
+            WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
+        } else if diff.isEmpty {
+            WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("ws.changes.noDiff"), message: tr("ws.changes.noDiffDetail"))
+        } else {
+            DiffText(text: diff, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == selected },
+                     onComment: { line, code, text in
+                         guard let path = selected else { return }
+                         workspace.addReviewComment(runID, ReviewComment(path: path, line: line, code: code, text: text))
+                     },
+                     onRemoveComment: { workspace.removeReviewComment(runID, $0) })
+        }
     }
 
     private func load(_ path: String?) {
