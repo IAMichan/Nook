@@ -625,6 +625,10 @@ struct AgentRunPanel: View {
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
+            // The subagents the agent started this turn, and its task list (subagent bar and Tasks).
+            let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
+            if !subagents.isEmpty { SubagentBar(agents: subagents) }
+            if let tasks = run.tasks, !tasks.isEmpty { TasksStrip(steps: tasks) }
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
                 QueuedMessagesStrip(
                     queue: waiting, editing: editingQueued,

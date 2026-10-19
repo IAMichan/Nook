@@ -191,3 +191,37 @@ enum TimelinePresentation {
         return blocks
     }
 }
+
+/// A subagent the agent started (Claude Code's Task or Agent tool).
+struct SubagentInfo: Identifiable, Equatable, Sendable {
+    var id: UUID
+    /// "Explore", "general-purpose"…
+    var kind: String
+    var title: String
+    var prompt: String
+    var state: RunEvent.State?
+    var output: String?
+
+    var isRunning: Bool { state == nil || state == .running || state == .pending }
+}
+
+enum Subagents {
+    static let tools: Set<String> = ["Task", "Agent"]
+
+    /// The subagents of the latest turn, in the order they started.
+    static func latest(_ events: [RunEvent]) -> [SubagentInfo] {
+        list(TimelinePresentation.split(events).last ?? [])
+    }
+
+    static func list(_ events: [RunEvent]) -> [SubagentInfo] {
+        events.compactMap { event in
+            guard event.kind == .tool, let tool = event.tool, tools.contains(tool), !event.text.hasPrefix("↳") else { return nil }
+            let input = event.detail.flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let kind = (input["subagent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
+            let title = (input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? event.text
+            return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
+                                state: event.state, output: event.output)
+        }
+    }
+}

@@ -251,8 +251,8 @@ extension WorkspaceManager {
                     if let state = Self.state(call.status) { event.state = state }
                 }
                 if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
-            case .plan(let entries):
-                append(id, RunEvent(kind: .system, text: entries.joined(separator: "\n"), tool: "todo"))
+            case .plan(let steps):
+                setTasks(id, steps)
             case .usage(let used, let size, let cost):
                 turns[id]?.lastContext = used
                 if size > 0 { turns[id]?.contextWindow = size }

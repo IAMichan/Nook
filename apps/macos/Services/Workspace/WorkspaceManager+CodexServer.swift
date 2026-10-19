@@ -330,6 +330,8 @@ extension WorkspaceManager {
         case .plan(let text):
             finishLiveText(id)
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
+        case .tasks(let steps):
+            setTasks(id, steps)
         case .notice(let text):
             append(id, RunEvent(kind: .system, text: text == "compact" ? tr("ws.event.compacted") : text))
         default:

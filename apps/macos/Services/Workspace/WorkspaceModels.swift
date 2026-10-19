@@ -268,6 +268,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
+    /// The agent's own task list, as it last reported it (Tasks above the composer).
+    var tasks: [RunTaskStep]? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -292,6 +294,63 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         if next == .running, turnStartedAt == nil { turnStartedAt = now }
         if !next.isActive { turnStartedAt = nil }
         return true
+    }
+}
+
+/// One step of the task list an agent keeps while it works: Claude Code's TodoWrite, Codex's `turn/plan/updated`,
+/// an ACP `plan` update.
+struct RunTaskStep: Codable, Equatable, Sendable {
+    enum Status: String, Codable, Sendable { case pending, active, done }
+    var text: String
+    var status: Status
+}
+
+enum RunTasks {
+    static func status(_ raw: String?) -> RunTaskStep.Status {
+        switch raw {
+        case "completed", "done": return .done
+        case "in_progress", "inProgress", "running", "active": return .active
+        default: return .pending
+        }
+    }
+
+    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`.
+    static func claude(_ input: [String: Any]) -> [RunTaskStep]? {
+        guard let todos = input["todos"] as? [[String: Any]] else { return nil }
+        return todos.compactMap { todo in
+            let state = Self.status(todo["status"] as? String)
+            let active = (todo["activeForm"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String), !text.isEmpty else { return nil }
+            return RunTaskStep(text: text, status: state)
+        }
+    }
+
+    /// Codex's `turn/plan/updated`: `plan` with `step` and `status`.
+    static func codex(_ params: [String: Any]) -> [RunTaskStep]? {
+        guard let plan = params["plan"] as? [[String: Any]] else { return nil }
+        return plan.enumerated().map { index, step in
+            let text = ((step["step"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return RunTaskStep(text: text.isEmpty ? "Step \(index + 1)" : text, status: Self.status(step["status"] as? String))
+        }
+    }
+
+    /// An ACP `plan` update: `entries` with `content` and `status`.
+    static func acp(_ update: [String: Any]) -> [RunTaskStep] {
+        ((update["entries"] as? [[String: Any]]) ?? []).compactMap { entry in
+            guard let text = entry["content"] as? String, !text.isEmpty else { return nil }
+            return RunTaskStep(text: text, status: Self.status(entry["status"] as? String))
+        }
+    }
+
+    /// How far the list is, and the step that matters now: the running one, else the next, else the last.
+    static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
+        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending } ?? steps.last
+        return (steps.filter { $0.status == .done }.count, steps.count, current?.text ?? "")
+    }
+
+    static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
+        guard let steps, !steps.isEmpty else { return true }
+        return steps.allSatisfy { $0.status == .done }
     }
 }
 

@@ -25,7 +25,7 @@ enum AcpEvent: Equatable, Sendable {
     case thoughtChunk(String)
     case toolCall(AcpToolCall)
     case toolCallUpdate(AcpToolCall)
-    case plan([String])
+    case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
     /// A request Nook does not handle (`fs/…`, `terminal/…` are not advertised): answered with an error.
@@ -189,12 +189,8 @@ enum AcpMapper {
         case "tool_call_update":
             return [.toolCallUpdate(toolCall(update))]
         case "plan":
-            let entries = ((update["entries"] as? [[String: Any]]) ?? []).compactMap { entry -> String? in
-                guard let content = entry["content"] as? String else { return nil }
-                let done = (entry["status"] as? String) == "completed"
-                return (done ? "☑ " : "☐ ") + content
-            }
-            return entries.isEmpty ? [] : [.plan(entries)]
+            let steps = RunTasks.acp(update)
+            return steps.isEmpty ? [] : [.plan(steps)]
         case "usage_update":
             let cost = (update["cost"] as? [String: Any]).flatMap { cost -> Double? in
                 guard (cost["currency"] as? String)?.uppercased() ?? "USD" == "USD" else { return nil }

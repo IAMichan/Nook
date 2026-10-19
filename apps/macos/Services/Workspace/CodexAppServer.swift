@@ -250,6 +250,8 @@ enum CodexAppServerMapper {
             return (limited ? [.usageLimited] : []) + [.failed(message)]
         case "thread/compacted":
             return [.notice("compact")]
+        case "turn/plan/updated":
+            return RunTasks.codex(params).map { [.tasks($0)] } ?? []
         case "account/rateLimits/updated":
             return [.rateLimits(JSONBox(params))]
         default:

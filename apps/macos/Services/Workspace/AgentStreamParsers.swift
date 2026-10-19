@@ -322,6 +322,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
     case unsupportedRequest(RPCID)
     case plan(String)
+    /// The agent's task list (`turn/plan/updated`).
+    case tasks([RunTaskStep])
     case notice(String)
     case rateLimits(JSONBox)
     /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).

@@ -726,6 +726,8 @@ final class WorkspaceManager: ObservableObject {
         guard processes[id] == nil else { return }
         // A new turn ends any wait for a usage limit (yours or the automatic one).
         clearUsageLimit(id)
+        // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
+        if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
@@ -973,6 +975,8 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.toolInputs[callID] = input
             recap?.toolUse(name)
             append(id, event)
+            // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
+            if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
             if let eventID = turns[id]?.toolEvents[callID] {
                 mutateEvent(id, eventID) {
@@ -1287,6 +1291,11 @@ final class WorkspaceManager: ObservableObject {
 
     func markReviewed(_ id: UUID) {
         update(id) { $0.reviewedAt = Date() }
+    }
+
+    /// The agent's latest task list. An empty list clears it.
+    func setTasks(_ id: UUID, _ steps: [RunTaskStep]) {
+        update(id) { $0.tasks = steps.isEmpty ? nil : steps }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
