@@ -605,6 +605,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "notch.goToHome": "Ga naar startpagina",
         "notch.taskRing": "Waar Nook en je agents mee bezig zijn",
         "notch.nudgeProposal": "Nook stelt voor: %@",
+        "notch.nowPlaying": "Nu: %@",
+        "notch.nowPlayingBy": "Nu: %@ van %@",
 
         "portfolio.configured": "Ingesteld",
         "portfolio.exchangeHint": "Gebruik sleutels met alleen leesrechten. Nook leest saldo’s en plaatst nooit orders of opnames. Koersen komen van Coinbase en worden in euro getoond.",
@@ -1375,6 +1377,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "notch.goToHome": "Go to home page",
         "notch.taskRing": "What Nook and your agents are working on",
         "notch.nudgeProposal": "Nook suggests: %@",
+        "notch.nowPlaying": "Now playing: %@",
+        "notch.nowPlayingBy": "Now playing: %@ by %@",
 
         "portfolio.configured": "Configured",
         "portfolio.exchangeHint": "Use read-only keys. Nook only reads balances and never places orders or withdrawals. Prices come from Coinbase and are shown in euros.",
@@ -2145,6 +2149,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "notch.goToHome": "Zur Startseite gehen",
         "notch.taskRing": "Woran Nook und deine Agents arbeiten",
         "notch.nudgeProposal": "Nook schlägt vor: %@",
+        "notch.nowPlaying": "Jetzt: %@",
+        "notch.nowPlayingBy": "Jetzt: %@ von %@",
 
         "portfolio.configured": "Konfiguriert",
         "portfolio.exchangeHint": "Verwende Nur-Lese-Schlüssel. Nook liest lediglich Guthaben und platziert niemals Aufträge oder Auszahlungen. Die Kurse stammen von Coinbase und werden in Euro angezeigt.",

@@ -64,7 +64,7 @@ extension AppModel {
                 action: tr("app.today.prepare"),
                 color: NookTheme.iris,
                 target: .action { [weak self] in
-                    self?.handleUserText("Help me voorbereiden op mijn afspraak \"\(next.title)\": what do I need to know and what on my screen is relevant?")
+                    self?.handleUserText(tr("app.today.preparePrompt", next.title))
                 },
                 logo: .source("calendar")
             ))
