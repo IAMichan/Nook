@@ -96,7 +96,7 @@ final class AppModel: ObservableObject {
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
         if settings.useMemory { all += memoryTools }
         all += webSpecs
-        all += BrowserStore.shared.tools
+        all += BrowserStore.tools
         all += TerminalStore.shared.tools
         return all
     }
@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
         var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
-        all += BrowserStore.shared.tools
+        all += BrowserStore.tools
         all += TerminalStore.shared.tools
         return all
     }

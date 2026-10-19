@@ -25,10 +25,28 @@ final class ScreenContext: ObservableObject {
         var frame: CGRect
     }
 
-    /// Current windows seen by Nook, frontmost window first.
-    @Published private(set) var windows: [WindowText] = []
-    @Published private(set) var lastUpdate: Date?
+    /// Current windows seen by Nook, frontmost window first. Not published itself: it changes on every read, while the
+    /// interface only shows `shown`, and the whole app redrawing every few seconds for nothing visible is what this avoids.
+    private(set) var windows: [WindowText] = [] {
+        didSet {
+            let front = windows.first { $0.isFront }
+            let now = Shown(count: windows.count, displays: displayCount, frontApp: front?.app ?? "",
+                            frontBundle: front?.bundleID ?? "", frontTitle: front?.title ?? "")
+            if now != shown { shown = now }
+        }
+    }
+    private(set) var lastUpdate: Date?
     @Published private(set) var isRunning = false
+
+    /// What views read of `windows`: how many, on how many displays, and which window is in front.
+    struct Shown: Equatable {
+        var count = 0
+        var displays = 0
+        var frontApp = ""
+        var frontBundle = ""
+        var frontTitle = ""
+    }
+    @Published private(set) var shown = Shown()
 
     var enabled: () -> Bool = { true }
 

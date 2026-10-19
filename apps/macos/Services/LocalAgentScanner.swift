@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// An agent running as a process on this Mac, even without hooks configured.
 struct DetectedAgent: Hashable {
@@ -40,17 +41,6 @@ enum LocalAgentScanner {
     private static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3"]
     private static let backgroundModes: Set<String> = ["app-server", "mcp-server", "mcp", "proto"]
 
-    private struct CachedProcess {
-        let command: String
-        var cwd: String
-        var cwdUpdatedAt: Date
-        let envLine: String
-    }
-
-    private static let cacheLock = NSLock()
-    private static var processCache: [Int32: CachedProcess] = [:]
-    private static let cwdTTL: TimeInterval = 30
-
     static func scan() async -> [DetectedAgent] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -59,102 +49,96 @@ enum LocalAgentScanner {
         }
     }
 
+    /// Reads the process table straight from the kernel, as `ps`, `ps -E` and `lsof` would, but without starting any of
+    /// them: this runs every ten seconds, and three short-lived processes per scan cost far more than the reads themselves.
     private static func scanNow() -> [DetectedAgent] {
-        guard let list = run("/bin/ps", ["-axo", "pid=,ppid=,command="]) else { return [] }
         let me = ProcessInfo.processInfo.processIdentifier
-
-        var found: [(pid: Int32, name: String, command: String)] = []
-        for line in list.split(separator: "\n") {
-            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]),
-                  pid != me, parent != me else { continue }   // Ignore Nook's own helper processes (codex app-server, claude -p)
-            let command = String(fields[2])
-            if let name = identify(command) { found.append((pid, name, command)) }
-        }
-        guard !found.isEmpty else {
-            cacheLock.lock()
-            processCache.removeAll()
-            cacheLock.unlock()
-            return []
-        }
-
-        let now = Date()
-        let activePIDs = Set(found.map(\.pid))
-        var needLsof: [Int32] = []
-        var needEnv: [Int32] = []
-        var folders: [Int32: String] = [:]
-        var environments: [Int32: String] = [:]
-
-        cacheLock.lock()
-        processCache = processCache.filter { activePIDs.contains($0.key) }
-        for item in found {
-            if let cached = processCache[item.pid], cached.command == item.command {
-                environments[item.pid] = cached.envLine
-                if !cached.cwd.isEmpty, now.timeIntervalSince(cached.cwdUpdatedAt) < cwdTTL {
-                    folders[item.pid] = cached.cwd
-                } else {
-                    needLsof.append(item.pid)
-                }
-            } else {
-                needLsof.append(item.pid)
-                needEnv.append(item.pid)
-            }
-        }
-        cacheLock.unlock()
-
-        // Working directory per process, in batch (with -b -w so lsof never blocks on network/FUSE mounts).
-        if !needLsof.isEmpty {
-            let lsofPIDs = needLsof.map(String.init).joined(separator: ",")
-            if let out = run("/usr/sbin/lsof", ["-b", "-w", "-a", "-p", lsofPIDs, "-d", "cwd", "-Fpn"]) {
-                var current: Int32?
-                for line in out.split(separator: "\n") {
-                    if line.hasPrefix("p") { current = Int32(line.dropFirst()) }
-                    else if line.hasPrefix("n"), let pid = current { folders[pid] = String(line.dropFirst()) }
-                }
-            }
-        }
-
-        // The environment of each new process: which account it runs under, and whether Nook started it itself.
-        if !needEnv.isEmpty {
-            let envPIDs = needEnv.map(String.init).joined(separator: ",")
-            let fetched = environmentLines(envPIDs)
-            for pid in needEnv {
-                environments[pid] = fetched[pid] ?? ""
-            }
-        }
-
-        cacheLock.lock()
-        for item in found {
-            let previous = processCache[item.pid]
-            let cwd = folders[item.pid] ?? previous?.cwd ?? ""
-            let envLine = environments[item.pid] ?? previous?.envLine ?? ""
-            let cwdUpdated = needLsof.contains(item.pid) ? now : (previous?.cwdUpdatedAt ?? now)
-            processCache[item.pid] = CachedProcess(command: item.command, cwd: cwd, cwdUpdatedAt: cwdUpdated, envLine: envLine)
-            folders[item.pid] = cwd
-            environments[item.pid] = envLine
-        }
-        cacheLock.unlock()
-
-        return found.compactMap { item in
-            let line = environments[item.pid] ?? ""
-            guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
+        var buffer = [UInt8](repeating: 0, count: argumentsMax)
+        var found: [DetectedAgent] = []
+        for pid in allProcesses() where pid > 0 && pid != me {
+            // Fails for other users' processes, like `ps` does; those are never your agents.
+            guard let process = arguments(pid, buffer: &buffer), !process.arguments.isEmpty,
+                  let name = identify(process.arguments.joined(separator: " ")),
+                  let parent = parentProcess(pid), parent != me else { continue }   // Ignore Nook's own helper processes (codex app-server, claude -p)
+            // The same line `ps -E` prints: the command line, then the environment.
+            let line = (process.arguments + process.environment).joined(separator: " ")
+            guard !AgentProcessEnvironment.isNookOwned(line) else { continue }
             let home = AgentProcessEnvironment.value(of: "CLAUDE_CONFIG_DIR", in: line)
                 ?? AgentProcessEnvironment.value(of: "CODEX_HOME", in: line) ?? ""
-            return DetectedAgent(pid: item.pid, name: item.name, cwd: folders[item.pid] ?? "", home: home)
+            found.append(DetectedAgent(pid: pid, name: name, cwd: workingDirectory(pid) ?? "", home: home))
         }
+        return found.sorted { $0.pid < $1.pid }
     }
 
-    /// The command line and environment of each process (`ps -E`), by pid. Empty if unavailable: then every session
-    /// belongs to the primary account and none is recognised as Nook's own.
-    private static func environmentLines(_ pids: String) -> [Int32: String] {
-        guard let out = run("/bin/ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids]) else { return [:] }
-        var result: [Int32: String] = [:]
-        for line in out.split(separator: "\n") {
-            let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-            guard fields.count == 2, let pid = Int32(fields[0]) else { continue }
-            result[pid] = String(fields[1])
+    // MARK: Kernel reads
+
+    /// The size of the largest argument area a process can have (`kern.argmax`).
+    private static let argumentsMax: Int = {
+        var mib: [Int32] = [CTL_KERN, KERN_ARGMAX]
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        return sysctl(&mib, 2, &value, &size, nil, 0) == 0 && value > 0 ? Int(value) : 1 << 20
+    }()
+
+    private static func allProcesses() -> [pid_t] {
+        let count = proc_listallpids(nil, 0)
+        guard count > 0 else { return [] }
+        // Room for processes started between the two calls.
+        var pids = [pid_t](repeating: 0, count: Int(count) + 64)
+        let filled = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        guard filled > 0 else { return [] }
+        return Array(pids.prefix(min(Int(filled), pids.count)))
+    }
+
+    /// The command line and environment of a process (`kern.procargs2`).
+    private static func arguments(_ pid: pid_t, buffer: inout [UInt8]) -> (arguments: [String], environment: [String])? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = buffer.count
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        return parseArguments(buffer, count: size)
+    }
+
+    /// Splits a `kern.procargs2` area: argc, the executable path, then argc arguments and the environment, each ending
+    /// in a zero byte. Nil when it is too short to hold argc.
+    static func parseArguments(_ buffer: [UInt8], count: Int) -> (arguments: [String], environment: [String])? {
+        let size = min(count, buffer.count)
+        guard size > MemoryLayout<Int32>.size else { return nil }
+        let argc = buffer.withUnsafeBytes { Int($0.loadUnaligned(as: Int32.self)) }
+        var index = MemoryLayout<Int32>.size
+        // Skip the executable path and the zero bytes that pad it.
+        while index < size && buffer[index] != 0 { index += 1 }
+        while index < size && buffer[index] == 0 { index += 1 }
+
+        var arguments: [String] = []
+        var environment: [String] = []
+        while index < size {
+            let start = index
+            while index < size && buffer[index] != 0 { index += 1 }
+            // An empty string ends the environment.
+            if index == start && arguments.count >= argc { break }
+            let text = String(decoding: buffer[start..<index], as: UTF8.self)
+            if arguments.count < argc { arguments.append(text) } else { environment.append(text) }
+            index += 1
         }
-        return result
+        return (arguments, environment)
+    }
+
+    private static func parentProcess(_ pid: pid_t) -> pid_t? {
+        var info = proc_bsdshortinfo()
+        let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, size) == size else { return nil }
+        return pid_t(info.pbsi_ppid)
+    }
+
+    /// The working directory, as `lsof -d cwd` reports it.
+    private static func workingDirectory(_ pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: info.pvi_cdir.vip_path) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        return path.isEmpty ? nil : path
     }
 
     /// Identifies an agent from its command line; excludes .app bundles and search commands.
@@ -182,33 +166,5 @@ enum LocalAgentScanner {
             if interpreters.contains(program), kind.packages.contains(where: { lower.contains($0) }) { return kind.name }
         }
         return nil
-    }
-
-    private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval = 3.0) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        let exited = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in exited.signal() }
-        do { try process.run() } catch { return nil }
-
-        let readGroup = DispatchGroup()
-        var outData = Data()
-        readGroup.enter()
-        DispatchQueue.global(qos: .utility).async {
-            outData = output.fileHandleForReading.readDataToEndOfFile()
-            readGroup.leave()
-        }
-
-        // Sleep until the process ends instead of polling every 10 ms.
-        if exited.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            return nil
-        }
-        _ = readGroup.wait(timeout: .now() + 0.5)
-        return String(data: outData, encoding: .utf8)
     }
 }

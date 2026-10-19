@@ -420,8 +420,8 @@ struct ProfileHome: Sendable {
 
 // MARK: Cloud sessions
 
-/// Reads an account's cloud sessions from Anthropic, with the login Claude Code keeps for it. Read-only; the token is used
-/// only for this request and never stored or logged.
+/// Reads an account's cloud sessions from Anthropic, with the login Claude Code keeps for it. Read-only; the token is never
+/// written anywhere or logged (see `ClaudeUsage.accessToken`).
 enum CloudSessionFetch {
     /// How far back cloud sessions are listed, like the transcripts on this Mac.
     static let days = 30
@@ -446,7 +446,9 @@ enum CloudSessionFetch {
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
             semaphore.signal()
         }.resume()
-        guard semaphore.wait(timeout: .now() + 20) == .success, status == 200, let payload else { return nil }
+        let answered = semaphore.wait(timeout: .now() + 20) == .success
+        if answered, status == 401 || status == 403 { ClaudeUsage.forgetToken(home: home, isDefault: isDefault) }
+        guard answered, status == 200, let payload else { return nil }
         let since = Date().addingTimeInterval(-Double(days) * 86_400)
         return ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since }
     }

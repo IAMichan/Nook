@@ -5,7 +5,14 @@ import WebKit
 /// navigates on its own after your approval (an action). It keeps no history beyond the session and stores no passwords.
 @MainActor
 final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
-    static let shared = BrowserStore()
+    /// Made on first use: a web view starts WebKit's own processes, so Nook only pays for them once the browser is used.
+    static var shared: BrowserStore {
+        if let instance { return instance }
+        let made = BrowserStore()
+        instance = made
+        return made
+    }
+    private static var instance: BrowserStore?
 
     @Published var address = ""
     @Published private(set) var title = ""
@@ -132,8 +139,9 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     // MARK: Tools
 
-    /// Reading the open page runs right away; going somewhere is an action that waits for approval.
-    var tools: [ToolSpec] {
+    /// Reading the open page runs right away; going somewhere is an action that waits for approval. Static, so offering
+    /// the tools to the model does not start the browser.
+    static var tools: [ToolSpec] {
         [
             ToolSpec(
                 name: "read_nook_browser",
@@ -142,9 +150,10 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
                 kind: .read,
                 summarize: { _ in "Read Nook's browser" },
                 tag: { _ in ("", .neutral) },
-                run: { [weak self] _ in
-                    guard let self else { throw NookError(tr("workbench.browser.nothingOpen")) }
-                    let page = try await self.pageText()
+                run: { _ in
+                    // Never opened: nothing to read, and no reason to start the browser for that.
+                    guard let browser = BrowserStore.instance else { throw NookError(tr("workbench.browser.nothingOpen")) }
+                    let page = try await browser.pageText()
                     return "## \(page.title)\nURL: \(page.url)\n\n\(page.text)\n\n" + ReferenceParser.line(title: page.title, url: page.url, detail: "Nook browser")
                 }
             ),
@@ -155,11 +164,11 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
                 kind: .action,
                 summarize: { input in "Browser: open \((input["url"] as? String) ?? "")" },
                 tag: { _ in ("", .neutral) },
-                run: { [weak self] input in
+                run: { input in
                     guard let raw = input["url"] as? String, let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
                         throw NookError("Only https addresses can be opened.")
                     }
-                    self?.webView.load(URLRequest(url: url))
+                    BrowserStore.shared.webView.load(URLRequest(url: url))
                     if WorkspaceWindowController.shared.isKey {
                         AppModel.shared.openMainWindow(.sessions, tool: .browser)
                     } else {

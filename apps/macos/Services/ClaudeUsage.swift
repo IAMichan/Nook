@@ -5,7 +5,8 @@ import CryptoKit
 /// an account instead of only once a session has run (the status line only reports while a session is open).
 ///
 /// The login token is read from where Claude Code itself keeps it (Keychain, or `.credentials.json` in the account
-/// directory); it is used only for this one read-only request and never stored or logged.
+/// directory); it is used only for read-only requests, never written anywhere or logged, and kept in memory only until it
+/// expires, so Nook does not start `security` for every read.
 @MainActor
 final class ClaudeUsage {
     private let hub: AgentHub
@@ -83,7 +84,9 @@ final class ClaudeUsage {
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
             semaphore.signal()
         }.resume()
-        guard semaphore.wait(timeout: .now() + 20) == .success, status == 200, let payload,
+        let answered = semaphore.wait(timeout: .now() + 20) == .success
+        if answered, status == 401 || status == 403 { forgetToken(home: home, isDefault: isDefault) }
+        guard answered, status == 200, let payload,
               let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any] else { return nil }
         let five = window(object["five_hour"])
         let week = window(object["seven_day"])
@@ -99,17 +102,43 @@ final class ClaudeUsage {
     }
 
     private nonisolated static func parseDate(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
 
     // MARK: Token
 
     /// The OAuth access token of this account, if it is signed in with a subscription and the token is still valid.
     nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
+        let key = tokenKey(home: home, isDefault: isDefault)
+        tokenLock.lock()
+        let cached = tokens[key]
+        tokenLock.unlock()
+        // Read recently and still valid for at least a minute: no need to ask the Keychain again. The short reuse window
+        // also picks up a switch to another account in Claude Code soon enough.
+        if let cached, cached.expires.timeIntervalSinceNow > 60, -cached.read.timeIntervalSinceNow < tokenReuse { return cached.token }
+        guard let found = readToken(home: home, isDefault: isDefault) else { return nil }
+        tokenLock.lock()
+        tokens[key] = found.expires.map { (token: found.token, expires: $0, read: Date()) }
+        tokenLock.unlock()
+        return found.token
+    }
+
+    /// Drops a token the server refused (signed out, revoked), so the next read asks the Keychain again.
+    nonisolated static func forgetToken(home: URL, isDefault: Bool) {
+        tokenLock.lock()
+        tokens[tokenKey(home: home, isDefault: isDefault)] = nil
+        tokenLock.unlock()
+    }
+
+    private nonisolated static let tokenLock = NSLock()
+    private nonisolated(unsafe) static var tokens: [String: (token: String, expires: Date, read: Date)] = [:]
+    private nonisolated static let tokenReuse: TimeInterval = 15 * 60
+
+    private nonisolated static func tokenKey(home: URL, isDefault: Bool) -> String {
+        (isDefault ? "default|" : "") + home.standardizedFileURL.path
+    }
+
+    private nonisolated static func readToken(home: URL, isDefault: Bool) -> (token: String, expires: Date?)? {
         var candidates: [Data] = []
         // Claude Code keeps the login in the Keychain; every extra account directory has its own entry, named after a hash of the path.
         var services = [isDefault ? "Claude Code-credentials" : "Claude Code-credentials-" + hash(home.path)]
@@ -124,8 +153,9 @@ final class ClaudeUsage {
             guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let oauth = object["claudeAiOauth"] as? [String: Any],
                   let token = oauth["accessToken"] as? String, !token.isEmpty else { continue }
-            if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue, expires / 1000 < Date().timeIntervalSince1970 { continue }
-            return token
+            let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue.map { Date(timeIntervalSince1970: $0 / 1000) }
+            if let expires, expires < Date() { continue }
+            return (token, expires)
         }
         return nil
     }

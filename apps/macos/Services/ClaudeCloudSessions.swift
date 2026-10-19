@@ -97,11 +97,7 @@ enum ClaudeCloudSessions {
 
     private static func date(_ raw: Any?) -> Date? {
         guard let text = raw as? String else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        return NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text)
     }
 
     /// The organization the session list belongs to, from Claude Code's own account file.

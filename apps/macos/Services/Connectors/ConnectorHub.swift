@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Central hub for all integrations: refreshes in the background at respective intervals,
 /// providing the brain with unified context and read tools for active sources. Queries never block on network:
@@ -11,6 +12,7 @@ final class ConnectorHub: ObservableObject {
     private(set) var sources: [ContextSource] = []
     private var lastRefresh: [String: Date] = [:]
     private var running: Set<String> = []
+    private var lastQuietRevision = Date.distantPast
     private var timer: Timer?
 
     func register(_ list: [ContextSource]) {
@@ -68,9 +70,16 @@ final class ConnectorHub: ObservableObject {
         tick()
     }
 
+    /// Sources read by scripting another app on this Mac (Mail's inbox, the browser's tabs). Away from the Mac they don't
+    /// change in ways anyone sees, and each read wakes that app too, so they pause until you are back; a question still
+    /// reads them fresh when they are stale (`MailConnector.inbox`).
+    private static let followsYou: Set<String> = ["mail", "browser"]
+
     private func tick() {
         let now = Date()
+        let away = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!) > 300
         for source in active where !running.contains(source.id) {
+            if away && Self.followsYou.contains(source.id) { continue }
             let last = lastRefresh[source.id] ?? .distantPast
             if now.timeIntervalSince(last) >= source.refreshInterval {
                 refresh(source)
@@ -83,12 +92,27 @@ final class ConnectorHub: ObservableObject {
         guard !running.contains(source.id) else { return }
         running.insert(source.id)
         lastRefresh[source.id] = Date()
+        let before = Self.fingerprint(source)
         Task { [weak self] in
             await source.refresh()
             guard let self else { return }
             self.running.remove(source.id)
-            self.revision += 1
+            // Every view of the app redraws on a new revision. A refresh that found nothing new (same status, same data)
+            // only moved its "updated" time, which is shown per minute: redraw for that at most once a minute.
+            let unchanged = Self.fingerprint(source) == before
+            let now = Date()
+            if !unchanged || now.timeIntervalSince(self.lastQuietRevision) >= 60 {
+                if unchanged { self.lastQuietRevision = now }
+                self.revision += 1
+            }
         }
+    }
+
+    /// What views can show of a source, without the time of its last refresh.
+    private static func fingerprint(_ source: ContextSource) -> (status: ConnectorStatus, active: Bool, lines: [String]) {
+        var status = source.status
+        status.updated = nil
+        return (status, source.isActive, source.contextLines())
     }
 
     func refreshAll() {
