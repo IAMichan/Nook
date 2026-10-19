@@ -304,6 +304,7 @@ final class AppModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] playing in
                 guard let self else { return }
+                NookPresence.shared.listeningToMusic = playing
                 let vm = self.viewModel
                 if playing, case .idle = vm.state {
                     vm.show(.music)
@@ -333,7 +334,10 @@ final class AppModel: ObservableObject {
             .removeDuplicates { $0.title == $1.title && $0.artist == $1.artist && $0.app == $1.app }
             .filter(\.isPlaying)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] info in self?.notch.announce(info) }
+            .sink { [weak self] info in
+                NookPresence.shared.trackChanged()
+                self?.notch.announce(info)
+            }
             .store(in: &bag)
 
         reloadHotKeys()

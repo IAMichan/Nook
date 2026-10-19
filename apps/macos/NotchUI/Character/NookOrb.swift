@@ -27,7 +27,8 @@ struct NookOrb: View {
     @State private var moodSince = Date()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { context in
+        // A dozing Nook keeps animating on every screen, so all orbs nod off together.
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !(animated || dozing))) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)
@@ -35,6 +36,9 @@ struct NookOrb: View {
         .onChange(of: mood) { _, _ in moodSince = Date() }
         .accessibilityHidden(true)
     }
+
+    /// Drowsiness is shared by every screen: the pointer being on one screen (`.seen`) must not keep the others awake.
+    private var dozing: Bool { presence.drowsy && (mood == .rest || mood == .seen) }
 
     private func orb(_ p: Pose) -> some View {
         // The light stays where it is while Nook turns: the highlight moves against his gaze.
@@ -87,6 +91,9 @@ struct NookOrb: View {
         .rotationEffect(.degrees(p.rotation))
         .offset(p.offset)
         .overlay {
+            if presence.listeningToMusic { headphones }
+        }
+        .overlay {
             if let progress = p.sparks { sparks(progress) }
         }
         .overlay(alignment: .topTrailing) {
@@ -121,6 +128,38 @@ struct NookOrb: View {
             .rotationEffect(.degrees(e.rotation))
             .offset(x: e.dx, y: e.dy)
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
+    }
+
+    /// Headphones while music plays: a band over the top and an ear cup on each side.
+    private var headphones: some View {
+        let band = max(1.5, size * 0.07)
+        let cupWidth = size * 0.17
+        let cupHeight = size * 0.34
+        return ZStack {
+            Circle()
+                .trim(from: 0.5, to: 1)
+                .stroke(Color(hex: 0x4A4A58), style: StrokeStyle(lineWidth: band, lineCap: .round))
+                .frame(width: size * 1.02, height: size * 1.02)
+                .offset(y: size * 0.01)
+            HStack {
+                cup(width: cupWidth, height: cupHeight)
+                Spacer(minLength: 0)
+                cup(width: cupWidth, height: cupHeight)
+            }
+            .frame(width: size * 1.08)
+        }
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
+    }
+
+    private func cup(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+            .fill(Color(hex: 0x4A4A58))
+            .overlay(
+                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 0.6)
+            )
+            .frame(width: width, height: height)
     }
 
     private var cheek: some View {
@@ -210,7 +249,7 @@ struct NookOrb: View {
         let u = size / 72   // the motions were designed on a 72-point orb
         let dt = tracker.advance(to: t)
         let lively = animated && !reduceMotion
-        let drowsy = presence.drowsy && mood == .rest
+        let drowsy = dozing
         let since = { (moment: Date) -> Double in date.timeIntervalSince(moment) }
 
         // Breathing: faster and shallower while thinking, slow when drowsy.
@@ -230,8 +269,8 @@ struct NookOrb: View {
         if drowsy {
             // Eyes half shut; awake, it nods off now and then and catches itself.
             let c = t.truncatingRemainder(dividingBy: 9)
-            let nod = lively ? bump((c - 4.2) / 1.6) : 0
-            let jerk = lively ? bump((c - 7) / 0.4) : 0
+            let nod = reduceMotion ? 0 : bump((c - 4.2) / 1.6)
+            let jerk = reduceMotion ? 0 : bump((c - 7) / 0.4)
             p.eachEye { e in
                 e.squash *= CGFloat(max(0.08, 0.35 - 0.25 * nod + 0.15 * jerk))
                 e.dy += 2 * u
@@ -397,7 +436,12 @@ struct NookOrb: View {
 
         // Looking at a piece of the task ring under the pointer, else following the pointer when it is near.
         var target = CGPoint.zero
-        if size >= 30, let angle = presence.lookAngle {
+        let track = since(presence.trackChangedAt)
+        if track >= 0, track < 4 {
+            // A new track: glance at the cover beside him, then back.
+            let k = ease(track / 0.25) * (1 - ease((track - 3.4) / 0.4))
+            target = CGPoint(x: 0.95 * k, y: 0.1 * k)
+        } else if size >= 30, let angle = presence.lookAngle {
             target = CGPoint(x: cos(angle) * 0.95, y: sin(angle) * 0.95)
         } else if mood != .think, mood != .done, reading < 0.5, !onOrb, let pointer {
             let distance = hypot(pointer.x, pointer.y)
