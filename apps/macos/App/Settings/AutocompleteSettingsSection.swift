@@ -18,6 +18,8 @@ struct AutocompleteSettingsSection: View {
     @State private var newSite = ""
     @State private var customLink = ""
     @State private var pendingDelete: CompletionCatalogModel?
+    /// A model file of another app, about to go to the Trash.
+    @State private var pendingTrash: CompletionModelFile?
 
     enum AppFilter: String, CaseIterable, Identifiable {
         case all, on, off
@@ -195,9 +197,30 @@ struct AutocompleteSettingsSection: View {
                 Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
+                // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
+                Button { pendingTrash = file } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
         .help(file.url.path)
+        .confirmationDialog(trashQuestion(file), isPresented: Binding(
+            get: { pendingTrash == file }, set: { if !$0 { pendingTrash = nil } })) {
+            Button(tr("autocomplete.download.trash"), role: .destructive) { trash(file) }
+        }
+    }
+
+    private func trashQuestion(_ file: CompletionModelFile) -> String {
+        guard file.source == .found else { return tr("autocomplete.download.deleteConfirm", file.title) }
+        return tr("autocomplete.download.trashConfirm", file.title, file.url.deletingLastPathComponent().path)
+    }
+
+    private func trash(_ file: CompletionModelFile) {
+        pendingTrash = nil
+        guard autocomplete.activeModel?.identity != file.url.path else { return }
+        try? FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+        if store.prefs.modelPath == file.url.path { store.prefs.modelPath = "" }
+        autocomplete.refresh()
     }
 
     /// The file of a catalog model when it is here: in Nook's folder, or found elsewhere on this Mac under the same name.
@@ -244,8 +267,8 @@ struct AutocompleteSettingsSection: View {
                 } else if let here {
                     Button(tr("autocomplete.use")) { store.prefs.modelPath = here.path }
                 }
-                // Only Nook's own copies can be deleted here; a file of another app stays where it is.
-                if ownCopy {
+                // Only Nook's own copies can be deleted here, and never the model in use.
+                if ownCopy, !inUse {
                     Button { pendingDelete = model } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .help(tr("autocomplete.download.delete"))
