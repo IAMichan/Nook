@@ -24,7 +24,12 @@ struct MCPRemoteService: Identifiable, Equatable {
         MCPRemoteService(id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", domain: "linear.app", category: .work),
         MCPRemoteService(id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", domain: "stripe.com", category: .business),
         MCPRemoteService(id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", domain: "vercel.com", category: .development),
-        MCPRemoteService(id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", domain: "sentry.io", category: .development)
+        MCPRemoteService(id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", domain: "sentry.io", category: .development),
+        MCPRemoteService(id: "atlassian", name: "Jira & Confluence", url: "https://mcp.atlassian.com/v1/mcp", domain: "atlassian.com", category: .work),
+        MCPRemoteService(id: "canva", name: "Canva", url: "https://mcp.canva.com/mcp", domain: "canva.com", category: .work),
+        MCPRemoteService(id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", domain: "supabase.com", category: .development),
+        MCPRemoteService(id: "neon", name: "Neon", url: "https://mcp.neon.tech/mcp", domain: "neon.tech", category: .development),
+        MCPRemoteService(id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", domain: "huggingface.co", category: .development)
     ]
 }
 

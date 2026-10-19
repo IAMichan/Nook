@@ -5,9 +5,9 @@ import AppKit
 extension SettingsView {
     // MARK: Connectors
 
-    /// Every service in one calm list, grouped by what it is for. Each row says its state in plain words (Not connected,
-    /// Connecting, Connected, Sign-in expired) and has one obvious button. Services with an official MCP server sign in
-    /// with OAuth; the rest use a key with a step-by-step guide. Agent accounts live under Agents, raw MCP under MCP.
+    /// Every way to connect on one page, in the order a person needs it: what needs you, what you already have, the
+    /// services you connect by signing in on their own page (one click, sign in, done), the apps on this Mac, the services
+    /// that take a key (a step-by-step guide), and MCP for everything else. Agent accounts live under Agents.
     var connectionsSection: some View {
         // Collected once per redraw: every capability line below is derived from it.
         let tools: [(name: String, isAction: Bool)] = app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }
@@ -15,7 +15,20 @@ extension SettingsView {
         let refresh = { app.connectors.refreshAll() }
         let oauthIDs = Set(MCPRemoteService.all.map(\.id))
         let cloud = app.connectors.sources.filter { !($0 is MCPConnector) && $0 is any CloudConnectorConfig }
-        let expired = expiredServices()
+        let expired = expiredConfigs()
+        // A service whose sign-in is running stays a card, with its spinner, until it is connected.
+        let linkedServices = Set(mcpStore.servers.filter { !mcpSignIn.isConnecting($0.id) }.compactMap(\.serviceID))
+        let keyed = { (id: String) in cloud.first { $0.id == id }.map(isConnected) ?? false }
+        let connectedCloud = cloud.filter { isConnected($0) && matchesSearch($0, capabilityLine) }
+        let linkedRemote = MCPRemoteService.all.filter {
+            linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline)
+        }
+        let oneClick = MCPRemoteService.all.filter {
+            !linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline)
+        }
+        let withKey = cloud.filter { !isConnected($0) && !oauthIDs.contains($0.id) && matchesSearch($0, capabilityLine) }
+        let local = localSources(capabilityLine)
+        let query = connectionSearch.trimmingCharacters(in: .whitespaces).lowercased()
         return Group {
             Section {
                 HStack(spacing: 8) {
@@ -27,75 +40,97 @@ extension SettingsView {
                             .buttonStyle(.plain)
                     }
                 }
-                categoryChips
             } footer: {
                 Text(tr("connect.intro"))
             }
 
             if !expired.isEmpty {
                 Section {
-                    ForEach(expired, id: \.self) { name in
-                        Label(tr("connect.expiredBanner", name), systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(NookTheme.amber)
-                            .font(.callout)
+                    ForEach(expired) { config in
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.amber)
+                            Text(tr("connect.expiredBanner", config.name)).font(.callout)
+                            Spacer(minLength: 8)
+                            Button(tr("settings.connections.signInAgain")) { mcpSignIn.signIn(config, app: app) }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                        }
                     }
                 }
             }
 
-            ForEach(ServiceCategory.allCases.filter { connectionCategory == nil || connectionCategory == $0 }) { category in
-                let builtIn = cloud.filter { ServiceCategory.of(sourceID: $0.id) == category && matchesSearch($0, capabilityLine) }
-                let remote = MCPRemoteService.all.filter { ServiceCategory.of($0) == category && matchesSearch(title: $0.name + " " + $0.tagline) }
-                let local = category == .mac ? localSources(capabilityLine) : []
-                if !builtIn.isEmpty || !remote.isEmpty || !local.isEmpty {
-                    Section {
-                        // A built-in service that also has an OAuth server shows once: the key row when a key is set,
-                        // otherwise the sign-in row with the key as the alternative.
-                        ForEach(builtIn.indices, id: \.self) { index in
-                            let source = builtIn[index]
-                            if !oauthIDs.contains(source.id) || isConnected(source) {
-                                serviceRow(source, capabilityLine, refresh)
-                            }
-                        }
-                        ForEach(remote) { service in
-                            let keyed = builtIn.first { $0.id == service.id }
-                            if keyed.map({ !isConnected($0) }) ?? true {
-                                MCPServiceRow(service: service, keyAlternative: keyed,
-                                              capabilities: keyed.map { capabilityLine($0.id) } ?? "", onChange: refresh)
-                            }
-                        }
-                        ForEach(local.indices, id: \.self) { index in
-                            localRow(local[index], capabilityLine)
-                        }
-                    } header: {
-                        Text(category.title)
-                    } footer: {
-                        if category == .mac { Text(tr("settings.connections.footer")) }
+            if !connectedCloud.isEmpty || !linkedRemote.isEmpty {
+                Section(tr("settings.connections.yours")) {
+                    ForEach(connectedCloud.indices, id: \.self) { index in
+                        serviceRow(connectedCloud[index], capabilityLine, refresh)
+                    }
+                    ForEach(linkedRemote) { service in
+                        MCPServiceRow(service: service, keyAlternative: cloud.first { $0.id == service.id },
+                                      capabilities: capabilityLine(service.id), onChange: refresh)
                     }
                 }
             }
 
-            if connectionCategory == nil || connectionCategory == .mac,
-               connectionSearch.isEmpty || "whatsapp".contains(connectionSearch.lowercased()) || connectionSearch.lowercased().contains("whats") {
+            if !oneClick.isEmpty {
+                Section {
+                    GalleryGrid {
+                        ForEach(oneClick) { service in
+                            OneClickServiceCard(service: service, keyAlternative: cloud.first { $0.id == service.id },
+                                                capabilities: capabilityLine(service.id), onChange: refresh)
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                } header: {
+                    Text(tr("settings.connections.oneClick"))
+                } footer: {
+                    Text(tr("settings.connections.oneClickFooter"))
+                }
+            }
+
+            if !local.isEmpty {
+                Section {
+                    ForEach(local.indices, id: \.self) { index in
+                        localRow(local[index], capabilityLine)
+                    }
+                } header: {
+                    Text(tr("settings.connections.onYourMac"))
+                } footer: {
+                    Text(tr("settings.connections.footer"))
+                }
+            }
+
+            if query.isEmpty || "whatsapp".contains(query) || query.contains("whats") {
                 WhatsAppLinkSection()
             }
 
-            Section {
-                Button { app.settingsSection = .mcp } label: {
-                    HStack(spacing: 12) {
-                        SettingsTile(.mcp, size: 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tr("settings2.connections.missing")).foregroundStyle(.primary)
-                            Text(tr("settings2.connections.missingDetail"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+            if !withKey.isEmpty {
+                Section {
+                    GalleryGrid {
+                        ForEach(withKey.indices, id: \.self) { index in
+                            CloudConnectorViews.card(withKey[index], capabilities: capabilityLine(withKey[index].id), onChange: refresh)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                     }
-                    .contentShape(Rectangle())
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                } header: {
+                    Text(tr("settings.connections.withKey"))
+                } footer: {
+                    Text(tr("settings.connections.withKeyFooter"))
                 }
-                .buttonStyle(.plain)
+            }
+
+            if query.isEmpty || "gitlab".contains(query) {
+                Section {
+                    GitLabSettingsRows()
+                }
+            }
+
+            if query.isEmpty || "mcp".contains(query) {
+                MCPSettingsSection()
+            }
+
+            Section {
                 let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
                 if !others.isEmpty {
                     DisclosureGroup(tr("settings.connections.moreApps")) {
@@ -117,34 +152,10 @@ extension SettingsView {
                 }
             } header: {
                 Text(tr("connect.notListed"))
+            } footer: {
+                Text(tr("settings2.connections.missingDetail"))
             }
         }
-    }
-
-    /// The category filter: All, then one chip per group.
-    private var categoryChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                chip(tr("connect.category.all"), selected: connectionCategory == nil) { connectionCategory = nil }
-                ForEach(ServiceCategory.allCases) { category in
-                    chip(category.title, selected: connectionCategory == category) { connectionCategory = category }
-                }
-            }
-        }
-    }
-
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.callout.weight(selected ? .semibold : .regular))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 4)
-                .foregroundStyle(selected ? NookTheme.onIris : Color.primary)
-                .background(Capsule().fill(selected ? NookTheme.iris : Color.primary.opacity(0.06)))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// A built-in service: the manage row once a key is set, otherwise a row with Connect.
@@ -157,12 +168,12 @@ extension SettingsView {
         }
     }
 
-    /// Names of signed-in services whose sign-in has expired: shown on top, so nobody has to go looking.
-    func expiredServices() -> [String] {
-        MCPServerStore.shared.servers.filter(\.signsIn).compactMap { config in
+    /// Signed-in services whose sign-in has expired: shown on top with one button, so nobody has to go looking.
+    func expiredConfigs() -> [MCPServerConfig] {
+        mcpStore.servers.filter(\.signsIn).filter { config in
             guard let source = app.connectors.source(id: config.sourceID), source.isActive,
-                  case .error = source.status.state, (source.status.errorKind ?? .other).needsReconnect else { return nil }
-            return config.name
+                  case .error = source.status.state else { return false }
+            return (source.status.errorKind ?? .other).needsReconnect
         }
     }
 

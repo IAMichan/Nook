@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 /// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
 struct AutocompleteSettingsSection: View {
+    @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
     @ObservedObject private var downloads = CompletionDownloads.shared
@@ -57,7 +58,7 @@ struct AutocompleteSettingsSection: View {
                 modelSection
                 downloadSection
                 suggestionsSection
-                keysSection
+                keysLink
             case .apps:
                 appsSection
                 sitesSection
@@ -320,18 +321,21 @@ struct AutocompleteSettingsSection: View {
 
     // MARK: Keys
 
-    private var keysSection: some View {
-        Section(tr("autocomplete.section.keys")) {
-            CompletionKeyRecorder(title: tr("autocomplete.key.word"), shortcut: Binding(get: { store.prefs.acceptWord }, set: { if let key = $0 { store.prefs.acceptWord = key } }),
-                                  fallback: .tab, allowsOff: false)
-            CompletionKeyRecorder(title: tr("autocomplete.key.all"), shortcut: Binding(get: { store.prefs.acceptAll }, set: { if let key = $0 { store.prefs.acceptAll = key } }),
-                                  fallback: .shiftTab, allowsOff: false)
-            CompletionKeyRecorder(title: tr("autocomplete.key.toggleAll"), shortcut: $store.prefs.toggleAll, fallback: nil, allowsOff: true)
-            CompletionKeyRecorder(title: tr("autocomplete.key.toggleApp"), shortcut: $store.prefs.toggleApp, fallback: nil, allowsOff: true)
-            Picker(tr("autocomplete.escape"), selection: $store.prefs.escape) {
-                ForEach(CompletionEscape.allCases) { Text(tr("autocomplete.escape.\($0.rawValue)")).tag($0) }
+    /// The keys live under Shortcuts, with every other key of Nook.
+    private var keysLink: some View {
+        Section {
+            Button { app.settingsSection = .shortcuts } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("autocomplete.section.keys")).foregroundStyle(.primary)
+                        Text(tr("settings.autocomplete.keysMoved")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
-            Stepper(tr("autocomplete.pauseMinutes", store.prefs.pauseMinutes), value: $store.prefs.pauseMinutes, in: 1...240)
+            .buttonStyle(.plain)
         }
     }
 
@@ -799,5 +803,25 @@ struct CompletionKeyRecorder: View {
         else if let characters = event.charactersIgnoringModifiers?.uppercased(), !characters.isEmpty { label += characters }
         else { return nil }
         return CompletionShortcut(keyCode: Int(event.keyCode), modifiers: modifiers, label: label)
+    }
+}
+
+/// The keys of completing, shown under Settings › Shortcuts with the other keys of Nook.
+struct AutocompleteKeysSection: View {
+    @ObservedObject private var store = AutocompleteStore.shared
+
+    var body: some View {
+        Section(tr("autocomplete.section.keys")) {
+            CompletionKeyRecorder(title: tr("autocomplete.key.word"), shortcut: Binding(get: { store.prefs.acceptWord }, set: { if let key = $0 { store.prefs.acceptWord = key } }),
+                                  fallback: .tab, allowsOff: false)
+            CompletionKeyRecorder(title: tr("autocomplete.key.all"), shortcut: Binding(get: { store.prefs.acceptAll }, set: { if let key = $0 { store.prefs.acceptAll = key } }),
+                                  fallback: .shiftTab, allowsOff: false)
+            CompletionKeyRecorder(title: tr("autocomplete.key.toggleAll"), shortcut: $store.prefs.toggleAll, fallback: nil, allowsOff: true)
+            CompletionKeyRecorder(title: tr("autocomplete.key.toggleApp"), shortcut: $store.prefs.toggleApp, fallback: nil, allowsOff: true)
+            Picker(tr("autocomplete.escape"), selection: $store.prefs.escape) {
+                ForEach(CompletionEscape.allCases) { Text(tr("autocomplete.escape.\($0.rawValue)")).tag($0) }
+            }
+            Stepper(tr("autocomplete.pauseMinutes", store.prefs.pauseMinutes), value: $store.prefs.pauseMinutes, in: 1...240)
+        }
     }
 }

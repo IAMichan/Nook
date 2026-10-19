@@ -2,7 +2,7 @@
 
 Coding agents (such as Claude Code and Codex) can use Nook's integrated workspace directly: start long-running dev servers in a visible Nook terminal, open and inspect pages in Nook's built-in browser (including console errors and screenshots), delegate subtasks to other agents, and propose pull requests that you approve right in the notch.
 
-Agents connect through a lightweight local MCP server (`nook-mcp`) that forwards requests over a user-only Unix domain socket to Nook. Sessions started inside Nook receive it automatically; external terminal sessions can be linked with one click in **Settings › Agents › Workspace**.
+Agents connect through a lightweight local MCP server (`nook-mcp`) that forwards requests over a user-only Unix domain socket to Nook. Sessions started inside Nook receive it automatically; external terminal sessions can be linked with one click in **Settings › Workspace**.
 
 ## Core Principles
 
@@ -35,7 +35,7 @@ Claude Code / Codex ──stdio (MCP)──▶ nook-mcp (Perl) ──bridge.sock
 
 ### Connecting External Terminal Agents
 
-For sessions you launch yourself in an external terminal, click **Connect** in **Settings › Agents › Workspace** (or run):
+For sessions you launch yourself in an external terminal, click **Connect** in **Settings › Workspace** (or run):
 
 ```sh
 claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code

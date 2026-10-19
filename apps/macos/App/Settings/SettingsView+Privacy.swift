@@ -20,6 +20,7 @@ extension SettingsView {
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
+            privateSourcesSection
             AuditLogSection()
             Section(tr("settings.privacy.whatLeavesMac")) {
                 promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))

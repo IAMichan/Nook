@@ -60,7 +60,7 @@ struct ActionField: Equatable, Identifiable {
 
 enum ActionGate {
     /// Actions safe to repeat without deduplication checks.
-    static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url"]
+    static let repeatable: Set<String> = ["media_control", "set_volume", "open_app", "open_url", "change_setting", "open_settings"]
     /// Window duration within which an action is considered a duplicate.
     static let duplicateWindow: TimeInterval = 12 * 3600
 

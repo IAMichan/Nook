@@ -60,7 +60,7 @@ struct SettingsHeader: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            if section == .general {
+            if section == .start {
                 NookOrb(mood: mood, size: 30, animated: false)
                     .frame(width: 44, height: 44)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.smoke))
@@ -197,6 +197,8 @@ struct WorkspaceSettingsSection: View {
     var body: some View {
         Group {
             defaults
+            openIn
+            behavior
             scheduled
             bridge
         }
@@ -277,6 +279,16 @@ struct WorkspaceSettingsSection: View {
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
+        } header: {
+            Text(tr("settings.ws.newSession"))
+        } footer: {
+            Text(tr("settings.ws.footer"))
+        }
+    }
+
+    /// Where a session's files, terminal and searches open.
+    private var openIn: some View {
+        Section(tr("settings.ws.openIn")) {
             Picker(tr("settings.ws.editor"), selection: $ws.editorBundleID) {
                 Text(tr("settings.ws.finder")).tag("")
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.editorCandidates)) { Text($0.name).tag($0.bundleID) }
@@ -285,6 +297,12 @@ struct WorkspaceSettingsSection: View {
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates)) { Text($0.name).tag($0.bundleID) }
             }
             BrowserSearchPicker()
+        }
+    }
+
+    /// How sessions behave and are tidied up.
+    private var behavior: some View {
+        Section(tr("settings.ws.behavior")) {
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)
                 Text(tr("settings.ws.days", 7)).tag(7)
@@ -305,12 +323,6 @@ struct WorkspaceSettingsSection: View {
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
             }
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
-            GitLabSettingsRows()
-            CompanionSettingsRows()
-        } header: {
-            Text(tr("settings.ws.title"))
-        } footer: {
-            Text(tr("settings.ws.footer"))
         }
     }
 

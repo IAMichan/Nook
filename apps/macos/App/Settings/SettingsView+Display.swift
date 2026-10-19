@@ -1,18 +1,29 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Display: language, where Nook sits on screen, behavior.
+/// Settings › General: every language choice together, the look, where Nook sits on screen.
 extension SettingsView {
-    // MARK: Display
+    // MARK: General
 
-    var displaySection: some View {
+    var generalSection: some View {
         Group {
-            Section(tr("settings.overview.languageSection")) {
+            Section {
                 Picker(tr("settings.overview.appLanguage"), selection: $settings.appLanguage) {
                     ForEach(AppLanguage.allCases) { lang in
                         Text(lang.displayName).tag(lang)
                     }
                 }
+                Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
+                    ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
+                }
+                Picker(tr("flow.settings.translate"), selection: $flowStore.translateTo) {
+                    Text(tr("flow.settings.asSpoken")).tag("")
+                    ForEach(["Nederlands", "English", "Deutsch", "Français", "Español"], id: \.self) { Text($0).tag($0) }
+                }
+            } header: {
+                Text(tr("settings.overview.languageSection"))
+            } footer: {
+                Text(tr("settings.general.languageFooter"))
             }
             Section(tr("settings.display.color")) {
                 HStack {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Voice & sound › Dictate anywhere (Flow).
+/// Settings › Dictation and voice › Dictate anywhere (Flow). The key is set under Shortcuts, the language under General.
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
@@ -14,12 +14,9 @@ struct FlowSettingsSection: View {
                     flow.refresh()
                 }
             if store.enabled {
-                Picker(tr("flow.settings.key"), selection: $store.key) {
-                    ForEach(FlowKey.allCases) { key in
-                        Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
-                    }
+                LabeledContent(tr("flow.settings.key")) {
+                    Text(store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol)).foregroundStyle(.secondary)
                 }
-                .onChange(of: store.key) { _, _ in flow.refresh() }
                 if !flow.trusted {
                     StatusRow(title: tr("flow.settings.access"), detail: tr("flow.settings.accessDetail"), state: .warning) {
                         Button(tr("flow.settings.allow")) { flow.openAccessibilitySettings() }
@@ -27,10 +24,6 @@ struct FlowSettingsSection: View {
                 }
                 SettingToggle(tr("flow.settings.cleanup"), detail: tr("flow.settings.cleanupDetail"), isOn: $store.cleanup)
                 SettingToggle(tr("flow.settings.prompt"), detail: tr("flow.settings.promptDetail"), isOn: $store.promptMode)
-                Picker(tr("flow.settings.translate"), selection: $store.translateTo) {
-                    Text(tr("flow.settings.asSpoken")).tag("")
-                    ForEach(["Nederlands", "English", "Deutsch", "Français", "Español"], id: \.self) { Text($0).tag($0) }
-                }
                 SettingToggle(tr("flow.settings.history"), detail: tr("flow.settings.historyDetail"), isOn: $store.keepHistory)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(tr("flow.settings.dictionary"))

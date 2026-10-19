@@ -107,13 +107,15 @@ struct MCPSettingsSection: View {
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
 
-            if !store.servers.isEmpty {
+            // Services you signed in to are listed with the other connections; here only the servers you added yourself.
+            let ownServers = store.servers.filter { $0.serviceID == nil }
+            if !ownServers.isEmpty {
                 Section {
-                    ForEach(store.servers) { config in
+                    ForEach(ownServers) { config in
                         MCPServerCardRow(config: config)
                     }
                 } header: {
-                    Text(tr("mcp.installed.title", store.servers.count))
+                    Text(tr("mcp.installed.title", ownServers.count))
                 } footer: {
                     Text(tr("mcp.footer"))
                 }

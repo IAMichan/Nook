@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Brain: which sources only a brain on this Mac may read.
+/// Settings › Privacy: which sources only a brain on this Mac may read.
 extension SettingsView {
     // MARK: Only on this Mac
 

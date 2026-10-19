@@ -20,6 +20,10 @@ enum Undo {
             return bracketID(in: result).map { Step(tool: "complete_open_loop", input: ["loop": $0]) }
         case "complete_reminder":
             return nil
+        case "change_setting":
+            // A setting goes back to what it was before.
+            guard let setting = input["setting"] as? String, let old = SettingsCatalog.previous(in: result) else { return nil }
+            return Step(tool: "change_setting", input: ["setting": setting, "value": old])
         default:
             return nil
         }

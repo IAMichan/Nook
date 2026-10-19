@@ -4,13 +4,14 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings sections, in the order of the sidebar.
+/// Settings sections, in the order of the sidebar. Each subject lives in exactly one place.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, display, brain, assistant, autocomplete, memory, connections, mcp, agents, privacy
+    case start, general, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, agents,
+         workspace, devices, privacy
 
     /// The sidebar groups: what belongs together sits together.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, connect, security
+        case nook, intelligence, input, connect, security
 
         var id: String { rawValue }
 
@@ -18,9 +19,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
         var sections: [SettingsSection] {
             switch self {
-            case .nook: return [.general, .display]
-            case .intelligence: return [.brain, .assistant, .autocomplete, .memory]
-            case .connect: return [.connections, .mcp, .agents]
+            case .nook: return [.start, .general, .shortcuts, .notifications]
+            case .intelligence: return [.brain, .assistant, .memory]
+            case .input: return [.autocomplete, .dictation]
+            case .connect: return [.connections, .agents, .workspace, .devices]
             case .security: return [.privacy]
             }
         }
@@ -44,8 +46,6 @@ struct SettingsView: View {
     @State var status = ""
     @State var refreshTick = 0
     @State var connectionSearch = ""
-    /// The category chip on Connected services; nil shows all of them.
-    @State var connectionCategory: ServiceCategory?
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
     @State var installing: String?
@@ -53,11 +53,17 @@ struct SettingsView: View {
     @State var testing = false
     @State var testResult: (ok: Bool, message: String)?
     @State var pendingChange: AgentConfigInstaller.Change?
-    @State var agentTab: AgentSettingsTab = .link
     @State var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
     @State var fetchedModels: [String] = []
     @State var fetchingModels = false
     @State var recommendations: [ModelAdvisor.Recommendation] = []
+    /// What is typed in the search field above the sidebar.
+    @State var searchQuery = ""
+    /// Usage and costs under Agents, opened on request.
+    @State var showUsage = false
+    @ObservedObject var flowStore = FlowStore.shared
+    @ObservedObject var mcpStore = MCPServerStore.shared
+    @ObservedObject var mcpSignIn = MCPSignIn.shared
 
     var body: some View {
         NavigationSplitView {
@@ -69,20 +75,25 @@ struct SettingsView: View {
                     DispatchQueue.main.async { app.settingsSection = value }
                 }
             )) {
-                ForEach(SettingsSection.Group.allCases) { group in
-                    Section(group.title) {
-                        ForEach(group.sections) { section in
-                            Label {
-                                Text(section.title)
-                            } icon: {
-                                SettingsTile(section, size: 20)
+                if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                    ForEach(SettingsSection.Group.allCases) { group in
+                        Section(group.title) {
+                            ForEach(group.sections) { section in
+                                Label {
+                                    Text(section.title)
+                                } icon: {
+                                    SettingsTile(section, size: 20)
+                                }
+                                .badge(badge(for: section))
+                                .tag(section)
                             }
-                            .badge(badge(for: section))
-                            .tag(section)
                         }
                     }
+                } else {
+                    searchResults
                 }
             }
+            .searchable(text: $searchQuery, placement: .sidebar, prompt: Text(tr("settings.search.prompt")))
             .scrollContentBackground(.hidden)
             .background(NookTheme.graphite)
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
@@ -94,15 +105,22 @@ struct SettingsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
-                detail(for: app.settingsSection)
+                // What the last action did, right under the title: never out of sight at the bottom of a long page.
                 if !status.isEmpty {
                     Section {
-                        Label(status, systemImage: "info.circle")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                        HStack(alignment: .top, spacing: 8) {
+                            Label(status, systemImage: "info.circle")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Spacer(minLength: 8)
+                            Button { status = "" } label: { Image(systemName: "xmark") }
+                                .buttonStyle(.borderless)
+                                .help(tr("button.close"))
+                        }
                     }
                 }
+                detail(for: app.settingsSection)
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
@@ -111,7 +129,7 @@ struct SettingsView: View {
         }
         .tint(NookTheme.iris)
         .preferredColorScheme(.dark)
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             refreshTick += 1
             refreshAgentStates()
@@ -139,9 +157,8 @@ struct SettingsView: View {
     func badge(for section: SettingsSection) -> Int {
         let broken = app.connectors.sources.filter { if case .error = $0.status.state { return $0.isActive }; return false }
         switch section {
-        case .general: return checklist.filter { !$0.done }.count
-        case .connections: return broken.filter { !($0 is MCPConnector) }.count
-        case .mcp: return broken.filter { $0 is MCPConnector }.count
+        case .start: return checklist.filter { !$0.done }.count
+        case .connections: return broken.count
         case .autocomplete: return AutocompleteController.shared.needsAttention ? 1 : 0
         default: return 0
         }
@@ -155,16 +172,49 @@ struct SettingsView: View {
     @ViewBuilder
     func detail(for section: SettingsSection) -> some View {
         switch section {
-        case .general: overviewSection
-        case .display: displaySection
+        case .start: startSection
+        case .general: generalSection
+        case .shortcuts: shortcutsSection
+        case .notifications: notificationsSection
         case .brain: brainSection
         case .assistant: assistantSection
-        case .autocomplete: AutocompleteSettingsSection()
         case .memory: MemorySettingsSection()
+        case .autocomplete: AutocompleteSettingsSection()
+        case .dictation: dictationSection
         case .connections: connectionsSection
-        case .mcp: MCPSettingsSection()
         case .agents: agentsSection
+        case .workspace: workspaceSection
+        case .devices: devicesSection
         case .privacy: privacySection
+        }
+    }
+
+    /// The search results in the sidebar: every setting by its own name, with the section it lives in.
+    private var searchResults: some View {
+        let hits = SettingsSearch.results(searchQuery)
+        return Section(tr("settings.search.results")) {
+            if hits.isEmpty {
+                Text(tr("settings.search.none"))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(hits) { hit in
+                Button {
+                    app.settingsSection = hit.section
+                    searchQuery = ""
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(hit.title).lineLimit(1)
+                            Text(hit.section.title).font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        SettingsTile(hit.section, size: 20)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
