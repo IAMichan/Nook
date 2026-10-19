@@ -167,11 +167,19 @@ struct AutocompleteSettingsSection: View {
                 presentRow(file)
             }
             ForEach(CompletionCatalogModel.catalog) { model in downloadRow(model) }
-            HStack {
-                TextField(tr("autocomplete.download.linkPlaceholder"), text: $customLink)
-                    .onSubmit(downloadLink)
-                Button(tr("autocomplete.download"), action: downloadLink)
-                    .disabled(CompletionCatalogModel.custom(from: customLink) == nil || downloads.downloading != nil)
+            // The explanation goes above the field: inside a Form a text field's title becomes its label, and the field itself
+            // was left with no room.
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("autocomplete.download.linkPlaceholder"))
+                HStack {
+                    TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+                        .onSubmit(downloadLink)
+                    Button(tr("autocomplete.download"), action: downloadLink)
+                        .disabled(CompletionCatalogModel.custom(from: customLink) == nil || downloads.downloading != nil)
+                }
             }
             if let model = downloads.downloading, !CompletionCatalogModel.catalog.contains(model) { downloadRow(model) }
             if let error = downloads.error { Text(error).font(.caption).foregroundStyle(.red) }
@@ -220,7 +228,7 @@ struct AutocompleteSettingsSection: View {
         guard autocomplete.activeModel?.identity != file.url.path else { return }
         try? FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
         if store.prefs.modelPath == file.url.path { store.prefs.modelPath = "" }
-        autocomplete.refresh()
+        autocomplete.forget(file.url)
     }
 
     /// The file of a catalog model when it is here: in Nook's folder, or found elsewhere on this Mac under the same name.
@@ -298,10 +306,11 @@ struct AutocompleteSettingsSection: View {
     }
 
     private func delete(_ model: CompletionCatalogModel) {
-        let path = downloads.file(for: model).path
+        let file = downloads.file(for: model)
         downloads.delete(model)
         pendingDelete = nil
-        if store.prefs.modelPath == path { store.prefs.modelPath = "" } else { autocomplete.refresh() }
+        if store.prefs.modelPath == file.path { store.prefs.modelPath = "" }
+        autocomplete.forget(file)
     }
 
     private func chooseFile() {

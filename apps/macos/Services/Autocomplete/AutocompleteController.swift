@@ -162,6 +162,13 @@ final class AutocompleteController: ObservableObject {
     // MARK: Starting
 
     /// At launch, and whenever autocomplete is turned on or off or its model changes.
+    /// A model file was just deleted or moved to the Trash: drop it from the list at once, then look again (scanning the model
+    /// folders on this Mac takes a moment).
+    func forget(_ url: URL) {
+        candidates.removeAll { $0.url.standardizedFileURL == url.standardizedFileURL }
+        refresh()
+    }
+
     func refresh() {
         trustTask?.cancel()
         trustTask = nil
@@ -176,7 +183,8 @@ final class AutocompleteController: ObservableObject {
             let found = await Task.detached(priority: .utility) {
                 CompletionModelLocator.foundModels() + CompletionModelLocator.nookModels(in: folder)
             }.value
-            candidates = found
+            // A scan that started before a file was deleted still lists it.
+            candidates = found.filter { FileManager.default.fileExists(atPath: $0.url.path) }
             brainModels = EmbeddedModel.shared.autocompleteModels
             let preferred = AppSettings.shared.localModel
             let model = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
