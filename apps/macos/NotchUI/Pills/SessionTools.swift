@@ -179,6 +179,9 @@ struct DevServerStrip: View {
         }
         .task(id: directory) {
             let folder = WorkspacePathPolicy.normalize(directory)
+            // Each scan starts `lsof` twice (100–500 ms of work). Every 3 seconds right after something changed, so a
+            // server that just started shows up at once; up to every 15 seconds while the list stays the same.
+            var wait: UInt64 = 3
             while !Task.isCancelled {
                 let found = await Task.detached(priority: .utility) { () -> [DevServer] in
                     var servers = DevServerScanner.scan(folder: folder)
@@ -190,8 +193,13 @@ struct DevServerStrip: View {
                     }
                     return servers.sorted { $0.port < $1.port }
                 }.value
-                if found != servers { withAnimation(.easeOut(duration: 0.15)) { servers = found } }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if found != servers {
+                    withAnimation(.easeOut(duration: 0.15)) { servers = found }
+                    wait = 3
+                } else {
+                    wait = min(wait + 3, 15)
+                }
+                try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
             }
         }
     }

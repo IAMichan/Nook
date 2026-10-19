@@ -70,19 +70,24 @@ final class ConnectorHub: ObservableObject {
         tick()
     }
 
-    /// Sources read by scripting another app on this Mac (Mail's inbox, the browser's tabs). Away from the Mac they don't
+    /// Sources read by scripting another app on this Mac (Mail's inbox, the browser's tabs, Notes). Away from the Mac they don't
     /// change in ways anyone sees, and each read wakes that app too, so they pause until you are back; a question still
     /// reads them fresh when they are stale (`MailConnector.inbox`).
-    private static let followsYou: Set<String> = ["mail", "browser"]
+    private static let followsYou: Set<String> = ["mail", "browser", "notes"]
 
     private func tick() {
         let now = Date()
         let away = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!) > 300
+        // One scripted source per tick: started together they wait on the one AppleScript queue, and the ones behind it
+        // fall back to starting an `osascript` process each. The others follow on the next ticks.
+        var scripting = running.contains { Self.followsYou.contains($0) }
         for source in active where !running.contains(source.id) {
-            if away && Self.followsYou.contains(source.id) { continue }
+            let scripted = Self.followsYou.contains(source.id)
+            if scripted && (away || scripting) { continue }
             let last = lastRefresh[source.id] ?? .distantPast
             if now.timeIntervalSince(last) >= source.refreshInterval {
                 refresh(source)
+                if scripted { scripting = true }
             }
         }
     }

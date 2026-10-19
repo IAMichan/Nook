@@ -31,6 +31,8 @@ final class DeviceHubService: ObservableObject {
     private var startedAt = Date()
     private var restartDelay: TimeInterval = 0
     private var stopping = false
+    /// `start()` is between its first check and starting the process (it waits for work off the main thread).
+    private var launching = false
     private var node: String?
     private var npm: String?
 
@@ -122,16 +124,25 @@ final class DeviceHubService: ObservableObject {
 
     /// Starts the hub and waits for `/readyz` (at most 30 s).
     func start() async {
-        guard process == nil, let node else { return }
+        guard process == nil, !launching, let node else { return }
+        launching = true
+        defer { launching = false }
         state = .starting
         stopping = false
-        stopStaleHub()
+        // A `ps` (up to 5 s) and the login shell (up to 15 s): never on the main thread, which they used to block on every
+        // start and automatic restart.
+        let stateFile = stateDir.appendingPathComponent("hub.json")
+        let loginEnvironment = await Task.detached(priority: .userInitiated) { () -> [String: String] in
+            Self.stopStaleHub(file: stateFile)
+            return Self.loginEnvironment()
+        }.value
+        guard !stopping, process == nil else { return }
         let port = Self.freePort()
         let entry = DeviceHub.hubEntry(hubFolder).path
         let process = Process()
         process.executableURL = URL(fileURLWithPath: node)
         process.arguments = DeviceHub.hubArguments(entry: entry, port: port)
-        var environment = Self.loginEnvironment()
+        var environment = loginEnvironment
         for (key, value) in DeviceHub.quietEnvironment { environment[key] = value }
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
@@ -196,8 +207,7 @@ final class DeviceHubService: ObservableObject {
     }
 
     /// A hub left by an earlier Nook (it crashed): stopped, but only when that process really is the hub.
-    private func stopStaleHub() {
-        let file = stateDir.appendingPathComponent("hub.json")
+    nonisolated private static func stopStaleHub(file: URL) {
         defer { try? FileManager.default.removeItem(at: file) }
         guard let data = try? Data(contentsOf: file), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let pid = (object["pid"] as? NSNumber)?.int32Value, let entry = object["entryPath"] as? String, pid > 1 else { return }
@@ -355,12 +365,25 @@ final class DeviceHubService: ObservableObject {
     /// The environment with your login shell's PATH, so npm finds node and its scripts their tools.
     nonisolated static func loginEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        let shell = environment["SHELL"] ?? "/bin/zsh"
-        if let output = try? ProcessRunner.run(shell, ["-lc", "printf %s \"$PATH\""], timeout: 15), output.status == 0, !output.stdout.isEmpty {
-            environment["PATH"] = output.stdout
-        }
+        if let path = loginPath() { environment["PATH"] = path }
         return environment
     }
+
+    /// The login shell's PATH, asked once per launch: starting the shell (with its startup files) takes up to seconds,
+    /// and the hub, each npm install and the device daemon all need it.
+    nonisolated private static func loginPath() -> String? {
+        loginPathLock.lock()
+        defer { loginPathLock.unlock() }
+        if let cachedLoginPath { return cachedLoginPath }
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        guard let output = try? ProcessRunner.run(shell, ["-lc", "printf %s \"$PATH\""], timeout: 15), output.status == 0,
+              !output.stdout.isEmpty else { return nil }
+        cachedLoginPath = output.stdout
+        return output.stdout
+    }
+
+    private nonisolated static let loginPathLock = NSLock()
+    private nonisolated(unsafe) static var cachedLoginPath: String?
 
     /// A free loopback port, from the system.
     nonisolated static func freePort() -> Int {

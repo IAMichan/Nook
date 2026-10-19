@@ -1328,25 +1328,25 @@ private final class HistoryScanner: @unchecked Sendable {
             candidates.insert(home.appendingPathComponent(".claude.json"), at: 0)
         }
         for url in candidates {
-            guard let data = try? Data(contentsOf: url),
-                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
-            if let oauth = root["oauthAccount"] as? [String: Any] {
-                let email = (oauth["emailAddress"] as? String) ?? (oauth["displayName"] as? String) ?? "Claude-account"
-                let org = (oauth["organizationName"] as? String) ?? ""
+            // Parsed again only when the file changed: it can be megabytes, and accounts are read every 30 seconds.
+            guard let account = ClaudeAccountFile.read(url) else { continue }
+            if account.hasOAuth {
+                let email = account.email ?? account.displayName ?? "Claude-account"
+                let org = account.organizationName ?? ""
                 // An organization simply named "<email>'s Organization" adds no useful detail.
                 let cleanOrg = org.contains(email) || org.hasSuffix("'s Organization") ? "" : org
-                return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(oauth))
+                return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(account.plan))
             }
-            if root["primaryApiKey"] != nil {
+            if account.hasAPIKey {
                 return AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "")
             }
         }
         return nil
     }
 
-    private static func claudePlan(_ oauth: [String: Any]) -> String {
+    private static func claudePlan(_ plan: [String: String]) -> String {
         for key in ["subscriptionType", "planType", "rateLimitTier"] {
-            if let value = oauth[key] as? String, !value.isEmpty { return planName(value) }
+            if let value = plan[key], !value.isEmpty { return planName(value) }
         }
         return ""
     }

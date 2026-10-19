@@ -23,6 +23,21 @@ final class FolderGitModel: ObservableObject {
     /// Resolved off the main thread in `refresh()`; creating the model must never spawn a process.
     private var git: GitService?
 
+    /// What only changes when refs move (the root, branches, remotes, the base and where the branch left it). Reused
+    /// between refreshes while the branch, its upstream and ahead/behind stay the same, for at most `refsMaxAge`: a
+    /// refresh then starts three git processes (status and the diffs) instead of about ten.
+    private struct Refs: Sendable {
+        var root: String
+        var key: String
+        var at: Date
+        var branches: [String]
+        var remotes: [String]
+        var base: String?
+        var comparedTo: String?
+    }
+    private var refs: Refs?
+    private static let refsMaxAge: TimeInterval = 60
+
     nonisolated init(directory: String) {
         self.directory = directory
     }
@@ -48,20 +63,30 @@ final class FolderGitModel: ObservableObject {
             return
         }
         let directory = directory
-        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?) in
-            guard let root = git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil, [], nil) }
+        let cached = refs.flatMap { Date().timeIntervalSince($0.at) < Self.refsMaxAge ? $0 : nil }
+        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
+            guard let root = cached?.root ?? git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil, [], nil, nil) }
             let status = try? git.status(root)
-            let local = (try? git.branches(root))?.local ?? []
-            let remotes = git.remotes(root)
-            let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-            let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
-            // Against where the branch left its base (else its upstream), so committed work still counts as a change.
-            let comparedTo = status.flatMap { status in
-                [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.mergeBase(root, base: $0) }.first
+            let key = status.map { "\($0.branch ?? "")|\($0.upstream ?? "")|\($0.ahead)|\($0.behind)|\($0.detached)" } ?? ""
+            let refs: Refs
+            if let cached, cached.root == root, cached.key == key, status != nil {
+                refs = cached
+            } else {
+                let local = (try? git.branches(root))?.local ?? []
+                let remotes = git.remotes(root)
+                let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+                let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
+                // Against where the branch left its base (else its upstream), so committed work still counts as a change.
+                let comparedTo = status.flatMap { status in
+                    [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.mergeBase(root, base: $0) }.first
+                }
+                refs = Refs(root: root, key: key, at: Date(), branches: local, remotes: remotes, base: base, comparedTo: comparedTo)
             }
-            let changes = comparedTo.flatMap { ref in status.flatMap { try? git.changes(root, since: ref, status: $0) } }
-            return (root, status, local, remotes, base, changes ?? status?.files ?? [], changes == nil ? nil : comparedTo)
+            let changes = refs.comparedTo.flatMap { ref in status.flatMap { try? git.changes(root, since: ref, status: $0) } }
+            return (root, status, refs.branches, refs.remotes, refs.base, changes ?? status?.files ?? [], changes == nil ? nil : refs.comparedTo,
+                    status == nil ? nil : refs)
         }.value
+        refs = result.refs
         if root != result.root { root = result.root }
         if status != result.status { status = result.status }
         let sorted = result.branches.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -102,6 +127,8 @@ final class FolderGitModel: ObservableObject {
                 error = failure.localizedDescription
             }
             working = false
+            // A checkout or push moves refs: read them again.
+            refs = nil
             await refresh()
         }
     }

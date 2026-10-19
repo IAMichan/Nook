@@ -58,9 +58,14 @@ struct SimulatorSnapshotView: View {
 
     /// The device list every few seconds, the screen about once a second; stops when the page closes.
     private func loop() async {
-        var tick = 0
+        var listed = Date.distantPast
+        // Each screenshot is a process and a PNG written and read back. About once a second while the screen changes;
+        // up to every three seconds while it stays the same (an idle app), back to fast as soon as it changes.
+        var wait: UInt64 = 1_200_000_000
         while !Task.isCancelled {
-            if tick % 5 == 0 {
+            // The device list about every six seconds, whatever the screenshot pace.
+            if Date().timeIntervalSince(listed) >= 6 {
+                listed = Date()
                 let found = await Task.detached(priority: .utility) { Simulators.booted() }.value
                 devices = found
                 looked = true
@@ -68,13 +73,17 @@ struct SimulatorSnapshotView: View {
             }
             if let udid = chosen {
                 let data = await Task.detached(priority: .utility) { Simulators.screenshot(udid) }.value
-                if let data, udid == chosen, let picture = NSImage(data: data) {
-                    png = data
-                    image = picture
+                if let data, data == png {
+                    wait = min(wait + 600_000_000, 3_000_000_000)
+                } else {
+                    wait = 1_200_000_000
+                    if let data, udid == chosen, let picture = NSImage(data: data) {
+                        png = data
+                        image = picture
+                    }
                 }
             }
-            tick += 1
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            try? await Task.sleep(nanoseconds: wait)
         }
     }
 

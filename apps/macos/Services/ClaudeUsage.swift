@@ -12,7 +12,8 @@ enum ClaudeLogin: Equatable, Sendable {
 /// an account instead of only once a session has run (the status line only reports while a session is open).
 ///
 /// The login token is read from where Claude Code itself keeps it (Keychain, or `.credentials.json` in the account
-/// directory); it is used only for this one read-only request and never stored or logged.
+/// directory); it is used only for read-only requests and never written anywhere or logged. It stays in memory for at
+/// most five minutes (`loginCache`), so the cloud session list does not start a Keychain process on every poll.
 @MainActor
 final class ClaudeUsage {
     private let hub: AgentHub
@@ -119,6 +120,30 @@ final class ClaudeUsage {
 
     /// The account's login as Claude Code keeps it, telling a token that ran out apart from no login at all.
     nonisolated static func login(home: URL, isDefault: Bool) -> ClaudeLogin {
+        let cacheKey = "\(isDefault)|\(home.path)"
+        let now = Date()
+        loginLock.lock()
+        if let hit = loginCache[cacheKey], hit.until > now {
+            loginLock.unlock()
+            return hit.login
+        }
+        loginLock.unlock()
+        let (login, expiresAt) = readLogin(home: home, isDefault: isDefault)
+        // A valid token until shortly before it runs out (at most five minutes); no login for half a minute, so signing in
+        // shows up soon.
+        var until = now.addingTimeInterval(login == .missing || login == .expired ? 30 : 300)
+        if let expiresAt { until = min(until, expiresAt.addingTimeInterval(-60)) }
+        loginLock.lock()
+        loginCache[cacheKey] = (login, until)
+        loginLock.unlock()
+        return login
+    }
+
+    private nonisolated static let loginLock = NSLock()
+    private nonisolated(unsafe) static var loginCache: [String: (login: ClaudeLogin, until: Date)] = [:]
+
+    /// Reads the login from the Keychain (a `security` process per entry) and the credentials file.
+    private nonisolated static func readLogin(home: URL, isDefault: Bool) -> (ClaudeLogin, expiresAt: Date?) {
         var candidates: [Data] = []
         // Claude Code keeps the login in the Keychain; every extra account directory has its own entry, named after a hash of the path.
         var services = [isDefault ? "Claude Code-credentials" : "Claude Code-credentials-" + hash(home.path)]
@@ -134,13 +159,14 @@ final class ClaudeUsage {
             guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let oauth = object["claudeAiOauth"] as? [String: Any],
                   let token = oauth["accessToken"] as? String, !token.isEmpty else { continue }
-            if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue, expires / 1000 < Date().timeIntervalSince1970 {
+            let expires = (oauth["expiresAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+            if let expires, expires < Date() {
                 expired = true
                 continue
             }
-            return .valid(token)
+            return (.valid(token), expires)
         }
-        return expired ? .expired : .missing
+        return (expired ? .expired : .missing, nil)
     }
 
     private nonisolated static func hash(_ path: String) -> String {
