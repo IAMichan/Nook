@@ -110,7 +110,9 @@ final class AgentHub: ObservableObject {
         let rawQuestions: Any
     }
 
-    private var records: [String: Record] = [:]
+    private var records: [String: Record] = [:] {
+        didSet { saveRecords() }
+    }
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var pendingQuestions: [String: PendingQuestion] = [:]
     private let server = UnixSocketServer(path: NookPaths.socketURL.path)
@@ -124,6 +126,7 @@ final class AgentHub: ObservableObject {
     private static let questionTimeout: UInt64 = 120
 
     func start() {
+        restoreRecords()
         server.onMessage = { [weak self] data, connection in
             Task { @MainActor in
                 if let self {
@@ -154,6 +157,7 @@ final class AgentHub: ObservableObject {
         Task {
             let found = await LocalAgentScanner.scan()
             processes = found
+            dropEndedRestored(found)
             // A hooked session covers one process of its agent and folder, not all of them: two sessions of the same agent in
             // the same folder stay two rows.
             var covered: [String: Int] = [:]
@@ -206,6 +210,118 @@ final class AgentHub: ObservableObject {
                 detected = newDetected
             }
         }
+    }
+
+    // MARK: Remembered sessions
+
+    /// What survives a restart of Nook: agents keep running in their terminals, so the sessions known from their hooks
+    /// are saved and put back, and listed again straight away instead of waiting for the next hook event.
+    private struct SavedRecord: Codable {
+        var key: String
+        var agentID: String
+        var agent: String
+        var cwd: String
+        var status: String
+        var steps: [[String]]
+        var file: String
+        var lastMessage: String
+        var updated: Date
+        var started: Date
+        var hostBundleID: String
+        var home: String
+        var sessionID: String
+        var transcriptPath: String
+        var lastPrompt: String
+        var linesAdded: Int
+        var linesRemoved: Int
+    }
+
+    private nonisolated static var recordsURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-sessions.json") }
+    /// Keys restored at launch that no process has confirmed yet.
+    private var unconfirmed: Set<String> = []
+    private let launchedAt = Date()
+    private var saveWork: Task<Void, Never>?
+
+    private func saveRecords() {
+        saveWork?.cancel()
+        let snapshot = records.map { key, r in
+            SavedRecord(key: key, agentID: r.agentID, agent: r.agent, cwd: r.cwd, status: "\(r.status)",
+                        steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
+                        updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
+                        sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
+                        linesAdded: r.linesAdded, linesRemoved: r.linesRemoved)
+        }
+        // A burst of hook events becomes one write.
+        saveWork = Task.detached(priority: .utility) {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            guard let data = try? encoder.encode(snapshot) else { return }
+            try? data.write(to: Self.recordsURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.recordsURL.path)
+        }
+    }
+
+    private func restoreRecords() {
+        guard records.isEmpty, let data = try? Data(contentsOf: Self.recordsURL) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let saved = try? decoder.decode([SavedRecord].self, from: data) else { return }
+        let now = Date()
+        var restored: [String: Record] = [:]
+        for item in saved {
+            let age = now.timeIntervalSince(item.updated)
+            let status: AgentStatus
+            switch item.status {
+            case "waiting": status = .waiting
+            case "failed": status = .failed
+            case "done": status = .done
+            default: status = .running
+            }
+            // Same lifetime as `prune`.
+            guard age < (status == .done ? 4 : 12) * 3600 else { continue }
+            let marks: [String: AgentStep.Mark] = ["done": .done, "running": .running, "blocked": .blocked, "failed": .failed, "todo": .todo]
+            var record = Record(agentID: item.agentID, agent: item.agent, project: Self.projectName(item.cwd), cwd: item.cwd,
+                                status: status, steps: item.steps.compactMap { pair in
+                                    guard pair.count == 2, let mark = marks[pair[0]] else { return nil }
+                                    return AgentStep(mark: mark, text: pair[1])
+                                }, file: item.file, lastMessage: item.lastMessage, updated: item.updated,
+                                hostBundleID: item.hostBundleID, diff: [], linesAdded: item.linesAdded, linesRemoved: item.linesRemoved)
+            record.home = item.home
+            record.sessionID = item.sessionID
+            record.transcriptPath = item.transcriptPath
+            record.lastPrompt = item.lastPrompt
+            record.started = item.started
+            restored[item.key] = record
+        }
+        unconfirmed = Set(restored.keys)
+        records = restored
+        rebuild()
+    }
+
+    /// A restored session whose agent has ended while Nook was closed is dropped once the process list shows it is gone.
+    /// Agents the scanner does not know (apps, custom tools) stay until the normal expiry.
+    private func dropEndedRestored(_ found: [DetectedAgent]) {
+        guard !unconfirmed.isEmpty else { return }
+        let scannable = Set(LocalAgentScanner.agentNames)
+        var running: [String: Int] = [:]
+        for agent in found { running["\(agent.name)|\(agent.cwd)", default: 0] += 1 }
+        var changed = false
+        for key in unconfirmed.sorted() {
+            // A hook event since launch already proves the session is alive.
+            guard let record = records[key], record.updated < launchedAt else { continue }
+            guard scannable.contains(record.agent) else { continue }
+            let id = "\(record.agent)|\(record.cwd)"
+            if let count = running[id], count > 0 {
+                running[id] = count - 1
+            } else {
+                records[key] = nil
+                changed = true
+            }
+        }
+        unconfirmed = []
+        if changed { rebuild() }
     }
 
     // MARK: Answers from Nook
