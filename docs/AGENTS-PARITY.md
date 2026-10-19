@@ -1,6 +1,6 @@
 # Wat Nook leert
 
-> **English summary:** A study of (octocat/hello-world, commit 13aa882c) and what Nook took from it for the Agents tab: folded turns, grouped tool calls, a live activity line, a message queue, steering (Codex and Claude Code), "done" markers, dev-server discovery, project scripts, long-lived connections to every agent (Claude Code over stdin, Codex `app-server`, ACP for Gemini, OpenCode, Cursor, Grok and Antigravity), checkpoints per turn, the agents' own model lists, automatic session titles, one smart git button, and resuming when a usage limit resets.
+> **English summary:** A study of (octocat/hello-world, commit 13aa882c) and what Nook took from it for the Agents tab: folded turns, grouped tool calls, a live activity line, a message queue, steering (Codex and Claude Code), "done" markers, dev-server discovery, project scripts, long-lived connections to every agent (Claude Code over stdin, Codex `app-server`, ACP for Gemini, OpenCode, Cursor, Grok and Antigravity), checkpoints per turn, the agents' own model lists, automatic session titles, one smart git button, and resuming when a usage limit resets. The third round adds the agent's task list and subagents above the composer, a pull request watch that wakes the agent, comments on the diff, a turn minimap, HTML and Mermaid previews, Markdown export, any ACP agent (from the ACP registry or by hand), and sessions on another machine over SSH.
 
  is een desktop-app voor coding-agents die veel dingen goed doet. We hebben de broncode grondig bestudeerd: de tijdlijn, het invoerveld, goedkeuringen, git, de werkruimte, en vooral hoe het per agent het gesprek ophaalt, berichten verstuurt en gebruik meet. Dit document zegt wat Nook al heeft overgenomen en wat de volgende stap is.
 
@@ -118,8 +118,10 @@ Aanvullingen op de tweede ronde, voor wat daar nog ontbrak:
 | Minimap | Een streepje per eigen bericht naast een lang gesprek; klik springt erheen | `TurnMinimap` |
 | HTML en Mermaid | Codeblokken `html`, `svg` en `mermaid` met **Bekijk**: een webweergave zonder opslag, zonder JavaScript voor HTML van de agent en zonder navigatie | `CodeRenderView` |
 | Delen | ⋯ › **Kopieer gesprek als Markdown** of **Bewaar als Markdown…** (lokaal, niets online) | `SessionExport` |
+| Extra agents (ACP-register) | Instellingen › Agents › Accounts › **Andere agents (ACP)**: kies een agent uit het ACP-register (npx- en uvx-pakketten op een vaste versie ze controleert; agents die alleen als download bestaan staan erbij maar kunnen nog niet) of vul zijn opdracht zelf in. Elke agent wordt een account van de soort ACP ("ACP · Kiro"), dus sessies, accounts en het modelmenu werken als bij elke andere agent. Hij start via je login-shell, zodat npx, uvx, nvm en asdf werken zoals in Terminal. | `CustomAgents`, `AcpRegistry`, `AcpAgentsSection` |
+| Andere machines | Instellingen › Agents › Werkruimte › **Machines (SSH)**: een alias uit `~/.ssh/config` of `gebruiker@host`, met een verbindingstest. Bij een nieuwe sessie kies je zo'n machine en typ je de map daar. De agent start daar via ssh en praat over die verbinding zoals lokaal (stream-json, app-server en ACP gaan allemaal over stdin en stdout). Git, worktrees, terugzetpunten en de werkruimte-brug blijven voor zo'n sessie uit; de kop toont de machine en opent een terminal daar. | `RemoteMachines`, `RemoteLaunch`, `WorkspaceManager+Remote` |
 
-Nog niet: extra agents (Pi, Muse, elke ACP-agent uit het register) en sessies op een andere machine (SSH). Een nieuwe agent raakt de accountlaag (elke sessie hoort bij een account van een bekende agentsoort), logo's, gebruik en het starten; een externe machine raakt alles wat aanneemt dat de map lokaal bestaat (git, checkpoints, worktrees, diffs). Dat bouwen we pas als de macOS-build weer draait.
+Bewust niet: de mobiele app (Nook heeft de iPhone-metgezel in `apps/ios`) en telemetrie.
 
 ## Bewust anders dan 
 
