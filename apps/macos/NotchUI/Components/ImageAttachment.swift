@@ -130,6 +130,67 @@ struct ImageAttachment: Identifiable, Equatable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return (trimmed.isEmpty ? "" : trimmed + "\n\n") + paths.joined(separator: "\n")
     }
+
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
+
+    /// The reverse of `appendingPaths`: the picture paths at the end of a sent message, split off its text, so the chat
+    /// shows the pictures instead of their paths.
+    static func splittingPaths(from text: String) -> (text: String, images: [URL]) {
+        var lines = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        var images: [URL] = []
+        while let last = lines.last {
+            let line = last.trimmingCharacters(in: .whitespaces)
+            let path = line.count > 1 && line.hasPrefix("\"") && line.hasSuffix("\"") ? String(line.dropFirst().dropLast()) : line
+            guard path.hasPrefix("/"), imageExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { break }
+            images.insert(URL(fileURLWithPath: path), at: 0)
+            lines.removeLast()
+        }
+        guard !images.isEmpty else { return (text, []) }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), images)
+    }
+}
+
+/// The pictures of a message sent to an agent, read from disk and shown above its bubble. A click opens the picture.
+struct MessagePictures: View {
+    let urls: [URL]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(urls, id: \.self) { url in
+                MessagePicture(url: url)
+            }
+        }
+    }
+}
+
+private struct MessagePicture: View {
+    let url: URL
+    @State private var image: NSImage?
+    @State private var missing = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: missing ? "photo.badge.exclamationmark" : "photo")
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .frame(width: 120, height: 120)
+        .background(NookTheme.smoke)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { if !missing { NSWorkspace.shared.open(url) } }
+        .help(url.lastPathComponent)
+        .task(id: url) {
+            let url = url
+            let data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value
+            let loaded = data.flatMap { NSImage(data: $0) }
+            image = loaded
+            missing = loaded == nil
+        }
+    }
 }
 
 /// The pictures above the text field, each with a small remove button.

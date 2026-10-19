@@ -22,18 +22,28 @@ struct ConversationMessage: View {
     }
 
     private var user: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 56)
-            Text(text)
-                .font(NookTheme.font(size))
-                .foregroundStyle(NookTheme.paper)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
+        // Pictures sent to an agent arrive as paths below the words: show the pictures above the bubble instead.
+        let parts = ImageAttachment.splittingPaths(from: text)
+        return VStack(alignment: .trailing, spacing: 6) {
+            if !parts.images.isEmpty {
+                MessagePictures(urls: parts.images)
+            }
+            if !parts.text.isEmpty {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 56)
+                    Text(parts.text)
+                        .font(NookTheme.font(size))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var reply: some View {
