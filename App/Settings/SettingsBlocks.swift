@@ -191,11 +191,40 @@ struct WorkspaceSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
     @ObservedObject private var inbox = InboxStore.shared
+    @ObservedObject private var webhook = WebhookListener.shared
+    @State private var showScheduled = false
 
     var body: some View {
         Group {
             defaults
+            scheduled
             bridge
+        }
+    }
+
+    /// Scheduled tasks: off until you turn it on; the list and editor open in a sheet.
+    private var scheduled: some View {
+        Section {
+            Toggle(tr("sched.settings.enable"), isOn: $ws.scheduledTasksEnabled)
+            if ws.scheduledTasksEnabled {
+                TextField(tr("sched.settings.port"), value: $ws.scheduledWebhookPort, format: .number.grouping(.never))
+                if ws.scheduledWebhookPort != 0, !(1024...65535).contains(ws.scheduledWebhookPort) {
+                    Text(tr("sched.settings.portInvalid")).font(.caption).foregroundStyle(.orange)
+                } else if case .listening(let port) = webhook.state {
+                    Text(tr("sched.settings.listening", Int(port))).font(.caption).foregroundStyle(.secondary)
+                } else if case .failed(let message) = webhook.state {
+                    Text(tr("sched.webhook.failed", message)).font(.caption).foregroundStyle(.orange)
+                }
+                Button(tr("sched.settings.open")) { showScheduled = true }
+            }
+        } header: {
+            Text(tr("sched.title"))
+        } footer: {
+            Text(tr("sched.settings.footer"))
+        }
+        .sheet(isPresented: $showScheduled) {
+            ScheduledTasksView { showScheduled = false }
+                .environmentObject(app)
         }
     }
 

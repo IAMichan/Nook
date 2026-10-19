@@ -68,6 +68,14 @@ final class WorkspaceSettings: ObservableObject {
     @Published var steerByDefault: Bool {
         didSet { defaults.set(steerByDefault, forKey: "ws.steerByDefault") }
     }
+    /// Scheduled tasks (interval, fixed time, webhook) may start sessions. Off by default; nothing runs on its own until you turn it on.
+    @Published var scheduledTasksEnabled: Bool {
+        didSet { defaults.set(scheduledTasksEnabled, forKey: "ws.scheduledTasksEnabled") }
+    }
+    /// Local port for webhook-triggered tasks (127.0.0.1 only); 0 = no listener.
+    @Published var scheduledWebhookPort: Int {
+        didSet { defaults.set(scheduledWebhookPort, forKey: "ws.scheduledWebhookPort") }
+    }
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
@@ -95,6 +103,8 @@ final class WorkspaceSettings: ObservableObject {
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? true
+        scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
+        scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
     }

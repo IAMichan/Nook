@@ -232,6 +232,7 @@ final class AppModel: ObservableObject {
         hub.recap = recap
         workspace.recap = recap
         startWorkspace()
+        ScheduledTaskStore.shared.attach(app: self)
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
         hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }
