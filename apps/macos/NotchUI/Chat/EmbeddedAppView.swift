@@ -163,6 +163,7 @@ struct EmbeddedAppPane: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if store.loading { ProgressView().controlSize(.small) }
+                    modeMenu(current)
                     Spacer(minLength: 8)
                     NookIconButton(systemName: "sparkles", label: tr("embedded.ask"), size: 28) { askAboutApp() }
                         .help(tr("embedded.ask"))
@@ -207,6 +208,26 @@ struct EmbeddedAppPane: View {
             .background(NookTheme.field)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+        }
+    }
+
+    /// How the app is open, and the other ways it can open (the web version, its own window), for an app that has more
+    /// than one. The choice is remembered for next time.
+    @ViewBuilder
+    private func modeMenu(_ current: EmbeddedApp) -> some View {
+        let ways = EmbeddedAppCatalog.modes(for: current)
+        if ways.count > 1 {
+            let now: EmbeddedAppMode = current.isMacApp ? .mirror : .web
+            Menu {
+                ForEach(ways, id: \.self) { way in
+                    Button((way == now ? "✓ " : "") + tr("embedded.mode." + way.rawValue)) { app.switchEmbeddedApp(to: way) }
+                        .disabled(way == now)
+                }
+            } label: {
+                ComposerPill(text: tr("embedded.mode.short." + now.rawValue))
+            }
+            .composerMenu()
+            .help(tr("embedded.mode.help"))
         }
     }
 
