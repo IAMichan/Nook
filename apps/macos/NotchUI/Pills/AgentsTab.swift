@@ -509,6 +509,7 @@ struct AgentListRow: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: 6)
+            if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
             slot.opacity(hovering && actions != nil ? 0 : 1)
         }
     }
@@ -966,28 +967,44 @@ enum WorkspaceRunsSection {
     }
 }
 
-/// "#12" with the state of the pull request as its colour: open mint, draft grey, merged iris, closed coral.
+/// "#12" with the state of the pull request as its icon and colour: open (ready to merge) mint, merge conflict coral,
+/// merged violet, draft and closed grey. `compact` shows the icon alone, for a slim row.
 struct PullRequestPill: View {
     let badge: PullRequestBadge
+    var compact = false
 
     private var tint: Color {
         switch badge.glyph {
         case .open: return NookTheme.mint
-        case .draft: return NookTheme.textTertiary
-        case .merged: return NookTheme.iris
-        case .closed: return NookTheme.coralSoft
+        case .conflict: return NookTheme.coral
+        case .merged: return NookTheme.violet
+        case .draft, .closed: return NookTheme.textTertiary
         case .stack: return NookTheme.amber
         }
     }
 
+    private var symbol: String {
+        switch badge.glyph {
+        case .open, .draft: return "arrow.triangle.pull"
+        case .conflict: return "exclamationmark.triangle.fill"
+        case .merged: return "arrow.triangle.merge"
+        case .closed: return "xmark.circle"
+        case .stack: return "square.stack.3d.up"
+        }
+    }
+
+    private var status: String { tr("inbox.pr.state." + badge.glyph.rawValue) }
+
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: badge.glyph == .merged ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 9, weight: .semibold))
-            Text(label).font(NookTheme.font(11, .medium)).lineLimit(1)
+            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+            if !compact { Text(label).font(NookTheme.font(11, .medium)).lineLimit(1) }
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6).padding(.vertical, 1)
+        .padding(.horizontal, compact ? 4 : 6).padding(.vertical, 1)
         .background(Capsule().fill(tint.opacity(0.14)))
+        .help(label.isEmpty ? status : "\(label) · \(status)")
+        .accessibilityLabel(label.isEmpty ? status : "\(label), \(status)")
     }
 
     private var label: String {

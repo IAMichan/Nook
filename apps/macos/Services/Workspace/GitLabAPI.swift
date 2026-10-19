@@ -57,7 +57,8 @@ enum GitLabAPI {
             return PullRequestLink(host: .gitlab, repository: repository.displayName, number: number, url: url,
                                    title: item["title"] as? String, state: state(item),
                                    updatedAt: stamp.flatMap { iso.date(from: $0) ?? plain.date(from: $0) },
-                                   baseBranch: item["target_branch"] as? String, headBranch: sourceBranch)
+                                   baseBranch: item["target_branch"] as? String, headBranch: sourceBranch,
+                                   conflicted: PullRequestMergeability.gitlabConflicted(item))
         }
     }
 

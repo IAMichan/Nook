@@ -2336,7 +2336,7 @@ enum GitHubPullRequests {
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { continue }
             let iso = ISO8601DateFormatter()
-            return list.compactMap { item in
+            var links: [PullRequestLink] = list.compactMap { item in
                 guard let number = item["number"] as? Int, let html = item["html_url"] as? String else { return nil }
                 let merged = (item["merged_at"] as? String) != nil
                 let open = (item["state"] as? String) == "open"
@@ -2346,8 +2346,27 @@ enum GitHubPullRequests {
                                        baseBranch: (item["base"] as? [String: Any])?["ref"] as? String,
                                        headBranch: branch)
             }
+            // The list leaves out mergeability: ask each open one on its own.
+            for index in links.indices where links[index].state.isOpen {
+                links[index].conflicted = await conflicted(repo: repo, number: links[index].number, token: token)
+            }
+            return links
         }
         return nil
+    }
+
+    /// Whether an open pull request has a merge conflict with its base. False when GitHub cannot say (yet).
+    private static func conflicted(repo: String, number: Int, token: String) async -> Bool {
+        guard let url = URL(string: "https://api.github.com/repos/\(repo)/pulls/\(number)") else { return false }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let pull = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return PullRequestMergeability.githubConflicted(pull)
     }
 
     private static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool, token: String) async throws -> URL {

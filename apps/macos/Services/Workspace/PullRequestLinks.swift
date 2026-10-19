@@ -99,14 +99,18 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
     var updatedAt: Date?
     var baseBranch: String?
     var headBranch: String?
+    /// The forge reports a merge conflict with the base branch. Only meaningful while the request is open.
+    var conflicted: Bool
 
     init(host: SourceControlHost, repository: String, number: Int, url: String = "", title: String? = nil,
-         state: PullRequestState = .open, updatedAt: Date? = nil, baseBranch: String? = nil, headBranch: String? = nil) {
+         state: PullRequestState = .open, updatedAt: Date? = nil, baseBranch: String? = nil, headBranch: String? = nil,
+         conflicted: Bool = false) {
         self.host = host; self.repository = repository; self.number = number; self.url = url; self.title = title
         self.state = state; self.updatedAt = updatedAt; self.baseBranch = baseBranch; self.headBranch = headBranch
+        self.conflicted = conflicted
     }
 
-    private enum Keys: String, CodingKey { case host, repository, number, url, title, state, updatedAt, baseBranch, headBranch }
+    private enum Keys: String, CodingKey { case host, repository, number, url, title, state, updatedAt, baseBranch, headBranch, conflicted }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -120,7 +124,11 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
         updatedAt = try? c.decodeIfPresent(Date.self, forKey: .updatedAt)
         baseBranch = try? c.decodeIfPresent(String.self, forKey: .baseBranch)
         headBranch = try? c.decodeIfPresent(String.self, forKey: .headBranch)
+        conflicted = ((try? c.decodeIfPresent(Bool.self, forKey: .conflicted)) ?? nil) ?? false
     }
+
+    /// Open (or draft) and blocked by a merge conflict.
+    var hasConflict: Bool { state.isOpen && conflicted }
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
 }
@@ -156,9 +164,23 @@ enum PullRequestStack {
     static func isStack(links: [PullRequestLink]) -> Bool { order(links: links).count > 1 }
 }
 
-/// What the sidebar badge shows, without any wording: the lead localises `.stack`.
+/// Whether a forge's answer about one request means "merge conflict". GitHub computes `mergeable` lazily (null on the
+/// first ask), so only an explicit `false` or a `dirty` merge state counts; GitLab says so with `has_conflicts`.
+enum PullRequestMergeability {
+    static func githubConflicted(_ pull: [String: Any]) -> Bool {
+        if (pull["mergeable_state"] as? String)?.lowercased() == "dirty" { return true }
+        return (pull["mergeable"] as? Bool) == false
+    }
+
+    static func gitlabConflicted(_ item: [String: Any]) -> Bool {
+        if (item["has_conflicts"] as? Bool) == true { return true }
+        return (item["detailed_merge_status"] as? String)?.lowercased() == "conflict"
+    }
+}
+
+/// What the sidebar badge shows, without any wording: the lead localises `.stack` and the state.
 struct PullRequestBadge: Equatable, Sendable {
-    enum Glyph: String, Sendable { case draft, open, merged, closed, stack }
+    enum Glyph: String, Sendable { case draft, open, conflict, merged, closed, stack }
     enum Label: Equatable, Sendable {
         case number(Int)
         case numberPlus(Int, extra: Int)
@@ -180,7 +202,7 @@ struct PullRequestBadge: Equatable, Sendable {
         guard !links.isEmpty else { return nil }
         if links.count > 1, PullRequestStack.isStack(links: links) { return PullRequestBadge(glyph: .stack, label: .stack(links.count)) }
         let primary = primaryLink(links)
-        let glyph = Glyph(rawValue: primary.state.rawValue) ?? .open
+        let glyph: Glyph = primary.hasConflict ? .conflict : Glyph(rawValue: primary.state.rawValue) ?? .open
         return PullRequestBadge(glyph: glyph, label: links.count == 1 ? .number(primary.number) : .numberPlus(primary.number, extra: links.count - 1))
     }
 
