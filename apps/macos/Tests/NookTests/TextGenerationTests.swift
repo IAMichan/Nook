@@ -8,11 +8,13 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(title.contains("3-8 words, fewer than 40 characters."))
         let commit = TextGeneration.commitPrompt(branch: nil, files: "M\ta.swift", patch: String(repeating: "x", count: 40_010))
         XCTAssertTrue(commit.contains("Branch: (detached)"))
+        XCTAssertTrue(commit.contains("write subject and body in English"))
         XCTAssertTrue(commit.hasSuffix("\n\n[truncated]"), "a long patch is cut off with a marker")
         let pr = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "abc fix", stat: "1 file", patch: "+x", template: nil)
         XCTAssertTrue(pr.contains("'## Summary' and '## Testing'"))
-        let templated = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "", stat: "", patch: "", template: "## Wat\n")
-        XCTAssertTrue(templated.contains("Repository change request template:\n## Wat"))
+        XCTAssertTrue(pr.contains("write title and body in English"))
+        let templated = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "", stat: "", patch: "", template: "## Summary\n")
+        XCTAssertTrue(templated.contains("Repository change request template:\n## Summary"))
     }
 
     func testCommands() {

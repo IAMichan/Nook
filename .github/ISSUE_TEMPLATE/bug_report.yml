@@ -1,35 +1,35 @@
-name: Bug melden
-description: Iets werkt niet zoals verwacht
+name: Bug Report
+description: Something isn't working as expected
 labels: [bug]
 body:
   - type: textarea
     id: what
     attributes:
-      label: Wat gebeurt er?
-      description: Wat deed je, wat verwachtte je en wat gebeurde er?
+      label: What happened?
+      description: What did you do, what did you expect, and what actually happened?
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Stappen om het na te doen
+      label: Steps to reproduce
       placeholder: |
         1. ...
         2. ...
   - type: input
     id: macos
     attributes:
-      label: macOS-versie en Mac
+      label: macOS version and Mac model
       placeholder: macOS 15.5, MacBook Pro M3
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Nook-versie of commit
+      label: Nook version or commit
   - type: textarea
     id: logs
     attributes:
-      label: Foutmeldingen of logs
-      description: Laat API-sleutels en persoonlijke gegevens weg.
+      label: Error messages or logs
+      description: Please omit any API keys or personal data.
       render: text

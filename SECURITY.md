@@ -1,25 +1,25 @@
-# Beveiliging
+# Security Policy
 
-Nook heeft toegang tot je scherm, agenda, microfoon en de shell-hooks van je coding agents. Beveiligingsproblemen nemen we dus serieus.
+Nook has access to sensitive local context—including screen text, calendars, microphone audio, and coding-agent shell hooks—so we take security issues seriously.
 
-## Een probleem melden
+## Reporting a Vulnerability
 
-Meld kwetsbaarheden **niet** in een openbaar issue. Gebruik in plaats daarvan [GitHub private vulnerability reporting](https://github.com/IAMichan/nook/security/advisories/new).
+Please **do not** report security vulnerabilities in public GitHub issues. Instead, use [GitHub Private Vulnerability Reporting](https://github.com/IAMichan/nook/security/advisories/new).
 
-Vermeld als het kan:
-- wat er mis is en welke impact het heeft;
-- hoe je het kunt reproduceren;
-- de versie of commit.
+Whenever possible, please include:
+- A clear description of the issue and its potential impact
+- Step-by-step reproduction instructions or a proof of concept
+- The affected version or commit hash
 
-Je krijgt binnen een week een eerste reactie.
+You will receive an initial response within 7 days.
 
-## Waar het vooral om gaat
+## Scope of Particular Interest
 
-- Prompt-injectie via schermtekst, agenda-items of tool-uitkomsten die tot een actie leidt zonder bevestiging door de gebruiker.
-- Toegang tot de hook-socket door een andere gebruiker of een ander proces.
-- Uitlekken van de API-sleutel of van lokale gegevens (`nook.sqlite`).
-- Riskante shell-commando's die door `CommandRisk` heen glippen.
+- Prompt injection via screen OCR text, calendar items, emails, web pages, or tool outputs that leads to an unapproved action or memory poisoning
+- Unauthorized access to the local Unix hook socket or companion server by another user or untrusted process
+- Leakage of API keys, OAuth tokens, or local database contents (`nook.sqlite`)
+- Dangerous shell commands that bypass `CommandRisk` classification or SSRF bypasses in `NetworkGuard`
 
-## Ondersteunde versies
+## Supported Versions
 
-Alleen de nieuwste versie op `main` krijgt beveiligingsupdates.
+Security updates are applied to the latest commit on the `main` branch.
