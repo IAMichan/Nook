@@ -1,11 +1,17 @@
 ---
 name: update-nook
-description: Haal de nieuwste versie van Nook van GitHub (IAMichan/nook) binnen, voeg hem veilig samen met de lokale werkmap, genereer het Xcode-project opnieuw en controleer dat het bouwt. Gebruik wanneer de gebruiker zegt "update Nook", "haal de nieuwste versie op", "pull main" of vraagt of lokaal bij is met GitHub.
+description: Haal de nieuwste versie van Nook van GitHub (IAMichan/nook) binnen, voeg hem veilig samen met de lokale werkmap, genereer de Xcode-projecten (macOS en iPhone-companion) opnieuw en controleer dat het bouwt. Gebruik wanneer de gebruiker zegt "update Nook", "haal de nieuwste versie op", "pull main" of vraagt of lokaal bij is met GitHub.
 ---
 
 # Nook bijwerken vanaf GitHub
 
-Werk in de Nook-repo (monorepo; de macOS-app staat in `apps/macos`, daar staat `project.yml`). Antwoord in het Nederlands. Wees eerlijk over wat wel en niet gelukt is.
+Werk in de hoofdmap van de Nook-repo (de map met `apps/` en `packages/`). Antwoord in het Nederlands. Wees eerlijk over wat wel en niet gelukt is.
+
+Nook is een monorepo (zie `docs/MONOREPO.md`):
+- `apps/macos/` de Mac-app, met `project.yml` → `apps/macos/Nook.xcodeproj`
+- `apps/ios/` de iPhone-companion, met `project.yml` → `apps/ios/NookCompanion.xcodeproj`
+- `packages/` code die de apps delen (o.a. `packages/protocol`)
+- `apps/android`, `apps/windows`, `apps/linux`: nog leeg, niets te bouwen
 
 ## Stappen
 
@@ -26,16 +32,20 @@ Werk in de Nook-repo (monorepo; de macOS-app staat in `apps/macos`, daar staat `
    - Op een andere branch: `git merge origin/main`.
    - Haal de stash terug met `git stash pop`. Bij conflicten: toon welke bestanden, los ze alleen op als het duidelijk is, en vraag anders de gebruiker.
 
-5. **Genereer het project opnieuw**
-   - `Nook.xcodeproj` staat niet in git en wordt gemaakt door XcodeGen. Draai in `apps/macos` na elke update `xcodegen generate` (nieuwe of verwijderde bestanden komen er anders niet in).
+5. **Genereer de projecten opnieuw**
+   - De Xcode-projecten staan niet in git en worden gemaakt door XcodeGen. Genereer ze na elke update opnieuw (niet via `./update.sh`, want dat doet ook een `git pull`):
+     - `(cd apps/macos && xcodegen generate)`
+     - `(cd apps/ios && xcodegen generate)`
+   - **Oud project van vóór de monorepo:** staat er nog een `Nook.xcodeproj` in de hoofdmap, dan verwijst dat naar paden die niet meer bestaan (fout "Build input files cannot be found: …/Nook/App/…"). Meld dit en stel voor hem te verwijderen (`rm -rf Nook.xcodeproj`); doe het pas na akkoord. Hetzelfde geldt voor achtergebleven mappen `App/` of `Companion/` in de hoofdmap met alleen `Info.plist`/entitlements: toon eerst wat erin staat.
 
 6. **Controleer de build**
-   - `cd apps/macos && xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug build 2>&1 | grep -E "error:|BUILD"`
-   - Meld `BUILD SUCCEEDED` of de fouten letterlijk. Los fouten niet ongevraagd op.
+   - Mac: `(cd apps/macos && xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug build 2>&1 | grep -E "error:|BUILD")`
+   - Alleen als er iets in `apps/ios` of `packages/protocol` veranderde, ook de companion: `(cd apps/ios && xcodebuild -project NookCompanion.xcodeproj -scheme NookCompanion -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD")`
+   - Meld per app `BUILD SUCCEEDED` of de fouten letterlijk. Los fouten niet ongevraagd op.
 
 7. **Rond af**
    - Noem de commit waar lokaal nu op staat (`git log --oneline -1`), de belangrijkste nieuwe commits, en of er een stash is blijven staan.
-   - Zeg dat Xcode het project opnieuw geopend moet worden (eerst afsluiten met ⌘Q) en dat een draaiende Nook eerst gestopt moet worden voor ⌘R.
+   - Zeg dat Xcode het project opnieuw geopend moet worden (eerst afsluiten met ⌘Q): `open apps/macos/Nook.xcodeproj`, niet een oud project uit de hoofdmap. Een draaiende Nook moet eerst gestopt worden voor ⌘R.
 
 ## Let op
 
