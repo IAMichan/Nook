@@ -15,6 +15,9 @@ extension AppModel {
         if text.isEmpty { text = tr("image.defaultQuestion") }
         NookPresence.shared.heard()
 
+        // "@open whatsapp": the app opens next to the chat. "@close" puts it away.
+        if images.isEmpty, handleEmbeddedAppCommand(text) { return }
+
         // "Maak ongedaan": the last actions Nook carried out, reversed as a plan to approve.
         if Undo.isRequest(text) {
             proposeUndo(asked: text)

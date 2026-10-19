@@ -127,6 +127,7 @@ targets:
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
       - path: Brain/ChatIntent.swift
+      - path: Services/EmbeddedApps/EmbeddedAppCatalog.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
       - path: Brain/Memory.swift

@@ -28,11 +28,13 @@ struct NookChatView: View {
     @State private var atEnd = true
     @State private var renaming = false
     @State private var titleDraft = ""
+    @ObservedObject private var embedded = EmbeddedAppStore.shared
 
     var body: some View {
-        // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right.
+        // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
+        // open ("@open whatsapp") the app takes the list's place on the right, and the chat narrows beside it.
         HStack(alignment: .top, spacing: 0) {
-            if !chat.history.isEmpty || !compact {
+            if (!chat.history.isEmpty || !compact) && embedded.current == nil {
                 NookList(chat: chat)
                     .frame(width: compact ? 200 : 260)
                 Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1)
@@ -48,6 +50,12 @@ struct NookChatView: View {
                 }
                 inputBar
                     .padding(.top, 10)
+            }
+            .frame(width: embedded.current == nil ? nil : (compact ? 400 : 440))
+            if embedded.current != nil {
+                EmbeddedAppPane()
+                    .padding(.leading, compact ? 12 : 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .overlay {
@@ -334,6 +342,8 @@ struct NookChatView: View {
     /// a question goes to the brain as plain text.
     private var chatComposerConfig: ComposerConfig {
         var config = ComposerConfig()
+        // `@` lists the apps that open next to the chat.
+        config.apps = EmbeddedAppCatalog.all.map { (id: $0.id, title: $0.title, symbol: $0.symbol) }
         config.commands = AgentCommands.commands(for: .claude, hasProject: false, surface: .chat).filter { $0.action == .new }
         config.onCommand = { [app] command in
             if command.action == .new { app.newChat() }

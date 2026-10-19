@@ -97,6 +97,7 @@ final class AppModel: ObservableObject {
         if settings.useMemory { all += memoryTools }
         all += webSpecs
         all += BrowserStore.tools
+        all += EmbeddedAppStore.tools
         all += TerminalStore.shared.tools
         return all
     }
@@ -108,6 +109,7 @@ final class AppModel: ObservableObject {
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.tools
+        all += EmbeddedAppStore.tools
         all += TerminalStore.shared.tools
         return all
     }

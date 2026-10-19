@@ -466,6 +466,7 @@ extension AppModel {
         }
         let sourceContext = connectors.contextLines(scope: scope, full: relevant)
         lines.append(contentsOf: sourceContext.lines)
+        if scope.allows("browser"), let open = embeddedAppContextLine { lines.append(open) }
 
         if !loops.isEmpty, scope.allows(SourceCatalog.loops) {
             lines.append("Open punten (id tussen haken, voor complete_open_loop):")

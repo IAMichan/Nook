@@ -125,8 +125,11 @@ struct ChatIntent: Equatable {
         // message that was already handled.
         let goAhead = confirms(raw) && recent.first(where: { !$0.fromUser }).map { asks($0.text) } == true
         guard !intent.isSmallTalk || goAhead else { return intent }
+        // "Opnieuw", "probeer het nog eens", "try again": the last thing the user asked Nook to do, once more.
+        let retry = retries(raw) && !questions(raw)
         let carried: Kind?
-        if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) }) {
+        if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
+            || (retry && recent.contains { $0.fromUser && sends($0.text) }) {
             // The channel is the one the conversation is about: the newest turn that names chats or mail.
             carried = recent.lazy.compactMap { turn -> Kind? in
                 let kinds = detect(turn.text).kinds
@@ -137,6 +140,9 @@ struct ChatIntent: Equatable {
         } else if goAhead {
             // "Ja, doe maar" after "maak een herinnering voor morgen": the action the user asked for last.
             carried = recent.first(where: \.fromUser).flatMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }
+        } else if retry {
+            // A retry follows a complaint ("hij is niet verzonden") as often as the request itself: the newest request.
+            carried = recent.lazy.filter(\.fromUser).compactMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }.first
         } else {
             carried = nil
         }
@@ -151,6 +157,13 @@ struct ChatIntent: Equatable {
     static func sends(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         return text.range(of: #"^(stuur|verstuur|verzend|send|schick|sende)\b|\b(stuur|stuurt|sturen|verstuur|versturen|verzend|verzenden|send|sending|schicken|senden|sende)\b[^.?!]{0,60}\b(bericht|berichtje|message|nachricht|tekst|text)\b|\b(bericht|berichtje|message|nachricht|tekst|text)\b[^.?!]{0,60}\b(sturen|versturen|verzenden|send|schicken|senden)\b"#, options: .regularExpression) != nil
+    }
+
+    /// Doing it again: "opnieuw", "stuur het nog een keer", "probeer het nog eens", "try again", "nochmal".
+    static func retries(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard text.count <= 60 else { return false }
+        return text.range(of: #"\b(opnieuw|nog (een )?keer|nog eens|nogmaals|probeer (het )?(nog|weer)|again|retry|resend|one more time|nochmal|noch (ein)?mal|erneut|encore|de nouveau|otra vez|de nuevo)\b"#, options: .regularExpression) != nil
     }
 
     /// A short go-ahead: "ja", "doe maar", "verzend", "send it", "ok".
