@@ -28,6 +28,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
         AutocompleteController.shared.flush()
+        Self.skipStaticDestructorsAtExit()
+    }
+
+    /// After this notification AppKit calls `exit()`, which runs the C++ static destructors of llama.cpp (Metal), MLX and
+    /// FluidAudio. With a model still loaded, or loading on another thread, those abort: Nook then crashes on quit, for
+    /// instance when macOS asks to "Quit & Reopen" right after a permission was granted (that is when autocomplete loads its
+    /// model). Handlers registered with `atexit` run in reverse order, so this one, registered last, runs before every
+    /// destructor and ends the process once all of Nook's own saving (here and in other `willTerminate` observers) is done.
+    nonisolated private static func skipStaticDestructorsAtExit() {
+        atexit {
+            fflush(nil)
+            _exit(0)
+        }
     }
 
     // MARK: Menubalk
