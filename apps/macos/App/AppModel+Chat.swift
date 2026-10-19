@@ -78,7 +78,7 @@ extension AppModel {
                 message.streaming = false
                 message.status = ""
                 for index in message.retrieval.indices where message.retrieval[index].outcome == .running {
-                    message.retrieval[index].outcome = .failed("gestopt")
+                    message.retrieval[index].outcome = .failed(tr("chat.sources.interrupted"))
                 }
                 if message.text.isEmpty && message.charts.isEmpty && message.mails.isEmpty && message.actions.isEmpty {
                     message.text = "Gestopt."
@@ -341,11 +341,8 @@ extension AppModel {
             let cited = Citations.used(in: body)
             // Prioritize cited references first, followed by other retrieved sources.
             let shown = references.filter { cited.contains($0.number) } + references.filter { !cited.contains($0.number) }
-            var notices = ledger.failures.map { step -> String in
-                if case .failed(let error) = step.outcome { return tr("chat.notice.sourceFailed", step.sourceTitle, error) }
-                return ""
-            }
-            if !ledger.failures.isEmpty { notices.append(tr("chat.notice.incomplete")) }
+            // Sources that could not be read are shown, with their reason, in the sources card under the answer.
+            var notices: [String] = []
             if !withheld.isEmpty {
                 notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
             }
