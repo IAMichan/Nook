@@ -280,6 +280,13 @@ struct NookChatView: View {
             .onScrollPhaseChange { _, phase in
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
             }
+            // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
+            // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
+            .onScrollGeometryChange(for: [Double].self) { geometry in
+                [geometry.containerSize.height, geometry.contentSize.height]
+            } action: { _, _ in
+                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .overlay(alignment: .bottom) {
                 if scroll.mode == .free, !atEnd {
                     TimelineToEndPill {
@@ -296,18 +303,27 @@ struct NookChatView: View {
                     Color.black
                 }
             )
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-            // Another conversation: start at its end and follow again.
-            .onChange(of: chat.activeID) { _, _ in
-                scroll.jumpedToEnd()
-                DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+            // Opening the chat or another conversation: start at its end and follow again.
+            .onAppear { settleAtEnd(proxy) }
+            .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
             // You asked something: it is the newest thing and the answer is followed again.
             .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in
                 scroll.jumpedToEnd()
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: scrollKey) { _, _ in
+                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+        }
+    }
+
+    /// Scrolls to the end now and again while the layout settles (rows measured, the notch done opening), unless you
+    /// scroll away in the meantime.
+    private func settleAtEnd(_ proxy: ScrollViewProxy) {
+        scroll.jumpedToEnd()
+        proxy.scrollTo("bottom", anchor: .bottom)
+        for delay in [0.0, 0.1, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
