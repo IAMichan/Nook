@@ -39,7 +39,6 @@ private struct BrainPicker: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var local = EmbeddedModel.shared
     let servers: [ServerModel]
-    @State private var shown: BrainPlace?
     @State private var query = ""
     @State private var fetched: [AIProvider: [String]] = [:]
     @State private var fetching = false
@@ -56,79 +55,55 @@ private struct BrainPicker: View {
     }
 
     private var active: BrainPlace { settings.isLocalBrain ? .mac : .external(settings.provider) }
-    private var current: BrainPlace { shown ?? active }
 
     var body: some View {
-        HStack(spacing: 0) {
-            rail
-            VStack(alignment: .leading, spacing: 0) {
-                switch current {
-                case .mac: macModels
-                case .external(let provider): externalModels(provider)
-                }
+        RailDropdown(groups: [[BrainPlace.mac], externals.map(BrainPlace.external)], chosen: active, maxHeight: 360,
+                     help: Self.title(of:), onShow: { _ in
+                         query = ""
+                         fetchError = nil
+                     },
+                     icon: placeIcon, footer: { addButton }) { place in
+            switch place {
+            case .mac: macModels
+            case .external(let provider): externalModels(provider)
             }
-            .padding(.horizontal, 4)
         }
-        .frame(maxHeight: 360)
     }
 
     // MARK: Rail
 
-    private var rail: some View {
-        VStack(spacing: 4) {
-            railButton(.mac, help: tr("brain.chip.installed")) {
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(NookTheme.paper)
-            }
-            if !externals.isEmpty {
-                Rectangle().fill(NookTheme.line2).frame(width: 18, height: 1).padding(.vertical, 2)
-            }
-            ForEach(externals) { provider in
-                railButton(.external(provider), help: Self.shortTitle(provider)) {
-                    BrandMark(logo: BrandLogo.forProvider(provider), size: 17)
-                }
-            }
-            Spacer(minLength: 0)
-            Button {
-                close()
-                app.openSettings(section: .brain)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(tr("brain.chip.addExternal"))
+    @ViewBuilder
+    private func placeIcon(_ place: BrainPlace) -> some View {
+        switch place {
+        case .mac:
+            Image(systemName: "laptopcomputer")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(NookTheme.paper)
+        case .external(let provider):
+            BrandMark(logo: BrandLogo.forProvider(provider), size: 17)
         }
-        .padding(6)
-        .frame(width: 44)
-        .background(NookTheme.paper.opacity(0.03))
-        .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
     }
 
-    private func railButton<Icon: View>(_ place: BrainPlace, help: String, @ViewBuilder icon: () -> Icon) -> some View {
+    private var addButton: some View {
         Button {
-            shown = place
-            query = ""
-            fetchError = nil
+            close()
+            app.openSettings(section: .brain)
         } label: {
-            icon()
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(place == current ? DropdownStyle.chosen : .clear))
-                .overlay(alignment: .bottomTrailing) {
-                    // A dot on the place Nook thinks with now, while you look at another one.
-                    if place == active && place != current {
-                        Circle().fill(NookTheme.paper.opacity(0.7)).frame(width: 4, height: 4).padding(4)
-                    }
-                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help(tr("brain.chip.addExternal"))
+    }
+
+    private static func title(of place: BrainPlace) -> String {
+        switch place {
+        case .mac: return tr("brain.chip.installed")
+        case .external(let provider): return shortTitle(provider)
+        }
     }
 
     // MARK: On this Mac
@@ -142,37 +117,31 @@ private struct BrainPicker: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)
             .padding(.bottom, 4)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                let installed = ModelAdvisor.catalog.filter { local.installed.contains($0.id) }
-                if !AppleIntelligence.isAvailable && installed.isEmpty && servers.isEmpty {
-                    emptyNote(tr("brain.chip.noLocal"))
-                }
-                if AppleIntelligence.isAvailable {
-                    DropdownRow(brand: BrandLogo.forName("Apple"), title: AppleModel.title,
-                                chosen: settings.useLocal && settings.localModel == AppleModel.id) {
-                        settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: AppleModel.id)
-                    }
-                }
-                ForEach(installed) { option in
-                    DropdownRow(brand: BrandLogo.forName(option.title) ?? BrandLogo.forName(option.id),
-                                title: option.title, chosen: settings.useLocal && settings.localModel == option.id) {
-                        settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: option.id)
-                    }
-                }
-                ForEach(servers, id: \.name) { model in
-                    let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
-                    DropdownRow(brand: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider), title: model.name,
-                                trailing: Self.shortTitle(provider),
-                                chosen: !settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name) {
-                        settings.selection = BrainSelection(runtime: model.server == .ollama ? .ollama : .lmstudio,
-                                                            provider: provider, model: model.name)
-                    }
+        let installed = ModelAdvisor.catalog.filter { local.installed.contains($0.id) }
+        let empty = !AppleIntelligence.isAvailable && installed.isEmpty && servers.isEmpty
+        DropdownList(maxHeight: 240, emptyNote: empty ? tr("brain.chip.noLocal") : nil) {
+            if AppleIntelligence.isAvailable {
+                DropdownRow(brand: BrandLogo.forName("Apple"), title: AppleModel.title,
+                            chosen: settings.useLocal && settings.localModel == AppleModel.id) {
+                    settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: AppleModel.id)
                 }
             }
-            .padding(.vertical, 4)
+            ForEach(installed) { option in
+                DropdownRow(brand: BrandLogo.forName(option.title) ?? BrandLogo.forName(option.id),
+                            title: option.title, chosen: settings.useLocal && settings.localModel == option.id) {
+                    settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: option.id)
+                }
+            }
+            ForEach(servers, id: \.name) { model in
+                let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
+                DropdownRow(brand: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider), title: model.name,
+                            trailing: Self.shortTitle(provider),
+                            chosen: !settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name) {
+                    settings.selection = BrainSelection(runtime: model.server == .ollama ? .ollama : .lmstudio,
+                                                        provider: provider, model: model.name)
+                }
+            }
         }
-        .frame(maxHeight: 240)
         settingsRow
     }
 
@@ -191,21 +160,16 @@ private struct BrainPicker: View {
         if list.count > 6 {
             DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
         }
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-                let shownModels = needle.isEmpty ? list : list.filter { $0.lowercased().contains(needle) }
-                if shownModels.isEmpty { emptyNote(tr("compose.noModels")) }
-                ForEach(shownModels, id: \.self) { id in
-                    DropdownRow(brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), title: id,
-                                chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
-                        settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
-                    }
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let shownModels = needle.isEmpty ? list : list.filter { $0.lowercased().contains(needle) }
+        DropdownList(maxHeight: 220, emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil) {
+            ForEach(shownModels, id: \.self) { id in
+                DropdownRow(brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), title: id,
+                            chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
+                    settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
                 }
             }
-            .padding(.vertical, 4)
         }
-        .frame(maxHeight: 220)
         if provider != .claudeCode && fetched[provider] == nil {
             DropdownRow(symbol: fetching ? "hourglass" : "arrow.clockwise", title: tr("button.fetchModels"),
                         detail: fetchError, staysOpen: true) {
@@ -244,13 +208,6 @@ private struct BrainPicker: View {
             DropdownDivider()
             DropdownRow(symbol: "gearshape", title: tr("brain.chip.settings")) { app.openSettings(section: .brain) }
         }
-    }
-
-    private func emptyNote(_ text: String) -> some View {
-        Text(text)
-            .font(NookTheme.font(12))
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(10)
     }
 
     /// "Claude Code" instead of "Claude Code (je abonnement)", "Ollama" instead of "Ollama (op je Mac)".
