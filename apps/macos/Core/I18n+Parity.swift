@@ -183,6 +183,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.grant": "Sta toe",
         "sim.permission.revoke": "Trek in",
         "sim.permission.reset": "Zet terug",
+        "ws.mcpApp.isFullscreen": "De app staat schermvullend open.",
+        "ws.mcpApp.exitFullscreen": "Terug naar de tijdlijn",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -362,6 +364,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.grant": "Grant",
         "sim.permission.revoke": "Revoke",
         "sim.permission.reset": "Reset",
+        "ws.mcpApp.isFullscreen": "The app is open fullscreen.",
+        "ws.mcpApp.exitFullscreen": "Back to the timeline",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -541,6 +545,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.grant": "Erlauben",
         "sim.permission.revoke": "Entziehen",
         "sim.permission.reset": "Zurücksetzen",
+        "ws.mcpApp.isFullscreen": "Die App ist im Vollbild geöffnet.",
+        "ws.mcpApp.exitFullscreen": "Zurück zum Verlauf",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -720,6 +726,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.grant": "Accorder",
         "sim.permission.revoke": "Révoquer",
         "sim.permission.reset": "Réinitialiser",
+        "ws.mcpApp.isFullscreen": "L’app est ouverte en plein écran.",
+        "ws.mcpApp.exitFullscreen": "Retour au fil",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -899,5 +907,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.grant": "Conceder",
         "sim.permission.revoke": "Revocar",
         "sim.permission.reset": "Restablecer",
+        "ws.mcpApp.isFullscreen": "La app está abierta a pantalla completa.",
+        "ws.mcpApp.exitFullscreen": "Volver a la línea de tiempo",
     ],
 ]
