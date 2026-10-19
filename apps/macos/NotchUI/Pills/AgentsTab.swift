@@ -465,9 +465,6 @@ struct AgentListRow: View {
     var pullRequest: PullRequestBadge? = nil
     let action: () -> Void
     @State private var hovering = false
-    /// The hover card opens after the pointer rests on the row a moment, so sweeping over the list stays quiet.
-    @State private var showCard = false
-    @State private var cardDelay: Task<Void, Never>?
 
     private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
     private var dimmed: Bool { item.status == .finished || slim }
@@ -475,10 +472,7 @@ struct AgentListRow: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button {
-                hover(false)
-                action()
-            } label: { content }
+            Button(action: action) { content }
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
@@ -488,25 +482,9 @@ struct AgentListRow: View {
                     .allowsHitTesting(hovering)
             }
         }
-        .onHover { inside in
-            hovering = inside
-            hover(inside)
-        }
-        .onDisappear { cardDelay?.cancel() }
-        .popover(isPresented: $showCard, arrowEdge: .trailing) { AgentHoverCard(item: item) }
+        .onHover { hovering = $0 }
+        .hoverCard { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
-    }
-
-    private func hover(_ inside: Bool) {
-        cardDelay?.cancel()
-        guard inside else {
-            showCard = false
-            return
-        }
-        cardDelay = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(650))
-            if !Task.isCancelled, hovering { showCard = true }
-        }
     }
 
     private var content: some View {
@@ -647,18 +625,12 @@ struct AgentHoverCard: View {
     let item: AgentListItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(item.title)
-                .font(NookTheme.font(13.5, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 2)
-            row("folder", item.folder, help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
+        HoverCard(title: item.title) {
+            HoverCardRow(symbol: "folder", text: item.folder, help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
             if !item.machine.isEmpty {
-                row(item.agent == AppModel.cloudAgentName ? "cloud" : "laptopcomputer", item.machine)
+                HoverCardRow(symbol: item.agent == AppModel.cloudAgentName ? "cloud" : "laptopcomputer", text: item.machine)
             }
-            row("arrow.triangle.branch", item.branch ?? tr("agents.noBranch"))
+            HoverCardRow(symbol: "arrow.triangle.branch", text: item.branch ?? tr("agents.noBranch"))
             HStack(spacing: 8) {
                 AgentMark(agent: item.agent, account: item.account, size: 14, ring: DropdownStyle.panel)
                     .frame(width: 16)
@@ -669,10 +641,6 @@ struct AgentHoverCard: View {
             .font(NookTheme.font(12.5))
             .foregroundStyle(NookTheme.textTertiary)
         }
-        .padding(14)
-        .frame(minWidth: 220, maxWidth: 320, alignment: .leading)
-        .background(DropdownStyle.panel)
-        .accessibilityElement(children: .combine)
     }
 
     /// "Claude Sonnet 5.5 · Personal"; the agent's name when the model is not known.
@@ -680,20 +648,6 @@ struct AgentHoverCard: View {
         let model = AgentFormat.model(item.model)
         let first = model.isEmpty ? item.agent : model
         return item.accountName.isEmpty ? first : "\(first) · \(item.accountName)"
-    }
-
-    private func row(_ symbol: String, _ text: String, help: String? = nil) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 16)
-            Text(text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .font(NookTheme.font(12.5))
-        .foregroundStyle(NookTheme.textSecondary)
-        .help(help ?? "")
     }
 }
 
