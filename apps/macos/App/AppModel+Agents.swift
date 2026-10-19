@@ -35,6 +35,11 @@ extension AppModel {
         return FinishedSessions.shared.isMarkedWhileBusy(key)
     }
 
+    /// You marked this chat as finished.
+    func isMarkedFinished(_ session: AgentSession) -> Bool {
+        FinishedSessions.shared.contains(FinishedSessions.key(agent: session.name, conversation: conversationID(for: session), fallback: session.id))
+    }
+
     /// Can Nook continue this running session's conversation itself?
     func canTakeOver(_ session: AgentSession) -> Bool {
         nookProvider(for: AgentKind(agentName: session.name)) != nil && !session.cwd.isEmpty && conversationID(for: session) != nil
