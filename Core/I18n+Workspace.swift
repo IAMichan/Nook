@@ -6,6 +6,8 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "bridge.approval.message": "%@ wil een bericht sturen naar de sessie “%@”",
+        "bridge.approval.messageNote": "De andere agent krijgt het als bericht van een agent, niet als jouw eigen opdracht.",
         "inbox.pr.stack": "Stapel van %ld",
         "settings.ws.autoSettleMerged": "Ook afhandelen als de pull request is gemerged",
         "settings.ws.inboxWorking": "Toon sessies die aan het werk zijn op een eigen plank",
@@ -684,6 +686,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "bridge.approval.message": "%@ wants to send a message to the session “%@”",
+        "bridge.approval.messageNote": "The other agent receives it as a message from an agent, not as your own instruction.",
         "inbox.pr.stack": "Stack of %ld",
         "settings.ws.autoSettleMerged": "Also settle when the pull request is merged",
         "settings.ws.inboxWorking": "Show working sessions on their own shelf",
@@ -1362,6 +1366,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "bridge.approval.message": "%@ möchte eine Nachricht an die Sitzung „%@“ senden",
+        "bridge.approval.messageNote": "Der andere Agent erhält sie als Nachricht eines Agenten, nicht als deine eigene Anweisung.",
         "inbox.pr.stack": "Stapel aus %ld",
         "settings.ws.autoSettleMerged": "Auch erledigen, wenn der Pull Request gemergt ist",
         "settings.ws.inboxWorking": "Laufende Sitzungen in einem eigenen Fach zeigen",
