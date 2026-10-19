@@ -26,6 +26,8 @@ Start de agent opnieuw na het koppelen. Toestemming geven vanuit de notch kan nu
 
 ## Je agents bedienen
 
+Sluit je Nook en open je hem weer, dan zijn de agents die in je terminal doorliepen er direct weer: Nook bewaart de sessies die hij via hooks kende (`agent-sessions.json`) en zet ze terug. Een sessie waarvan het proces intussen weg is, laat Nook bij de eerste scan los.
+
 Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-overzicht, transcripten en sessies die Nook zelf draait komen samen: een gesprek staat er één keer in, ook als het uit meerdere bronnen bekend is, en twee processen in dezelfde map blijven twee rijen. Processen die Nook zelf startte (herkend aan `NOOK_RUN_ID` of `NOOK_INTERNAL` in hun omgeving) staan er niet in en worden nooit beëindigd.
 
 **In de notch** (tab Agents, compact) zie je wat loopt en wat op je wacht, keur je goed, beantwoord je meerkeuzevragen en typ je een kort vervolg. Een nieuwe sessie starten en accounts beheren gaat niet meer hier: **Nieuwe sessie** opent het venster, accounts staan bij Instellingen.
