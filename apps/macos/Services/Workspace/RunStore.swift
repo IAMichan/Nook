@@ -87,11 +87,12 @@ final class RunStore: @unchecked Sendable {
         try write(Self.encoder.encode(kept), to: eventsURL(id))
     }
 
-    func saveEventsAsync(_ id: UUID, _ events: [RunEvent], runs: [WorkspaceRun]) {
+    /// Without `runs` only the timeline is written (the session list has not been read yet).
+    func saveEventsAsync(_ id: UUID, _ events: [RunEvent], runs: [WorkspaceRun]?) {
         ioQueue.async { [weak self] in
             guard let self else { return }
             try? self.saveEvents(id, events)
-            try? self.saveRuns(runs)
+            if let runs { try? self.saveRuns(runs) }
         }
     }
 

@@ -237,16 +237,12 @@ final class WorkspaceManager: ObservableObject {
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
-        runs = store.loadRuns()
-        // Sessions taken over before agents' tags were left out of titles were called "<task-notification>" and the like.
-        for index in runs.indices where runs[index].title.hasPrefix("<") {
-            let clean = InjectedPrompt.title(runs[index].title)
-            runs[index].title = clean.isEmpty ? runs[index].projectName : clean
-        }
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
-        applyAutoArchive()
-        // Sessions that were waiting for a usage limit to reset go on waiting.
-        for run in runs where run.autoResume == true { armLimitResume(run.id) }
+        // The session list can be long: read it off the main thread so launching Nook does not wait for it.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let loaded = store.loadRuns()
+            await self?.finishLoadingRuns(loaded)
+        }
         // Watched pull requests are looked at every half minute (each at most every two minutes).
         Task { [weak self] in
             while !Task.isCancelled {
@@ -261,6 +257,28 @@ final class WorkspaceManager: ObservableObject {
                 self?.gitAvailable = service != nil
             }
         }
+    }
+
+    /// The saved sessions have been read. Until then the session list is never written, so it cannot be replaced.
+    private var runsLoaded = false
+
+    private func finishLoadingRuns(_ loaded: [WorkspaceRun]) {
+        var loaded = loaded
+        // Sessions taken over before agents' tags were left out of titles were called "<task-notification>" and the like.
+        for index in loaded.indices where loaded[index].title.hasPrefix("<") {
+            let clean = InjectedPrompt.title(loaded[index].title)
+            loaded[index].title = clean.isEmpty ? loaded[index].projectName : clean
+        }
+        // Sessions started in the meantime stay in front of the saved ones.
+        let started = runs
+        let known = Set(started.map(\.id))
+        loaded.removeAll { known.contains($0.id) }
+        runs = started + loaded
+        runsLoaded = true
+        applyAutoArchive()
+        // Sessions that were waiting for a usage limit to reset go on waiting.
+        for run in loaded where run.autoResume == true { armLimitResume(run.id) }
+        if !started.isEmpty { scheduleSave() }
     }
 
     // MARK: Reading
@@ -1700,7 +1718,7 @@ final class WorkspaceManager: ObservableObject {
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
         }
-        try? store.saveRuns(runs)
+        if runsLoaded { try? store.saveRuns(runs) }
         for (id, list) in events { try? store.saveEvents(id, list) }
     }
 
@@ -1742,7 +1760,7 @@ final class WorkspaceManager: ObservableObject {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, self.runsLoaded else { return }
             let runsSnapshot = self.runs
             self.store.saveRunsAsync(runsSnapshot)
         }
@@ -1754,10 +1772,10 @@ final class WorkspaceManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard let self else { return }
             self.eventSaves[id] = nil
-            let runsSnapshot = self.runs
+            let runsSnapshot = self.runsLoaded ? self.runs : nil
             if let list = self.events[id] {
                 self.store.saveEventsAsync(id, list, runs: runsSnapshot)
-            } else {
+            } else if let runsSnapshot {
                 self.store.saveRunsAsync(runsSnapshot)
             }
         }

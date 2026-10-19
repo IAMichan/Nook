@@ -12,14 +12,15 @@ import Speech
 @MainActor
 final class WakeWordService {
     var onWake: (() -> Void)?
+    /// The microphone could not be started after `start()` returned; listening is off again.
+    var onError: ((String) -> Void)?
     /// The user turned it on (it may be paused for now).
     private(set) var isRunning = false
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
-    private let engine = AVAudioEngine()
+    private let audio = WakeAudio()
     private let gate = WakeGate()
     private var task: SFSpeechRecognitionTask?
-    private var hasTap = false
     private var paused = false
     private var observers: [NSObjectProtocol] = []
     /// Each speech stretch gets an incremented generation; late results of an older one are ignored.
@@ -46,7 +47,7 @@ final class WakeWordService {
         }
         isRunning = true
         observePause()
-        if shouldPause { paused = true } else { try listen() }
+        if shouldPause { paused = true } else { listen(reportFailure: true) }
     }
 
     func stop() {
@@ -55,27 +56,28 @@ final class WakeWordService {
         paused = false
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
         observers = []
-        teardown()
+        // Wait for the microphone to be released: voice input may start right after.
+        teardown(wait: true)
     }
 
     // MARK: Listening for speech
 
-    private func listen() throws {
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        if hasTap { input.removeTap(onBus: 0) }
-        let gate = self.gate
-        gate.reset()
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
-            switch gate.consume(buffer) {
+    /// Starts the microphone off the main thread (see `WakeAudio`).
+    private func listen(reportFailure: Bool) {
+        audio.start(gate: gate, onEvent: { [weak self] event in
+            switch event {
             case .start: Task { @MainActor in self?.speechStarted() }
             case .end: Task { @MainActor in self?.speechEnded() }
             case .none: break
             }
-        }
-        hasTap = true
-        engine.prepare()
-        try engine.start()
+        }, failed: { [weak self] error in
+            let message = error.localizedDescription
+            Task { @MainActor in
+                guard let self, self.isRunning, !self.paused else { return }
+                self.stop()
+                if reportFailure { self.onError?(message) }
+            }
+        })
     }
 
     /// Someone speaks: recognize this stretch, with the moment before it.
@@ -107,12 +109,8 @@ final class WakeWordService {
         gate.detach()?.endAudio()
     }
 
-    private func teardown() {
-        if engine.isRunning { engine.stop() }
-        if hasTap {
-            engine.inputNode.removeTap(onBus: 0)
-            hasTap = false
-        }
+    private func teardown(wait: Bool = false) {
+        audio.stop(wait: wait)
         gate.detach()?.endAudio()
         task?.cancel()
         task = nil
@@ -164,7 +162,7 @@ final class WakeWordService {
     private func resume() {
         guard isRunning, paused, !shouldPause else { return }
         paused = false
-        do { try listen() } catch { stop() }
+        listen(reportFailure: false)
     }
 
     // MARK: Matching
@@ -184,6 +182,44 @@ final class WakeWordService {
         recognizer.recognitionTask(with: request) { result, error in
             handler(result?.bestTranscription.formattedString, (result?.isFinal ?? false) || error != nil)
         }
+    }
+}
+
+/// The microphone: AVAudioEngine is created, started and stopped on its own serial queue. Starting the audio hardware can
+/// take hundreds of milliseconds, and that should hold up neither launching Nook nor waking the screen.
+private final class WakeAudio: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "nl.imdigital.nook.wakeword.audio", qos: .userInitiated)
+    /// Only touched on `queue`.
+    private var engine: AVAudioEngine?
+    private var hasTap = false
+
+    func start(gate: WakeGate, onEvent: @escaping @Sendable (EnergyVAD.Event) -> Void, failed: @escaping @Sendable (Error) -> Void) {
+        queue.async {
+            let engine = self.engine ?? AVAudioEngine()
+            self.engine = engine
+            let input = engine.inputNode
+            let format = input.outputFormat(forBus: 0)
+            if self.hasTap { input.removeTap(onBus: 0) }
+            gate.reset()
+            input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
+                onEvent(gate.consume(buffer))
+            }
+            self.hasTap = true
+            engine.prepare()
+            do { try engine.start() } catch { failed(error) }
+        }
+    }
+
+    func stop(wait: Bool) {
+        let work = {
+            guard let engine = self.engine else { return }
+            if engine.isRunning { engine.stop() }
+            if self.hasTap {
+                engine.inputNode.removeTap(onBus: 0)
+                self.hasTap = false
+            }
+        }
+        if wait { queue.sync(execute: work) } else { queue.async(execute: work) }
     }
 }
 

@@ -210,23 +210,31 @@ final class AppModel: ObservableObject {
     @Published private(set) var attachmentName: String?
 
     private init() {
-        hub.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        nowPlaying.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        connectors.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        codex.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        antigravityUsage.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        history.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        profiles.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
+        // connector, history, usage, the first screen read), so they are combined: at most one redraw per frame or so.
+        let children: [AnyPublisher<Void, Never>] = [
+            hub.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            nowPlaying.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            settings.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            connectors.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            codex.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            antigravityUsage.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            history.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            profiles.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            screenContext.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            thinkAlong.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            memory.objectWillChange.map { _ in () }.eraseToAnyPublisher()
+        ]
+        Publishers.MergeMany(children)
+            .throttle(for: .milliseconds(33), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
             guard let self else { return }
             self.history.profiles = all
             self.history.refresh(minimumInterval: 0)
         }.store(in: &bag)
-        screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
-        memory.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // Tracks whether any conversation is active (for orb mood and idle notch state); chat handles messages directly.
         chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
             .receive(on: RunLoop.main)
@@ -287,6 +295,11 @@ final class AppModel: ObservableObject {
 
         // Wake word: only listen when enabled, and pause while Nook is already listening.
         wake.onWake = { [weak self] in self?.toggleVoice() }
+        wake.onError = { [weak self] message in
+            guard let self else { return }
+            self.settings.wakeWord = false
+            self.viewModel.present(self.errorCard(message))
+        }
         settings.$wakeWord
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateWakeWord() }
