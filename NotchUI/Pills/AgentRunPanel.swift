@@ -27,6 +27,11 @@ struct AgentRunPanel: View {
     @State private var skills: [Skill] = []
     /// A queued message that is being edited in the composer, and the draft that waits behind it.
     @State private var editingQueued: UUID?
+    @State private var scroll = ScrollModel()
+    @State private var atEnd = true
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var findIndex: Int?
     @StateObject private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
@@ -298,6 +303,9 @@ struct AgentRunPanel: View {
 
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
+        let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
+        let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
+        let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -307,9 +315,13 @@ struct AgentRunPanel: View {
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    ForEach(TimelinePresentation.blocks(events, active: run.status.isActive)) { block in
+                    ForEach(blocks) { block in
                         TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                            AnyView(eventRow(event))
+                            AnyView(
+                                eventRow(event)
+                                    .padding(.vertical, current == event.id ? 4 : 0)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                            )
                         }
                         .id(block.id)
                     }
@@ -319,7 +331,7 @@ struct AgentRunPanel: View {
                                         accent: run.provider.color)
                     }
                     if run.status == .failed || run.status == .stopped {
-                        recovery(run)
+                        recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -327,17 +339,87 @@ struct AgentRunPanel: View {
             }
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Scrolling away from the end stops the following until you come back (scroll anchoring).
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
+            } action: { _, nowAtEnd in
+                atEnd = nowAtEnd
+                if nowAtEnd { scroll.reachedEnd() }
+            }
+            .onScrollPhaseChange { _, phase in
+                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+            }
+            .overlay(alignment: .bottom) {
+                if scroll.mode == .free, !atEnd, !finding {
+                    TimelineToEndPill {
+                        scroll.jumpedToEnd()
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+            .overlay(alignment: .top) {
+                if finding {
+                    TimelineFindBar(query: $findQuery, result: found, current: findIndex,
+                                    previous: { stepFind(found, blocks: blocks, proxy: proxy, forward: false) },
+                                    next: { stepFind(found, blocks: blocks, proxy: proxy, forward: true) },
+                                    close: closeFind)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
+                }
+            }
+            .background {
+                Button("") { openFind() }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
+            }
+            .onChange(of: findQuery) { _, _ in
+                findIndex = nil
+                let fresh = TimelineSearch.search(events, query: findQuery)
+                if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
+            }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: events.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                if scroll.shouldFollowEnd { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: events.last?.text.count ?? 0) { _, _ in
-                if run.status.isActive { proxy.scrollTo("bottom", anchor: .bottom) }
+                if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            // You sent something: it is the newest thing and follows again.
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
+                scroll.jumpedToEnd()
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }
 
-    private func recovery(_ run: WorkspaceRun) -> some View {
+    // MARK: Find
+
+    private func openFind() {
+        finding = true
+        scroll.findStarted()
+    }
+
+    private func closeFind() {
+        finding = false
+        findQuery = ""
+        findIndex = nil
+        scroll.findEnded()
+    }
+
+    private func stepFind(_ found: TimelineSearchResult, blocks: [TimelineBlock], proxy: ScrollViewProxy, forward: Bool) {
+        guard let target = forward ? found.next(after: findIndex) : found.previous(before: findIndex) else { return }
+        findIndex = target
+        reveal(found, at: target, blocks: blocks, proxy: proxy)
+    }
+
+    /// Opens the groups around the match, then scrolls to it.
+    private func reveal(_ found: TimelineSearchResult, at index: Int, blocks: [TimelineBlock], proxy: ScrollViewProxy) {
+        guard found.matches.indices.contains(index) else { return }
+        let id = found.matches[index].eventID
+        for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
+        DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) } }
+    }
+
+    private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
         HStack(spacing: 10) {
             Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
                 .foregroundStyle(run.status.color)
@@ -351,6 +433,13 @@ struct AgentRunPanel: View {
                     .lineLimit(3)
             }
             Spacer(minLength: 6)
+            if let failure = FailureJump.firstFailure(in: events) {
+                NookGhostButton(title: tr("timeline.goToFailure")) {
+                    scroll.userScrolled()
+                    for key in TimelineContainers.keys(blocks)[failure] ?? [] { openBlocks.insert(key) }
+                    DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(failure, anchor: .center) } }
+                }
+            }
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
         }
         .padding(10)

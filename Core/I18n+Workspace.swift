@@ -6,6 +6,13 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "timeline.search.placeholder": "Zoek in sessie",
+        "timeline.search.previous": "Vorige",
+        "timeline.search.next": "Volgende",
+        "timeline.search.none": "Niets gevonden",
+        "timeline.search.tooLong": "Te lang",
+        "timeline.toEnd": "Naar einde",
+        "timeline.goToFailure": "Ga naar fout",
         "inbox.search.placeholder": "Zoek sessies",
         "inbox.noResults": "Geen sessies gevonden",
         "inbox.section.working": "Aan het werk (%ld)",
@@ -668,6 +675,13 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "timeline.search.placeholder": "Find in session",
+        "timeline.search.previous": "Previous",
+        "timeline.search.next": "Next",
+        "timeline.search.none": "No matches",
+        "timeline.search.tooLong": "Too long",
+        "timeline.toEnd": "Scroll to end",
+        "timeline.goToFailure": "Go to failure",
         "inbox.search.placeholder": "Search sessions",
         "inbox.noResults": "No sessions found",
         "inbox.section.working": "Working (%ld)",
@@ -1330,6 +1344,13 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "timeline.search.placeholder": "In Sitzung suchen",
+        "timeline.search.previous": "Zurück",
+        "timeline.search.next": "Weiter",
+        "timeline.search.none": "Keine Treffer",
+        "timeline.search.tooLong": "Zu lang",
+        "timeline.toEnd": "Zum Ende",
+        "timeline.goToFailure": "Zum Fehler",
         "inbox.search.placeholder": "Sitzungen suchen",
         "inbox.noResults": "Keine Sitzungen gefunden",
         "inbox.section.working": "In Arbeit (%ld)",
