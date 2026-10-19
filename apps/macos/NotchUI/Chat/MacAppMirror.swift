@@ -380,7 +380,7 @@ final class MacAppMirror: ObservableObject {
     /// popover of the app itself. Nook's own windows and other apps' overlays (above normal windows) are looked past.
     private static func isFront(_ pid: pid_t, at point: CGPoint) -> Bool {
         let own = ProcessInfo.processInfo.processIdentifier
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
         for info in list {
             guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != own,
                   owner == pid || (info[kCGWindowLayer as String] as? Int) == 0,
