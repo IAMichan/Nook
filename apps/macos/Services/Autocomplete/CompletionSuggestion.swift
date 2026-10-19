@@ -225,6 +225,50 @@ enum CompletionTextAnalysis {
         return (word, separator)
     }
 
+    /// The last whole word before the cursor that is worth checking for a typo, and the text after it: the separator just
+    /// typed ("gedaam "), punctuation and a space ("gedaam, "), or that and the start of the next word ("gedaam en"). So a
+    /// fix is still offered while the next word is being typed, instead of only in the moment between the two.
+    static func recentlyFinishedWord(in text: String) -> (word: String, tail: String)? {
+        let partial = text.reversed().prefix { $0.isLetter }.count
+        guard partial > 0 else { return finishedWord(endingAt: text) }
+        let head = String(text.dropLast(partial))
+        guard partial <= 20, head.last == " ", let found = finishedWord(endingAt: head) else { return nil }
+        return (found.word, found.tail + String(text.suffix(partial)))
+    }
+
+    /// A word followed by one separator, or by punctuation and a space.
+    private static func finishedWord(endingAt text: String) -> (word: String, tail: String)? {
+        if let (word, separator) = justCompletedWord(in: text) { return (word, String(separator)) }
+        guard text.last == " ", let mark = text.dropLast().last, ",.!?;:".contains(mark),
+              let found = justCompletedWord(in: String(text.dropLast())) else { return nil }
+        return (found.word, String(mark) + " ")
+    }
+
+    /// Whether a spell checker's guess is a believable fix for `word`: one word, and at most one change for a short word or two
+    /// for a longer one (a letter added, left out, replaced, or two swapped). Guesses further away change what was meant.
+    static func isLikelyFix(_ candidate: String, for word: String) -> Bool {
+        guard !candidate.isEmpty, candidate != word, candidate.allSatisfy({ $0.isLetter || "'’-".contains($0) }) else { return false }
+        return editDistance(candidate.lowercased(), word.lowercased()) <= (word.count <= 4 ? 1 : 2)
+    }
+
+    /// Damerau–Levenshtein distance (optimal string alignment): swapping two neighbouring letters counts as one change.
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        guard !a.isEmpty else { return b.count }
+        guard !b.isEmpty else { return a.count }
+        var table = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in 0...a.count { table[i][0] = i }
+        for j in 0...b.count { table[0][j] = j }
+        for i in 1...a.count {
+            for j in 1...b.count {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                table[i][j] = min(table[i - 1][j] + 1, table[i][j - 1] + 1, table[i - 1][j - 1] + cost)
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] { table[i][j] = min(table[i][j], table[i - 2][j - 2] + 1) }
+            }
+        }
+        return table[a.count][b.count]
+    }
+
     /// A selection worth offering other words for: one word, no line breaks.
     static func isSingleWord(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -255,6 +299,17 @@ struct CompletionOptions: Equatable {
         minFirstProbability = 0.05 + 0.3 * caution
         minProbability = 0.02 + 0.13 * caution
         minSequenceProbability = 0.01 + 0.09 * caution
+    }
+
+    /// For the suggestion after one that was taken whole. Every suggestion ends where the model got unsure, so the next one
+    /// starts at an unsure point: with the usual bar the chain stopped after two or three suggestions. The user is writing
+    /// along with the model, so it may go on with less certainty.
+    func continuing() -> CompletionOptions {
+        var options = self
+        options.minFirstProbability *= 0.4
+        options.minProbability *= 0.6
+        options.minSequenceProbability *= 0.4
+        return options
     }
 }
 

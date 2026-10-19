@@ -203,6 +203,34 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertFalse(CompletionTextAnalysis.isSingleWord("twee woorden"))
     }
 
+    func testRecentlyFinishedWordAlsoWhileTypingTheNext() {
+        XCTAssertEqual(CompletionTextAnalysis.recentlyFinishedWord(in: "ik heb het gedaam ")?.tail, " ")
+        let typing = CompletionTextAnalysis.recentlyFinishedWord(in: "ik heb het gedaam en")
+        XCTAssertEqual(typing?.word, "gedaam")
+        XCTAssertEqual(typing?.tail, " en")
+        let comma = CompletionTextAnalysis.recentlyFinishedWord(in: "bedankt voor je bericjt, ik")
+        XCTAssertEqual(comma?.word, "bericjt")
+        XCTAssertEqual(comma?.tail, ", ik")
+        XCTAssertEqual(CompletionTextAnalysis.recentlyFinishedWord(in: "thanks,")?.word, "thanks")
+        XCTAssertEqual(CompletionTextAnalysis.recentlyFinishedWord(in: "nog bezig")?.word, "nog")
+        XCTAssertNil(CompletionTextAnalysis.recentlyFinishedWord(in: "bezig"), "the first word is not finished yet")
+        XCTAssertNil(CompletionTextAnalysis.recentlyFinishedWord(in: "ik ben bij NASA en"))
+        XCTAssertNil(CompletionTextAnalysis.recentlyFinishedWord(in: "gedaam en nog"), "only the word right before the one being typed")
+    }
+
+    func testLikelyFixesStayCloseToTheWord() {
+        XCTAssertEqual(CompletionTextAnalysis.editDistance("gedaam", "gedaan"), 1)
+        XCTAssertEqual(CompletionTextAnalysis.editDistance("teh", "the"), 1, "a swap is one change")
+        XCTAssertEqual(CompletionTextAnalysis.editDistance("", "abc"), 3)
+        XCTAssertTrue(CompletionTextAnalysis.isLikelyFix("gedaan", for: "gedaam"))
+        XCTAssertTrue(CompletionTextAnalysis.isLikelyFix("bericht", for: "bericjt"))
+        XCTAssertTrue(CompletionTextAnalysis.isLikelyFix("receive", for: "recieve"))
+        XCTAssertFalse(CompletionTextAnalysis.isLikelyFix("gedaam", for: "gedaam"))
+        XCTAssertFalse(CompletionTextAnalysis.isLikelyFix("ge daan", for: "gedaam"))
+        XCTAssertFalse(CompletionTextAnalysis.isLikelyFix("hut", for: "hoi"), "two changes in a short word is another word")
+        XCTAssertFalse(CompletionTextAnalysis.isLikelyFix("morgenavond", for: "morgen"))
+    }
+
     // MARK: Emoji
 
     func testEmojiQueryAndDutchNames() {
@@ -434,6 +462,16 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertGreaterThan(careful.minSequenceProbability, eager.minSequenceProbability)
         XCTAssertGreaterThan(CompletionOptions().minFirstProbability, 0.15)
         XCTAssertFalse(CompletionOptions().heal)
+    }
+
+    func testFollowUpSuggestionsMayBeLessSure() {
+        let usual = CompletionOptions(maxWords: 8, eagerness: 0.5)
+        let next = usual.continuing()
+        XCTAssertLessThan(next.minFirstProbability, usual.minFirstProbability)
+        XCTAssertLessThan(next.minProbability, usual.minProbability)
+        XCTAssertLessThan(next.minSequenceProbability, usual.minSequenceProbability)
+        XCTAssertEqual(next.maxWords, usual.maxWords)
+        XCTAssertGreaterThan(CompletionOptions(maxWords: 8, eagerness: 1).continuing().minFirstProbability, 0)
     }
 
     func testScreenTextKeepsSentencesNotButtons() {

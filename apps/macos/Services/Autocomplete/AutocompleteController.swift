@@ -52,12 +52,27 @@ final class AutocompleteController: ObservableObject {
         var anchor: String
         /// Until its first word is taken (for the statistics).
         var fresh = true
+        /// The field and app it was made for, to write the next suggestion ahead (see `upcoming`).
+        var snapshot: AutocompleteFieldSnapshot
+        var app: NSRunningApplication
+        var after: String
+        var maxWords: Int
+    }
+
+    /// The suggestion after the one on screen, written while that one is on screen (see `writeAhead`).
+    private struct Upcoming {
+        var app: String?
+        var before: String
+        var task: Task<CompletionResult?, Never>
+        /// Set once the model is done: taking the last word then shows it at once.
+        var done = false
+        var result: CompletionResult?
     }
 
     private enum Proposal {
         case completion(Completion)
-        /// Replace the last `delete` characters with `insert` (typo fix).
-        case replacement(delete: Int, insert: String)
+        /// Replace the last `delete` characters with `insert` (typo fix of `word`).
+        case replacement(delete: Int, insert: String, word: String)
         /// The emoji picker after a colon: the arrow keys move through `choices`, Tab or Return takes the selected one.
         case emoji(EmojiPicker)
     }
@@ -89,7 +104,7 @@ final class AutocompleteController: ObservableObject {
     private var streaming: Int?
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
-    private var upcoming: (app: String?, before: String, task: Task<CompletionResult?, Never>)?
+    private var upcoming: Upcoming?
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
@@ -100,6 +115,9 @@ final class AutocompleteController: ObservableObject {
     private var refreshWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
+    /// Words (lowercased) the typo check leaves alone: the user's own vocabulary, and fixes turned down with Escape.
+    private var knownWords: Set<String> = []
+    private var ignoredTypos: Set<String> = []
     private var batteryCheck: (date: Date, onBattery: Bool)?
 
     private var tap: CFMachPort?
@@ -394,7 +412,7 @@ final class AutocompleteController: ObservableObject {
                     settle()
                     return false
                 }
-            case .replacement(let delete, let insert):
+            case .replacement(let delete, let insert, let word):
                 if acceptWord || acceptAll {
                     dismiss()
                     AutocompleteTyper.replace(last: delete, with: insert)
@@ -402,6 +420,8 @@ final class AutocompleteController: ObservableObject {
                     scheduleRefresh()
                     return true
                 }
+                // Escape: the word is meant this way. Not offered again (it would come back with every letter of the next word).
+                if plainEscape { ignoredTypos.insert(word.lowercased()) }
             case .emoji(var picker):
                 if plainEscape { dismiss(); return true }
                 if key.modifiers == 0, let step = emojiStep(key.code) {
@@ -456,18 +476,46 @@ final class AutocompleteController: ObservableObject {
         let text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
         AutocompleteTyper.type(text)
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
+        // Taken while the model was still writing it: the rest of that stream is dropped (the text changed), so nothing would
+        // write ahead. Start that now, from what is on screen.
+        let wasStreaming = streaming != nil
+        streaming = nil
         if rest.suggestion.isEmpty {
+            let anchor = rest.anchor + text
+            if continueAtOnce(after: anchor, typed: text, from: rest) { return }
             proposal = nil
             overlay.hide()
-            followUp(after: rest.anchor + text)
+            followUp(after: anchor)
         } else {
             var rest = rest
             rest.anchor += text
             rest.fresh = false
             proposal = .completion(rest)
+            if wasStreaming { writeAhead(for: rest) }
             overlay.advance(over: text, remaining: rest.suggestion.remaining)
             settle()
         }
+    }
+
+    /// After the last word of a suggestion is taken: when the next one is already written (see `upcoming`), show it right
+    /// away, moved past the word just typed as if the app had drawn it already. `settle()` then puts it where the app shows
+    /// the cursor. No pause, no read first, no model call: Tab, Tab, Tab goes on as fast as you press it.
+    private func continueAtOnce(after anchor: String, typed: String, from previous: Completion) -> Bool {
+        guard let ahead = upcoming, ahead.done, ahead.app == previous.app.bundleIdentifier, ahead.before == anchor, let result = ahead.result,
+              let suggestion = CompletionSuggestion.make(raw: result.text, before: anchor, after: previous.after, maxWords: previous.maxWords,
+                                                         truncated: result.truncated, unfinished: result.unfinished),
+              overlay.advance(over: typed, remaining: suggestion.remaining) else { return false }
+        var next = previous
+        next.suggestion = suggestion
+        next.anchor = anchor
+        next.fresh = true
+        next.snapshot.before = anchor
+        upcoming = nil
+        proposal = .completion(next)
+        store.recordShown()
+        writeAhead(for: next)
+        settle()
+        return true
     }
 
     private func dismiss() {
@@ -524,7 +572,8 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
+    /// - Parameter continuing: right after a whole suggestion was taken (see `CompletionOptions.continuing()`).
+    private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool = false) {
         lastSite = snapshot.site
         guard prefs.isEnabled(onSite: snapshot.site) else { return }
         record(snapshot, app: app.bundleIdentifier)
@@ -541,10 +590,12 @@ final class AutocompleteController: ObservableObject {
             return
         }
 
-        if prefs.typos, let fix = AutocompleteTypos.fix(for: snapshot.before) {
+        // Text Nook just typed itself is the model's own spelling: no need to check it.
+        if prefs.typos, !continuing, let fix = AutocompleteTypos.fix(for: snapshot.before, known: knownWords.union(ignoredTypos)),
+           prefs.showTypoFixes || !fix.typedOn {
             // Never build a suggestion on a likely typo.
             if prefs.showTypoFixes, let caret = snapshot.caret {
-                proposal = .replacement(delete: fix.deleteCount, insert: fix.replacement)
+                proposal = .replacement(delete: fix.deleteCount, insert: fix.replacement, word: fix.original)
                 let text = NSMutableAttributedString(string: fix.original, attributes: [
                     .strikethroughStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: NSColor.secondaryLabelColor,
                 ])
@@ -554,10 +605,10 @@ final class AutocompleteController: ObservableObject {
             return
         }
 
-        requestCompletion(for: snapshot, in: app)
+        requestCompletion(for: snapshot, in: app, continuing: continuing)
     }
 
-    private func requestCompletion(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
+    private func requestCompletion(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool) {
         let bundleID = app.bundleIdentifier
         let midLine = prefs.midLine(inApp: bundleID)
         let policy = CompletionPolicy(midLine: midLine)
@@ -565,6 +616,7 @@ final class AutocompleteController: ObservableObject {
         var maxWords = prefs.maxWords
         if prefs.shorterOnBattery, onBattery { maxWords = min(maxWords, 4) }
         var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        if continuing { options = options.continuing() }
         options.heal = Self.midWord(snapshot.before)
         let prompt = self.prompt(for: snapshot, in: app)
         let token = readToken
@@ -610,28 +662,34 @@ final class AutocompleteController: ObservableObject {
             if final { streaming = nil }
             return
         }
-        proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before))
+        proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords))
         streaming = final ? nil : token
         show(suggestion, for: snapshot, in: app)
         if first { store.recordShown() }
-        if final { writeAhead(for: snapshot, in: app, maxWords: maxWords) }
+        if final, case .completion(let shown) = proposal { writeAhead(for: shown) }
     }
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
-    private func writeAhead(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, maxWords: Int) {
-        guard case .completion(let completion) = proposal, let model = activeModel else { return }
+    private func writeAhead(for completion: Completion) {
+        guard let model = activeModel else { return }
         let rest = completion.suggestion.remaining
         let typed = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(rest, after: completion.anchor.last) : rest
-        var next = snapshot
+        var next = completion.snapshot
         next.before = completion.anchor + typed
-        let prompt = self.prompt(for: next, in: app)
-        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
-        options.heal = Self.midWord(next.before)
+        let before = next.before
+        let prompt = self.prompt(for: next, in: completion.app)
+        var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness).continuing()
+        options.heal = Self.midWord(before)
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
-            return await completer.complete(prompt: prompt, options: options, partial: nil)
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+            if upcoming?.before == before {
+                upcoming?.done = true
+                upcoming?.result = result
+            }
+            return result
         }
-        upcoming = (app.bundleIdentifier, next.before, task)
+        upcoming = Upcoming(app: completion.app.bundleIdentifier, before: before, task: task)
     }
 
     /// The cursor stands right after a letter or digit: the model has to finish that word first (see `CompletionOptions.heal`).
@@ -648,7 +706,7 @@ final class AutocompleteController: ObservableObject {
         read(in: app) { [weak self] snapshot in
             guard let self else { return }
             if let snapshot, snapshot.before == anchor {
-                self.propose(for: snapshot, in: app)
+                self.propose(for: snapshot, in: app, continuing: true)
             } else if attempt < self.settleAttempts {
                 let token = self.readToken
                 DispatchQueue.main.asyncAfter(deadline: .now() + self.settleInterval) {
@@ -921,7 +979,10 @@ final class AutocompleteController: ObservableObject {
 
     /// Hands the words the user writes often to the model.
     func applyPersonalization() {
-        completer?.setPersonalization(words: prefs.learn ? store.samples.vocabulary() : [:], strength: prefs.learn ? prefs.personalStrength : 0)
+        let vocabulary = prefs.learn ? store.samples.vocabulary() : [:]
+        // Words the user writes again and again are theirs (names, jargon, slang), not typos.
+        knownWords = Set(vocabulary.keys.map { $0.lowercased() })
+        completer?.setPersonalization(words: vocabulary, strength: prefs.learn ? prefs.personalStrength : 0)
     }
 
     // MARK: The model
