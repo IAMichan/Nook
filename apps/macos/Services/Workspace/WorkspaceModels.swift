@@ -198,6 +198,12 @@ struct TurnUsage: Equatable, Sendable {
     var contextTokens: Int?
     var contextWindow: Int?
     var durationSeconds: Double?
+
+    /// What this turn cost in tokens: new input, what went into the cache, and output. Cache reads are left out: every
+    /// call in a turn reads the whole context again, so counting them shows hundreds of thousands for one short question.
+    var ownTokens: Int {
+        (inputTokens ?? 0) + (cacheWriteTokens ?? 0) + (outputTokens ?? 0)
+    }
 }
 
 /// A single session in the workspace. Stored in `RunStore`, persisted across restarts.

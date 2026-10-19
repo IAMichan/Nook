@@ -1200,7 +1200,7 @@ final class WorkspaceManager: ObservableObject {
     func resultLine(_ usage: TurnUsage, denials: Int) -> String {
         var parts: [String] = []
         if let seconds = usage.durationSeconds { parts.append(AgentPathFormat.duration(seconds)) }
-        let tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+        let tokens = usage.ownTokens
         if tokens > 0 { parts.append(TokenTally.format(tokens) + " tokens") }
         if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }
