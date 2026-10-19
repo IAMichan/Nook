@@ -216,6 +216,11 @@ struct PullRequestsPanel: View {
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
     /// The pull request shown in full, with the account it is listed under.
     @State private var opened: (account: String, item: PullRequestItem)?
+    /// Search and filters; kept while a pull request is open, so going back shows the same list.
+    @State private var filter = PullRequestFilter()
+    @FocusState private var searching: Bool
+    /// The accounts with only the pull requests that match the filter.
+    private var shown: [AccountPullRequests] { accounts.map(filter.apply) }
 
     var body: some View {
         if let opened {
@@ -245,13 +250,23 @@ struct PullRequestsPanel: View {
             } else if store.loaded && accounts.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
                 empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(accounts) { account in
-                            accountSection(account, showName: accounts.count > 1)
+                filterBar
+                if filter.isActive && shown.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
+                    empty(title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
+                        filter = PullRequestFilter()
+                    }))
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForEach(shown) { account in
+                                // An account without matches stays out of a filtered list, unless it has an error to show.
+                                if !filter.isActive || !account.mine.isEmpty || !account.reviews.isEmpty || account.error != nil {
+                                    accountSection(account, showName: accounts.count > 1)
+                                }
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -266,6 +281,78 @@ struct PullRequestsPanel: View {
         .onChange(of: gitHubSignIn.phase) { _, phase in
             if phase == .done { Task { await store.refresh(force: true) } }
         }
+    }
+
+    // MARK: Search and filters
+
+    private var filterBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+                TextField(tr("agents.pulls.search"), text: $filter.query)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(NookTheme.paper)
+                    .focused($searching)
+                    .onExitCommand { filter.query = ""; searching = false }
+                if !filter.query.isEmpty {
+                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tr("button.clear"))
+                }
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+            .background {
+                // ⌘F jumps to the search field.
+                Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
+            }
+
+            HStack(spacing: 4) {
+                ForEach(PullRequestFilter.Scope.allCases) { scope in
+                    filterChip(tr("agents.pulls.scope." + scope.rawValue), selected: filter.scope == scope) { filter.scope = scope }
+                }
+                Spacer(minLength: 6)
+                Menu {
+                    ForEach(PullRequestFilter.Status.allCases) { status in
+                        Button {
+                            filter.status = status
+                        } label: {
+                            if filter.status == status {
+                                Label(tr("agents.pulls.status." + status.rawValue), systemImage: "checkmark")
+                            } else {
+                                Text(tr("agents.pulls.status." + status.rawValue))
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(tr("agents.pulls.status." + filter.status.rawValue))
+                    }
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(filter.status == .any ? NookTheme.textSecondary : NookTheme.paper)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        }
+    }
+
+    private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(selected ? NookTheme.paper : NookTheme.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(selected ? NookTheme.smoke : Color.white.opacity(0.04)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
