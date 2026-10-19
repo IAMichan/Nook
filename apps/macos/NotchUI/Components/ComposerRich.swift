@@ -108,7 +108,7 @@ final class ComposerModel: ObservableObject {
                 // "@open WhatsApp" as a line to choose: Return puts it in the box, Return again opens it.
                 let matches = EmbeddedAppCatalog.matching(EmbeddedAppCatalog.mentionQuery(found.query))
                 let rows = matches.compactMap { match in config.apps.first { $0.id == match.id } }
-                return publish(rows.prefix(8).map { app in
+                return publish(rows.prefix(10).map { app in
                     ComposerSuggestion(id: "app:" + app.id, title: "@open " + app.title, detail: tr("embedded.mentionDetail"), symbol: app.symbol,
                                        payload: .command(ComposerCommand(name: app.id, insertion: "@open " + app.title, action: .insert)))
                 })
