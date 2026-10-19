@@ -39,7 +39,7 @@ extension WorkspaceManager {
     }
 
     /// What this session asks of you right now (see `AgentAttention`).
-    func attention(_ run: WorkspaceRun, unseen: Bool, settled: Bool = false, now: Date = Date()) -> AgentAttention {
+    func attention(_ run: WorkspaceRun, unseen: Bool, settled: Bool = false, includeSnooze: Bool = true, now: Date = Date()) -> AgentAttention {
         var input = AgentAttention.Input(
             status: run.status,
             pendingApprovals: (approvals[run.id] ?? []).count,
@@ -49,6 +49,7 @@ extension WorkspaceManager {
             settled: settled
         )
         let base = AgentAttention.resolve(input)
+        guard includeSnooze else { return base }
         input.settled = settled || SnoozePolicy.isSnoozed(until: run.snoozedUntil, since: run.snoozedAt, attention: base,
                                                           finishedAt: run.status.isActive ? nil : run.updatedAt, now: now)
         return AgentAttention.resolve(input)

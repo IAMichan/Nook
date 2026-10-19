@@ -8,7 +8,6 @@ import AppKit
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    @State private var showFinished = false
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
 
@@ -181,60 +180,8 @@ struct AgentsTab: View {
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
 
         return TimelineView(.periodic(from: .now, by: 30)) { context in
-            // Marked as finished by you, or done and quiet for ten minutes: the chat moves down. Not while the agent works.
-            let moved = running.filter { entry in
-                guard !entry.isBusy else { return false }
-                if entry.snoozed { return true }
-                // A process Nook only sees (id "proc-…") is running in a terminal: never finished by itself.
-                let idle = (entry.status == .idle || entry.status == .finished) && !entry.id.hasPrefix("proc-")
-                return finishedMarks.isFinished(key: entry.finishKey, idle: idle, lastActive: entry.started, now: context.date)
-            }
-            let active = running.filter { entry in !moved.contains { $0.id == entry.id } }
-            let movedKeys = Set(moved.map(\.finishKey))
-            let finished = moved.map { $0.markedFinished() } + past.map { item($0) }.filter { !movedKeys.contains($0.finishKey) }
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(active) { entry in
-                        AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
-                            viewModel.selectedAgentID = entry.id
-                        }
-                        .contextMenu { finishMenu(entry, finished: false) }
-                    }
-                    if active.isEmpty && finished.isEmpty {
-                        Text(app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(12)
-                    }
-                    if !finished.isEmpty {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.18)) { showFinished.toggle() }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(tr("agents.finishedCount", finished.count))
-                                Image(systemName: showFinished ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 8.5, weight: .bold))
-                                Spacer(minLength: 0)
-                            }
-                            .font(NookTheme.font(12, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, active.isEmpty ? 0 : 6)
-                        if showFinished {
-                            ForEach(finished) { entry in
-                                AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
-                                    viewModel.selectedAgentID = entry.id
-                                }
-                                .contextMenu { finishMenu(entry, finished: true) }
-                            }
-                        }
-                    }
-                }
-            }
+            AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+                           current: current, now: context.date) { viewModel.selectedAgentID = $0 }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
@@ -247,38 +194,6 @@ struct AgentsTab: View {
         .onChange(of: current) { old, new in
             visits.visit(old)
             visits.visit(new)
-        }
-    }
-
-    /// The finish/reopen action of a row, in its context menu.
-    @ViewBuilder
-    private func finishMenu(_ entry: AgentListItem, finished: Bool) -> some View {
-        snoozeMenu(entry)
-        if entry.isBusy {
-            Button(tr("agents.finish.mark")) {}.disabled(true)
-        } else if finished {
-            // Earlier sessions from transcripts are finished by nature; only chats that were running can be reopened.
-            if !entry.id.hasPrefix("past:") {
-                Button(tr("agents.finish.reopen")) { finishedMarks.reopenByUser(entry.finishKey) }
-            }
-        } else {
-            Button(tr("agents.finish.mark")) { finishedMarks.mark(entry.finishKey) }
-        }
-    }
-
-    /// Snooze or end a snooze of a session Nook runs (not for sessions it only sees).
-    @ViewBuilder
-    private func snoozeMenu(_ entry: AgentListItem) -> some View {
-        if entry.id.hasPrefix("run:"), let uuid = UUID(uuidString: String(entry.id.dropFirst(4))), let run = app.workspace.run(uuid) {
-            if let until = run.snoozedUntil, until > Date() {
-                Button(tr("agents.snooze.cancel")) { app.workspace.unsnooze(uuid) }
-            } else if !entry.isBusy {
-                Menu(tr("agents.snooze.menu")) {
-                    Button(tr("agents.snooze.hour")) { app.workspace.snooze(uuid, .hour) }
-                    Button(tr("agents.snooze.evening")) { app.workspace.snooze(uuid, .evening) }
-                    Button(tr("agents.snooze.tomorrow")) { app.workspace.snooze(uuid, .tomorrow) }
-                }
-            }
         }
     }
 
@@ -309,7 +224,8 @@ struct AgentsTab: View {
 
     private func item(_ run: WorkspaceRun) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
-        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt))
+        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
+                                                includeSnooze: false)
         let status: AgentListItem.Status
         switch attention {
         case .approval: status = .waiting
@@ -332,7 +248,8 @@ struct AgentsTab: View {
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
             unseen: attention == .ready,
-            snoozed: run.status != .stopped && attention == .finished && run.snoozedUntil != nil
+            snoozedUntil: run.snoozedUntil,
+            snoozedAt: run.snoozedAt
         )
     }
 
@@ -426,7 +343,8 @@ struct AgentListItem: Identifiable {
     /// Finished after you last looked at it: "done" in green until you open it.
     var unseen = false
     /// Snoozed by you: out of the way until the snooze ends or the session needs you.
-    var snoozed = false
+    var snoozedUntil: Date? = nil
+    var snoozedAt: Date? = nil
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -437,54 +355,155 @@ struct AgentListItem: Identifiable {
     }
 }
 
-/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath.
+/// What a row can do on hover (row actions): the right slot swaps, without shifting the layout, between the
+/// status and these buttons.
+struct AgentRowActions {
+    var pinned: Bool
+    var onPin: () -> Void
+    var settled: Bool
+    var onSettle: () -> Void
+    /// Snoozing and waking are for sessions Nook runs.
+    var onSnooze: ((SnoozePolicy.Choice) -> Void)? = nil
+    var onWake: (() -> Void)? = nil
+}
+
+/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath. A row that
+/// asks nothing of you recedes (lighter text, normal weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View {
     let item: AgentListItem
     let now: Date
     let selected: Bool
+    var receded = false
+    var pinned = false
+    var woke = false
+    /// One line, for the snoozed and settled shelves.
+    var slim = false
+    /// When a snoozed row wakes, as text ("tot 9:00").
+    var wakeLabel: String? = nil
+    var actions: AgentRowActions? = nil
     let action: () -> Void
     @State private var hovering = false
 
     private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
-    private var dimmed: Bool { item.status == .finished }
+    private var dimmed: Bool { item.status == .finished || slim }
+    private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(item.folder)
-                        .lineLimit(1)
-                        .help(AgentPathFormat.tilde(item.path))
-                    Spacer(minLength: 6)
-                    time
-                }
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textSecondary)
-
-                Text(item.title)
-                    .font(NookTheme.font(14.5, .medium))
-                    .foregroundStyle(dimmed ? NookTheme.textSecondary : NookTheme.paper)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
-                    Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 6)
-                    AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
-                        .padding(.trailing, item.account == nil ? 0 : 3)
-                }
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textTertiary)
+        ZStack(alignment: .topTrailing) {
+            Button(action: action) { content }
+                .buttonStyle(.plain)
+            if let actions {
+                hoverActions(actions)
+                    .padding(.top, slim ? 8 : 9)
+                    .padding(.trailing, 10)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
+    }
+
+    private var content: some View {
+        Group {
+            if slim { slimBody } else { fullBody }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, slim ? 8 : 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
+        .contentShape(Rectangle())
+        .opacity(restOpacity)
+    }
+
+    private var fullBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(item.folder)
+                    .lineLimit(1)
+                    .help(AgentPathFormat.tilde(item.path))
+                if pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary) }
+                Spacer(minLength: 6)
+                slot.opacity(hovering && actions != nil ? 0 : 1)
+            }
+            .font(NookTheme.font(12))
+            .foregroundStyle(receded ? NookTheme.textTertiary : NookTheme.textSecondary)
+
+            Text(item.title)
+                .font(NookTheme.font(14.5, receded ? .regular : .medium))
+                .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 6)
+                AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
+                    .padding(.trailing, item.account == nil ? 0 : 3)
+            }
+            .font(NookTheme.font(12))
+            .foregroundStyle(NookTheme.textTertiary)
+        }
+    }
+
+    private var slimBody: some View {
+        HStack(spacing: 8) {
+            AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: true, ring: background)
+            Text(item.title)
+                .font(NookTheme.font(13))
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            slot.opacity(hovering && actions != nil ? 0 : 1)
+        }
+    }
+
+    /// The right slot: the wake time of a snoozed row, "Wakker" for one that woke, otherwise the status or how long ago.
+    @ViewBuilder
+    private var slot: some View {
+        if let wakeLabel {
+            StatusBadge(state: .snoozed, detail: wakeLabel)
+        } else if woke {
+            StatusBadge(state: .woke)
+        } else {
+            time
+        }
+    }
+
+    @ViewBuilder
+    private func hoverActions(_ actions: AgentRowActions) -> some View {
+        HStack(spacing: 2) {
+            if let onSnooze = actions.onSnooze {
+                Menu {
+                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
+                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
+                    }
+                } label: {
+                    rowIcon("clock", tr("agents.snooze.menu"))
+                }
+                .composerMenu()
+            }
+            if let onWake = actions.onWake {
+                rowButton("alarm", tr("agents.snooze.cancel"), onWake)
+            }
+            rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
+            rowButton(actions.settled ? "arrow.uturn.backward" : "checkmark",
+                      actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), actions.onSettle)
+        }
+    }
+
+    private func rowIcon(_ symbol: String, _ label: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help(label)
+            .accessibilityLabel(label)
+    }
+
+    private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { rowIcon(symbol, label) }.buttonStyle(.plain)
     }
 
     /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.

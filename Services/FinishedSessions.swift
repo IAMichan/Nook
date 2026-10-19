@@ -113,6 +113,13 @@ final class SessionVisits: ObservableObject {
         visited = stored.filter { $0.value > cutoff }
     }
 
+    /// "Mark as unread": the session counts as news again until you open it.
+    func markUnread(_ id: String) {
+        guard !id.isEmpty else { return }
+        visited[id] = 0
+        UserDefaults.standard.set(visited, forKey: Self.key)
+    }
+
     func visit(_ id: String, at date: Date = Date()) {
         guard !id.isEmpty else { return }
         visited[id] = date.timeIntervalSince1970
