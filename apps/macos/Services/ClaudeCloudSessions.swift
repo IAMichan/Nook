@@ -31,7 +31,7 @@ struct CloudSession: Equatable {
 }
 
 /// Why an account's cloud sessions could not be read, so the list can say so instead of staying silently empty.
-enum CloudSessionProblem: Equatable, Sendable {
+enum CloudSessionProblem: Error, Equatable, Sendable {
     /// No Claude subscription login from Claude Code on this Mac.
     case notSignedIn
     /// The login ran out; Claude Code renews it the next time it runs.
