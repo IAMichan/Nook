@@ -104,6 +104,7 @@ extension WorkspaceManager {
                             if case .failure(let error) = result {
                                 return self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                             }
+                            self.onAntigravitySignedIn?()
                             self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
                         }
                     }

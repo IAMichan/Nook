@@ -118,6 +118,11 @@ extension AppModel {
         }
         // Codex reports new limits while it works: show them right away.
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
+        // Signed in to Antigravity (when linking it, or in a session): its limits show right away.
+        workspace.onAntigravitySignedIn = { [weak self] in
+            self?.antigravityUsage.refreshNow(force: true)
+            self?.history.refresh(minimumInterval: 0)
+        }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
         // GitHub, or a GitLab merge request (with its token from Settings).
@@ -248,7 +253,10 @@ extension AppModel {
         case .claude: command = profile.environmentPrefixOnly + "claude /login"
         case .codex: command = profile.environmentPrefixOnly + "codex login"
         case .gemini: command = "gemini"
-        case .antigravity: command = "agy"
+        // Antigravity signs in again through Nook, in your browser.
+        case .antigravity:
+            if agentConnect[profile.id]?.isBusy != true { connectAntigravity(profile, fresh: true) }
+            return
         case .opencode, .cursor, .grok: command = profile.kind.loginCommand
         // ACP agents sign in themselves, in their first session.
         case .acp: return

@@ -33,7 +33,7 @@ extension AppModel {
     func isConnected(_ profile: AgentProfile) -> Bool {
         guard history.profileAccounts[profile.id] != nil else { return false }
         switch profile.kind {
-        // Google's ACP server that Nook installed counts too: you sign in during the first session.
+        // Google's ACP server that Nook installed counts too: linking the account signs in right away.
         case .antigravity: return !antigravityUsage.noLogin || AntigravityClient.isAvailable || AntigravityInstaller.shared.installed != nil
         default: return history.executables[profile.kind] != nil
         }
@@ -114,6 +114,9 @@ extension AppModel {
         }
         // The brain is never switched to an external service on the user's behalf: that is always their own choice.
 
+        // Antigravity signs in right away, in your browser, instead of at its first session.
+        if kind == .antigravity { return connectAntigravity(profile) }
+
         let hasProgram = history.executables[kind] != nil
         // An account that signs in with a key it already holds needs no Terminal login.
         let loggedIn = history.profileAccounts[profile.id] != nil
@@ -154,6 +157,37 @@ extension AppModel {
                 }
             }
             self?.agentConnect[profile.id] = .failed(tr("app.connect.noLogin"))
+        }
+    }
+
+    /// Links Antigravity: Nook installs Google's ACP server when it is missing, then signs in with Google in your browser
+    /// (at once when a sign-in is saved, unless `fresh`). The usage overview reads the account's limits straight after.
+    func connectAntigravity(_ profile: AgentProfile, fresh: Bool = false) {
+        let installer = AntigravityInstaller.shared
+        guard installer.installed != nil else {
+            agentConnect[profile.id] = .working(tr("app.connect.antigravityInstalling"))
+            if !installer.isBusy { installer.install() }
+            Task { [weak self] in
+                while AntigravityInstaller.shared.isBusy { try? await Task.sleep(nanoseconds: 500_000_000) }
+                guard let self else { return }
+                if AntigravityInstaller.shared.installed != nil {
+                    self.connectAntigravity(profile, fresh: fresh)
+                } else if case .failed(let message) = AntigravityInstaller.shared.phase {
+                    self.agentConnect[profile.id] = .failed(message)
+                } else {
+                    self.agentConnect[profile.id] = .failed(tr("ws.antigravity.notInstalled"))
+                }
+            }
+            return
+        }
+        agentConnect[profile.id] = .waitingForLogin(tr("app.connect.antigravityBrowser"))
+        workspace.signInAntigravity(profileID: profile.id, fresh: fresh) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                self.agentConnect[profile.id] = .failed(error)
+            } else {
+                self.finishConnect(profile)
+            }
         }
     }
 

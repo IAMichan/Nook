@@ -156,6 +156,8 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
     var antigravitySignIns: Set<UUID> = []
+    /// Antigravity sign-ins outside a session (when you link the account), per account: the server and what to call when done.
+    var antigravityLogins: [String: (client: AcpClient, done: (String?) -> Void)] = [:]
 
     let settings = WorkspaceSettings.shared
     private let store: RunStore
@@ -172,6 +174,8 @@ final class WorkspaceManager: ObservableObject {
     var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
     var onApproval: ((WorkspaceRun, PendingPermission) -> Void)?
+    /// An Antigravity session signed in: AppModel reads the account's limits again.
+    var onAntigravitySignedIn: (() -> Void)?
     var onApprovalGone: ((String) -> Void)?
     /// A session asks you a question (Codex requestUserInput, Claude Code AskUserQuestion).
     var onQuestion: ((WorkspaceRun, PendingQuestion) -> Void)?
