@@ -510,6 +510,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.sidebar.noMatches": "Niets gevonden.",
         "ws.sidebar.pendingHelp": "Wacht op je goedkeuring",
         "ws.sidebar.unreviewedHelp": "Wijzigingen die je nog niet bekeek",
+        "ws.sidebar.clearSearch": "Zoekopdracht wissen",
+        "ws.sidebar.filterHelp": "Filteren en groeperen",
+        "ws.sidebar.clearFilter": "Filter weghalen",
 
         "ws.empty.first.title": "Start je eerste sessie",
         "ws.empty.first.message": "Kies een project, beschrijf de taak en kies of de agent in de map zelf of in een eigen worktree werkt. Nook volgt alles hier, live.",
@@ -1344,6 +1347,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.sidebar.noMatches": "Nothing found.",
         "ws.sidebar.pendingHelp": "Waiting for your approval",
         "ws.sidebar.unreviewedHelp": "Changes you haven't reviewed yet",
+        "ws.sidebar.clearSearch": "Clear search",
+        "ws.sidebar.filterHelp": "Filter and group",
+        "ws.sidebar.clearFilter": "Remove filter",
 
         "ws.empty.first.title": "Start your first session",
         "ws.empty.first.message": "Pick a project, describe the task and choose whether the agent works in the folder itself or in its own worktree. Nook follows everything here, live.",

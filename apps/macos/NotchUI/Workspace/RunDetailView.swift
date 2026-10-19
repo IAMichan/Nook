@@ -17,7 +17,7 @@ struct RunDetailView: View {
         if let run = workspace.run(runID) {
             VStack(spacing: 0) {
                 header(run)
-                Divider().overlay(WS.border)
+                Rectangle().fill(WS.border).frame(height: 1)
                 timeline(run)
                 if let pending = workspace.approvals[runID], !pending.isEmpty {
                     ApprovalBar(run: run, pending: pending)
@@ -66,89 +66,71 @@ struct RunDetailView: View {
 
     // MARK: Header
 
+    /// One calm line: where it works and what it is (project / title), its state, and how far along it is. Agent,
+    /// model and permissions sit with the input field, where they apply; folder and Git in the inspector.
     private func header(_ run: WorkspaceRun) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 10) {
-                if editingTitle {
-                    TextField(tr("ws.title.placeholder"), text: $titleDraft)
-                        .textFieldStyle(.plain)
-                        .font(NookTheme.font(17, .semibold))
-                        .onSubmit {
-                            workspace.rename(runID, to: titleDraft)
-                            editingTitle = false
-                        }
-                        .onExitCommand { editingTitle = false }
-                } else {
-                    Text(run.title)
-                        .font(NookTheme.font(17, .semibold))
-                        .foregroundStyle(WS.text)
-                        .lineLimit(1)
-                        .onTapGesture(count: 2) {
-                            titleDraft = run.title
-                            editingTitle = true
-                        }
-                        .help(tr("ws.title.renameHelp"))
-                }
-                StatusBadge(status: run.status)
-                Spacer(minLength: 8)
-                if run.status.isActive, let started = run.turnStartedAt {
-                    HStack(spacing: 4) {
-                        Image(systemName: "timer").font(.system(size: 10))
-                        ElapsedText(since: started)
-                    }
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(WS.secondary)
-                    .help(tr("ws.header.elapsed"))
-                }
-                usageSummary(run)
-            }
-            HStack(spacing: 6) {
-                Chip(text: run.provider.displayName, color: run.provider.color, agent: run.provider.kind)
-                if let profile = app.profile(for: run) {
-                    Chip(text: AccountLabel.name(profile, app: app), color: WS.secondary, systemImage: "person.crop.circle")
-                        .help(tr("ws.header.accountHelp", AccountLabel.line(profile, app: app)))
-                } else {
-                    Chip(text: tr("ws.header.accountGone"), color: NookTheme.amber, systemImage: "person.crop.circle.badge.exclamationmark")
-                }
-                Chip(text: (run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model)), systemImage: "cpu")
-                // Mode, permissions and model of the next turn: click to change, also while the agent works.
-                Menu {
-                    Section(tr("agents.run.nextTurn")) { NextTurnSettings(run: run) }
-                } label: {
-                    HStack(spacing: 6) {
-                        Chip(text: run.mode.label, color: run.mode == .plan ? Color(hex: 0x8AB4F8) : WS.secondary)
-                        Chip(text: run.permission.label, color: run.permission == .bypass ? NookTheme.coral : WS.secondary,
-                             systemImage: run.permission == .bypass ? "exclamationmark.shield" : "checkmark.shield")
-                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(WS.tertiary)
-                    }
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(run.permission.help(for: run.provider))
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 6) {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 5) {
                 Image(systemName: run.isolation == .worktree ? "arrow.triangle.branch" : "folder")
-                    .font(.system(size: 10))
-                Text(AgentPathFormat.tilde(run.workingDirectory))
-                    .font(NookTheme.mono(11))
+                    .font(.system(size: 10.5))
+                Text(run.projectName)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                if let branch = run.branch {
-                    Text("·")
-                    Text(branch).font(NookTheme.mono(11))
-                }
-                if let base = run.baseBranch {
-                    Text("← \(base)").font(NookTheme.mono(11)).foregroundStyle(WS.tertiary)
-                }
             }
+            .font(NookTheme.font(13, .medium))
             .foregroundStyle(WS.secondary)
+            .help(AgentPathFormat.tilde(run.workingDirectory))
+            .layoutPriority(-1)
+            Text("/")
+                .font(NookTheme.font(13))
+                .foregroundStyle(WS.tertiary)
+            if editingTitle {
+                TextField(tr("ws.title.placeholder"), text: $titleDraft)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(13, .semibold))
+                    .onSubmit {
+                        workspace.rename(runID, to: titleDraft)
+                        editingTitle = false
+                    }
+                    .onExitCommand { editingTitle = false }
+            } else {
+                Text(run.title)
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(WS.text)
+                    .lineLimit(1)
+                    .onTapGesture(count: 2) {
+                        titleDraft = run.title
+                        editingTitle = true
+                    }
+                    .help(tr("ws.title.renameHelp"))
+            }
+            StatusBadge(status: run.status)
+            if let branch = run.branch {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 9))
+                    Text(branch).lineLimit(1).truncationMode(.middle)
+                }
+                .font(NookTheme.mono(11))
+                .foregroundStyle(WS.tertiary)
+                .padding(.horizontal, 7)
+                .frame(height: 20)
+                .background(Capsule().fill(WS.subtle))
+                .help(run.baseBranch.map { "\(branch) ← \($0)" } ?? branch)
+                .layoutPriority(-2)
+            }
+            Spacer(minLength: 8)
+            if run.status.isActive, let started = run.turnStartedAt {
+                HStack(spacing: 4) {
+                    Image(systemName: "timer").font(.system(size: 10))
+                    ElapsedText(since: started)
+                }
+                .font(NookTheme.font(12))
+                .foregroundStyle(WS.secondary)
+                .help(tr("ws.header.elapsed"))
+            }
+            usageSummary(run)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+        .frame(height: 46)
     }
 
     private func usageSummary(_ run: WorkspaceRun) -> some View {
@@ -219,9 +201,9 @@ struct RunDetailView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-                .frame(maxWidth: 920, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+                .frame(maxWidth: 800, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(.bottom)
@@ -275,6 +257,7 @@ struct RunDetailView: View {
 /// The input field of a session, with its own draft: typing redraws only this, not the whole timeline above it (which
 /// is laid out in full, and re-renders every message's Markdown when its view redraws).
 private struct RunComposer: View {
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     let run: WorkspaceRun
     let runID: UUID
@@ -285,37 +268,35 @@ private struct RunComposer: View {
 
     var body: some View {
         let active = run.status.isActive
-        return VStack(alignment: .leading, spacing: 6) {
+        let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
                 if draft.isEmpty {
                     Text(active ? tr("ws.composer.placeholderBusy") : tr("ws.composer.placeholder"))
-                        .font(NookTheme.font(13))
+                        .font(NookTheme.font(13.5))
                         .foregroundStyle(WS.tertiary)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $draft)
-                    .font(NookTheme.font(13))
+                    .font(NookTheme.font(13.5))
                     .scrollContentBackground(.hidden)
                     .focused($focused)
-                    .frame(minHeight: 44, maxHeight: 160)
+                    .frame(minHeight: 40, maxHeight: 180)
                     .fixedSize(horizontal: false, vertical: true)
+                    .help(active ? tr("ws.composer.hintBusy") : tr("ws.composer.hint"))
                     .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                         insertPaths(providers)
                         return true
                     }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 10).fill(WS.surface))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? NookTheme.iris.opacity(0.5) : WS.border, lineWidth: 1))
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
 
-            HStack(spacing: 8) {
-                Text(active ? tr("ws.composer.hintBusy") : tr("ws.composer.hint"))
-                    .font(NookTheme.font(11))
-                    .foregroundStyle(WS.tertiary)
-                Spacer()
+            HStack(spacing: 6) {
+                settings
+                Spacer(minLength: 8)
                 if active {
                     // While it works: Codex over app-server and Claude Code take the message now (steer), others after the turn (queue).
                     let steers = workspace.canSteer(runID)
@@ -324,35 +305,44 @@ private struct RunComposer: View {
                     } label: {
                         Label(steers ? tr("ws.action.steer") : tr("ws.action.queue"),
                               systemImage: steers ? "arrow.turn.down.right" : "text.append")
+                            .font(NookTheme.font(12, .medium))
+                            .foregroundStyle(empty ? WS.tertiary : WS.text)
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(Capsule().fill(WS.subtle))
                     }
+                    .buttonStyle(.plain)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(empty)
                     .help(steers ? tr("compose.steer") : tr("compose.queue"))
-                    Button(role: .destructive) {
+                    ComposerRoundButton(symbol: "stop.fill", fill: .clear, stroke: true) {
                         workspace.stop(runID)
-                    } label: {
-                        Label(tr("ws.action.stop"), systemImage: "stop.fill")
                     }
                     .keyboardShortcut(".", modifiers: .command)
                     .help(tr("ws.action.stop.help"))
+                    .accessibilityLabel(tr("ws.action.stop"))
                 } else {
-                    Button {
+                    ComposerRoundButton(symbol: "arrow.up", fill: NookTheme.iris, foreground: NookTheme.onIris) {
                         send()
-                    } label: {
-                        Label(run.status == .completed ? tr("ws.action.send") : tr("ws.action.continue"), systemImage: "arrow.up")
                     }
-                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(empty)
+                    .opacity(empty ? 0.4 : 1)
                     .help(tr("ws.action.send.help"))
+                    .accessibilityLabel(run.status == .completed ? tr("ws.action.send") : tr("ws.action.continue"))
                 }
             }
-            .controlSize(.small)
+            .padding(.horizontal, 10)
+            .padding(.top, 2)
+            .padding(.bottom, 9)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 14)
-        .frame(maxWidth: 956)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(WS.surface))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(focused ? NookTheme.iris.opacity(0.35) : WS.border, lineWidth: 1))
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+        .frame(maxWidth: 800)
         .frame(maxWidth: .infinity)
         // The composer gives way to an agent's question and comes back after it: the draft is kept in the shared draft
         // store (the same one the notch uses for this session), so nothing typed is lost meanwhile.
@@ -361,6 +351,37 @@ private struct RunComposer: View {
             focused = true
         }
         .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
+    }
+
+    /// Agent, account, model, mode and permissions of the next turn: click to change, also while the agent works.
+    private var settings: some View {
+        HStack(spacing: 4) {
+            Chip(text: run.provider.displayName, color: run.provider.color, agent: run.provider.kind)
+            if let profile = app.profile(for: run) {
+                if app.profiles.profiles(for: run.provider.kind).count > 1 {
+                    Chip(text: AccountLabel.name(profile, app: app), color: WS.secondary, systemImage: "person.crop.circle")
+                        .help(tr("ws.header.accountHelp", AccountLabel.line(profile, app: app)))
+                }
+            } else {
+                Chip(text: tr("ws.header.accountGone"), color: NookTheme.amber, systemImage: "person.crop.circle.badge.exclamationmark")
+            }
+            Menu {
+                Section(tr("agents.run.nextTurn")) { NextTurnSettings(run: run) }
+            } label: {
+                HStack(spacing: 4) {
+                    Chip(text: (run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model)), systemImage: "cpu")
+                    Chip(text: run.mode.label, color: run.mode == .plan ? Color(hex: 0x8AB4F8) : WS.secondary)
+                    Chip(text: run.permission.label, color: run.permission == .bypass ? NookTheme.coral : WS.secondary,
+                         systemImage: run.permission == .bypass ? "exclamationmark.shield" : "checkmark.shield")
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(WS.tertiary)
+                }
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(run.permission.help(for: run.provider))
+        }
     }
 
     private func queueOrSteer() {
@@ -390,6 +411,31 @@ private struct RunComposer: View {
                 }
             }
         }
+    }
+}
+
+/// The round send and stop buttons of the input field.
+private struct ComposerRoundButton: View {
+    let symbol: String
+    var fill: Color
+    var foreground: Color = WS.text
+    var stroke = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(foreground)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(stroke && hovering ? WS.hover : fill))
+                .overlay { if stroke { Circle().stroke(WS.border, lineWidth: 1) } }
+                .scaleEffect(hovering && !stroke ? 1.05 : 1)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }
 }
 
@@ -709,9 +755,9 @@ struct ApprovalBar: View {
                     .opacity(0)
                     .allowsHitTesting(false)
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .frame(maxWidth: 956)
+                .frame(maxWidth: 800)
                 .frame(maxWidth: .infinity)
         }
     }
