@@ -154,7 +154,8 @@ final class BrainService {
         // Nothing runs before the user approves it, so a reply without a proposed action that says the message was sent
         // (or the event was made) is never true. Say plainly that nothing happened instead. "Sent again" is never true
         // without an action, whatever the request looked like: sending again is a new message to approve.
-        if plan.actions.isEmpty, intent.wantsAction || Self.claimsRedone(plan.text), Self.claimsDone(plan.text) {
+        // "Ik heb het bericht voorbereid" is the same untruth, whatever the request looked like.
+        if plan.actions.isEmpty, ((intent.wantsAction || Self.claimsRedone(plan.text)) && Self.claimsDone(plan.text)) || ChatIntent.claimsPrepared(plan.text) {
             return BrainPlan(text: tr("brain.notDone"), actions: plan.actions)
         }
         return plan
@@ -353,6 +354,8 @@ final class BrainService {
         Fill in every field from the request and the conversation; use the context only for missing details (a name, an address, a time).
         \(ChatIntent.dateSheet())
         Dates and times are ISO 8601 with the timezone offset. Without an end time, an event lasts one hour.
+        A short follow-up ("nee, naar de appgroep X", "nee, om 4 uur", "verstuur", "ja") corrects or confirms what the conversation asked for: \
+        fill in that earlier request with the change. Such a follow-up is never the message text itself.
         The user approves the result before anything happens, so call the tool now; do not ask for permission.
         After the call, confirm in one short sentence what you prepared. \(settings.languageInstruction(for: request))
         """

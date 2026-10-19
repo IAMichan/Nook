@@ -115,7 +115,7 @@ Integrations can have multiple accounts (`AccountRegistry`, e.g., `"GitHub · Wo
 
 ### Apps Next to the Chat
 
-`@open whatsapp` (or `@whatsapp`, `open whatsapp in nook`) opens an app's web version next to the chat: WhatsApp Web, Telegram, Slack, Gmail, Notion and others from `EmbeddedAppCatalog`, or any `https` address (`@open notion.so`). You work in the app itself while you chat with Nook beside it; `@close` puts it away. Each app keeps its own sign-in across launches in a separate `WKWebsiteDataStore`, so WhatsApp asks for the QR code only once; the pane's menu signs out and removes that data. `read_open_app` (*Browser* source) reads what the app shows when you ask about it; Nook never types or clicks in it.
+`@open whatsapp` (or `@whatsapp`, `open whatsapp in nook`) opens an app's web version next to the chat: over a hundred apps from `EmbeddedAppCatalog` (WhatsApp Web, Telegram, Slack, Gmail, Google Docs, Notion, Trello, GitHub, ChatGPT, Spotify…), or any `https` address (`@open notion.so`). You work in the app itself while you chat with Nook beside it; `@close` puts it away. Each app keeps its own sign-in across launches in a separate `WKWebsiteDataStore`, so WhatsApp asks for the QR code only once; the pane's menu signs out and removes that data. `read_open_app` (*Browser* source) reads what the app shows when you ask about it; Nook never types or clicks in it.
 
 ### Source Chips & Citations
 

@@ -49,4 +49,36 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
         XCTAssertEqual(EmbeddedAppCatalog.storeID(for: "whatsapp"), EmbeddedAppCatalog.storeID(for: "whatsapp"), "the same every launch")
     }
+
+    func testSplitKeepsBothSidesUsable() {
+        XCTAssertEqual(EmbeddedSplit.chatWidth(500, total: 1200), 500)
+        XCTAssertEqual(EmbeddedSplit.chatWidth(100, total: 1200), EmbeddedSplit.minimumChat, "the chat never gets too narrow")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(5000, total: 1200), 1200 - EmbeddedSplit.minimumApp - EmbeddedSplit.handle, "nor does the app")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 0), 400, "width not known yet")
+        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 500), EmbeddedSplit.minimumChat, "too small for both: the chat keeps its minimum")
+    }
+
+    func testManyAppsOpenByName() {
+        XCTAssertEqual(opened("@open trello"), "trello")
+        XCTAssertEqual(opened("@open ChatGPT"), "chatgpt")
+        XCTAssertEqual(opened("@open google docs"), "docs")
+        XCTAssertEqual(opened("@open bol.com"), "bol", "a known app wins over the web address")
+        XCTAssertEqual(opened("@open disney+"), "disneyplus")
+        XCTAssertEqual(opened("@github"), "github")
+        XCTAssertGreaterThanOrEqual(EmbeddedAppCatalog.all.count, 100)
+    }
+
+    func testCatalogIsWellFormed() {
+        let ids = EmbeddedAppCatalog.all.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count, "no app twice")
+        for app in EmbeddedAppCatalog.all {
+            XCTAssertEqual(app.url.scheme, "https", app.id)
+            XCTAssertEqual(EmbeddedAppCatalog.find(app.title)?.id, app.id, "\(app.title) opens itself, not another app")
+        }
+    }
+
+    func testUnknownNamesGetSuggestions() {
+        XCTAssertEqual(EmbeddedAppCatalog.suggestions(for: "whatsap").first?.id, "whatsapp")
+        XCTAssertFalse(EmbeddedAppCatalog.suggestions(for: "qqqq").isEmpty, "always something to try")
+    }
 }

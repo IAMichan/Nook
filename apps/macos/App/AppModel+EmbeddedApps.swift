@@ -16,7 +16,7 @@ extension AppModel {
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
         case .unknown(let name):
-            let names = EmbeddedAppCatalog.all.map(\.title).joined(separator: ", ")
+            let names = EmbeddedAppCatalog.suggestions(for: name).map { "@open " + $0.title }.joined(separator: ", ")
             chat.append(ChatMessage(role: .nook, text: tr("embedded.unknown", name, names)))
         }
         showChat()
