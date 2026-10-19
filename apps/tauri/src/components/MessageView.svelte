@@ -23,6 +23,8 @@
     {#each message.images as src (src)}<img class="pic" {src} alt="" />{/each}
     <div class="bubble">{message.text}</div>
   {:else}
+    {#if message.sources.length}<div class="looked faint">Nook keek in {message.sources.join(", ")}</div>{/if}
+    {#each message.notices as notice (notice)}<div class="notice">{notice}</div>{/each}
     {#if message.streaming && !text}
       <div class="status"><span class="dot working"></span> {message.status || "Denkt na…"}</div>
     {:else}
@@ -59,6 +61,8 @@
   .pic { max-width: 180px; max-height: 140px; border-radius: 10px; margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
+  .looked { font-size: 11px; margin-bottom: 4px; }
+  .notice { font-size: 12px; color: var(--amber); margin-bottom: 4px; }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
   .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }

@@ -54,6 +54,20 @@ export interface Capabilities {
   terminals: boolean;
   localAgents: boolean;
   media: boolean;
+  screenPart: boolean;
+  microphone: boolean;
+  localSpeech: boolean;
+  speechOutput: boolean;
+  wakeWord: boolean;
+  flow: boolean;
+  systemAudio: boolean;
+  openApps: boolean;
+  volume: boolean;
+  clipboard: boolean;
+  notifications: boolean;
+  files: boolean;
+  /// Uitleg per mogelijkheid die er niet (helemaal) is.
+  notes: Record<string, string>;
 }
 
 export interface AppInfo {

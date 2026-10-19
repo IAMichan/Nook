@@ -1,6 +1,11 @@
 <script lang="ts">
   // Het invoerveld: Return verstuurt, Shift+Return is een nieuwe regel. Afbeeldingen plakken of slepen kan ook.
   import { nook } from "../lib/state.svelte";
+  import { serviceEvents } from "../lib/services";
+  import { listening } from "../lib/listening.svelte";
+  import { heard } from "./Orb.svelte";
+  import MicButton from "./MicButton.svelte";
+  import Listening from "../views/services/Listening.svelte";
 
   let { autofocus = false, compact = false }: { autofocus?: boolean; compact?: boolean } = $props();
   let text = $state("");
@@ -15,12 +20,26 @@
     if (autofocus) field?.focus();
   });
 
+  // Een schermdeel komt als afbeelding bij het invoerveld.
+  $effect(() => {
+    const un = serviceEvents.onAttachImage(({ mediaType, base64 }) => {
+      // Alleen in de balk (die opent ervoor), niet ook in het hoofdvenster.
+      if (!compact) return;
+      images = [...images, { mediaType, base64, url: `data:${mediaType};base64,${base64}` }];
+      field?.focus();
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  });
+
   async function send() {
     const value = text.trim();
     if (!value || nook.busy) return;
     const attached = images.map(({ mediaType, base64 }) => ({ mediaType, base64 }));
     text = "";
     images = [];
+    heard();
     await nook.ask(value, attached.length ? attached : undefined);
   }
 
@@ -59,6 +78,7 @@
     if (e.dataTransfer?.files) addFiles(e.dataTransfer.files);
   }}
 >
+  {#if listening.active}<Listening onclose={() => listening.stop()} />{/if}
   {#if images.length}
     <div class="thumbs">
       {#each images as img, i (img.url)}
@@ -77,6 +97,7 @@
       rows="1"
       placeholder="Vraag Nook iets…"
     ></textarea>
+    <MicButton />
     {#if nook.busy}
       <button class="ghost" onclick={() => nook.stop()} title="Stoppen">■</button>
     {:else}

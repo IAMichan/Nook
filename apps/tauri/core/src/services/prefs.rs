@@ -53,7 +53,7 @@ impl Default for ServicePrefs {
             whisper_model: String::new(),
             think_along_muted: BTreeMap::new(),
             screen_part_shortcut: "Alt+CommandOrControl+4".into(),
-            notes_shortcut: String::new(),
+            notes_shortcut: "Alt+CommandOrControl+R".into(),
             files: true,
             call_notes: true,
             recap_seen: String::new(),

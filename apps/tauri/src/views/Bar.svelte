@@ -8,8 +8,12 @@
   import Today from "./Today.svelte";
   import Agents from "./Agents.svelte";
   import Workspace from "./Workspace.svelte";
+  import Music from "./services/Music.svelte";
+  import { services, serviceEvents, type NowPlaying } from "../lib/services";
+  import { listening } from "../lib/listening.svelte";
+  import { play } from "../lib/sounds";
 
-  type Tab = "nook" | "agents" | "workspace";
+  type Tab = "nook" | "agents" | "workspace" | "music";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
@@ -24,11 +28,49 @@
       expanded = true;
       await api.barExpand(true);
     }
-    if (focus === "chat" || focus === "voice") {
+    if (focus === "chat" || focus === "voice" || focus === "lookAlong") {
       tab = "nook";
       pinnedOpen = true;
     }
+    if (focus === "voice") listening.start();
+    if (focus === "lookAlong") services.lookAlong().catch((e) => (nook.error = String(e)));
   }
+
+  // Muziek: een eigen tab zolang er iets speelt.
+  let playing = $state<NowPlaying | null>(null);
+  let since = $state(Date.now());
+  $effect(() => {
+    services.nowPlaying().then((n) => ((playing = n), (since = Date.now()))).catch(() => {});
+    const un = serviceEvents.onNowPlaying((n) => {
+      playing = n;
+      since = Date.now();
+      if (!n && tab === "music") tab = "nook";
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  });
+
+  // Geluiden: aandacht als een Nook op je wacht, klaar als hij af is.
+  let statuses = new Map<string, string>();
+  $effect(() => {
+    const next = new Map(nook.nooks.map((n) => [n.id, n.status as string]));
+    for (const [id, status] of next) {
+      const before = statuses.get(id);
+      if (before && before !== status) {
+        if (status === "waiting") play("attention", nook.settings?.sounds ?? true);
+        else if (before === "working" && (status === "unread" || status === "idle")) play("done", nook.settings?.sounds ?? true);
+      }
+    }
+    statuses = next;
+  });
+
+  // De ring om Nook in het open paneel: alles waar hij mee bezig is of wat op je wacht.
+  const ring = $derived(
+    nook.nooks
+      .filter((n) => n.status === "working" || n.status === "waiting")
+      .map((n) => ({ id: n.id, label: n.title, state: n.status as "working" | "waiting" })),
+  );
 
   async function close() {
     if (!expanded) return;
@@ -75,12 +117,15 @@
     <div class="panel">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <header onmousedown={drag}>
-        <Orb size={20} {mood} />
+        <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
         <nav>
           <button class:on={tab === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={tab === "agents"} onclick={() => select("agents")}>Agents</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={tab === "workspace"} onclick={() => select("workspace")}>Werkruimte</button>
+          {/if}
+          {#if playing}
+            <button class:on={tab === "music"} onclick={() => select("music")}>Muziek {#if playing.playing}<span class="dot unread"></span>{/if}</button>
           {/if}
         </nav>
         <span class="spacer"></span>
@@ -95,6 +140,8 @@
           </div>
         {:else if tab === "agents"}
           <Agents compact />
+        {:else if tab === "music"}
+          <Music info={playing} {since} />
         {:else}
           <Workspace compact />
         {/if}

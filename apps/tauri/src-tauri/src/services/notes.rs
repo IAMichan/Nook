@@ -237,7 +237,7 @@ async fn finish(app: &AppHandle, mut note: Note, mine: Vec<TimedWord>, theirs: V
     let services = app.state::<Services>();
     if note.lines.is_empty() {
         note.status = NoteStatus::Failed;
-        note.error = Some("Er is niets verstaan. Stond de microfoon aan?".into());
+        note.error = Some("In de opname werd niets verstaan, dus er is geen gespreksnotitie.".into());
         services.notes.lock().unwrap_or_else(|e| e.into_inner()).save(&note);
         emit_live(app);
         return;
@@ -266,7 +266,7 @@ async fn finish(app: &AppHandle, mut note: Note, mine: Vec<TimedWord>, theirs: V
     services.notes.lock().unwrap_or_else(|e| e.into_inner()).save(&note);
     emit_live(app);
     show_in_chat(app, &note);
-    services.platform.system.notify("Gesprek genoteerd", &note.title);
+    services.platform.system.notify("Nook", &format!("Gespreksnotitie klaar: {}", note.title));
 }
 
 /// De notitie in een eigen Nook: samenvatting, kernpunten en to-do's, met het voorstel ze als open punten te bewaren.
@@ -278,7 +278,8 @@ fn show_in_chat(app: &AppHandle, note: &Note) {
         body.truncate(cut);
     }
     let mut message = ChatMessage::nook(body.trim());
-    message.sources = vec![format!("Gesprek van {}", note.start.with_timezone(&chrono::Local).format("%H:%M"))];
+    message.sources = vec![format!("Gespreksnotitie van {}", note.start.with_timezone(&chrono::Local).format("%H:%M"))];
+    message.offers = vec!["Schrijf een mail met deze samenvatting".into()];
     if !note.todos.is_empty() {
         message.actions = note
             .todos

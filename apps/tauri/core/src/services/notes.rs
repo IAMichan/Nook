@@ -330,7 +330,10 @@ pub fn markdown(note: &Note) -> String {
         out.push_str(&format!("## Samenvatting\n\n{summary}\n\n"));
     }
     if !note.key_points.is_empty() {
-        out.push_str(&format!("## Kernpunten\n\n{}\n\n", note.key_points.iter().map(|p| format!("- {p}")).collect::<Vec<_>>().join("\n")));
+        out.push_str(&format!(
+            "## Belangrijkste punten\n\n{}\n\n",
+            note.key_points.iter().map(|p| format!("- {p}")).collect::<Vec<_>>().join("\n")
+        ));
     }
     if !note.todos.is_empty() {
         let todos = note
