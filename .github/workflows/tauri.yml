@@ -1,0 +1,141 @@
+name: Tauri (Windows, Linux, Android)
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
+  pull_request:
+    paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/tauri
+
+jobs:
+  checks:
+    name: Kern en interface
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri
+      - name: Linux-pakketten voor Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - run: npm ci
+      - name: Svelte-typecheck
+        run: npm run check
+      - name: Interface-tests
+        run: npm test
+      - name: Interface bouwen
+        run: npm run build
+      - name: Rust-opmaak
+        run: cargo fmt --all --check
+      - name: Rust-tests
+        run: cargo test --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  desktop:
+    name: Bouwen voor ${{ matrix.name }}
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            bundles: nsis,msi
+          - name: Linux
+            os: ubuntu-22.04
+            bundles: deb,appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri
+      - name: Linux-pakketten voor Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - run: npm ci
+      - name: Rust-tests op dit platform
+        run: cargo test --workspace
+      - name: App bouwen en verpakken
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v5
+        with:
+          name: nook-${{ matrix.name }}
+          path: |
+            apps/tauri/target/release/bundle/**/*.exe
+            apps/tauri/target/release/bundle/**/*.msi
+            apps/tauri/target/release/bundle/**/*.deb
+            apps/tauri/target/release/bundle/**/*.AppImage
+          if-no-files-found: warn
+
+  android:
+    name: Android
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Android NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri
+      - run: npm ci
+      # Het Android-project staat in de repo (src-tauri/gen/android, met eigen MainActivity); alleen als het
+      # ontbreekt maakt de CLI het opnieuw.
+      - name: Android-project
+        run: test -d src-tauri/gen/android || npx tauri android init --ci
+      - name: APK bouwen (ongetekend)
+        run: npx tauri android build --apk --ci
+      - uses: actions/upload-artifact@v5
+        with:
+          name: nook-Android
+          path: apps/tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

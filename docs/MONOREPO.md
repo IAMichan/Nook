@@ -1,14 +1,15 @@
 # Monorepo Structure
 
-Nook is organized as a single multi-platform repository. Today, the native macOS app and the iPhone companion app are implemented; additional platform directories are scaffolded with their architecture guidelines, and shared logic is tested in CI.
+Nook is organized as a single multi-platform repository. The macOS app and the iPhone companion are written in Swift; Windows, Linux, and Android share one Tauri app in `apps/tauri` (Rust core, Svelte UI).
 
 ```text
 apps/
   macos/     Native macOS app (Swift, AppKit/SwiftUI, XcodeGen) — built and tested in CI
   ios/       Nook Companion for iPhone (SwiftUI, XcodeGen) — companion app & foundation for Nook on iOS
-  android/   Planned Android app scaffold
-  windows/   Planned Windows app scaffold
-  linux/     Planned Linux app scaffold
+  tauri/     Nook for Windows, Linux, and Android (Tauri 2: Rust core in core/, Svelte UI in src/)
+  android/   points to tauri/
+  windows/   points to tauri/
+  linux/     points to tauri/
 packages/
   core/      Platform-independent Swift core package (Foundation-only)
   protocol/  Shared Companion protocol, ChaCha20-Poly1305 sealing, and HMAC/SHA-256 verification (used by macOS and iOS)
@@ -36,3 +37,9 @@ scripts/     Helper scripts (including core-tests.sh and local model fine-tuning
 3. Implement platform adapters for storage, secrets, screen reading, calendar, and global shortcuts.
 4. Add a dedicated CI workflow in `.github/workflows/` with `paths:` filters for `apps/<platform>/**` and `packages/**`.
 5. Document any new dependencies in `README.md` and `THIRD-PARTY-NOTICES.md`.
+
+## Chosen: Tauri for Windows, Linux, and Android
+
+- **One app, three platforms.** `apps/tauri` is a Tauri 2 app: the core in Rust (`apps/tauri/core`, testable without Tauri), the UI in Svelte 5. Windows, Linux, and Android share everything except the platform layer (`src-tauri/src/platform`). The Swift core is ported rather than shared; the macOS app remains the specification. See [TAURI.md](TAURI.md) for what has been ported.
+- **The Mac stays Swift.** The notch, ScreenCaptureKit, AppleScript, and MLX belong to the Mac.
+- **The local model.** MLX only exists for Apple Silicon. The Tauri app thinks locally with Ollama or LM Studio, or with an external AI the user chooses.

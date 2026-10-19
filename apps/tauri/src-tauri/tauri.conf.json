@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nook",
+  "version": "0.1.0",
+  "identifier": "nl.imdigital.nook",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nook",
+        "url": "index.html",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 360,
+        "minHeight": 480,
+        "visible": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob: https: http://localhost:*; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Je persoonlijke agent",
+    "longDescription": "Nook is een persoonlijke assistent bovenaan je scherm: chatten met je eigen of een externe AI, Nooks, geheugen, je coding-agents en je koppelingen. Niets gebeurt zonder jouw OK.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    },
+    "linux": {
+      "deb": { "depends": ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1"] }
+    }
+  }
+}

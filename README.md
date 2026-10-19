@@ -19,7 +19,7 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 >
 > **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (`Settings › General › App language`).
 >
-> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Shared protocol and core packages live in [`packages/`](packages), with scaffolds ready for Android, Windows, and Linux (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
+> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Nook for **Windows, Linux, and Android** is a single Tauri app in [`apps/tauri`](apps/tauri) (Rust core, Svelte UI); see [`docs/TAURI.md`](docs/TAURI.md) for what has been ported so far (its interface is Dutch-only for now). Shared protocol and core packages live in [`packages/`](packages) (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
 
 ---
 
@@ -198,9 +198,10 @@ nook/
 │   │   ├── Demo/            # Sample data for previews and Demo Mode
 │   │   └── Tests/           # Unit test suite (NookTests)
 │   ├── ios/                 # Nook Companion for iPhone (SwiftUI, XcodeGen)
-│   ├── android/             # Planned Android companion/app scaffold
-│   ├── windows/             # Planned Windows app scaffold
-│   └── linux/               # Planned Linux app scaffold
+│   ├── tauri/               # Nook for Windows, Linux & Android (Tauri 2: Rust core, Svelte UI)
+│   ├── android/             # Points to tauri/
+│   ├── windows/             # Points to tauri/
+│   └── linux/               # Points to tauri/
 ├── packages/
 │   ├── protocol/            # Shared Companion protocol, ChaCha20-Poly1305 sealing & webhook security
 │   └── core/                # Cross-platform Foundation-only Swift core package
