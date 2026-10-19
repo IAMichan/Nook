@@ -971,6 +971,7 @@ private struct NookRow: View {
                 .allowsHitTesting(hovering)
         }
         .onHover { hovering = $0 }
+        .hoverCard { NookHoverCard(conversation: conversation) }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(conversation.title), \(statusText)")
@@ -1052,6 +1053,29 @@ private struct NookRow: View {
         case .unread: return tr("nooks.doneAt", NookDates.ago(conversation.updated))
         case .idle: return NookDates.ago(conversation.updated)
         }
+    }
+}
+
+/// What a Nook shows on hover, like a session in the Agents tab: its title, when it started and was last active,
+/// how many messages it holds, and the sources it may use.
+private struct NookHoverCard: View {
+    let conversation: Conversation
+
+    var body: some View {
+        HoverCard(title: conversation.title) {
+            HoverCardRow(symbol: "clock", text: tr("nooks.card.started", NookDates.ago(conversation.created)))
+            if conversation.updated > conversation.created {
+                HoverCardRow(symbol: "arrow.clockwise", text: tr("nooks.card.updated", NookDates.ago(conversation.updated)))
+            }
+            HoverCardRow(symbol: "bubble.left.and.bubble.right", text: messageCount)
+            HoverCardRow(symbol: "line.3.horizontal.decrease",
+                         text: conversation.scope.isRestricted ? conversation.scope.label() : tr("scope.automaticShort"))
+        }
+    }
+
+    private var messageCount: String {
+        let count = conversation.messages.count
+        return count == 1 ? tr("nooks.card.message") : tr("nooks.card.messages", count)
     }
 }
 

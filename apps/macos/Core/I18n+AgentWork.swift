@@ -9,6 +9,11 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Jij",
         "chat.moreActions": "Meer acties",
+        // The card a conversation shows on hover.
+        "nooks.card.started": "Gestart %@",
+        "nooks.card.updated": "Laatst actief %@",
+        "nooks.card.message": "1 bericht",
+        "nooks.card.messages": "%ld berichten",
         "nooks.section.pinned": "Vastgezet",
         "nooks.section.recent": "Recent",
         "nooks.section.archived": "Archief (%ld)",
@@ -281,6 +286,11 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "You",
         "chat.moreActions": "More actions",
+        // The card a conversation shows on hover.
+        "nooks.card.started": "Started %@",
+        "nooks.card.updated": "Last active %@",
+        "nooks.card.message": "1 message",
+        "nooks.card.messages": "%ld messages",
         "nooks.section.pinned": "Pinned",
         "nooks.section.recent": "Recent",
         "nooks.section.archived": "Archive (%ld)",
@@ -553,6 +563,11 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Du",
         "chat.moreActions": "Weitere Aktionen",
+        // The card a conversation shows on hover.
+        "nooks.card.started": "Gestartet %@",
+        "nooks.card.updated": "Zuletzt aktiv %@",
+        "nooks.card.message": "1 Nachricht",
+        "nooks.card.messages": "%ld Nachrichten",
         "nooks.section.pinned": "Angeheftet",
         "nooks.section.recent": "Zuletzt",
         "nooks.section.archived": "Archiv (%ld)",
@@ -825,6 +840,11 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Vous",
         "chat.moreActions": "Plus d’actions",
+        // The card a conversation shows on hover.
+        "nooks.card.started": "Commencé %@",
+        "nooks.card.updated": "Dernière activité %@",
+        "nooks.card.message": "1 message",
+        "nooks.card.messages": "%ld messages",
         "nooks.section.pinned": "Épinglés",
         "nooks.section.recent": "Récents",
         "nooks.section.archived": "Archives (%ld)",
@@ -1097,6 +1117,11 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Tú",
         "chat.moreActions": "Más acciones",
+        // The card a conversation shows on hover.
+        "nooks.card.started": "Iniciado %@",
+        "nooks.card.updated": "Última actividad %@",
+        "nooks.card.message": "1 mensaje",
+        "nooks.card.messages": "%ld mensajes",
         "nooks.section.pinned": "Fijados",
         "nooks.section.recent": "Recientes",
         "nooks.section.archived": "Archivo (%ld)",
