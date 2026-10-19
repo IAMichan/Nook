@@ -6,6 +6,8 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "inbox.pr.stack": "Stapel van %ld",
+        "settings.ws.autoSettleMerged": "Ook afhandelen als de pull request is gemerged",
         "settings.ws.inboxWorking": "Toon sessies die aan het werk zijn op een eigen plank",
         "settings.ws.autoSettle": "Oude sessies automatisch afhandelen",
         "settings.ws.autoSettleDays": "Na %ld dagen stil",
@@ -682,6 +684,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "inbox.pr.stack": "Stack of %ld",
+        "settings.ws.autoSettleMerged": "Also settle when the pull request is merged",
         "settings.ws.inboxWorking": "Show working sessions on their own shelf",
         "settings.ws.autoSettle": "Settle old sessions automatically",
         "settings.ws.autoSettleDays": "After %ld days of quiet",
@@ -1358,6 +1362,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "inbox.pr.stack": "Stapel aus %ld",
+        "settings.ws.autoSettleMerged": "Auch erledigen, wenn der Pull Request gemergt ist",
         "settings.ws.inboxWorking": "Laufende Sitzungen in einem eigenen Fach zeigen",
         "settings.ws.autoSettle": "Alte Sitzungen automatisch erledigen",
         "settings.ws.autoSettleDays": "Nach %ld Tagen Ruhe",

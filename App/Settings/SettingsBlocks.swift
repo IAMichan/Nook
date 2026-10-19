@@ -260,6 +260,7 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
+                Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
                 Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
             }

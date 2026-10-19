@@ -381,6 +381,8 @@ struct AgentListRow: View {
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
     var actions: AgentRowActions? = nil
+    /// "#12" of the session's pull request.
+    var pullRequest: PullRequestBadge? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -437,6 +439,7 @@ struct AgentListRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
                 Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
+                if let pullRequest { PullRequestPill(badge: pullRequest) }
                 Spacer(minLength: 6)
                 AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
                     .padding(.trailing, item.account == nil ? 0 : 3)
@@ -1047,5 +1050,35 @@ enum WorkspaceRunsSection {
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
         return Array(list.prefix(12))
+    }
+}
+
+/// "#12" with the state of the pull request as its colour: open mint, draft grey, merged iris, closed coral.
+struct PullRequestPill: View {
+    let badge: PullRequestBadge
+
+    private var tint: Color {
+        switch badge.glyph {
+        case .open: return NookTheme.mint
+        case .draft: return NookTheme.textTertiary
+        case .merged: return NookTheme.iris
+        case .closed: return NookTheme.coralSoft
+        case .stack: return NookTheme.amber
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: badge.glyph == .merged ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 9, weight: .semibold))
+            Text(label).font(NookTheme.font(11, .medium)).lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .background(Capsule().fill(tint.opacity(0.14)))
+    }
+
+    private var label: String {
+        if case .stack(let count) = badge.label { return tr("inbox.pr.stack", count) }
+        return badge.text ?? ""
     }
 }

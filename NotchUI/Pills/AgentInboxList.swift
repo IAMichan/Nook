@@ -10,6 +10,7 @@ struct AgentInboxList: View {
     @ObservedObject private var store = InboxStore.shared
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    @ObservedObject private var pullRequests = PullRequestSync.shared
     /// Sessions that are running or were, and earlier sessions (settled by nature).
     let items: [AgentListItem]
     let past: [AgentListItem]
@@ -59,6 +60,11 @@ struct AgentInboxList: View {
         )
     }
 
+    private func runID(_ item: AgentListItem?) -> UUID? {
+        guard let item else { return nil }
+        return runID(item)
+    }
+
     private func runID(_ item: AgentListItem) -> UUID? {
         item.id.hasPrefix("run:") ? UUID(uuidString: String(item.id.dropFirst(4))) : nil
     }
@@ -91,6 +97,7 @@ struct AgentInboxList: View {
             undoNotice
         }
         .onAppear {
+            pullRequests.refresh(workspace: app.workspace, now: now)
             store.undoSnooze = { ids in
                 for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.unsnooze(uuid) } }
             }
@@ -98,7 +105,10 @@ struct AgentInboxList: View {
                 for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.setArchived(uuid, false) } }
             }
         }
-        .onChange(of: now) { _, current in autoSettle(rows: rows, byID: byID, now: current) }
+        .onChange(of: now) { _, current in
+            autoSettle(rows: rows, byID: byID, now: current)
+            pullRequests.refresh(workspace: app.workspace, now: current)
+        }
     }
 
     private var emptyState: some View {
@@ -229,7 +239,8 @@ struct AgentInboxList: View {
                     settled: entry.row.settled,
                     onSettle: { entry.row.settled ? store.unsettle([item]) : store.settle([item]) },
                     onSnooze: isRun ? { snooze(item, $0) } : nil,
-                    onWake: isRun && snoozeActive ? { wake(item) } : nil)
+                    onWake: isRun && snoozeActive ? { wake(item) } : nil),
+                pullRequest: runID(item).flatMap { pullRequests.badge($0) }
             ) {
                 select(item.id)
                 if entry.woke { store.dismissWoke(item.id) }
@@ -355,7 +366,7 @@ struct AgentInboxList: View {
     // MARK: Auto-settle
 
     private func autoSettle(rows: [InboxRow], byID: [String: AgentListItem], now: Date) {
-        let ids = store.autoSettleCandidates(rows: rows, prMerged: { _ in false }, now: now)
+        let ids = store.autoSettleCandidates(rows: rows, prMerged: { id in runID(byID[id]).map { pullRequests.merged($0) } ?? false }, now: now)
         let settle = ids.compactMap { byID[$0] }
         if !settle.isEmpty { store.settle(settle, now: now, record: false) }
     }
