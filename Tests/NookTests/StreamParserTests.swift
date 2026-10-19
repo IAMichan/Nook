@@ -12,7 +12,7 @@ final class ClaudeStreamParserTests: XCTestCase {
         let nested = #"{"type":"stream_event","parent_tool_use_id":"toolu_1","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}}"#
         XCTAssertEqual(ClaudeStreamParser.parse(nested), [])
         let thinking = #"{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hm"}}}"#
-        XCTAssertEqual(ClaudeStreamParser.parse(thinking), [])
+        XCTAssertEqual(ClaudeStreamParser.parse(thinking), [.thinkingDelta("hm", starts: false)], "thinking streams live, as in T3Code")
     }
 
     func testAssistantMessageWithToolUseAndUsage() {

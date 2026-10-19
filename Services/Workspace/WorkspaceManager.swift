@@ -130,6 +130,12 @@ final class WorkspaceManager: ObservableObject {
     /// The turn that just ended stopped on a usage limit, with its reset when known. Kept apart from the turn state,
     /// which some paths clear before the end of the turn is handled.
     var limitedTurns: [UUID: Date?] = [:]
+    /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
+    var claudeThinkingDisplay: [String: Bool] = [:]
+    /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
+    var warmPrompts: [UUID: String] = [:]
+    /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
+    var awaitingCheckpoint: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
@@ -186,6 +192,11 @@ final class WorkspaceManager: ObservableObject {
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
+        /// Claude Code's thinking as it streams: the block being written, whether a thinking block is open, and the
+        /// finished streamed blocks waiting for their complete copy (nil: the block streamed no text).
+        var liveThinkingID: UUID?
+        var thinkingOpen = false
+        var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
     }
@@ -382,7 +393,8 @@ final class WorkspaceManager: ObservableObject {
             // The first snapshot, before the agent does anything: "back to here" on the first message.
             if let git {
                 let ref = GitService.checkpointRef(session: id, index: 0)
-                if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(worktreePath, ref: ref) }.value) != nil {
+                // A new worktree is exactly its branch's HEAD: point the snapshot there instead of reading every file.
+                if (try? await Task.detached(priority: .userInitiated) { try git.checkpointHead(worktreePath, ref: ref) }.value) != nil {
                     update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
                 }
             }
@@ -482,23 +494,37 @@ final class WorkspaceManager: ObservableObject {
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     func send(_ id: UUID, text: String) {
+        send(id, text: text, shown: false)
+    }
+
+    /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
+    @discardableResult
+    private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return }
-        // The previous turn's snapshot is still being made: wait for it (a moment), so this turn's edits stay out of it.
+        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return false }
+        // The previous turn's snapshot is still being made (a moment): your message shows at once, as in T3Code, and
+        // goes out right after it, so this turn's edits stay out of that snapshot.
         if checkpointing.contains(id) {
-            enqueue(id, text: clean)
-            return
+            if awaitingCheckpoint[id] != nil {
+                enqueue(id, text: clean)
+            } else {
+                loadTimeline(id)
+                if !shown { append(id, RunEvent(kind: .user, text: clean)) }
+                awaitingCheckpoint[id] = clean
+            }
+            return true
         }
         guard let executable = executable(run.provider) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
-            return
+            return false
         }
         guard WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
-            return
+            return false
         }
         loadTimeline(id)
-        launchTurn(id, prompt: clean, executable: executable)
+        launchTurn(id, prompt: clean, executable: executable, showPrompt: !shown)
+        return true
     }
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
@@ -526,7 +552,15 @@ final class WorkspaceManager: ObservableObject {
     private func recordCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint?) {
         checkpointing.remove(id)
         if let checkpoint { update(id) { $0.checkpoints = ($0.checkpoints ?? []) + [checkpoint] } }
-        sendQueued(id)
+        if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
+            // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
+            if !send(id, text: waiting, shown: true) {
+                queued[id, default: []].insert(waiting, at: 0)
+                sendQueued(id)
+            }
+        } else {
+            sendQueued(id)
+        }
     }
 
     /// Files can go back to how they were before a message: a worktree session that is idle, alone in its folder.
@@ -643,8 +677,10 @@ final class WorkspaceManager: ObservableObject {
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
-            bridge: bridgeLaunch()
+            bridge: bridgeLaunch(),
+            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true
         )
+        if run.provider == .claude, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
         let spec = AgentCommand.spec(input)
         if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
         let process = AgentProcess(spec: spec)
@@ -677,6 +713,48 @@ final class WorkspaceManager: ObservableObject {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+    }
+
+    /// Opens the agent's connection when you open an idle session (an existing conversation), so your first message goes
+    /// straight in instead of waiting for a process to start: Claude Code waits on stdin, Codex has its thread open, an
+    /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
+    func prewarm(_ id: UUID) {
+        guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
+              run.providerSessionID != nil, !forkNext.contains(id), let executable = executable(run.provider),
+              WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
+        switch run.provider {
+        case .claude:
+            guard claudeIdle[id] == nil else { return }
+            if claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+            var spec = AgentCommand.spec(AgentCommand.Input(
+                provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
+                instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
+                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridgeLaunch(),
+                thinkingDisplay: claudeThinkingDisplay[executable] == true))
+            spec.initialInput = []
+            let process = AgentProcess(spec: spec)
+            process.onLines = { [weak self, weak process] lines in
+                Task { @MainActor in
+                    // While it only waits, nothing it prints is a turn (a failed resume must not fail the session).
+                    guard let self, let process, self.processes[id] === process else { return }
+                    for line in lines { self.handle(line: line, for: id) }
+                }
+            }
+            process.onExit = { [weak self, weak process] status, stderr in
+                Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+            }
+            guard (try? process.start()) != nil else { return }
+            parkWarmClaude(id, process, key: claudeKey(run))
+        case .codex:
+            guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
+            connectCodexServer(id, executable: executable, prompt: nil)
+        case .gemini, .opencode, .cursor, .grok:
+            guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
+            connectAcp(id, executable: executable, prompt: nil)
+        case .antigravity:
+            // Not ahead of time: signing in could open Google's page just because you looked at the session.
+            return
+        }
     }
 
     // MARK: Agent Output
@@ -784,8 +862,32 @@ final class WorkspaceManager: ObservableObject {
             } else {
                 append(id, RunEvent(kind: .assistant, text: text, state: .done))
             }
+        case .thinkingDelta(let text, let starts):
+            if starts {
+                closeThinking(id)
+                turns[id]?.thinkingOpen = true
+            }
+            guard !text.isEmpty else { return }
+            if let live = turns[id]?.liveThinkingID {
+                mutateEvent(id, live) { $0.text += text }
+            } else {
+                let event = RunEvent(kind: .thinking, text: text, state: .running)
+                turns[id]?.liveThinkingID = event.id
+                append(id, event)
+            }
+        case .blockStopped:
+            closeThinking(id)
         case .thinking(let text):
-            append(id, RunEvent(kind: .thinking, text: text))
+            closeThinking(id)
+            // The complete copy of a block that streamed: keep the streamed text unless this one has more to say.
+            if let state = turns[id], !state.streamedThinking.isEmpty {
+                let streamed = turns[id]?.streamedThinking.removeFirst()
+                if let streamed = streamed ?? nil {
+                    if !text.isEmpty { mutateEvent(id, streamed) { $0.text = text } }
+                    return
+                }
+            }
+            if !text.isEmpty { append(id, RunEvent(kind: .thinking, text: text)) }
         case .toolUse(let callID, let name, let input, let nested):
             finishLiveText(id)
             let summary = ToolSummary.describe(tool: name, input: input.dictionary)
@@ -849,9 +951,13 @@ final class WorkspaceManager: ObservableObject {
             // A steering message cut this segment short: the turn goes on with the new message (T3Code's rule).
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
+                // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
+                closeThinking(id)
+                turns[id]?.streamedThinking.removeAll()
                 return
             }
             turns[id]?.steered = false
+            closeThinking(id)
             // Stopped by a usage limit (T3Code's test): remember when it resets, for "Resume at reset".
             if result.isError, turns[id]?.stopping != true,
                !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
@@ -976,7 +1082,7 @@ final class WorkspaceManager: ObservableObject {
         if var list = events[id] {
             var changed = false
             for index in list.indices where list[index].state == .running {
-                list[index].state = list[index].kind == .assistant ? .done : .failed
+                list[index].state = list[index].kind == .assistant || list[index].kind == .thinking ? .done : .failed
                 changed = true
             }
             if changed { events[id] = list; scheduleEventSave(id) }
@@ -1029,6 +1135,16 @@ final class WorkspaceManager: ObservableObject {
         if let cost = usage.reportedCostUSD, settings.showCost { parts.append(AgentPathFormat.cost(cost)) }
         if denials > 0 { parts.append(tr("ws.event.denials", denials)) }
         return parts.joined(separator: " · ")
+    }
+
+    /// Ends the thinking block being streamed; it then waits for its complete copy (see `.thinking`).
+    func closeThinking(_ id: UUID) {
+        guard turns[id]?.thinkingOpen == true else { return }
+        turns[id]?.thinkingOpen = false
+        let live = turns[id]?.liveThinkingID
+        if let live { mutateEvent(id, live) { $0.state = .done } }
+        turns[id]?.liveThinkingID = nil
+        turns[id]?.streamedThinking.append(live)
     }
 
     func finishLiveText(_ id: UUID) {
@@ -1118,6 +1234,8 @@ final class WorkspaceManager: ObservableObject {
         closeClaudeProcess(id)
         closeAcpClient(id)
         limitResumes.removeValue(forKey: id)?.cancel()
+        warmPrompts[id] = nil
+        awaitingCheckpoint[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         git[id] = nil

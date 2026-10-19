@@ -19,6 +19,7 @@ struct NookChatView: View {
     var compact = true
     @EnvironmentObject private var app: AppModel
     @State private var question = ""
+    @State private var images: [ImageAttachment] = []
     @State private var dropTargeted = false
     @FocusState private var inputFocused: Bool
 
@@ -47,13 +48,9 @@ struct NookChatView: View {
             }
         }
         // Drop a file anywhere on the chat: Nook reads it and you ask about it (this replaces the old Shelf tab).
-        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { providers in
-            guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async { app.askAbout(url) }
-            }
-            return true
+        // A picture is added to the message instead; it goes to the model with your question.
+        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
+            ImageAttachment.receive(Array(providers.prefix(6)), images: { images += $0 }, file: { app.askAbout($0) })
         }
         .onAppear {
             // Wait briefly for the panel to acquire keyboard focus.
@@ -189,14 +186,17 @@ struct NookChatView: View {
             .trailing {
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
             }
+            .images($images, asPaths: false, onFile: { app.askAbout($0) })
         }
     }
 
     private func send() {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty else { return }
+        let attached = images
         question = ""
-        app.handleUserText(text)
+        images = []
+        app.handleUserText(text, images: attached)
         inputFocused = true
     }
 }
@@ -223,7 +223,15 @@ private struct ChatMessageView: View, Equatable {
     }
 
     private var user: some View {
-        ConversationMessage(fromUser: true, text: message.text, size: 14)
+        VStack(alignment: .trailing, spacing: 6) {
+            if !message.images.isEmpty {
+                ImageMessageRow(images: message.images)
+            }
+            if !message.text.isEmpty {
+                ConversationMessage(fromUser: true, text: message.text, size: 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var nook: some View {

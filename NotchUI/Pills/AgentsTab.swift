@@ -808,8 +808,14 @@ struct TranscriptConversation: View {
                 .padding(.vertical, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
+            .defaultScrollAnchor(.bottom)
             .onChange(of: shown) { _, _ in scrollToEnd(proxy) }
-            .onAppear { scrollToEnd(proxy) }
+            .onChange(of: loaded) { _, _ in scrollToEnd(proxy) }
+            .onAppear {
+                scrollToEnd(proxy)
+                DispatchQueue.main.async { scrollToEnd(proxy) }
+            }
         }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {

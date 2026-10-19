@@ -46,6 +46,8 @@ targets:
       - package: MLXSwiftLM
         product: MLXLMCommon
       - package: MLXSwiftLM
+        product: MLXVLM
+      - package: MLXSwiftLM
         product: MLXHuggingFace
       - package: SwiftHuggingFace
         product: HuggingFace
@@ -110,6 +112,7 @@ targets:
       - path: Brain/ChatIntent.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
+      - path: Brain/Memory.swift
       - path: Brain/NookDates.swift
       - path: Brain/AppData.swift
       - path: Brain/BrainSelection.swift
@@ -123,6 +126,7 @@ targets:
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
+      - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift

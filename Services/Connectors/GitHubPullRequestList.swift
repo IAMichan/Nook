@@ -1,140 +1,117 @@
 import Foundation
 
-/// One pull request in the list under Agents › Pull requests.
-struct PullRequestItem: Identifiable, Equatable, Sendable {
-    enum CI: Equatable, Sendable { case unknown, pending, passing, failing }
-
-    let repo: String
-    let number: Int
-    let title: String
-    let url: URL?
-    let draft: Bool
-    let updated: Date?
-    let author: String
-    var ci: CI = .unknown
-
-    var id: String { "\(repo)#\(number)" }
-}
-
-/// The open pull requests of one GitHub account: the ones you wrote and the ones waiting for your review.
-struct AccountPullRequests: Identifiable, Equatable, Sendable {
-    /// The account's id in `AccountRegistry` ("github", "github.werk").
-    let id: String
-    /// How the account is named in Nook: its label, else its login.
-    let name: String
-    let login: String
-    var mine: [PullRequestItem]
-    var reviews: [PullRequestItem]
-    /// Set when this account could not be read (token rejected, no connection).
-    var error: String?
-}
-
 /// Reads the open pull requests of every GitHub account that is connected, for the Pull requests view. Read-only.
-@MainActor
+/// One GraphQL request per account (see PullRequestGraphQL), all accounts at once, parsed off the main thread.
 enum GitHubPullRequestList {
+    @MainActor
     static var isAvailable: Bool {
         ConnectorToggle.isOn("github") && !accounts.isEmpty
     }
 
+    @MainActor
     private static var accounts: [ServiceAccount] {
         AccountRegistry.shared.accounts(for: "github").filter { CloudHelp.secret($0.key("token")) != nil }
     }
 
     /// All accounts, in the order they are set up. One failing account does not hide the others.
+    @MainActor
     static func load() async -> [AccountPullRequests] {
         guard ConnectorToggle.isOn("github") else { return [] }
-        var result: [AccountPullRequests] = []
-        for account in accounts {
-            guard let token = CloudHelp.secret(account.key("token")) else { continue }
-            let name = GitHubConnector.accountName(account)
-            do {
-                result.append(try await fetch(account: account, name: name, token: token))
-            } catch {
-                result.append(AccountPullRequests(id: account.id, name: name, login: account.identity ?? "", mine: [], reviews: [],
-                                                  error: CloudHelp.errorText(error, service: "GitHub")))
-            }
+        let targets = accounts.compactMap { account -> (id: String, name: String, login: String, token: String)? in
+            guard let token = CloudHelp.secret(account.key("token")) else { return nil }
+            return (account.id, GitHubConnector.accountName(account), account.identity ?? "", token)
         }
-        return result
-    }
-
-    private static func headers(_ token: String) -> [String: String] {
-        [
-            "Authorization": "Bearer \(token)",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28"
-        ]
-    }
-
-    private static func fetch(account: ServiceAccount, name: String, token: String) async throws -> AccountPullRequests {
-        let auth = headers(token)
-        let userRaw = try await ConnectorHTTP.json(try CloudHelp.url("https://api.github.com/user"), headers: auth)
-        guard let login = CloudHelp.object(userRaw)["login"] as? String, !login.isEmpty else {
-            throw NookError("GitHub returned no username.")
-        }
-        async let mineRaw = search("is:pr is:open archived:false author:\(login)", auth: auth)
-        async let reviewRaw = search("is:pr is:open archived:false review-requested:\(login)", auth: auth)
-        var mine = try await mineRaw
-        let reviews = try await reviewRaw
-        // CI only for the most recent ones, to stay within GitHub's rate limits.
-        for index in mine.indices.prefix(10) {
-            mine[index].ci = await ciState(repo: mine[index].repo, number: mine[index].number, auth: auth)
-        }
-        return AccountPullRequests(id: account.id, name: name, login: login, mine: mine, reviews: reviews, error: nil)
-    }
-
-    private static func search(_ query: String, auth: [String: String]) async throws -> [PullRequestItem] {
-        let url = try CloudHelp.url("https://api.github.com", "/search/issues", query: [
-            ("q", query), ("sort", "updated"), ("order", "desc"), ("per_page", "30")
-        ])
-        let root = CloudHelp.object(try await ConnectorHTTP.json(url, headers: auth))
-        return CloudHelp.list(root["items"]).compactMap(parse)
-    }
-
-    private static func parse(_ item: [String: Any]) -> PullRequestItem? {
-        guard let number = CloudHelp.int(item["number"]), let repoURL = item["repository_url"] as? String else { return nil }
-        let prefix = "https://api.github.com/repos/"
-        let repo = repoURL.hasPrefix(prefix) ? String(repoURL.dropFirst(prefix.count)) : repoURL
-        return PullRequestItem(
-            repo: repo,
-            number: number,
-            title: (item["title"] as? String) ?? "Untitled",
-            url: CloudHelp.link(item["html_url"] as? String),
-            draft: (item["draft"] as? Bool) ?? false,
-            updated: CloudHelp.date(item["updated_at"]),
-            author: (CloudHelp.object(item["user"])["login"] as? String) ?? ""
-        )
-    }
-
-    /// Check runs and commit statuses of the latest commit of a pull request.
-    private static func ciState(repo: String, number: Int, auth: [String: String]) async -> PullRequestItem.CI {
-        let base = "https://api.github.com/repos/\(repo)"
-        guard let pull = await CloudHelp.optionalObject(URL(string: "\(base)/pulls/\(number)"), headers: auth),
-              let sha = CloudHelp.object(pull["head"])["sha"] as? String else { return .unknown }
-        var seen = false
-        var pending = false
-        var failing = false
-        let bad: Set<String> = ["failure", "timed_out", "action_required", "startup_failure"]
-        if let runs = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/check-runs?per_page=50"), headers: auth) {
-            for run in CloudHelp.list(runs["check_runs"]) {
-                seen = true
-                if (run["status"] as? String) != "completed" {
-                    pending = true
-                } else if bad.contains((run["conclusion"] as? String) ?? "") {
-                    failing = true
+        return await withTaskGroup(of: (Int, AccountPullRequests).self) { group in
+            for (index, target) in targets.enumerated() {
+                group.addTask {
+                    do {
+                        let list = try await fetch(token: target.token)
+                        return (index, AccountPullRequests(id: target.id, name: target.name, login: list.login.isEmpty ? target.login : list.login,
+                                                           mine: list.mine, reviews: list.reviews, error: nil))
+                    } catch {
+                        return (index, AccountPullRequests(id: target.id, name: target.name, login: target.login, mine: [], reviews: [],
+                                                           error: CloudHelp.errorText(error, service: "GitHub"),
+                                                           errorKind: ConnectorErrorKind.classify(error)))
+                    }
                 }
             }
+            var result: [(Int, AccountPullRequests)] = []
+            for await entry in group { result.append(entry) }
+            return result.sorted { $0.0 < $1.0 }.map(\.1)
         }
-        if let combined = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/status"), headers: auth),
-           (CloudHelp.int(combined["total_count"]) ?? 0) > 0 {
-            seen = true
-            switch (combined["state"] as? String) ?? "" {
-            case "failure", "error": failing = true
-            case "pending": pending = true
-            default: break
-            }
-        }
-        if failing { return .failing }
-        if pending { return .pending }
-        return seen ? .passing : .unknown
     }
+
+    private static func fetch(token: String) async throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
+        var request = URLRequest(url: URL(string: "https://api.github.com/graphql")!)
+        request.httpMethod = "POST"
+        request.httpBody = PullRequestGraphQL.body()
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
+        case 200..<300: return try PullRequestGraphQL.parse(data)
+        case 401, 403: throw NookError("The credentials were rejected. Check them in Settings › Integrations.", kind: .auth)
+        case 429: throw NookError("Too many requests. Nook will retry shortly.", kind: .rateLimited)
+        case let status: throw NookError("GitHub returned an error (\(status)).")
+        }
+    }
+}
+
+/// The pull request list kept between visits (T3Code keeps it the same way): the last list shows at once, also after a
+/// restart, and is refreshed in the background when it is older than half a minute. A failed refresh keeps the rows.
+@MainActor
+final class PullRequestStore: ObservableObject {
+    static let shared = PullRequestStore()
+
+    @Published private(set) var accounts: [AccountPullRequests] = []
+    @Published private(set) var loading = false
+    @Published private(set) var loaded = false
+    @Published private(set) var available = false
+    private(set) var fetchedAt = Date.distantPast
+    private static let staleAfter: TimeInterval = 30
+    private let file = NookPaths.supportDirectory.appendingPathComponent("pull-requests.json")
+
+    private init() {
+        if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([AccountPullRequests].self, from: data) {
+            accounts = saved
+            loaded = !saved.isEmpty
+        }
+    }
+
+    /// Refreshes when stale (or always with `force`); returns at once while a refresh is already running.
+    func refresh(force: Bool = false) async {
+        available = GitHubPullRequestList.isAvailable
+        guard available else {
+            // GitHub was disconnected: no old rows from an account Nook can no longer read.
+            loaded = true
+            if !accounts.isEmpty {
+                accounts = []
+                try? FileManager.default.removeItem(at: file)
+            }
+            return
+        }
+        guard !loading, force || Date().timeIntervalSince(fetchedAt) > Self.staleAfter else { return }
+        loading = true
+        let fresh = await GitHubPullRequestList.load()
+        loading = false
+        loaded = true
+        fetchedAt = Date()
+        // An account that failed this time keeps its last rows, with the error shown.
+        accounts = fresh.map { account in
+            guard account.error != nil, let old = accounts.first(where: { $0.id == account.id }) else { return account }
+            var kept = old
+            kept.error = account.error
+            kept.errorKind = account.errorKind
+            return kept
+        }
+        let snapshot = accounts.map { var copy = $0; copy.error = nil; copy.errorKind = nil; return copy }
+        let file = self.file
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: file, options: .atomic) }
+        }
+    }
+
+    /// Something changed (a turn ended, a pull request opened): the next look refreshes.
+    func markStale() { fetchedAt = .distantPast }
 }

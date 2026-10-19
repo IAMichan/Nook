@@ -161,8 +161,8 @@ enum TimelinePresentation {
                 .event(turn[answer]), .event(finished)]
     }
 
-    /// Two or more tool calls in a row become one block; thinking between them stays inside it. Everything else stands
-    /// on its own: errors and approvals are never hidden inside a group.
+    /// Two or more tool calls in a row become one block. Everything else stands on its own: the agent's thinking stays
+    /// readable in the chat, and errors and approvals are never hidden inside a group.
     static func group(_ events: [RunEvent]) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
@@ -180,7 +180,7 @@ enum TimelinePresentation {
             run = []
         }
         for event in events {
-            if isWork(event) || (event.kind == .thinking && !run.isEmpty) {
+            if isWork(event) {
                 run.append(event)
             } else {
                 flush()

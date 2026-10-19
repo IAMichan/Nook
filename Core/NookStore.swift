@@ -18,7 +18,7 @@ struct AuditEntry: Identifiable, Equatable {
     var result: String
 }
 
-/// Nook's memory: open loops and an audit log of everything Nook does. Everything remains local.
+/// Nook's own data: open loops, an audit log of everything Nook does and what it learned (memory). Everything remains local.
 ///
 /// The schema is versioned with `PRAGMA user_version`: each migration below runs once, in order, so an existing database
 /// from any earlier version is brought up to date without losing anything.
@@ -57,7 +57,19 @@ final class NookStore {
         );
         """,
         // 2: faster log browsing and pruning.
-        "CREATE INDEX IF NOT EXISTS audit_ts ON audit (ts);"
+        "CREATE INDEX IF NOT EXISTS audit_ts ON audit (ts);",
+        // 3: memory (what Nook learned about the user) and small learned state (which sources answer what).
+        """
+        CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            body TEXT NOT NULL,
+            updated REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS memory_state (
+            key TEXT PRIMARY KEY,
+            body TEXT NOT NULL
+        );
+        """
     ]
 
     init(url: URL = NookPaths.databaseURL) {
@@ -253,6 +265,72 @@ final class NookStore {
             sqlite3_bind_text(stmt, 2, tool, -1, transient)
             sqlite3_bind_text(stmt, 3, String(args.prefix(2000)), -1, transient)
             sqlite3_bind_text(stmt, 4, String(result.prefix(2000)), -1, transient)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    // MARK: Memory
+
+    /// Every stored memory. A row that cannot be read (from a newer version) is skipped, never deleted.
+    func memories() -> [MemoryItem] {
+        var result: [MemoryItem] = []
+        var stmt: OpaquePointer?
+        let decoder = JSONDecoder()
+        if sqlite3_prepare_v2(db, "SELECT body FROM memories ORDER BY updated ASC", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let text = sqlite3_column_text(stmt, 0) else { continue }
+                if let item = try? decoder.decode(MemoryItem.self, from: Data(String(cString: text).utf8)) { result.append(item) }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return result
+    }
+
+    func saveMemory(_ item: MemoryItem) {
+        guard let data = try? JSONEncoder().encode(item), let body = String(data: data, encoding: .utf8) else { return }
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memories (id, body, updated) VALUES (?, ?, ?)", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, item.id, -1, transient)
+            sqlite3_bind_text(stmt, 2, body, -1, transient)
+            sqlite3_bind_double(stmt, 3, item.updated.timeIntervalSince1970)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    func deleteMemory(id: String) {
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "DELETE FROM memories WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, id, -1, transient)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    /// Forgets everything Nook learned (Settings › Memory).
+    func clearMemories() {
+        exec("DELETE FROM memories; DELETE FROM memory_state;")
+    }
+
+    /// Small learned state, stored as JSON text under a key.
+    func memoryState(_ key: String) -> Data? {
+        var stmt: OpaquePointer?
+        var result: Data?
+        if sqlite3_prepare_v2(db, "SELECT body FROM memory_state WHERE key = ?", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, key, -1, transient)
+            if sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) { result = Data(String(cString: text).utf8) }
+        }
+        sqlite3_finalize(stmt)
+        return result
+    }
+
+    func setMemoryState(_ key: String, _ data: Data) {
+        guard let body = String(data: data, encoding: .utf8) else { return }
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memory_state (key, body) VALUES (?, ?)", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, key, -1, transient)
+            sqlite3_bind_text(stmt, 2, body, -1, transient)
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)

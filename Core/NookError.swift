@@ -2,7 +2,7 @@ import Foundation
 
 /// What kind of failure a connection ran into, so the UI can offer the right way out
 /// ("Reconnect" for rejected credentials, "Try again" for a network problem).
-enum ConnectorErrorKind: String, Equatable, Sendable {
+enum ConnectorErrorKind: String, Equatable, Codable, Sendable {
     /// The credentials were rejected or have expired.
     case auth
     /// The service could not be reached.

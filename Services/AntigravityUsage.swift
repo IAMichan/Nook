@@ -3,8 +3,10 @@ import SQLite3
 
 /// Antigravity's quota windows (per model family: 5-hour and weekly), read the way Antigravity itself does.
 ///
-/// Antigravity (`agy`) keeps its Google sign-in in `<home>/antigravity-acp/acp_token.json`. Nook exchanges the refresh token
-/// for a short-lived access token and asks Google's Cloud Code endpoint for the quota summary. The token never leaves this
+/// Antigravity's ACP server keeps its Google sign-in in `<GEMINI_HOME>/antigravity-acp/acp_token.json` (T3Code reads the
+/// same file): first the profiles of Nook's own Antigravity sessions, then Antigravity's own folder. Nook exchanges the
+/// refresh token for a short-lived access token (kept until shortly before it expires) and asks Google's Cloud Code
+/// endpoint for the quota summary. The token never leaves this
 /// request and is not stored or logged; nothing is written to Antigravity's files.
 @MainActor
 final class AntigravityUsage: ObservableObject {
@@ -15,6 +17,8 @@ final class AntigravityUsage: ObservableObject {
 
     /// The account directory to read, set by the app. Defaults to Antigravity's own (`~/.gemini`).
     var home: () -> URL = { AgentKind.antigravity.defaultHome }
+    /// The profile folders of Nook's own Antigravity sessions (where signing in in Nook leaves its token), set by the app.
+    var sessionProfiles: () -> [URL] = { [] }
 
     private var timer: Timer?
     private var busy = false
@@ -38,10 +42,11 @@ final class AntigravityUsage: ObservableObject {
         guard !busy, Date().timeIntervalSince(lastFetch) >= Self.minimumInterval else { return }
         busy = true
         lastFetch = Date()
-        let directory = home()
+        let directories = sessionProfiles() + [home()]
         Task.detached(priority: .utility) { [weak self] in
-            let hasLogin = AntigravityUsage.credentials(home: directory) != nil
-            let windows = hasLogin ? AntigravityUsage.read(home: directory) : nil
+            // A sign-in file counts as a login; a token borrowed from the Antigravity editor only when it still works.
+            let hasLogin = AntigravityUsage.credentials(homes: directories, includeApp: false) != nil
+            let windows = AntigravityUsage.read(homes: directories)
             await MainActor.run {
                 guard let self else { return }
                 self.busy = false
@@ -51,7 +56,7 @@ final class AntigravityUsage: ObservableObject {
                 } else {
                     // Not signed in yet, or offline: try again at the next opportunity. Old values stay until then.
                     self.lastFetch = .distantPast
-                    if !hasLogin {
+                    if !hasLogin, windows == nil || windows?.isEmpty == true {
                         self.limits = []
                         self.noLogin = true
                     }
@@ -76,17 +81,21 @@ final class AntigravityUsage: ObservableObject {
         var project: String?
     }
 
-    /// Antigravity's own sign-in file, or any token file next to it (`~/.gemini` and a few folders deep).
-    private nonisolated static func credentials(home: URL) -> Credentials? {
+    /// Antigravity's own sign-in file, or any token file next to it (`~/.gemini` and a few folders deep), in each folder
+    /// in turn; then the Antigravity editor's token.
+    private nonisolated static func credentials(homes: [URL], includeApp: Bool = true) -> Credentials? {
         let fm = FileManager.default
-        var urls = [home.appendingPathComponent("antigravity-acp/acp_token.json")]
-        for folder in ["antigravity-acp", "antigravity", "antigravity-cli", "config"] {
-            let directory = home.appendingPathComponent(folder, isDirectory: true)
-            for name in ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).sorted() where name.hasSuffix(".json") {
-                urls.append(directory.appendingPathComponent(name))
+        var urls: [URL] = []
+        for home in homes {
+            urls.append(home.appendingPathComponent("antigravity-acp/acp_token.json"))
+            for folder in ["antigravity-acp", "antigravity", "antigravity-cli", "config"] {
+                let directory = home.appendingPathComponent(folder, isDirectory: true)
+                for name in ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).sorted() where name.hasSuffix(".json") {
+                    urls.append(directory.appendingPathComponent(name))
+                }
             }
+            urls.append(home.appendingPathComponent("oauth_creds.json"))
         }
-        urls.append(home.appendingPathComponent("oauth_creds.json"))
         for url in urls {
             guard let data = try? Data(contentsOf: url),
                   let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
@@ -102,7 +111,7 @@ final class AntigravityUsage: ObservableObject {
             if canRefresh || credentials.access != nil { return credentials }
         }
         // The Antigravity app keeps its sign-in in its own storage; it keeps that token fresh while the app runs.
-        if let token = appToken() { return Credentials(access: token) }
+        if includeApp, let token = appToken() { return Credentials(access: token) }
         return nil
     }
 
@@ -138,16 +147,29 @@ final class AntigravityUsage: ObservableObject {
         return nil
     }
 
-    private nonisolated static func read(home: URL) -> [QuotaLimit]? {
-        guard let credentials = credentials(home: home) else { return nil }
+    /// The last access token per refresh token, until a minute before it expires (as T3Code keeps it).
+    private nonisolated(unsafe) static var tokenCache: [String: (token: String, until: Date)] = [:]
+    private nonisolated static let tokenLock = NSLock()
+
+    private nonisolated static func read(homes: [URL]) -> [QuotaLimit]? {
+        guard let credentials = credentials(homes: homes) else { return nil }
         let project = credentials.project
         var access = credentials.access
         if access == nil, let clientID = credentials.clientID, let secret = credentials.secret, let refresh = credentials.refresh {
-            var token = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-            token.httpMethod = "POST"
-            token.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            token.httpBody = form(["client_id": clientID, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"])
-            access = ((send(token) as? [String: Any])?["access_token"]) as? String
+            let key = clientID + "\u{0}" + refresh
+            if let cached = tokenLock.withLock({ tokenCache[key] }), cached.until > Date() {
+                access = cached.token
+            } else {
+                var token = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+                token.httpMethod = "POST"
+                token.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                token.httpBody = form(["client_id": clientID, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"])
+                let answer = send(token) as? [String: Any]
+                access = answer?["access_token"] as? String
+                if let fresh = access, let seconds = (answer?["expires_in"] as? NSNumber)?.doubleValue, seconds > 60 {
+                    tokenLock.withLock { tokenCache[key] = (fresh, Date().addingTimeInterval(seconds - 60)) }
+                }
+            }
         }
         guard let access else { return nil }
 

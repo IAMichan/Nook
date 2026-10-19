@@ -42,7 +42,12 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case textDelta(String)
     /// A complete text block from the assistant.
     case text(String)
+    /// A complete thinking block (empty when the model kept it to itself).
     case thinking(String)
+    /// Thinking as it streams: a new block starts, or more text for the current one.
+    case thinkingDelta(String, starts: Bool)
+    /// A streamed content block ended.
+    case blockStopped
     case toolUse(id: String, name: String, input: JSONBox, nested: Bool)
     case toolResult(id: String, output: String, isError: Bool)
     case usage(messageID: String, tokens: TokenCounts, model: String?)
@@ -88,12 +93,29 @@ enum ClaudeStreamParser {
             return []
 
         case "stream_event":
-            guard !nested, let event = object["event"] as? [String: Any],
-                  (event["type"] as? String) == "content_block_delta",
-                  let delta = event["delta"] as? [String: Any],
-                  (delta["type"] as? String) == "text_delta",
-                  let text = delta["text"] as? String, !text.isEmpty else { return [] }
-            return [.textDelta(text)]
+            guard !nested, let event = object["event"] as? [String: Any] else { return [] }
+            switch event["type"] as? String {
+            case "content_block_start":
+                // Thinking shows while it is written, as T3Code streams it.
+                guard let block = event["content_block"] as? [String: Any], (block["type"] as? String) == "thinking" else { return [] }
+                return [.thinkingDelta((block["thinking"] as? String) ?? "", starts: true)]
+            case "content_block_delta":
+                guard let delta = event["delta"] as? [String: Any] else { return [] }
+                switch delta["type"] as? String {
+                case "text_delta":
+                    guard let text = delta["text"] as? String, !text.isEmpty else { return [] }
+                    return [.textDelta(text)]
+                case "thinking_delta":
+                    guard let text = delta["thinking"] as? String, !text.isEmpty else { return [] }
+                    return [.thinkingDelta(text, starts: false)]
+                default:
+                    return []
+                }
+            case "content_block_stop":
+                return [.blockStopped]
+            default:
+                return []
+            }
 
         case "assistant":
             guard let message = object["message"] as? [String: Any] else { return [] }
@@ -106,7 +128,8 @@ enum ClaudeStreamParser {
                         events.append(.text(text))
                     }
                 case "thinking":
-                    if !nested, let text = block["thinking"] as? String, !text.isEmpty { events.append(.thinking(text)) }
+                    // Also when empty: it matches the streamed block, which keeps its text then.
+                    if !nested { events.append(.thinking((block["thinking"] as? String) ?? "")) }
                 case "tool_use":
                     if let id = block["id"] as? String, let name = block["name"] as? String {
                         events.append(.toolUse(id: id, name: name, input: JSONBox(block["input"] ?? [String: Any]()), nested: nested))

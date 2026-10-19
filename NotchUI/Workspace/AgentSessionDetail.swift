@@ -17,6 +17,7 @@ struct AgentSessionDetail: View {
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
     /// An action is in progress (sending, ending a process).
@@ -243,6 +244,7 @@ struct AgentSessionDetail: View {
             SessionComposer(text: $draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
+            .images($images)
         } else {
             SessionComposer(
                 text: $draft,
@@ -254,6 +256,7 @@ struct AgentSessionDetail: View {
                 agentPill(name: session.name, profile: app.profile(for: session))
                 sessionMenu(session)
             }
+            .images($images)
         }
     }
 
@@ -268,34 +271,35 @@ struct AgentSessionDetail: View {
     private func sessionMenu(_ session: AgentSession) -> some View {
         let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
-        return Menu {
-            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
-            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+        let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
+        return ComposerDropdown(width: 250) {
+            moreLabel
+        } content: {
+            DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                        title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
+                        disabledReason: busy ? tr("ws.error.busy") : nil) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
-            .disabled(busy)
-            Divider()
             if app.canEnd(session) && app.canTakeOver(session) {
-                Button(tr("agents.nook.takeOver")) {
+                DropdownDivider()
+                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.takeOver")) {
                     perform { try await app.continueInNook(session, endingTerminal: true) }
                 }
             }
             if app.canEnd(session) {
-                Button(tr("agents.nook.end"), role: .destructive) {
+                if !app.canTakeOver(session) { DropdownDivider() }
+                DropdownRow(symbol: "xmark.octagon", title: tr("agents.nook.end"), tint: NookTheme.coralSoft) {
                     perform { try app.endSession(session) }
                 }
             }
             if !session.cwd.isEmpty {
-                if app.canEnd(session) { Divider() }
-                Button(tr("button.openFolder")) {
+                DropdownDivider()
+                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
-        } label: {
-            moreLabel
         }
-        .composerMenu()
         .help(tr("agents.nook.more"))
     }
 
@@ -475,6 +479,7 @@ struct AgentSessionDetail: View {
                 // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
                 pastMenu(session, canContinue: app.canContinueInNook(session))
             }
+            .images($images)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -489,23 +494,22 @@ struct AgentSessionDetail: View {
 
     /// Open the whole conversation in Nook without a message, or its folder or a terminal there.
     private func pastMenu(_ session: PastSession, canContinue: Bool) -> some View {
-        Menu {
+        ComposerDropdown(width: 250) {
+            moreLabel
+        } content: {
             if canContinue {
-                Button(tr("agents.nook.open")) {
+                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.open")) {
                     perform { try await app.continueInNook(session) }
                 }
-                Divider()
+                if !session.cwd.isEmpty { DropdownDivider() }
             }
             if !session.cwd.isEmpty {
-                Button(tr("button.openFolder")) {
+                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
-        } label: {
-            moreLabel
         }
-        .composerMenu()
         .help(tr("agents.nook.more"))
     }
 

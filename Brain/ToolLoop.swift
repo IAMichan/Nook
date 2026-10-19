@@ -55,6 +55,18 @@ protocol ModelConversation: AnyObject {
     func addResults(_ results: [(call: ToolCallRequest, output: String, isError: Bool)])
     /// Asks the model to finish with a plain answer, without further tools.
     func addInstruction(_ text: String)
+    /// Adds pictures to the last user message. Brains that cannot see pictures ignore them.
+    func attach(_ images: [PromptImage])
+}
+
+extension ModelConversation {
+    func attach(_ images: [PromptImage]) {}
+}
+
+/// A picture as a model receives it: its type and the bytes in base64.
+struct PromptImage {
+    let mediaType: String
+    let base64: String
 }
 
 /// The one place where tool calls of any model are handled. Every runtime (cloud, local server, Claude Code, MLX)

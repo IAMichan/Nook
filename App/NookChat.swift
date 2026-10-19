@@ -20,6 +20,8 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     var role: Role
     var text: String
+    /// Pictures sent with a question. Kept for this session only: they are not saved with the conversation.
+    var images: [ImageAttachment] = []
     var date = Date()
     /// Goes up with every change (`NookChat.update`), so a message view redraws only when its own message changed.
     var revision = 0
@@ -655,4 +657,6 @@ private struct StoredMail: Codable {
 /// Associates tool outputs (charts, mail drafts) with the correct reply and conversation.
 enum ReplyContext {
     @TaskLocal static var messageID: UUID?
+    /// The pictures sent with the question being answered; the brain adds them to the last message.
+    @TaskLocal static var images: [ImageAttachment] = []
 }

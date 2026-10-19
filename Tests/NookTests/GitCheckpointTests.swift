@@ -30,6 +30,16 @@ final class GitCheckpointTests: XCTestCase {
         try? String(contentsOf: repo.appendingPathComponent(name), encoding: .utf8)
     }
 
+    func testFirstSnapshotOfAFreshWorktreeIsHead() throws {
+        let ref = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpointHead(repo.path, ref: ref)
+        XCTAssertEqual(try git.run(["rev-parse", ref], in: repo.path), try git.run(["rev-parse", "HEAD"], in: repo.path))
+        try write("later.txt", "nieuw")
+        try git.restore(repo.path, to: ref)
+        XCTAssertNil(read("later.txt"), "back to HEAD: a file added later goes")
+        XCTAssertEqual(read("a.txt"), "een")
+    }
+
     func testCheckpointAndRestore() throws {
         let session = UUID()
         let head = try git.run(["rev-parse", "HEAD"], in: repo.path)

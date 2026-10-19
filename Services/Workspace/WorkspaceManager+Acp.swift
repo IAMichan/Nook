@@ -5,7 +5,7 @@ import Foundation
 /// `session/update`, tool calls show live, and the agent's permission requests are answered here (or right away when the
 /// session's rights allow it). A continued conversation is `session/load` when the agent supports it.
 extension WorkspaceManager {
-    private static let acpIdleSeconds: UInt64 = 15 * 60
+    private static let acpIdleSeconds: UInt64 = 30 * 60
 
     // MARK: Turns
 
@@ -21,19 +21,26 @@ extension WorkspaceManager {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
 
-        if let client = acpClients[id], client.isRunning, client.sessionID != nil {
-            sendAcpPrompt(id, client, prompt: prompt)
+        if let client = acpClients[id], client.isRunning {
+            // Warmed up already: the prompt goes at once, or as soon as the session is open.
+            if client.sessionID != nil { sendAcpPrompt(id, client, prompt: prompt) } else { warmPrompts[id] = prompt }
             return
         }
+        connectAcp(id, executable: executable, prompt: prompt)
+    }
 
-        let input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt, model: run.model, mode: run.mode,
+    /// Starts the agent's ACP server and opens (or loads) its session. With a prompt it is sent right away; without one
+    /// (warming up when you open the session) the session waits for your first message.
+    func connectAcp(_ id: UUID, executable: String, prompt: String?) {
+        guard let run = run(id) else { return }
+        let input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt ?? "", model: run.model, mode: run.mode,
                                        permission: run.permission, instructions: run.instructions, workingDirectory: run.workingDirectory,
                                        resumeSessionID: run.providerSessionID, accountEnvironment: accountEnvironment(run.profileID), runID: id)
         var spec = AgentCommand.acpSpec(input)
         if run.provider == .antigravity {
             // Its own profile folder, harness and sign-in helper; your other Google settings stay out (T3Code's way).
             guard let environment = prepareAntigravity(profileID: run.profileID, executable: executable) else {
-                failAcpTurn(id, tr("ws.antigravity.notInstalled"))
+                if prompt != nil { failAcpTurn(id, tr("ws.antigravity.notInstalled")) }
                 return
             }
             spec.extraEnvironment.merge(environment) { $1 }
@@ -48,16 +55,19 @@ extension WorkspaceManager {
             Task { @MainActor in self?.handleAcp(id, client, message, events) }
         }
         client.onExit = { [weak self] status, stderr in
-            Task { @MainActor in self?.acpExited(id, client, status: status, stderr: stderr, prompt: prompt, executable: executable) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.acpExited(id, client, status: status, stderr: stderr, prompt: prompt ?? self.warmPrompts[id] ?? "", executable: executable)
+            }
         }
         do {
             try client.start()
         } catch {
-            failAcpTurn(id, tr("ws.error.launch", error.localizedDescription))
+            if prompt != nil { failAcpTurn(id, tr("ws.error.launch", error.localizedDescription)) }
             return
         }
         acpClients[id] = client
-        append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+        if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let bridge = bridgeLaunch().map { launch in
             (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
@@ -68,7 +78,7 @@ extension WorkspaceManager {
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
-                    self.acpFailed(id, client, error, prompt: prompt, executable: executable)
+                    self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
                     let capabilities = (response.dictionary["agentCapabilities"] as? [String: Any]) ?? [:]
                     client.canLoadSessions = (capabilities["loadSession"] as? Bool) ?? false
@@ -80,7 +90,9 @@ extension WorkspaceManager {
                     client.request("authenticate", ["methodId": AntigravityAcp.authMethod]) { [weak self] result in
                         Task { @MainActor in
                             guard let self else { return }
-                            if case .failure(let error) = result { return self.acpFailed(id, client, error, prompt: prompt, executable: executable) }
+                            if case .failure(let error) = result {
+                                return self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
+                            }
                             self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
                         }
                     }
@@ -91,7 +103,7 @@ extension WorkspaceManager {
 
     /// A new session, or the earlier one loaded again (its replay is dropped: Nook keeps the timeline itself).
     private func openAcpSession(_ id: UUID, _ client: AcpClient, bridge: (command: String, args: [String], env: [String: String])?,
-                                prompt: String, executable: String) {
+                                prompt: String?, executable: String) {
         guard let run = run(id) else { return }
         let loadID = client.canLoadSessions ? run.providerSessionID : nil
         if run.providerSessionID != nil, loadID == nil {
@@ -105,14 +117,18 @@ extension WorkspaceManager {
                 client.replaying = false
                 switch result {
                 case .failure(let error):
-                    self.acpFailed(id, client, error, prompt: prompt, executable: executable)
+                    self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
                     let session = (response.dictionary["sessionId"] as? String) ?? loadID
                     client.sessionID = session
                     client.freshSession = loadID == nil
                     if let session { self.update(id) { $0.providerSessionID = session } }
                     self.configureAcpSession(id, client, response.dictionary)
-                    self.sendAcpPrompt(id, client, prompt: prompt)
+                    if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
+                        self.sendAcpPrompt(id, client, prompt: next)
+                    } else {
+                        self.scheduleAcpIdleClose(id)
+                    }
                 }
             }
         }
@@ -310,6 +326,11 @@ extension WorkspaceManager {
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
         sendQueued(id)
+        scheduleAcpIdleClose(id)
+    }
+
+    /// An idle session closes after a while; the next message loads it again in a new process.
+    private func scheduleAcpIdleClose(_ id: UUID) {
         acpIdleClose[id]?.cancel()
         acpIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.acpIdleSeconds * 1_000_000_000)
@@ -321,10 +342,16 @@ extension WorkspaceManager {
     // MARK: Failures
 
     /// Starting failed. Gemini CLI without ACP (an older version) uses its headless mode from now on.
-    private func acpFailed(_ id: UUID, _ client: AcpClient, _ error: CodexAppServerError, prompt: String, executable: String) {
+    private func acpFailed(_ id: UUID, _ client: AcpClient, _ error: CodexAppServerError, prompt: String?, executable: String) {
         guard acpClients[id] === client else { return }
         acpClients[id] = nil
         client.stop()
+        warmPrompts[id] = nil
+        // Warming up failed with no message waiting: remember a Gemini without ACP, and the next message starts it again.
+        guard let prompt else {
+            if run(id)?.provider == .gemini, client.sessionID == nil { acpFallback.insert(executable) }
+            return
+        }
         if run(id)?.provider == .gemini, client.sessionID == nil {
             acpFallback.insert(executable)
             turns[id] = nil
@@ -342,6 +369,7 @@ extension WorkspaceManager {
         acpClients[id] = nil
         acpIdleClose[id]?.cancel()
         acpIdleClose[id] = nil
+        warmPrompts[id] = nil
         guard let state = turns[id], !state.finished else { return }
         if run(id)?.provider == .gemini, client.sessionID == nil, !state.stopping {
             acpFallback.insert(executable)

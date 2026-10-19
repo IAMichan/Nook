@@ -17,6 +17,7 @@ struct MCPPreset: Identifiable {
     /// A preset that works with something on the Mac shows that app's icon (the filesystem server: Finder).
     var appSource: String? { id == "filesystem" ? "files" : nil }
 
+    // No memory server here: memory is built into Nook (Settings › Memory), without Node or npx.
     static let all: [MCPPreset] = [
         MCPPreset(
             id: "filesystem",
@@ -65,19 +66,6 @@ struct MCPPreset: Identifiable {
             fallbackIcon: "safari.fill",
             tint: Color(hex: 0x00D69F),
             defaultCommand: "npx -y @modelcontextprotocol/server-puppeteer",
-            requiredEnv: [],
-            envLabels: [:],
-            envPlaceholders: [:],
-            helpURL: nil
-        ),
-        MCPPreset(
-            id: "memory",
-            name: "Geheugen & Kennisbank",
-            detail: "Onthoudt belangrijke feiten en notities permanent in een lokale graaf.",
-            iconDomain: "modelcontextprotocol.io",
-            fallbackIcon: "brain.head.profile",
-            tint: Color(hex: 0x9D8FFF),
-            defaultCommand: "npx -y @modelcontextprotocol/server-memory",
             requiredEnv: [],
             envLabels: [:],
             envPlaceholders: [:],

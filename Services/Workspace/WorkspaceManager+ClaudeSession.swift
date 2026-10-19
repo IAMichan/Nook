@@ -4,7 +4,7 @@ import Foundation
 /// message goes straight to it, warm cache and all. A change of model, mode or rights (they are command-line flags),
 /// a copy of the conversation, or ten quiet minutes start a fresh process that resumes the conversation instead.
 extension WorkspaceManager {
-    private static let claudeIdleSeconds: UInt64 = 10 * 60
+    private static let claudeIdleSeconds: UInt64 = 30 * 60
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
@@ -52,11 +52,34 @@ extension WorkspaceManager {
         return true
     }
 
+    /// A process started ahead of your first message (see `prewarm`): it waits like one parked after a turn.
+    func parkWarmClaude(_ id: UUID, _ process: AgentProcess, key: String) {
+        closeClaudeProcess(id)
+        claudeIdle[id] = (process, key)
+        claudeIdleClose[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.claudeIdleSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.closeClaudeProcess(id)
+        }
+    }
+
     func closeClaudeProcess(_ id: UUID) {
         claudeIdleClose[id]?.cancel()
         claudeIdleClose[id] = nil
         guard let idle = claudeIdle.removeValue(forKey: id) else { return }
         idle.process.closeInput()
         idle.process.stop(grace: 2)
+    }
+
+    /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.
+    func probeClaudeFlags(_ executable: String) {
+        claudeThinkingDisplay[executable] = false
+        Task { [weak self] in
+            let known = await Task.detached(priority: .utility) {
+                let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable, extra: [:])
+                return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout.contains("--thinking-display") == true
+            }.value
+            self?.claudeThinkingDisplay[executable] = known
+        }
     }
 }

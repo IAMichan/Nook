@@ -14,6 +14,7 @@ struct NewSessionComposer: View {
     let onStarted: (UUID) -> Void
 
     @State private var config = NewRunConfig()
+    @State private var images: [ImageAttachment] = []
     @State private var project: ProjectInfo?
     @State private var inspecting = false
     @State private var starting = false
@@ -48,26 +49,22 @@ struct NewSessionComposer: View {
         HStack(spacing: 0) {
             Text(tr("compose.heading"))
                 .foregroundStyle(NookTheme.paper)
-            Menu {
-                if !recentProjects.isEmpty {
-                    Section(tr("ws.new.recent")) {
-                        ForEach(recentProjects, id: \.self) { path in
-                            Button(AgentPathFormat.tilde(path)) { select(path) }
-                        }
-                    }
-                }
-                Divider()
-                Button(tr("ws.new.chooseFolder")) { chooseFolder() }
-                Button(tr("ws.new.clone")) { showClone = true }
-            } label: {
+            ComposerDropdown(width: 320) {
                 Text(project?.name ?? tr("compose.pickProject"))
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
+            } content: {
+                if !recentProjects.isEmpty {
+                    DropdownHeader(title: tr("ws.new.recent"))
+                    ForEach(recentProjects, id: \.self) { path in
+                        DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
+                                    chosen: project?.path == path) { select(path) }
+                    }
+                    DropdownDivider()
+                }
+                DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
+                DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             Text("?").foregroundStyle(NookTheme.paper)
             if inspecting {
@@ -114,86 +111,54 @@ struct NewSessionComposer: View {
             ComposerDivider()
             permissionMenu
         }
+        .images($images)
     }
 
     // MARK: Choices in the box
 
-    /// Agent and account in one menu, the model below them.
+    /// Agent, account and model in one panel, as T3Code's model picker: agents in a rail, their models with a search.
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
-        return Menu {
-            // Only agents and accounts you connected; the rest would only clutter the choice.
-            if app.connectedProviders.isEmpty {
-                Text(tr("agents.noneConnected"))
-            }
-            ForEach(app.connectedProviders) { provider in
-                Section(provider.displayName) {
-                    ForEach(app.connectedProfiles(for: provider)) { account in
-                        Button {
-                            choose(provider, account: account.id)
-                        } label: {
-                            if config.provider == provider && config.profileID == account.id {
-                                Label(AccountLabel.line(account, app: app), systemImage: "checkmark")
-                            } else {
-                                Text(AccountLabel.line(account, app: app))
-                            }
-                        }
-                    }
-                }
-            }
-            Divider()
-            Section(tr("ws.new.model")) {
-                ForEach(app.models(for: config.provider), id: \.self) { model in
-                    Button {
-                        config.model = model
-                    } label: {
-                        let title = app.modelName(model, for: config.provider)
-                        if config.model == model { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            }
-        } label: {
+        return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296) {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
                             + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)))
+        } content: {
+            if app.connectedProviders.isEmpty {
+                DropdownHeader(title: tr("agents.noneConnected"))
+            } else {
+                AgentModelPicker(providers: app.connectedProviders, provider: config.provider, profileID: config.profileID,
+                                 model: config.model) { provider, account, model in
+                    if provider != config.provider || (account != nil && account != config.profileID) {
+                        choose(provider, account: account ?? app.connectedProfiles(for: provider).first?.id ?? config.profileID)
+                    }
+                    if let model { config.model = model }
+                }
+            }
         }
-        .composerMenu()
         .help(tr("ws.new.accountPinned"))
     }
 
     private var modeMenu: some View {
-        Menu {
-            ForEach(ExecutionMode.allCases) { mode in
-                Button {
-                    config.mode = mode
-                } label: {
-                    if config.mode == mode { Label(mode.label, systemImage: "checkmark") } else { Text(mode.label) }
-                }
-            }
-        } label: {
-            ComposerPill(symbol: config.mode == .plan ? "list.bullet.clipboard" : "sparkles", dot: nil, text: config.mode.label)
-        }
-        .composerMenu()
-        .help(config.mode.help)
+        ModeToggle(mode: $config.mode)
     }
 
     private var permissionMenu: some View {
-        Menu {
-            ForEach(config.provider.capabilities.policies) { policy in
-                Button {
-                    config.permission = policy
-                } label: {
-                    if config.permission == policy { Label(policy.label, systemImage: "checkmark") } else { Text(policy.label) }
-                }
-            }
-        } label: {
+        ComposerDropdown(width: 300) {
             ComposerPill(symbol: config.permission == .bypass ? "lock.open" : "lock",
                  dot: nil,
                  text: config.mode == .plan ? tr("compose.readOnly") : config.permission.label,
                  tint: config.permission == .bypass && config.mode != .plan ? NookTheme.coralSoft : nil)
+        } content: {
+            DropdownHeader(title: tr("compose.access"))
+            ForEach(config.provider.capabilities.policies) { policy in
+                DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: config.provider),
+                            chosen: config.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
+                    config.permission = policy
+                }
+            }
         }
-        .composerMenu()
         .disabled(config.mode == .plan)
         .help(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
     }
@@ -202,40 +167,30 @@ struct NewSessionComposer: View {
 
     private var belowBox: some View {
         HStack(spacing: 6) {
-            Menu {
-                Button {
-                    config.isolation = .folder
-                } label: {
-                    if config.isolation == .folder { Label(tr("compose.currentCheckout"), systemImage: "checkmark") } else { Text(tr("compose.currentCheckout")) }
-                }
-                Button {
-                    config.isolation = .worktree
-                } label: {
-                    if config.isolation == .worktree { Label(tr("compose.newWorktree"), systemImage: "checkmark") } else { Text(tr("compose.newWorktree")) }
-                }
-                .disabled(!worktreeAllowed)
-            } label: {
+            ComposerDropdown(width: 300) {
                 ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
                      text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
+            } content: {
+                DropdownHeader(title: tr("compose.whereWorks"))
+                DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
+                            chosen: config.isolation == .folder) {
+                    config.isolation = .folder
+                }
+                DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
+                            chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : worktreeBlockedReason) {
+                    config.isolation = .worktree
+                }
             }
-            .composerMenu()
             .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : worktreeBlockedReason)
 
             Spacer(minLength: 8)
 
             if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
-                Menu {
-                    ForEach(sortedBranches(branches), id: \.self) { branch in
-                        Button {
-                            config.baseBranch = branch
-                        } label: {
-                            if config.baseBranch == branch { Label(branch, systemImage: "checkmark") } else { Text(branch) }
-                        }
-                    }
-                } label: {
+                ComposerDropdown(width: 280) {
                     ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
+                } content: {
+                    BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
                 }
-                .composerMenu()
             } else if let branch = project?.currentBranch {
                 ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
             }

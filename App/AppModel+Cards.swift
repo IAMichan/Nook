@@ -35,6 +35,7 @@ extension AppModel {
                 copy.input = ActionGate.normalized(action.input, schema: spec.schema)
                 return copy
             }
+            plan.actions = withHabits(plan.actions, tools: prepared.tools).actions
 
             let bare = plan.text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
             if plan.actions.isEmpty && bare == "NONE" {

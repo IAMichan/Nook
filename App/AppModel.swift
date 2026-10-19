@@ -81,12 +81,18 @@ final class AppModel: ObservableObject {
         onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
     )
 
+    /// What Nook learned about the user, stored next to the open loops (see `AppModel+Memory`).
+    private(set) lazy var memory = NookMemory(store: store)
+    /// remember, forget and recall_memory.
+    private(set) lazy var memoryTools: [ToolSpec] = makeMemoryTools()
+
     /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
+        if settings.useMemory { all += memoryTools }
         all += webSpecs
         all += BrowserStore.shared.tools
         all += TerminalStore.shared.tools
@@ -96,7 +102,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.shared.tools
@@ -218,6 +224,7 @@ final class AppModel: ObservableObject {
         }.store(in: &bag)
         screenContext.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         thinkAlong.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        memory.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // Tracks whether any conversation is active (for orb mood and idle notch state); chat handles messages directly.
         chat.$conversations.map { $0.contains { $0.busy } }.removeDuplicates()
             .receive(on: RunLoop.main)
@@ -365,6 +372,11 @@ final class AppModel: ObservableObject {
         }
         codex.start()
         antigravityUsage.home = { [weak self] in self?.profiles.profiles(for: .antigravity).first?.homeURL ?? AgentKind.antigravity.defaultHome }
+        // Signing in during an Antigravity session in Nook leaves its token in that account's profile folder.
+        antigravityUsage.sessionProfiles = { [weak self] in
+            let paths = AntigravityPaths(support: NookPaths.supportDirectory)
+            return (self?.profiles.profiles(for: .antigravity) ?? []).map { paths.profile($0.id) }
+        }
         antigravityUsage.start()
         claudeUsage.start()
 
@@ -413,4 +425,7 @@ final class AppModel: ObservableObject {
     @Published var missedNudge: (line: String, card: NookCard, app: String, date: Date)?
     /// Proposal cards that move into the chat when the user types a reply on them, by card ID.
     var cardReplies: [String: () -> Void] = [:]
+    /// The value a proposed action field had before the user first edited it ("message#step#field"), so running the
+    /// plan teaches Nook the user's habits.
+    var editOrigins: [String: String] = [:]
 }

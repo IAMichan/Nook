@@ -237,6 +237,8 @@ extension AppModel {
         var context: String
         /// What was looked up in advance (empty when nothing was relevant).
         var fetched: [String]
+        /// What Nook remembered for this question (already in `context`).
+        var memories: [MemoryItem] = []
     }
 
     /// `prefetch: false` skips the up-front lookups (for questions about the screen itself, where they only add waiting).
@@ -253,9 +255,13 @@ extension AppModel {
         var activeIDs = Set(connectors.searchable.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
         let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
-        let summary = contextSummary(scope: scope, relevant: relevant)
-        onSummary?(summary)
         let tools = scopedTools(scope, ledger: ledger)
+        // What Nook remembers about the user that matters here; a follow-up also recalls with the question before it.
+        let recallText = text + (history.last(where: \.fromUser).map { "\n" + $0.text } ?? "")
+        let recalled = recalledMemories(for: recallText, scope: scope, tools: tools)
+        var summary = contextSummary(scope: scope, relevant: relevant)
+        if !recalled.isEmpty { summary.titles.append(SourceCatalog.title(SourceCatalog.memory)) }
+        onSummary?(summary)
 
         // Nook does the research itself, for every model: it searches each relevant source with the words that carry
         // the question (everywhere it can search when the question names no source), ranks what it finds across
@@ -272,7 +278,8 @@ extension AppModel {
             let profile = settings.brainProfile
             let roomy = !profile.isSmall || profile.contextTokens >= 16_000
             let available = tools.compactMap { spec -> Prefetch.Available? in
-                guard spec.kind == .read, let source = SourceCatalog.source(forTool: spec.name) else { return nil }
+                // Memory is in the context already; recall_memory stays for the model to dig further.
+                guard spec.kind == .read, let source = SourceCatalog.source(forTool: spec.name), source != SourceCatalog.memory else { return nil }
                 return Prefetch.Available(name: spec.name, source: source, required: (spec.schema["required"] as? [String]) ?? [],
                                           query: Prefetch.Available.queryField(spec.schema))
             }
@@ -287,6 +294,9 @@ extension AppModel {
             let terms: Research.Terms
             if let plan, !plan.queries.isEmpty { terms = plan.terms } else if plan?.kind == .listing { terms = Research.Terms() } else { terms = regexTerms }
             let previous = history.last(where: \.fromUser).map { SourceRouter.relevant(to: $0.text, scope: scope, active: activeIDs) } ?? []
+            // Where questions with these words were answered before (learned from cited sources): searched as well.
+            let searchable = Set(available.map(\.source)).intersection(activeIDs).filter { scope.allows($0) }
+            let learned = settings.useMemory ? Set(memory.suggestSources(terms: terms.all, among: searchable)) : []
             // The sources the question names itself ("in WhatsApp"), or the plan picked: the user said where to look, so
             // Nook never searches everywhere else instead, and says so plainly when it cannot read that source right now.
             let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids } + (plan?.sources ?? [])).filter { scope.allows($0) }
@@ -305,10 +315,13 @@ extension AppModel {
                 // The plan says where to look and with which words (several searches, synonyms included).
                 var usable = plan
                 usable.sources = plan.sources.filter { activeIDs.contains($0) && scope.allows($0) }
+                if plan.kind == .lookup, named.isEmpty {
+                    usable.sources += learned.sorted().filter { !usable.sources.contains($0) }
+                }
                 sources = Set(usable.sources).union(Prefetch.inContext.intersection(relevant))
                 calls = QueryPlanner.lookups(usable, question: text, available: available, limit: roomy ? 12 : 9)
             } else {
-                sources = Research.sources(question: text, intent: intent, terms: terms, relevant: relevant, previous: previous,
+                sources = Research.sources(question: text, intent: intent, terms: terms, relevant: named.isEmpty ? relevant.union(learned) : relevant, previous: previous,
                                            named: named, available: available, active: activeIDs.filter { scope.allows($0) })
                 calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
             }
@@ -362,6 +375,9 @@ extension AppModel {
         // the documents that answer the question.
         let overview = summary.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         var context = overview.first.map(String.init) ?? ""
+        if !recalled.isEmpty {
+            context += "\n\n" + MemoryBook.section(recalled)
+        }
         if !goal.isEmpty {
             context += "\n\nWhat the user wants (Nook's reading of the question): " + goal
         }
@@ -388,7 +404,7 @@ extension AppModel {
         if let snapshotText { web.note(snapshotText) }
         web.note(connectors.contextLines(scope: scope, full: relevant).lines.joined(separator: "\n"))
         return PreparedRun(scope: scope, relevant: relevant, summary: summary, ledger: ledger, tools: tools, context: context,
-                           fetched: opened + found)
+                           fetched: opened + found, memories: recalled)
     }
 
     /// Runs lookups at once, each with a time limit; returns the ones that answered, in the order asked.

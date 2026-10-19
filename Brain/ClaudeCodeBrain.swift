@@ -55,6 +55,8 @@ enum ClaudeCodeBrain {
         let allowWebSearch: Bool
         var message: String
         var sessionID: String?
+        /// Pictures for the first message; a resumed session already has them.
+        var images: [PromptImage] = []
 
         init(model: String, system: String, prompt: String, allowWebSearch: Bool) {
             self.model = model
@@ -69,7 +71,8 @@ enum ClaudeCodeBrain {
             }
             let fullSystem = system + "\n\n" + ClaudeCodeBrain.protocolText(tools, allowWebSearch: allowWebSearch)
             let result = try await ClaudeCodeBrain.call(path: path, model: model, system: fullSystem, message: message,
-                                                        resume: sessionID, allowWebSearch: allowWebSearch)
+                                                        resume: sessionID, allowWebSearch: allowWebSearch, images: images)
+            images = []
             sessionID = result.session ?? sessionID
             if !result.text.isEmpty { onText?(result.text) }
             // Tool calls are written as JSON in the text: the shared loop extracts them.
@@ -83,6 +86,10 @@ enum ClaudeCodeBrain {
 
         func addInstruction(_ text: String) {
             message += "\n\n" + text
+        }
+
+        func attach(_ images: [PromptImage]) {
+            self.images = images
         }
     }
 
@@ -115,9 +122,11 @@ enum ClaudeCodeBrain {
         "Read", "Glob", "Grep", "LS", "WebFetch", "TodoWrite"
     ]
 
-    nonisolated static func arguments(message: String, model: String, system: String, resume: String?, allowWebSearch: Bool) -> [String] {
-        var arguments = [
-            "-p", message,
+    nonisolated static func arguments(message: String, model: String, system: String, resume: String?, allowWebSearch: Bool,
+                                      withImages: Bool = false) -> [String] {
+        // With pictures the message goes in over stdin as a stream-json user message (that is where images fit), so the
+        // Read tool stays blocked and Claude Code never gets to open a file of its own.
+        var arguments = (withImages ? ["-p", "--input-format", "stream-json"] : ["-p", message]) + [
             "--output-format", "json",
             "--model", model.isEmpty ? "haiku" : model,
             "--append-system-prompt", system
@@ -134,9 +143,21 @@ enum ClaudeCodeBrain {
         return arguments
     }
 
-    fileprivate static func call(path: String, model: String, system: String, message: String, resume: String?, allowWebSearch: Bool) async throws -> CallResult {
-        let arguments = Self.arguments(message: message, model: model, system: system, resume: resume, allowWebSearch: allowWebSearch)
-        let output = try await execute(path, arguments)
+    /// The user message Claude Code reads from stdin when pictures are sent along.
+    nonisolated static func streamInput(message: String, images: [PromptImage]) -> Data {
+        var content: [[String: Any]] = images.map {
+            ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.base64]]
+        }
+        content.append(["type": "text", "text": message])
+        let line: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+        return ((try? JSONSerialization.data(withJSONObject: line)) ?? Data()) + Data("\n".utf8)
+    }
+
+    fileprivate static func call(path: String, model: String, system: String, message: String, resume: String?, allowWebSearch: Bool,
+                                 images: [PromptImage] = []) async throws -> CallResult {
+        let arguments = Self.arguments(message: message, model: model, system: system, resume: resume, allowWebSearch: allowWebSearch,
+                                       withImages: !images.isEmpty)
+        let output = try await execute(path, arguments, stdin: images.isEmpty ? nil : streamInput(message: message, images: images))
         // Never retry without the isolation flags: that would load the user's own hooks and permission rules.
         if output.status != 0, output.text.contains("setting-sources") || output.text.contains("strict-mcp-config") {
             throw NookError("This version of Claude Code is too old to run safely as Nook's brain. Update it (`claude update`) and try again.")
@@ -168,7 +189,7 @@ enum ClaudeCodeBrain {
     }
 
     /// Runs `claude` off the main thread with a PATH containing node, capped at 2 minutes.
-    private nonisolated static func execute(_ path: String, _ arguments: [String]) async throws -> ProcessOutput {
+    private nonisolated static func execute(_ path: String, _ arguments: [String], stdin: Data? = nil) async throws -> ProcessOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -192,12 +213,17 @@ enum ClaudeCodeBrain {
                 let out = Pipe()
                 process.standardOutput = out
                 process.standardError = out
-                process.standardInput = FileHandle.nullDevice
+                let input = stdin == nil ? nil : Pipe()
+                process.standardInput = input ?? FileHandle.nullDevice
                 do {
                     try process.run()
                 } catch {
                     continuation.resume(throwing: NookError("Failed to start Claude Code: \(error.localizedDescription)"))
                     return
+                }
+                if let input, let stdin {
+                    input.fileHandleForWriting.write(stdin)
+                    try? input.fileHandleForWriting.close()
                 }
                 let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: deadline)

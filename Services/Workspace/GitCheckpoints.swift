@@ -31,6 +31,11 @@ extension GitService {
         }
     }
 
+    /// The first snapshot of a fresh worktree: it is exactly HEAD, so the ref points there, without reading any files.
+    func checkpointHead(_ directory: String, ref: String) throws {
+        try git(["update-ref", ref, "HEAD"], in: directory, env: [:])
+    }
+
     /// Puts the files of `directory` back as they were at `ref`. HEAD, the branch and the index stay as they are.
     func restore(_ directory: String, to ref: String) throws {
         let target = Set(try git(["ls-tree", "-r", "-z", "--name-only", ref], in: directory, env: [:])

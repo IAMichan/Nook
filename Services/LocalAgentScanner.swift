@@ -34,6 +34,9 @@ enum LocalAgentScanner {
         Kind(name: "Qwen Code", commands: ["qwen"], packages: ["@qwen-code/qwen-code"])
     ]
 
+    /// The names of the agents the process scan can recognise.
+    static var agentNames: [String] { kinds.map(\.name) }
+
     private static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3"]
     private static let backgroundModes: Set<String> = ["app-server", "mcp-server", "mcp", "proto"]
 

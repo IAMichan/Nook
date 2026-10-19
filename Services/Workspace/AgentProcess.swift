@@ -45,6 +45,8 @@ enum AgentCommand {
         var runID: UUID
         /// Nook's workspace bridge (terminal, browser, pull requests) as an MCP server; nil leaves the agent as it is.
         var bridge: BridgeLaunch? = nil
+        /// Claude Code knows `--thinking-display`: ask for summarized thinking (T3Code's way), so newer models show it.
+        var thinkingDisplay = false
     }
 
     static func spec(_ input: Input) -> LaunchSpec {
@@ -60,8 +62,11 @@ enum AgentCommand {
                 "--include-partial-messages",
                 // Permission prompts arrive as control_request on stdout; Nook replies via stdin.
                 "--permission-prompt-tool", "stdio",
-                "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission)
+                "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission),
+                // Newer models leave their thinking empty unless summaries are asked for (T3Code: showThinkingSummaries).
+                "--settings", #"{"showThinkingSummaries":true}"#
             ]
+            if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             if let resume = input.resumeSessionID, !resume.isEmpty {
                 arguments += ["--resume", resume]

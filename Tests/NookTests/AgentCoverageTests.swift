@@ -146,6 +146,23 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertFalse(done.endedBySteer)
     }
 
+    func testClaudeThinkingStreams() {
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}},"parent_tool_use_id":null}"#),
+                       [.thinkingDelta("", starts: true)])
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Eerst de test"}},"parent_tool_use_id":null}"#),
+                       [.thinkingDelta("Eerst de test", starts: false)])
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null}"#),
+                       [.blockStopped])
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"","signature":"x"}]},"parent_tool_use_id":null}"#),
+                       [.thinking("")], "an empty complete copy still lines up with its streamed block")
+        let input = AgentCommand.Input(provider: .claude, executable: "/bin/claude", prompt: "hoi", model: "", mode: .agent, permission: .ask,
+                                       instructions: "", workingDirectory: "/tmp", resumeSessionID: nil, accountEnvironment: [:], runID: UUID(),
+                                       thinkingDisplay: true)
+        let args = AgentCommand.spec(input).arguments
+        XCTAssertEqual(value(after: "--settings", in: args), #"{"showThinkingSummaries":true}"#)
+        XCTAssertEqual(value(after: "--thinking-display", in: args), "summarized")
+    }
+
     private func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]

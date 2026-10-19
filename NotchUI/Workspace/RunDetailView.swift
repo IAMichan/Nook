@@ -57,6 +57,7 @@ struct RunDetailView: View {
             .onAppear {
                 workspace.loadTimeline(runID)
                 workspace.refreshGit(runID)
+                workspace.prewarm(runID)
                 composerFocused = true
             }
             .sheet(item: $diffFile) { file in
@@ -394,18 +395,36 @@ struct EventRow: View {
                 .padding(.horizontal, 2)
 
         case .thinking:
-            DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
-                Text(event.text)
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(WS.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
-            } label: {
-                Label(tr("ws.event.thinking"), systemImage: "brain")
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(WS.tertiary)
+            // The agent's reasoning in the chat itself (as T3Code shows it): muted, live while it is written, the first
+            // lines at once and the rest a click away.
+            Button(action: toggle) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "brain").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NookTheme.iris)
+                        Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
+                            .font(NookTheme.font(11.5, .medium))
+                            .foregroundStyle(WS.tertiary)
+                        if event.text.count > 280 || event.text.split(separator: "\n").count > 4 {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundStyle(WS.tertiary)
+                                .rotationEffect(.degrees(expanded ? 90 : 0))
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    Text(event.text)
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(WS.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(expanded || event.state == .running ? nil : 4)
+                        .opacity(0.85)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.iris.opacity(0.35)).frame(width: 2) }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
         case .tool:
             ToolRow(event: event, expanded: expanded, toggle: toggle)

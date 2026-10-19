@@ -11,6 +11,7 @@ struct AgentRunPanel: View {
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @State private var images: [ImageAttachment] = []
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
@@ -56,11 +57,14 @@ struct AgentRunPanel: View {
             .onAppear {
                 workspace.loadTimeline(runID)
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
+                // The agent's connection opens now, so your first message goes straight in (T3Code keeps it alive too).
+                workspace.prewarm(runID)
                 focused = true
             }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
+                workspace.prewarm(runID)
                 draft = ""
                 renaming = false
                 confirmDelete = false
@@ -134,45 +138,46 @@ struct AgentRunPanel: View {
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
-        return Menu {
-            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
-            Divider()
-            if run.status.isActive {
-                Button(tr("ws.action.stop")) { workspace.stop(runID) }
-            } else if run.status == .failed || run.status == .stopped {
-                Button(tr("ws.action.retry")) { workspace.retry(runID) }
-            }
-            let finishKey = FinishedSessions.key(run: run)
-            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !run.status.isActive, lastActive: run.updatedAt)
-            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
-                if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
-            }
-            .disabled(run.status.isActive)
-            Button(tr("agents.run.rename")) {
-                titleDraft = run.title
-                renaming = true
-            }
-            Button(tr("button.openFolder")) {
-                NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
-            }
-            Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
-                .disabled(run.repoRoot == nil)
-            Divider()
-            Button(tr("agents.run.archive")) {
-                workspace.setArchived(runID, true)
-                app.viewModel.selectedAgentID = ""
-            }
-            .disabled(!idle)
-            Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
-                .disabled(!idle)
-        } label: {
+        let finishKey = FinishedSessions.key(run: run)
+        let isFinished = finishedMarks.isFinished(key: finishKey, idle: idle, lastActive: run.updatedAt)
+        return ComposerDropdown(width: 240) {
             Image(systemName: "ellipsis")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
+        } content: {
+            DropdownRow(symbol: "info.circle", title: tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
+            DropdownDivider()
+            if run.status.isActive {
+                DropdownRow(symbol: "stop.circle", title: tr("ws.action.stop")) { workspace.stop(runID) }
+            } else if run.status == .failed || run.status == .stopped {
+                DropdownRow(symbol: "arrow.clockwise", title: tr("ws.action.retry")) { workspace.retry(runID) }
+            }
+            DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                        title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
+                        disabledReason: idle ? nil : tr("ws.error.busy")) {
+                if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
+            }
+            DropdownRow(symbol: "pencil", title: tr("agents.run.rename")) {
+                titleDraft = run.title
+                renaming = true
+            }
+            DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
+            }
+            DropdownRow(symbol: "plusminus", title: tr("agents.run.changes"),
+                        disabledReason: run.repoRoot == nil ? tr("ws.error.notRepository") : nil) {
+                app.viewModel.open(.changes(runID, file: nil))
+            }
+            DropdownDivider()
+            DropdownRow(symbol: "archivebox", title: tr("agents.run.archive"), disabledReason: idle ? nil : tr("ws.error.busy")) {
+                workspace.setArchived(runID, true)
+                app.viewModel.selectedAgentID = ""
+            }
+            DropdownRow(symbol: "trash", title: tr("agents.run.delete"), tint: NookTheme.coralSoft,
+                        disabledReason: idle ? nil : tr("ws.error.busy")) { confirmDelete = true }
         }
-        .composerMenu()
         .help(tr("agents.run.actions"))
     }
 
@@ -397,6 +402,7 @@ struct AgentRunPanel: View {
             // While it works, what you type waits in line and goes out when the turn is done.
             .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
                       symbol: steers ? "arrow.turn.down.right" : "text.append")
+            .images($images)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))
@@ -405,63 +411,42 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account, and the model for the next turn.
+    /// The agent with its account, and the model for the next turn (T3Code's model picker, for this session's agent).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
         let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
-        return Menu {
-            Section(tr("ws.new.model")) {
-                ForEach(app.models(for: run.provider), id: \.self) { option in
-                    Button {
-                        workspace.configure(runID, model: option)
-                    } label: {
-                        let title = app.modelName(option, for: run.provider)
-                        if run.model == option { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            }
-        } label: {
+        return ComposerDropdown(width: 296) {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
+        } content: {
+            AgentModelPicker(providers: [run.provider], provider: run.provider, profileID: nil, model: run.model) { _, _, option in
+                if let option { workspace.configure(runID, model: option) }
+            }
         }
-        .composerMenu()
         .disabled(run.status.isActive)
         .help(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {
-        Menu {
-            ForEach(ExecutionMode.allCases) { mode in
-                Button {
-                    workspace.configure(runID, mode: mode)
-                } label: {
-                    if run.mode == mode { Label(mode.label, systemImage: "checkmark") } else { Text(mode.label) }
-                }
-            }
-        } label: {
-            ComposerPill(symbol: run.mode == .plan ? "list.bullet.clipboard" : "sparkles", text: run.mode.label)
-        }
-        .composerMenu()
-        .disabled(run.status.isActive)
-        .help(run.mode.help)
+        ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
+            .disabled(run.status.isActive)
     }
 
     private func permissionMenu(_ run: WorkspaceRun) -> some View {
-        Menu {
-            ForEach(run.provider.capabilities.policies) { policy in
-                Button {
-                    workspace.configure(runID, permission: policy)
-                } label: {
-                    if run.permission == policy { Label(policy.label, systemImage: "checkmark") } else { Text(policy.label) }
-                }
-            }
-        } label: {
+        ComposerDropdown(width: 300) {
             ComposerPill(symbol: run.permission == .bypass ? "lock.open" : "lock",
                          text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
                          tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
+        } content: {
+            DropdownHeader(title: tr("compose.access"))
+            ForEach(run.provider.capabilities.policies) { policy in
+                DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: run.provider),
+                            chosen: run.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
+                    workspace.configure(runID, permission: policy)
+                }
+            }
         }
-        .composerMenu()
         .disabled(run.status.isActive || run.mode == .plan)
         .help(run.permission.help(for: run.provider))
     }
