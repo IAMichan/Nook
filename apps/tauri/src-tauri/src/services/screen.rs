@@ -35,6 +35,13 @@ fn refresh(services: &Services, front_only: bool) {
     };
     let mut read = HashMap::new();
     for id in due {
+        if let Some(print) = platform.screen.fingerprint(&id) {
+            let unchanged = !services.live.lock().unwrap_or_else(|e| e.into_inner()).needs_text(&id, print);
+            if let (true, Some(old)) = (unchanged, olds.get(&id)) {
+                read.insert(id, (old.clone(), print));
+                continue;
+            }
+        }
         if let Some((text, print)) = platform.screen.read_window(&id) {
             let text = if text.trim().is_empty() { olds.get(&id).cloned().unwrap_or_default() } else { text };
             read.insert(id, (text, print));

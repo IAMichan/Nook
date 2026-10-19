@@ -286,7 +286,8 @@ pub fn aside_expand(app: AppHandle, large: bool) {
 /// Het aanbod weer naast de balk, als er nog een openstaat (na het sluiten van de balk).
 #[tauri::command]
 pub fn aside_show(app: AppHandle, services: State<'_, Services>) {
-    let pending = services.nudge.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|n| n.still_fresh(chrono::Utc::now().timestamp()));
+    let pending =
+        services.nudge.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|n| n.still_fresh(chrono::Utc::now().timestamp()));
     #[cfg(desktop)]
     if pending {
         services::windows::show_aside(&app);

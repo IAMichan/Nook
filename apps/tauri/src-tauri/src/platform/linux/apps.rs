@@ -13,6 +13,7 @@ pub struct DesktopEntry {
     pub generic: Option<String>,
     pub exec: String,
     pub path: PathBuf,
+    pub wm_class: Option<String>,
 }
 
 fn dirs() -> Vec<PathBuf> {
@@ -61,6 +62,7 @@ pub fn parse(id: &str, path: &Path, text: &str, language: &str) -> Option<Deskto
         generic: fields.get(&format!("GenericName[{language}]")).or(fields.get("GenericName")).cloned(),
         exec,
         path: path.to_path_buf(),
+        wm_class: fields.get("StartupWMClass").cloned(),
     })
 }
 
@@ -86,6 +88,21 @@ pub fn installed() -> Vec<DesktopEntry> {
         }
     }
     out
+}
+
+/// WM_CLASS (kleine letters) → de naam die de gebruiker kent: via `StartupWMClass`, het bestand of het programma.
+pub fn names_by_class() -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for app in installed() {
+        let name = app.local_name.clone().unwrap_or_else(|| app.name.clone());
+        let program = command_line(&app.exec).first().and_then(|p| Path::new(p).file_name().map(|f| f.to_string_lossy().to_lowercase()));
+        let id = app.id.trim_end_matches(".desktop").to_lowercase();
+        let last = id.rsplit('.').next().map(String::from);
+        for key in [app.wm_class.map(|c| c.to_lowercase()), program, Some(id.clone()), last].into_iter().flatten() {
+            map.entry(key).or_insert_with(|| name.clone());
+        }
+    }
+    map
 }
 
 /// De opdracht uit `Exec`, als losse argumenten, zonder veldcodes (%f, %U…). Volgt de aanhalingsregels van de spec.

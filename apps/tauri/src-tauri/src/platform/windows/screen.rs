@@ -360,6 +360,11 @@ impl ScreenReader for WindowsScreen {
         self.read(&win, 8000)
     }
 
+    fn fingerprint(&self, id: &str) -> Option<u64> {
+        let win = self.find(id)?;
+        capture_window(&win).map(|(rgba, w, h)| imaging::rgba_fingerprint(&rgba, w, h))
+    }
+
     fn frontmost(&self) -> Option<WindowText> {
         let front = self.windows().into_iter().find(|w| w.frontmost)?;
         let (text, _) = self.read_window(&front.id)?;

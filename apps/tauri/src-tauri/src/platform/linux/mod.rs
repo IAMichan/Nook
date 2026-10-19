@@ -24,13 +24,20 @@ const RETRY: Duration = Duration::from_secs(30);
 
 pub struct LinuxScreen {
     x11: Option<x11::X11>,
+    /// WM_CLASS (kleine letters) → de naam van de app uit zijn `.desktop`-bestand.
+    names: std::sync::OnceLock<std::collections::HashMap<String, String>>,
     atspi: Mutex<(Option<atspi::Atspi>, Option<Instant>)>,
     ocr: Option<String>,
 }
 
 impl LinuxScreen {
     pub fn new() -> Self {
-        let screen = Self { x11: x11::X11::connect(), atspi: Mutex::new((None, None)), ocr: imaging::tesseract_languages() };
+        let screen = Self {
+            x11: x11::X11::connect(),
+            names: std::sync::OnceLock::new(),
+            atspi: Mutex::new((None, None)),
+            ocr: imaging::tesseract_languages(),
+        };
         screen.with_atspi(|_| ());
         screen
     }
@@ -62,7 +69,20 @@ impl LinuxScreen {
     }
 
     fn x_windows(&self) -> Vec<x11::XWindow> {
-        self.x11.as_ref().map(|x| x.windows()).unwrap_or_default().into_iter().filter(|w| !Self::own(w.pid, &w.class)).collect()
+        let names = self.names.get_or_init(apps::names_by_class);
+        self.x11
+            .as_ref()
+            .map(|x| x.windows())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|w| !Self::own(w.pid, &w.class))
+            .map(|mut w| {
+                if let Some(name) = names.get(&w.class.to_lowercase()) {
+                    w.class = name.clone();
+                }
+                w
+            })
+            .collect()
     }
 
     fn frames(&self) -> Vec<atspi::Frame> {
@@ -115,14 +135,6 @@ impl LinuxScreen {
         names.retain(|n| !n.is_empty());
         names
     }
-
-    pub fn fingerprint(&self, id: &str) -> Option<u64> {
-        let xid: u32 = id.strip_prefix("x11:")?.parse().ok()?;
-        let x11 = self.x11.as_ref()?;
-        let window = self.x_windows().into_iter().find(|w| w.id == xid)?;
-        let (rgba, w, h) = x11.capture_window(&window).ok()?;
-        Some(imaging::rgba_fingerprint(&rgba, w, h))
-    }
 }
 
 fn hash(text: &str) -> u64 {
@@ -173,6 +185,14 @@ impl ScreenReader for LinuxScreen {
     fn read_window(&self, id: &str) -> Option<(String, u64)> {
         let frames = self.frames();
         self.read(id, &frames, 8000)
+    }
+
+    fn fingerprint(&self, id: &str) -> Option<u64> {
+        let xid: u32 = id.strip_prefix("x11:")?.parse().ok()?;
+        let x11 = self.x11.as_ref()?;
+        let window = self.x_windows().into_iter().find(|w| w.id == xid)?;
+        let (rgba, w, h) = x11.capture_window(&window).ok()?;
+        Some(imaging::rgba_fingerprint(&rgba, w, h))
     }
 
     fn frontmost(&self) -> Option<WindowText> {

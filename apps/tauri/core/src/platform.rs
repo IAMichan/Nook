@@ -59,6 +59,10 @@ pub trait ScreenReader: Send + Sync {
     fn read_window(&self, _id: &str) -> Option<(String, u64)> {
         None
     }
+    /// Alleen de vingerafdruk (een klein plaatje), zodat een onveranderd venster niet opnieuw gelezen wordt.
+    fn fingerprint(&self, _id: &str) -> Option<u64> {
+        None
+    }
     /// Leest één app, ook als hij achter andere vensters staat: stukken per venster (titel, tekst).
     fn read_app(&self, query: &str, _limit: usize) -> Result<Vec<(String, String)>, String> {
         Err(format!("Ik kan {query} op dit platform niet lezen."))
