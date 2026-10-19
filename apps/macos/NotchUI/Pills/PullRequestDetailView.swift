@@ -495,7 +495,7 @@ struct PullRequestDetailView: View {
     }
 
     private var confirmMessage: String {
-        var text = tr("agents.pr.confirmMessage", tr(method.titleKey), detail?.headBranch ?? "")
+        var text = tr("agents.pr.confirmMessage", detail?.headBranch ?? "", tr(method.titleKey))
         if let detail, detail.checkSummary != .passing, !detail.checks.isEmpty { text += "\n" + tr("agents.pr.confirmChecks") }
         return text
     }
