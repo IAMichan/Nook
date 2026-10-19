@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// What the buttons at the bottom of the Agents list open on the right: your pull requests, the usage of every account,
-/// and the tools that are not tied to one session: every terminal, the browser, every worktree.
+/// The pages the Agents tab opens on the right: your pull requests and the usage of every account (from the buttons
+/// under the list), and the tools that are not tied to one session: every terminal, the browser, every worktree.
 enum AgentsPage {
     static let pullRequests = "pulls"
     static let usage = "usage"
@@ -14,10 +14,12 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Pull requests and usage as quiet icons under the list, then the tools.
+/// Pull requests and usage as quiet icons under the list, and Settings at the far end. It takes the list's width, so
+/// Settings follows the line beside the list when you drag it.
 struct AgentsFooter: View {
     let selected: String
     let open: (String) -> Void
+    let openSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
@@ -25,18 +27,12 @@ struct AgentsFooter: View {
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
-            Rectangle().fill(NookTheme.line2).frame(width: 1, height: 16).padding(.horizontal, 4)
-            FooterIcon(label: tr("agents.footer.terminals"), active: selected == AgentsPage.terminals,
-                       action: { open(AgentsPage.terminals) }) { ToolGlyph(symbol: "terminal") }
-            FooterIcon(label: tr("agents.footer.browser"), active: selected == AgentsPage.browser,
-                       action: { open(AgentsPage.browser) }) { ToolGlyph(symbol: "safari") }
-            FooterIcon(label: tr("agents.footer.worktrees"), active: selected == AgentsPage.worktrees,
-                       action: { open(AgentsPage.worktrees) }) { WorktreeGlyph() }
-            FooterIcon(label: tr("agents.footer.simulator"), active: selected == AgentsPage.simulator,
-                       action: { open(AgentsPage.simulator) }) { ToolGlyph(symbol: "iphone") }
             Spacer(minLength: 0)
+            FooterIcon(label: tr("agents.footer.settings"), active: false,
+                       action: openSettings) { ToolGlyph(symbol: "gearshape") }
         }
-        .padding(.leading, 4)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -142,38 +138,6 @@ struct PullRequestStateGlyph: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
-    }
-}
-
-/// A branch that leaves the line and ends in a folder: a second checkout of the same repository.
-private struct WorktreeGlyph: View {
-    var body: some View {
-        Canvas { context, size in
-            let unit = min(size.width, size.height) / 16
-            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }
-            let style = StrokeStyle(lineWidth: 1.3 * unit, lineCap: .round, lineJoin: .round)
-            var lines = Path()
-            lines.move(to: point(4, 5.2)); lines.addLine(to: point(4, 10.8))
-            lines.move(to: point(4, 10.4)); lines.addQuadCurve(to: point(6.6, 7.8), control: point(4, 7.8))
-            lines.addLine(to: point(8, 7.8))
-            var folder = Path()
-            folder.move(to: point(8, 10.4)); folder.addLine(to: point(8, 4.6))
-            folder.addQuadCurve(to: point(9, 3.6), control: point(8, 3.6))
-            folder.addLine(to: point(10.5, 3.6)); folder.addLine(to: point(11.7, 4.9)); folder.addLine(to: point(13.8, 4.9))
-            folder.addQuadCurve(to: point(14.8, 5.9), control: point(14.8, 4.9))
-            folder.addLine(to: point(14.8, 10.4))
-            folder.addQuadCurve(to: point(13.8, 11.4), control: point(14.8, 11.4))
-            folder.addLine(to: point(9, 11.4))
-            folder.addQuadCurve(to: point(8, 10.4), control: point(8, 11.4))
-            folder.closeSubpath()
-            context.stroke(lines, with: .foreground, style: style)
-            context.stroke(folder, with: .foreground, style: style)
-            for center in [point(4, 3.6), point(4, 12.4)] {
-                let node = Path(ellipseIn: CGRect(x: center.x - 1.6 * unit, y: center.y - 1.6 * unit, width: 3.2 * unit, height: 3.2 * unit))
-                context.stroke(node, with: .foreground, style: style)
-            }
-        }
-        .frame(width: 16, height: 16)
     }
 }
 
