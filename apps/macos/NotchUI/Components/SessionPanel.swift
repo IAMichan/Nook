@@ -445,9 +445,13 @@ private struct PanelRow: View {
                         content
                         chevron.frame(width: 30, height: 34)
                     }
+                    .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
-                .composerMenu()
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity)
             } else {
                 content.opacity(enabled ? 1 : 0.55)
             }
