@@ -5,6 +5,8 @@
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-MLX-orange)
 ![Local-First](https://img.shields.io/badge/AI-Local--First-2ea44f)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Stars](https://img.shields.io/github/stars/IAMichan/nook?style=social)](https://github.com/IAMichan/nook/stargazers)
 
 **Your personal AI assistant and coding-agent command center in the MacBook notch.**
 
@@ -14,10 +16,22 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 
 **Nothing runs, sends, or modifies files without your explicit approval.**
 
+[Quick Start](#quick-start) · [Highlights](#highlights) · [Documentation](#documentation) · [Contributing](#contributing) · [Report a bug](https://github.com/IAMichan/nook/issues/new/choose) · [Security](SECURITY.md)
+
+## Why Nook?
+
+- **Local-first and private.** The default brain runs on your Mac. Cloud models are opt-in, per source, and never get data you marked *Only on this Mac*.
+- **Always has context.** Live on-device OCR plus Calendar, Mail, Reminders, browser tabs, files, and your connected services, so you don't have to paste anything.
+- **One place for your coding agents.** See what every agent is doing, review diffs, and approve tool calls from the notch instead of hunting through terminals.
+- **You stay in control.** Every side effect goes through an approval card and is written to a local audit log.
+- **Open source (MIT).** Built to be read, hacked on, and translated.
+
 > [!NOTE]
 > **Project Status (`v0.1`):** Early open-source release. The app compiles and its core test suite passes in CI, but expect rough edges as real-world testing expands.
 >
 > **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (`Settings › General › App language`).
+>
+> **Platform status:** macOS is the primary, most complete app. The iPhone companion and the Tauri app (Windows, Linux, Android) are in earlier stages.
 >
 > **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Nook for **Windows, Linux, and Android** is a single Tauri app in [`apps/tauri`](apps/tauri) (Rust core, Svelte UI); see [`docs/TAURI.md`](docs/TAURI.md) for what has been ported so far (its interface is Dutch-only for now). Shared protocol and core packages live in [`packages/`](packages) (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
 
@@ -36,9 +50,11 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
   - [Navigating Nook](#navigating-nook)
 - [Local Brain Quality & Evaluation](#local-brain-quality--evaluation)
 - [Privacy & Security](#privacy--security)
+- [Documentation](#documentation)
 - [Architecture & Repository Layout](#architecture--repository-layout)
 - [Known Limitations](#known-limitations)
 - [Contributing](#contributing)
+- [Community & Support](#community--support)
 - [Acknowledgments & License](#acknowledgments--license)
 
 ---
@@ -130,9 +146,17 @@ xcodegen
 xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test
 ```
 
+The fast Foundation-only core and localization tests also run on Linux:
+
+```sh
+./scripts/core-tests.sh
+```
+
+Not on a Mac? See [`apps/tauri`](apps/tauri) and [`docs/TAURI.md`](docs/TAURI.md) for the Windows, Linux, and Android app.
+
 ### First Launch & Onboarding
 
-On first launch, Nook shows a welcome card. Clicking **Set up** opens a 3-step onboarding flow (every step can be skipped):
+On first launch, Nook shows a welcome card. Clicking **Set up** opens an onboarding flow (every step can be skipped):
 
 1. **Brain:** Nook recommends a local model matched to your Mac's unified memory (or detects models already running in Ollama or LM Studio) and installs it with one click. Prefer a cloud provider? Select it in **Settings › Brain**. Nook never switches to the cloud on its own.
 2. **Permissions:** Screen Recording (for local window OCR) and Calendar; Reminders and Microphone are only requested when you first use them.
@@ -182,6 +206,22 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 
 ---
 
+## Documentation
+
+| Topic | Document |
+|---|---|
+| Assistant, sources & citations | [`docs/ASSISTANT.md`](docs/ASSISTANT.md) |
+| Coding-agent integration (`nook_agent`) | [`docs/AGENTS.md`](docs/AGENTS.md) |
+| Terminal, browser & PR workspace for agents (MCP) | [`docs/WERKRUIMTE-AGENTS.md`](docs/WERKRUIMTE-AGENTS.md) |
+| System-wide autocomplete | [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md) |
+| iPhone companion & protocol | [`docs/COMPANION.md`](docs/COMPANION.md) |
+| Monorepo structure | [`docs/MONOREPO.md`](docs/MONOREPO.md) |
+| Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
+| Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |
+| Third-party attributions | [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) |
+
+---
+
 ## Architecture & Repository Layout
 
 Nook is organized as a multi-platform monorepo (see [`docs/MONOREPO.md`](docs/MONOREPO.md)):
@@ -224,11 +264,27 @@ nook/
 
 Bug reports, feature ideas, translations, and pull requests are very welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request to learn about the architecture, localization coverage tests (`I18nCoverageTests`), and safety guidelines.
 
+The short version:
+
+1. Fork the repo and create a branch (`git checkout -b fix/short-description`).
+2. Make your change. Every user-facing string goes through `tr("key")` and needs all five languages (`en`, `nl`, `de`, `fr`, `es`).
+3. Run `./scripts/core-tests.sh` before committing.
+4. Open a pull request using the [PR template](.github/pull_request_template.md). Commits, branches, code, and docs are written in English.
+
+New here? Look for issues labeled `good first issue`, or help by adding a translation or improving the docs. Coding agents working in this repo should follow [`AGENTS.md`](AGENTS.md). Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+---
+
+## Community & Support
+
+- **Questions, bugs, and feature requests:** [open an issue](https://github.com/IAMichan/nook/issues/new/choose).
+- **Security vulnerabilities:** report privately via [SECURITY.md](SECURITY.md), not in public issues.
+- **Like Nook?** Give the repo a ⭐ and tell a friend.
+
 ---
 
 ## Acknowledgments & License
 
-- The concept of a utility living inside the MacBook notch was inspired by [boring.notch](https://github.com/TheBoredTeam/boring.notch) (no code was reused).
 - Parts of Flow dictation, Call Notetaker, and Autocomplete adapt open-source MIT/Apache-2.0 components; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for full attributions.
 
 Licensed under the [MIT License](LICENSE) © 2026 Michan van der Hoek.
