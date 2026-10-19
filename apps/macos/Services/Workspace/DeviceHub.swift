@@ -76,6 +76,7 @@ enum DeviceHub {
         return .launchFailed
     }
 
+    static func avccPath(udid: String) -> String { "/vendor/serve-sim/helper/\(escaped(udid))/stream.avcc" }
     static func mjpegPath(udid: String) -> String { "/vendor/serve-sim/helper/\(escaped(udid))/stream.mjpeg" }
     static func inputPath(udid: String) -> String { "/vendor/serve-sim/helper/ws?device=\(escaped(udid))" }
     static func screenshotPath(udid: String) -> String { "/vendor/serve-sim/api/screenshot?device=\(escaped(udid))" }
@@ -324,5 +325,91 @@ struct MjpegParser {
         if buffer.range(of: Self.start) == nil { buffer = Data(buffer.suffix(1)) }
         if buffer.count > Self.maxBuffer { buffer = Data() }
         return frames
+    }
+}
+
+/// One piece of serve-sim's H.264 stream (`stream.avcc`): `[u32 big-endian length][tag][payload]`.
+struct AvccChunk: Equatable, Sendable {
+    enum Kind: UInt8, Sendable {
+        /// The decoder setup: an avcC record (SPS and PPS).
+        case description = 1
+        /// A frame that decodes on its own, then the ones that build on it (AVCC length-prefixed NAL units).
+        case keyframe = 2
+        case delta = 3
+        /// A JPEG still to show until the first frame is decoded.
+        case seed = 4
+    }
+
+    var kind: Kind
+    var payload: Data
+}
+
+/// Cuts the AVCC stream into its chunks as bytes arrive (AvccDemuxer); unknown tags are skipped.
+struct AvccDemuxer {
+    private var buffer = Data()
+    static let maxChunk = 32 * 1024 * 1024
+
+    mutating func push(_ data: Data) -> [AvccChunk] {
+        buffer.append(data)
+        var chunks: [AvccChunk] = []
+        var offset = buffer.startIndex
+        while buffer.endIndex - offset >= 4 {
+            let length = buffer[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
+            guard length <= Self.maxChunk else {
+                buffer = Data()
+                return chunks
+            }
+            guard buffer.endIndex - offset - 4 >= length else { break }
+            if length >= 1, let kind = AvccChunk.Kind(rawValue: buffer[offset + 4]) {
+                chunks.append(AvccChunk(kind: kind, payload: Data(buffer[(offset + 5)..<(offset + 4 + length)])))
+            }
+            offset += 4 + length
+        }
+        if offset > buffer.startIndex { buffer = Data(buffer[offset...]) }
+        return chunks
+    }
+
+    mutating func reset() { buffer = Data() }
+}
+
+/// The decoder setup in an avcC record (ISO 14496-15): the parameter sets and how long each NAL unit's length prefix is.
+struct AvcConfiguration: Equatable, Sendable {
+    var sps: [Data]
+    var pps: [Data]
+    var nalLengthSize: Int
+
+    init?(_ record: Data) {
+        let bytes = [UInt8](record)
+        guard bytes.count >= 7, bytes[0] == 1 else { return nil }
+        var index = 5
+        /// `count` parameter sets, each a 16-bit length and its bytes, from `index` on.
+        func sets(_ count: Int) -> [Data]? {
+            var result: [Data] = []
+            for _ in 0..<count {
+                guard index + 2 <= bytes.count else { return nil }
+                let length = Int(bytes[index]) << 8 | Int(bytes[index + 1])
+                index += 2
+                guard length > 0, index + length <= bytes.count else { return nil }
+                result.append(Data(bytes[index..<index + length]))
+                index += length
+            }
+            return result
+        }
+        let spsCount = Int(bytes[5] & 0x1F)
+        index = 6
+        guard let sps = sets(spsCount), !sps.isEmpty, index < bytes.count else { return nil }
+        let ppsCount = Int(bytes[index])
+        index += 1
+        guard let pps = sets(ppsCount), !pps.isEmpty else { return nil }
+        self.sps = sps
+        self.pps = pps
+        nalLengthSize = Int(bytes[4] & 0x03) + 1
+    }
+
+    /// "avc1.64001f": the codec from profile, compatibility and level.
+    static func codecString(_ record: Data) -> String {
+        let bytes = [UInt8](record)
+        guard bytes.count >= 4 else { return "avc1" }
+        return "avc1." + bytes[1...3].map { String(format: "%02x", $0) }.joined()
     }
 }

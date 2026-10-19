@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import QuartzCore
+import AVFoundation
+import CoreMedia
 import UniformTypeIdentifiers
 
 /// The Simulator page (Device panel): a simulator live, to touch, swipe, type into, rotate and press the
@@ -175,18 +177,30 @@ struct SimulatorScreen: NSViewRepresentable {
     func makeNSView(context: Context) -> SimulatorScreenView {
         let view = SimulatorScreenView()
         view.stream = stream
+        stream.onVideo = { [weak view] chunk in view?.decode(chunk) }
+        stream.onVideoReset = { [weak view] in view?.resetVideo() }
         return view
     }
 
     func updateNSView(_ view: SimulatorScreenView, context: Context) {
         view.stream = stream
-        view.show(stream.frame, config: stream.config)
+        view.show(stream.usesH264 ? nil : stream.frame, config: stream.config)
+    }
+
+    static func dismantleNSView(_ view: SimulatorScreenView, coordinator: ()) {
+        view.stream?.onVideo = nil
+        view.stream?.onVideoReset = nil
     }
 }
 
 final class SimulatorScreenView: NSView {
     weak var stream: SimulatorStream?
     private let picture = CALayer()
+    /// H.264 frames, decoded by the system (VideoToolbox) as they are enqueued.
+    private let video = AVSampleBufferDisplayLayer()
+    private var format: CMVideoFormatDescription?
+    private var awaitingKeyframe = true
+    private var decoding = false
     private var config: DeviceHub.ScreenConfig?
     private var imageSize = CGSize(width: 9, height: 19.5)
     private var pressedModifiers: Set<UInt16> = []
@@ -200,6 +214,11 @@ final class SimulatorScreenView: NSView {
         picture.cornerRadius = 18
         picture.masksToBounds = true
         layer?.addSublayer(picture)
+        video.videoGravity = .resize
+        video.cornerRadius = 18
+        video.masksToBounds = true
+        video.isHidden = true
+        layer?.addSublayer(video)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -208,8 +227,14 @@ final class SimulatorScreenView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func show(_ jpeg: Data?, config: DeviceHub.ScreenConfig?) {
-        self.config = config
-        guard let jpeg, let image = NSImage(data: jpeg), let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        if self.config != config {
+            self.config = config
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layoutPicture()
+            CATransaction.commit()
+        }
+        guard !decoding, let jpeg, let image = NSImage(data: jpeg), let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         imageSize = CGSize(width: cgImage.width, height: cgImage.height)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -245,9 +270,124 @@ final class SimulatorScreenView: NSView {
     private func layoutPicture() {
         let rect = displayRect
         let turned = abs(rotation) == 90
-        picture.bounds = CGRect(x: 0, y: 0, width: turned ? rect.height : rect.width, height: turned ? rect.width : rect.height)
-        picture.position = CGPoint(x: rect.midX, y: rect.midY)
-        picture.setAffineTransform(CGAffineTransform(rotationAngle: CGFloat(rotation * .pi / 180)))
+        for shown in [picture, video] {
+            shown.bounds = CGRect(x: 0, y: 0, width: turned ? rect.height : rect.width, height: turned ? rect.width : rect.height)
+            shown.position = CGPoint(x: rect.midX, y: rect.midY)
+            shown.setAffineTransform(CGAffineTransform(rotationAngle: CGFloat(rotation * .pi / 180)))
+        }
+    }
+
+    // MARK: H.264
+
+    /// A new stream: nothing decoded yet, the picture (a still, or MJPEG) shows until the first frame.
+    func resetVideo() {
+        video.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
+        video.isHidden = true
+        picture.isHidden = false
+        format = nil
+        awaitingKeyframe = true
+        decoding = false
+    }
+
+    /// The decoder setup, then frames: from the first keyframe on, each enqueued to be shown at once. A setup the
+    /// system cannot use, or a renderer that fails, switches this device to MJPEG; a renderer that falls behind asks for
+    /// a fresh stream (which starts with a keyframe).
+    func decode(_ chunk: AvccChunk) {
+        switch chunk.kind {
+        case .description:
+            guard let configuration = AvcConfiguration(chunk.payload), let format = Self.format(configuration) else {
+                stream?.decoderFailed()
+                return
+            }
+            self.format = format
+            let dimensions = CMVideoFormatDescriptionGetDimensions(format)
+            if dimensions.width > 0, dimensions.height > 0 { imageSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height)) }
+            awaitingKeyframe = true
+        case .keyframe, .delta:
+            guard let format else { return }
+            let key = chunk.kind == .keyframe
+            if awaitingKeyframe {
+                guard key else { return }
+                awaitingKeyframe = false
+            }
+            let renderer = video.sampleBufferRenderer
+            if renderer.status == .failed {
+                stream?.decoderFailed()
+                return
+            }
+            guard renderer.isReadyForMoreMediaData else {
+                stream?.resubscribeVideo()
+                return
+            }
+            guard let sample = Self.sample(chunk.payload, format: format, key: key) else { return }
+            renderer.enqueue(sample)
+            if !decoding {
+                decoding = true
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                video.isHidden = false
+                picture.isHidden = true
+                layoutPicture()
+                CATransaction.commit()
+            }
+        case .seed:
+            break
+        }
+    }
+
+    private static func format(_ configuration: AvcConfiguration) -> CMVideoFormatDescription? {
+        let sets = configuration.sps + configuration.pps
+        var format: CMVideoFormatDescription?
+        let status: OSStatus = withPointers(sets) { pointers, sizes in
+            CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                allocator: kCFAllocatorDefault, parameterSetCount: sets.count, parameterSetPointers: pointers,
+                parameterSetSizes: sizes, nalUnitHeaderLength: Int32(configuration.nalLengthSize), formatDescriptionOut: &format)
+        }
+        return status == noErr ? format : nil
+    }
+
+    /// Pointers to each parameter set for the length of the call.
+    private static func withPointers<T>(_ sets: [Data], _ body: (UnsafePointer<UnsafePointer<UInt8>>, UnsafePointer<Int>) -> T) -> T {
+        let buffers = sets.map { set -> UnsafeMutablePointer<UInt8> in
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: set.count)
+            set.copyBytes(to: buffer, count: set.count)
+            return buffer
+        }
+        defer { buffers.forEach { $0.deallocate() } }
+        let pointers = buffers.map { UnsafePointer($0) }
+        let sizes = sets.map(\.count)
+        return pointers.withUnsafeBufferPointer { pointerBuffer in
+            sizes.withUnsafeBufferPointer { sizeBuffer in body(pointerBuffer.baseAddress!, sizeBuffer.baseAddress!) }
+        }
+    }
+
+    /// One frame (AVCC length-prefixed NAL units, as serve-sim sends them) as a sample to show right away.
+    private static func sample(_ payload: Data, format: CMVideoFormatDescription, key: Bool) -> CMSampleBuffer? {
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: payload.count,
+                                                 blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
+                                                 dataLength: payload.count, flags: kCMBlockBufferAssureMemoryNowFlag,
+                                                 blockBufferOut: &block) == kCMBlockBufferNoErr, let block else { return nil }
+        let copied = payload.withUnsafeBytes { raw -> OSStatus in
+            guard let base = raw.baseAddress else { return -1 }
+            return CMBlockBufferReplaceDataBytes(with: base, blockBuffer: block, offsetIntoDestination: 0, dataLength: payload.count)
+        }
+        guard copied == kCMBlockBufferNoErr else { return nil }
+        var sample: CMSampleBuffer?
+        var size = payload.count
+        guard CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format, sampleCount: 1,
+                                        sampleTimingEntryCount: 0, sampleTimingArray: nil, sampleSizeEntryCount: 1,
+                                        sampleSizeArray: &size, sampleBufferOut: &sample) == noErr, let sample else { return nil }
+        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true), CFArrayGetCount(attachments) > 0 {
+            let first = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+            CFDictionarySetValue(first, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                                 Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+            if !key {
+                CFDictionarySetValue(first, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(),
+                                     Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+            }
+        }
+        return sample
     }
 
     /// A point of the view as 0…1 of the picture as shown.

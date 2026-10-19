@@ -644,4 +644,29 @@ final class RoundThreeTests: XCTestCase {
         let all = Simulators.parseAll(Data(#"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-2":[{"udid":"A","name":"iPhone","state":"Shutdown","isAvailable":true},{"udid":"B","name":"iPad","state":"Booted","isAvailable":true}],"com.apple.CoreSimulator.SimRuntime.watchOS-11-0":[{"udid":"W","name":"Watch","state":"Booted"}]}}"#.utf8))
         XCTAssertEqual(all.map(\.udid), ["B", "A"])
     }
+
+    func testAvccDemuxerAndConfiguration() {
+        func chunk(_ tag: UInt8, _ payload: [UInt8]) -> Data {
+            let length = UInt32(payload.count + 1)
+            return Data([UInt8(length >> 24), UInt8(length >> 16 & 0xFF), UInt8(length >> 8 & 0xFF), UInt8(length & 0xFF), tag] + payload)
+        }
+        // avcC: version 1, profile 0x64, compat 0, level 0x1f, 4-byte lengths, one SPS, one PPS.
+        let record: [UInt8] = [1, 0x64, 0x00, 0x1F, 0xFF, 0xE1, 0, 3, 0x67, 0x64, 0x1F, 1, 0, 2, 0x68, 0xEE]
+        let stream = chunk(1, record) + chunk(4, [0xFF, 0xD8]) + chunk(9, [1]) + chunk(2, [0, 0, 0, 1, 0x65]) + chunk(3, [0, 0, 0, 1, 0x41])
+        var demuxer = AvccDemuxer()
+        let first = demuxer.push(stream.prefix(10))
+        let rest = demuxer.push(stream.dropFirst(10))
+        let kinds = (first + rest).map(\.kind)
+        XCTAssertEqual(kinds, [.description, .seed, .keyframe, .delta], "an unknown tag is skipped")
+        XCTAssertEqual((first + rest).first?.payload, Data(record))
+
+        let configuration = AvcConfiguration(Data(record))
+        XCTAssertEqual(configuration?.sps, [Data([0x67, 0x64, 0x1F])])
+        XCTAssertEqual(configuration?.pps, [Data([0x68, 0xEE])])
+        XCTAssertEqual(configuration?.nalLengthSize, 4)
+        XCTAssertNil(AvcConfiguration(Data([0, 1, 2, 3, 4, 5, 6])))
+        XCTAssertNil(AvcConfiguration(Data([1, 0x64, 0, 0x1F, 0xFF, 0xE1, 0, 9, 0x67])), "a set longer than the record")
+        XCTAssertEqual(AvcConfiguration.codecString(Data(record)), "avc1.64001f")
+        XCTAssertEqual(DeviceHub.avccPath(udid: "U-1"), "/vendor/serve-sim/helper/U-1/stream.avcc")
+    }
 }

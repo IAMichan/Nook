@@ -185,6 +185,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.reset": "Zet terug",
         "ws.mcpApp.isFullscreen": "De app staat schermvullend open.",
         "ws.mcpApp.exitFullscreen": "Terug naar de tijdlijn",
+        "sim.stream.stalled": "De simulator stuurt geen beeld meer. Opnieuw verbinden…",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -366,6 +367,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.reset": "Reset",
         "ws.mcpApp.isFullscreen": "The app is open fullscreen.",
         "ws.mcpApp.exitFullscreen": "Back to the timeline",
+        "sim.stream.stalled": "The device stream stopped receiving video. Reconnecting…",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -547,6 +549,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.reset": "Zurücksetzen",
         "ws.mcpApp.isFullscreen": "Die App ist im Vollbild geöffnet.",
         "ws.mcpApp.exitFullscreen": "Zurück zum Verlauf",
+        "sim.stream.stalled": "Der Simulator sendet kein Bild mehr. Verbinde neu…",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -728,6 +731,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.reset": "Réinitialiser",
         "ws.mcpApp.isFullscreen": "L’app est ouverte en plein écran.",
         "ws.mcpApp.exitFullscreen": "Retour au fil",
+        "sim.stream.stalled": "Le simulateur n’envoie plus d’image. Reconnexion…",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -909,5 +913,6 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.permission.reset": "Restablecer",
         "ws.mcpApp.isFullscreen": "La app está abierta a pantalla completa.",
         "ws.mcpApp.exitFullscreen": "Volver a la línea de tiempo",
+        "sim.stream.stalled": "El simulador dejó de enviar vídeo. Reconectando…",
     ],
 ]
