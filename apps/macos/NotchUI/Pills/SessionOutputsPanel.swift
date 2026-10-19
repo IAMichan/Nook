@@ -40,7 +40,7 @@ struct SessionOutputsPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sidebar.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "tray.full").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.outputs.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
             if !outputs.isEmpty {
                 Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
@@ -427,8 +427,8 @@ struct TaskListRows: View {
     }
 }
 
-/// The button in a session's header that opens or closes the outputs panel: a quiet icon like the terminal and branch
-/// buttons next to it, with how many outputs there are while the panel is closed and a dot when something is new.
+/// The button in a session's header that opens or closes the outputs panel: a quiet group of its own next to the
+/// side panel's tools, with how many outputs there are while the panel is closed and a dot when something is new.
 struct SessionOutputsButton: View {
     let open: Bool
     var count = 0
@@ -440,21 +440,22 @@ struct SessionOutputsButton: View {
         let showCount = !open && count > 0
         let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
         Button { withAnimation(.easeInOut(duration: 0.2)) { toggle() } } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "sidebar.right").font(.system(size: 12, weight: .medium))
+            HStack(spacing: 5) {
+                Image(systemName: "tray.full").font(.system(size: 11, weight: .medium))
                 if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }
             }
             .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, showCount ? 7 : 0)
-            .frame(height: 26)
+            .frame(height: ToolbarGroup.itemHeight)
             .frame(minWidth: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(open ? NookTheme.smoke : Color.clear))
+            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(open ? NookTheme.smoke : Color.clear))
             .overlay(alignment: .topTrailing) {
-                if fresh { Circle().fill(tint).frame(width: 6, height: 6).offset(x: -3, y: 3) }
+                if fresh { Circle().fill(tint).frame(width: 5, height: 5).offset(x: -3, y: 3) }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .toolbarGroup()
         .help(open || fresh ? label : tr("ws.outputs.show"))
         .accessibilityLabel(label)
     }
