@@ -90,6 +90,7 @@ struct SessionPanel: View {
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    .textSelection(.enabled)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
             }
