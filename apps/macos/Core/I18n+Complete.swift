@@ -502,6 +502,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.header.accountGone": "Konto nicht mehr in Nook",
         "ws.header.accountHelp": "Diese Sitzung läuft mit %@ und behält dieses Konto.",
         "ws.header.contextHelp": "Wie voll das Kontextfenster beim letzten Modellaufruf war",
+        "ws.header.context": "ctx %lld%%",
         "ws.header.elapsed": "Wie lange diese Runde schon läuft",
         "ws.header.tokensHelp": "Tokens dieser Sitzung, wie vom Agent gemeldet",
         "ws.inspector.accountPinned": "Beim Start der Sitzung festgelegt. Das Wechseln des Standardkontos ändert daran nichts.",
