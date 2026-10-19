@@ -7,9 +7,10 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
     @Published private(set) var pointerInside = false
-    @Published var selectedAgentID: String = "cc" {
+    @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }
+            UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
             // Another session starts on its conversation; the terminal or browser was for the one you left.
             sessionTool = .conversation
             resizeForWorkbench()
@@ -151,7 +152,7 @@ final class NotchViewModel: ObservableObject {
         if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook { app?.warmUp() }
         if case .panel(let tab) = target {
             switch tab {
-            case .chat, .agents: lastTab = tab
+            case .chat, .agents, .music: lastTab = tab
             default: break
             }
             // Tasks belong to Agents; another tab means you moved on.
@@ -386,6 +387,8 @@ final class NotchViewModel: ObservableObject {
             selectedAgentID = waiting.id
             return .agents
         }
+        // Music only exists while a player is open.
+        if lastTab == .music, app?.nowPlaying.current == nil { return .chat }
         return lastTab
     }
 
