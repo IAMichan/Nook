@@ -149,6 +149,7 @@ targets:
       - path: Services/ClaudeCloudSessions.swift
       - path: Services/FinishedSessions.swift
       - path: Services/SessionLiveness.swift
+      - path: Services/NudgeFilter.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
