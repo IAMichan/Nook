@@ -7,8 +7,7 @@ struct CompletionEmoji: Equatable {
     var toneable: Bool
 }
 
-/// Emoji by name: type `:joy` (or in Dutch `:lachen`) and Tab gives 😂. The table and search follow Typist (MIT, © 2026 Brody
-/// Salvucci); the Dutch names are Nook's.
+/// Emoji by name: type `:` for the picker, or `:joy` (or in Dutch `:lachen`) to search it.
 enum CompletionEmojiCatalog {
     /// The name being typed at the end of `text`, without the colon; empty right after the colon. The colon must start a
     /// word, so times (10:30), links and "Note:" do not count.

@@ -1,8 +1,7 @@
 import Foundation
 
 // Autocomplete's plain logic: when to suggest, what the model reads, and how its answer is shown and accepted. No AppKit, so
-// it is tested on its own (AutocompleteTests). The shape of Suggestion, CompletionPolicy and PromptBuilder follows Typist
-// (MIT, © 2026 Brody Salvucci; see THIRD-PARTY-NOTICES.md).
+// it is tested on its own (AutocompleteTests).
 
 /// A suggestion on screen: the text that would be typed at the cursor. It shrinks as words are accepted or typed through.
 struct CompletionSuggestion: Equatable {

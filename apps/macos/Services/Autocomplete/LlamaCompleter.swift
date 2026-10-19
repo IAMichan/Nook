@@ -8,8 +8,6 @@ import LlamaSwift
 /// - Greedy, with a certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its
 ///   certainty drops.
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
-///
-/// The approach (threshold, word bonus, word alternatives) follows Typist's engine (MIT, © 2026 Brody Salvucci).
 final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     let path: String
     var identity: String { path }

@@ -154,7 +154,7 @@ enum CompletionSource: Equatable {
 }
 
 /// A model Nook can download for autocomplete when none is on this Mac yet. Base (not chat) models: plain continuation is
-/// what inline completion needs. The list follows Typist's catalog (MIT, © 2026 Brody Salvucci).
+/// what inline completion needs.
 struct CompletionCatalogModel: Identifiable, Equatable {
     var name: String
     var fileName: String

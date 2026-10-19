@@ -62,5 +62,3 @@ In **Automatic** mode, Nook selects a model in this order:
 The `LlamaSwift` package ([mattt/llama.swift](https://github.com/mattt/llama.swift), pinned to `2.10549.0` / `llama.cpp` `b10549`) is configured in `apps/macos/project.yml`. Run `xcodegen` in `apps/macos` after pulling changes.
 
 Foundation-only autocomplete logic is tested in `apps/macos/Tests/NookTests/AutocompleteTests.swift` (`GGUFReader`, `CompletionModels`, `CompletionSuggestion`, `CompletionPreferences`, `CompletionEmoji`, `CompletionPrivacy`, and `CompletionLearning`) and runs via `./scripts/core-tests.sh --filter AutocompleteTests`.
-
-Parts of the autocomplete design and implementation are adapted from [Typist](https://github.com/BrodySalvucci/Typist) (MIT License); see [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).

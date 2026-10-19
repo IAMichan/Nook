@@ -6,7 +6,7 @@ import NaturalLanguage
 ///
 /// The ghost text is drawn, not put in a label: in the app's own font and size (read through Accessibility), centred on the
 /// cursor's line, starting exactly where the typed text ends, so it reads as the rest of the line instead of a box on top of
-/// it. It only shows what fits in the field. After Typist's overlay (MIT, © 2026 Brody Salvucci).
+/// it. It only shows what fits in the field.
 @MainActor
 final class GhostOverlay {
     private let panel: NSPanel

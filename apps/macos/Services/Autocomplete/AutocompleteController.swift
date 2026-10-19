@@ -19,8 +19,8 @@ private let autocompleteTapCallback: CGEventTapCallBack = { _, type, event, refc
 /// Password fields are never read, and nothing runs while macOS Secure Input is on. The model is a GGUF file: by default the
 /// one already on this Mac, one Nook downloads itself, or the model Nook's brain downloaded (MLX).
 ///
-/// The flow (key watcher → short pause → read the field → proposal → overlay) follows Typist's coordinator (MIT, © 2026
-/// Brody Salvucci). Nook adds what it knows: your memory and the text it already reads on screen.
+/// The flow: key watcher → short pause → read the field → proposal → overlay. Nook adds what it knows: your memory and the
+/// text on screen.
 @MainActor
 final class AutocompleteController: ObservableObject {
     static let shared = AutocompleteController()
