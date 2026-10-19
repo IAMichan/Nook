@@ -169,32 +169,76 @@ private final class GhostTextView: NSView {
 /// Catches a typo in the word just finished, with the system spell checker (the languages set in macOS, Dutch included).
 enum AutocompleteTypos {
     struct Fix {
-        /// Characters to delete before the cursor: the word and the separator after it.
+        /// Characters to delete before the cursor: the word and everything typed after it.
         var deleteCount: Int
         var replacement: String
         var original: String
         var corrected: String
+        /// The next word is already being typed: the fix also retypes its start.
+        var typedOn: Bool
     }
 
-    @MainActor static func fix(for before: String) -> Fix? {
-        guard let (word, separator) = CompletionTextAnalysis.justCompletedWord(in: before),
-              let language = language(of: before) else { return nil }
+    /// The last word checked, in which languages, and its fix: the same word is checked again with every letter of the next.
+    @MainActor private static var lastCheck: (word: String, languages: [String], corrected: String?)?
+
+    /// - Parameter known: words (lowercased) that are never a typo: the user's own vocabulary and fixes they turned down.
+    @MainActor static func fix(for before: String, known: Set<String> = []) -> Fix? {
+        guard let (word, tail) = CompletionTextAnalysis.recentlyFinishedWord(in: before), !known.contains(word.lowercased()) else { return nil }
+        let languages = languages(of: before)
+        let corrected: String?
+        if let last = lastCheck, last.word == word, last.languages == languages {
+            corrected = last.corrected
+        } else {
+            corrected = correction(of: word, languages: languages)
+            lastCheck = (word, languages, corrected)
+        }
+        guard let corrected else { return nil }
+        return Fix(deleteCount: word.count + tail.count, replacement: corrected + tail, original: word, corrected: corrected,
+                   typedOn: tail.last?.isLetter == true)
+    }
+
+    @MainActor private static func correction(of word: String, languages: [String]) -> String? {
         let checker = NSSpellChecker.shared
+        guard let primary = languages.first, !checker.hasLearnedWord(word) else { return nil }
+        // Only a typo when none of the user's languages knows the word: an English word in a Dutch message is not one.
+        for language in languages {
+            let miss = checker.checkSpelling(of: word, startingAt: 0, language: language, wrap: false, inSpellDocumentWithTag: 0, wordCount: nil)
+            if miss.location == NSNotFound { return nil }
+        }
+        // The autocorrect choice first, then the guesses: `correction` alone often has nothing for a word that is clearly off.
         let range = NSRange(location: 0, length: (word as NSString).length)
-        let miss = checker.checkSpelling(of: word, startingAt: 0, language: language, wrap: false, inSpellDocumentWithTag: 0, wordCount: nil)
-        guard miss.location != NSNotFound,
-              let corrected = checker.correction(forWordRange: range, in: word, language: language, inSpellDocumentWithTag: 0),
-              corrected != word else { return nil }
-        return Fix(deleteCount: word.count + 1, replacement: corrected + String(separator), original: word, corrected: corrected)
+        var candidates: [String] = []
+        for language in languages.prefix(2) {
+            if let corrected = checker.correction(forWordRange: range, in: word, language: language, inSpellDocumentWithTag: 0) {
+                candidates.append(corrected)
+            }
+        }
+        candidates += checker.guesses(forWordRange: range, in: word, language: primary, inSpellDocumentWithTag: 0) ?? []
+        guard var corrected = candidates.first(where: { CompletionTextAnalysis.isLikelyFix($0, for: word) }) else { return nil }
+        if word.first?.isUppercase == true, corrected.first?.isLowercase == true { corrected = corrected.prefix(1).uppercased() + corrected.dropFirst() }
+        return corrected
     }
 
-    /// The language the text is written in, as one of the spell checker's languages; nil when unsure or not available.
-    /// Checking Dutch with an English dictionary would mark every word, and a marked word holds back every suggestion.
-    @MainActor static func language(of text: String) -> String? {
+    /// The spell checker's languages to check `text` in. When the recognizer is sure, only the text's own language: checking
+    /// Dutch with an English dictionary would mark every word. Otherwise (short texts, mixed languages) its likely languages and
+    /// the ones set in macOS, so a short message is checked too instead of not at all.
+    @MainActor static func languages(of text: String) -> [String] {
+        let checker = NSSpellChecker.shared
+        let available = checker.availableLanguages
+        func match(_ code: String) -> String? {
+            available.first { $0 == code } ?? available.first { $0.hasPrefix(code + "_") || $0.hasPrefix(code + "-") }
+        }
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(String(text.suffix(400)))
-        guard let (code, confidence) = recognizer.languageHypotheses(withMaximum: 1).first, confidence > 0.6 else { return nil }
-        let available = NSSpellChecker.shared.availableLanguages
-        return available.first { $0 == code.rawValue } ?? available.first { $0.hasPrefix(code.rawValue + "_") || $0.hasPrefix(code.rawValue + "-") }
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 3).sorted { $0.value > $1.value }
+        if let (code, confidence) = hypotheses.first, confidence > 0.75, let language = match(code.rawValue) { return [language] }
+        var result: [String] = []
+        for (code, confidence) in hypotheses where confidence > 0.2 {
+            if let language = match(code.rawValue), !result.contains(language) { result.append(language) }
+        }
+        for language in checker.userPreferredLanguages.prefix(3) where !result.contains(language) && available.contains(language) {
+            result.append(language)
+        }
+        return result
     }
 }

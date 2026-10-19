@@ -33,7 +33,8 @@ Enable it in **Settings › Autocomplete**, which has four tabs:
 
 - **Word by word:** each word is shown as soon as the model has finished it, while the rest is still being written.
 - **Fixed context per field:** everything before your text in the prompt is gathered once per field, so a key only costs the last few tokens.
-- **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the key delay or a new model call.
+- **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word shows that next suggestion at once, moved past the word just typed, before the app has even drawn it (`settle()` then lines it up with the real cursor); typing it to the end shows it as soon as the app has the text. A suggestion taken while it is still being written starts the writing ahead right away, from what is on screen.
+- **Chains do not stall:** every suggestion ends where the model got unsure, so the next one starts at an unsure point. Suggestions right after one that was taken whole use lower thresholds (`CompletionOptions.continuing()`), so Tab, Tab, Tab keeps going instead of stopping after two or three suggestions.
 - **Window text without blocking:** with "What is on your screen" on (the default), the text of the window you write in comes from Nook's screen reading when that is on, and otherwise autocomplete reads the focused window itself through Accessibility (`AppTextReader.focusedWindowText`), once per field and off the main thread. The first suggestion in a field does not wait for it.
 
 ## Quality
@@ -42,7 +43,10 @@ Enable it in **Settings › Autocomplete**, which has four tabs:
 - **Sure of the whole suggestion:** besides the threshold per token, the product of all token probabilities must stay above a threshold (`minSequenceProbability`), so a suggestion ends where it starts to drift. "Eagerness" sets all thresholds.
 - **No half words:** when the model stops because it is no longer sure, it stops at the last whole word.
 - **No copies:** three words or more that already stand in the last lines before the cursor are not shown.
-- **Screen text without the interface:** only lines of four words or more go into the prompt, not buttons, labels and menus.
+- **Screen text without the interface:** only lines that read as text go into the prompt (four words or more, or a short sentence such as "Kom je morgen?"), not buttons, labels and menus.
+- **The text you reply to:** autocomplete reads the pane around the field (`AppTextReader.textAroundFocus`: the nearest ancestor of the focused element with enough text, such as the conversation above a message field) instead of the whole window with its sidebar first. The prompt keeps the *end* of it (`CompletionScreenText.recent`), so the newest messages sit right above your text. Nook's own screen reading fills in until that read is done.
+- **Fresh context:** the context around a field is gathered again after a message is sent (the field empties) and every three minutes, so new incoming messages are seen. The clipboard only goes into the prompt for five minutes after it was copied.
+- **Typo check:** the last finished word is checked with the macOS spell checker, also while the next word is being typed (the fix then retypes that word's start too). Short or mixed-language text is checked in the likely languages and the ones set in macOS, and only counts as a typo when none of them knows the word. The fix comes from the autocorrect choice or the spell checker's guesses, but only when it is one or two letters away (`CompletionTextAnalysis.isLikelyFix`). Words you write often, and fixes turned down with Escape, are left alone.
 - **Base models first:** automatic model choice prefers a base model over a chat, code or math model found on this Mac.
 
 ## Emoji Picker

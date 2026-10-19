@@ -44,6 +44,40 @@ enum AppTextReader {
         return text.isEmpty ? nil : String(text.prefix(limit))
     }
 
+    /// The text of the pane around the focused element: the nearest ancestor with at least `minimum` characters of text (the
+    /// conversation above a message field, the mail being answered), not the whole window with its sidebar and lists first.
+    /// Read in screen order and cut from the front, so the end stays: in a chat that is the newest messages, right above the
+    /// field. Falls back to the whole focused window. Nil when there is nothing to read. Synchronous: call it off the main thread.
+    static func textAroundFocus(pid: pid_t, limit: Int, minimum: Int = 400) -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        var found: String?
+        if let focused = value(app, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() {
+            var element = focused as! AXUIElement
+            for _ in 0..<12 {
+                guard let parent = value(element, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                element = parent as! AXUIElement
+                let role = (value(element, kAXRoleAttribute) as? String) ?? ""
+                if role == "AXWindow" || role == "AXApplication" { break }
+                let text = collectedText(element, chars: limit * 4)
+                if text.count >= minimum { found = text; break }
+            }
+        }
+        if found == nil, let window = value(app, kAXFocusedWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() {
+            found = collectedText(window as! AXUIElement, chars: limit * 4)
+        }
+        guard let text = found, !text.isEmpty else { return nil }
+        return String(text.suffix(limit))
+    }
+
+    private static func collectedText(_ element: AXUIElement, chars: Int) -> String {
+        var lines: [String] = []
+        var budget = 5000
+        var count = 0
+        collect(element, depth: 0, into: &lines, budget: &budget, count: &count, chars: chars)
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func read(pid: pid_t, limit: Int) -> [(title: String, text: String)] {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 1.5)
