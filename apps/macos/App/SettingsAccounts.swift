@@ -62,8 +62,12 @@ private struct AgentAccountCardRow: View {
         return several || !profile.isDefault ? label : profile.kind.name
     }
 
+    /// Antigravity's hooks may be set up while Nook holds no Google sign-in for it yet.
+    private var antigravitySignedOut: Bool { profile.kind == .antigravity && app.antigravityUsage.noLogin }
+
     private var health: ConnectionHealth {
         if let progress = app.agentConnect[profile.id], progress.isBusy { return .busy }
+        if antigravitySignedOut { return .needsYou }
         if account != nil { return .working }
         if app.history.executables[profile.kind] == nil { return .notLinked }
         return .needsYou
@@ -107,16 +111,19 @@ private struct AgentAccountCardRow: View {
             }
             .buttonStyle(.plain)
 
-            Button(account == nil ? tr("button.login") : tr("settings2.manage")) {
-                onManage()
+            Button(account == nil || antigravitySignedOut ? tr("button.login") : tr("settings2.manage")) {
+                // Antigravity signs in right here, in your browser.
+                if antigravitySignedOut { app.connect(profile) } else { onManage() }
             }
             .controlSize(.small)
+            .disabled(antigravitySignedOut && app.agentConnect[profile.id]?.isBusy == true)
         }
         .padding(.vertical, 3)
     }
 
     private var healthText: String? {
         if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
+        if antigravitySignedOut { return tr("agents.notLoggedIn") }
         if account != nil { return tr("connect.status.connected") }
         if app.history.executables[profile.kind] == nil { return tr("agents.notInstalled") }
         return tr("agents.notLoggedIn")
@@ -200,6 +207,11 @@ private struct ManageAccountSheet: View {
                     }
                 }
 
+                if profile.kind == .antigravity {
+                    Divider()
+                    antigravitySignInView
+                }
+
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
@@ -263,6 +275,35 @@ private struct ManageAccountSheet: View {
                     app.logout(profile)
                 }
             }
+        }
+    }
+
+    /// Antigravity signs in through Nook, in your browser: the same sign-in its sessions and the usage overview use.
+    @ViewBuilder
+    private var antigravitySignInView: some View {
+        let progress = app.agentConnect[profile.id]
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button {
+                    app.reauthenticate(profile)
+                } label: {
+                    Label(app.antigravityUsage.noLogin ? tr("accounts.antigravitySignIn") : tr("accounts.reauth"),
+                          systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(progress?.isBusy == true)
+
+                if let progress, progress.isBusy {
+                    ProgressView().controlSize(.small)
+                    Text(progress.text).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if case .failed(let message)? = progress {
+                Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(tr("accounts.antigravitySignInHelp"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

@@ -37,6 +37,71 @@ extension WorkspaceManager {
         NSWorkspace.shared.open(url)
     }
 
+    /// Signs in to Antigravity without a session, when you link the account: the server starts in the account's profile
+    /// folder and `authenticate` opens Google's sign-in page in your browser (or returns at once with a saved token, unless
+    /// `fresh`). The token stays in that folder, where sessions and the usage overview find it. `done` gets nil on
+    /// success, otherwise the reason it failed.
+    func signInAntigravity(profileID: String, fresh: Bool, done: @escaping (String?) -> Void) {
+        guard let executable = AntigravityInstaller.shared.installed?.executable,
+              let environment = prepareAntigravity(profileID: profileID, executable: executable) else {
+            return done(tr("ws.antigravity.notInstalled"))
+        }
+        antigravityLogins.removeValue(forKey: profileID)?.client.stop()
+        let profile = antigravityPaths.profile(profileID)
+        if fresh { try? FileManager.default.removeItem(at: profile.appendingPathComponent("antigravity-acp/acp_token.json")) }
+        var extra = accountEnvironment(profileID)
+        extra.merge(environment) { $1 }
+        var spec = LaunchSpec(executable: executable, arguments: [], extraEnvironment: extra, workingDirectory: profile.path,
+                              initialInput: [], keepsInputOpen: true)
+        spec.removedEnvironment = AntigravityAcp.removedEnvironment
+        let client = AcpClient(spec: spec)
+        client.onText = { line in
+            guard let url = AntigravityAcp.signInURL(inLine: line) else { return }
+            Task { @MainActor in NSWorkspace.shared.open(url) }
+        }
+        client.onExit = { [weak self] _, stderr in
+            Task { @MainActor in
+                self?.finishAntigravitySignIn(profileID, client, WorkspaceManager.cleanError(stderr, status: 1))
+            }
+        }
+        antigravityLogins[profileID] = (client, done)
+        do {
+            try client.start()
+        } catch {
+            return finishAntigravitySignIn(profileID, client, tr("ws.error.launch", error.localizedDescription))
+        }
+        client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                if case .failure(let error) = result { return self.finishAntigravitySignIn(profileID, client, error.localizedDescription) }
+                client.request("authenticate", ["methodId": AntigravityAcp.authMethod]) { [weak self] result in
+                    Task { @MainActor in
+                        if case .failure(let error) = result {
+                            self?.finishAntigravitySignIn(profileID, client, error.localizedDescription)
+                        } else {
+                            self?.finishAntigravitySignIn(profileID, client, nil)
+                        }
+                    }
+                }
+            }
+        }
+        // Signing in in the browser may take a while, but not forever.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10 * 60 * 1_000_000_000)
+            self?.finishAntigravitySignIn(profileID, client, tr("app.connect.noLogin"))
+        }
+    }
+
+    /// Ends a sign-in once: the server stops and the caller hears how it went.
+    private func finishAntigravitySignIn(_ profileID: String, _ client: AcpClient, _ error: String?) {
+        guard let login = antigravityLogins[profileID], login.client === client else { return }
+        antigravityLogins[profileID] = nil
+        client.onExit = nil
+        client.stop()
+        if error == nil { onAntigravitySignedIn?() }
+        login.done(error)
+    }
+
     /// Sets an ACP mode: as the mode config option when the agent has one, otherwise with `session/set_mode` when it
     /// lists the mode.
     func setAcpMode(_ client: AcpClient, session: String, response: [String: Any], modes: [[String: Any]], to mode: String) {

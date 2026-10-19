@@ -22,6 +22,8 @@ final class AntigravityUsage: ObservableObject {
 
     private var timer: Timer?
     private var busy = false
+    /// A forced read came in while one was running: read again once that one is done.
+    private var again = false
     private var lastFetch = Date.distantPast
     private static let minimumInterval: TimeInterval = 30
 
@@ -38,8 +40,13 @@ final class AntigravityUsage: ObservableObject {
         timer = nil
     }
 
-    func refreshNow() {
-        guard !busy, Date().timeIntervalSince(lastFetch) >= Self.minimumInterval else { return }
+    /// Reads the windows again, at most every 30 seconds; `force` (right after signing in) reads at once.
+    func refreshNow(force: Bool = false) {
+        if busy {
+            if force { again = true }
+            return
+        }
+        guard force || Date().timeIntervalSince(lastFetch) >= Self.minimumInterval else { return }
         busy = true
         lastFetch = Date()
         let directories = sessionProfiles() + [home()]
@@ -60,6 +67,10 @@ final class AntigravityUsage: ObservableObject {
                         self.limits = []
                         self.noLogin = true
                     }
+                }
+                if self.again {
+                    self.again = false
+                    self.refreshNow(force: true)
                 }
             }
         }
@@ -181,7 +192,10 @@ final class AntigravityUsage: ObservableObject {
         let agent = "antigravity/hub/1.0.0 (aidev_client; os_type=darwin; arch=\(architecture); cl=963137146)"
         let body = (try? JSONSerialization.data(withJSONObject: project.map { ["project": $0] } ?? [:])) ?? Data("{}".utf8)
 
+        // The endpoints can report different groups (the daily one has returned Claude & GPT without Gemini): every
+        // endpoint's windows count, the most used reading of a window wins.
         for operation in ["retrieveUserQuotaSummary", "fetchAvailableModels"] {
+            var merged: [QuotaLimit] = []
             for endpoint in endpoints {
                 var request = URLRequest(url: URL(string: "\(endpoint)/v1internal:\(operation)")!)
                 request.httpMethod = "POST"
@@ -190,9 +204,15 @@ final class AntigravityUsage: ObservableObject {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = body
                 guard let object = send(request) as? [String: Any] else { continue }
-                let windows = operation == "retrieveUserQuotaSummary" ? summaryWindows(object) : modelWindows(object)
-                if !windows.isEmpty { return windows }
+                for window in operation == "retrieveUserQuotaSummary" ? summaryWindows(object) : modelWindows(object) {
+                    if let index = merged.firstIndex(where: { $0.id == window.id }) {
+                        if window.percent > merged[index].percent { merged[index] = window }
+                    } else {
+                        merged.append(window)
+                    }
+                }
             }
+            if !merged.isEmpty { return merged }
         }
         return nil
     }
