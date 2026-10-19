@@ -119,14 +119,10 @@ private struct PanelApprovalBar: View {
     var body: some View {
         let waiting = app.approvals.pending
         if let approval = waiting.first(where: { !onScreen($0) }) {
-            let tint = approval.danger ? NookTheme.coral : NookTheme.amber
             HStack(spacing: 8) {
-                Image(systemName: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(tint)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(approval.title)
-                        .font(NookTheme.font(12.5, .semibold))
+                        .font(NookTheme.font(12.5, .medium))
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(subtitle(approval, more: waiting.count - 1))
@@ -147,8 +143,8 @@ private struct PanelApprovalBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.25), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, lineWidth: 1))
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
         }

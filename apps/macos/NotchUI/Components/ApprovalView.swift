@@ -12,22 +12,21 @@ struct ApprovalView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill")
-                    .foregroundStyle(approval.danger ? NookTheme.coral : NookTheme.amber)
+            // Calm by default: no icon, no colored card. Only a risky request gets a quiet coral accent.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(approval.title)
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.font(12.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 if more > 0 {
-                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
             if !approval.note.isEmpty {
                 Text(approval.note)
                     .font(NookTheme.font(11.5))
-                    .foregroundStyle(approval.danger ? NookTheme.coral : NookTheme.textSecondary)
+                    .foregroundStyle(approval.danger ? NookTheme.coralSoft : NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             content
@@ -44,8 +43,8 @@ struct ApprovalView: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill((approval.danger ? NookTheme.coral : NookTheme.amber).opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke((approval.danger ? NookTheme.coral : NookTheme.amber).opacity(0.25), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -75,6 +74,6 @@ struct ApprovalView: View {
         .padding(8)
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.25)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.03)))
     }
 }
