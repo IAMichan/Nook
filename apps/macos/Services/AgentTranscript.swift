@@ -31,8 +31,11 @@ struct AgentChatMessage: Identifiable, Equatable {
 
     let id: String
     let kind: Kind
-    let text: String
+    var text: String
     var steps: [AgentToolStep] = []
+    /// When it was written, and when the last part of it (a later block, a step's result) came in: what the turn took.
+    var date: Date?
+    var updated: Date?
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
@@ -44,11 +47,20 @@ struct AgentChatMessage: Identifiable, Equatable {
         self.text = text
     }
 
-    init(id: String, kind: Kind, text: String, steps: [AgentToolStep] = []) {
+    init(id: String, kind: Kind, text: String, steps: [AgentToolStep] = [], date: Date? = nil) {
         self.id = id
         self.kind = kind
         self.text = text
         self.steps = steps
+        self.date = date
+        self.updated = date
+    }
+
+    /// A later part of the same message came in at `date`.
+    mutating func touch(_ date: Date?) {
+        guard let date else { return }
+        if self.date == nil { self.date = date }
+        if updated.map({ date > $0 }) ?? true { updated = date }
     }
 }
 
@@ -125,6 +137,7 @@ enum AgentTranscript {
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
             let id = (object["uuid"] as? String) ?? (object["id"] as? String) ?? "\(object["step_index"] ?? index)"
             let type = (object["type"] as? String) ?? ""
+            let when = date(object["timestamp"])
 
             // Claude Code
             if type == "user" || type == "assistant" {
@@ -135,30 +148,30 @@ enum AgentTranscript {
                     // Results of the agent's steps come back as user lines: they only mark a step done or failed.
                     for block in (message["content"] as? [[String: Any]]) ?? [] where block["type"] as? String == "tool_result" {
                         guard let callID = block["tool_use_id"] as? String else { continue }
-                        finish(step: callID, failed: (block["is_error"] as? Bool) == true, in: &messages)
+                        finish(step: callID, failed: (block["is_error"] as? Bool) == true, at: when, in: &messages)
                     }
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty, isTypedPrompt(text) else { continue }
-                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
+                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 } else {
                     // One line can hold several blocks; keep their order (thinking, text, steps).
                     for (offset, block) in ((message["content"] as? [[String: Any]]) ?? []).enumerated() {
                         let blockID = "\(id)-\(offset)"
                         switch block["type"] as? String {
                         case "thinking", "redacted_thinking":
-                            append(thinking: (block["thinking"] as? String) ?? "", id: blockID, to: &messages, allowEmpty: true)
+                            append(thinking: (block["thinking"] as? String) ?? "", id: blockID, at: when, to: &messages, allowEmpty: true)
                         case "text":
-                            append(reply: (block["text"] as? String) ?? "", id: blockID, to: &messages)
+                            append(reply: (block["text"] as? String) ?? "", id: blockID, at: when, to: &messages)
                         case "tool_use", "server_tool_use":
                             let name = (block["name"] as? String) ?? ""
                             let input = (block["input"] as? [String: Any]) ?? [:]
                             append(step: AgentToolStep(id: (block["id"] as? String) ?? blockID, name: toolName(name),
-                                                       summary: toolSummary(name, input)), to: &messages)
+                                                       summary: toolSummary(name, input)), at: when, to: &messages)
                         default:
                             continue
                         }
                     }
-                    if let content = message["content"] as? String { append(reply: content, id: id, to: &messages) }
+                    if let content = message["content"] as? String { append(reply: content, id: id, at: when, to: &messages) }
                 }
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
@@ -166,10 +179,10 @@ enum AgentTranscript {
                 guard let raw = object["content"] as? String else { continue }
                 let text = cleanAntigravityPrompt(raw)
                 guard !text.isEmpty else { continue }
-                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
+                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
             } else if type == "PLANNER_RESPONSE" {
-                append(thinking: (object["thinking"] as? String) ?? "", id: id, to: &messages)
-                append(reply: (object["content"] as? String) ?? "", id: id, to: &messages)
+                append(thinking: (object["thinking"] as? String) ?? "", id: id, at: when, to: &messages)
+                append(reply: (object["content"] as? String) ?? "", id: id, at: when, to: &messages)
             }
             // Codex (event_msg): prompts, answers and the reasoning summaries it shows while it thinks.
             else if type == "event_msg", let payload = object["payload"] as? [String: Any],
@@ -178,11 +191,11 @@ enum AgentTranscript {
                 case "user_message":
                     let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text)))
+                    messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 case "agent_message":
-                    append(reply: (payload["message"] as? String) ?? "", id: id, to: &messages)
+                    append(reply: (payload["message"] as? String) ?? "", id: id, at: when, to: &messages)
                 case "agent_reasoning":
-                    append(thinking: (payload["text"] as? String) ?? "", id: id, to: &messages)
+                    append(thinking: (payload["text"] as? String) ?? "", id: id, at: when, to: &messages)
                 default:
                     continue
                 }
@@ -197,17 +210,18 @@ enum AgentTranscript {
                     let arguments = (payload["arguments"] as? String).flatMap {
                         (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
                     } ?? [:]
-                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments)), to: &messages)
+                    append(step: AgentToolStep(id: callID, name: codexToolName(name), summary: codexSummary(name, arguments)), at: when,
+                           to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
-                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action)), to: &messages)
+                    append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action)), at: when, to: &messages)
                 case "web_search_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
                     append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),
-                           to: &messages)
-                    finish(step: callID, failed: false, in: &messages)
+                           at: when, to: &messages)
+                    finish(step: callID, failed: false, at: when, in: &messages)
                 case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
-                    finish(step: callID, failed: false, in: &messages)
+                    finish(step: callID, failed: false, at: when, in: &messages)
                 default:
                     continue
                 }
@@ -224,10 +238,11 @@ enum AgentTranscript {
         for (index, message) in list.enumerated() {
             let id = (message["id"] as? String) ?? "gemini-\(index)"
             let content = geminiText(message["content"])
+            let when = date(message["timestamp"])
             switch message["type"] as? String {
             case "user":
                 guard !content.isEmpty else { continue }
-                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(content)))
+                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(content), date: when))
             case "gemini":
                 let thoughts = ((message["thoughts"] as? [[String: Any]]) ?? []).compactMap { thought -> String? in
                     let subject = ((thought["subject"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -235,8 +250,8 @@ enum AgentTranscript {
                     if subject.isEmpty { return description.isEmpty ? nil : description }
                     return description.isEmpty ? "**\(subject)**" : "**\(subject)**\n\(description)"
                 }
-                append(thinking: thoughts.joined(separator: "\n\n"), id: id, to: &messages)
-                append(reply: content, id: id, to: &messages)
+                append(thinking: thoughts.joined(separator: "\n\n"), id: id, at: when, to: &messages)
+                append(reply: content, id: id, at: when, to: &messages)
             default:
                 continue
             }
@@ -246,50 +261,64 @@ enum AgentTranscript {
 
     /// Thinking right after thinking joins one bubble. With `allowEmpty`, thinking the agent kept to itself still shows
     /// that it thought (as its own app does), without text.
-    private static func append(thinking raw: String, id: String, to messages: inout [AgentChatMessage], allowEmpty: Bool = false) {
+    private static func append(thinking raw: String, id: String, at date: Date?, to messages: inout [AgentChatMessage],
+                               allowEmpty: Bool = false) {
         let thinking = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !thinking.isEmpty || allowEmpty else { return }
         if let last = messages.last, last.isThinking {
+            messages[messages.count - 1].touch(date)
             guard !thinking.isEmpty else { return }
-            let joined = last.text.isEmpty ? thinking : last.text + "\n\n" + thinking
-            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .thinking, text: clip(joined))
+            messages[messages.count - 1].text = clip(last.text.isEmpty ? thinking : last.text + "\n\n" + thinking)
         } else {
-            messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking)))
+            messages.append(AgentChatMessage(id: "\(id)-think", kind: .thinking, text: clip(thinking), date: date))
         }
     }
 
     /// Answer text right after answer text joins one bubble.
-    private static func append(reply raw: String, id: String, to messages: inout [AgentChatMessage]) {
+    private static func append(reply raw: String, id: String, at date: Date?, to messages: inout [AgentChatMessage]) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         if let last = messages.last, last.kind == .assistant {
-            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .assistant, text: clip(last.text + "\n\n" + text))
+            messages[messages.count - 1].text = clip(last.text + "\n\n" + text)
+            messages[messages.count - 1].touch(date)
         } else {
-            messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text)))
+            messages.append(AgentChatMessage(id: id, kind: .assistant, text: clip(text), date: date))
         }
     }
 
     /// Steps right after steps join one list.
-    private static func append(step: AgentToolStep, to messages: inout [AgentChatMessage]) {
+    private static func append(step: AgentToolStep, at date: Date?, to messages: inout [AgentChatMessage]) {
         if let last = messages.last, last.isTools {
-            var steps = last.steps
-            steps.append(step)
-            messages[messages.count - 1] = AgentChatMessage(id: last.id, kind: .tools, text: "", steps: Array(steps.suffix(maxSteps)))
+            messages[messages.count - 1].steps = Array((last.steps + [step]).suffix(maxSteps))
+            messages[messages.count - 1].touch(date)
         } else {
-            messages.append(AgentChatMessage(id: "\(step.id)-steps", kind: .tools, text: "", steps: [step]))
+            messages.append(AgentChatMessage(id: "\(step.id)-steps", kind: .tools, text: "", steps: [step], date: date))
         }
     }
 
     /// Marks the step with this call id done or failed. Results follow their call closely, so only recent lists are searched.
-    private static func finish(step callID: String, failed: Bool, in messages: inout [AgentChatMessage]) {
+    private static func finish(step callID: String, failed: Bool, at date: Date?, in messages: inout [AgentChatMessage]) {
         for index in messages.indices.reversed().prefix(12) where messages[index].isTools {
             guard let position = messages[index].steps.lastIndex(where: { $0.id == callID }) else { continue }
-            var message = messages[index]
-            message.steps[position].state = failed ? .failed : .done
-            messages[index] = message
+            messages[index].steps[position].state = failed ? .failed : .done
+            messages[index].touch(date)
             return
         }
     }
+
+    /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.
+    static func date(_ value: Any?) -> Date? {
+        guard let text = value as? String, !text.isEmpty else { return nil }
+        return fractionalStamp.date(from: text) ?? plainStamp.date(from: text)
+    }
+
+    // ISO8601DateFormatter is thread-safe; one each is enough for every transcript.
+    private static let fractionalStamp: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let plainStamp = ISO8601DateFormatter()
 
     /// A long run of steps keeps its newest ones.
     private static let maxSteps = 200

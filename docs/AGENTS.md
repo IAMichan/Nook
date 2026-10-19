@@ -39,7 +39,7 @@ Key capabilities:
 - **Running Sessions:** Continue a busy external session safely as a fork (`--fork-session`) so two writers never collide, or choose **Take Over** (`⋯`) to stop the external process and continue the session directly inside Nook.
 - **Sessions Managed by Nook ("In Nook"):** Supports Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Grok, and Antigravity with persistent per-session connections: Codex via `codex app-server`, Claude Code via a persistent streaming process, and others via ACP. Includes git checkpoints in isolated worktrees, auto-generated session titles, one-click Commit / Push / PR (always in English), and automatic resume when rate limits reset.
 - **Cloud Sessions:** Anthropic cloud sessions (started in the Claude Mac/iOS app or on `claude.ai/code`) are read-only polled at most once per minute using your existing Claude Code login and listed as **Claude (cloud)** with an **Open in Claude** button.
-- **Full Transcript & Reasoning:** Reads agent transcripts to show collapsible reasoning steps (`thinking` / `thoughts`), commands, file edits, searches, and subagents inline.
+- **Full Transcript & Reasoning:** Reads agent transcripts to show collapsible reasoning steps (`thinking` / `thoughts`), commands, file edits, searches, and subagents inline. The conversation reads like a Code thread (`TranscriptPresentation`): your messages in a bubble on the right, answers as plain text on the left, steps in a row as one line ("Ran 3 commands and read 2 files"), each finished turn folded into "Worked for 1m 3s", and a running turn showing "Working for 12s" with the live step at its end.
 
 ## Nook Workspace MCP for Your Agents
 
