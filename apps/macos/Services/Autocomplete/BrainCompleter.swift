@@ -41,6 +41,9 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     private static let step = 64
     /// …and at least this far before the end, so typing a few letters stays after the newest one.
     private static let tail = 24
+    /// A long prompt is read in pieces of this many tokens (a multiple of `step`): between pieces a newer request can stop it,
+    /// and what was read is kept as a checkpoint for that request.
+    private static let readChunk = 256
 
     init(modelID: String) { self.modelID = modelID }
 
@@ -75,6 +78,19 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
+    /// Reads `prompt` up to its checkpoint without writing anything, so the next request only reads the last few tokens. Does
+    /// not stop the running request; a newer request stops it between pieces and goes on from what it read.
+    func warm(prompt: String) {
+        let id = lock.withLock { latest }
+        Task {
+            guard let container = try? await EmbeddedModel.shared.completionContainer(self.modelID), !self.superseded(id) else { return }
+            let owner = ObjectIdentifier(container)
+            _ = try? await container.perform { context -> Bool in
+                self.work.withLock { (try? self.prime(context, owner: owner, prompt: prompt) { self.superseded(id) }) != nil }
+            }
+        }
+    }
+
     func alternatives(prompt: String, excluding: String, count: Int) async -> [String] {
         let id = begin()
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID), !superseded(id) else { return [] }
@@ -89,7 +105,8 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     // MARK: Under the work lock
 
     /// A cache that holds the prompt up to the newest usable checkpoint, and the tokens still to be read (at least one).
-    private func prime(_ context: ModelContext, owner: ObjectIdentifier, prompt: String) throws -> (layers: [KVCache], fresh: [Int], all: [Int])? {
+    private func prime(_ context: ModelContext, owner: ObjectIdentifier, prompt: String,
+                       isCancelled: () -> Bool) throws -> (layers: [KVCache], fresh: [Int], all: [Int])? {
         var tokens = context.tokenizer.encode(text: prompt, addSpecialTokens: true)
         if tokens.count > Self.maxPromptTokens { tokens.removeFirst(tokens.count - Self.maxPromptTokens) }
         guard !tokens.isEmpty else { return nil }
@@ -107,12 +124,18 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         // Move the checkpoint forward when the prompt has grown a step past it (or there is none yet).
         let target = max(0, ((tokens.count - Self.tail) / Self.step) * Self.step)
         if target - read >= Self.step {
-            _ = try TokenIterator(input: LMInput(tokens: MLXArray(Array(tokens[read ..< target]))), model: context.model, cache: layers,
-                                  processor: nil, sampler: ArgMaxSampler(), prefillStepSize: 512, maxTokens: 0)
+            // In pieces: when a newer request comes in, keep what was read as the checkpoint and stop.
+            while read < target {
+                let end = min(read + Self.readChunk, target)
+                _ = try TokenIterator(input: LMInput(tokens: MLXArray(Array(tokens[read ..< end]))), model: context.model, cache: layers,
+                                      processor: nil, sampler: ArgMaxSampler(), prefillStepSize: 512, maxTokens: 0)
+                read = end
+                if read < target, isCancelled() { break }
+            }
             let copies = layers.map { $0.copy() }
             eval(copies.flatMap { $0.state })
-            checkpoint = Checkpoint(owner: owner, tokens: Array(tokens[..<target]), layers: copies)
-            read = target
+            checkpoint = Checkpoint(owner: owner, tokens: Array(tokens[..<read]), layers: copies)
+            if read < target { return nil }
         }
         return (layers, Array(tokens[read...]), tokens)
     }
@@ -159,7 +182,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                           partial: (@Sendable (String) -> Void)?, isCancelled: () -> Bool) -> CompletionResult? {
         guard !isCancelled() else { return nil }
         do {
-            guard let (layers, fresh, all) = try prime(context, owner: owner, prompt: prompt), !isCancelled() else { return nil }
+            guard let (layers, fresh, all) = try prime(context, owner: owner, prompt: prompt, isCancelled: isCancelled), !isCancelled() else { return nil }
             let bonus = bias(context.tokenizer, owner: owner)
             let sampler = ConfidenceSampler(bias: bonus.bias, biasArray: bonus.array)
             let stopIDs = stopIDs(context, stops)
@@ -215,7 +238,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         var text = prompt
         while text.last == " " { text.removeLast() }
         do {
-            guard !isCancelled(), let (layers, fresh, all) = try prime(context, owner: owner, prompt: text) else { return [] }
+            guard !isCancelled(), let (layers, fresh, all) = try prime(context, owner: owner, prompt: text, isCancelled: isCancelled) else { return [] }
             let bonus = bias(context.tokenizer, owner: owner)
             let first = ConfidenceSampler(bias: bonus.bias, biasArray: bonus.array, candidates: count * 4)
             // Reading the prompt leaves the cache at its end (the sampled token is not read yet): a starting point for every

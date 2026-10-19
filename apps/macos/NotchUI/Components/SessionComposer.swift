@@ -272,19 +272,11 @@ struct SessionComposer<Controls: View>: View {
             }
             withKeys(field(focused: focused))
                 .frame(minHeight: minHeight, alignment: .topLeading)
-            HStack(spacing: 6) {
-                controls()
-                Spacer(minLength: 8)
-                if let trailingAccessory { trailingAccessory }
-                if busy, let onStop {
-                    if let queueAction, !isEmpty {
-                        roundButton(symbol: queueSymbol, label: queueLabel, active: true) { fire(queueAction) }
-                    }
-                    roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
-                } else {
-                    roundButton(symbol: "arrow.up", label: sendLabel ?? tr("button.send"), active: enabled) { fire(onSend) }
-                        .disabled(!enabled)
-                }
+            // When the box gets narrow (the chat beside an open app), the choices drop their words and keep their icons,
+            // so the row shrinks with the box instead of running out of it.
+            ViewThatFits(in: .horizontal) {
+                controlRow.environment(\.composerCompact, false)
+                controlRow.environment(\.composerCompact, true)
             }
         }
         .padding(.leading, 16)
@@ -315,6 +307,24 @@ struct SessionComposer<Controls: View>: View {
         }
         .onAppear { startPasteMonitor(focused: focused) }
         .onDisappear { pasteMonitor.stop() }
+    }
+
+    /// The choices for the turn, then the extra button and send (or stop) on the right.
+    private var controlRow: some View {
+        HStack(spacing: 6) {
+            controls()
+            Spacer(minLength: 8)
+            if let trailingAccessory { trailingAccessory }
+            if busy, let onStop {
+                if let queueAction, !isEmpty {
+                    roundButton(symbol: queueSymbol, label: queueLabel, active: true) { fire(queueAction) }
+                }
+                roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
+            } else {
+                roundButton(symbol: "arrow.up", label: sendLabel ?? tr("button.send"), active: enabled) { fire(onSend) }
+                    .disabled(!enabled)
+            }
+        }
     }
 
     /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text.
@@ -396,7 +406,11 @@ struct ComposerPill: View {
     let text: String
     var tint: Color? = nil
     var showsChevron = true
+    @Environment(\.composerCompact) private var compact
     @State private var hovering = false
+
+    /// In a narrow composer only a pill with an icon drops its text (and chevron); one without keeps its words.
+    private var iconOnly: Bool { compact && (agent != nil || brand != nil || dot != nil || symbol != nil) }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -410,8 +424,10 @@ struct ComposerPill: View {
             } else if let symbol {
                 Image(systemName: symbol).font(.system(size: 11, weight: .medium))
             }
-            Text(text).lineLimit(1)
-            if showsChevron {
+            if !iconOnly {
+                Text(text).lineLimit(1)
+            }
+            if showsChevron && !iconOnly {
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
             }
         }
@@ -422,6 +438,18 @@ struct ComposerPill: View {
         .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+}
+
+private struct ComposerCompactKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// The composer is too narrow for its full row of choices: pills show only their icon.
+    var composerCompact: Bool {
+        get { self[ComposerCompactKey.self] }
+        set { self[ComposerCompactKey.self] = newValue }
     }
 }
 

@@ -11,6 +11,8 @@ protocol CompletionEngine: AnyObject, Sendable {
     /// Continues `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far each time
     /// another word is finished, so the suggestion can show before the model is done.
     func complete(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult?
+    /// Reads `prompt` into the model's cache ahead of the next key, without writing anything or stopping the running request.
+    func warm(prompt: String)
     /// Words that could come next, most likely first, each with the space before it when the model would put one there.
     func alternatives(prompt: String, excluding: String, count: Int) async -> [String]
     /// Leans generation toward words the user writes often. Strength 0 turns it off.
