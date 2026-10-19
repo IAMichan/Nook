@@ -93,7 +93,7 @@ Notch cards (Screen Peek `⌥⌘N` and Think Along) use the exact same `prepareR
 
 ### "Only on This Mac" Source Lock
 
-`AppSettings.localOnlySources` tracks sources that external cloud providers are never allowed to see (**Settings › Brain**). Whenever an external brain is active (`AppSettings.privateSources`), those sources are stripped from the scope via `SourceScope.keepingLocal` at the start of `prepareRun` and `answer`. Their context, tools, and search queries are completely excluded, and prior turns that used a local-only source are omitted from conversation history (`NookChat.withoutPrivate`). With a local brain (built-in MLX, Ollama, LM Studio), all enabled sources remain available.
+`AppSettings.localOnlySources` tracks sources that external cloud providers are never allowed to see (**Settings › Privacy and access › Only on this Mac**). Whenever an external brain is active (`AppSettings.privateSources`), those sources are stripped from the scope via `SourceScope.keepingLocal` at the start of `prepareRun` and `answer`. Their context, tools, and search queries are completely excluded, and prior turns that used a local-only source are omitted from conversation history (`NookChat.withoutPrivate`). With a local brain (built-in MLX, Ollama, LM Studio), all enabled sources remain available.
 
 ### Local Brain Quality & Grounding
 
@@ -140,6 +140,10 @@ Clicking `ⓘ` reveals the exact context and every search query with its outcome
 - `PlanRunner` re-validates every step at execution time and records a deterministic key (tool + inputs) in `executed_actions` so identical actions are not accidentally repeated within 12 hours unless you explicitly click **Run Anyway**.
 - All approvals, cancellations, and executions are logged in `nook.sqlite` (`audit` table).
 
+### Changing Settings from the Chat
+
+Ask Nook to change its own settings ("turn web search off", "answer in English", "open my connection settings"). The brain reads them with `get_settings` and proposes `change_setting`; every change waits for your click on the plan, is logged in the `audit` table, and can be undone ("undo that" restores the old value). `open_settings` only opens the window at a section, so it may run right away when you ask for it and **Perform small tasks immediately** is on. Which settings qualify is `Brain/SettingsCatalog.swift`: anything that would let Nook act without asking, or send more data off your Mac (the brain, its provider, **Only on this Mac**), is deliberately left out and stays a click in Settings.
+
 ## Integration Capabilities Matrix
 
 Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built-in (use an MCP server).
@@ -173,4 +177,4 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 - Keyword-based source fallback uses a curated stop-word list when `QueryPlanner` times out; the manual source picker always overrides automatic detection.
 - `search_mail` searches subject, sender, and recipient via AppleScript (full-body AppleScript search across large mailboxes is too slow), then reads top matches in full via `read_mail`. When Mail is too slow to return message text, it searches again with headers only.
 - Messages, WhatsApp, Bear, and Things are read from their local SQLite databases; if an app changes its internal schema in an update, queries fail gracefully and report the error on the source chip.
-- Gmail/Google Drive and Microsoft Teams/OneDrive require custom OAuth app registrations and are not built in directly; connect them via an **MCP server** in **Settings › Integrations & Models**, or use Mail.app / Finder sync.
+- Gmail/Google Drive and Microsoft Teams/OneDrive require custom OAuth app registrations and are not built in directly; connect them via an **MCP server** in **Settings › Connections**, or use Mail.app / Finder sync.

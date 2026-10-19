@@ -94,12 +94,7 @@ extension SettingsView {
 
             if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
 
-            privateSourcesSection
-
             Section {
-                Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
-                    ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
-                }
                 HStack {
                     Button(tr("button.testConnection")) { Task { await testConnection() } }
                         .disabled(!settings.brainReady || testing)
@@ -112,6 +107,12 @@ extension SettingsView {
                         .foregroundStyle(result.ok ? Color.green : Color.red)
                         .textSelection(.enabled)
                 }
+            }
+
+            // The answer language and the sources kept on this Mac have one home each: General and Privacy.
+            Section {
+                settingsLink(.general, title: tr("settings.brain.answerLanguage"), detail: tr("settings.brain.languageMoved"))
+                settingsLink(.privacy, title: tr("settings.private.title"), detail: tr("settings.brain.privateMoved"))
             }
         }
         .task { recommendations = await app.brainRecommendations() }

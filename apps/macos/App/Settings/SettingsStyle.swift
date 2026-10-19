@@ -11,32 +11,30 @@ extension SettingsSection {
     /// Filled symbol on the sidebar tile.
     var tileSymbol: String {
         switch self {
-        case .general: return "house.fill"
-        case .display: return "macwindow"
+        case .start: return "house.fill"
+        case .general: return "gearshape.fill"
+        case .appearance: return "paintpalette.fill"
+        case .shortcuts: return "command"
+        case .notifications: return "bell.fill"
         case .brain: return "brain"
         case .assistant: return "sparkles"
-        case .autocomplete: return "text.cursor"
         case .memory: return "brain.head.profile"
+        case .autocomplete: return "text.cursor"
+        case .dictation: return "mic.fill"
         case .connections: return "app.connected.to.app.below.fill"
-        case .mcp: return "puzzlepiece.extension.fill"
         case .agents: return "terminal.fill"
+        case .workspace: return "folder.fill"
+        case .devices: return "iphone"
         case .privacy: return "hand.raised.fill"
         }
     }
 
-    /// Top and bottom color of the tile gradient.
+    /// Top and bottom color of the tile gradient. Tiles themselves are graphite now; a few charts still take the color.
     var tileColors: (Color, Color) {
         switch self {
-        case .general: return (Color(hex: 0x9D8FFF), Color(hex: 0x6C5CE7))
-        case .display: return (Color(hex: 0x6CB6FF), Color(hex: 0x3478F6))
-        case .brain: return (Color(hex: 0xF58FCB), Color(hex: 0xD24C9E))
-        case .assistant: return (Color(hex: 0xFFC961), Color(hex: 0xF59E2E))
         case .autocomplete: return (Color(hex: 0x8FE3FF), Color(hex: 0x2FA8D8))
         case .memory: return (Color(hex: 0xB9AEFF), Color(hex: 0x8B7CF6))
-        case .connections: return (Color(hex: 0x5BE3B1), Color(hex: 0x1DB67F))
-        case .mcp: return (Color(hex: 0x5ED6EE), Color(hex: 0x1FA2C6))
-        case .agents: return (Color(hex: 0x62626F), Color(hex: 0x34343E))
-        case .privacy: return (Color(hex: 0xFF8C8C), Color(hex: 0xE5505E))
+        default: return (NookTheme.smoke, NookTheme.graphite)
         }
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for Nook's appearance (Settings › Display): eye and mouth styles, gloss, glow and blush.
+// Texts for Nook's appearance (Settings › Appearance): eye and mouth styles, gloss, glow and blush.
 
 let lookTranslations: [AppLanguage: [String: String]] = [
     .nl: [

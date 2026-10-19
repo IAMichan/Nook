@@ -33,7 +33,7 @@ extension SettingsView {
         ]
     }
 
-    var overviewSection: some View {
+    var startSection: some View {
         Group {
             Section {
                 StatusRow(title: tr("settings.overview.readyToUse"),
@@ -46,31 +46,67 @@ extension SettingsView {
                     }
                 }
             }
-            Section(tr("settings.overview.steps")) {
-                ForEach(checklist) { step in
-                    StatusRow(title: step.title, detail: step.detail, state: step.done ? .done : .todo) {
-                        Button(step.button) {
-                            if let request = step.request {
-                                app.requestPermission { await request(); refreshTick += 1 }
-                            } else {
-                                app.settingsSection = step.section
+            let openSteps = checklist.filter { !$0.done }
+            if !openSteps.isEmpty {
+                Section(tr("settings.start.todo")) {
+                    ForEach(openSteps) { step in
+                        StatusRow(title: step.title, detail: step.detail, state: .todo) {
+                            Button(step.button) {
+                                if let request = step.request {
+                                    app.requestPermission { await request(); refreshTick += 1 }
+                                } else {
+                                    app.settingsSection = step.section
+                                }
                             }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
                     }
                 }
+                .onAppear { permissions.watch() }
+                .onDisappear { permissions.unwatch() }
             }
-            .onAppear { permissions.watch() }
-            .onDisappear { permissions.unwatch() }
+            Section(tr("settings.start.glance")) {
+                glanceRow(.brain, detail: settings.brainReady ? settings.activeModelName : tr("settings.checklist.brain.notReady"),
+                          state: settings.brainReady ? .done : .todo)
+                glanceRow(.connections, detail: connectionsGlance.text, state: connectionsGlance.state)
+                glanceRow(.agents, detail: tr("settings.start.agentsLinked", linkedAgentCount), state: linkedAgentCount > 0 ? .done : .todo)
+                let granted = SystemPermission.allCases.filter { permissions.isGranted($0) }.count
+                glanceRow(.privacy, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
+                          state: granted == SystemPermission.allCases.count ? .done : .todo)
+            }
             Section {
-                ForEach(ShortcutAction.allCases) { action in ShortcutRecorder(action: action) }
-                LabeledContent(tr("flow.settings.title")) {
-                    Text(tr("shortcut.flowHint", FlowStore.shared.key.symbol)).foregroundStyle(.secondary)
-                }
+                quickToggle(tr("settings.assistant.thinkAlongToggle"), .assistant, isOn: $settings.autoWatch)
+                    .disabled(settings.useLocal)
+                quickToggle(tr("settings.assistant.webSearch"), .assistant, isOn: $settings.webSearch)
+                quickToggle(tr("flow.settings.enable"), .dictation, isOn: Binding(
+                    get: { flowStore.enabled },
+                    set: { on in
+                        flowStore.enabled = on
+                        if on, !FlowDictation.shared.trusted { FlowDictation.shared.askForAccessibility() }
+                        FlowDictation.shared.refresh()
+                    }
+                ))
+                quickToggle(tr("settings.voice.speakAnswers"), .dictation, isOn: $settings.speakAnswers)
+                quickToggle(tr("settings.voice.agentSound"), .notifications, isOn: $settings.sounds)
+            } header: {
+                Text(tr("settings.start.quick"))
+            } footer: {
+                Text(tr("settings.start.quickFooter"))
+            }
+            Section {
                 LabeledContent(tr("settings.overview.openPanel")) {
                     Text(tr("settings.overview.pointToNotch")).foregroundStyle(.secondary)
                 }
+                Button { app.settingsSection = .shortcuts } label: {
+                    HStack {
+                        Text(tr("settings.start.allShortcuts")).foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             } header: {
                 Text(tr("settings.overview.howToUse"))
             } footer: {
@@ -79,11 +115,50 @@ extension SettingsView {
         }
     }
 
-    func shortcutRow(_ title: String, keys: [String]) -> some View {
-        LabeledContent(title) {
-            HStack(spacing: 4) {
-                ForEach(keys, id: \.self) { Keycap(label: $0) }
+    /// One line per part of Nook: its tile, how it is doing, and a button to go there.
+    func glanceRow(_ section: SettingsSection, detail: String, state: StatusState) -> some View {
+        Button { app.settingsSection = section } label: {
+            HStack(spacing: 12) {
+                SettingsTile(section, size: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(section.title).foregroundStyle(.primary)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(state == .warning ? state.color : Color.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: state.symbol).foregroundStyle(state.color)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A switch with, under its name, the section it belongs to.
+    func quickToggle(_ title: String, _ section: SettingsSection, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(section.title).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Active sources, and how many need a new sign-in.
+    var connectionsGlance: (text: String, state: StatusState) {
+        let active = app.connectors.active.count
+        let broken = app.connectors.sources.filter { if case .error = $0.status.state { return $0.isActive }; return false }.count
+        if broken > 0 { return (tr("settings.start.connectionsBroken", active, broken), .warning) }
+        return (tr("settings.checklist.connectors.detail", active), active > 0 ? .done : .todo)
+    }
+
+    /// Agents whose link with Nook is in place.
+    var linkedAgentCount: Int {
+        agentStates.values.filter { state in
+            if case .installed = state { return true }
+            return false
+        }.count
     }
 }

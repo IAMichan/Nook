@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Assistant: screen reading, thinking along, voice and sound.
+/// Settings › Assistant: what Nook sees and how it thinks along.
 extension SettingsView {
     // MARK: Assistant
 
@@ -35,7 +35,6 @@ extension SettingsView {
                 }
                 SettingToggle(tr("settings.assistant.autoRunSafe"), detail: tr("settings.assistant.autoRunSafeDetail"), isOn: $settings.autoRunSafe)
             }
-            voiceSection
         }
     }
 }

@@ -4,7 +4,7 @@
 
 ## Pairing
 
-1. **On your Mac:** Go to **Settings › Agents › Workspace**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
+1. **On your Mac:** Go to **Settings › Devices**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
 2. **On your iPhone:** Open **Nook Companion** and scan the QR code (or paste the pairing link).
 3. The first authenticated request proves the phone holds the shared key; your Mac stores the paired device key in the macOS Keychain. Unpairing deletes the key on either side.
 

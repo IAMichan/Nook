@@ -23,7 +23,7 @@ struct NookOrb: View {
     /// Frames per second while awake. The closed notch thinks along at a lower rate for hours on end (an agent working
     /// or waiting), where its slow breathing looks the same and costs a fraction of the redraws.
     var frameRate: Double = 30
-    /// Draws this look instead of the one chosen in Settings: the previews in Settings › Display.
+    /// Draws this look instead of the one chosen in Settings: the previews in Settings › Appearance.
     var look: NookLook?
 
     @ObservedObject private var presence = NookPresence.shared

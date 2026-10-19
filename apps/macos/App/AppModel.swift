@@ -57,7 +57,7 @@ final class AppModel: ObservableObject {
     /// The subscription limits of every agent account.
     var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.
-    @Published var settingsSection: SettingsSection = .general
+    @Published var settingsSection: SettingsSection = .start
 
     private(set) lazy var tools: NookTools = {
         let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in
@@ -87,6 +87,8 @@ final class AppModel: ObservableObject {
     private(set) lazy var memory = NookMemory(store: store)
     /// remember, forget and recall_memory.
     private(set) lazy var memoryTools: [ToolSpec] = makeMemoryTools()
+    /// get_settings, change_setting and open_settings (see `AppModel+SettingsTools`).
+    private(set) lazy var settingsTools: [ToolSpec] = makeSettingsTools()
 
     /// Built-in Nook tools plus read tools for all enabled connectors.
     var allTools: [ToolSpec] {
@@ -95,6 +97,7 @@ final class AppModel: ObservableObject {
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
         var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
         if settings.useMemory { all += memoryTools }
+        all += settingsTools
         all += webSpecs
         all += BrowserStore.tools
         all += EmbeddedAppStore.tools
@@ -105,7 +108,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.tools

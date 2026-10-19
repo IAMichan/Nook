@@ -158,6 +158,55 @@ struct MCPServiceRow: View {
     }
 }
 
+/// A service you connect by signing in on its own page: one click opens its sign-in, you log in there, and Nook takes
+/// it from there. A service that also takes a key offers that on right-click.
+struct OneClickServiceCard: View {
+    let service: MCPRemoteService
+    var keyAlternative: ContextSource?
+    var capabilities: String = ""
+    var onChange: () -> Void = {}
+
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var signIn = MCPSignIn.shared
+    @ObservedObject private var store = MCPServerStore.shared
+    @State private var showKeySetup = false
+
+    private var config: MCPServerConfig? { store.servers.first { $0.serviceID == service.id } }
+
+    var body: some View {
+        let connecting = config.map { signIn.isConnecting($0.id) } ?? false
+        let failure = signIn.failure(for: service.id) ?? config.flatMap { signIn.failure(for: $0.id) }
+        GalleryCard(title: service.name,
+                    detail: failure ?? (connecting ? tr("connect.waiting", service.name) : service.tagline)) {
+            ServiceTile(domain: service.domain, fallback: "link", tint: NookTheme.iris, size: 32)
+        } accessory: {
+            if connecting {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(failure == nil ? tr("settings.connections.signIn") : tr("connector.retry"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NookTheme.onIris)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(NookTheme.iris))
+            }
+        } action: {
+            if connecting { signIn.cancel() } else { signIn.connect(service, app: app) }
+        }
+        .help(connecting ? tr("button.cancel") : tr("settings.connections.signInHelp", service.name))
+        .contextMenu {
+            if keyAlternative != nil {
+                Button(tr("connect.useKey")) { showKeySetup = true }
+            }
+        }
+        .sheet(isPresented: $showKeySetup, onDismiss: onChange) {
+            if let keyAlternative {
+                CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities, onChange: onChange)
+            }
+        }
+    }
+}
+
 /// A connected (or expired) MCP service: observes its connector so the state changes without reopening Settings.
 private struct LinkedMCPServiceRow: View {
     let service: MCPRemoteService

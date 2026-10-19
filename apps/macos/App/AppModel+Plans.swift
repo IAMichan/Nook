@@ -240,7 +240,7 @@ extension AppModel {
 
     /// Safe actions that can run without prompt when Auto-run Safe Actions is enabled: easily reversible
     /// and without side effects on third parties. Events, emails, links, shortcuts require approval.
-    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop"]
+    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop", "open_settings"]
 
     /// Only when the user's own words ask for each action. The prompt also carries text from others (screen, mail, web, invites),
     /// and such text must never be enough to make Nook act without a click. `request == nil` means no user request is known.
@@ -273,6 +273,9 @@ extension AppModel {
         case "forget":
             let what = (action.input["what"] as? String) ?? ""
             return MemoryRequest.asksToForget(request) && MemoryText.grounded(what, in: request)
+        case "open_settings":
+            // Only opening the window: changing a setting (change_setting) always waits for a click.
+            return mentions(#"instelling|setting|einstellung|réglage|reglage|paramètre|ajuste|configuración|preferen"#)
         case "add_open_loop", "complete_open_loop":
             return mentions(#"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt"#)
         default:
