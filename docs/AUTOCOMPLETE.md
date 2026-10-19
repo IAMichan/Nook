@@ -54,7 +54,8 @@ Een voorstel moet er zijn voordat je verder typt. Daarom:
 - **Vaste context per veld.** Wat vóór je tekst in de prompt staat (instructies, geheugen, scherm, klembord, waar je schrijft), haalt Nook één keer per veld op, en daarna maximaal elke tien minuten opnieuw. Zo blijft het begin van de prompt gelijk, en een toets kost alleen de laatste paar tokens.
 - **Cache hergebruiken.** llama.cpp zet de cache terug tot het gedeelde begin. Modellen met een rollend venster (Gemma 3 en 4) krijgen daarvoor een volledige cache (`swa_full`). Hybride modellen, waarvan de cache niet terug kan, krijgen checkpoints: elke 64 tokens bewaart Nook een kopie (`llama_state_seq_get_data`), en bij de volgende toets gaat het daar verder. Het model van het brein werkt altijd met zulke checkpoints (`KVCache.copy()`), dus voor elk soort cache.
 - **Kortere prompt:** hoogstens zo'n 2000 tekens tekst, met een begin dat in stappen van 500 opschuift.
-- **Korte wachttijd:** 70 ms na de laatste toets. Een voorstel dat te laat is, stopt bij de volgende toets.
+- **Korte wachttijd:** 40 ms na de laatste toets. Een voorstel dat te laat is, stopt bij de volgende toets.
+- **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the pause after a key or a new model call.
 - **Model blijft geladen.** Gebruikt aanvullen het model van het brein, dan blijft dat tijdens het typen een kwartier in het geheugen in plaats van anderhalve minuut.
 
 ### Het model van je brein

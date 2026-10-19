@@ -250,12 +250,14 @@ final class AutocompleteTests: XCTestCase {
         prefs.apps["com.tinyspeck.slackmacgap"] = CompletionAppRule(enabled: .on, instructions: "Kort")
         var object = try JSONSerialization.jsonObject(with: prefs.encoded()) as! [String: Any]
         object.removeValue(forKey: "emoji")
+        object.removeValue(forKey: "menuBarCount")
         var apps = object["apps"] as! [String: [String: Any]]
         apps["com.tinyspeck.slackmacgap"]?.removeValue(forKey: "leaveTab")
         object["apps"] = apps
         let decoded = CompletionPreferences.decode(try JSONSerialization.data(withJSONObject: object))
         XCTAssertEqual(decoded.maxWords, 5)
         XCTAssertTrue(decoded.emoji)
+        XCTAssertFalse(decoded.menuBarCount)
         XCTAssertEqual(decoded.app("com.tinyspeck.slackmacgap").instructions, "Kort")
         XCTAssertFalse(decoded.app("com.tinyspeck.slackmacgap").leaveTab)
         XCTAssertEqual(CompletionPreferences.decode(Data("nonsense".utf8)), CompletionPreferences())

@@ -43,6 +43,11 @@ final class AutocompleteStore: ObservableObject {
             if prefs.delayMilliseconds == 120 { prefs.delayMilliseconds = 70 }
             defaults.set(true, forKey: "autocompleteDelayMigrated")
         }
+        // 70 ms was the next default; 40 is the shortest the slider has, and a suggestion taken now brings the next one at once.
+        if !defaults.bool(forKey: "autocompleteDelayMigrated40") {
+            if prefs.delayMilliseconds == 70 { prefs.delayMilliseconds = 40 }
+            defaults.set(true, forKey: "autocompleteDelayMigrated40")
+        }
         self.prefs = prefs
         stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()
         samples = Self.load(CompletionSamples.self, "samples.json") ?? CompletionSamples()

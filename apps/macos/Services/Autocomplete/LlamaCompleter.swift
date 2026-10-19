@@ -14,7 +14,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     let path: String
     var identity: String { path }
 
-    private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInteractive)
     private let lock = NSLock()
     private var latest = 0
 

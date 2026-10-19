@@ -71,6 +71,9 @@ final class AutocompleteController: ObservableObject {
     private var proposal: Proposal?
     /// The read token of a suggestion still being written, word by word.
     private var streaming: Int?
+    /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
+    /// shows the next suggestion at once, without waiting for the model.
+    private var upcoming: (app: String?, before: String, task: Task<CompletionResult?, Never>)?
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     private var alternatives: [String]?
@@ -207,6 +210,7 @@ final class AutocompleteController: ObservableObject {
         store.offUntilSwitch = nil
         lastSite = nil
         fieldContext = nil
+        upcoming = nil
         commitSample()
         dismiss()
     }
@@ -340,8 +344,15 @@ final class AutocompleteController: ObservableObject {
                     return true
                 }
                 // Typing exactly what was suggested keeps the suggestion.
-                if !commandLike, completion.suggestion.consume(typed: key.characters), !completion.suggestion.isEmpty {
+                if !commandLike, completion.suggestion.consume(typed: key.characters) {
                     completion.anchor += key.characters
+                    if completion.suggestion.isEmpty {
+                        // Typed to its end: the next suggestion follows as if it was taken.
+                        self.proposal = nil
+                        overlay.hide()
+                        followUp(after: completion.anchor)
+                        return false
+                    }
                     self.proposal = .completion(completion)
                     // Move the ghost past the new letter right away; settle() puts it exactly where the app drew it.
                     overlay.advance(over: key.characters, remaining: completion.suggestion.remaining)
@@ -378,7 +389,7 @@ final class AutocompleteController: ObservableObject {
         if rest.suggestion.isEmpty {
             proposal = nil
             overlay.hide()
-            scheduleRefresh()
+            followUp(after: rest.anchor + text)
         } else {
             var rest = rest
             rest.anchor += text
@@ -412,8 +423,11 @@ final class AutocompleteController: ObservableObject {
     // MARK: Proposals
 
     private func scheduleRefresh() {
+        // Reads still under way are for text that is no longer there.
+        readToken += 1
         refreshWork?.cancel()
         completer?.cancel()
+        upcoming = nil
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refreshProposal() } }
         refreshWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(prefs.delayMilliseconds, 30)) / 1000, execute: work)
@@ -486,7 +500,15 @@ final class AutocompleteController: ObservableObject {
         let partial: @Sendable (String) -> Void = { [weak self] text in
             Task { @MainActor in self?.present(text, truncated: true, final: false, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app) }
         }
+        // Written ahead while the last suggestion was on screen: no need to ask the model again.
+        let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
+        upcoming = nil
         Task {
+            if let ahead, let result = await ahead.value {
+                guard token == readToken else { return }
+                present(result.text, truncated: result.truncated, final: true, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app)
+                return
+            }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
             let result = await completer.complete(prompt: prompt, options: options, partial: partial)
             scheduleUnload()
@@ -516,6 +538,43 @@ final class AutocompleteController: ObservableObject {
         streaming = final ? nil : token
         show(suggestion, for: snapshot, in: app)
         if first { store.recordShown() }
+        if final { writeAhead(for: snapshot, in: app, maxWords: maxWords) }
+    }
+
+    /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
+    private func writeAhead(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, maxWords: Int) {
+        guard case .completion(let completion) = proposal, let model = activeModel else { return }
+        let rest = completion.suggestion.remaining
+        let typed = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(rest, after: completion.anchor.last) : rest
+        var next = snapshot
+        next.before = completion.anchor + typed
+        let prompt = self.prompt(for: next, in: app)
+        let options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        let task = Task { () -> CompletionResult? in
+            guard let completer = await loadedCompleter(for: model) else { return nil }
+            return await completer.complete(prompt: prompt, options: options, partial: nil)
+        }
+        upcoming = (app.bundleIdentifier, next.before, task)
+    }
+
+    /// After the last word of a suggestion is taken: waits until the app shows it, then suggests again right away, without
+    /// the pause after a key (the next suggestion is usually written already, see `upcoming`).
+    private func followUp(after anchor: String, attempt: Int = 0) {
+        if attempt == 0 { readToken += 1 }
+        guard let app = frontApp, isActive(in: app) else { return }
+        read(in: app) { [weak self] snapshot in
+            guard let self else { return }
+            if let snapshot, snapshot.before == anchor {
+                self.propose(for: snapshot, in: app)
+            } else if attempt < self.settleAttempts {
+                let token = self.readToken
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.settleInterval) {
+                    MainActor.assumeIsolated { if token == self.readToken { self.followUp(after: anchor, attempt: attempt + 1) } }
+                }
+            } else {
+                self.scheduleRefresh()
+            }
+        }
     }
 
     /// Builds the prompt. Everything around the typed text (instructions, memory, screen, clipboard, writing samples, where you
