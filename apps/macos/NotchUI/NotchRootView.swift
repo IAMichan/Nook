@@ -149,7 +149,7 @@ struct NotchRootView: View {
             } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
             } else {
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20) {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, orbInset: 3) {
                     idleBadge
                 }
                 .contentShape(Rectangle())
@@ -215,11 +215,13 @@ struct NotchRootView: View {
         mood: NookMood,
         animated: Bool,
         orbSize: CGFloat = 24,
+        orbInset: CGFloat = 0,
         @ViewBuilder right: () -> Right
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating)
+                .offset(x: orbInset)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()
