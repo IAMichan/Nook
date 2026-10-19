@@ -1,3 +1,4 @@
+// What Nook took over from Coucou and does better: WhatsApp, Flow, the Notetaker, shortcuts, undo and attaching a window.
 import SwiftUI
 import Combine
 
@@ -197,5 +198,31 @@ extension AppModel {
         }
         chat.append(reply, to: conversation)
         showChat()
+    }
+}
+
+/// ⌥-drag Nook onto a window: that window's picture and text are attached to the chat.
+extension AppModel {
+    func startWindowAttach() {
+        WindowAttach.shared.onAttach = { [weak self] image, target in self?.attachWindow(image, target: target) }
+        WindowAttach.shared.onFailure = { [weak self] message in
+            guard let self else { return }
+            self.viewModel.present(self.errorCard(message))
+        }
+    }
+
+    func attachWindow(_ cg: CGImage, target: WindowAttach.Target) {
+        guard let image = ChatImage.encode(cg) else { return }
+        let name = target.title.isEmpty ? target.app : "\(target.app) — \(target.title)"
+        showChat()
+        Task { @MainActor [weak self] in
+            let recognized = (try? await ScreenReader.recognize(cg)) ?? ""
+            guard let self else { return }
+            self.attachment = (name, ChatImage.describe(name: name, recognized: recognized), Date())
+            self.attachmentImages = [image]
+            var message = ChatMessage(role: .nook, text: tr("attach.window.done", name))
+            message.sources = [target.app]
+            self.chat.append(message)
+        }
     }
 }

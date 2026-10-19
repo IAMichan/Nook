@@ -358,6 +358,7 @@ final class AppModel: ObservableObject {
         startWhatsApp()
         startFlow()
         startNotes()
+        startWindowAttach()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }

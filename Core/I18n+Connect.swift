@@ -191,7 +191,9 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.partly": "Dit kan ik terugdraaien; de rest (een verstuurd bericht of een aanpassing) niet:",
         "undo.ready": "Dit draai ik terug. Klik op Uitvoeren:",
         "system.connector.headline": "Processor, geheugen, batterij en schijf",
-        "system.connector.detail": "Alleen gelezen als je ernaar vraagt"
+        "system.connector.detail": "Alleen gelezen als je ernaar vraagt",
+        "attach.window.failed": "Ik kon het venster van %@ niet vastleggen.",
+        "attach.window.done": "Ik kijk naar **%@**. Wat wil je erover weten?"
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -380,7 +382,9 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.partly": "This I can reverse; the rest (a sent message or a change) not:",
         "undo.ready": "This is what I'll reverse. Click Run:",
         "system.connector.headline": "Processor, memory, battery and disk",
-        "system.connector.detail": "Only read when you ask"
+        "system.connector.detail": "Only read when you ask",
+        "attach.window.failed": "I could not capture the window of %@.",
+        "attach.window.done": "I'm looking at **%@**. What would you like to know?"
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -569,6 +573,8 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "undo.partly": "Das kann ich rückgängig machen; den Rest (eine gesendete Nachricht oder eine Änderung) nicht:",
         "undo.ready": "Das mache ich rückgängig. Klicke auf Ausführen:",
         "system.connector.headline": "Prozessor, Speicher, Akku und Festplatte",
-        "system.connector.detail": "Nur gelesen, wenn du fragst"
+        "system.connector.detail": "Nur gelesen, wenn du fragst",
+        "attach.window.failed": "Ich konnte das Fenster von %@ nicht aufnehmen.",
+        "attach.window.done": "Ich sehe mir **%@** an. Was möchtest du wissen?"
     ]
 ]
