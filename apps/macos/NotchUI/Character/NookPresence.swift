@@ -15,6 +15,8 @@ final class NookPresence: ObservableObject {
     static let greetingGap: TimeInterval = 180
 
     @Published private(set) var drowsy = false
+    /// Music is playing: Nook puts on headphones. Published so an orb that is not animating redraws.
+    @Published var listeningToMusic = false
 
     private(set) var pokedAt: Date = .distantPast
     private(set) var greetedAt: Date = .distantPast

@@ -304,6 +304,7 @@ final class AppModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] playing in
                 guard let self else { return }
+                NookPresence.shared.listeningToMusic = playing
                 let vm = self.viewModel
                 if playing, case .idle = vm.state {
                     vm.show(.music)

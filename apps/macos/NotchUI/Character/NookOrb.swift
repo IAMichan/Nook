@@ -87,6 +87,9 @@ struct NookOrb: View {
         .rotationEffect(.degrees(p.rotation))
         .offset(p.offset)
         .overlay {
+            if presence.listeningToMusic { headphones }
+        }
+        .overlay {
             if let progress = p.sparks { sparks(progress) }
         }
         .overlay(alignment: .topTrailing) {
@@ -121,6 +124,38 @@ struct NookOrb: View {
             .rotationEffect(.degrees(e.rotation))
             .offset(x: e.dx, y: e.dy)
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
+    }
+
+    /// Headphones while music plays: a band over the top and an ear cup on each side.
+    private var headphones: some View {
+        let band = max(1.5, size * 0.07)
+        let cupWidth = size * 0.17
+        let cupHeight = size * 0.34
+        return ZStack {
+            Circle()
+                .trim(from: 0.5, to: 1)
+                .stroke(Color(hex: 0x4A4A58), style: StrokeStyle(lineWidth: band, lineCap: .round))
+                .frame(width: size * 1.02, height: size * 1.02)
+                .offset(y: size * 0.01)
+            HStack {
+                cup(width: cupWidth, height: cupHeight)
+                Spacer(minLength: 0)
+                cup(width: cupWidth, height: cupHeight)
+            }
+            .frame(width: size * 1.08)
+        }
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
+    }
+
+    private func cup(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+            .fill(Color(hex: 0x4A4A58))
+            .overlay(
+                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 0.6)
+            )
+            .frame(width: width, height: height)
     }
 
     private var cheek: some View {
