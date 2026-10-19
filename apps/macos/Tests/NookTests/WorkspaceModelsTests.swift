@@ -95,6 +95,23 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertTrue(WorktreeNaming.isPlausibleBranchName(name))
     }
 
+    /// Branch names keep the words that matter, never cut a word in half, and ignore pasted picture paths.
+    func testShortBranchSlug() {
+        XCTAssertEqual(WorktreeNaming.shortSlug("Verwijder de button dat je de scherm kleiner kan maken"),
+                       "verwijder-button-scherm-kleiner")
+        XCTAssertEqual(WorktreeNaming.shortSlug("Can you make the login button blue please"), "login-button-blue")
+        XCTAssertEqual(WorktreeNaming.shortSlug("Fix this\n\n/Users/me/Library/Application Support/Nook/images/58e31f65.png"), "fix")
+        XCTAssertEqual(WorktreeNaming.shortSlug("/Users/me/Nook/images/58e31f65.png"), "sessie")
+        XCTAssertEqual(WorktreeNaming.shortSlug("de het een"), "de-het-een")
+        XCTAssertLessThanOrEqual(WorktreeNaming.shortSlug(String(repeating: "supercalifragilistic ", count: 5)).count, 32)
+        XCTAssertEqual(WorktreeNaming.title(from: "/Users/me/x.png\nKijk hiernaar"), "Kijk hiernaar")
+    }
+
+    func testWorktreeDirectoryDropsNookPrefix() {
+        XCTAssertEqual(WorktreeNaming.directorySlug(branch: "nook/fix-login-3fa2"), "fix-login-3fa2")
+        XCTAssertEqual(WorktreeNaming.directorySlug(branch: "feature/x"), "feature-x")
+    }
+
     func testBranchNameRules() {
         for bad in ["", "-x", "a..b", "a b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "x.lock", "x/", "/x", "@", "a@{b", "x."] {
             XCTAssertFalse(WorktreeNaming.isPlausibleBranchName(bad), bad)

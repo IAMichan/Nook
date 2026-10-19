@@ -398,7 +398,7 @@ final class WorkspaceManager: ObservableObject {
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
             let repoName = URL(fileURLWithPath: root).lastPathComponent
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
-                                                   slug: WorktreeNaming.slug(name.replacingOccurrences(of: "/", with: "-"), limit: 60),
+                                                   slug: WorktreeNaming.directorySlug(branch: name),
                                                    exists: { FileManager.default.fileExists(atPath: $0) })
             do {
                 try await Task.detached(priority: .userInitiated) {

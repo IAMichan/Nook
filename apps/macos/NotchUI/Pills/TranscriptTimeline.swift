@@ -262,28 +262,38 @@ struct TranscriptUserBubble: View {
     @State private var expanded = false
     @State private var hovering = false
 
+    /// The words, without the paths of the pictures sent along; those show as pictures above the bubble.
+    private var parts: (text: String, images: [URL]) { ImageAttachment.splittingPaths(from: message.text) }
+
     private var long: Bool {
-        message.text.count > 600 || message.text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
+        let text = parts.text
+        return text.count > 600 || text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
     }
 
     var body: some View {
+        let parts = parts
         VStack(alignment: .trailing, spacing: 4) {
-            HStack(spacing: 0) {
-                Spacer(minLength: 48)
-                VStack(alignment: .leading, spacing: 6) {
-                    text
-                    if long {
-                        Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
-                            withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            if !parts.images.isEmpty {
+                MessagePictures(urls: parts.images)
+            }
+            if !parts.text.isEmpty {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 48)
+                    VStack(alignment: .leading, spacing: 6) {
+                        text(parts.text)
+                        if long {
+                            Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
+                                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                            }
+                            .buttonStyle(.plain)
+                            .font(NookTheme.font(11.5, .medium))
+                            .foregroundStyle(NookTheme.textSecondary)
                         }
-                        .buttonStyle(.plain)
-                        .font(NookTheme.font(11.5, .medium))
-                        .foregroundStyle(NookTheme.textSecondary)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
             }
             HStack(spacing: 8) {
                 if let date = message.date { TranscriptTime(date: date) }
@@ -297,8 +307,8 @@ struct TranscriptUserBubble: View {
     }
 
     @ViewBuilder
-    private var text: some View {
-        let label = Text(message.text)
+    private func text(_ string: String) -> some View {
+        let label = Text(string)
             .font(NookTheme.font(13.5))
             .foregroundStyle(NookTheme.paper)
             .lineSpacing(2)

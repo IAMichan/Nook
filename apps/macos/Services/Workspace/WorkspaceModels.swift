@@ -572,7 +572,7 @@ enum WorktreeNaming {
     /// A short title from the first line of the task prompt.
     static func title(from task: String, limit: Int = 60) -> String {
         // The first line of your own words: an agent's tags (`<task-notification>` …) are no title.
-        let clean = InjectedPrompt.title(task)
+        let clean = InjectedPrompt.title(task.split(whereSeparator: \.isNewline).filter { !isPathLine($0) }.joined(separator: "\n"))
         guard !clean.isEmpty else { return "Nieuwe sessie" }
         if clean.count <= limit { return clean }
         let cut = clean.prefix(limit)
@@ -584,7 +584,45 @@ enum WorktreeNaming {
 
     /// "nook/fix-login-bug-3fa2": recognizable and unique thanks to a slice of the UUID.
     static func branchName(task: String, id: UUID) -> String {
-        "nook/" + slug(task, limit: 32) + "-" + String(id.uuidString.prefix(4)).lowercased()
+        "nook/" + shortSlug(task) + "-" + String(id.uuidString.prefix(4)).lowercased()
+    }
+
+    /// The directory of a branch's worktree: "nook/fix-login-bug-3fa2" → "fix-login-bug-3fa2". The repository's own
+    /// directory already says where it belongs, so Nook's prefix is left off.
+    static func directorySlug(branch: String) -> String {
+        let name = branch.hasPrefix("nook/") ? String(branch.dropFirst(5)) : branch
+        return slug(name.replacingOccurrences(of: "/", with: "-"), limit: 60)
+    }
+
+    /// Words that say little in a branch name, in the languages Nook speaks.
+    private static let fillerWords: Set<String> = [
+        "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "that", "this", "it", "is", "be", "you", "your",
+        "i", "me", "my", "we", "can", "could", "please", "so", "with", "make", "sure", "should",
+        "de", "het", "een", "en", "dat", "die", "dit", "deze", "je", "jij", "u", "ik", "wij", "mijn", "kan",
+        "kun", "kunnen", "wil", "graag", "zodat", "zo", "ook", "nog", "er", "te", "om", "van", "naar", "met", "voor",
+        "zijn", "wordt", "moet", "moeten", "maar", "wat", "als", "dan", "aan", "bij", "uit", "op",
+        "der", "das", "ein", "eine", "und", "le", "la", "les", "un", "une", "et", "el", "los", "las", "y"
+    ]
+
+    /// A short slug from the meaningful words of the task's first line: "Verwijder de button dat je het scherm kleiner
+    /// kan maken" → "verwijder-button-scherm-kleiner". Pasted paths (pictures) are skipped; words are never cut in half.
+    static func shortSlug(_ task: String, maxWords: Int = 4, limit: Int = 32) -> String {
+        let lines = task.split(whereSeparator: \.isNewline).filter { !isPathLine($0) }
+        let words = slug(InjectedPrompt.title(lines.joined(separator: "\n")), limit: 200)
+            .split(separator: "-").map(String.init)
+        let meaningful = words.filter { !fillerWords.contains($0) }
+        var result: [String] = []
+        for word in meaningful.isEmpty ? words : meaningful {
+            let length = result.joined(separator: "-").count + (result.isEmpty ? 0 : 1) + word.count
+            if result.count >= maxWords || (length > limit && !result.isEmpty) { break }
+            result.append(String(word.prefix(limit)))
+        }
+        return result.isEmpty || result == ["sessie"] ? "sessie" : result.joined(separator: "-")
+    }
+
+    private static func isPathLine(_ line: Substring) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return (trimmed.hasPrefix("/") || trimmed.hasPrefix("~/")) && !trimmed.contains("  ")
     }
 
     /// Fast check without Git; `GitService.isValidBranchName` verifies via Git directly.
