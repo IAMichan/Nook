@@ -1,14 +1,15 @@
 # Monorepo
 
-Nook is één repo voor alle platformen. Nu zijn de macOS-app en de iPhone-companion geschreven; de rest heeft een map, een README met de bedoeling, en (voor het gedeelde stuk) een plek in de CI.
+Nook is één repo voor alle platformen. De macOS-app en de iPhone-companion zijn in Swift geschreven; Windows, Linux en Android delen één Tauri-app in `apps/tauri` (kern in Rust, interface in Svelte).
 
 ```
 apps/
   macos/     de huidige app (Swift, AppKit/SwiftUI, XcodeGen) — gebouwd en getest in CI
   ios/       Nook Companion voor iPhone (SwiftUI, XcodeGen) — groeit uit tot de iOS-app
-  android/   toekomstige Android-app (nu alleen een README)
-  windows/   toekomstige Windows-app (nu alleen een README)
-  linux/     toekomstige Linux-app (nu alleen een README)
+  tauri/     Nook voor Windows, Linux en Android (Tauri 2: Rust-kern in core/, Svelte-interface in src/)
+  android/   verwijst naar tauri/
+  windows/   verwijst naar tauri/
+  linux/     verwijst naar tauri/
 packages/
   core/      Swift-pakket voor de platformonafhankelijke kern (Foundation-only), nu leeg op een placeholder na
   protocol/  gedeeld protocol tussen apps (Companion-protocol, verzegeling, hashing), gebruikt door macos en ios
@@ -37,8 +38,11 @@ scripts/     hulpscripts (o.a. core-tests.sh)
 4. Voeg een eigen CI-job toe in `.github/workflows/`, met een `paths:`-filter op `apps/<platform>/**` en `packages/**`.
 5. Zet de platformregel in de README en in `THIRD-PARTY-NOTICES.md` als er nieuwe afhankelijkheden zijn.
 
-## Open keuzes
+## Gekozen: Tauri voor Windows, Linux en Android
 
-- **UI-techniek per platform.** De kern is Swift, en Swift draait op Linux, Windows en Android. Dan kan de kern gedeeld worden. De UI is per platform: SwiftUI op iOS, Jetpack Compose op Android, WinUI/WPF of een Swift-UI-laag op Windows, GTK/Qt op Linux. Hier is nog niets gekozen.
-- **Het lokale model.** De MLX-pakketten bestaan alleen voor Apple Silicon. Andere platformen hebben een andere lokale runtime nodig (bv. llama.cpp) of gebruiken Ollama/LM Studio/een externe AI.
+- **Eén app, drie platformen.** `apps/tauri` is een Tauri 2-app: de kern in Rust (`apps/tauri/core`, zonder Tauri te testen), de interface in Svelte 5. Windows, Linux en Android delen alles behalve de platformlaag (`src-tauri/src/platform`). De Swift-kern wordt daarvoor niet gedeeld maar geport; de macOS-app blijft de specificatie. Zie [TAURI.md](TAURI.md) voor wat er al geport is.
+- **De Mac blijft Swift.** De notch, ScreenCaptureKit, AppleScript en MLX horen bij de Mac; de Tauri-app kan later ook op macOS draaien, maar dat is geen doel.
+- **Het lokale model.** De MLX-pakketten bestaan alleen voor Apple Silicon. De Tauri-app denkt lokaal met Ollama of LM Studio, of met een externe AI die de gebruiker zelf kiest.
+
+## Open keuzes
 - **Releasekanalen** (notarisatie, TestFlight, Play Store, MSIX, Flatpak/AppImage) staan hier nog niet in.
