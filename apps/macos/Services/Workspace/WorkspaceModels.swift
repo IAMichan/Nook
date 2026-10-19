@@ -582,15 +582,37 @@ enum WorktreeNaming {
         return String(cut) + "…"
     }
 
+    /// The prefix Nook puts before the branches it creates, unless Settings › Workspace names another.
+    static let defaultBranchPrefix = "nook"
+    /// UserDefaults key of the branch prefix (written by `WorkspaceSettings`).
+    static let branchPrefixKey = "ws.branchPrefix"
+
+    /// The branch prefix from Settings, cleaned up; falls back to "nook".
+    static var branchPrefix: String {
+        normalizedBranchPrefix(UserDefaults.standard.string(forKey: branchPrefixKey) ?? defaultBranchPrefix)
+    }
+
+    /// " Team/Michan " → "team/michan": every path component slugged, without leading, trailing, or double slashes.
+    /// An empty result falls back to "nook", so Nook's branches always carry a prefix.
+    static func normalizedBranchPrefix(_ raw: String) -> String {
+        let parts = raw.split(separator: "/").map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { $0.contains { $0.isLetter || $0.isNumber } }.map { slug($0, limit: 32) }
+        return parts.isEmpty ? defaultBranchPrefix : parts.joined(separator: "/")
+    }
+
     /// "nook/fix-login-bug-3fa2": recognizable and unique thanks to a slice of the UUID.
-    static func branchName(task: String, id: UUID) -> String {
-        "nook/" + shortSlug(task) + "-" + String(id.uuidString.prefix(4)).lowercased()
+    static func branchName(task: String, id: UUID, prefix: String = WorktreeNaming.branchPrefix) -> String {
+        normalizedBranchPrefix(prefix) + "/" + shortSlug(task) + "-" + String(id.uuidString.prefix(4)).lowercased()
     }
 
     /// The directory of a branch's worktree: "nook/fix-login-bug-3fa2" → "fix-login-bug-3fa2". The repository's own
-    /// directory already says where it belongs, so Nook's prefix is left off.
-    static func directorySlug(branch: String) -> String {
-        let name = branch.hasPrefix("nook/") ? String(branch.dropFirst(5)) : branch
+    /// directory already says where it belongs, so Nook's prefix (the configured one, or "nook") is left off.
+    static func directorySlug(branch: String, prefix: String = WorktreeNaming.branchPrefix) -> String {
+        var name = branch
+        for candidate in [normalizedBranchPrefix(prefix) + "/", defaultBranchPrefix + "/"] where name.hasPrefix(candidate) {
+            name = String(name.dropFirst(candidate.count))
+            break
+        }
         return slug(name.replacingOccurrences(of: "/", with: "-"), limit: 60)
     }
 

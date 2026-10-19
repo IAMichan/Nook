@@ -279,7 +279,8 @@ enum BranchPolicy {
     }
 
     /// "nook/fix-login-3fa2", lengthening the id slice and then counting up until no existing branch (any case) has it.
-    static func suggestBranchName(task: String, id: UUID, prefix: String = "nook/", existing: Set<String>) -> String {
+    static func suggestBranchName(task: String, id: UUID, prefix: String = WorktreeNaming.branchPrefix + "/",
+                                  existing: Set<String>) -> String {
         let taken = Set(existing.map { $0.lowercased() })
         let slug = WorktreeNaming.slug(task, limit: 32)
         let hex = id.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
