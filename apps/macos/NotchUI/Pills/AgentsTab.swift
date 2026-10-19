@@ -11,6 +11,9 @@ struct AgentsTab: View {
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
     @State private var palette = false
+    /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
+    @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
+    @State private var totalWidth: Double = 0
 
     private enum Selection {
         case live(AgentSession)
@@ -44,10 +47,10 @@ struct AgentsTab: View {
                     AgentsFooter(selected: selectedID(selection)) { viewModel.selectedAgentID = $0 }
                 }
             }
-            .padding(.trailing, 12)
-            .frame(width: 280)
-
-            Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1)
+            .padding(.trailing, 4)
+            .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
+                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                            edge: .trailing, divider: true)
 
             Group {
                 switch selection {
@@ -82,9 +85,10 @@ struct AgentsTab: View {
                     }
                 }
             }
-            .padding(.leading, 18)
+            .padding(.leading, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .overlay(alignment: .top) {
             if palette {
                 AgentCommandPalette(viewModel: viewModel) { palette = false }

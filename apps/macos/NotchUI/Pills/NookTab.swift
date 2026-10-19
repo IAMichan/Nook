@@ -33,6 +33,9 @@ struct NookChatView: View {
     @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
     @State private var totalWidth: Double = 0
     @State private var dragStartWidth: Double?
+    /// How wide the list of Nooks is, in the notch and in the main window: drag the line beside it. Remembered.
+    @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
+    @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
 
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
@@ -40,9 +43,12 @@ struct NookChatView: View {
         HStack(alignment: .top, spacing: 0) {
             if (!chat.history.isEmpty || !compact) && embedded.current == nil {
                 NookList(chat: chat)
-                    .frame(width: compact ? 200 : 260)
-                Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1)
-                    .padding(.horizontal, compact ? 12 : 16)
+                    .padding(.trailing, compact ? 4 : 8)
+                    .resizablePanel(width: compact ? $listWidth : $windowListWidth,
+                                    defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
+                                    minimum: PanelLayout.minimumList, available: totalWidth,
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
+                    .padding(.trailing, compact ? 4 : 8)
             }
             VStack(alignment: .leading, spacing: 0) {
                 if chat.isEmpty {

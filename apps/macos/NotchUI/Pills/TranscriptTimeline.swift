@@ -28,7 +28,9 @@ struct TranscriptConversation: View {
     /// The panel next to the conversation with what the agent produced.
     @State private var outputsOpen = false
     @State private var outputSelection: String?
-    @State private var outputsWide = false
+    /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
+    @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
+    @State private var totalWidth: Double = 0
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
@@ -37,7 +39,7 @@ struct TranscriptConversation: View {
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
         let outputs = SessionOutputs.collect(shown, directory: directory ?? "").filter { directory != nil || !$0.isFile }
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
                     // Lazy: a long conversation only lays out what is on screen.
@@ -93,13 +95,15 @@ struct TranscriptConversation: View {
                 }
             }
             if outputsOpen {
-                SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: $outputsWide) {
+                SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
                     withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
                 }
-                .frame(width: outputsWide ? 620 : 380)
+                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
                 let path = self.path

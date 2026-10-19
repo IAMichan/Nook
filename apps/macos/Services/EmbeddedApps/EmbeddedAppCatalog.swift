@@ -432,8 +432,27 @@ enum EmbeddedSplit {
     /// `wanted` kept between the chat's minimum and what leaves the app its minimum. Before the total width is known
     /// (0), only the chat's minimum applies.
     static func chatWidth(_ wanted: Double, total: Double) -> Double {
-        let most = total > 0 ? max(minimumChat, total - minimumApp - handle) : .infinity
-        return min(max(wanted, minimumChat), most)
+        PanelSplit.width(wanted, minimum: minimumChat, available: total, rest: minimumApp + handle)
+    }
+}
+
+/// A side panel you make wider or narrower by dragging the line beside it (the Agents tab's list, a session's results
+/// or terminal, the chat's list): how wide it may be, so neither the panel nor what sits next to it gets too narrow.
+enum PanelSplit {
+    /// Room the drag line takes beside the panel.
+    static let handle: Double = 16
+
+    /// `wanted` kept at least `minimum`, and at most what leaves `rest` of `available` for the rest. Before the available
+    /// width is known (0), only the minimum applies; when there is too little room for both, the panel keeps its minimum.
+    static func width(_ wanted: Double, minimum: Double, available: Double, rest: Double) -> Double {
+        let most = available > 0 ? max(minimum, available - rest) : .infinity
+        return min(max(wanted, minimum), most)
+    }
+
+    /// The width after dragging the line `offset` points from where it was at `start`. A line on the panel's leading
+    /// edge (a panel on the right) widens the panel when dragged to the left.
+    static func dragged(from start: Double, offset: Double, handleOnLeading: Bool) -> Double {
+        handleOnLeading ? start - offset : start + offset
     }
 }
 

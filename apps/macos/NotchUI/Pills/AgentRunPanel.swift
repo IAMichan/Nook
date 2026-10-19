@@ -41,7 +41,10 @@ struct AgentRunPanel: View {
     /// The panel next to the conversation with what the agent produced: open, which output it shows, and wider.
     @State private var outputsOpen = false
     @State private var outputSelection: String?
-    @State private var outputsWide = false
+    /// How wide the results and the terminal are: drag the line beside them, double-click it to reset. Remembered.
+    @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
+    @AppStorage("nook.agents.consoleWidth") private var consoleWidth = PanelLayout.console
+    @State private var totalWidth: Double = 0
     /// The outputs (by signature) you have seen, for the dot on the panel's button; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The terminal on the left: the command it shows; nil while it is closed.
@@ -51,12 +54,15 @@ struct AgentRunPanel: View {
         if let run = workspace.run(runID) {
             let outputs = SessionOutputs.collect(workspace.timeline(runID), tasks: run.tasks, directory: run.workingDirectory)
             let runningCommand = CommandConsole.running(workspace.timeline(runID))?.id
-            HStack(alignment: .top, spacing: 14) {
+            let consoleOpen = consoleEventID != nil
+            HStack(alignment: .top, spacing: 0) {
                 if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
                     CommandConsolePanel(event: event) {
                         withAnimation(.easeInOut(duration: 0.2)) { self.consoleEventID = nil }
                     }
-                    .frame(width: 400)
+                    .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
+                                    available: PanelLayout.room(totalWidth, besides: outputsOpen ? outputsWidth : nil),
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 VStack(alignment: .leading, spacing: 10) {
@@ -86,14 +92,17 @@ struct AgentRunPanel: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if outputsOpen {
-                    SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: $outputsWide) {
+                    SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
                     }
-                    .frame(width: outputsWide ? 620 : 400)
+                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
