@@ -380,7 +380,7 @@ struct AgentRunPanel: View {
     /// What this composer offers beyond typing: the commands, files and sessions to point at, and the agent's own color.
     private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
         var config = ComposerConfig()
-        config.tint = run.provider.color
+        config.tint = run.provider.composerTint
         config.fileRoot = run.workingDirectory
         config.repository = repository
         config.sessions = { [workspace, runID] in

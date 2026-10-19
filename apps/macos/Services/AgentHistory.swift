@@ -64,6 +64,12 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// The tint of a composer (focus ring, send button) for this agent. Its brand color, except where that color is red:
+    /// a red box reads as an error or a warning, and red is what the composer uses for "allow everything".
+    var composerTint: Color {
+        self == .antigravity ? NookTheme.iris : color
+    }
+
     /// The integration in Settings › Agents that brings progress and permissions to the notch (Grok has none).
     var hookTarget: AgentConfigInstaller.Target? {
         switch self {

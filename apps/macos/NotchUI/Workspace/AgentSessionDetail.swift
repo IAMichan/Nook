@@ -532,7 +532,7 @@ struct AgentSessionDetail: View {
                 agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
                           canSwitch: app.canContinueInNook(session))
             }
-            .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.color))
+            .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.composerTint))
             .images($images)
             .trailing { ComposerMic(text: $draft) }
         }

@@ -161,6 +161,29 @@ final class GitServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(try git.worktrees(repo).count, 2)
     }
 
+    func testWorktreeStartsFromFreshRemoteDefault() throws {
+        let origin = root + "/origin.git"
+        try git.run(["init", "--bare", "-b", "main", origin], in: root)
+        try git.run(["remote", "add", "origin", origin], in: repo)
+        try git.run(["push", "--quiet", "origin", "main"], in: repo)
+        try git.run(["fetch", "--quiet", "origin"], in: repo)
+        XCTAssertEqual(git.worktreeBaseBranch(repo), "origin/main", "the remote's default, not the local copy")
+        XCTAssertEqual(git.defaultBaseBranch(repo), "main", "pull request bases are unchanged")
+
+        // The server moves on while the local origin/main is stale: the worktree still starts from the server's state.
+        try "nieuw\n".write(toFile: repo + "/nieuw.txt", atomically: true, encoding: .utf8)
+        try git.run(["add", "nieuw.txt"], in: repo)
+        try git.run(["-c", "commit.gpgsign=false", "commit", "-m", "tweede"], in: repo)
+        try git.run(["push", "--quiet", "origin", "main"], in: repo)
+        let pushed = try git.run(["rev-parse", "HEAD"], in: repo)
+        try git.run(["update-ref", "refs/remotes/origin/main", "HEAD~1"], in: repo)
+
+        let path = root + "/worktrees/repo/vers"
+        try git.addWorktree(repo: repo, path: path, branch: "nook/vers", base: "origin/main")
+        XCTAssertEqual(try git.run(["rev-parse", "HEAD"], in: path), pushed)
+        XCTAssertThrowsError(try git.run(["rev-parse", "--abbrev-ref", "@{upstream}"], in: path), "the new branch does not track main")
+    }
+
     func testWorktreeGuards() throws {
         XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "nook/x", base: "bestaat-niet"))
         XCTAssertThrowsError(try git.addWorktree(repo: repo, path: root + "/x", branch: "main", base: "main"), "existing branch")

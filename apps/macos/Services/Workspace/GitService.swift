@@ -220,6 +220,27 @@ struct GitService: Sendable {
         return fallbackBranch ?? currentBranch(repo)
     }
 
+    /// Where a new worktree starts: the remote's default branch (`origin/main`), so a session begins from what is on the
+    /// server, not from a local copy that may be behind or carry unpushed commits. Without a remote, `defaultBaseBranch`.
+    func worktreeBaseBranch(_ repo: String, localBranches: [String]? = nil, fallbackBranch: String? = nil) -> String? {
+        let remotes = remotes(repo)
+        if let remote = remotes.contains("origin") ? "origin" : remotes.first,
+           let name = defaultBranch(repo, remote: remote), refExists("refs/remotes/\(remote)/\(name)", in: repo) {
+            return "\(remote)/\(name)"
+        }
+        return defaultBaseBranch(repo, localBranches: localBranches, fallbackBranch: fallbackBranch)
+    }
+
+    /// Brings a remote-tracking base (`origin/main`) up to date right before a worktree starts from it. Best effort:
+    /// offline or without access, the worktree starts from the last fetched state. Local bases are left alone.
+    func refreshRemoteBase(_ base: String, in repo: String) {
+        guard let slash = base.firstIndex(of: "/") else { return }
+        let remote = String(base[..<slash])
+        let branch = String(base[base.index(after: slash)...])
+        guard !branch.isEmpty, remotes(repo).contains(remote), refExists("refs/remotes/\(base)", in: repo) else { return }
+        _ = try? run(["fetch", "--quiet", "--no-tags", remote, "+refs/heads/\(branch):refs/remotes/\(base)"], in: repo, timeout: 20)
+    }
+
     func refExists(_ ref: String, in repo: String) -> Bool {
         (try? run(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], in: repo)) != nil
     }
@@ -333,6 +354,7 @@ struct GitService: Sendable {
     /// Creates a new worktree with a new branch from `base`. Current directory and branch remain unchanged.
     func addWorktree(repo: String, path: String, branch: String, base: String) throws {
         guard hasCommits(repo) else { throw GitError("This repository has no commits yet; a worktree requires an initial commit.") }
+        refreshRemoteBase(base, in: repo)
         guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
         guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is not a valid branch name.") }
         guard !localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' already exists. Choose a different name.") }
@@ -343,7 +365,8 @@ struct GitService: Sendable {
         }
         do {
             // On another machine git makes the folders on the way itself.
-            try run(["worktree", "add", "-b", branch, "--", path, base], in: repo, timeout: 180)
+            // No upstream: from `origin/main` git would otherwise make the new branch track main.
+            try run(["worktree", "add", "--no-track", "-b", branch, "--", path, base], in: repo, timeout: 180)
         } catch {
             throw Self.friendlyWorktreeError(error, base: base)
         }
