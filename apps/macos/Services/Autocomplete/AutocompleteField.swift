@@ -298,6 +298,17 @@ enum AutocompleteTyper {
         type(text)
     }
 
+    /// Presses one key (an accept key held while a suggestion was on its way, passed on after all).
+    static func press(keyCode: Int, flags: CGEventFlags) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for isDown in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(keyCode), keyDown: isDown) else { continue }
+            event.flags = flags
+            event.setIntegerValueField(.eventSourceUserData, value: marker)
+            event.post(tap: .cgSessionEventTap)
+        }
+    }
+
     static func type(_ text: String) {
         let source = CGEventSource(stateID: .combinedSessionState)
         let units = Array(text.utf16)

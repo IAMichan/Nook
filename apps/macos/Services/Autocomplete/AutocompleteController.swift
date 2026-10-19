@@ -100,6 +100,14 @@ final class AutocompleteController: ObservableObject {
     private var readToken = 0
 
     private var proposal: Proposal?
+    /// The model request for the text in the field now (`token` is `readToken` when it started).
+    private var asking: (token: Int, done: Bool, eager: Bool)?
+    /// An accept key pressed while a suggestion was on its way: held until it shows, and passed on to the app when none
+    /// comes (see `holdAcceptKey`).
+    private var heldKey: (token: Int, key: Key)?
+    private var holdWork: DispatchWorkItem?
+    /// The longest an accept key waits for a suggestion before it goes to the app after all.
+    private let holdSeconds: TimeInterval = 1.5
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
     private var upcoming: Upcoming?
@@ -375,6 +383,13 @@ final class AutocompleteController: ObservableObject {
             // What Nook types itself. Some apps lose the mark, so also check who sent it.
             if event.getIntegerValueField(.eventSourceUserData) == AutocompleteTyper.marker
                 || event.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid()) { return false }
+            // Another key while an accept key waits: the user went on, so the held key goes first, then this one.
+            if heldKey != nil, let copy = event.copy() {
+                releaseHeldKey(force: true)
+                copy.setIntegerValueField(.eventSourceUserData, value: AutocompleteTyper.marker)
+                copy.post(tap: .cgSessionEventTap)
+                return true
+            }
             var length = 0
             var buffer = [UniChar](repeating: 0, count: 8)
             event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)
@@ -413,6 +428,11 @@ final class AutocompleteController: ObservableObject {
             dismiss()
             if plainEscape { return true }
         }
+
+        // An accept key with nothing on screen yet: wait for the suggestion on its way, or ask again more eagerly, instead of
+        // letting the key go to the app while the user expects a word.
+        if proposal == nil, !commandLike, key.matches(prefs.acceptWord) || key.matches(prefs.acceptAll),
+           !(prefs.app(bundleID).leaveTab && key.code == kVK_Tab), holdAcceptKey(key) { return true }
 
         if let proposal {
             let tabLeftToApp = prefs.app(bundleID).leaveTab && key.code == kVK_Tab
@@ -556,8 +576,54 @@ final class AutocompleteController: ObservableObject {
                                          truncated: result.truncated, unfinished: result.unfinished)
     }
 
+    /// Holds an accept key pressed with no suggestion on screen when one is coming: the pause after the last key is still
+    /// running, or the model is writing. When the model answered nothing for this text, asks once more with a lower bar (the
+    /// user asked for a word). False when nothing is coming: the key then does what it always does in the app.
+    private func holdAcceptKey(_ key: Key) -> Bool {
+        guard heldKey == nil else { return false }
+        let token = readToken
+        if let work = refreshWork, !work.isCancelled {
+            hold(key, token: token)
+            work.cancel()
+            refreshProposal()
+            return true
+        }
+        guard let asking, asking.token == token else { return false }
+        if !asking.done {
+            hold(key, token: token)
+            return true
+        }
+        guard !asking.eager else { return false }
+        hold(key, token: token)
+        refreshProposal(eager: true)
+        return true
+    }
+
+    private func hold(_ key: Key, token: Int) {
+        heldKey = (token, key)
+        holdWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.releaseHeldKey(force: true) } }
+        holdWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdSeconds, execute: work)
+    }
+
+    /// Passes a held accept key on to the app once no suggestion is coming for it. Dropped when a suggestion is on screen (it
+    /// was waited for) or the text changed since. `force`: pass it on now, the wait is over.
+    private func releaseHeldKey(force: Bool = false) {
+        guard let held = heldKey else { return }
+        if !force, let asking, asking.token == held.token, !asking.done, proposal == nil { return }
+        heldKey = nil
+        holdWork?.cancel()
+        holdWork = nil
+        guard held.token == readToken || force, proposal == nil else { return }
+        AutocompleteTyper.press(keyCode: held.key.code, flags: held.key.flags)
+    }
+
     private func dismiss() {
         readToken += 1
+        // A click or another app: a held accept key no longer belongs to this text.
+        heldKey = nil
+        holdWork?.cancel()
         refreshWork?.cancel()
         selectionWork?.cancel()
         completer?.cancel()
@@ -603,10 +669,14 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    private func refreshProposal() {
-        guard let app = frontApp, isActive(in: app) else { return }
+    /// - Parameter eager: asked for with an accept key after the model answered nothing (see `holdAcceptKey`).
+    private func refreshProposal(eager: Bool = false) {
+        refreshWork = nil
+        guard let app = frontApp, isActive(in: app) else { return releaseHeldKey() }
         read(in: app) { [weak self] snapshot in
-            if let snapshot { self?.propose(for: snapshot, in: app) }
+            if let snapshot { self?.propose(for: snapshot, in: app, continuing: eager) }
+            // No model request came of it (a selection, an emoji name, too little text): a held key goes on to the app.
+            self?.releaseHeldKey()
         }
     }
 
@@ -681,7 +751,9 @@ final class AutocompleteController: ObservableObject {
         // Written ahead while the last suggestion was on screen: no need to ask the model again.
         let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
         upcoming = nil
+        asking = (token, false, continuing)
         Task {
+            defer { finishAsking(token) }
             if let ahead, let result = await ahead.value {
                 guard token == readToken else { return }
                 present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
@@ -697,6 +769,13 @@ final class AutocompleteController: ObservableObject {
                         after: after, maxWords: maxWords, app: app)
             }
         }
+    }
+
+    /// The model is done with the request made at `token`, whether or not it showed something.
+    private func finishAsking(_ token: Int) {
+        guard asking?.token == token else { return }
+        asking?.done = true
+        releaseHeldKey()
     }
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is

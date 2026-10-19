@@ -143,13 +143,14 @@ final class CompletionPlayground: ObservableObject {
         cancel()
     }
 
-    /// An accept key with nothing to accept: ask right away, without the pause after a key. True when the key is taken (a
-    /// suggestion is on its way), false when there is nothing to ask about and the key should do what it always does.
+    /// An accept key with nothing to accept: ask right away, without the pause after a key and with a lower bar (the user
+    /// asked for a word, see `CompletionOptions.continuing()`). True when the key is taken (a suggestion is on its way), false
+    /// when there is nothing to ask about and the key should do what it always does.
     func askNow(before: String, after: String) -> Bool {
         if thinking || task != nil { return true }
         guard suggestion == nil else { return false }
         anchor = before
-        request(before: before, after: after, continuing: false, pause: false)
+        request(before: before, after: after, continuing: true)
         return task != nil
     }
 
@@ -170,7 +171,7 @@ final class CompletionPlayground: ObservableObject {
         AutocompleteController.shared.cancelPlaygroundCompletion()
     }
 
-    private func request(before: String, after: String, continuing: Bool, pause: Bool = true) {
+    private func request(before: String, after: String, continuing: Bool) {
         // Typing on while the model writes: keep showing that it thinks, instead of flickering off and on with every key.
         let wasThinking = thinking
         cancel()
@@ -179,7 +180,7 @@ final class CompletionPlayground: ObservableObject {
         requested = before
         thinking = wasThinking
         let token = self.token
-        let delay = continuing || !pause ? 0 : UInt64(max(prefs.delayMilliseconds, 120)) * 1_000_000
+        let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 120)) * 1_000_000
         task = Task { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             guard let self, !Task.isCancelled, token == self.token else { return }
