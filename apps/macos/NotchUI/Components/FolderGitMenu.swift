@@ -10,6 +10,10 @@ final class FolderGitModel: ObservableObject {
     @Published private(set) var remotes: [String] = []
     /// What the branch compares against: the remote's default branch ("origin/main"), else the local one.
     @Published private(set) var base: String?
+    /// What the branch changed since it left `base`: commits not yet merged (pushed or not) and the working tree.
+    @Published private(set) var changes: [GitFileChange] = []
+    /// The commit `changes` compare against; nil when only the working tree counts.
+    private var comparedTo: String?
     /// The repository root; git reports paths relative to it, so everything runs there.
     @Published private(set) var root: String?
     @Published private(set) var working = false
@@ -24,9 +28,10 @@ final class FolderGitModel: ObservableObject {
     }
 
     var isRepository: Bool { root != nil && status != nil }
+    /// What is not committed yet.
     var files: [GitFileChange] { status?.files ?? [] }
-    var added: Int { files.compactMap(\.added).reduce(0, +) }
-    var removed: Int { files.compactMap(\.removed).reduce(0, +) }
+    var added: Int { changes.compactMap(\.added).reduce(0, +) }
+    var removed: Int { changes.compactMap(\.removed).reduce(0, +) }
 
     /// A branch that has commits the remote does not have yet, or no upstream at all.
     var canPush: Bool {
@@ -39,17 +44,23 @@ final class FolderGitModel: ObservableObject {
         guard let git, !directory.isEmpty, FileManager.default.fileExists(atPath: directory) else {
             root = nil
             status = nil
+            changes = []
             return
         }
         let directory = directory
-        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?) in
-            guard let root = git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil) }
+        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?) in
+            guard let root = git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil, [], nil) }
             let status = try? git.status(root)
             let local = (try? git.branches(root))?.local ?? []
             let remotes = git.remotes(root)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
             let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
-            return (root, status, local, remotes, base)
+            // Against where the branch left its base (else its upstream), so committed work still counts as a change.
+            let comparedTo = status.flatMap { status in
+                [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.mergeBase(root, base: $0) }.first
+            }
+            let changes = comparedTo.flatMap { ref in status.flatMap { try? git.changes(root, since: ref, status: $0) } }
+            return (root, status, local, remotes, base, changes ?? status?.files ?? [], changes == nil ? nil : comparedTo)
         }.value
         if root != result.root { root = result.root }
         if status != result.status { status = result.status }
@@ -57,6 +68,8 @@ final class FolderGitModel: ObservableObject {
         if branches != sorted { branches = sorted }
         if remotes != result.remotes { remotes = result.remotes }
         if base != result.base { base = result.base }
+        if changes != result.changes { changes = result.changes }
+        comparedTo = result.comparedTo
     }
 
     func checkout(_ branch: String) {
@@ -72,7 +85,11 @@ final class FolderGitModel: ObservableObject {
 
     func diff(_ file: GitFileChange) async throws -> String {
         guard let git, let root else { throw GitError(tr("ws.error.noGit")) }
-        return try await Task.detached(priority: .userInitiated) { try git.diff(root, file: file) }.value
+        let ref = file.kind == .untracked ? nil : comparedTo
+        return try await Task.detached(priority: .userInitiated) {
+            guard let ref else { return try git.diff(root, file: file) }
+            return try git.diff(root, path: file.path, from: ref, to: nil)
+        }.value
     }
 
     private func perform(_ action: @escaping @Sendable () throws -> Void) {
@@ -151,7 +168,7 @@ struct FolderGitButton: View {
                 Image(systemName: icon).font(.system(size: 10.5, weight: .medium))
             }
             Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 170, alignment: .leading)
-            if counts, !model.files.isEmpty {
+            if counts, !model.changes.isEmpty {
                 Text("+\(model.added)").foregroundStyle(NookTheme.mint)
                 Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
             }
@@ -181,7 +198,7 @@ struct FolderChangesSheet: View {
         HStack(spacing: 12) {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(model.files) { file in
+                    ForEach(model.changes) { file in
                         Button { selected = file.path } label: {
                             FileChangeRow(file: file)
                                 .padding(.horizontal, 8)
@@ -192,7 +209,7 @@ struct FolderChangesSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    if model.files.isEmpty {
+                    if model.changes.isEmpty {
                         Text(tr("agents.git.noChanges"))
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
@@ -216,13 +233,13 @@ struct FolderChangesSheet: View {
         }
         .task {
             await model.refresh()
-            if selected == nil { selected = model.files.first?.path }
+            if selected == nil { selected = model.changes.first?.path }
         }
         .onChange(of: selected) { _, path in load(path) }
     }
 
     private func load(_ path: String?) {
-        guard let path, let file = model.files.first(where: { $0.path == path }) else { diff = ""; return }
+        guard let path, let file = model.changes.first(where: { $0.path == path }) else { diff = ""; return }
         loading = true
         error = nil
         Task {

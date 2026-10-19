@@ -33,6 +33,15 @@ final class GitParsingTests: XCTestCase {
         XCTAssertNil(counts["old.swift"])
     }
 
+    func testParseNameStatus() {
+        let text = "M\0Sources/App.swift\0A\0new.txt\0R087\0old.swift\0renamed.swift\0D\0gone.md\0"
+        let files = GitService.parseNameStatus(text)
+        XCTAssertEqual(files.map(\.path), ["Sources/App.swift", "new.txt", "renamed.swift", "gone.md"])
+        XCTAssertEqual(files.map(\.kind), [.modified, .added, .renamed, .deleted])
+        XCTAssertEqual(files[2].oldPath, "old.swift")
+        XCTAssertTrue(GitService.parseNameStatus("").isEmpty)
+    }
+
     func testParseWorktrees() {
         let text = """
         worktree /repo
