@@ -28,6 +28,9 @@ final class NookPresence: ObservableObject {
     private(set) var noddedAt: Date = .distantPast
     private(set) var giggledAt: Date = .distantPast
     private(set) var trackChangedAt: Date = .distantPast
+    /// The word Nook is reading aloud and when it started; nil while he is quiet. His mouth moves along with it.
+    private(set) var spokenWord: String?
+    private(set) var spokenWordAt: Date = .distantPast
     private var pokes: [Date] = []
 
     /// Where something Nook should look at sits, as an angle around him (0 = right, clockwise, y pointing down): a piece of
@@ -71,6 +74,18 @@ final class NookPresence: ObservableObject {
     func trackChanged() {
         trackChangedAt = Date()
         noteActivity()
+    }
+
+    /// Nook starts saying a word of an answer read aloud.
+    func speaking(word: String) {
+        spokenWord = word
+        spokenWordAt = Date()
+        noteActivity()
+    }
+
+    /// Reading aloud finished or was stopped.
+    func stoppedSpeaking() {
+        spokenWord = nil
     }
 
     /// The pointer arrived at the notch: wakes Nook with a start, or says hello now and then.

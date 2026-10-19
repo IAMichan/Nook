@@ -6,6 +6,11 @@ import NaturalLanguage
 @MainActor
 final class SpeechOutput {
     private let synthesizer = AVSpeechSynthesizer()
+    private let mouth = SpeechMouth()
+
+    init() {
+        synthesizer.delegate = mouth
+    }
 
     func speak(_ text: String, language: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,6 +74,24 @@ final class SpeechOutput {
         case "es": return "es-ES"
         default: return "nl-NL"
         }
+    }
+}
+
+/// Tells Nook which word is being read aloud, so his mouth can move along with it.
+private final class SpeechMouth: NSObject, AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange,
+                           utterance: AVSpeechUtterance) {
+        guard let range = Range(characterRange, in: utterance.speechString) else { return }
+        let word = String(utterance.speechString[range])
+        Task { @MainActor in NookPresence.shared.speaking(word: word) }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in NookPresence.shared.stoppedSpeaking() }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in NookPresence.shared.stoppedSpeaking() }
     }
 }
 
