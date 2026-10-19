@@ -88,6 +88,8 @@ extension AppModel {
         }
         FlowDictation.shared.refresh()
         startAutocomplete()
+        // From now on every permission is checked again whenever Nook comes to the front.
+        PermissionMonitor.shared.refresh()
     }
 
     /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.

@@ -69,6 +69,9 @@ struct AutocompleteSettingsSection: View {
                 statsSection
             }
         }
+        // Picks up Accessibility the moment it is switched on in System Settings.
+        .onAppear { PermissionMonitor.shared.watch() }
+        .onDisappear { PermissionMonitor.shared.unwatch() }
     }
 
     // MARK: Status

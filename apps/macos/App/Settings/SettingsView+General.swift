@@ -22,12 +22,12 @@ extension SettingsView {
         return [
             Step(title: tr("settings.checklist.brain"), detail: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain.notReady"),
                  done: settings.brainReady, button: tr("button.choose"), section: .brain),
-            Step(title: tr("settings.checklist.screen"), detail: CGPreflightScreenCaptureAccess() ? tr("settings.checklist.screen.granted") : tr("settings.checklist.screen.notGranted"),
-                 done: CGPreflightScreenCaptureAccess(), button: tr("button.allow"), section: .privacy,
-                 request: { _ = CGRequestScreenCaptureAccess() }),
-            Step(title: tr("settings.checklist.calendar"), detail: app.calendar.hasEventAccess ? tr("settings.checklist.calendar.granted") : tr("settings.checklist.calendar.notGranted"),
-                 done: app.calendar.hasEventAccess, button: tr("button.allow"), section: .privacy,
-                 request: { _ = await app.calendar.requestEvents(); app.connectors.refreshAll() }),
+            Step(title: tr("settings.checklist.screen"), detail: permissions.isGranted(.screen) ? tr("settings.checklist.screen.granted") : tr("settings.checklist.screen.notGranted"),
+                 done: permissions.isGranted(.screen), button: tr("button.allow"), section: .privacy,
+                 request: { await permissions.request(.screen, app: app) }),
+            Step(title: tr("settings.checklist.calendar"), detail: permissions.isGranted(.calendar) ? tr("settings.checklist.calendar.granted") : tr("settings.checklist.calendar.notGranted"),
+                 done: permissions.isGranted(.calendar), button: tr("button.allow"), section: .privacy,
+                 request: { await permissions.request(.calendar, app: app) }),
             Step(title: tr("settings.checklist.connectors"), detail: tr("settings.checklist.connectors.detail", app.connectors.active.count),
                  done: app.connectors.active.count >= 3, button: tr("button.view"), section: .connections)
         ]
@@ -61,6 +61,8 @@ extension SettingsView {
                     }
                 }
             }
+            .onAppear { permissions.watch() }
+            .onDisappear { permissions.unwatch() }
             Section {
                 ForEach(ShortcutAction.allCases) { action in ShortcutRecorder(action: action) }
                 LabeledContent(tr("flow.settings.title")) {

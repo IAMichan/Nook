@@ -55,10 +55,15 @@ final class FlowDictation: ObservableObject {
         if !trusted { waitForTrust() }
     }
 
+    /// The "Allow" button. Asking macOS first is what puts Nook in the list in System Settings; opening the pane alone shows a
+    /// list without Nook in it.
     func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
+        trusted = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        if !trusted {
+            SystemPermission.accessibility.openSettings()
+            waitForTrust()
         }
+        PermissionMonitor.shared.refresh()
     }
 
     /// Hands-free from a button (the pill, Settings' "Try it").

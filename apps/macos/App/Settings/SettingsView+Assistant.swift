@@ -14,7 +14,7 @@ extension SettingsView {
                     Text(app.screenContext.windows.isEmpty ? tr("settings.assistant.nothingRead") : "\(app.screenContext.windows.count) vensters op \(max(1, app.screenContext.displayCount)) \(app.screenContext.displayCount == 1 ? "scherm" : "schermen")")
                         .foregroundStyle(.secondary)
                 }
-                if !CGPreflightScreenCaptureAccess() {
+                if !permissions.isGranted(.screen) {
                     Button(tr("settings.assistant.managePermissions")) { app.settingsSection = .privacy }
                         .buttonStyle(.link)
                 }
