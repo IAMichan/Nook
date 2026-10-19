@@ -1,6 +1,6 @@
 import Foundation
 
-/// Antigravity over ACP runs it: Google's `agy_acp_server` (a pinned release, checked byte for byte)
+/// Antigravity over ACP: Google's `agy_acp_server` (a pinned release, checked byte for byte)
 /// next to its `localharness_external`, a profile folder of its own (`GEMINI_HOME`) with file-based token storage, and
 /// Google sign-in through the agent's own loopback server, opened in your browser. Foundation only, so tests can use it.
 enum AntigravityRelease {
@@ -20,7 +20,7 @@ enum AntigravityRelease {
         var harness: Member
     }
 
-    /// pins for the Mac (antigravityRelease.ts).
+    /// Pinned release versions for macOS.
     static func asset(arch: String) -> Asset? {
         switch arch {
         case "arm64":
@@ -100,7 +100,7 @@ enum AntigravityAcp {
     static let authMethod = "oauth-personal"
     static let agentName = "antigravity-acp"
 
-    /// Variables that would steer the server to another account or project: never passed on (list).
+    /// Variables that would steer the server to another account or project: never passed on.
     static let removedEnvironment = [
         "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
         "GOOGLE_CLOUD_QUOTA_PROJECT", "GOOGLE_GENAI_USE_VERTEXAI", "GCLOUD_PROJECT", "CLOUDSDK_CORE_PROJECT", "AGY_ACP_CCPA_PROJECT",
@@ -134,7 +134,7 @@ enum AntigravityAcp {
     """
 
     /// The sign-in address in a line of the server's output, when it is a real Google sign-in page that returns to the
-    /// server's own loopback port (checks).
+    /// server's own loopback port.
     static func signInURL(inLine line: String) -> URL? {
         guard let range = line.range(of: signInPrefix) else { return nil }
         return validSignInURL(String(line[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines))
@@ -155,7 +155,7 @@ enum AntigravityAcp {
         return components.url
     }
 
-    /// The mode for the session's rights (antigravityPermissionMode).
+    /// The mode for the session's rights.
     static func mode(_ mode: ExecutionMode, permission: PermissionPolicy) -> String {
         if mode == .plan { return "plan" }
         switch permission {

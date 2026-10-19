@@ -97,7 +97,7 @@ final class WorkspaceManager: ObservableObject {
     /// The latest token totals per Codex session, so a turn's own usage is the difference.
     var codexTotals: [UUID: TokenCounts] = [:]
     var codexIdleClose: [UUID: Task<Void, Never>] = [:]
-    /// Claude Code processes kept alive after a turn (way): the next message goes to the same process, as long
+    /// Claude Code processes kept alive after a turn: the next message goes to the same process, as long
     /// as model, mode and rights are unchanged. With the settings they were started with, and when they close.
     var claudeIdle: [UUID: (process: AgentProcess, key: String)] = [:]
     var claudeIdleClose: [UUID: Task<Void, Never>] = [:]
@@ -137,7 +137,7 @@ final class WorkspaceManager: ObservableObject {
     var watchesInFlight: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
     var codexSubagents: [UUID: [String: UUID]] = [:]
-    /// Comments on a session's diff, waiting to go to the agent together (review comments).
+    /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
@@ -667,7 +667,7 @@ final class WorkspaceManager: ObservableObject {
         refreshGit(id)
     }
 
-    /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
+    /// Keeps a message for when the current turn is done: you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
@@ -783,12 +783,12 @@ final class WorkspaceManager: ObservableObject {
         // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
-        // Codex speaks app-server when it can (way): approvals, questions, steering and live reasoning.
+        // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
         if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }
-        // Gemini CLI, OpenCode, Cursor and Grok speak ACP (way); Gemini falls back to its headless mode.
+        // Gemini CLI, OpenCode, Cursor and Grok speak ACP; Gemini falls back to its headless mode.
         if run.provider.usesACP, !acpFallback.contains(executable) {
             launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
@@ -1051,7 +1051,7 @@ final class WorkspaceManager: ObservableObject {
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
             finishLiveText(id)
-            // A question is answered, not approved (way): the answers go back as the tool's input.
+            // A question is answered, not approved: the answers go back as the tool's input.
             if tool == "AskUserQuestion" {
                 let items = ClaudeStreamParser.questions(from: input)
                 if !items.isEmpty {
@@ -1083,7 +1083,7 @@ final class WorkspaceManager: ObservableObject {
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
             finishLiveText(id)
-            // A steering message cut this segment short: the turn goes on with the new message (rule).
+            // A steering message cut this segment short: the turn goes on with the new message.
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
                 // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
@@ -1093,7 +1093,7 @@ final class WorkspaceManager: ObservableObject {
             }
             turns[id]?.steered = false
             closeThinking(id)
-            // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
+            // Stopped by a usage limit: remember when it resets, for "Resume at reset".
             if turns[id]?.stopping != true {
                 let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
                                                isError: result.isError, rateLimitRejected: !(turns[id]?.limitWindows.isEmpty ?? true),
@@ -1134,7 +1134,7 @@ final class WorkspaceManager: ObservableObject {
             questions[id] = nil
             turnDidFinish(id)
             scheduleGitRefresh(id, delay: 0.5)
-            // Turn finished: keep Claude Code waiting for the next message instead of closing it (way).
+            // Turn finished: keep Claude Code waiting for the next message instead of closing it.
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
             if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
@@ -1375,7 +1375,7 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Watching pull requests
 
     /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
-    /// what the agent can act on goes to it as a message (PR watch).
+    /// what the agent can act on goes to it as a message.
     func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
         update(id) { $0.prWatch = url.map { PullRequestWatch(url: $0.absoluteString, wakeAgent: wakeAgent) } }
         if url != nil { checkPullRequestWatches(force: true) }

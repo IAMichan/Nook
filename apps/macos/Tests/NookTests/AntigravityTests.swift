@@ -1,6 +1,6 @@
 import XCTest
 
-/// Antigravity over ACP, installed and run it.
+/// Antigravity over ACP.
 final class AntigravityTests: XCTestCase {
     private let goodURL = "https://accounts.google.com/o/oauth2/v2/auth?client_id=x&response_type=code&state=abc123&redirect_uri=http%3A%2F%2F127.0.0.1%3A50123%2F&scope=openid"
 

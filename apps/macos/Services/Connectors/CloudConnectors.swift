@@ -2213,7 +2213,7 @@ enum GitHubPullRequests {
         return (parts[0] + "/" + parts[1], number)
     }
 
-    /// A pull request's state, checks, reviews and comments, for a session that watches it (PR watch). Nil when
+    /// A pull request's state, checks, reviews and comments, for a session that watches it. Nil when
     /// no connected account can read it.
     static func snapshot(url: URL) async -> PullRequestSnapshot? {
         guard isAvailable, let target = parse(url) else { return nil }

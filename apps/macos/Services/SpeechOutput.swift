@@ -60,7 +60,7 @@ final class SpeechOutput {
     private static func voiceLanguage(for code: String, text: String) -> String {
         var language = code
         if language == "auto" {
-            language = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue ?? "nl"
+            language = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue ?? "en"
         }
         switch language {
         case "en": return "en-US"

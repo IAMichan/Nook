@@ -80,7 +80,7 @@ enum GitLabAPI {
         return nil
     }
 
-    // MARK: Watching a merge request (PR watch, for GitLab)
+    // MARK: Watching a merge request
 
     /// The repository and number of a merge request link ("https://gitlab.com/group/app/-/merge_requests/12").
     static func mergeRequest(_ url: URL) -> (repo: RemoteRepository, iid: Int)? {

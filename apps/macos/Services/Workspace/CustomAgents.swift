@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-// Agents beyond the ones Nook knows by name adds them: any agent that speaks ACP (Agent Client
+// Agents beyond the ones Nook knows by name: any agent that speaks ACP (Agent Client
 // Protocol), picked from the ACP registry or entered by hand. Each runs as an account of the ACP kind ("ACP · Kiro"),
 // so sessions, accounts and the model menu work as for every other agent. The agent starts through your login shell,
 // so npx, uvx and tools from nvm or asdf are found exactly as in your terminal. Foundation only, so tests can use it.
@@ -96,7 +96,7 @@ enum CustomAgents {
 }
 
 /// The ACP registry (agentclientprotocol.com): the agents that speak ACP, with how to start each one: npx and uvx at an
-/// exact version (as checks them), or a download for this Mac that Nook installs after checking its SHA-256.
+/// exact version, or a download for this Mac that Nook installs after checking its SHA-256.
 enum AcpRegistry {
     static let url = URL(string: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json")!
     static let maxBytes = 1024 * 1024

@@ -4,7 +4,7 @@ import AppKit
 // What the agent is doing besides talking, above the composer: its own task list, the subagents it
 // started, and the pull request the session watches.
 
-/// "Tasks Running the tests 3/7" with a bar per step; opens into the whole list (ComposerTasksBadge).
+/// "Tasks  Running the tests  3/7" with a bar per step; opens into the whole list.
 struct TasksStrip: View {
     let steps: [RunTaskStep]
     @State private var open = false
@@ -99,7 +99,7 @@ struct TasksStrip: View {
 }
 
 /// "Subagents 1 of 3 done" with a row per subagent: its kind, what it does, and whether it still runs; a row opens
-/// to its task and its answer (subagent bar).
+/// to its task and its answer.
 struct SubagentBar: View {
     let agents: [SubagentInfo]
     @State private var open = false
@@ -238,7 +238,7 @@ struct PullRequestWatchStrip: View {
     }
 }
 
-/// A thin column next to the conversation with a mark per message of yours (turn minimap): hover shows the
+/// A thin column next to the conversation with a mark per message of yours: hover shows the
 /// message, a click goes there.
 struct TurnMinimap: View {
     let turns: [RunEvent]
@@ -262,7 +262,7 @@ struct TurnMinimap: View {
     }
 }
 
-/// "3 files changed" under a finished turn (changed files per turn): opens the files, each with what this turn
+/// "3 files changed" under a finished turn: opens the files, each with what this turn
 /// did to it.
 struct TurnChangesChip: View {
     let turn: TurnChanges.Turn

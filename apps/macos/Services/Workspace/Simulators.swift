@@ -58,7 +58,7 @@ enum Simulators {
     }
 }
 
-/// What you can change on a simulator from Nook (device actions), as `xcrun simctl` arguments.
+/// What you can change on a simulator from Nook, as `xcrun simctl` arguments.
 enum SimulatorAction: Equatable, Sendable {
     case appearance(dark: Bool)
     case textSize(SimulatorTextSize)
@@ -101,7 +101,7 @@ enum SimulatorAction: Equatable, Sendable {
     }
 }
 
-/// four text sizes and the iOS content-size categories behind them.
+/// Four text sizes and the iOS content-size categories behind them.
 enum SimulatorTextSize: String, CaseIterable, Identifiable, Sendable {
     case small, standard, large, extraLarge
 

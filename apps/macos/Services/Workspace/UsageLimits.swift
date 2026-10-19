@@ -1,10 +1,10 @@
 import Foundation
 
-/// A usage limit that stopped a turn, read reads it, so the session can go on by itself once the
+/// A usage limit that stopped a turn, so the session can go on by itself once the
 /// limit resets. Claude Code says so in `rate_limit_event` (status "rejected", `resetsAt`); Codex with the error code
 /// `usageLimitExceeded` and its rate limit snapshot (`account/rateLimits/updated`).
 enum UsageLimits {
-    /// What a session sends when it goes on after the reset (text).
+    /// What a session sends when it goes on after the reset.
     static let resumeMessage = "Continue where you left off."
 
     struct ClaudeEvent: Equatable, Sendable {

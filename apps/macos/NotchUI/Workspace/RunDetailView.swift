@@ -397,7 +397,7 @@ struct EventRow: View {
                 .padding(.horizontal, 2)
 
         case .thinking:
-            // The agent's reasoning in the chat itself (as shows it): muted, live while it is written, the first
+            // The agent's reasoning in the chat itself: muted, live while it is written, the first
             // lines at once and the rest a click away.
             Button(action: toggle) {
                 VStack(alignment: .leading, spacing: 4) {

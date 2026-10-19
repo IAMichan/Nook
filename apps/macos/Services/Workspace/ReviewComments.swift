@@ -1,6 +1,6 @@
 import Foundation
 
-// Comments on a session's diff, sent to the agent as one message (review comments), and quoting the agent's
+// Comments on a session's diff, sent to the agent as one message, and quoting the agent's
 // own words back into the composer. Foundation only, so tests can use it independently.
 
 /// A remark on one line of a changed file.

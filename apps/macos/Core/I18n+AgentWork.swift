@@ -1,10 +1,10 @@
 import Foundation
 
-// Texts for what the Agents tab took in its third round: the task list, subagents, splitting from a message,
+// Texts for the Agents tab's work features: the task list, subagents, splitting from a message,
 // watching a pull request, diff comments, the minimap and previews, export, other agents and remote machines.
 // Numbers use %ld, text uses %@.
 
-let parityTranslations: [AppLanguage: [String: String]] = [
+let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "ws.subagents.title": "Subagents",
         "ws.subagents.progress": "%ld van %ld klaar",
@@ -136,7 +136,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.hub.daemonFailed": "agent-device startte niet.",
         "sim.hub.installing": "Simulator-tools installeren (expo-device-hub en agent-device)…",
         "sim.hub.starting": "Simulator-tools starten…",
-        "sim.hub.installExplain": "Voor een live simulator die je kunt aanraken, en die agents kunnen besturen, installeert Nook eenmalig dezelfde tools als (expo-device-hub en agent-device, via npm, in Application Support).",
+        "sim.hub.installExplain": "Voor een live simulator die je kunt aanraken, en die agents kunnen besturen, installeert Nook eenmalig de tools (expo-device-hub en agent-device, via npm, in Application Support).",
         "sim.hub.install": "Installeer",
         "sim.hub.retry": "Opnieuw",
         "sim.stream.noVideo": "Geen beeld van de simulator. Kies hem opnieuw om opnieuw te verbinden.",
@@ -318,7 +318,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.hub.daemonFailed": "agent-device did not start.",
         "sim.hub.installing": "Installing the simulator tools (expo-device-hub and agent-device)…",
         "sim.hub.starting": "Starting the simulator tools…",
-        "sim.hub.installExplain": "For a live simulator you can touch, and agents can drive, Nook installs the same tools once (expo-device-hub and agent-device, with npm, in Application Support).",
+        "sim.hub.installExplain": "For a live simulator you can touch, and agents can drive, Nook installs its device tools once (expo-device-hub and agent-device, with npm, in Application Support).",
         "sim.hub.install": "Install",
         "sim.hub.retry": "Try again",
         "sim.stream.noVideo": "No video received from the device. Pick it again to reconnect.",
@@ -500,7 +500,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.hub.daemonFailed": "agent-device ist nicht gestartet.",
         "sim.hub.installing": "Simulator-Werkzeuge werden installiert (expo-device-hub und agent-device)…",
         "sim.hub.starting": "Simulator-Werkzeuge werden gestartet…",
-        "sim.hub.installExplain": "Für einen Live-Simulator, den du berühren und Agenten steuern können, installiert Nook einmalig dieselben Werkzeuge wie (expo-device-hub und agent-device, per npm, in Application Support).",
+        "sim.hub.installExplain": "Für einen Live-Simulator, den du berühren und Agenten steuern können, installiert Nook einmalig die Geräte-Werkzeuge (expo-device-hub und agent-device, per npm, in Application Support).",
         "sim.hub.install": "Installieren",
         "sim.hub.retry": "Erneut",
         "sim.stream.noVideo": "Kein Bild vom Gerät. Wähle es erneut, um neu zu verbinden.",
@@ -682,7 +682,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.hub.daemonFailed": "agent-device n’a pas démarré.",
         "sim.hub.installing": "Installation des outils du simulateur (expo-device-hub et agent-device)…",
         "sim.hub.starting": "Démarrage des outils du simulateur…",
-        "sim.hub.installExplain": "Pour un simulateur en direct que vous pouvez toucher et que les agents peuvent piloter, Nook installe une fois les mêmes outils que (expo-device-hub et agent-device, via npm, dans Application Support).",
+        "sim.hub.installExplain": "Pour un simulateur en direct que vous pouvez toucher et que les agents peuvent piloter, Nook installe une fois les outils d’appareil (expo-device-hub et agent-device, via npm, dans Application Support).",
         "sim.hub.install": "Installer",
         "sim.hub.retry": "Réessayer",
         "sim.stream.noVideo": "Aucune vidéo reçue de l’appareil. Choisissez-le à nouveau pour vous reconnecter.",
@@ -864,7 +864,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "sim.hub.daemonFailed": "agent-device no arrancó.",
         "sim.hub.installing": "Instalando las herramientas del simulador (expo-device-hub y agent-device)…",
         "sim.hub.starting": "Arrancando las herramientas del simulador…",
-        "sim.hub.installExplain": "Para un simulador en vivo que puedes tocar y que los agentes pueden manejar, Nook instala una vez las mismas herramientas que (expo-device-hub y agent-device, con npm, en Application Support).",
+        "sim.hub.installExplain": "Para un simulador en vivo que puedes tocar y que los agentes pueden manejar, Nook instala una vez las herramientas de dispositivo (expo-device-hub y agent-device, con npm, en Application Support).",
         "sim.hub.install": "Instalar",
         "sim.hub.retry": "Reintentar",
         "sim.stream.noVideo": "No se recibe vídeo del dispositivo. Elígelo de nuevo para reconectar.",

@@ -4,7 +4,7 @@ import Combine
 import FoundationNetworking
 #endif
 
-/// One simulator, live (as viewer): its screen as H.264 from the hub (`stream.avcc`, decoded by the screen
+/// One simulator, live: its screen as H.264 from the hub (`stream.avcc`, decoded by the screen
 /// view), or as MJPEG when that cannot be decoded, and your touches, buttons, keys and rotation over its input
 /// WebSocket. Input goes only once the hub has admitted it and the device takes input; a dropped connection comes back
 /// after a second.

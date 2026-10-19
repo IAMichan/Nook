@@ -167,6 +167,8 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
             var truncated = true
             var text = ""
             var reported = 0
+            var unfinished = false
+            var sure: Float = 1
             var iterator = try TokenIterator(input: LMInput(tokens: MLXArray(fresh)), model: context.model, cache: layers,
                                              processor: nil, sampler: sampler, prefillStepSize: 512, maxTokens: options.maxTokens)
             defer { keepBiasArray(sampler.biasArray, owner: owner) }
@@ -174,9 +176,18 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
             while let token = iterator.next() {
                 let probability = step < sampler.probabilities.count ? sampler.probabilities[step] : 0
                 step += 1
+                sure *= probability
                 if isCancelled() { return nil }
-                if step == 1, probability < options.minFirstProbability { return nil }
-                if probability < options.minProbability || stopIDs.contains(token) { truncated = false; break }
+                if step == 1, probability < options.minFirstProbability || sure < options.minSequenceProbability || stopIDs.contains(token) {
+                    return nil
+                }
+                if stopIDs.contains(token) { truncated = false; break }
+                if probability < options.minProbability || sure < options.minSequenceProbability {
+                    // Not sure any more: end here, and never in the middle of a word.
+                    unfinished = CompletionHealing.continuesWord(decode(context.tokenizer, [token], after: kept.last ?? all.last))
+                    truncated = false
+                    break
+                }
                 kept.append(token)
                 text = decode(context.tokenizer, kept, after: all.last)
                 if let newline = text.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
@@ -192,7 +203,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     partial(text)
                 }
             }
-            return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated)
+            return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated, unfinished: unfinished)
         } catch {
             checkpoint = nil
             return nil

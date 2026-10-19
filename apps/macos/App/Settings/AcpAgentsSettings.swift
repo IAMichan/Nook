@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Settings › Agents › Accounts › ACP: the agents you added beyond the ones Nook knows by name (ACP registry
-/// agents). Pick one from the ACP registry, or enter its command yourself. Each becomes an account ("ACP · Kiro") you can
+/// Settings › Agents › Accounts › ACP: the agents you added beyond the ones Nook knows by name. Pick one from the ACP registry, or enter its command yourself. Each becomes an account ("ACP · Kiro") you can
 /// start sessions with; removing it removes that account from Nook (its folder stays).
 struct AcpAgentsSection: View {
     @EnvironmentObject private var app: AppModel

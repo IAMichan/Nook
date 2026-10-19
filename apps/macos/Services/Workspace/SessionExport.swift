@@ -1,7 +1,6 @@
 import Foundation
 
-/// A session as a Markdown document, to save or share (shares a thread; Nook keeps it local: you choose where it
-/// goes). Your messages and the agent's answers in full, the work in between as a short folded list, no thinking.
+/// A session as a Markdown document, to save or share. Your messages and the agent's answers in full, the work in between as a short folded list, no thinking.
 /// Foundation only, so tests can use it independently.
 enum SessionExport {
     static func markdown(_ run: WorkspaceRun, events: [RunEvent], date: Date = Date()) -> String {

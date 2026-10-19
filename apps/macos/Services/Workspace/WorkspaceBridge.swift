@@ -465,7 +465,7 @@ final class WorkspaceBridge: ObservableObject {
 
     // MARK: Simulator
 
-    /// device tools: the simulators, one opened in Nook's Simulator page with an agent-device command to drive
+    /// The device tools: the simulators, one opened in Nook's Simulator page with an agent-device command to drive
     /// it, its screenshot, and closing it.
     private func device(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
         if case .refuse(let reason) = verdict(tool, caller) { return .error(Self.refusal(reason)) }

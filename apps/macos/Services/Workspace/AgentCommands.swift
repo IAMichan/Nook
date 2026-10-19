@@ -1,10 +1,10 @@
 import Foundation
 
 // The `/` list per agent: only commands the agent really has. Sources:
-// - plan, fork, new: Nook's own (: `/plan` and `/model` are "Code commands" that work on any line).
-// - compact: COMPACT_SLASH_COMMAND for Claude and Codex (docs/user/composer.md).
-// - goal: Codex and Claude (docs/user/composer.md "Goals"; CodexProvider.ts slashCommands).
-// has no `/context` or `/usage` for Claude, so Nook offers none. Codex's `/feedback` is OpenAI-specific: left out.
+// - plan, fork, new: Nook's own.
+// - compact: context compaction command for Claude and Codex.
+// - goal: Codex and Claude.
+// Codex's `/feedback` is OpenAI-specific: left out.
 enum AgentCommands {
     enum Surface: Sendable { case agent, chat }
 

@@ -143,7 +143,7 @@ final class RemindersConnector: ContextSource {
         guard !reminders.isEmpty else { return [] }
         var lines = ["Reminders that are open:"]
         for reminder in reminders.prefix(15) {
-            let due = reminder.due.map { " | due \(NookDates.iso($0))" } ?? ""
+            let due = reminder.due.map { " | due \(NookDates.iso($0)) (\(NookDates.distance($0)))" } ?? ""
             lines.append("- \(reminder.title)\(due)" + (reminder.list.isEmpty ? "" : " | list \(reminder.list)"))
         }
         return lines

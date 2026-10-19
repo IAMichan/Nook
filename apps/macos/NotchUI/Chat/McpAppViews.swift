@@ -4,11 +4,11 @@ import Combine
 import WebKit
 import UniformTypeIdentifiers
 
-// MCP apps in the timeline (see McpApp), hosted hosts them: the page runs in an iframe with
+// MCP apps in the timeline (see McpApp), hosted: the page runs in an iframe with
 // `sandbox="allow-scripts allow-forms"` (an opaque origin, no popups, no way into Nook) under its own Content-Security-
 // Policy, inside a host page that relays its messages to Nook and nothing else. Calling a tool that changes something,
 // sending a message, opening a link and saving a file each ask you first. Fullscreen moves the same web view into a
-// window that fills the screen, so the app keeps running and its state web app.
+// window that fills the screen, so the app keeps running and its state's web app.
 
 /// The app of one tool call: inline, sized to what the page reports, or fullscreen.
 struct McpAppBlock: View {

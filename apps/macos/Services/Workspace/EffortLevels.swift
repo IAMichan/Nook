@@ -1,6 +1,6 @@
 import Foundation
 
-// Reasoning effort per turn. takes the levels a model advertises (Codex `effort` on turn/start, any non-empty
+// Reasoning effort per turn. Uses the levels a model advertises (Codex `effort` on turn/start, any non-empty
 // string); Nook has no live catalogue yet, so `advertised` lets the lead pass what the session reports.
 enum EffortLevels {
     /// Codex: low, medium, high are the safe common set; "minimal" and "xhigh" exist only on some models, so they

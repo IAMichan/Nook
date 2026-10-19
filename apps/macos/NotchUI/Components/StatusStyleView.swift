@@ -24,7 +24,7 @@ extension AgentDisplayState {
     var tone: StatusTone { AgentStatusStyle.tone(self) }
 }
 
-/// A status as a quiet tinted badge: a light wash of its color behind the symbol and word (tinted-surface badges),
+/// A status as a quiet tinted badge: a light wash of its color behind the symbol and word,
 /// never a solid chip. `detail` adds a tail such as "3m" or "tot 9:00".
 struct AgentStatusBadge: View {
     let state: AgentDisplayState
@@ -53,7 +53,7 @@ struct AgentStatusBadge: View {
     }
 }
 
-/// The "working" dot: it steps through a few opacities (six steps in two seconds, duty-cycled pulse) instead of
+/// The "working" dot: it steps through a few opacities instead of
 /// repainting every frame, and stands still when it is not on screen or when you asked for less motion.
 struct SteppedPulseDot: View {
     let color: Color

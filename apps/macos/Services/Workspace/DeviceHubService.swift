@@ -4,7 +4,7 @@ import Combine
 import FoundationNetworking
 #endif
 
-/// Runs device tools on this Mac (see DeviceHub): installs expo-device-hub and agent-device with npm into
+/// Runs the device tools on this Mac (see DeviceHub): installs expo-device-hub and agent-device with npm into
 /// Application Support (once, after you ask), starts the hub on a free loopback port, keeps it running, and hands agents
 /// an agent-device command for the simulator they open. Simulators are never shut down behind your back.
 @MainActor
@@ -280,7 +280,7 @@ final class DeviceHubService: ObservableObject {
 
     // MARK: agent-device for agents
 
-    /// The command and flags an agent drives this simulator with (device_open): the daemon running, a config
+    /// The command and flags an agent drives this simulator with: the daemon running, a config
     /// with its port and token, and a shim that refuses to run without them.
     func agentTarget(runID: String, udid: String) async throws -> (command: String, targetArgs: [String]) {
         guard let node else { throw NookError(tr("sim.hub.noNode")) }

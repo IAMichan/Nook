@@ -327,7 +327,7 @@ struct GitService: Sendable {
         }
     }
 
-    /// Git's "already checked out" refusal in words you can act on (the check does on the same message).
+    /// Git's "already checked out" refusal in words you can act on.
     static func friendlyWorktreeError(_ error: Error, base: String) -> Error {
         let text = error.localizedDescription
         guard text.range(of: #"is already (used by worktree at|checked out at)"#, options: [.regularExpression, .caseInsensitive]) != nil else {

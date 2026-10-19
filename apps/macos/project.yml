@@ -4,7 +4,7 @@ options:
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
-  developmentLanguage: nl
+  developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -100,7 +100,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook
         # Hardened runtime: other programs cannot inject code into Nook and inherit its screen, microphone and automation access.
         ENABLE_HARDENED_RUNTIME: YES
-        DEVELOPMENT_TEAM: 35SMNHP9K7
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).

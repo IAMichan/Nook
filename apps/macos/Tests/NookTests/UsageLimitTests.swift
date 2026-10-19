@@ -1,6 +1,6 @@
 import XCTest
 
-/// A turn stopped by a usage limit reads it: when the limit resets, so the session can go on then.
+/// A turn stopped by a usage limit: when the limit resets, so the session can go on then.
 final class UsageLimitTests: XCTestCase {
     func testClaudeRateLimitEvent() {
         let rejected = UsageLimits.claudeEvent(["status": "rejected", "rateLimitType": "seven_day", "resetsAt": 1_700_000_000])

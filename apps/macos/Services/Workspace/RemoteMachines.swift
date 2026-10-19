@@ -152,8 +152,7 @@ enum RemoteShell {
                                 environment: ProcessInfo.processInfo.environment, timeout: 20))?.status == 0
     }
 
-    /// Where a session's worktree goes on the remote machine: ~/.nook/worktrees/<repository>/<branch> (keeps them
-    /// in ~/.agent/worktrees the same way).
+    /// Where a session's worktree goes on the remote machine: ~/.nook/worktrees/<repository>/<branch>.
     static func worktreeRoot(home: String) -> String {
         (home as NSString).appendingPathComponent(".nook/worktrees")
     }

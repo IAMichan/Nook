@@ -1,6 +1,6 @@
 import Foundation
 
-// Interactive results from MCP servers (MCP-UI / MCP Apps, which shows in its timeline): a tool result can carry
+// Interactive results from MCP servers (MCP-UI / MCP Apps): a tool result can carry
 // a `ui://` resource, an HTML page or a link, that is meant to be shown rather than read. The parsers keep it in the
 // tool's output as a fenced block; the timeline shows it in a sandboxed web view. Foundation only, so tests can use it.
 enum McpUI {

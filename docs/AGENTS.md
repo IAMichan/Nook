@@ -1,139 +1,118 @@
-# Agents koppelen aan Nook
+# Connecting Coding Agents to Nook
 
-Nook laat in de notch zien wat je AI-agents doen. Elke agent die een commando kan starten of naar een Unix-socket kan schrijven, kan zich bij Nook melden en krijgt dan een eigen regel, los van Claude Code.
+Nook displays what your AI coding agents are doing right inside the notch. Any agent that can invoke a shell command or write to a Unix domain socket can report to Nook and get its own dedicated session row.
 
-Alles blijft op je Mac: berichten gaan via een lokale socket die alleen jouw gebruiker kan openen. Draait Nook niet, dan doet het hook-script niets en gaat de agent gewoon door.
+Everything stays on your Mac: events travel over a local Unix socket (`0600`) that only your user account can open. If Nook is not running, the hook script exits cleanly as a no-op and the agent continues without interruption.
 
-## Ingebouwde koppelingen
+## Built-In Integrations
 
-Bij **Instellingen › Agents** koppel je deze agents met één klik. Nook laat eerst precies zien wat er verandert, maakt een backup met datum naast het bestand en schrijft pas na jouw OK. Een bestand dat Nook niet kan lezen, of dat geen geldige JSON is, blijft onaangeroerd. Een pluginbestand met dezelfde naam dat niet door Nook is gemaakt, ook.
+In **Settings › Agents**, you can connect these agents with one click. Nook previews the exact file changes first, creates a timestamped backup next to the configuration file, and writes only after your confirmation. Any file that cannot be read or contains invalid JSON is left untouched, as is any plugin file not created by Nook.
 
-| Agent | Bestand | Hoe | Wat je ziet |
+| Agent | Configuration File | Mechanism | What You See |
 |---|---|---|---|
-| Claude Code | `~/.claude/settings.json` | hooks, `--agent claude-code` | voortgang, toestemming, vragen |
-| Claude (app) | zelfde hooks | herkend aan `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | voortgang, toestemming, vragen |
-| Claude (cloud) | niets te koppelen | sessielijst van je Claude-account | status, titel, repo; openen in Claude |
-| Codex | `~/.codex/hooks.json` | hooks, `--agent codex` | voortgang, toestemming |
-| Gemini CLI | `~/.gemini/settings.json` | hooks, `--agent gemini` | voortgang |
-| Antigravity (`agy`) | `~/.gemini/config/hooks.json` | eigen groep `nook`, `--agent antigravity`, pad zonder spaties via `~/.nook/nook-hook`, geen `PreToolUse` | voortgang |
-| Cursor | `~/.cursor/hooks.json` | hooks, `--agent cursor` | voortgang |
-| Copilot CLI | `~/.copilot/hooks/nook.json` | eigen bestand, `--agent copilot` | voortgang |
-| Muse Code | `~/.config/muse/settings.json` | hooks, `--agent muse` | voortgang |
-| OpenCode | `~/.config/opencode/plugins/nook.js` | plugin | voortgang |
-| Amp | `~/.config/amp/plugins/nook.ts` | plugin | voortgang |
-| Hermes | `~/.hermes/plugins/nook/` | plugin, daarna `hermes plugins enable nook` | voortgang, "wacht op goedkeuring" |
+| Claude Code | `~/.claude/settings.json` | hooks, `--agent claude-code` | progress, approvals, questions |
+| Claude (Desktop app) | same hooks | detected via `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | progress, approvals, questions |
+| Claude (cloud) | zero config | session list from your Claude account | status, title, repo; open in Claude |
+| Codex | `~/.codex/hooks.json` | hooks, `--agent codex` | progress, approvals |
+| Gemini CLI | `~/.gemini/settings.json` | hooks, `--agent gemini` | progress |
+| Antigravity (`agy`) | `~/.gemini/config/hooks.json` | dedicated `nook` group, `--agent antigravity`, space-free path via `~/.nook/nook-hook`, no `PreToolUse` | progress |
+| Cursor | `~/.cursor/hooks.json` | hooks, `--agent cursor` | progress |
+| Copilot CLI | `~/.copilot/hooks/nook.json` | dedicated file, `--agent copilot` | progress |
+| Muse Code | `~/.config/muse/settings.json` | hooks, `--agent muse` | progress |
+| OpenCode | `~/.config/opencode/plugins/nook.js` | plugin | progress |
+| Amp | `~/.config/amp/plugins/nook.ts` | plugin | progress |
+| Hermes | `~/.hermes/plugins/nook/` | plugin, then `hermes plugins enable nook` | progress, "waiting for approval" |
 
-Start de agent opnieuw na het koppelen. Toestemming geven vanuit de notch kan nu alleen bij Claude Code en Codex; bij de andere agents beslist Nook nooit iets en vraagt de agent het je zelf, zoals altijd.
+Restart the agent after connecting. Inline tool approvals from the notch are supported for Claude Code and Codex; for other hook-based agents, Nook never blocks execution and the agent prompts you in its own UI as usual.
 
-## Je agents bedienen
+## Supervising & Controlling Agents
 
-Sluit je Nook en open je hem weer, dan zijn de agents die in je terminal doorliepen er direct weer: Nook bewaart de sessies die hij via hooks kende (`agent-sessions.json`) en zet ze terug. Een sessie waarvan het proces intussen weg is, laat Nook bij de eerste scan los.
+If you quit and reopen Nook, agents that kept running in your terminal reappear immediately: Nook persists known hook sessions (`agent-sessions.json`) and restores them, pruning any session whose process has exited on the first scan.
 
-Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-overzicht, transcripten en sessies die Nook zelf draait komen samen: een gesprek staat er één keer in, ook als het uit meerdere bronnen bekend is, en twee processen in dezelfde map blijven twee rijen. Processen die Nook zelf startte (herkend aan `NOOK_RUN_ID` of `NOOK_INTERNAL` in hun omgeving) staan er niet in en worden nooit beëindigd.
+All agent sessions converge in a single registry (`AgentSessionRegistry`): hooks, process scanning, transcripts, and sessions launched by Nook itself are deduplicated so each conversation appears once, while two processes in the same folder remain two separate rows. Internal helper processes spawned by Nook (`NOOK_RUN_ID` or `NOOK_INTERNAL`) are excluded and never terminated.
 
-**In de notch** (tab Agents, compact) zie je wat loopt en wat op je wacht, keur je goed, beantwoord je meerkeuzevragen en typ je een kort vervolg. Een nieuwe sessie starten en accounts beheren gaat niet meer hier: **Nieuwe sessie** opent het venster, accounts staan bij Instellingen.
+- **In the Notch** (**Agents** tab, compact view): see what is running and what is waiting for you, approve or deny tool calls, answer multiple-choice questions, and send quick follow-ups. Clicking **New Session** opens the workspace window; accounts are managed in Settings.
+- **In the Main Window** (`⌥⌘W` › **Agents**): full conversation timeline, inline approvals, stop (`⌘.`), resume, retry, and per-turn mode, permission, and model controls. The right inspector displays branch, worktree, changed files with diffs, **Commit**, **Push**, and **Pull Request** actions.
 
-**In het hoofdvenster** (⌥⌘W › Agents) heb je de volledige weergave: het gesprek, goedkeuringen, stoppen, hervatten, opnieuw proberen en per beurt de modus, rechten en het model. Rechts staan branch, worktree, wijzigingen met diff, **Commit**, **Push** en een pull request.
+Key capabilities:
+- **Unified Approvals** (`ApprovalCenter`, `ApprovalView`): shows the complete command or file diff, risk level, and **Allow**, **Always**, **Deny**, or **In Terminal**. Approving in the window or terminal immediately clears the notch card.
+- **Running Sessions:** Continue a busy external session safely as a fork (`--fork-session`) so two writers never collide, or choose **Take Over** (`⋯`) to stop the external process and continue the session directly inside Nook.
+- **Sessions Managed by Nook ("In Nook"):** Supports Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Grok, and Antigravity with persistent per-session connections: Codex via `codex app-server`, Claude Code via a persistent streaming process, and others via ACP. Includes git checkpoints in isolated worktrees, auto-generated session titles, one-click Commit / Push / PR (always in English), and automatic resume when rate limits reset.
+- **Cloud Sessions:** Anthropic cloud sessions (started in the Claude Mac/iOS app or on `claude.ai/code`) are read-only polled at most once per minute using your existing Claude Code login and listed as **Claude (cloud)** with an **Open in Claude** button.
+- **Full Transcript & Reasoning:** Reads agent transcripts to show collapsible reasoning steps (`thinking` / `thoughts`), commands, file edits, searches, and subagents inline.
 
-- **Goedkeuringen** zijn overal hetzelfde (`ApprovalCenter`, `ApprovalView`): het hele commando of de hele wijziging, het risico, en **Toestaan**, **Altijd**, **Weigeren** en **In terminal**. Een goedkeuring die in het venster is afgehandeld, verdwijnt direct uit de notch.
-- **Lopende sessie**: een sessie die nog bezig is, zet Nook voort als kopie (`--fork-session`), zodat twee schrijvers elkaar niet storen. Via ⋯ neem je een sessie helemaal over; Nook sluit het oude proces af en het gesprek gaat verder.
-- **Sessie die Nook alleen als proces ziet**: neem hem over in Nook of beëindig hem.
-- **Eerdere sessie**: kies Open in Nook; het gesprek gaat verder waar je bleef.
-- **Open terminal hier** opent de ingebouwde terminal in de map van de sessie.
-- **Limieten** per account (5 uur en week) staan bij Instellingen › Gebruik (`QuotaService`); Codex wordt per accountmap gelezen.
+## Nook Workspace MCP for Your Agents
 
-Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Grok en Antigravity, elk met één verbinding per sessie: Codex via `codex app-server`, Claude Code als één proces dat tussen beurten blijft wachten, en de rest via ACP (Antigravity op Google's ACP-server, die Nook eenmalig installeert). Goedkeuringen en vragen beantwoord je in Nook; Codex en Claude Code kun je tijdens een beurt bijsturen; bij een sessie in een eigen worktree kun je de bestanden terugzetten naar vóór een bericht. Een nieuwe sessie krijgt vanzelf een korte titel, één git-knop doet commit, push en pull request (de agent schrijft de teksten), en een sessie die op een gebruikslimiet stuit kan vanzelf verdergaan zodra die vrij is. Gesprekken uit de Antigravity-app beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen. Zie [AGENTS-PARITY.md](AGENTS-PARITY.md).
+Agents can use Nook's integrated terminal, browser, and PR workflow via a local MCP server (`~/.nook/nook-mcp`): start a dev server in a visible Nook terminal (`terminal_run`, `terminal_read`), open and inspect pages in Nook's browser (`browser_open`, `browser_read`, `browser_screenshot`), and propose a pull request (`pull_request_create`). Sessions started by Nook receive this automatically; external agents can be linked in **Settings › Agents › Workspace**. See [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
 
-**Cloudsessies.** Sessies die in de cloud van Anthropic draaien (gestart in de Claude-app op je Mac of telefoon, of op claude.ai/code) hebben geen proces en geen transcript op je Mac. Nook leest ze met de login die Claude Code al bewaart (dezelfde als voor de gebruikslimieten) uit de sessielijst van je account, hooguit eens per minuut en alleen lezend. Ze staan als **Claude (cloud)** in de lijst: bezig of wachtend bij de actieve sessies, de rest bij eerdere. Het gesprek zelf staat in de cloud; **Open in Claude** brengt je erheen.
+## Connecting a Custom Agent
 
-**Het hele gesprek.** Bij elke sessie, lopend of eerder, zie je het volledige gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen: Claude Code, Codex (de redeneersamenvattingen), Gemini CLI (`thoughts`) en Antigravity. Ook de stappen ertussen staan erin, zoals in de Claude-app: elk commando, gelezen of gewijzigd bestand, zoekactie en subagent op één regel, met een rode stip als hij mislukte en de stap die nu loopt glanzend (Claude Code, ook uit de Claude-app, en Codex). Houdt Claude zijn denken voor zich (het transcript bewaart dan alleen dát hij nadacht), dan zie je "Dacht na" op die plek. Neem je een sessie over, dan neemt Nook dat hele gesprek mee.
+### 1. Via the Hook Script (Recommended)
 
-**Alleen wat gekoppeld is.** Bij een nieuwe sessie, in de lijst met eerdere sessies en bij Gebruik zie je alleen agents en accounts die ingelogd zijn op een geïnstalleerde agent. De modellen zijn die de agent zelf aanbiedt (Codex `model/list`, de ACP-agents bij een sessie), anders de bekende, plus de modellen die je recent met die agent gebruikte. Inloggen en installeren gaat in de ingebouwde terminal (of Terminal.app, naar keuze bij Instellingen › Agents); Nook ziet het inloggen vanzelf doordat het regelmatig controleert of het account bekend is.
+The hook script is installed at:
 
-## De werkruimte van Nook voor je agents
-
-Agents kunnen ook zelf Nooks werkruimte gebruiken: een commando starten in een zichtbare terminal van Nook (zoals een dev-server), een pagina openen en controleren in Nooks browser (tekst, console-fouten, screenshot) en een pull request voorstellen dat jij in de notch goedkeurt. Dat gaat via een kleine MCP-server, `~/.nook/nook-mcp`. Sessies die Nook start (Claude Code en Codex) krijgen hem vanzelf; een agent die je zelf start koppel je bij **Instellingen › Agents › Werkruimte**. Lezen gaat direct, een commando dat niet duidelijk onschuldig is en elk pull request vragen eerst jouw OK, gevaarlijke commando's weigert Nook altijd. Zie [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
-
-## Zelf een agent koppelen
-
-### Via het hook-script (aanrader)
-
-Het hook-script staat op:
-
-```
+```text
 ~/Library/Application Support/Nook/nook-hook.sh
 ```
 
-Laat je agent het bij elke gebeurtenis starten, met de JSON van de gebeurtenis op stdin:
+Configure your agent to invoke it on each lifecycle event, passing the event JSON on `stdin`:
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "type": "command", "command": "\"$HOME/Library/Application Support/Nook/nook-hook.sh\" --agent mijn-tool" }
+      { "type": "command", "command": "\"$HOME/Library/Application Support/Nook/nook-hook.sh\" --agent my-tool" }
     ]
   }
 }
 ```
 
-- `--agent <naam>`: de naam waaronder de agent in Nook staat. Gebruik kleine letters, cijfers, `-` en `_` (maximaal 32 tekens). Bekende namen krijgen een nette weergavenaam (zie hieronder); een andere naam verschijnt met een hoofdletter, zoals `Mijn-tool`.
-- `<Gebeurtenis>` (optioneel): de naam van de gebeurtenis, voor agents die die niet zelf in de JSON zetten, bijvoorbeeld `--agent mijn-tool Stop`. Staat `hook_event_name` wel in de JSON, dan telt die.
+- `--agent <name>`: Identifier under which the agent appears in Nook (lowercase letters, digits, `-`, and `_`, up to 32 characters).
+- `<EventName>` (optional): Event name for agents that do not include `hook_event_name` in their JSON payload, e.g. `--agent my-tool Stop`.
 
-### Het veld `nook_agent`
+### 2. Via the `nook_agent` JSON Field
 
-Kun je geen argumenten meegeven, zet dan de naam in de JSON zelf:
+If you cannot pass CLI arguments, include `nook_agent` directly in the JSON payload:
 
 ```json
-{ "hook_event_name": "UserPromptSubmit", "session_id": "s1", "nook_agent": "mijn-tool", "prompt": "Schrijf de tests" }
+{ "hook_event_name": "UserPromptSubmit", "session_id": "s1", "nook_agent": "my-tool", "prompt": "Write unit tests" }
 ```
 
-Het script neemt `nook_agent` over als er geen `--agent` is meegegeven (`--agent` wint altijd). Een ongeldige naam telt niet; de gebeurtenis komt dan bij Claude Code terecht.
+### 3. Directly Over the Unix Socket
 
-### Rechtstreeks via de socket
+Send a single newline-terminated JSON line to:
 
-Wie liever zelf schrijft: stuur één regel JSON, afgesloten met een newline, naar
-
-```
+```text
 ~/Library/Application Support/Nook/hub.sock
 ```
 
 ```json
-{"agent":"mijn-tool","mode":"event","event":{"hook_event_name":"Stop","session_id":"s1","cwd":"/Users/jij/project"}}
+{"agent":"my-tool","mode":"event","event":{"hook_event_name":"Stop","session_id":"s1","cwd":"/Users/you/project"}}
 ```
 
-`mode` is `event` voor gewone meldingen. Nook sluit de verbinding als hij klaar is; wacht dus niet op een antwoord.
+## Supported Hook Events
 
-## Gebeurtenissen
+Nook normalizes event names from Claude Code and common aliases (`BeforeTool`, `preToolUse`, `beforeSubmitPrompt`, `PreInvocation`, `session_start`, etc.):
 
-Nook gebruikt de namen van Claude Code. Veelgebruikte namen van andere agents (`BeforeTool`, `preToolUse`, `beforeSubmitPrompt`, `PreInvocation`, `session_start`, …) zet Nook zelf om.
-
-| Gebeurtenis | Wat Nook doet |
+| Event | Nook Behavior |
 |---|---|
-| `SessionStart` | zet de agent op "bezig" |
-| `UserPromptSubmit` | nieuwe opdracht; `prompt` verschijnt als stap |
-| `PreToolUse` | nieuwe stap met wat de tool doet (`tool_name`, `tool_input`) |
-| `PostToolUse` / `PostToolUseFailure` | sluit de laatste stap af als klaar of mislukt |
-| `Notification` | de agent wacht op je; `message` verschijnt in de notch |
-| `Stop` | klaar; `last_assistant_message` wordt de samenvatting |
-| `StopFailure` | gestopt met een fout (`error`) |
-| `SubagentStart` / `SubagentStop` | hulpagent gestart of klaar |
-| `SessionEnd` | de agent verdwijnt uit de lijst |
+| `SessionStart` | Marks the agent session as working |
+| `UserPromptSubmit` | Starts a new turn; displays `prompt` as the current step |
+| `PreToolUse` | Adds a running tool step (`tool_name`, `tool_input`) |
+| `PostToolUse` / `PostToolUseFailure` | Completes the latest step as done or failed |
+| `Notification` | Marks the agent as waiting for user attention; displays `message` in the notch |
+| `Stop` | Marks the turn as finished; uses `last_assistant_message` as summary |
+| `StopFailure` | Marks the turn as failed (`error`) |
+| `SubagentStart` / `SubagentStop` | Tracks subagent lifecycle |
+| `SessionEnd` | Removes the session from active lists |
 
-Velden die Nook leest: `session_id` (anders `conversation_id`, `conversationId`, `sessionId` of `thread_id`), `cwd` (anders `workdir`, `workspacePaths[0]` of `workspace_roots[0]`), `tool_name` (anders `toolName` of `toolCall.name`), `tool_input` (anders `toolArgs` of `toolCall.args`), `prompt`, `message`, `last_assistant_message` en `error`. Een `stop` met `"status": "error"` telt als `StopFailure`.
+## Quick Test
 
-Ziet je agent alleen dat een tool klaar is, stuur dan `PostToolUse` met `"nook_show_step": true`: het script laat de stap dan eerst zien en sluit hem meteen af.
-
-## Weergavenamen
-
-`claude-code` → Claude Code, `claude-desktop` → Claude (app), `codex` → Codex, `gemini` → Gemini CLI, `antigravity` → Antigravity, `copilot` → Copilot CLI, `cursor` → Cursor, `opencode` → OpenCode, `amp` → Amp, `hermes` → Hermes, `muse` → Muse Code, `qwen` → Qwen Code.
-
-## Snel proberen
-
-Met Nook aan:
+With Nook running:
 
 ```sh
-echo '{"hook_event_name":"UserPromptSubmit","session_id":"t1","prompt":"hallo","nook_agent":"demo"}' \
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"t1","prompt":"hello","nook_agent":"demo"}' \
   | ~/Library/Application\ Support/Nook/nook-hook.sh
 ```
 
-In de notch staat nu "Demo" met de opdracht "hallo".
+You will immediately see **Demo** in the notch with the prompt `"hello"`.

@@ -1,6 +1,6 @@
 import Foundation
 
-// Delegated tasks as sessions (`delegate_task`): a child is an ordinary session with a link to its parent. The
+// Delegated tasks as sessions: a child is an ordinary session with a link to its parent. The
 // parent gets the result by task_status, by waiting in the call, or by a message when the child finishes.
 
 extension WorkspaceManager {
@@ -85,7 +85,7 @@ extension WorkspaceManager {
         }
     }
 
-    /// Stopping a session stops what it delegated (Stop cascades to children).
+    /// Stopping a session stops what it delegated.
     func stopDelegatedChildren(of id: UUID) {
         for child in activeChildren(of: id) { cancelDelegated(child.id) }
     }

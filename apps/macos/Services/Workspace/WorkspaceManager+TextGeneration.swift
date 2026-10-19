@@ -1,6 +1,6 @@
 import Foundation
 
-/// Text an agent writes for Nook (titles, commit messages, pull requests) written: the session's own
+/// Text an agent writes for Nook (titles, commit messages, pull requests): the session's own
 /// agent when that is Claude Code or Codex, otherwise whichever of the two is connected. Nil when neither is.
 extension WorkspaceManager {
     func generateText(_ prompt: String, schema: [String: Any], prefer provider: RunProvider?, profileID: String?,
@@ -17,7 +17,7 @@ extension WorkspaceManager {
     }
 
     /// A title for a new session from its first message, in place of the first line Nook shows until then. It is
-    /// dropped when you renamed the session meanwhile (rule).
+    /// dropped when you renamed the session meanwhile.
     func generateTitle(_ id: UUID) {
         guard settings.autoTitles, let run = run(id) else { return }
         let seed = run.title

@@ -32,8 +32,8 @@ struct AutocompleteFieldSnapshot {
 }
 
 /// Reads the focused field of the front app through the Accessibility API. Password fields are never read. Slow apps can take
-/// tens of milliseconds to answer, so this runs off the main thread. After Typist's reader (MIT, © 2026 Brody Salvucci), with
-/// rich web editors, the app's font and a stricter cursor added.
+/// tens of milliseconds to answer, so this runs off the main thread. Also reads rich web editors, the app's font and a strict
+/// cursor position.
 enum AutocompleteField {
     /// Browsers built on Chromium: they build their accessibility tree for web pages only when a client says it needs it.
     private static let chromium: Set<String> = [

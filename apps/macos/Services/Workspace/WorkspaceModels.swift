@@ -23,7 +23,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Runs over ACP (Agent Client Protocol) for these agents.
+    /// Runs over ACP (Agent Client Protocol).
     var usesACP: Bool {
         switch self {
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return true
@@ -39,7 +39,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
         case .codex:
-            // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
+            // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true)
@@ -252,10 +252,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
-    /// Snapshots of the worktree, before the first turn and after every turn (checkpoints): "back to here".
+    /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
-    /// on by itself ("Resume at reset").
+    /// on by itself.
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil
@@ -276,9 +276,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
-    /// The agent's own task list, as it last reported it (Tasks above the composer).
+    /// The agent's own task list, as it last reported it.
     var tasks: [RunTaskStep]? = nil
-    /// The pull request this session watches (PR watch): what it last saw, so only news wakes it.
+    /// The pull request this session watches: what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
     var remote: RemoteTarget? = nil

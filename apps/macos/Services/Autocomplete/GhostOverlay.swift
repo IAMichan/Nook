@@ -6,7 +6,7 @@ import NaturalLanguage
 ///
 /// The ghost text is drawn, not put in a label: in the app's own font and size (read through Accessibility), centred on the
 /// cursor's line, starting exactly where the typed text ends, so it reads as the rest of the line instead of a box on top of
-/// it. It only shows what fits in the field. After Typist's overlay (MIT, © 2026 Brody Salvucci).
+/// it. It only shows what fits in the field.
 @MainActor
 final class GhostOverlay {
     private let panel: NSPanel
@@ -119,6 +119,27 @@ final class GhostOverlay {
             origin.x = min(origin.x, screen.visibleFrame.maxX - size.width)
         }
         present(CGRect(origin: origin, size: size))
+    }
+
+    /// The value of `key` in the card's text under `point` (AppKit screen coordinates), when the card is shown there: which
+    /// emoji in the picker was clicked. The panel itself takes no clicks; the key tap asks this on a mouse down.
+    func cardValue(at point: CGPoint, key: NSAttributedString.Key) -> Int? {
+        guard panel.isVisible, panel.contentView === cardBackground, panel.frame.contains(point) else { return nil }
+        let text = cardLabel.attributedStringValue
+        let size = cardLabel.frame.size
+        // The label draws from the bottom up; text layout counts from the top.
+        let local = CGPoint(x: point.x - panel.frame.minX - cardLabel.frame.minX,
+                            y: size.height - (point.y - panel.frame.minY - cardLabel.frame.minY))
+        let storage = NSTextStorage(attributedString: text)
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: size)
+        container.lineFragmentPadding = 2
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        var fraction: CGFloat = 0
+        let index = layout.characterIndex(for: local, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard index < text.length else { return nil }
+        return text.attribute(key, at: index, effectiveRange: nil) as? Int
     }
 
     func hide() {

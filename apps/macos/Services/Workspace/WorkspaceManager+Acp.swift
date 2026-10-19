@@ -48,7 +48,7 @@ extension WorkspaceManager {
         }
         var spec = AgentCommand.acpSpec(input)
         if run.provider == .antigravity {
-            // Its own profile folder, harness and sign-in helper; your other Google settings stay out (way).
+            // Its own profile folder, harness and sign-in helper; your other Google settings stay out.
             guard let environment = prepareAntigravity(profileID: run.profileID, executable: executable) else {
                 if prompt != nil { failAcpTurn(id, tr("ws.antigravity.notInstalled")) }
                 return
@@ -157,7 +157,7 @@ extension WorkspaceManager {
         }
         learnModels(run.provider, AgentModelCatalog.acp(response))
         if !run.model.isEmpty {
-            // A model config option is set as one (way for newer agents); otherwise `session/set_model`.
+            // A model config option is set as one; otherwise `session/set_model`.
             if let option = AgentModelCatalog.acpModelOptionID(response) {
                 client.request("session/set_config_option", ["sessionId": session, "configId": option, "value": run.model]) { _ in }
             } else {
@@ -227,7 +227,7 @@ extension WorkspaceManager {
     private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
         guard acpClients[id] === client, !events.isEmpty else { return }
         if turns[id] == nil, client.sessionID != nil, !client.replaying, run(id)?.status.isActive != true {
-            // After its turn: kept until the agent shows it is really working again (wake buffer).
+            // After its turn: kept until the agent shows it is really working again.
             // A request needs its answer now, turn or not.
             for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
             acpWakeBuffer[id, default: []] += events.filter { if case .unsupportedRequest = $0 { return false } else { return true } }

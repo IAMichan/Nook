@@ -5,9 +5,9 @@ import AVFoundation
 import CoreMedia
 import UniformTypeIdentifiers
 
-/// The Simulator page (Device panel): a simulator live, to touch, swipe, type into, rotate and press the
+/// The Simulator page: a simulator live, to touch, swipe, type into, rotate and press the
 /// buttons of, with its settings a menu away; agents open it with device_open and drive it with agent-device. Without
-/// device tools (they need Node.js and one install) it falls back to pictures of the screen.
+/// the device tools (they need Node.js and one install) it falls back to pictures of the screen.
 struct SimulatorView: View {
     @ObservedObject private var hub = DeviceHubService.shared
     @StateObject private var stream = SimulatorStream()
@@ -470,7 +470,7 @@ final class SimulatorScreenView: NSView {
     }
 }
 
-/// The simulator's settings (device actions): appearance, text size, contrast, location, an app's
+/// The simulator's settings: appearance, text size, contrast, location, an app's
 /// permissions, opening a link, starting and stopping an app, and a push notification.
 struct SimulatorActionsPanel: View {
     let udid: String

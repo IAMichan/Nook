@@ -1,12 +1,12 @@
 import Foundation
 
-// The iOS Simulator drives it: expo-device-hub (with serve-sim) runs on this Mac on a loopback port, streams the
+// The iOS Simulator: expo-device-hub (with serve-sim) runs on this Mac on a loopback port, streams the
 // screen as MJPEG and takes touches, buttons, keys and rotation over a WebSocket; agent-device lets agents drive the app
 // (snapshot, click, fill). This is the part without AppKit or networking: versions and paths, command lines, the hub's
 // answers, the input frames and the coordinate rules. Foundation only, so tests can use it.
 
 enum DeviceHub {
-    /// The versions pins (deviceToolVersions.json).
+    /// The pinned versions.
     static let hubPackage = "expo-device-hub"
     static let hubVersion = "0.15.3"
     static let agentPackage = "agent-device"
@@ -262,7 +262,7 @@ enum DeviceHub {
         """
     }
 
-    /// What device_open tells the agent quick start.
+    /// What device_open tells the agent: a quick start.
     static func quickStart(device: String, version: String, command: String, targetArgs: [String]) -> String {
         let x = shellQuote(command)
         let t = targetArgs.map(shellQuote).joined(separator: " ")
@@ -344,7 +344,7 @@ struct AvccChunk: Equatable, Sendable {
     var payload: Data
 }
 
-/// Cuts the AVCC stream into its chunks as bytes arrive (AvccDemuxer); unknown tags are skipped.
+/// Cuts the AVCC stream into its chunks as bytes arrive; unknown tags are skipped.
 struct AvccDemuxer {
     private var buffer = Data()
     static let maxChunk = 32 * 1024 * 1024

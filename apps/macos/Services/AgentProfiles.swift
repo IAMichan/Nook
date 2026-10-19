@@ -327,7 +327,7 @@ final class AgentProfileStore: ObservableObject {
         }
     }
 
-    /// "Bettr Health" → "bettr-health".
+    /// "Acme Corp" → "acme-corp".
     static func slug(_ text: String) -> String {
         let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).lowercased()
         var result = ""

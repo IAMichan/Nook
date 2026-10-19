@@ -51,20 +51,20 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
     }
-    /// A new session gets a short title written by a small model (way) in place of the first line of its task.
+    /// A new session gets a short title written by a small model in place of the first line of its task.
     @Published var autoTitles: Bool {
         didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
     }
-    /// A session stopped by a usage limit goes on by itself once the limit resets ("Auto-resume"; off by default).
+    /// A session stopped by a usage limit goes on by itself once the limit resets.
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
     }
-    /// A session that a restart of Nook cut off gets "Continue where you left off." once (restart continuation; off by default).
+    /// A session that a restart of Nook cut off gets "Continue where you left off." once.
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
     /// A message typed while an agent works steers the turn (Cmd+Return queues it instead); off: it queues (Cmd+Return steers).
-    /// has the same choice.
+    /// Configurable in Settings.
     @Published var steerByDefault: Bool {
         didSet { defaults.set(steerByDefault, forKey: "ws.steerByDefault") }
     }

@@ -58,7 +58,7 @@ struct ChangesSheet: View {
                 }
                 .frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
             }
-            // Comments on the diff go to the agent together (review comments).
+            // Comments on the diff go to the agent together.
             if let comments = workspace.reviewComments[runID], !comments.isEmpty {
                 Divider()
                 HStack(spacing: 8) {

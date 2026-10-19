@@ -200,7 +200,7 @@ struct WSEmptyState: View {
 /// Syntax-colored diff view. Performant for large diffs using LazyVStack.
 struct DiffText: View {
     let text: String
-    /// Review comments on this file (diff comments): shown under their line. With `onComment`, hovering a line
+    /// Review comments on this file: shown under their line. With `onComment`, hovering a line
     /// offers a comment button.
     var comments: [ReviewComment] = []
     var onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil

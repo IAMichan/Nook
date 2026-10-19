@@ -65,9 +65,24 @@ enum NookDates {
         }
     }
 
-    /// "Fri 16 Oct 14:00"
-    static func short(_ date: Date) -> String {
-        formatter("EEE d MMM HH:mm").string(from: date)
+    /// "Fri 16 Oct 14:00", with the year ("Fri 16 Oct 2027 14:00") when it is not this year.
+    static func short(_ date: Date, now: Date = Date()) -> String {
+        let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
+        return formatter(sameYear ? "EEE d MMM HH:mm" : "EEE d MMM yyyy HH:mm").string(from: date)
+    }
+
+    /// How far a date is from now in whole calendar days, for the brain: "today", "tomorrow", "in 365 days", "3 days ago".
+    /// Spelled out so a reminder a year away is never read as one coming up soon.
+    static func distance(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+        switch days {
+        case 0: return "today"
+        case 1: return "tomorrow"
+        case -1: return "yesterday"
+        case 2...: return "in \(days) days"
+        default: return "\(-days) days ago"
+        }
     }
 
     static func time(_ date: Date) -> String {

@@ -228,7 +228,7 @@ enum McpApp {
     }
 }
 
-/// The host side of one app's JSON-RPC conversation (`makeMcpAppHost`). It checks every request and answers;
+/// The host side of one app's JSON-RPC conversation. It checks every request and answers;
 /// what needs Nook (calling a tool, a confirmation, a window) goes through `actions`.
 final class McpAppHost {
     enum DisplayMode: String { case inline, fullscreen }

@@ -1,7 +1,7 @@
-# Nook voor Linux
+# Nook for Linux
 
-Nog niet geschreven. Deze map is gereserveerd voor de Linux-app.
+Not yet implemented. This directory is reserved for the Linux desktop app.
 
-- Voorstel: GTK 4 of Qt, met een statusicoon (AppIndicator) in plaats van de notch; de gedeelde kern uit `packages/core` bouwt met Swift op Linux (`scripts/core-tests.sh` doet dat al voor de bestaande kern).
-- Geheimen: libsecret. Scherm lezen verschilt tussen X11 en Wayland (AT-SPI waar mogelijk).
-- Zet hier straks het project en een CI-job (`ubuntu-latest`) met een `paths:`-filter op `apps/linux/**`.
+- **Planned architecture:** GTK 4 or Qt with a status bar indicator in place of the notch, backed by the portable Swift core in `packages/core` (which already compiles and passes tests on Linux via `scripts/core-tests.sh`).
+- **Platform services:** `libsecret` for credential storage and AT-SPI for accessibility screen context.
+- **Build & CI:** Will include a dedicated `ubuntu-latest` CI workflow filtered on `apps/linux/**`.

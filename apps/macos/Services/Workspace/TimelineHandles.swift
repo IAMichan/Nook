@@ -1,6 +1,6 @@
 import Foundation
 
-/// ships handles, not bodies: a huge output stays out of the timeline and out of memory; the row shows a
+/// Uses lightweight handles instead of full bodies: a huge output stays out of the timeline and out of memory; the row shows a
 /// preview and the lead's file layer stores the body under `id`.
 enum OutputSpill {
     struct Handle: Equatable, Codable, Sendable {

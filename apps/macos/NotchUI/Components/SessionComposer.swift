@@ -57,7 +57,7 @@ struct SessionComposer<Controls: View>: View {
         return copy
     }
 
-    /// The same composer with behaviour: `/`, `@` and `#` lists, ArrowUp for earlier messages, references, and the
+    /// The same composer with rich workspace behaviour: `/`, `@` and `#` lists, ArrowUp for earlier messages, references, and the
     /// composer's own tint. The model belongs to the call site, which sends through `model.outgoing(_:)`.
     func rich(_ model: ComposerModel, _ config: ComposerConfig) -> Self {
         var copy = self
@@ -212,7 +212,7 @@ struct SessionComposer<Controls: View>: View {
         return .handled
     }
 
-    /// Cmd+S: set the draft aside, bring one back, or choose from several (prompt stash).
+    /// Cmd+S: set the draft aside, bring one back, or choose from several.
     private func stashKey(_ press: KeyPress) -> KeyPress.Result {
         guard let extras, press.modifiers.contains(.command), let result = extras.model.stashKey(composerText: text) else {
             return press.modifiers.contains(.command) ? .handled : .ignored

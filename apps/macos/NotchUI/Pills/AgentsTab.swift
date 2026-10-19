@@ -380,7 +380,7 @@ struct AgentListItem: Identifiable {
     }
 }
 
-/// What a row can do on hover (row actions): the right slot swaps, without shifting the layout, between the
+/// What a row can do on hover: the right slot swaps, without shifting the layout, between the
 /// status and these buttons.
 struct AgentRowActions {
     var pinned: Bool

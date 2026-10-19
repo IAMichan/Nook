@@ -1,7 +1,7 @@
 import Foundation
 
 /// What you arranged in the Agents list: pins and their order, what the list folds away, the auto-settle rules and the
-/// one-line undo (inbox). The decisions are in `InboxLayout`, `InboxDrop`, `UndoLog` and `AutoSettlePolicy`; this
+/// one-line undo. The decisions are in `InboxLayout`, `InboxDrop`, `UndoLog` and `AutoSettlePolicy`; this
 /// keeps their state across launches and applies a drop or an undo to the places that hold the result: the pins here, the
 /// "finished" marks in `FinishedSessions`, the snooze and archive on the sessions themselves.
 @MainActor
@@ -11,8 +11,7 @@ final class InboxStore: ObservableObject {
     @Published private(set) var state: InboxState
     @Published private(set) var undoLog = UndoLog()
     @Published var query = ""
-    /// Sessions that work and need nothing from you fold into their own shelf; one that needs you jumps back up (
-    /// keeps this behind a beta switch; here it is on).
+    /// Sessions that work and need nothing from you fold into their own shelf; one that needs you jumps back up.
     @Published var showWorking: Bool { didSet { save() } }
     @Published var autoSettle: AutoSettlePolicy.Settings { didSet { save() } }
 

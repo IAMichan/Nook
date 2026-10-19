@@ -1,9 +1,11 @@
 import AppKit
+import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel.shared
     private var statusItem: NSStatusItem?
+    private var countWatch: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -40,6 +42,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
         statusItem = item
+        watchCount()
+    }
+
+    /// The words autocomplete typed today, next to the icon, when turned on in Settings › Autocomplete. Follows every taken
+    /// word, and starts again at zero when the day changes.
+    private func watchCount() {
+        let store = AutocompleteStore.shared
+        let dayChanged = NotificationCenter.default.publisher(for: .NSCalendarDayChanged).map { _ in () }.prepend(())
+        countWatch = store.$stats.combineLatest(store.$prefs, dayChanged)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] stats, prefs, _ in
+                MainActor.assumeIsolated { self?.showCount(prefs.enabled && prefs.menuBarCount ? stats.day().words : nil) }
+            }
+    }
+
+    private func showCount(_ words: Int?) {
+        guard let item = statusItem, let button = item.button else { return }
+        if let words {
+            item.length = NSStatusItem.variableLength
+            button.font = .monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
+            button.title = words.formatted()
+            button.imagePosition = .imageLeading
+            button.toolTip = tr("autocomplete.menuBarCount.tooltip", words)
+        } else {
+            item.length = NSStatusItem.squareLength
+            button.title = ""
+            button.imagePosition = .imageOnly
+            button.toolTip = nil
+        }
     }
 
     /// The menu shows what is going on right now (next meeting, agents, music), so it is rebuilt every time it opens.

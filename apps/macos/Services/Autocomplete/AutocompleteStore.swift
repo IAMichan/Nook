@@ -21,6 +21,14 @@ final class AutocompleteStore: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private static let prefsKey = "autocompletePreferences"
+    private static let recentEmojiKey = "autocompleteRecentEmoji"
+
+    /// Emoji taken from the picker, last first (without skin tone), so the picker opens with them.
+    var recentEmoji: [String] { defaults.stringArray(forKey: Self.recentEmojiKey) ?? [] }
+
+    func recordEmoji(_ character: String) {
+        defaults.set(Array(([character] + recentEmoji.filter { $0 != character }).prefix(16)), forKey: Self.recentEmojiKey)
+    }
     private var statsSave: Task<Void, Never>?
 
     static var folder: URL { NookPaths.supportDirectory.appendingPathComponent("Autocomplete", isDirectory: true) }
@@ -42,6 +50,11 @@ final class AutocompleteStore: ObservableObject {
         if !defaults.bool(forKey: "autocompleteDelayMigrated") {
             if prefs.delayMilliseconds == 120 { prefs.delayMilliseconds = 70 }
             defaults.set(true, forKey: "autocompleteDelayMigrated")
+        }
+        // 70 ms was the next default; 40 is the shortest the slider has, and a suggestion taken now brings the next one at once.
+        if !defaults.bool(forKey: "autocompleteDelayMigrated40") {
+            if prefs.delayMilliseconds == 70 { prefs.delayMilliseconds = 40 }
+            defaults.set(true, forKey: "autocompleteDelayMigrated40")
         }
         self.prefs = prefs
         stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()

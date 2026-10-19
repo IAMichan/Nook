@@ -1,6 +1,6 @@
 import Foundation
 
-/// A snapshot of a session's files after a turn (checkpoints): a commit under a hidden ref, so the branch, HEAD
+/// A snapshot of a session's files after a turn: a commit under a hidden ref, so the branch, HEAD
 /// and the index never change.
 struct RunCheckpoint: Codable, Equatable, Sendable {
     var ref: String

@@ -2,7 +2,6 @@ import Foundation
 
 /// Takes out what looks like a secret before text is kept as a writing sample or given to the model as context: card
 /// numbers, IBANs, Dutch citizen service numbers (BSN), API keys and tokens, private keys, passwords after "password:".
-/// After Typist's sanitizer (MIT, © 2026 Brody Salvucci), with the BSN check added.
 enum CompletionPrivacy {
     static let placeholder = "[redacted]"
 

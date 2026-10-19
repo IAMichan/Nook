@@ -209,13 +209,13 @@ struct AgentRunPanel: View {
                 Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
                     .disabled(watchablePullRequest() == nil)
             }
-            // shares a thread; Nook keeps it local: copy it, or save it where you want.
+            // Kept local: copy it, or save it where you want.
             Button(tr("ws.export.copy")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(SessionExport.markdown(run, events: workspace.timeline(runID)), forType: .string)
             }
             Button(tr("ws.export.save")) { saveMarkdown(run) }
-            // terminal context: the last lines of this session's terminal go with your message.
+            // Terminal context: the last lines of this session's terminal go with your message.
             Button(tr("ws.context.terminal")) { addTerminalOutput(run) }
                 .disabled(TerminalStore.shared.sessions(in: run.workingDirectory).isEmpty)
             Button(tr("button.openFolder")) {
@@ -416,7 +416,7 @@ struct AgentRunPanel: View {
             }
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // Scrolling away from the end stops the following until you come back (scroll anchoring).
+            // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
             } action: { _, nowAtEnd in
@@ -445,7 +445,7 @@ struct AgentRunPanel: View {
                         .padding(.top, 4)
                 }
             }
-            // A mark per message of yours, to jump through a long session (minimap).
+            // A mark per message of yours, to jump through a long session.
             .overlay(alignment: .topTrailing) {
                 let turns = events.filter { $0.kind == .user }
                 if turns.count >= 4, !finding {
@@ -555,7 +555,7 @@ struct AgentRunPanel: View {
         } else if event.kind == .user {
             eventView(event)
                 .contextMenu {
-                    // "edit from here": the worktree's files go back to how they were before this message.
+                    // "Edit from here": the worktree's files go back to how they were before this message.
                     Button(tr("ws.revert.menu")) {
                         revertError = nil
                         revertTarget = event
@@ -571,7 +571,7 @@ struct AgentRunPanel: View {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
                         .disabled(!workspace.canTransfer(runID))
-                    // Quote the agent's words in your next message (citations).
+                    // Quote the agent's words in your next message.
                     Button(tr("ws.review.quote")) {
                         draft = ReviewComments.quote(event.text, into: draft)
                         focused = true
@@ -695,7 +695,7 @@ struct AgentRunPanel: View {
             workspace.send(runID, text: outgoing.send)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
-        // Return does what you chose in Settings, Cmd+Return the other (queue / steer).
+        // Return does what you chose in Settings, Cmd+Return the other.
         let canSteer = active && workspace.canSteer(runID)
         let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
         func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
@@ -714,7 +714,7 @@ struct AgentRunPanel: View {
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
-            // The subagents the agent started this turn, and its task list (subagent bar and Tasks).
+            // The subagents the agent started this turn, and its task list.
             let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
             if let tasks = run.tasks, !tasks.isEmpty { TasksStrip(steps: tasks) }
@@ -774,7 +774,7 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account and the model (model picker). A model counts from the next turn; another account
+    /// The agent with its account and the model. A model counts from the next turn; another account
     /// or agent moves the session there with a summary of what happened (shown in the timeline).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)

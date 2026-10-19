@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import WebKit
 
-/// A code block of HTML, SVG or Mermaid shown as what it draws (HTML render and Mermaid diagrams). Agent HTML
+/// A code block of HTML, SVG or Mermaid shown as what it draws. Agent HTML
 /// runs without JavaScript, in a store that keeps nothing, and cannot navigate anywhere; Mermaid gets only Nook's own page
 /// with the pinned Mermaid script.
 struct CodeRenderView: NSViewRepresentable {

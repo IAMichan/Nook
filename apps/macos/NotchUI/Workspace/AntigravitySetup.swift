@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Antigravity runs in Nook on Google's own ACP server (way), installed once: the pinned release for this
+/// Antigravity runs in Nook on Google's own ACP server, installed once: the pinned release for this
 /// Mac, checked before anything is unpacked. Shown where you start an Antigravity session, and in Settings.
 struct AntigravitySetupRow: View {
     @ObservedObject private var installer = AntigravityInstaller.shared

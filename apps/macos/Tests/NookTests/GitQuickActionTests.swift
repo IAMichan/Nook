@@ -1,6 +1,6 @@
 import XCTest
 
-/// The one git button: choice of action per branch state, and the git work behind it.
+/// Single git action button: chooses the action per branch state and runs the git workflow behind it.
 final class GitQuickActionTests: XCTestCase {
     private func state(changes: Bool = false, branch: String? = "feat", isDefault: Bool = false, upstream: Bool = true,
                        remote: Bool = true, ahead: Int = 0, behind: Int = 0, aheadOfBase: Int = 0, pr: Bool = false) -> GitQuickState {
