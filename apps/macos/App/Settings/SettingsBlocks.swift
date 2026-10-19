@@ -231,11 +231,11 @@ struct WorkspaceSettingsSection: View {
     private var defaults: some View {
         Section {
             Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
-                ForEach(RunProvider.allCases) { provider in
+                ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
                     Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
                 }
             }
-            ForEach(RunProvider.allCases) { provider in
+            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
                 Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
                     get: { ws.model(for: provider) },
                     set: { ws.setModel($0, for: provider) }

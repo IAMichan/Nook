@@ -33,9 +33,17 @@ extension WorkspaceManager {
     /// (warming up when you open the session) the session waits for your first message.
     func connectAcp(_ id: UUID, executable: String, prompt: String?) {
         guard let run = run(id) else { return }
-        let input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt ?? "", model: run.model, mode: run.mode,
+        var input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt ?? "", model: run.model, mode: run.mode,
                                        permission: run.permission, instructions: run.instructions, workingDirectory: run.workingDirectory,
                                        resumeSessionID: run.providerSessionID, accountEnvironment: accountEnvironment(run.profileID), runID: id)
+        // An ACP agent you added runs its own command line; without it (removed in Settings) there is nothing to start.
+        if run.provider == .acp {
+            guard let agent = CustomAgents.agent(for: run.profileID) else {
+                if prompt != nil { failAcpTurn(id, tr("ws.acp.agentGone")) }
+                return
+            }
+            input.customAgent = agent
+        }
         var spec = AgentCommand.acpSpec(input)
         if run.provider == .antigravity {
             // Its own profile folder, harness and sign-in helper; your other Google settings stay out (way).

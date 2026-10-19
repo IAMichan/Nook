@@ -15,6 +15,8 @@ enum AcpLaunch {
         case .grok: return permission == .bypass ? ["agent", "--always-approve", "stdio"] : ["agent", "stdio"]
         // Antigravity's server takes no arguments on the Mac; its account and harness come from the environment.
         case .antigravity, .claude, .codex: return []
+        // An ACP agent you added starts with its own command line (see CustomAgents).
+        case .acp: return []
         }
     }
 }

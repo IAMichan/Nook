@@ -112,4 +112,80 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertFalse(markdown.contains("secret thoughts"))
         XCTAssertEqual(SessionExport.fileName(run), "fix-login.md")
     }
+
+    // MARK: ACP agents
+
+    func testParseCommandLikeAShell() {
+        XCTAssertEqual(CustomAgents.parseCommand("npx -y @kiro/acp@1.2.3")?.command, "npx")
+        XCTAssertEqual(CustomAgents.parseCommand("npx -y @kiro/acp@1.2.3")?.arguments, ["-y", "@kiro/acp@1.2.3"])
+        XCTAssertEqual(CustomAgents.parseCommand(#"  my-agent --name "Two Words" 'it''s' x\ y "#)?.arguments,
+                       ["--name", "Two Words", "its", "x y"])
+        XCTAssertNil(CustomAgents.parseCommand("agent \"open"))
+        XCTAssertNil(CustomAgents.parseCommand("   "))
+    }
+
+    func testShellLineQuotesEveryPart() {
+        let agent = CustomAgent(profileID: "acp-x", name: "X", command: "npx", arguments: ["-y", "@a/b@1.0.0", "it's; rm -rf ~"])
+        XCTAssertEqual(agent.shellLine, #"exec npx -y @a/b@1.0.0 'it'\''s; rm -rf ~'"#)
+    }
+
+    func testRegistryEntries() {
+        let json = #"""
+        {"version":"1.0.0","agents":[
+          {"id":"kiro","name":"Kiro","version":"1.2.3","description":"An agent","website":"https://kiro.dev",
+           "distribution":{"npx":{"package":"@kiro/acp@1.2.3","args":["--acp"],"env":{"KIRO_MODE":"acp","bad key":"x"}}}},
+          {"id":"pyagent","name":"Py","version":"0.4.0","description":"",
+           "distribution":{"uvx":{"package":"py-agent==0.4.0"}}},
+          {"id":"bin","name":"Binary","version":"2.0.0","description":"",
+           "distribution":{"binary":{"darwin-aarch64":{"archive":"https://x.dev/a.tgz","cmd":"./a"}}}},
+          {"id":"loose","name":"Loose","version":"1.0.0","description":"","distribution":{"npx":{"package":"loose-agent"}}},
+          {"id":"Bad Id","name":"Bad","version":"1","description":"","distribution":{}}
+        ]}
+        """#
+        let entries = AcpRegistry.parse(Data(json.utf8))
+        XCTAssertEqual(entries.map(\.id), ["kiro", "pyagent", "bin", "loose"])
+        XCTAssertEqual(entries[0].command, "npx")
+        XCTAssertEqual(entries[0].arguments, ["-y", "@kiro/acp@1.2.3", "--acp"])
+        XCTAssertEqual(entries[0].environment, ["KIRO_MODE": "acp"])
+        XCTAssertEqual(entries[0].website, "https://kiro.dev")
+        XCTAssertEqual(entries[1].command, "uvx")
+        XCTAssertEqual(entries[1].arguments, ["py-agent==0.4.0"])
+        // Only a download, or a package without an exact version: listed, but not started.
+        XCTAssertFalse(entries[2].isSupported)
+        XCTAssertFalse(entries[3].isSupported)
+        let agent = AcpRegistry.agent(from: entries[0], profileID: "acp-kiro")
+        XCTAssertEqual(agent?.registryID, "kiro")
+        XCTAssertEqual(agent?.version, "1.2.3")
+        XCTAssertNil(AcpRegistry.agent(from: entries[2], profileID: "acp-bin"))
+        XCTAssertEqual(AcpRegistry.parse(Data("not json".utf8)), [])
+    }
+
+    func testCustomAgentStore() {
+        let defaults = UserDefaults(suiteName: "nook.tests.acp." + UUID().uuidString)!
+        XCTAssertEqual(CustomAgents.load(defaults: defaults), [])
+        let first = CustomAgent(profileID: "acp-a", name: "A", command: "a")
+        CustomAgents.upsert(first, defaults: defaults)
+        CustomAgents.upsert(CustomAgent(profileID: "acp-b", name: "B", command: "b"), defaults: defaults)
+        var changed = first
+        changed.arguments = ["--acp"]
+        CustomAgents.upsert(changed, defaults: defaults)
+        XCTAssertEqual(CustomAgents.load(defaults: defaults).count, 2)
+        XCTAssertEqual(CustomAgents.agent(for: "acp-a", defaults: defaults)?.arguments, ["--acp"])
+        CustomAgents.remove(profileID: "acp-a", defaults: defaults)
+        XCTAssertNil(CustomAgents.agent(for: "acp-a", defaults: defaults))
+    }
+
+    func testAcpAgentStartsThroughTheLoginShell() {
+        var input = AgentCommand.Input(provider: .acp, executable: "/bin/zsh", prompt: "", model: "", mode: .agent,
+                                       permission: .acceptEdits, instructions: "", workingDirectory: "/w", resumeSessionID: nil,
+                                       accountEnvironment: [:], runID: UUID())
+        input.customAgent = CustomAgent(profileID: "acp-k", name: "K", command: "npx", arguments: ["-y", "@k/acp@1.0.0"],
+                                        environment: ["K_MODE": "acp"])
+        let spec = AgentCommand.acpSpec(input)
+        XCTAssertEqual(spec.executable, "/bin/zsh")
+        XCTAssertEqual(spec.arguments, ["-ilc", "exec npx -y @k/acp@1.0.0"])
+        XCTAssertEqual(spec.extraEnvironment["K_MODE"], "acp")
+        XCTAssertTrue(spec.keepsInputOpen)
+        XCTAssertTrue(RunProvider.acp.usesACP)
+    }
 }

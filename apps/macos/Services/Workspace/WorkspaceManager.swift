@@ -837,7 +837,7 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
-        case .gemini, .opencode, .cursor, .grok:
+        case .gemini, .opencode, .cursor, .grok, .acp:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
         case .antigravity:
@@ -860,7 +860,7 @@ final class WorkspaceManager: ObservableObject {
         case .gemini:
             let parsed = GeminiStreamParser.parse(line)
             for event in parsed { handleGemini(event, id: id) }
-        case .opencode, .cursor, .grok, .antigravity:
+        case .opencode, .cursor, .grok, .antigravity, .acp:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }

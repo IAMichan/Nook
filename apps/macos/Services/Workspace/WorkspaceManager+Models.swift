@@ -10,7 +10,8 @@ extension WorkspaceManager {
     }
 
     func learnModels(_ provider: RunProvider, _ models: [AgentModel]) {
-        guard !models.isEmpty, agentModels[provider] != models else { return }
+        // ACP agents you added share one kind but not their models: a list from one would be wrong for the next.
+        guard provider != .acp, !models.isEmpty, agentModels[provider] != models else { return }
         agentModels[provider] = models
         AgentModelStore(url: Self.modelStoreURL).save(agentModels)
     }
