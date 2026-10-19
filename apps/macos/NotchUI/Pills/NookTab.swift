@@ -23,17 +23,27 @@ struct NookChatView: View {
     @State private var dropTargeted = false
     @StateObject private var composerModel = ComposerModel()
     @FocusState private var inputFocused: Bool
+    /// Follows the answer while it streams, until you scroll away; the same rules as an agent session.
+    @State private var scroll = ScrollModel()
+    @State private var atEnd = true
+    @State private var renaming = false
+    @State private var titleDraft = ""
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right.
+        HStack(alignment: .top, spacing: 0) {
             if !chat.history.isEmpty || !compact {
                 NookList(chat: chat)
-                    .frame(width: compact ? 168 : 220)
+                    .frame(width: compact ? 200 : 260)
+                Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1)
+                    .padding(.horizontal, compact ? 12 : 16)
             }
             VStack(alignment: .leading, spacing: 0) {
                 if chat.isEmpty {
                     emptyState
                 } else {
+                    header
+                        .padding(.bottom, 8)
                     thread
                 }
                 inputBar
@@ -106,50 +116,148 @@ struct NookChatView: View {
         SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
     }
 
+    // MARK: Header
+
+    /// "Nook / Plan my Friday" (double-click the name to rename it), the status while it works, and the conversation's
+    /// menu on the right: the same header as an agent session.
+    @ViewBuilder
+    private var header: some View {
+        if let conversation = chat.active {
+            HStack(spacing: 8) {
+                Text(tr("tab.nook"))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize()
+                Text("/").foregroundStyle(NookTheme.textTertiary)
+                if renaming {
+                    TextField(tr("ws.title.placeholder"), text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.font(13.5, .medium))
+                        .foregroundStyle(NookTheme.paper)
+                        .onSubmit {
+                            chat.rename(conversation.id, to: titleDraft)
+                            renaming = false
+                        }
+                        .onExitCommand { renaming = false }
+                } else {
+                    Text(conversation.title)
+                        .font(NookTheme.font(13.5, .medium))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .onTapGesture(count: 2) { startRenaming(conversation) }
+                        .help(tr("ws.title.renameHelp"))
+                }
+                if conversation.pinned {
+                    Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 8)
+                if conversation.busy, let since = conversation.turnStarted {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        AgentStatusBadge(state: .working, detail: AgentFormat.short(context.date.timeIntervalSince(since)))
+                    }
+                } else if conversation.status == .waiting {
+                    AgentStatusBadge(state: .approval)
+                }
+                // A new Nook starts from the list's header (⌘N), which is always next to a conversation.
+                conversationMenu(conversation)
+            }
+            .font(NookTheme.font(13.5))
+            .frame(height: 30)
+            .onChange(of: chat.activeID) { _, _ in renaming = false }
+        }
+    }
+
+    private func startRenaming(_ conversation: Conversation) {
+        titleDraft = conversation.title
+        renaming = true
+    }
+
+    /// Everything else you can do with this conversation, as in a session's menu.
+    private func conversationMenu(_ conversation: Conversation) -> some View {
+        Menu {
+            Button(tr("nooks.rename")) { startRenaming(conversation) }
+            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
+            Button(tr("ws.export.copy")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(ChatExport.markdown(conversation), forType: .string)
+            }
+            Divider()
+            Button(tr("nooks.archive")) { chat.setArchived(true, conversation.id) }
+                .disabled(conversation.busy)
+            Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+                .disabled(conversation.busy)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .composerMenu()
+        .help(tr("chat.moreActions"))
+        .accessibilityLabel(tr("chat.moreActions"))
+    }
+
     // MARK: Conversation
 
     private var thread: some View {
-        ZStack(alignment: .topTrailing) {
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        let newest = chat.messages.last?.id
-                        ForEach(chat.messages) { message in
-                            // Equatable on the message's revision: while one answer streams in, the earlier messages
-                            // (and their Markdown) are not laid out again for every few words.
-                            ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
-                                .equatable()
-                                .id(message.id)
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    let newest = chat.messages.last?.id
+                    ForEach(chat.messages) { message in
+                        // Equatable on the message's revision: while one answer streams in, the earlier messages
+                        // (and their Markdown) are not laid out again for every few words.
+                        ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)
+                            .equatable()
+                            .id(message.id)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
                     }
-                    .padding(.trailing, 4)
-                    .padding(.top, 2)
+                    Color.clear.frame(height: 1).id("bottom")
                 }
-                .defaultScrollAnchor(.bottom)
-                .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-                .onChange(of: chat.messages.count) { _, _ in
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
-                .onChange(of: scrollKey) { _, _ in
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                .padding(.trailing, 4)
+                .padding(.top, 8)
+                .animation(.easeOut(duration: 0.2), value: chat.messages.count)
+            }
+            .defaultScrollAnchor(.bottom)
+            // Scrolling away from the end stops the following until you come back, or jump back with the pill.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
+            } action: { _, nowAtEnd in
+                atEnd = nowAtEnd
+                if nowAtEnd { scroll.reachedEnd() }
+            }
+            .onScrollPhaseChange { _, phase in
+                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+            }
+            .overlay(alignment: .bottom) {
+                if scroll.mode == .free, !atEnd {
+                    TimelineToEndPill {
+                        scroll.jumpedToEnd()
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                    .padding(.bottom, 8)
                 }
             }
-
-            if let title = chat.active?.title {
-                // The current Nook conversation and option to start a new one.
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(NookTheme.font(11.5, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                    NookIconButton(systemName: "square.and.pencil", label: tr("nooks.new"), size: 26) {
-                        app.newChat()
-                    }
+            // A soft fade under the header, so text scrolls away instead of being cut off.
+            .mask(
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 10)
+                    Color.black
                 }
-                .padding(.leading, 10)
-                .background(Capsule().fill(NookTheme.notch))
-                .offset(y: -6)
+            )
+            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            // Another conversation: start at its end and follow again.
+            .onChange(of: chat.activeID) { _, _ in
+                scroll.jumpedToEnd()
+                DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            // You asked something: it is the newest thing and the answer is followed again.
+            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in
+                scroll.jumpedToEnd()
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: scrollKey) { _, _ in
+                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
     }
@@ -256,7 +364,7 @@ private struct ChatMessageView: View, Equatable {
                 ConversationMessage(fromUser: false, text: message.text, size: 14,
                                     onChoose: !message.streaming && isNewest ? { app.handleUserText($0) } : nil)
             } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
-                TypingIndicator(status: message.status)
+                TypingIndicator(status: message.status, since: message.date)
             }
 
             ForEach(message.charts) { chart in
@@ -289,40 +397,58 @@ private struct ChatMessageView: View, Equatable {
             if !message.streaming && !message.offers.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(message.offers, id: \.self) { offer in
-                        Button { app.handleUserText(offer) } label: {
-                            Text(offer)
-                                .font(NookTheme.font(12, .medium))
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 5)
-                                .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Nook: \(offer)")
+                        OfferChip(text: offer) { app.handleUserText(offer) }
                     }
                 }
             }
 
             if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
-                TypingIndicator(status: message.status)
+                TypingIndicator(status: message.status, since: message.date)
             }
 
             if !message.streaming && !message.isError && !message.text.isEmpty {
-                HStack(spacing: 2) {
-                    SmallGhostButton(title: copied ? "Gekopieerd" : "Kopieer") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(message.text, forType: .string)
-                        copied = true
-                    }
-                }
-                .opacity(hovering ? 1 : 0)
-                .padding(.top, -6)
+                actionRow
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    /// Under a finished answer, on hover: copy, try again (the newest answer only) and when it was written. The row keeps
+    /// its place when hidden, so nothing jumps when the pointer moves over the thread.
+    private var actionRow: some View {
+        HStack(spacing: 2) {
+            messageAction(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message.text, forType: .string)
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+            }
+            if isLast {
+                messageAction("arrow.clockwise", tr("chat.retry")) { app.retryLast() }
+            }
+            Text(message.date.formatted(date: .omitted, time: .shortened))
+                .font(NookTheme.font(11))
+                .foregroundStyle(NookTheme.textTertiary)
+                .padding(.leading, 4)
+        }
+        .opacity(hovering || copied ? 1 : 0)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .padding(.top, -4)
+    }
+
+    private func messageAction(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {
@@ -415,198 +541,380 @@ private struct ChatErrorCard: View {
     }
 }
 
-/// Three gentle dots while Nook is thinking, along with its current activity.
+/// What Nook is doing right now, as an agent session shows it: a pulsing dot, the current step shimmering, and how long
+/// the answer has been going.
 private struct TypingIndicator: View {
     let status: String
+    /// When the answer started.
+    var since: Date? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var label: String { status.isEmpty ? tr("chat.thinking") : status }
 
     var body: some View {
         HStack(spacing: 8) {
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                HStack(spacing: 4) {
-                    ForEach(0..<3, id: \.self) { i in
-                        let wave = (1.0 + sin(t * 3.2 + Double(i) * 0.7)) / 2.0
-                        Circle()
-                            .fill(NookTheme.iris)
-                            .frame(width: 6, height: 6)
-                            .opacity(0.35 + 0.65 * wave)
+            PulseDot(color: NookTheme.iris, animated: !reduceMotion)
+                .frame(width: 14, height: 14)
+            Group {
+                if reduceMotion {
+                    Text(label).foregroundStyle(NookTheme.textSecondary)
+                } else {
+                    ShimmerText(text: label)
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+            if let since {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let elapsed = context.date.timeIntervalSince(since)
+                    // Only once it takes a moment: a quick answer should not flash a timer.
+                    if elapsed >= 3 {
+                        Text(AgentPathFormat.duration(elapsed))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .monospacedDigit()
                     }
                 }
             }
-            if !status.isEmpty {
-                Text(status)
-                    .font(NookTheme.font(12.5))
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
         }
+        .font(NookTheme.font(12.5))
         .padding(.vertical, 4)
-        .accessibilityLabel(status.isEmpty ? "Nook denkt na" : status)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A next step Nook offers under its answer: one click asks it.
+private struct OfferChip: View {
+    let text: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Text(text)
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityLabel("Nook: \(text)")
+    }
+}
+
+/// A conversation as Markdown, to paste elsewhere: who said what, in order.
+enum ChatExport {
+    static func markdown(_ conversation: Conversation) -> String {
+        var parts = ["# " + conversation.title]
+        for message in conversation.messages where !message.text.isEmpty {
+            let author = message.role == .user ? tr("chat.you") : "Nook"
+            parts.append("**\(author)**\n\n" + message.text)
+        }
+        return parts.joined(separator: "\n\n")
     }
 }
 
 // MARK: Your Nooks
 
-/// All your Nooks listed: each conversation is a dedicated Nook working on a specific task. Busy, waiting for you, or done
-/// is indicated by the dot. Start a new one at the top; right-click to delete.
+/// All your Nooks, listed the way the Agents tab lists sessions: a header with the new-Nook button, a search, pinned
+/// conversations first, then the rest, and the archive folded away at the bottom. Each row is a card with the title,
+/// the status as the same badge the agents use (working, needs you, new answer) or how long ago, and the last answer
+/// underneath. Pin and archive appear on hover, in the badge's place, so nothing shifts; right-click for the rest.
 private struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
+    @State private var query = ""
     @State private var showArchived = false
     @State private var renaming: UUID?
     @State private var nameDraft = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            NewNookButton { app.newChat() }
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    let items = chat.list(query: "", showArchived: showArchived)
-                    if items.isEmpty {
-                        Text(tr("nooks.none"))
-                            .font(NookTheme.font(11.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
-                    }
-                    ForEach(items) { conversation in
-                        if renaming == conversation.id {
-                            TextField("", text: $nameDraft)
-                                .textFieldStyle(.roundedBorder)
-                                .font(NookTheme.font(12))
-                                .onSubmit {
-                                    chat.rename(conversation.id, to: nameDraft)
-                                    renaming = nil
-                                }
-                                .onExitCommand { renaming = nil }
-                        } else {
-                            NookRow(conversation: conversation, selected: conversation.id == chat.activeID) {
-                                app.openConversation(conversation.id)
+        let items = chat.list(query: query, showArchived: false)
+        let archived = chat.list(query: query, showArchived: true)
+        let pinned = items.filter(\.pinned)
+        let rest = items.filter { !$0.pinned }
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            searchField
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if items.isEmpty && (archived.isEmpty || !showArchived) {
+                            Text(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"))
+                                .font(NookTheme.font(12.5))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .padding(12)
+                        }
+                        if !pinned.isEmpty {
+                            sectionLabel(tr("nooks.section.pinned"))
+                            rows(pinned, now: context.date)
+                            if !rest.isEmpty {
+                                sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
                             }
-                            .contextMenu {
-                                Button(tr("nooks.rename")) {
-                                    nameDraft = conversation.title
-                                    renaming = conversation.id
-                                }
-                                if !conversation.archived {
-                                    Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
-                                }
-                                Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
-                                    chat.setArchived(!conversation.archived, conversation.id)
-                                }
-                                Divider()
-                                Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
-                            }
+                        }
+                        rows(rest, now: context.date)
+                        if !archived.isEmpty {
+                            archiveShelf(archived, now: context.date)
                         }
                     }
                 }
             }
+        }
+    }
 
-            if chat.hasArchived || showArchived {
-                Button {
-                    showArchived.toggle()
-                } label: {
-                    Label(tr(showArchived ? "nooks.hideArchive" : "nooks.showArchive"), systemImage: showArchived ? "tray.full" : "archivebox")
-                        .font(NookTheme.font(11.5, .medium))
+    // MARK: Header and search
+
+    /// "Nook" with the button that starts a new one, as "Agents" has.
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text(tr("tab.nook"))
+                .font(NookTheme.font(14, .semibold))
+                .foregroundStyle(NookTheme.paper)
+            Spacer(minLength: 4)
+            Button { app.newChat() } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(chat.isEmpty ? NookTheme.paper : NookTheme.textSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(chat.isEmpty ? NookTheme.smoke : Color.clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: .command)
+            .help(tr("nooks.newHelp"))
+            .accessibilityLabel(tr("nooks.new"))
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 2)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+            TextField(tr("nooks.search"), text: $query)
+                .textFieldStyle(.plain)
+                .font(NookTheme.font(12.5))
+                .foregroundStyle(NookTheme.paper)
+                .onExitCommand { query = "" }
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tr("button.clear"))
+            }
+        }
+        .foregroundStyle(NookTheme.textTertiary)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+        .padding(.horizontal, 2)
+    }
+
+    // MARK: Sections
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(NookTheme.font(11.5, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 2)
+    }
+
+    /// The archive as a shelf, like the settled sessions: a line with its count, opened with a click.
+    private func archiveShelf(_ archived: [Conversation], now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showArchived.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(tr("nooks.section.archived", archived.count))
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                    Rectangle().fill(NookTheme.line2).frame(height: 1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .rotationEffect(.degrees(showArchived ? 0 : -90))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 12)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(showArchived ? tr("compose.queue.expanded") : "")
+            if showArchived {
+                rows(archived, now: now)
             }
         }
-        .padding(.trailing, 12)
-        .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line).frame(width: 1) }
+        .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func rows(_ conversations: [Conversation], now: Date) -> some View {
+        ForEach(conversations) { conversation in
+            if renaming == conversation.id {
+                TextField("", text: $nameDraft)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.font(13.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: 0x17171A)))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.5), lineWidth: 1))
+                    .onSubmit {
+                        chat.rename(conversation.id, to: nameDraft)
+                        renaming = nil
+                    }
+                    .onExitCommand { renaming = nil }
+            } else {
+                NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
+                        onPin: { chat.togglePin(conversation.id) },
+                        onArchive: { chat.setArchived(!conversation.archived, conversation.id) }) {
+                    app.openConversation(conversation.id)
+                }
+                .contextMenu { contextMenu(conversation) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contextMenu(_ conversation: Conversation) -> some View {
+        Button(tr("nooks.rename")) {
+            nameDraft = conversation.title
+            renaming = conversation.id
+        }
+        if !conversation.archived {
+            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
+        }
+        Button(tr("ws.export.copy")) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(ChatExport.markdown(conversation), forType: .string)
+        }
+        Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
+            chat.setArchived(!conversation.archived, conversation.id)
+        }
+        .disabled(conversation.busy)
+        Divider()
+        Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+            .disabled(conversation.busy)
     }
 }
 
-private struct NewNookButton: View {
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
-                Text(tr("nooks.new"))
-                    .font(NookTheme.font(12.5, .semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(NookTheme.paper)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 9).fill(hovering ? NookTheme.smoke : NookTheme.graphite))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .keyboardShortcut("n", modifiers: .command)
-        .help(tr("nooks.newHelp"))
-    }
-}
-
+/// One Nook in the list, built like a session row in the Agents tab: a soft card, the title with the status on the
+/// right, the last answer underneath. A conversation that asks nothing of you recedes, so what needs you stands out.
 private struct NookRow: View {
     let conversation: Conversation
     let selected: Bool
+    let now: Date
+    let onPin: () -> Void
+    let onArchive: () -> Void
     let action: () -> Void
     @State private var hovering = false
 
+    private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
+    private var receded: Bool { conversation.status == .idle && !selected }
+
     var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 8) {
-                StatusDot(status: conversation.status)
-                    .padding(.top, 5)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(conversation.title)
-                        .font(NookTheme.font(12.5, selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? NookTheme.paper : Color(hex: 0xC9C7D2))
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(NookTheme.font(11))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(selected ? NookTheme.smoke : (hovering ? NookTheme.graphite : Color.clear)))
-            .contentShape(Rectangle())
+        ZStack(alignment: .topTrailing) {
+            Button(action: action) { content }
+                .buttonStyle(.plain)
+            hoverActions
+                .padding(.top, 8)
+                .padding(.trailing, 8)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
         }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .accessibilityLabel("\(conversation.title), \(subtitle)")
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(conversation.title), \(statusText)")
     }
 
-    private var subtitle: String {
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(conversation.title)
+                    .font(NookTheme.font(13.5, receded ? .regular : .medium))
+                    .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
+                    .lineLimit(1)
+                if conversation.pinned {
+                    Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 6)
+                slot.opacity(hovering ? 0 : 1)
+            }
+            Text(conversation.preview.isEmpty ? statusText : conversation.preview)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
+        .contentShape(Rectangle())
+    }
+
+    /// The status as the agents show it, otherwise how long ago.
+    @ViewBuilder
+    private var slot: some View {
+        switch conversation.status {
+        case .working:
+            AgentStatusBadge(state: .working, detail: conversation.turnStarted.map { AgentFormat.short(now.timeIntervalSince($0)) })
+        case .waiting:
+            AgentStatusBadge(state: .approval)
+        case .unread:
+            AgentStatusBadge(state: .ready)
+        case .idle:
+            Text(AgentFormat.short(now.timeIntervalSince(conversation.updated)))
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize()
+        }
+    }
+
+    private var hoverActions: some View {
+        HStack(spacing: 2) {
+            if !conversation.archived {
+                rowButton(conversation.pinned ? "pin.slash" : "pin", tr(conversation.pinned ? "nooks.unpin" : "nooks.pin"), onPin)
+            }
+            if !conversation.busy {
+                rowButton(conversation.archived ? "tray.and.arrow.up" : "archivebox",
+                          tr(conversation.archived ? "nooks.unarchive" : "nooks.archive"), onArchive)
+            }
+        }
+    }
+
+    private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private var statusText: String {
         switch conversation.status {
         case .working: return tr("nooks.working")
         case .waiting: return tr("nooks.waiting")
         case .unread: return tr("nooks.doneAt", NookDates.ago(conversation.updated))
-        case .idle: return conversation.preview.isEmpty ? NookDates.ago(conversation.updated) : conversation.preview
-        }
-    }
-}
-
-/// Busy (white, breathing), waiting for you (amber), new response (mint), or idle (gray).
-private struct StatusDot: View {
-    let status: Conversation.Status
-
-    var body: some View {
-        switch status {
-        case .working:
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                Circle().fill(NookTheme.iris).frame(width: 7, height: 7)
-                    .opacity(0.45 + 0.55 * abs(sin(t * 2.6)))
-            }
-            .frame(width: 7, height: 7)
-        case .waiting:
-            Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
-        case .unread:
-            Circle().fill(NookTheme.mint).frame(width: 7, height: 7)
-        case .idle:
-            Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
+        case .idle: return NookDates.ago(conversation.updated)
         }
     }
 }
@@ -621,18 +929,38 @@ private struct SuggestionRow: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(questions, id: \.self) { question in
-                Button { ask(question) } label: {
-                    Text(question)
-                        .font(NookTheme.font(12, .medium))
-                        .foregroundStyle(NookTheme.paper)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(NookTheme.smoke))
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
+                SuggestionChip(text: question) { ask(question) }
             }
         }
+    }
+}
+
+/// One starter: lifts a little under the pointer, like the rows in the Agents list.
+private struct SuggestionChip: View {
+    let text: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(NookTheme.iris)
+                Text(text)
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .background(Capsule().fill(hovering ? Color(hex: 0x26262B) : NookTheme.smoke))
+            .overlay(Capsule().stroke(NookTheme.line2.opacity(hovering ? 1 : 0), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
