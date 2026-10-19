@@ -3,7 +3,18 @@ import AppKit
 
 extension MarkdownBlock {
     /// Bold, italic, code, and links within an inline span.
+    ///
+    /// Cached per text and size: `AttributedString(markdown:)` is slow, and every paragraph, bullet and table cell of every
+    /// visible message asks for it again on each redraw (another message streaming in, hover, a keystroke).
     static func inline(_ text: String, size: CGFloat = 14) -> AttributedString {
+        let key = "\(size)|\(text)" as NSString
+        if let hit = InlineCache.shared.object(forKey: key) { return hit.value }
+        let value = renderInline(text, size: size)
+        InlineCache.shared.setObject(InlineCache.Entry(value), forKey: key)
+        return value
+    }
+
+    private static func renderInline(_ text: String, size: CGFloat) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         guard let parsed = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
         // Answers can repeat text from mails or web pages: only web and mail links stay clickable, and a link whose text
@@ -37,6 +48,20 @@ extension MarkdownBlock {
     }
 }
 
+/// Rendered inline Markdown, by size and text (see `MarkdownBlock.inline`).
+private enum InlineCache {
+    final class Entry {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
+
+    static let shared: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 3_000
+        return cache
+    }()
+}
+
 /// Renders an answer with headings, lists, tables, charts, code blocks, call-outs, and questions, in Nook's visual style.
 /// Parsed Markdown per text. SwiftUI asks for a message's body far more often than its text changes (scrolling, hover,
 /// another message streaming in); parsing once per text keeps long conversations smooth.
@@ -52,11 +77,25 @@ enum MarkdownCache {
         return cache
     }()
 
+    /// Texts parsed most recently, newest last. A text that continues one of them is the same answer one token further:
+    /// the shorter one is dropped from the cache, so a streaming answer keeps one entry instead of one per token, which
+    /// pushed the parsed finished messages out of the cache and made them parse again.
+    private static var recent: [String] = []
+    private static let recentLimit = 8
+    private static let lock = NSLock()
+
     static func blocks(_ text: String) -> [MarkdownBlock] {
         let key = text as NSString
         if let hit = cache.object(forKey: key) { return hit.blocks }
         let blocks = MarkdownBlock.parse(text)
         cache.setObject(ParsedMarkdown(blocks), forKey: key)
+        lock.lock()
+        if let earlier = recent.firstIndex(where: { $0.utf8.count < text.utf8.count && text.utf8.starts(with: $0.utf8) }) {
+            cache.removeObject(forKey: recent.remove(at: earlier) as NSString)
+        }
+        recent.append(text)
+        if recent.count > recentLimit { recent.removeFirst() }
+        lock.unlock()
         return blocks
     }
 }
