@@ -18,11 +18,15 @@ struct NookTabBar<Value: Hashable>: View {
     let items: [Item]
     let selected: Value
     let onSelect: (Value) -> Void
+    /// Tabs you open yourself can be closed again: a small cross on the selected tab and the one under the pointer.
+    var onClose: ((Value) -> Void)? = nil
     @Namespace private var selection
+    @State private var hovered: Value?
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(items) { item in
+                let closable = onClose != nil
                 Button {
                     onSelect(item.value)
                 } label: {
@@ -30,10 +34,13 @@ struct NookTabBar<Value: Hashable>: View {
                         if let symbol = item.symbol { Image(systemName: symbol).font(.system(size: 11, weight: .medium)) }
                         Text(item.title).lineLimit(1)
                         if item.fresh { Circle().fill(NookTheme.iris).frame(width: 5, height: 5) }
+                        // Room for the cross, so a tab keeps its width when the cross appears.
+                        if closable { Color.clear.frame(width: 12, height: 12) }
                     }
                     .font(NookTheme.font(13, .medium))
                     .foregroundStyle(item.value == selected ? NookTheme.paper : NookTheme.textTertiary)
-                    .padding(.horizontal, 12)
+                    .padding(.leading, 12)
+                    .padding(.trailing, closable ? 8 : 12)
                     .padding(.vertical, 5)
                     .background {
                         if item.value == selected {
@@ -48,6 +55,24 @@ struct NookTabBar<Value: Hashable>: View {
                 .help(item.help ?? "")
                 .accessibilityLabel(item.title)
                 .accessibilityAddTraits(item.value == selected ? .isSelected : [])
+                .overlay(alignment: .trailing) {
+                    if let onClose, item.value == selected || hovered == item.value {
+                        Button { onClose(item.value) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .frame(width: 12, height: 12)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 8)
+                        .help(tr("tab.close"))
+                        .accessibilityLabel(tr("tab.close") + " " + item.title)
+                    }
+                }
+                .onHover { inside in
+                    if inside { hovered = item.value } else if hovered == item.value { hovered = nil }
+                }
             }
         }
         .padding(3)

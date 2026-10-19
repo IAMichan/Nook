@@ -18,8 +18,19 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// What the selected session shows in the Agents tab: its conversation, or a terminal or the browser next to it.
+    /// A tool that opens gets its own tab in the side panel.
     @Published var sessionTool: SessionTool = .conversation {
-        didSet { if sessionTool != oldValue { resizeForWorkbench() } }
+        didSet {
+            if SessionTool.panelTools.contains(sessionTool), !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
+            if sessionTool != oldValue { resizeForWorkbench() }
+        }
+    }
+
+    /// The tools open as tabs in a session's side panel, in the order you opened them. Kept between sessions and
+    /// launches; with none open the side panel offers the tools to choose from.
+    @Published var sessionTabs: [SessionTool] = (UserDefaults.standard.stringArray(forKey: "nook.agents.sideTabs") ?? [])
+        .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) } {
+        didSet { UserDefaults.standard.set(sessionTabs.map(\.rawValue), forKey: "nook.agents.sideTabs") }
     }
 
     /// A terminal or the browser is open in the Agents tab: the panel gets the room the old Workspace tab had, and
