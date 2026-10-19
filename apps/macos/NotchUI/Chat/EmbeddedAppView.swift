@@ -1,8 +1,9 @@
 import SwiftUI
 import WebKit
 
-/// The app open next to Nook's chat ("@open whatsapp"). Each app keeps its own sign-in across launches in a store of
-/// its own; Nook only reads what it shows when you ask (a read tool), and never types or clicks in it.
+/// The app open next to Nook's chat ("@open whatsapp"). Each web app keeps its own sign-in across launches in a store of
+/// its own; a Mac app is shown live by `MacAppMirror`. Nook only reads what it shows when you ask (a read tool), and
+/// never types or clicks in it itself.
 @MainActor
 final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
     static let shared = EmbeddedAppStore()
@@ -18,6 +19,13 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     func open(_ app: EmbeddedApp) {
         lastError = nil
+        if app.isMacApp {
+            current = app
+            loading = false
+            MacAppMirror.shared.open(app)
+            return
+        }
+        if current?.isMacApp == true { MacAppMirror.shared.close() }
         if views[app.id] == nil {
             let view = makeWebView(for: app)
             views[app.id] = view
@@ -29,11 +37,13 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     /// Hides the app; it stays signed in and keeps running until Nook quits, so opening it again is instant.
     func close() {
+        if current?.isMacApp == true { MacAppMirror.shared.close() }
         current = nil
         loading = false
     }
 
     func reload() {
+        if current?.isMacApp == true { return MacAppMirror.shared.restart() }
         guard let webView = webView else { return }
         if webView.url == nil, let app = current { webView.load(URLRequest(url: app.url)) } else { webView.reload() }
     }
@@ -42,6 +52,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     func forget() async {
         guard let app = current else { return }
         close()
+        guard !app.isMacApp else { return }
         // The store can only go once no web view uses it any more.
         views[app.id]?.removeFromSuperview()
         views[app.id] = nil
@@ -51,12 +62,14 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     /// The open app in the user's own browser.
     func openInDefaultBrowser() {
+        if current?.isMacApp == true { return MacAppMirror.shared.bringToFront() }
         guard let url = webView?.url ?? current?.url else { return }
         NSWorkspace.shared.open(url)
     }
 
     /// What the open app shows now, as text: for Nook to read when the user asks about it.
     func pageText() async throws -> (title: String, url: String, text: String) {
+        if current?.isMacApp == true { return try await MacAppMirror.shared.text() }
         guard let app = current, let webView = webView else { throw NookError(tr("embedded.nothingOpen")) }
         let result = try await webView.evaluateJavaScript("document.body ? document.body.innerText : ''")
         let text = ((result as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,7 +95,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         [
             ToolSpec(
                 name: "read_open_app",
-                description: "Reads what the app open next to the chat shows right now (opened with @open, for example WhatsApp Web): its visible text. Use it when the user asks about what is in that app (\"what did Arjan write?\", \"summarize this chat\").",
+                description: "Reads what the app open next to the chat shows right now (opened with @open, for example WhatsApp Web or a Mac app such as WhatsApp): its visible text. Use it when the user asks about what is in that app (\"what did Arjan write?\", \"summarize this chat\").",
                 schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
                 kind: .read,
                 summarize: { _ in "Read the open app" },
@@ -139,7 +152,7 @@ struct EmbeddedAppPane: View {
     @State private var asking = false
 
     var body: some View {
-        if let current = store.current, let webView = store.webView {
+        if let current = store.current, current.isMacApp || store.webView != nil {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: current.symbol)
@@ -156,30 +169,38 @@ struct EmbeddedAppPane: View {
                         .disabled(asking)
                     NookIconButton(systemName: "arrow.clockwise", label: tr("embedded.reload"), size: 28) { store.reload() }
                         .help(tr("embedded.reload"))
-                    NookIconButton(systemName: "arrow.up.forward.app", label: tr("browser.openExternal"), size: 28) { store.openInDefaultBrowser() }
-                        .help(tr("browser.openExternal"))
-                    Menu {
-                        Button(tr("embedded.forget", current.title), role: .destructive) { Task { await app.closeEmbeddedApp(forget: true) } }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
+                    let external = current.isMacApp ? tr("embedded.mac.bringToFront") : tr("browser.openExternal")
+                    NookIconButton(systemName: "arrow.up.forward.app", label: external, size: 28) { store.openInDefaultBrowser() }
+                        .help(external)
+                    // A Mac app keeps its own sign-in; there is nothing of it in Nook to forget.
+                    if !current.isMacApp {
+                        Menu {
+                            Button(tr("embedded.forget", current.title), role: .destructive) { Task { await app.closeEmbeddedApp(forget: true) } }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .composerMenu()
                     }
-                    .composerMenu()
                     NookIconButton(systemName: "xmark", label: tr("embedded.close"), size: 28) { Task { await app.closeEmbeddedApp() } }
                         .help(tr("embedded.close"))
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 38)
                 Rectangle().fill(NookTheme.line).frame(height: 1)
-                ZStack {
-                    WebViewHost(webView: webView)
-                    if let error = store.lastError, !store.loading {
-                        WSEmptyState(symbol: "wifi.exclamationmark", title: tr("embedded.failed", current.title), message: error,
-                                     action: (tr("embedded.reload"), { store.reload() }))
-                            .background(NookTheme.field)
+                if current.isMacApp {
+                    MacAppMirrorPane(app: current)
+                } else if let webView = store.webView {
+                    ZStack {
+                        WebViewHost(webView: webView)
+                        if let error = store.lastError, !store.loading {
+                            WSEmptyState(symbol: "wifi.exclamationmark", title: tr("embedded.failed", current.title), message: error,
+                                         action: (tr("embedded.reload"), { store.reload() }))
+                                .background(NookTheme.field)
+                        }
                     }
                 }
             }
