@@ -110,7 +110,7 @@ extension AppModel {
         }
         let profile = self.profile(for: session) ?? profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
         let path = session.transcriptPath.isEmpty
-            ? (history.sessions.first { $0.sessionID == conversation }?.path ?? "") : session.transcriptPath
+            ? (history.sessions.first { $0.isConversation(conversation) }?.path ?? "") : session.transcriptPath
         let earlier = await earlierConversation(path: path, prompt: session.lastPrompt, reply: session.lastReply)
         let id = try await workspace.adopt(provider: provider, sessionID: conversation, profileID: profile.id,
                                            directory: session.cwd, title: session.lastPrompt.isEmpty ? session.project : session.lastPrompt,

@@ -84,7 +84,7 @@ struct AgentSessionDetail: View {
     /// The transcript behind a session Nook only sees as a process (it was running before Nook started), or matching history.
     private func transcript(for session: AgentSession) -> PastSession? {
         if let transcript = app.detectedTranscripts()[session.id] { return transcript }
-        if let id = app.conversationID(for: session), let past = app.history.sessions.first(where: { $0.sessionID == id }) {
+        if let id = app.conversationID(for: session), let past = app.history.sessions.first(where: { $0.isConversation(id) }) {
             return past
         }
         guard !session.cwd.isEmpty, let kind = AgentKind(agentName: session.name) else { return nil }
@@ -95,7 +95,7 @@ struct AgentSessionDetail: View {
     private func known(_ session: AgentSession) -> PastSession? {
         if let transcript = transcript(for: session) { return transcript }
         guard let id = app.conversationID(for: session) else { return nil }
-        return app.history.sessions.first { $0.sessionID == id }
+        return app.history.sessions.first { $0.isConversation(id) }
     }
 
     private func title(for session: AgentSession) -> String {
