@@ -158,6 +158,15 @@ struct CompletionContext {
 
 /// Lays out what the model reads. Base models continue documents, so this is a document: a short header about the author
 /// and the situation, then the text before the cursor.
+/// Which field a prompt's context belongs to: while it stays the same, the context is kept and the model's cache reused.
+enum CompletionFieldKey {
+    /// Digits are left out of the window title: unread counters and clocks ("(3) Inbox") change it all the time, and every
+    /// change would make the model read the whole context again.
+    static func make(app: String?, site: String?, placeholder: String?, windowTitle: String?) -> String {
+        [app ?? "", site ?? "", placeholder ?? "", (windowTitle ?? "").filter { !$0.isNumber }].joined(separator: "|")
+    }
+}
+
 struct PromptBuilder {
     /// Characters of text before the cursor that are kept.
     var windowLength = 2_000
