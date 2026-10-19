@@ -93,14 +93,17 @@ struct CompletionPreferences: Codable, Equatable {
     /// Ghost text in the line or a small card below it.
     var inlineGhost = true
     /// Wait this long after the last key, in milliseconds.
-    var delayMilliseconds = 70
+    var delayMilliseconds = 40
+    /// The words taken today, next to Nook's icon in the menu bar.
+    var menuBarCount = false
 
     // Model: a GGUF path, "brain:<id>" for the brain's model, or empty for automatic (see CompletionSource.resolve).
     var modelPath = ""
 
     // Context
     var windowContext = true
-    var screenContext = false
+    /// The text in the window being written in (Nook's screen reading, or read here through Accessibility).
+    var screenContext = true
     var clipboardContext = false
     var memoryContext = true
 

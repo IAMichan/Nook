@@ -1,7 +1,6 @@
 import Foundation
 
 /// What the user wrote, so suggestions sound like them. Only on this Mac, secrets taken out first, deletable in Settings.
-/// After Typist (MIT, © 2026 Brody Salvucci).
 struct CompletionSamples: Codable, Equatable {
     struct Sample: Codable, Equatable {
         var app: String

@@ -49,7 +49,10 @@ struct AutocompleteSettingsSection: View {
                             if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
                             autocomplete.refresh()
                         }
-                    if store.prefs.enabled { status }
+                    if store.prefs.enabled {
+                        status
+                        SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
+                    }
                 }
                 modelSection
                 downloadSection

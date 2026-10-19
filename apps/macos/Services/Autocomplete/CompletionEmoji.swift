@@ -7,17 +7,16 @@ struct CompletionEmoji: Equatable {
     var toneable: Bool
 }
 
-/// Emoji by name: type `:joy` (or in Dutch `:lachen`) and Tab gives 😂. The table and search follow Typist (MIT, © 2026 Brody
-/// Salvucci); the Dutch names are Nook's.
+/// Emoji by name: type `:` for the picker, or `:joy` (or in Dutch `:lachen`) to search it.
 enum CompletionEmojiCatalog {
-    /// The name being typed at the end of `text`, without the colon. The colon must start a word, so times (10:30) and links
-    /// do not count.
+    /// The name being typed at the end of `text`, without the colon; empty right after the colon. The colon must start a
+    /// word, so times (10:30), links and "Note:" do not count.
     static func query(in text: String) -> String? {
         var query = ""
         for character in text.reversed() {
             if character == ":" {
                 let beforeColon = text.dropLast(query.count + 1).last
-                guard beforeColon == nil || beforeColon!.isWhitespace, query.count >= 2 else { return nil }
+                guard beforeColon == nil || beforeColon!.isWhitespace else { return nil }
                 return String(query.reversed())
             }
             guard character.isASCII, character.isLetter || character.isNumber || "_+-".contains(character), query.count < 30 else { return nil }
@@ -37,6 +36,14 @@ enum CompletionEmojiCatalog {
             else if needle.count >= 3, emoji.shortcodes.contains(where: { $0.contains(needle) }) { contains.append(emoji) }
         }
         return Array((exact + prefix + contains).prefix(limit))
+    }
+
+    /// What the picker shows for `query`: right after the colon the ones you used last and then the most used, otherwise the
+    /// matches by name.
+    static func choices(for query: String, recent: [String], limit: Int) -> [CompletionEmoji] {
+        guard query.isEmpty else { return search(query, limit: limit) }
+        let used = recent.compactMap { character in all.first { $0.character == character } }
+        return Array((used + all.filter { !recent.contains($0.character) }).prefix(limit))
     }
 
     /// - Parameter tone: 0 for the default, 1…5 light to dark.

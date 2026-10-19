@@ -30,6 +30,20 @@ enum AppTextReader {
         AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
     }
 
+    /// The text of the app's focused window, within `limit` characters; nil when there is nothing to read. Synchronous: call it
+    /// off the main thread.
+    static func focusedWindowText(pid: pid_t, limit: Int) -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        guard let focused = value(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        var lines: [String] = []
+        var budget = 5000
+        var count = 0
+        collect(focused as! AXUIElement, depth: 0, into: &lines, budget: &budget, count: &count, chars: limit)
+        let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : String(text.prefix(limit))
+    }
+
     private static func read(pid: pid_t, limit: Int) -> [(title: String, text: String)] {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 1.5)

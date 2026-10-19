@@ -1,8 +1,7 @@
 import Foundation
 
 // Autocomplete's plain logic: when to suggest, what the model reads, and how its answer is shown and accepted. No AppKit, so
-// it is tested on its own (AutocompleteTests). The shape of Suggestion, CompletionPolicy and PromptBuilder follows Typist
-// (MIT, © 2026 Brody Salvucci; see THIRD-PARTY-NOTICES.md).
+// it is tested on its own (AutocompleteTests).
 
 /// A suggestion on screen: the text that would be typed at the cursor. It shrinks as words are accepted or typed through.
 struct CompletionSuggestion: Equatable {
@@ -24,19 +23,31 @@ struct CompletionSuggestion: Equatable {
     ///   - before: The text before the cursor (no doubled space after a space).
     ///   - after: The rest of the line after the cursor: a suggestion that runs into it stops where it starts.
     ///   - truncated: The model hit its token limit, so the last word may be cut off; it is dropped unless it is the only one.
-    static func make(raw: String, before: String, after: String = "", maxWords: Int, truncated: Bool = false) -> CompletionSuggestion? {
+    ///   - unfinished: The model stopped in the middle of a word (it was no longer sure how it goes on): that word is always
+    ///     dropped, a half word is never shown.
+    static func make(raw: String, before: String, after: String = "", maxWords: Int, truncated: Bool = false,
+                     unfinished: Bool = false) -> CompletionSuggestion? {
         var text = Substring(raw.replacingOccurrences(of: "\t", with: " "))
         if let newline = text.firstIndex(where: \.isNewline) { text = text[..<newline] }
         text = Substring(text.filter { !$0.unicodeScalars.contains { $0.properties.generalCategory == .control } })
         if before.last?.isWhitespace ?? true { text = text.drop(while: \.isWhitespace) }
 
         var parts = chunks(of: text)
-        if truncated, parts.count > 1, !(text.last?.isWhitespace ?? false) { parts.removeLast() }
+        if unfinished, !(text.last?.isWhitespace ?? false), !parts.isEmpty { parts.removeLast() }
+        else if truncated, parts.count > 1, !(text.last?.isWhitespace ?? false) { parts.removeLast() }
         var result = parts.prefix(max(maxWords, 0)).joined()
         result = overlapTrimmed(result, after: after)
         while let last = result.last, last.isWhitespace { result.removeLast() }
-        guard result.contains(where: { !$0.isWhitespace }) else { return nil }
+        guard result.contains(where: { !$0.isWhitespace }), !repeats(result, before: before) else { return nil }
         return CompletionSuggestion(result)
+    }
+
+    /// A model that is lost tends to copy what was just written. Three words or more that already stand in the last lines
+    /// before the cursor are not a suggestion.
+    static func repeats(_ text: String, before: String) -> Bool {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard words.count >= 3 else { return false }
+        return before.suffix(300).range(of: words.joined(separator: " "), options: .caseInsensitive) != nil
     }
 
     /// Mid-line: when the suggestion runs into the words already after the cursor, keep only what comes before them.
@@ -229,14 +240,21 @@ struct CompletionOptions: Equatable {
     var minFirstProbability: Float
     /// Stop the suggestion where the model's certainty drops below this.
     var minProbability: Float
+    /// How sure the model must stay of the suggestion as a whole (the product of its tokens' probabilities): a suggestion
+    /// ends where it drifts off, so long ones do not wander away from what you mean.
+    var minSequenceProbability: Float
+    /// The cursor is in the middle of a word: the engine reads the prompt without it and lets the model write it out again
+    /// (token healing), so the word is not split into odd tokens that make the model guess wildly.
+    var heal = false
 
     /// - Parameter eagerness: 0 only very sure suggestions … 1 eager.
     init(maxWords: Int = 8, eagerness: Double = 0.5) {
         self.maxWords = maxWords
         maxTokens = max(maxWords * 3, 6)
         let caution = Float(1 - min(max(eagerness, 0), 1))
-        minFirstProbability = 0.02 + 0.2 * caution
-        minProbability = 0.01 + 0.1 * caution
+        minFirstProbability = 0.05 + 0.3 * caution
+        minProbability = 0.02 + 0.13 * caution
+        minSequenceProbability = 0.01 + 0.09 * caution
     }
 }
 
@@ -244,6 +262,58 @@ struct CompletionResult: Equatable {
     var text: String
     /// Stopped at the token limit: the last word may be cut off.
     var truncated: Bool
+    /// Stopped in the middle of a word because the model was no longer sure.
+    var unfinished = false
+}
+
+/// Token healing: the end of a prompt that stops in the middle of a word is taken off and written again by the model. A word
+/// cut off by the cursor ("morg") tokenizes unlike any text the model learned from; read without it, the model chooses
+/// among the tokens that spell it ("morgen", "morgens") and goes on from a whole word.
+enum CompletionHealing {
+    /// The longest piece of word that is healed.
+    static let maxLength = 24
+
+    /// The prompt without the word the cursor is in, and that word with the spaces before it (empty when the prompt ends
+    /// with a space or punctuation, or the word is all there is).
+    static func split(_ prompt: String) -> (stem: String, pending: String) {
+        var word = prompt.endIndex
+        while word > prompt.startIndex {
+            let previous = prompt.index(before: word)
+            let character = prompt[previous]
+            guard character.isLetter || character.isNumber || character == "'" || character == "’" else { break }
+            word = previous
+        }
+        guard word < prompt.endIndex, prompt.distance(from: word, to: prompt.endIndex) <= maxLength else { return (prompt, "") }
+        var start = word
+        while start > prompt.startIndex, prompt[prompt.index(before: start)] == " " { start = prompt.index(before: start) }
+        guard start > prompt.startIndex else { return (prompt, "") }
+        return (String(prompt[..<start]), String(prompt[start...]))
+    }
+
+    /// Whether a token's bytes fit what still has to be written: it spells the start of it, or all of it and more.
+    static func fits(_ piece: [UInt8], _ required: [UInt8]) -> Bool {
+        guard !piece.isEmpty else { return false }
+        return piece.count >= required.count ? piece.starts(with: required) : required.starts(with: piece)
+    }
+
+    /// Whether `text` goes on with the word before it (a letter, digit or apostrophe first), so stopping before it would
+    /// leave half a word.
+    static func continuesWord(_ text: String) -> Bool {
+        guard let first = text.first else { return false }
+        return first.isLetter || first.isNumber || "'’".contains(first)
+    }
+}
+
+/// The text of the window around the field, for the prompt.
+enum CompletionScreenText {
+    /// Only the lines that read as text (a message, a paragraph), not the buttons, labels and menus around them: those make
+    /// the model write like a user interface.
+    static func prose(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.completionWordCount >= 4 }
+            .joined(separator: "\n")
+    }
 }
 
 /// Curly quotes, as macOS's "Use smart quotes and dashes" setting would give: text Nook types itself skips the app's own
