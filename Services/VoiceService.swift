@@ -8,7 +8,8 @@ final class VoiceService: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var transcript = ""
 
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
+    /// One recognizer per language, made when it is first needed.
+    private var recognizers: [String: SFSpeechRecognizer] = [:]
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -33,9 +34,65 @@ final class VoiceService: ObservableObject {
         return micOK && speechOK
     }
 
-    func start(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
+    /// The language to listen in: the language Nook answers in, or with "auto" the language of Nook's interface. The Mac's
+    /// own region wins when it speaks that language (nl-BE, en-GB), so accents are recognized better.
+    static func locale(answerLanguage: String, appLanguage: String, current: Locale = .current) -> Locale {
+        let code = answerLanguage == "auto" ? appLanguage : answerLanguage
+        if current.language.languageCode?.identifier == code, let region = current.region?.identifier {
+            let local = Locale(identifier: "\(code)-\(region)")
+            if SFSpeechRecognizer.supportedLocales().contains(where: { $0.identifier.replacingOccurrences(of: "_", with: "-") == local.identifier }) {
+                return local
+            }
+        }
+        let regions = ["nl": "nl-NL", "en": "en-US", "de": "de-DE", "fr": "fr-FR", "es": "es-ES"]
+        return Locale(identifier: regions[code] ?? "nl-NL")
+    }
+
+    private func recognizer(for locale: Locale) -> SFSpeechRecognizer? {
+        if let known = recognizers[locale.identifier] { return known }
+        let made = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "nl-NL"))
+        recognizers[locale.identifier] = made
+        return made
+    }
+
+    /// "Taal van mijn vraag": Nook listens in your languages at once (up to three, on-device) and keeps the one it was
+    /// surest of. Otherwise one recognizer in the chosen language.
+    private var multi: MultiDictation?
+    private var multiPoll: Task<Void, Never>?
+
+    func startMultilingual(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) {
         guard !isListening else { return }
-        guard let recognizer, recognizer.isAvailable else {
+        let dictation = MultiDictation()
+        dictation.onLevel = { VoiceLevel.shared.set($0) }
+        multi = dictation
+        self.onPartial = onPartial
+        self.onFinish = onFinish
+        transcript = ""
+        isListening = true
+        multiPoll = Task { @MainActor [weak self] in
+            await dictation.start(from: "")
+            guard let self, self.multi === dictation else { return }
+            guard dictation.isRecording else { self.cancel(); return }
+            var lastChange = Date()
+            var heard = ""
+            while !Task.isCancelled, self.multi === dictation {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                let now = dictation.transcript
+                if now != heard {
+                    heard = now
+                    lastChange = Date()
+                    self.transcript = now
+                    self.onPartial?(now)
+                }
+                // Silence: 6 s to start speaking, then 1.8 s after the last word.
+                if Date().timeIntervalSince(lastChange) > (heard.isEmpty ? 6 : 1.8) { self.finishNow(); return }
+            }
+        }
+    }
+
+    func start(locale: Locale = Locale(identifier: "nl-NL"), onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
+        guard !isListening else { return }
+        guard let recognizer = self.recognizer(for: locale), recognizer.isAvailable else {
             throw NookError("Speech recognition is currently unavailable.")
         }
         self.onPartial = onPartial
@@ -106,6 +163,21 @@ final class VoiceService: ObservableObject {
     /// Stops listening and delivers the recognized transcript.
     func finishNow() {
         guard isListening else { return }
+        if let dictation = multi {
+            let callback = onFinish
+            multi = nil
+            multiPoll?.cancel()
+            multiPoll = nil
+            isListening = false
+            onPartial = nil
+            onFinish = nil
+            Task { @MainActor in
+                let text = await dictation.finish()
+                VoiceLevel.shared.reset()
+                callback?(text)
+            }
+            return
+        }
         let text = transcript
         let callback = onFinish
         teardown()
@@ -115,6 +187,17 @@ final class VoiceService: ObservableObject {
     /// Stops listening without delivering anything.
     func cancel() {
         guard isListening else { return }
+        if let dictation = multi {
+            multi = nil
+            multiPoll?.cancel()
+            multiPoll = nil
+            dictation.stop()
+            isListening = false
+            onPartial = nil
+            onFinish = nil
+            VoiceLevel.shared.reset()
+            return
+        }
         teardown()
     }
 
@@ -171,6 +254,12 @@ final class VoiceLevel: @unchecked Sendable {
         let value = min(max((decibels + 50) / 40, 0), 1)
         lock.lock()
         level = value
+        lock.unlock()
+    }
+
+    func set(_ value: Double) {
+        lock.lock()
+        level = Float(value)
         lock.unlock()
     }
 

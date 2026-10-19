@@ -142,7 +142,16 @@ enum AIProvider: String, CaseIterable, Identifiable {
         let list = (object["data"] as? [[String: Any]]) ?? (object["models"] as? [[String: Any]]) ?? []
         return list.compactMap { ($0["id"] as? String) ?? ($0["name"] as? String) }
             .map { $0.replacingOccurrences(of: "models/", with: "") }
+            .filter(Self.isChatModel)
             .sorted()
+    }
+
+    /// Model lists also hold embedding, speech, image and moderation models; picked as a brain, they only give an error.
+    static func isChatModel(_ id: String) -> Bool {
+        let lower = id.lowercased()
+        let excluded = ["embed", "bge-", "all-minilm", "rerank", "clip", "whisper", "tts", "transcribe", "dall-e", "imagen",
+                        "gpt-image", "sora", "veo", "moderat", "realtime", "babbage", "davinci", "aqa"]
+        return !excluded.contains { lower.contains($0) }
     }
 }
 

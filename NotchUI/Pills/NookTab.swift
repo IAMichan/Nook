@@ -167,7 +167,7 @@ struct NookChatView: View {
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let name = app.attachmentName {
-                AttachmentChip(name: name) { app.clearAttachment() }
+                AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
             }
             SessionComposer(
                 text: $question,

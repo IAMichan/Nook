@@ -199,7 +199,7 @@ Legenda: ✅ werkt (code nagelopen, logica getest) · ➕ nieuw in deze versie �
 | Terminal | In Nook | – | ➕ `run_command`: hele commando in het plan, gevaarlijke commando's geweigerd, draait zichtbaar in de werkruimte |
 | MCP-servers | stdio of HTTP | ➕ lees-tools van de server | ➕ actie-tools van de server, altijd na jouw OK |
 | Berichten (iMessage, sms) | Op je Mac, Volledige schijftoegang | ➕ `search_messages` (hele geschiedenis, op tekst en contactnaam), `read_messages` (gesprek rond de treffers), ➕ `messages_open_chats` (ongelezen en onbeantwoorde gesprekken) | – |
-| WhatsApp | Op je Mac, Volledige schijftoegang | ➕ `search_whatsapp`, `read_whatsapp`, ➕ `whatsapp_open_chats` (ongelezen en onbeantwoorde chats) | – |
+| WhatsApp | Op je Mac, Volledige schijftoegang; of live via een lokale koppeling (GOWA/OpenWA) | ➕ `search_whatsapp`, `read_whatsapp`, ➕ `whatsapp_open_chats` (ongelezen en onbeantwoorde chats); ➕ `whatsapp_live` (live via je telefoon) | ➕ `whatsapp_send` naar een bestaande chat, max 6 per minuut; antwoorden vanuit de notch-kaart. |
 | Bear | Op je Mac | ➕ `search_bear`, `read_bear` | – |
 | Things | Op je Mac | ➕ `search_things` (open en afgerond, met project) | – |
 | Bestanden (Spotlight) | Op je Mac | ✅ `search_files`, `read_file` (pdf, Word, rtf, tekst), ➕ met klikbare verwijzing | – |

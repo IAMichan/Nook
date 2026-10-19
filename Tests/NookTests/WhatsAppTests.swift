@@ -1,0 +1,129 @@
+import XCTest
+
+/// WhatsApp through a local gateway: conversations in memory, what the gateways send, the webhook's signature, and who a
+/// recipient means. Partly after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
+final class WhatsAppTests: XCTestCase {
+    private func message(_ id: String, chat: String, from: String? = nil, text: String = "hoi", at: Double = 0,
+                         fromMe: Bool = false, mention: Bool = false, name: String = "Lisa") -> WAMessage {
+        WAMessage(id: id, chat: chat, sender: from ?? chat, senderName: name, text: text,
+                  date: Date(timeIntervalSince1970: 1_800_000_000 + at), fromMe: fromMe, mentionsMe: mention)
+    }
+
+    func testInboxGroupsByChatAndCountsUnread() {
+        var inbox = WAInbox()
+        let filters = WAFilters()
+        XCTAssertEqual(inbox.add(message("1", chat: "31600000001@s.whatsapp.net"), filters: filters), .notify)
+        inbox.add(message("2", chat: "31600000001@s.whatsapp.net", at: 5), filters: filters)
+        inbox.add(message("3", chat: "31600000002@s.whatsapp.net", at: 3), filters: filters)
+        XCTAssertEqual(inbox.conversations.count, 2)
+        XCTAssertEqual(inbox.conversations["31600000001@s.whatsapp.net"]?.unread, 2)
+        XCTAssertEqual(inbox.sorted.first?.id, "31600000001@s.whatsapp.net")
+        XCTAssertEqual(inbox.add(message("2", chat: "31600000001@s.whatsapp.net"), filters: filters), .duplicate)
+        // The same person under another form is the same chat.
+        XCTAssertEqual(inbox.add(message("4", chat: "31600000001:7@c.us", at: 9), filters: filters), .notify)
+        XCTAssertEqual(inbox.conversations.count, 2)
+        // Answering from the phone reads the chat.
+        XCTAssertEqual(inbox.add(message("5", chat: "31600000002@s.whatsapp.net", at: 10, fromMe: true), filters: filters), .quiet)
+        XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.unread, 0)
+    }
+
+    func testGroupsStayQuietUnlessTheyMentionYou() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        XCTAssertEqual(inbox.add(message("g1", chat: group, from: "316@s.whatsapp.net"), filters: WAFilters()), .quiet)
+        XCTAssertTrue(inbox.visible(filters: WAFilters()).isEmpty)
+        XCTAssertEqual(inbox.add(message("g2", chat: group, from: "316@s.whatsapp.net", mention: true), filters: WAFilters()), .notify)
+        var filters = WAFilters()
+        filters.ignored = ["31600000009@s.whatsapp.net"]
+        XCTAssertEqual(inbox.add(message("i1", chat: "31600000009@s.whatsapp.net"), filters: filters), .ignored)
+    }
+
+    func testHistoryIsKeptButNeverNew() {
+        var inbox = WAInbox()
+        XCTAssertEqual(inbox.add(message("h1", chat: "1@s.whatsapp.net"), filters: WAFilters(), history: true), .quiet)
+        XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.unread, 0)
+        for index in 0..<30 { inbox.add(message("m\(index)", chat: "1@s.whatsapp.net", at: Double(index + 1)), filters: WAFilters()) }
+        XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.count, WAInbox.keep)
+        XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m29")
+    }
+
+    func testRateLimit() {
+        var limit = WARateLimit(limit: 2, window: 60)
+        let now = Date()
+        XCTAssertTrue(limit.allow(now: now))
+        XCTAssertTrue(limit.allow(now: now))
+        XCTAssertFalse(limit.allow(now: now.addingTimeInterval(10)))
+        XCTAssertTrue(limit.allow(now: now.addingTimeInterval(61)))
+    }
+
+    // MARK: Webhook
+
+    func testOnlyASignedDeliveryCounts() {
+        let body = Data(#"{"event":"message","device_id":"31611111111@s.whatsapp.net","payload":{"id":"ABC","chat_id":"31622222222@s.whatsapp.net","from":"31622222222@s.whatsapp.net","from_name":"Jan","timestamp":"2026-10-18T12:00:00Z","is_from_me":false,"body":"Kom je vanavond?"}}"#.utf8)
+        let signature = WAWebhook.signature(body: body, secret: "geheim")
+        XCTAssertTrue(signature.hasPrefix("sha256="))
+        XCTAssertTrue(WAWebhook.verify(kind: .gowa, headers: ["x-hub-signature-256": signature], body: body, secret: "geheim"))
+        XCTAssertFalse(WAWebhook.verify(kind: .gowa, headers: ["x-hub-signature-256": signature], body: body, secret: "anders"))
+        XCTAssertFalse(WAWebhook.verify(kind: .gowa, headers: [:], body: body, secret: "geheim"))
+        XCTAssertFalse(WAWebhook.verify(kind: .openwa, headers: ["x-hub-signature-256": signature], body: body, secret: "geheim"))
+
+        guard case .message(let parsed)? = WAWebhook.parse(kind: .gowa, body: body) else { return XCTFail("no message") }
+        XCTAssertEqual(parsed.id, "ABC")
+        XCTAssertEqual(parsed.senderName, "Jan")
+        XCTAssertEqual(parsed.text, "Kom je vanavond?")
+        XCTAssertFalse(parsed.fromMe)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: Data(#"{"event":"receipt"}"#.utf8)), .ignored)
+        XCTAssertNil(WAWebhook.parse(kind: .gowa, body: Data("geen json".utf8)))
+    }
+
+    func testOpenWADelivery() {
+        let body = Data(#"{"event":"message.received","sessionId":"s","data":{"id":"X1","from":"31633333333@c.us","chatId":"31633333333@c.us","body":"","type":"voice","timestamp":1800000000,"fromMe":false,"contact":{"pushName":"Sanne"}}}"#.utf8)
+        guard case .message(let parsed)? = WAWebhook.parse(kind: .openwa, body: body) else { return XCTFail("no message") }
+        XCTAssertEqual(parsed.media, .voice(seconds: nil))
+        XCTAssertEqual(parsed.senderName, "Sanne")
+    }
+
+    func testTheWebhookRequestIsReadWhole() {
+        let raw = "POST /whatsapp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 4\r\nX-Hub-Signature-256: sha256=ab\r\n\r\n"
+        XCTAssertEqual(WAHTTPRequest.parse(Data((raw + "ab").utf8)), .incomplete)
+        guard case .done(let request) = WAHTTPRequest.parse(Data((raw + "abcd").utf8)) else { return XCTFail("not parsed") }
+        XCTAssertEqual(request.path, "/whatsapp")
+        XCTAssertEqual(request.headers["x-hub-signature-256"], "sha256=ab")
+        XCTAssertEqual(request.body, Data("abcd".utf8))
+    }
+
+    // MARK: Recipients and text
+
+    private let chats: [(jid: String, name: String)] = [
+        ("31611111111@s.whatsapp.net", "Lisa de Vries"),
+        ("31622222222@s.whatsapp.net", "Jan Bakker"),
+        ("31633333333@s.whatsapp.net", "Jan Jansen"),
+        ("120363000000000001@g.us", "Familie")
+    ]
+
+    func testRecipientByNameNumberOrId() {
+        XCTAssertEqual(WhatsAppRecipients.match("Lisa", in: chats)?.jid, "31611111111@s.whatsapp.net")
+        XCTAssertEqual(WhatsAppRecipients.match("lisa de vries", in: chats)?.jid, "31611111111@s.whatsapp.net")
+        XCTAssertEqual(WhatsAppRecipients.match("familie", in: chats)?.jid, "120363000000000001@g.us")
+        XCTAssertEqual(WhatsAppRecipients.match("06-11111111", in: chats)?.jid, "31611111111@s.whatsapp.net")
+        XCTAssertEqual(WhatsAppRecipients.match("31622222222@c.us", in: chats)?.name, "Jan Bakker")
+        XCTAssertNil(WhatsAppRecipients.match("Jan", in: chats), "two Jans: ask which one")
+        XCTAssertEqual(WhatsAppRecipients.match("Bakker", in: chats)?.name, "Jan Bakker")
+        XCTAssertNil(WhatsAppRecipients.match("0698765432", in: chats), "a number that is not a chat is never sent to")
+        XCTAssertNil(WhatsAppRecipients.match("Pieter", in: chats))
+    }
+
+    func testMessagesAsText() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let messages = [
+            message("2", chat: "c", text: "Top, tot dan", at: 120, fromMe: true, name: ""),
+            message("1", chat: "c", text: "Ben om 8 uur bij je", at: 0)
+        ]
+        let text = WhatsAppRecipients.lines(messages, chatName: "Lisa", calendar: calendar)
+        XCTAssertEqual(text, "2027-01-15 08:00 Lisa: Ben om 8 uur bij je\n2027-01-15 08:02 Me: Top, tot dan")
+        var voice = message("3", chat: "c", text: "")
+        voice.media = .voice(seconds: 12)
+        XCTAssertTrue(WhatsAppRecipients.lines([voice], chatName: "Lisa", calendar: calendar).hasSuffix("Lisa: [voice message]"))
+    }
+}

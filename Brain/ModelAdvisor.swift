@@ -33,6 +33,9 @@ struct ModelProfile: Equatable {
     static let localPro = ModelProfile(contextTokens: 32_768, maxOutputTokens: 4_096, maxTools: 40, compactDescriptions: false, rounds: 8,
                                        isSmall: true, richPrompt: true)
 
+    /// Apple Intelligence's on-device model (macOS 26): about 3B parameters and a 4k window, so few tools and a short prompt.
+    static let apple = ModelProfile(contextTokens: 4_096, maxOutputTokens: 700, maxTools: 5, compactDescriptions: true, rounds: 3, isSmall: true)
+
     /// Room for the answer when the model first reasons it out: reasoning takes tokens of its own.
     var thinkingOutputTokens: Int { min(max(maxOutputTokens * 3, 4_096), contextTokens / 2) }
 
@@ -313,4 +316,10 @@ enum ModelAdvisor {
     private static func formatted(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
+}
+
+/// Apple Intelligence as Nook's brain: chosen like a built-in model, under this id, but nothing to download.
+enum AppleModel {
+    static let id = "apple.intelligence"
+    static let title = "Apple Intelligence"
 }
