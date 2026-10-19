@@ -379,6 +379,8 @@ final class AgentWorkTests: XCTestCase {
     func testBrowserSearchEngine() {
         XCTAssertEqual(BrowserSearchEngine.address("example.com", engine: .google)?.absoluteString, "https://example.com")
         XCTAssertEqual(BrowserSearchEngine.address("localhost:3000", engine: .google)?.absoluteString, "http://localhost:3000")
+        XCTAssertEqual(BrowserSearchEngine.address("http://localhost:3000", engine: .duckDuckGo)?.absoluteString, "http://localhost:3000")
+        XCTAssertEqual(BrowserSearchEngine.address("http://localhost:5173/app", engine: .google)?.absoluteString, "http://localhost:5173/app")
         XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .google)?.absoluteString,
                        "https://www.google.com/search?q=swift%20actors")
         XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .duckDuckGo)?.host, "duckduckgo.com")
