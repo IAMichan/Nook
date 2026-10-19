@@ -148,7 +148,7 @@ final class AutocompleteStore: ObservableObject {
 
 /// The tabs of Settings › Autocomplete.
 enum AutocompleteSettingsTab: String, CaseIterable, Identifiable {
-    case general, apps, style, stats
+    case general, apps, style, playground, stats
 
     var id: String { rawValue }
     var title: String { tr("autocomplete.tab.\(rawValue)") }

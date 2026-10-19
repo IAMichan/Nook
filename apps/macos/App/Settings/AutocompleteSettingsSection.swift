@@ -68,6 +68,8 @@ struct AutocompleteSettingsSection: View {
                 contextSection
                 personalSection
                 extrasSection
+            case .playground:
+                AutocompletePlaygroundSection()
             case .stats:
                 statsSection
             }
