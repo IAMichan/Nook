@@ -28,8 +28,6 @@
     </label>
     <label class="row"><span>Groter paneel</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
-  <label class="row"><span>Geluiden</span><input type="checkbox" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
-  <label class="row"><span>Kleine dingen meteen doen</span><input type="checkbox" checked={s.autoRunSafe} onchange={(e) => nook.saveSettings({ autoRunSafe: e.currentTarget.checked })} /></label>
   <div class="row">
     <span>Kleur van Nook</span>
     <div class="swatches">

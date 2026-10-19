@@ -172,7 +172,8 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
         base.microphone = audio::has_microphone();
         base.system_audio = audio::has_system_audio();
         base.open_apps = true;
-        base.volume = true;
+        // Op Linux regelt Nook het volume via PipeWire, PulseAudio of ALSA; zonder een van die drie kan het niet.
+        base.volume = !cfg!(target_os = "linux") || ["wpctl", "pactl", "amixer"].iter().any(|p| process::which(p));
         base.clipboard = true;
         base.notifications = true;
         base.files = true;
@@ -187,6 +188,12 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
             notes.insert(
                 "systemAudio".into(),
                 "Het geluid van de computer opnemen kan hier niet; de Notetaker neemt alleen je microfoon op.".into(),
+            );
+        }
+        if !base.volume {
+            notes.insert(
+                "volume".into(),
+                "Het volume regelen kan niet: installeer PipeWire (wpctl), PulseAudio (pactl) of ALSA (amixer).".into(),
             );
         }
         if !base.screen_part {

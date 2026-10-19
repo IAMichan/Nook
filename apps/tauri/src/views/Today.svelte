@@ -148,9 +148,9 @@
   .panel { background: var(--graphite); border: 1px solid var(--line2); border-radius: 12px; padding: 8px 12px 12px; margin-bottom: 12px; }
   .head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
   .x { padding: 2px 6px; }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0 0; font-size: 12px; }
+  dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; margin: 6px 0 0; font-size: 12px; }
   dt { color: var(--text2); }
-  dd { margin: 0; }
+  dd { margin: 0; white-space: nowrap; text-align: right; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   .note { max-height: 260px; overflow-y: auto; font-size: 12px; }
   .more { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; }
   .err { color: var(--coral); font-size: 11px; }

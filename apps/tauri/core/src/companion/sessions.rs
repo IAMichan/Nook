@@ -111,7 +111,13 @@ pub fn hub_session(session: &AgentSession, approvals: &[ApprovalRequest], questi
     let mut items: Vec<DigestItem> =
         approvals.iter().map(|a| DigestItem { can_allow: hub_can_allow(a), ..approval_item(&a.id, &a.tool, &a.summary, None) }).collect();
     items.extend(questions.iter().map(|q| question_item(&q.id, &q.items)));
-    let title = if session.project.is_empty() { session.name.clone() } else { session.project.clone() };
+    // Zoals de lijst in de tab Agents: de samenvatting, anders je laatste opdracht, anders het project.
+    let title = [&session.summary, &session.last_prompt, &session.project, &session.name]
+        .into_iter()
+        .map(|t| t.lines().next().unwrap_or_default().trim())
+        .find(|t| !t.is_empty())
+        .unwrap_or_default()
+        .to_string();
     BackendSession {
         digest: SessionDigest {
             id: format!("{HUB_PREFIX}{}", session.id),
@@ -227,7 +233,7 @@ mod tests {
             "id": "claude-code:s1", "name": "Claude Code", "project": "nook", "status": "waiting", "file": "", "placeholder": "",
             "steps": [], "diff": [], "cwd": "/w/nook", "host": "", "home": "", "approvalId": null, "questionId": null,
             "linesAdded": 0, "linesRemoved": 0, "summary": "", "isLinked": false, "sessionId": "s1", "transcriptPath": "",
-            "lastPrompt": "", "lastReply": "Bijna klaar", "started": null, "updated": null, "pid": null
+            "lastPrompt": "Schrijf de tests\nvoor de login", "lastReply": "Bijna klaar", "started": null, "updated": null, "pid": null
         }))
         .unwrap();
         let approval: ApprovalRequest = serde_json::from_value(json!({
@@ -239,6 +245,7 @@ mod tests {
         let other = ApprovalRequest { id: "a2".into(), session_key: "codex:x".into(), ..approval.clone() };
         let s = hub_session(&session, &[approval, other], &[]);
         assert_eq!(s.digest.id, "hub:claude-code:s1");
+        assert_eq!(s.digest.title, "Schrijf de tests");
         assert_eq!((s.digest.attention.as_str(), s.digest.folder.as_str(), s.digest.excerpt.as_str()), ("approval", "nook", "Bijna klaar"));
         assert_eq!(s.digest.items.len(), 1);
         assert!(s.digest.items[0].can_allow, "git status is veilig");
