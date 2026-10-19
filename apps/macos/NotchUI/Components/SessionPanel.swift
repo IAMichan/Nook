@@ -11,6 +11,7 @@ struct OpenInTarget: Identifiable, Hashable {
     let appURL: URL?
 
     /// Finder first, then Nook's own terminal, the terminal apps and the editors installed on this Mac.
+    @MainActor
     static func available() -> [OpenInTarget] {
         var targets = [OpenInTarget(id: finder, name: "Finder", appURL: NSWorkspace.shared.urlForApplication(withBundleIdentifier: finder))]
         for choice in WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates) + WorkspaceSettings.installed(WorkspaceSettings.editorCandidates) {
