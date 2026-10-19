@@ -76,8 +76,8 @@ final class AppSettings: ObservableObject {
     }
 
     static let languages: [(code: String, name: String)] = [
-        ("nl", "Nederlands"), ("en", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"),
-        ("auto", "Taal van mijn vraag")
+        ("en", "English"), ("nl", "Nederlands"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"),
+        ("auto", "Language of my question")
     ]
 
     /// The language to answer this request in: the chosen language, or with "auto" the language the request is written in.
@@ -105,7 +105,7 @@ final class AppSettings: ObservableObject {
     /// Prompt sentence, e.g. "Always respond in English."
     var languageInstruction: String {
         if language == "auto" { return "Respond in the language the user writes in." }
-        let name = Self.languages.first { $0.code == language }?.name ?? "Nederlands"
+        let name = Self.languages.first { $0.code == language }?.name ?? "English"
         return "Always respond in \(name), even if the data or tools are in a different language."
     }
 
@@ -343,7 +343,7 @@ final class AppSettings: ObservableObject {
         } else {
             appLanguage = I18n.shared.language
         }
-        language = defaults.string(forKey: "language") ?? "nl"
+        language = defaults.string(forKey: "language") ?? "en"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external

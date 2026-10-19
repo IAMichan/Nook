@@ -45,9 +45,10 @@ enum TextGeneration {
 
     static func commitPrompt(branch: String?, files: String, patch: String) -> String {
         [
-            "You write concise git commit messages.",
+            "You write concise git commit messages in English.",
             "Return a JSON object with keys: subject, body.",
             "Rules:",
+            "- write subject and body in English",
             "- subject must be imperative, <= 72 chars, and no trailing period",
             "- body can be empty string or short bullet points",
             "- capture the primary user-visible or developer-visible change",
@@ -74,7 +75,8 @@ enum TextGeneration {
             "- drop HTML comments from the template in the generated body",
             "- keep the template's markdown structure"
         ]
-        var lines = ["You write source control change request content.", "Return a JSON object with keys: title, body.", "Rules:",
+        var lines = ["You write source control change request content in English.", "Return a JSON object with keys: title, body.", "Rules:",
+                     "- write title and body in English",
                      "- title should be concise and specific"] + bodyRules
         if let template { lines += ["", "Repository change request template:", limit(template, 8_000)] }
         lines += ["", "Base branch: \(base)", "Head branch: \(head)", "", "Commits:", limit(commits, 12_000), "",
