@@ -136,27 +136,44 @@ enum AutocompleteSettingsTab: String, CaseIterable, Identifiable {
     var title: String { tr("autocomplete.tab.\(rawValue)") }
 }
 
-/// Downloads a model from the catalog into Nook's models folder, with progress.
+/// Downloads GGUF models (from the list, or a pasted link) into Nook's models folder, with progress, and checks that what
+/// arrived is a GGUF model before it can be used.
 @MainActor
 final class CompletionDownloads: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = CompletionDownloads()
 
     @Published private(set) var downloading: CompletionCatalogModel?
     @Published private(set) var progress: Double = 0
+    @Published private(set) var received: Int64 = 0
+    @Published private(set) var expected: Int64 = 0
     @Published var error: String?
+    /// Bumped when a file arrives or goes, so the lists redraw.
+    @Published private(set) var changes = 0
 
     private var task: URLSessionDownloadTask?
     private var done: ((URL) -> Void)?
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
 
+    func file(for model: CompletionCatalogModel) -> URL { AutocompleteStore.modelsFolder.appendingPathComponent(model.fileName) }
+
     func isInstalled(_ model: CompletionCatalogModel) -> Bool {
-        FileManager.default.fileExists(atPath: AutocompleteStore.modelsFolder.appendingPathComponent(model.fileName).path)
+        FileManager.default.fileExists(atPath: file(for: model).path)
+    }
+
+    /// "1.2 of 2.5 GB" while downloading.
+    var progressText: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        guard expected > 0 else { return formatter.string(fromByteCount: received) }
+        return tr("autocomplete.download.progress", formatter.string(fromByteCount: received), formatter.string(fromByteCount: expected))
     }
 
     func download(_ model: CompletionCatalogModel, then done: @escaping (URL) -> Void) {
         guard downloading == nil else { return }
         downloading = model
         progress = 0
+        received = 0
+        expected = 0
         error = nil
         self.done = done
         task = session.downloadTask(with: model.url)
@@ -165,20 +182,32 @@ final class CompletionDownloads: NSObject, ObservableObject, URLSessionDownloadD
 
     func cancel() { task?.cancel() }
 
+    func delete(_ model: CompletionCatalogModel) {
+        try? FileManager.default.removeItem(at: file(for: model))
+        changes += 1
+    }
+
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                                 totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard totalBytesExpectedToWrite > 0 else { return }
-        let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        MainActor.assumeIsolated { if fraction - progress >= 0.005 || fraction >= 1 { progress = fraction } }
+        MainActor.assumeIsolated {
+            received = totalBytesWritten
+            expected = max(totalBytesExpectedToWrite, 0)
+            guard totalBytesExpectedToWrite > 0 else { return }
+            let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            if fraction - progress >= 0.005 || fraction >= 1 { progress = fraction }
+        }
     }
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // The file at `location` is gone once this returns: move it now.
+        // The file at `location` is gone once this returns: check and move it now.
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200
-        let target = MainActor.assumeIsolated { downloading.map { AutocompleteStore.modelsFolder.appendingPathComponent($0.fileName) } }
+        let target = MainActor.assumeIsolated { downloading.map { file(for: $0) } }
         guard let target else { return }
         guard (200..<300).contains(status) else {
             return MainActor.assumeIsolated { finish(error: tr("autocomplete.download.http", status)) }
+        }
+        guard GGUFReader.read(location) != nil else {
+            return MainActor.assumeIsolated { finish(error: tr("autocomplete.download.notGGUF")) }
         }
         do {
             try? FileManager.default.removeItem(at: target)
@@ -205,5 +234,6 @@ final class CompletionDownloads: NSObject, ObservableObject, URLSessionDownloadD
         done = nil
         task = nil
         self.error = error
+        changes += 1
     }
 }

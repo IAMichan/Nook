@@ -346,4 +346,20 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionTypography.smartQuotes("'s avonds", after: " "), "’s avonds")
         XCTAssertEqual(CompletionTypography.smartQuotes("'sterk'", after: " "), "‘sterk’")
     }
+
+    func testDownloadLinks() {
+        let page = CompletionCatalogModel.custom(from: " https://huggingface.co/someone/Model-GGUF/blob/main/model.Q4_K_M.gguf?download=true ")
+        XCTAssertEqual(page?.url.absoluteString, "https://huggingface.co/someone/Model-GGUF/resolve/main/model.Q4_K_M.gguf")
+        XCTAssertEqual(page?.fileName, "model.Q4_K_M.gguf")
+        XCTAssertEqual(page?.name, "model.Q4_K_M")
+        XCTAssertEqual(CompletionCatalogModel.custom(from: "https://hf.co/a/b/resolve/main/sub/x.gguf")?.url.absoluteString,
+                       "https://huggingface.co/a/b/resolve/main/sub/x.gguf")
+        XCTAssertEqual(CompletionCatalogModel.custom(from: "https://example.com/models/y.gguf")?.fileName, "y.gguf")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "http://example.com/y.gguf"), "only https")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "https://huggingface.co/a/b"), "a page, not a file")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "https://huggingface.co/a/b/blob/main/mmproj-x.gguf"), "a vision projector")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "hallo"))
+        XCTAssertEqual(CompletionCatalogModel.catalog.first?.url.absoluteString,
+                       "https://huggingface.co/mradermacher/Qwen3-0.6B-Base-i1-GGUF/resolve/main/Qwen3-0.6B-Base.i1-Q4_K_M.gguf")
+    }
 }

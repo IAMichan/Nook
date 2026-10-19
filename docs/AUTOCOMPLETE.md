@@ -41,7 +41,7 @@ Velden zonder gewone tekstwaarde, zoals rich-text editors in de browser (Gmail, 
 **Automatisch** kiest in deze volgorde:
 
 1. **Een GGUF-model dat al op je Mac staat.** Andere apps en tools hebben het dan al gedownload. `CompletionModelLocator` zoekt in `~/Library/Application Support`, `~/Library/Caches`, de map van LM Studio en de caches van Hugging Face en llama.cpp. De containers van andere apps slaat het over, want daarvoor vraagt macOS toestemming. Projectoren voor beeld, embedding-modellen en bestanden onder 50 MB tellen niet mee. `GGUFReader` leest van elk bestand alleen de header (naam, architectuur, contextlengte). Nook leest zo'n bestand alleen, op de plek waar het staat: geen kopie, geen wijziging.
-2. **Een GGUF-model dat je in Instellingen downloadde** uit de catalogus. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft.
+2. **Een GGUF-model dat je in Instellingen downloadde.** Dat doe je bij **Instellingen › Aanvullen › Algemeen › GGUF-modellen downloaden**. Daar staat een lijst basismodellen met hun grootte en het geheugen dat ze vragen. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft. Je kunt ook een eigen link naar een `.gguf`-bestand plakken, zoals een Hugging Face-pagina of een directe link. Je ziet de voortgang in GB en kunt de download annuleren. Is een download klaar, dan controleert Nook of het echt een GGUF-model is en gebruikt het meteen. Gedownloade modellen kun je weer verwijderen. Staat er nog geen enkel model op je Mac, dan zit de knop voor het aanbevolen model direct in de melding "Nog geen model".
 3. **Het model van je brein.** Dat is het MLX-model dat je bij **Instellingen › Brein** installeerde. Je hoeft dan niets te downloaden.
 
 Je kunt ook zelf een model kiezen, of een `.gguf`-bestand.

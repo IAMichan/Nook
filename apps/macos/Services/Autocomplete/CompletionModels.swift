@@ -153,8 +153,31 @@ struct CompletionCatalogModel: Identifiable, Equatable {
     /// Key of the one-line note (i18n).
     var noteKey: String
 
+    /// A link of its own, for a model you paste instead of picking from the list.
+    var link: URL? = nil
+
     var id: String { fileName }
-    var url: URL { URL(string: "https://huggingface.co/\(repository)/resolve/main/\(fileName)")! }
+    var url: URL { link ?? URL(string: "https://huggingface.co/\(repository)/resolve/main/\(fileName)")! }
+
+    /// A model from a pasted link to a `.gguf` file: a Hugging Face page of the file ("…/blob/main/x.gguf", turned into its
+    /// download link) or any https link ending in `.gguf`. Nil for anything else.
+    static func custom(from text: String) -> CompletionCatalogModel? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed), components.scheme == "https", let host = components.host, !host.isEmpty else { return nil }
+        var parts = components.path.split(separator: "/").map(String.init)
+        guard let last = parts.last, last.lowercased().hasSuffix(".gguf"), !last.lowercased().contains("mmproj") else { return nil }
+        if host == "huggingface.co" || host == "hf.co" {
+            // owner/repo/(blob|resolve)/revision/path…
+            guard parts.count >= 5, ["blob", "resolve"].contains(parts[2]) else { return nil }
+            parts[2] = "resolve"
+            components.host = "huggingface.co"
+            components.path = "/" + parts.joined(separator: "/")
+            components.query = nil
+        }
+        guard let url = components.url else { return nil }
+        let name = String(last.dropLast(5))
+        return CompletionCatalogModel(name: name, fileName: last, repository: "", sizeGB: 0, minimumMemoryGB: 0, noteKey: "", link: url)
+    }
 
     static let catalog: [CompletionCatalogModel] = [
         CompletionCatalogModel(name: "Qwen3 0.6B Base", fileName: "Qwen3-0.6B-Base.i1-Q4_K_M.gguf",
