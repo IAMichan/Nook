@@ -5,8 +5,9 @@ import Combine
 /// Manages the notch panel: positioning, click-through outside shape, and dismissal on external clicks.
 @MainActor
 final class NotchController {
-    /// The panel has a fixed bounding size (accommodating the largest state); SwiftUI renders the notch shape within it.
-    static let panelSize = CGSize(width: 1280, height: 900)
+    /// The panel has a fixed bounding size (accommodating the largest state, including a notch you dragged larger); SwiftUI
+    /// renders the notch shape within it, and outside the shape clicks pass through.
+    static let panelSize = CGSize(width: 2000, height: 1300)
 
     let viewModel = NotchViewModel()
     private var panel: NotchPanel?

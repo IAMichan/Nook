@@ -458,7 +458,7 @@ final class NotchViewModel: ObservableObject {
         }
         switch tab {
         case .nook where embeddedAppOpen, .chat where embeddedAppOpen:
-            return CGSize(width: NotchController.panelSize.width - 40, height: min(chrome + 680, NotchController.panelSize.height))
+            return CGSize(width: 1240, height: min(chrome + 680, NotchController.panelSize.height))
         case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
         case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
         case .agents where workbenchOpen:

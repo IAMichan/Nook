@@ -1,7 +1,8 @@
 import Foundation
 
-/// Making the open notch larger or smaller by dragging its sides or bottom corners. What you drag is kept as an extra
-/// width and height on top of the size each tab starts at, so the Agents tab stays wider than the music, just bigger.
+/// Making the open notch larger by dragging its sides or bottom corners, and back down again. What you drag is kept as an
+/// extra width and height on top of the size each tab starts at, so the Agents tab stays wider than the music, just
+/// bigger. The size a tab starts at is also the smallest it gets: dragging only ever adds room.
 enum NotchResize {
     /// The edge or corner being dragged. The notch stays centred under the camera, so a side moves both sides.
     enum Edge: String, CaseIterable {
@@ -19,18 +20,16 @@ enum NotchResize {
         var vertical: Bool { self == .bottom || self == .bottomLeft || self == .bottomRight }
     }
 
-    /// The smallest an open notch gets, whatever you drag.
-    static let minimum = CGSize(width: 560, height: 300)
     static let defaultsKey = "notch.panelExtra"
 
-    /// `base` with `extra` added, kept between the minimum and `maximum` (the room the panel window and the screen give).
-    /// A tab that starts smaller than the minimum (or larger than the maximum) keeps that edge of its own size.
+    /// `base` with `extra` added, kept between `base` itself and `maximum` (the room the panel window and the screen give).
+    /// A tab that starts larger than the maximum keeps that edge of its own size.
     static func size(base: CGSize, extra: CGSize, maximum: CGSize) -> CGSize {
-        func fit(_ value: CGFloat, _ base: CGFloat, low: CGFloat, high: CGFloat) -> CGFloat {
-            min(max(value, min(low, base)), max(high, base))
+        func fit(_ value: CGFloat, _ base: CGFloat, high: CGFloat) -> CGFloat {
+            min(max(value, base), max(high, base))
         }
-        return CGSize(width: fit(base.width + extra.width, base.width, low: minimum.width, high: maximum.width),
-                      height: fit(base.height + extra.height, base.height, low: minimum.height, high: maximum.height))
+        return CGSize(width: fit(base.width + extra.width, base.width, high: maximum.width),
+                      height: fit(base.height + extra.height, base.height, high: maximum.height))
     }
 
     /// The extra size after dragging `edge` by `translation` (screen points, y down) from where it was at `start`.
@@ -46,8 +45,10 @@ enum NotchResize {
         return CGSize(width: shown.width - base.width, height: shown.height - base.height)
     }
 
+    /// Never below zero: a size saved back when the notch could be made smaller than a tab's own size counts as that size.
     static func load(_ defaults: UserDefaults = .standard) -> CGSize {
-        CGSize(width: defaults.double(forKey: defaultsKey + ".width"), height: defaults.double(forKey: defaultsKey + ".height"))
+        CGSize(width: max(0, defaults.double(forKey: defaultsKey + ".width")),
+               height: max(0, defaults.double(forKey: defaultsKey + ".height")))
     }
 
     static func save(_ extra: CGSize, _ defaults: UserDefaults = .standard) {
