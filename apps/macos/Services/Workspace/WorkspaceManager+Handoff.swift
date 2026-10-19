@@ -1,6 +1,6 @@
 import Foundation
 
-// Forking a session and switching it to another agent (fork and provider switch). See `ContextTransfer`.
+// Forking a session and switching it to another agent. See `ContextTransfer`.
 
 extension WorkspaceManager {
     func shownPrompt(_ id: UUID, _ prompt: String) -> String { displayPrompt[id] ?? prompt }
@@ -158,7 +158,7 @@ extension WorkspaceManager {
 
     // MARK: Merge back
 
-    /// Sends what a fork found out to the session it came from, as one message (merge-back): the summary of the
+    /// Sends what a fork found out to the session it came from, as one message: the summary of the
     /// fork's timeline since the point where it split off. The parent takes it up as soon as it is idle.
     @discardableResult
     func mergeBack(_ id: UUID) -> Bool {

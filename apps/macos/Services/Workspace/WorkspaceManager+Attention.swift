@@ -1,6 +1,6 @@
 import Foundation
 
-// Session state beyond start/stop: going on after a restart and snoozing (restart continuation and snooze).
+// Session state beyond start/stop: going on after a restart and snoozing.
 
 extension WorkspaceManager {
     /// Sessions a restart of Nook cut off get "Continue where you left off." once. Called a moment after launch, when the

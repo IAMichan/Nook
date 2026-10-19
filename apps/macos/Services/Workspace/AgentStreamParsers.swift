@@ -96,7 +96,7 @@ enum ClaudeStreamParser {
             guard !nested, let event = object["event"] as? [String: Any] else { return [] }
             switch event["type"] as? String {
             case "content_block_start":
-                // Thinking shows while it is written streams it.
+                // Thinking shows while it is written.
                 guard let block = event["content_block"] as? [String: Any], (block["type"] as? String) == "thinking" else { return [] }
                 return [.thinkingDelta((block["thinking"] as? String) ?? "", starts: true)]
             case "content_block_delta":
@@ -239,7 +239,7 @@ enum ClaudeStreamParser {
     // MARK: Messages to Claude Code (stdin)
 
     /// A user message in `--input-format stream-json` format. With `steer`, it has `priority: "now"`: Claude Code
-    /// stops what it is doing in the running turn and takes the message in right away (steering).
+    /// stops what it is doing in the running turn and takes the message in right away.
     static func userMessage(_ text: String, steer: Bool = false) -> String {
         var message: [String: Any] = ["type": "user", "message": ["role": "user", "content": text], "parent_tool_use_id": NSNull(), "session_id": ""]
         if steer { message["priority"] = "now" }
@@ -259,7 +259,7 @@ enum ClaudeStreamParser {
                      "response": ["subtype": "success", "request_id": requestID, "response": decision]])
     }
 
-    /// The answer to AskUserQuestion, given as permission to run the tool with the answers filled in (way):
+    /// The answer to AskUserQuestion, given as permission to run the tool with the answers filled in:
     /// `answers` maps each question's text to the chosen labels, joined.
     static func questionAnswer(requestID: String, input: JSONBox, questions: [RunQuestion], answers: [String: [String]]) -> String {
         var updated = input.dictionary

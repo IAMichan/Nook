@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// The one git button (quick action): the state of the session's branch decides between commit, push, pull
+/// The one git button: the state of the session's branch decides between commit, push, pull
 /// request and pull, and the agent writes the commit message and the pull request.
 extension WorkspaceManager {
     /// Where the button stands for a session; nil outside a repository.

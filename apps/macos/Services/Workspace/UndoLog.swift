@@ -1,6 +1,6 @@
 import Foundation
 
-// The one-line "3 sessions settled · ⌘Z" notice. keeps it in a UI store and only in the sidebar footer; here the
+// The one-line "3 sessions settled · ⌘Z" notice. Here the
 // decision lives in a value so the list and the composer line show the same entry. Foundation only.
 
 struct UndoEntry: Equatable, Sendable {

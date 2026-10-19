@@ -1,48 +1,41 @@
 # Nook Companion (iPhone)
 
-Een kleine iPhone-app die laat zien welke Agents-sessies jou nodig hebben, en waarmee je kunt **goedkeuren, antwoorden, een bericht sturen en stoppen**. Ze praat rechtstreeks met Nook op je Mac via je eigen wifi; er is geen server van ons tussen.
+**Nook Companion** is a lightweight iPhone app that shows which coding-agent sessions on your Mac need your attention, letting you **approve or deny tool calls, answer questions, send follow-up messages, and stop sessions**. It communicates directly with Nook on your Mac over your local Wi-Fi network (or Tailscale/VPN)—with no cloud relay server in between.
 
-## Koppelen
+## Pairing
 
-1. Mac: Instellingen › Agents › Werkruimte › **iPhone-metgezel** aan, dan **Koppel een iPhone**. Nook toont een QR-code (en een link `nook://pair?…`) die vijf minuten en één keer geldt.
-2. iPhone: open Nook Companion en scan de code (of plak de link).
-3. De eerste aanvraag bewijst dat de telefoon de sleutel heeft; de Mac bewaart het toestel (sleutel in de Keychain). Ontkoppelen = de sleutel verwijderen, aan beide kanten.
+1. **On your Mac:** Go to **Settings › Agents › Workspace**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
+2. **On your iPhone:** Open **Nook Companion** and scan the QR code (or paste the pairing link).
+3. The first authenticated request proves the phone holds the shared key; your Mac stores the paired device key in the macOS Keychain. Unpairing deletes the key on either side.
 
-## Beveiliging
+## Security Architecture
 
-- De sleutel (32 willekeurige bytes) reist alleen via de QR-code, nooit over het netwerk.
-- Elk bericht is verzegeld met ChaCha20-Poly1305 (sleutel via HKDF uit de koppelsleutel; toestel-id en richting zitten in de geauthenticeerde data). Wie meeluistert op het wifi ziet geen titels of commando’s en kan niets veranderen of namaken.
-- Een aanvraag heeft een tijdstempel (maximaal 60 s verschil) en een uniek id; de Mac weigert oude en herhaalde aanvragen (`RequestGuard`) en begrenst tot 120 per minuut per toestel. Maximaal 8 gelijktijdige verbindingen, 256 KB per bericht, 30 s per verbinding.
-- Wat de telefoon mag (`CompanionPolicy`): weigeren altijd; **toestaan alleen als het laag risico is** (bestanden lezen/bewerken, of een shell-commando dat `CommandRisk` als veilig beoordeelt). Alles daarbuiten (onbekende of gevaarlijke commando’s, web, MCP-tools) kan alleen op de Mac. Een vraag met meerdere onderdelen beantwoord je ook op de Mac.
-- Elke actie vanaf de telefoon staat in het auditlogboek (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_paired`).
-- Een bericht van de telefoon is jouw eigen bericht (het toestel is gekoppeld door jou); tekst die agents of webpagina’s opleveren blijft data.
+- **Out-of-band key exchange:** The 32-byte random key is transferred exclusively via the QR code and never sent over the network.
+- **End-to-end authenticated encryption:** Every message is sealed with **ChaCha20-Poly1305** (keys derived via HKDF from the pairing key, with device ID and direction bound in the associated data). Anyone on the same Wi-Fi network cannot read session titles or commands, nor modify or forge requests.
+- **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
+- **Least-privilege policy (`CompanionPolicy`):** Denying a tool call is always permitted from the phone; **allowing a tool call from the phone is restricted to low-risk operations** (reading/editing files or shell commands classified as safe by `CommandRisk`). High-risk or unknown commands, web actions, and MCP tools must be approved on the Mac itself.
+- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_paired`).
 
-## Grenzen (bewust)
+## Scope & Intentional Boundaries
 
-- Alleen in hetzelfde lokale netwerk (of via een VPN zoals Tailscale als je het adres van de Mac daarin gebruikt; de koppelcode bevat de hostnaam `….local`).
-- Acties (goedkeuren, antwoorden) vragen nog steeds dat de telefoon de Mac bereikt; een pushmelding werkt overal waar de telefoon internet heeft, maar de knoppen erin pas als de Mac bereikbaar is.
-- De Mac luistert alleen als de metgezel aanstaat.
+- Works on the same local network (or over a VPN such as Tailscale using your Mac's hostname/address).
+- Interactive actions (approve, answer, send, stop) require a live connection to the Mac; push notifications arrive anywhere with internet access, and their inline actions execute as soon as the phone can reach the Mac.
+- The Mac listener only runs when **iPhone Companion** is enabled in Settings.
 
-## Waar zit het
+## Code Locations
 
-- Gedeeld: `packages/protocol/Sources/CompanionModels.swift` (protocol, framing, regels; getest in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit), `WebhookSecurity.swift` (hashing).
-- Mac: `apps/macos/Services/Companion/CompanionServer.swift` (NWListener + Bonjour `_nookcompanion._tcp`), `CompanionStore.swift` (toestellen, koppelvenster), `apps/macos/App/Settings/CompanionSettings.swift`.
-- iPhone: `apps/ios/NookCompanion/` (eigen project: `apps/ios/project.yml`, zie [apps/ios](../apps/ios)).
+- **Shared protocol:** `packages/protocol/Sources/CompanionModels.swift` (protocol, framing, policy rules; tested in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit ChaCha20-Poly1305), `WebhookSecurity.swift` (SHA-256 / HMAC).
+- **macOS app:** `apps/macos/Services/Companion/CompanionServer.swift` (`NWListener` + Bonjour `_nookcompanion._tcp`), `CompanionStore.swift` (paired devices & pairing window), `apps/macos/App/Settings/CompanionSettings.swift`.
+- **iOS app:** `apps/ios/NookCompanion/` (XcodeGen project in `apps/ios/project.yml`; see [`apps/ios/README.md`](../apps/ios/README.md)).
 
-## Pushmeldingen
+## Direct APNs Push Notifications
 
-Nook stuurt ze zelf, zonder server van ons: de Mac ondertekent een verzoek met jouw eigen APNs-sleutel en stuurt het naar Apple (`api.push.apple.com`), die het naar de telefoon brengt.
+Nook sends push notifications directly from your Mac without any intermediary server: your Mac signs the APNs JWT using your own Apple Developer `.p8` key and sends it straight to Apple (`api.push.apple.com`).
 
-**Eenmalig instellen (Apple Developer-account):**
-1. Zet Push Notifications aan voor de app-id `nl.imdigital.nook.companion` (Certificates, Identifiers & Profiles › Identifiers).
-2. Maak een APNs-sleutel (Keys › + › Apple Push Notifications service) en download het `.p8`-bestand. Noteer het sleutel-id en je team-id.
-3. Nook › Instellingen › iPhone-metgezel › Pushmeldingen: vul de twee id’s in en importeer het `.p8`-bestand (het gaat naar de sleutelhanger). Met "Stuur testmelding" controleer je alles.
-4. Op de iPhone: sta meldingen toe als de app erom vraagt. De app geeft haar token (versleuteld) door aan de Mac.
+**One-time setup (Apple Developer account):**
+1. Enable **Push Notifications** for the `nl.imdigital.nook.companion` App ID (or your custom bundle ID) in *Certificates, Identifiers & Profiles › Identifiers*.
+2. Create an APNs key (*Keys › + › Apple Push Notifications service*) and download the `.p8` file. Note your **Key ID** and **Team ID**.
+3. In Nook on your Mac (**Settings › iPhone Companion › Push Notifications**), enter your Key ID and Team ID and import the `.p8` file (stored in the macOS Keychain). Click **Send Test Notification** to verify.
+4. On your iPhone, allow notifications when prompted. The app sends its push token (encrypted) to your Mac.
 
-**Wat je krijgt:** een melding bij toestemming nodig, een vraag, een klare sessie, een mislukte sessie en een bereikte limiet (elk aan/uit), met op de toestemmingsmelding de knoppen *Weiger* (en *Sta toe* als het laag risico is) zonder de app te openen. Het app-icoon toont hoeveel sessies je nodig hebben.
-
-**Regels:** alleen als je niet bij de Mac bent (twee minuten inactief of scherm vergrendeld), stille uren (toestemming en vragen komen desgewenst toch door), en per melding één keer (geen dubbele).
-
-**Privacy:** Apple ziet de tekst. Die noemt standaard alleen de agent en wat er nodig is ("Claude Code · Wacht op jouw toestemming"); de sessietitel staat er alleen in als je dat aanzet. Nooit een commando, bestand of antwoord.
-
-**Let op:** een development-build van de app (Xcode) gebruikt Apple’s sandbox-omgeving, TestFlight/App Store de productie-omgeving; de app meldt dat zelf aan de Mac. Een verlopen of ingetrokken token wordt bij Apple’s antwoord (410) automatisch vergeten.
+**Privacy:** Because push payloads pass through Apple's APNs servers, Nook sends only the agent name and status by default (e.g., `"Claude Code · Waiting for your approval"`). Session titles are omitted unless you explicitly opt in, and commands, file paths, or answers are never included in push payloads.

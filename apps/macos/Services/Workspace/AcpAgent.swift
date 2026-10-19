@@ -1,9 +1,9 @@
 import Foundation
 
-// Agents over ACP (Agent Client Protocol) runs Gemini CLI, OpenCode, Cursor, Grok and Antigravity: one
+// Agents over ACP (Agent Client Protocol), OpenCode, Cursor, Grok and Antigravity: one
 // process per session speaking JSON-RPC 2.0 over stdin/stdout. Nook starts or loads a session, sends prompts, shows
 // the agent's messages, thoughts and tool calls live, and answers its permission requests. Shapes follow the ACP v1
-// schema (as vendored by). Everything in this file depends only on Foundation so tests can use it independently.
+// schema. Everything in this file depends only on Foundation so tests can use it independently.
 
 /// How to start an agent's ACP server (the arguments the ACP registry lists for it).
 enum AcpLaunch {
@@ -129,7 +129,7 @@ enum AcpRPC {
         return ["outcome": ["outcome": "cancelled"]]
     }
 
-    /// Whether a request may be allowed without asking, under the session's rights (as runtime modes).
+    /// Whether a request may be allowed without asking, under the session's rights.
     static func autoAllows(_ call: AcpToolCall, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
         if mode == .plan { return ["read", "search", "think", "fetch"].contains(call.kind) }
         switch permission {

@@ -1,6 +1,6 @@
 import XCTest
 
-/// Titles, commit messages and pull requests written by a headless agent, with prompts and clean-up rules.
+/// Titles, commit messages and pull requests written by a headless agent.
 final class TextGenerationTests: XCTestCase {
     func testPrompts() {
         let title = TextGeneration.titlePrompt(message: "Fix de login op mobiel")

@@ -1,6 +1,6 @@
 import Foundation
 
-// How a session's timeline reads in the narrow notch work log: a finished turn folds into "Worked for
+// How a session's timeline reads in the narrow notch: a finished turn folds into "Worked for
 // 2m 13s" between your message and the agent's answer, consecutive tool calls become one line that says what they did
 // ("Ran 3 commands and changed 2 files"), and while the agent works one live line shows what it is doing and thinking.
 // Everything in this file depends only on Foundation so tests can use it independently.

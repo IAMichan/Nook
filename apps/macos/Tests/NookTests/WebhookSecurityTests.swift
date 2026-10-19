@@ -105,7 +105,7 @@ final class WebhookSecurityTests: XCTestCase {
         XCTAssertEqual(w.admit(now: t0.addingTimeInterval(200)), .accepted, "everything aged out")
     }
 
-    func testRateWindowDefaultsMatch() {
+    func testRateWindowDefaults() {
         XCTAssertEqual(RateWindow().limit, 60)
         XCTAssertEqual(RateWindow().window, 60)
     }

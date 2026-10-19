@@ -1,11 +1,11 @@
 import SwiftUI
 
-// composer dropdowns in Nook: the quiet pill as trigger, and instead of a system menu a dark panel with rows.
+// Composer dropdowns in Nook: the quiet pill as trigger, and instead of a system menu a dark panel with rows.
 // A section header, rows with an icon or logo, a title and a description, a faint fill on the chosen row (no check
-// mark), disabled rows that say why, and a search field for long lists. The model picker has layout: the
+// mark), disabled rows that say why, and a search field for long lists. The model picker layout shows the
 // agents in a narrow rail on the left, their models with a search field on the right.
 
-/// A composer choice that opens a panel under its pill.
+/// A composer choice that opens a custom dropdown panel under its pill.
 struct ComposerDropdown<Trigger: View, Content: View>: View {
     var width: CGFloat = 264
     @ViewBuilder let trigger: () -> Trigger
@@ -155,7 +155,7 @@ struct DropdownSearch: View {
     }
 }
 
-/// model picker: the connected agents in a narrow rail on the left, and on the right the chosen agent's
+/// Model picker: the connected agents in a narrow rail on the left, and on the right the chosen agent's
 /// accounts and its models, with a search field. Picking an account or model keeps the panel open until you pick a model.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
@@ -263,7 +263,7 @@ struct ModeToggle: View {
     }
 }
 
-/// branch picker: a search field over the branches, the chosen one faintly filled.
+/// Branch picker: a search field over the branches, the chosen one faintly filled.
 struct BranchPicker: View {
     let branches: [String]
     let selected: String
@@ -290,7 +290,7 @@ struct BranchPicker: View {
 }
 
 extension PermissionPolicy {
-    /// The symbol shows for an access level.
+    /// The symbol shown for an access level.
     var symbol: String {
         switch self {
         case .ask: return "lock"

@@ -1,6 +1,6 @@
 import Foundation
 
-// The `$` list of the composer: skills found on disk lists "skills enabled for the provider". Only the front
+// The `$` list of the composer: skills found on disk for the active provider. Only the front
 // matter of each file is read (bounded), never the body, so a huge or hostile SKILL.md cannot cost memory or leak into the UI.
 
 struct Skill: Equatable, Sendable, Identifiable {

@@ -38,7 +38,7 @@ extension WorkspaceManager {
     }
 
     /// Sets an ACP mode: as the mode config option when the agent has one, otherwise with `session/set_mode` when it
-    /// lists the mode (order).
+    /// lists the mode.
     func setAcpMode(_ client: AcpClient, session: String, response: [String: Any], modes: [[String: Any]], to mode: String) {
         let options = (response["configOptions"] as? [[String: Any]]) ?? []
         if let option = options.first(where: { ($0["category"] as? String) == "mode" && ($0["type"] as? String ?? "select") == "select" }),

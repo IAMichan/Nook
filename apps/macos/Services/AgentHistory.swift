@@ -3,7 +3,7 @@ import SwiftUI
 import SQLite3
 
 /// Which agent a past session or account belongs to. Nook reads the sessions of Claude Code, Codex, Gemini CLI and
-/// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP (as does) and knows by their login.
+/// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP and knows by their login.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
     case claude, codex, gemini, antigravity, opencode, cursor, grok
 
