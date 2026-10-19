@@ -31,13 +31,29 @@ struct PlanReview: View {
         runnable.isEmpty || runnable.contains { !problems($0).isEmpty }
     }
 
+    /// Steps that went through. The per-step lines already say what happened, so a finished plan needs no repeat below.
+    private var succeeded: Int {
+        message.actions.indices.filter { state($0).result != nil }.count
+    }
+
+    private var finished: Bool {
+        if case .done = message.planState { return succeeded > 0 }
+        return false
+    }
+
+    private var header: String {
+        let count = message.actions.count
+        if finished { return count == 1 ? tr("chat.plan.doneOne") : tr("chat.plan.doneMany", count) }
+        return count == 1 ? tr("chat.plan.reviewOne") : tr("chat.plan.review", count)
+    }
+
     private var duplicates: Set<Int> {
         Set(message.actions.indices.filter { if case .duplicate = state($0) { return true }; return false })
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(message.actions.count == 1 ? tr("chat.plan.reviewOne") : tr("chat.plan.review", message.actions.count))
+            Text(header)
                 .font(NookTheme.font(10.5, .semibold))
                 .foregroundStyle(NookTheme.textTertiary)
 
@@ -45,7 +61,9 @@ struct PlanReview: View {
                 stepView(index, step)
             }
 
-            controls.padding(.top, 2)
+            if !finished {
+                controls.padding(.top, 2)
+            }
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
@@ -133,10 +151,10 @@ struct PlanReview: View {
     @ViewBuilder
     private func stateLine(_ index: Int) -> some View {
         switch state(index) {
-        case .done(let result):
-            Text(result).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint).fixedSize(horizontal: false, vertical: true)
-        case .verified(let result):
-            Text(result + " · " + tr("chat.plan.verified")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint).fixedSize(horizontal: false, vertical: true)
+        case .done:
+            Text(tr("chat.plan.stepDone")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
+        case .verified:
+            Text(tr("chat.plan.stepVerified")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
         case .approved:
             Text(tr("chat.plan.approved")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
         case .failed(let error):
@@ -182,6 +200,19 @@ struct PlanReview: View {
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+            }
+            // The raw tool output (ids and all) stays available here, out of the way.
+            if let result = state(index).result {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("chat.plan.result"))
+                        .font(NookTheme.font(10.5, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(result)
+                        .font(NookTheme.font(11.5))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             ForEach(problems(index), id: \.self) { problem in
