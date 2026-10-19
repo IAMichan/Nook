@@ -5,6 +5,7 @@
   import { nook } from "../lib/state.svelte";
 
   let open = $state(false);
+  let root: HTMLDivElement;
   let choices = $state<SourceChoice[]>([]);
   const scope = $derived<SourceScope>(nook.active?.scope ?? { mode: "automatic", included: [], excluded: [], focus: [] });
   const label = $derived(
@@ -34,7 +35,9 @@
   }
 </script>
 
-<div class="picker">
+<svelte:window onclick={(e) => open && !root.contains(e.target as Node) && (open = false)} onkeydown={(e) => e.key === "Escape" && (open = false)} />
+
+<div class="picker" bind:this={root}>
   <button class="chip" class:restricted={scope.mode === "only" || scope.excluded.length > 0} onclick={toggle} title="Welke bronnen deze Nook mag gebruiken">
     ◎ {label}
   </button>

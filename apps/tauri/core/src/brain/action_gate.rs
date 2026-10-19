@@ -264,19 +264,21 @@ pub fn fields(input: &Value, schema: &Value) -> Vec<ActionField> {
     order
         .into_iter()
         .filter_map(|key| {
-            let value = input.get(&key)?;
-            let text = match value {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => if *b { "ja" } else { "nee" }.into(),
-                Value::Null => return None,
-                other => super::tool_loop::sorted(other).to_string(),
-            };
-            if text.is_empty() {
-                return None;
-            }
             let property = props.get(&key);
             let is_string = property.is_some_and(|p| p["type"] == "string" && p.get("enum").is_none());
+            // Een verplicht tekstveld dat ontbreekt staat er leeg bij, zodat je het in de plankaart kunt invullen.
+            let fillable = is_string && required.contains(&key);
+            let text = match input.get(&key) {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Number(n)) => n.to_string(),
+                Some(Value::Bool(b)) => if *b { "ja" } else { "nee" }.into(),
+                None | Some(Value::Null) if fillable => String::new(),
+                None | Some(Value::Null) => return None,
+                Some(other) => super::tool_loop::sorted(other).to_string(),
+            };
+            if text.is_empty() && !fillable {
+                return None;
+            }
             let multiline =
                 is_string && (text.chars().count() > 60 || text.contains('\n') || ["body", "message", "notes"].contains(&key.as_str()));
             Some(ActionField { label: short_label(&key), key, value: text, editable: is_string, multiline })
@@ -455,6 +457,14 @@ mod tests {
         assert_eq!(list.iter().map(|f| f.key.as_str()).collect::<Vec<_>>(), vec!["title", "start", "end"]);
         assert_eq!(list.last().unwrap().value, body);
         assert!(list.last().unwrap().multiline && list[0].editable);
+    }
+
+    #[test]
+    fn missing_required_text_field_stays_fillable() {
+        let list = fields(&json!({"start": "2026-10-16T14:00:00+02:00"}), &event_schema());
+        let title = list.iter().find(|f| f.key == "title").expect("titel blijft zichtbaar");
+        assert!(title.value.is_empty() && title.editable);
+        assert!(!list.iter().any(|f| f.key == "end"));
     }
 
     #[test]

@@ -299,7 +299,8 @@ impl RetrievalLedger {
 
 /// Verpakt een lees-tool zodat elke aanroep door het grootboek gaat. Acties blijven zoals ze zijn.
 pub fn ledgered(tool: LoopTool, ledger: Arc<RetrievalLedger>, timeout: Duration) -> LoopTool {
-    if tool.kind != ToolKind::Read {
+    // Alleen leestools van een bron: een grafiek tekenen of een mail opstellen is geen opzoeking.
+    if tool.kind != ToolKind::Read || tool.source.is_none() {
         return tool;
     }
     let run = tool.run.clone();

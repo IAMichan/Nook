@@ -59,6 +59,17 @@
     }
   }
 
+  /** Zet de cursor meteen in een veld dat je gaat aanpassen. */
+  function focusField(node: HTMLInputElement | HTMLTextAreaElement) {
+    node.focus();
+    node.select();
+  }
+
+  /** Bij één stap staat de uitkomst al bij de stap. */
+  const outcomeShown = $derived(
+    !(message.actions.length === 1 && message.planState?.detail && message.actionStates[0]?.detail === message.planState.detail),
+  );
+
   const title = $derived(
     editable
       ? message.actions.length === 1 ? "VOORSTEL · CONTROLEER EN KEUR GOED" : `PLAN · ${message.actions.length} STAPPEN · CONTROLEER EN KEUR GOED`
@@ -96,9 +107,9 @@
               <span class="faint">{field.label}</span>
               {#if field.editable && editable && !finished(i) && editing[token] !== undefined}
                 {#if field.multiline}
-                  <textarea rows="5" bind:value={editing[token]}></textarea>
+                  <textarea rows="5" bind:value={editing[token]} use:focusField></textarea>
                 {:else}
-                  <input bind:value={editing[token]} onkeydown={(e) => e.key === "Enter" && saveField(i, field.key)} />
+                  <input bind:value={editing[token]} use:focusField onkeydown={(e) => e.key === "Enter" && saveField(i, field.key)} />
                 {/if}
                 <button class="tiny" onclick={() => saveField(i, field.key)}>Klaar</button>
               {:else}
@@ -114,7 +125,7 @@
     </div>
   {/each}
   {#if error}<p class="result bad">{error}</p>{/if}
-  {#if message.planState?.kind === "failed" || message.planState?.kind === "done"}
+  {#if (message.planState?.kind === "failed" || message.planState?.kind === "done") && outcomeShown}
     <div class="outcome {message.planState.kind === 'failed' ? 'bad' : 'ok'}">{message.planState.detail}</div>
   {/if}
   {#if editable}

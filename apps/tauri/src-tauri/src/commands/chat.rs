@@ -850,7 +850,13 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
 
 /// Een herinnering toevoegen vanuit Instellingen › Geheugen.
 pub fn remember_told(app: &AppHandle, text: &str) -> Result<(), String> {
-    match app.state::<BrainState>().memory.remember(text, MemoryKind::Fact, "", Origin::Told, None, false) {
+    // Zoals op de Mac: "onthoud dat ik …" of "voortaan …" is een voorkeur, de rest een feit.
+    let kind = if memory_request::asks_to_remember(text) || text.trim().to_lowercase().starts_with("voortaan") {
+        MemoryKind::Preference
+    } else {
+        MemoryKind::Fact
+    };
+    match app.state::<BrainState>().memory.remember(text, kind, "", Origin::Told, None, false) {
         Change::Rejected(reason) => Err(crate::tools::memory_rejected(reason)),
         _ => Ok(()),
     }

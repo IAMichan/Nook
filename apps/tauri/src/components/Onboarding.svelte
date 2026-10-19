@@ -93,6 +93,7 @@
   .toggles label { display: flex; gap: 8px; align-items: center; }
   .link { background: none; border: none; padding: 0; color: var(--text2); text-align: left; font-size: 12px; text-decoration: underline; }
   .hint { font-size: 12px; }
+  .body > button { align-self: flex-start; }
   .buttons { display: flex; gap: 8px; align-items: center; }
   .spacer { flex: 1; }
 </style>

@@ -17,6 +17,7 @@
   let brainMenu = $state(false);
   let servers = $state<ServerModel[]>([]);
   let field: HTMLTextAreaElement;
+  let brainRoot = $state<HTMLDivElement>();
 
   export function focus() {
     field?.focus();
@@ -86,6 +87,8 @@
   }
 </script>
 
+<svelte:window onclick={(e) => brainMenu && !brainRoot?.contains(e.target as Node) && (brainMenu = false)} />
+
 <div
   class="composer"
   class:compact
@@ -133,7 +136,7 @@
   {#if nook.info && !compact}
     <div class="under">
       <SourcePicker />
-      <div class="brain">
+      <div class="brain" bind:this={brainRoot}>
         <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
           title={nook.info.brainLocal ? "Denkt op deze computer" : "Externe AI"}>
           {nook.info.brainLocal ? "● lokaal" : "○ extern"} · {nook.info.brainLabel}{nook.info.brainReady ? "" : " · niet klaar"}

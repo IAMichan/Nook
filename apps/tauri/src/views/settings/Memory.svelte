@@ -60,6 +60,11 @@
     });
   }
 
+  function focusField(node: HTMLInputElement) {
+    node.focus();
+    node.select();
+  }
+
   function ago(iso: string | null): string {
     if (!iso) return "nog niet gebruikt";
     return new Date(iso).toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
@@ -108,7 +113,7 @@
           <div class="item">
             {#if editing[m.id] !== undefined}
               <div class="inline grow">
-                <input class="grow" bind:value={editing[m.id]} onkeydown={(e) => e.key === "Enter" && save(m)} />
+                <input class="grow" bind:value={editing[m.id]} use:focusField onkeydown={(e) => e.key === "Enter" && save(m)} />
                 <button onclick={() => save(m)}>Bewaar</button>
                 <button class="ghost" onclick={() => delete editing[m.id]}>Annuleer</button>
               </div>
@@ -116,7 +121,7 @@
               <div class="text">
                 <span>{m.pinned ? "📌 " : ""}{m.text}</span>
                 <span class="faint small">
-                  {origin[m.origin]} · {m.certainty}% zeker · {m.uses}× gebruikt · {ago(m.lastUsed)}{m.localOnly ? " · alleen op dit apparaat" : ""} · <code>m:{m.shortId}</code>
+                  {origin[m.origin]} · {m.certainty}% zeker · {m.uses}× gebruikt · {ago(m.lastUsed)}{m.localOnly ? " · alleen op dit apparaat" : ""} · <code>{m.shortId}</code>
                 </span>
               </div>
               <div class="tools">
