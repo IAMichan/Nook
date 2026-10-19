@@ -19,6 +19,7 @@ extension SettingsView {
                      : "This Mac cannot recognize speech on-device, so wake word cannot be enabled. Use ⌥ Space to talk anytime.")
             }
             FlowSettingsSection()
+            AutocompleteSettingsSection()
             ParakeetSettingsSection()
             Section {
                 Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)

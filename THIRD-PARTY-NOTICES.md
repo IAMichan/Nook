@@ -28,3 +28,5 @@ SOFTWARE.
 ```
 
 Parakeet speech recognition and speaker diarization use FluidAudio (Apache-2.0).
+
+Autocomplete anywhere runs GGUF models with llama.cpp (MIT, © 2023-2026 The ggml authors), through the llama.swift package (MIT, Mattt).

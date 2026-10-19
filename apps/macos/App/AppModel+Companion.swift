@@ -87,6 +87,7 @@ extension AppModel {
             await self?.brain.rewrite(system: system, prompt: text, timeout: timeout)
         }
         FlowDictation.shared.refresh()
+        AutocompleteController.shared.refresh()
     }
 }
 
