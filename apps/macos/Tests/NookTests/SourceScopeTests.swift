@@ -106,6 +106,15 @@ final class SourceScopeTests: XCTestCase {
         XCTAssertFalse(relevant.contains("github"))
     }
 
+    func testRemindersOnlyComeAlongWhenAskedFor() {
+        let active: Set<String> = ["calendar", "reminders", "loops", "whatsapp"]
+        let chat = SourceRouter.relevant(to: "Stuur: Mooi idee, maar nog niet volledig", scope: .automatic, active: active)
+        XCTAssertFalse(chat.contains("reminders"), "a message to send has nothing to do with the user's reminders")
+        for question in ["Welke herinneringen heb ik nog?", "Wat moet ik vandaag nog doen?", "Show my reminders"] {
+            XCTAssertTrue(SourceRouter.relevant(to: question, scope: .automatic, active: active).contains("reminders"), question)
+        }
+    }
+
     func testRouterBroadQuestionUsesAllAllowed() {
         let active: Set<String> = ["calendar", "mail", "github", "stripe"]
         let relevant = SourceRouter.relevant(to: "Vat samen wat er deze week gebeurde", scope: SourceScope(excluded: ["stripe"]), active: active)

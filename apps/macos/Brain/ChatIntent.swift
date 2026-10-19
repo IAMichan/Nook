@@ -114,6 +114,66 @@ struct ChatIntent: Equatable {
         return intent
     }
 
+    /// A follow-up carries the action of the conversation it continues. "Stuur: Mooi idee" or "Verzend" after a talk about
+    /// a WhatsApp message to Arjan names no channel itself; read alone it asks for nothing, and a small model then only
+    /// claims it sent the message. Here it becomes that WhatsApp message (or mail) again, so the action is proposed.
+    static func detect(_ raw: String, history: [ChatTurn]) -> ChatIntent {
+        var intent = detect(raw)
+        guard !history.isEmpty, intent.primaryAction == nil else { return intent }
+        let recent = Array(history.suffix(6).reversed())
+        // "Ja" or "ok" only goes ahead with what Nook just asked ("Wil je het bericht nu verzenden?"), never after a
+        // message that was already handled.
+        let goAhead = confirms(raw) && recent.first(where: { !$0.fromUser }).map { asks($0.text) } == true
+        guard !intent.isSmallTalk || goAhead else { return intent }
+        let carried: Kind?
+        if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) }) {
+            // The channel is the one the conversation is about: the newest turn that names chats or mail.
+            carried = recent.lazy.compactMap { turn -> Kind? in
+                let kinds = detect(turn.text).kinds
+                if kinds.contains(.chatWrite) || kinds.contains(.chats) { return .chatWrite }
+                if kinds.contains(.mailWrite) || kinds.contains(.mailRead) { return .mailWrite }
+                return nil
+            }.first
+        } else if goAhead {
+            // "Ja, doe maar" after "maak een herinnering voor morgen": the action the user asked for last.
+            carried = recent.first(where: \.fromUser).flatMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }
+        } else {
+            carried = nil
+        }
+        guard let carried else { return intent }
+        intent.kinds = [carried] + intent.kinds.filter { $0 != carried && !(carried == .chatWrite && $0 == .chats) }
+        intent.wantsAction = true
+        intent.isSmallTalk = false
+        return intent
+    }
+
+    /// Sending a message, with or without a channel: "stuur: …", "ik wil een bericht naar Arjan sturen", "verzend".
+    static func sends(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.range(of: #"^(stuur|verstuur|verzend|send|schick|sende)\b|\b(stuur|stuurt|sturen|verstuur|versturen|verzend|verzenden|send|sending|schicken|senden|sende)\b[^.?!]{0,60}\b(bericht|berichtje|message|nachricht|tekst|text)\b|\b(bericht|berichtje|message|nachricht|tekst|text)\b[^.?!]{0,60}\b(sturen|versturen|verzenden|send|schicken|senden)\b"#, options: .regularExpression) != nil
+    }
+
+    /// A short go-ahead: "ja", "doe maar", "verzend", "send it", "ok".
+    static func confirms(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard text.count <= 40 else { return false }
+        return text.range(of: #"^(ja|jawel|jep|yes|yep|yeah|ok(é|e|ay)?|oké|prima|goed|klopt|akkoord|top|graag|doe maar|doe het|go|do it|sure|please|bitte|genau|mach( es| das)?|verzend|verstuur|stuur|send|schick)\b[^?]*$"#, options: .regularExpression) != nil
+    }
+
+    /// A question about messages ("wat stuurt Lisa voor berichten?"), not a request to send one. A polite request
+    /// ("kun je het versturen?") still asks Nook to act.
+    private static func questions(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasSuffix("?") else { return false }
+        return text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) == nil
+    }
+
+    /// Nook's turn ends with a question to the user (suggestions below it aside).
+    private static func asks(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("»") }
+        return lines.last?.hasSuffix("?") ?? false
+    }
+
     // MARK: Tables
 
     /// Tools per kind, the most useful first. Action tools come before the lookups that support them.
