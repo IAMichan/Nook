@@ -839,6 +839,8 @@ struct Message: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
+    /// The outputs panel next to the conversation; its button sits in the header above.
+    var outputsOpen: Binding<Bool> = .constant(false)
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
 
@@ -854,7 +856,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd)
+                               directory: session.cwd, outputsOpen: outputsOpen)
             .id(session.id)
     }
 }
