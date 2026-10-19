@@ -33,6 +33,7 @@ pub fn run() {
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
             agents::setup(app.handle());
+            workspace::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -115,7 +116,45 @@ pub fn run() {
             commands::agents::agents_run_in_terminal,
             commands::agents::agents_terminal_name,
             commands::agents::agents_sound,
+            commands::workspace::workspace_overview,
+            commands::workspace::workspace_save_settings,
+            commands::workspace::workspace_forget_project,
+            commands::workspace::workspace_timeline,
+            commands::workspace::workspace_queue,
+            commands::workspace::workspace_inspect,
+            commands::workspace::workspace_start,
+            commands::workspace::workspace_adopt,
+            commands::workspace::workspace_configure,
+            commands::workspace::workspace_send,
+            commands::workspace::workspace_steer,
+            commands::workspace::workspace_enqueue,
+            commands::workspace::workspace_queue_remove,
+            commands::workspace::workspace_queue_move,
+            commands::workspace::workspace_queue_edit,
+            commands::workspace::workspace_queue_send_now,
+            commands::workspace::workspace_queue_steer,
+            commands::workspace::workspace_stop,
+            commands::workspace::workspace_retry,
+            commands::workspace::workspace_rename,
+            commands::workspace::workspace_archive,
+            commands::workspace::workspace_mark_reviewed,
+            commands::workspace::workspace_delete,
+            commands::workspace::workspace_usage,
+            commands::workspace::workspace_git,
+            commands::workspace::workspace_diff,
+            commands::workspace::workspace_commit,
+            commands::workspace::workspace_push,
+            commands::workspace::workspace_can_revert,
+            commands::workspace::workspace_revert,
+            commands::workspace::workspace_worktrees,
+            commands::workspace::workspace_remove_worktree,
         ])
-        .run(tauri::generate_context!())
-        .expect("Nook kon niet starten");
+        .build(tauri::generate_context!())
+        .expect("Nook kon niet starten")
+        .run(|app, event| {
+            // Bij afsluiten: lopende agents van de werkruimte netjes stoppen.
+            if let tauri::RunEvent::Exit = event {
+                workspace::shutdown(app);
+            }
+        });
 }

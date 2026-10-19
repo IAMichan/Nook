@@ -38,7 +38,9 @@ pub fn agents_overview(app: AppHandle, state: State<'_, AgentsState>) -> Overvie
     approvals.extend(crate::workspace::pending_approvals(&app));
     approvals.sort_by_key(|a| a.created);
     let (plan_usage, profile_plan_usage) = state.hub.plan_usage();
-    Overview { sessions, approvals, questions: state.hub.questions(), plan_usage, profile_plan_usage, marks: lock(&state.marks).snapshot() }
+    let mut questions = state.hub.questions();
+    questions.extend(crate::workspace::pending_questions(&app));
+    Overview { sessions, approvals, questions, plan_usage, profile_plan_usage, marks: lock(&state.marks).snapshot() }
 }
 
 /// Beslist over een toestemmingsvraag, waar hij ook vandaan kwam.
@@ -52,13 +54,20 @@ pub fn agents_decide(app: AppHandle, state: State<'_, AgentsState>, id: String, 
 }
 
 #[tauri::command]
-pub fn agents_answer(state: State<'_, AgentsState>, id: String, selections: Vec<Vec<String>>) {
+pub fn agents_answer(app: AppHandle, state: State<'_, AgentsState>, id: String, selections: Vec<Vec<String>>) -> Res<()> {
+    if id.starts_with("runq:") {
+        return crate::workspace::answer_question(&app, &id, &selections);
+    }
     state.hub.answer_question(&id, &selections);
+    Ok(())
 }
 
 /// "In terminal": de vraag gaat terug naar de agent, en Nook haalt zijn venster naar voren.
 #[tauri::command]
 pub fn agents_answer_in_terminal(state: State<'_, AgentsState>, id: String) -> Res<()> {
+    if id.starts_with("runq:") {
+        return Err("Deze sessie draait in Nook zelf, niet in een terminal. Beantwoord de vraag hier.".into());
+    }
     let host = state
         .hub
         .questions()
@@ -72,6 +81,9 @@ pub fn agents_answer_in_terminal(state: State<'_, AgentsState>, id: String) -> R
 /// Weigert toestemming hier en haalt het venster van de agent naar voren, zodat je het daar beantwoordt.
 #[tauri::command]
 pub fn agents_decide_in_terminal(state: State<'_, AgentsState>, id: String) -> Res<()> {
+    if !id.starts_with("hook-") {
+        return Err("Deze sessie draait in Nook zelf, niet in een terminal. Beslis hier.".into());
+    }
     let request = id.strip_prefix("hook-").unwrap_or(&id).to_string();
     let host = state.hub.sessions().into_iter().find(|s| s.approval_id.as_deref() == Some(request.as_str())).map(|s| s.host);
     state.hub.decide(&request, ApprovalDecision::Terminal);
