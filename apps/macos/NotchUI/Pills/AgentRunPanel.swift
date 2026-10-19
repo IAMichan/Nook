@@ -263,11 +263,11 @@ struct AgentRunPanel: View {
         focused = true
     }
 
-    /// The session's open GitHub pull request, from the git button or the pull request list.
+    /// The session's open GitHub pull request or GitLab merge request, from the git button or the pull request list.
     private func watchablePullRequest() -> URL? {
-        if let url = workspace.openPullRequests[runID], GitHubPullRequests.parse(url) != nil { return url }
+        if let url = workspace.openPullRequests[runID], PullRequestWatch.canWatch(url) { return url }
         return PullRequestSync.shared.links[runID]?
-            .first { ($0.state == .open || $0.state == .draft) && $0.host == .github }
+            .first { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }
             .flatMap { URL(string: $0.url) }
     }
 

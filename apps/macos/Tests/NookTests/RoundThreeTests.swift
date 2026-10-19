@@ -260,4 +260,33 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertTrue(CodexAgentState(status: "errored").isFailure)
         XCTAssertFalse(CodexAgentState(status: "running").isFinished)
     }
+    // MARK: GitLab merge request watch
+
+    func testGitLabMergeRequestLink() throws {
+        let url = URL(string: "https://gitlab.com/group/sub/app/-/merge_requests/12#note_5")!
+        let parsed = try XCTUnwrap(GitLabAPI.mergeRequest(url))
+        XCTAssertEqual(parsed.iid, 12)
+        XCTAssertEqual(parsed.repo.path, "group/sub/app")
+        XCTAssertEqual(GitLabAPI.mergeRequestURL(parsed.repo, iid: 12, suffix: "/notes", query: "per_page=100")?.absoluteString,
+                       "https://gitlab.com/api/v4/projects/group%2Fsub%2Fapp/merge_requests/12/notes?per_page=100")
+        XCTAssertNil(GitLabAPI.mergeRequest(URL(string: "https://github.com/o/r/pull/1")!))
+        XCTAssertTrue(PullRequestWatch.canWatch(url))
+        XCTAssertTrue(PullRequestWatch.canWatch(URL(string: "https://github.com/o/r/pull/7")!))
+        XCTAssertFalse(PullRequestWatch.canWatch(URL(string: "https://bitbucket.org/o/r/pull-requests/3")!))
+    }
+
+    func testGitLabSnapshot() {
+        let snapshot = GitLabAPI.snapshot(
+            mergeRequest: ["state": "opened", "head_pipeline": ["id": 9, "status": "failed"]],
+            notes: [["system": true, "body": "added 1 commit", "author": ["username": "bot"]],
+                    ["system": false, "body": "Rename this", "author": ["username": "ann"], "position": ["new_path": "App.swift"]]],
+            approvals: ["approved_by": [["user": ["username": "bob"]]]],
+            failedJobs: [["name": "test"]])
+        XCTAssertEqual(snapshot.state, "open")
+        XCTAssertEqual(snapshot.checks, "failure")
+        XCTAssertEqual(snapshot.failedChecks, ["test"])
+        XCTAssertEqual(snapshot.reviews, [PullRequestSnapshot.Note(author: "bob", verdict: "APPROVED", text: "")])
+        XCTAssertEqual(snapshot.comments, [PullRequestSnapshot.Note(author: "ann", verdict: "", text: "App.swift: Rename this")])
+        XCTAssertEqual(GitLabAPI.snapshot(mergeRequest: ["state": "merged"], notes: [], approvals: nil, failedJobs: []).state, "merged")
+    }
 }

@@ -70,6 +70,28 @@ enum GitLabMergeRequests {
         return GitLabAPI.parseList(data, repository: repo, sourceBranch: branch)
     }
 
+    /// A merge request as it is now, for a session that watches it: state, pipeline, approvals and comments. nil when
+    /// GitLab cannot be asked (no token, offline, refused).
+    static func snapshot(url: URL) async -> PullRequestSnapshot? {
+        guard let (repo, iid) = GitLabAPI.mergeRequest(url).map({ ($0.repo, $0.iid) }),
+              let token = GitLabCredentials.token(host: repo.hostName) else { return nil }
+        func get(_ url: URL?) async -> Any? {
+            guard let url, let req = try? request(url, token: token),
+                  let (data, response) = try? await ConnectorHTTP.session.data(for: req),
+                  (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return try? JSONSerialization.jsonObject(with: data)
+        }
+        guard let mergeRequest = await get(GitLabAPI.mergeRequestURL(repo, iid: iid)) as? [String: Any] else { return nil }
+        let notes = await get(GitLabAPI.mergeRequestURL(repo, iid: iid, suffix: "/notes", query: "per_page=100&sort=asc")) as? [[String: Any]] ?? []
+        let approvals = await get(GitLabAPI.mergeRequestURL(repo, iid: iid, suffix: "/approvals")) as? [String: Any]
+        var failed: [[String: Any]] = []
+        if let pipeline = mergeRequest["head_pipeline"] as? [String: Any], (pipeline["status"] as? String) == "failed",
+           let pipelineID = pipeline["id"] as? Int {
+            failed = await get(GitLabAPI.failedJobsURL(repo, pipeline: pipelineID)) as? [[String: Any]] ?? []
+        }
+        return GitLabAPI.snapshot(mergeRequest: mergeRequest, notes: notes, approvals: approvals, failedJobs: failed)
+    }
+
     static func create(repo: RemoteRepository, title: String, body: String, head: String, base: String, draft: Bool) async throws -> URL {
         guard let token = GitLabCredentials.token(host: repo.hostName), let url = GitLabAPI.createURL(repo: repo) else {
             throw CloudHelp.notSetUp("GitLab")

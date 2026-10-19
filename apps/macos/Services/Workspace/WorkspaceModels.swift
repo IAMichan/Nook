@@ -372,6 +372,13 @@ enum RunTasks {
 
 /// What a watched pull request last looked like. A change in it is news for the session.
 struct PullRequestWatch: Codable, Equatable, Sendable {
+    /// A GitHub pull request or a GitLab merge request: the two Nook can read.
+    static func canWatch(_ url: URL) -> Bool {
+        let parts = url.path.split(separator: "/")
+        let github = url.host?.hasSuffix("github.com") == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
+        return github || url.absoluteString.contains("/-/merge_requests/")
+    }
+
     var url: String
     /// "open", "merged", "closed".
     var state: String = "open"
