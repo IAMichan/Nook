@@ -420,7 +420,10 @@ final class AppSettings: ObservableObject {
     }
 
     /// Model selected for the active provider.
-    var activeProviderModel: String {
+    var activeProviderModel: String { providerModel(for: provider) }
+
+    /// Model selected for a provider, active or not.
+    func providerModel(for provider: AIProvider) -> String {
         provider == .claude ? model : (providerModels[provider.rawValue] ?? provider.defaultModel)
     }
 
@@ -437,7 +440,10 @@ final class AppSettings: ObservableObject {
     }
 
     /// Key for the selected provider.
-    var providerKey: String? {
+    var providerKey: String? { key(for: provider) }
+
+    /// Key for a provider, active or not.
+    func key(for provider: AIProvider) -> String? {
         provider == .claude ? apiKey : Keychain.read(provider.keyAccount)
     }
 

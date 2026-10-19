@@ -87,7 +87,10 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "brain.chip.help": "Het model waarmee Nook nu denkt. Lokaal: blijft op je Mac, kost niets per vraag.",
         "brain.chip.installed": "Op je Mac",
         "brain.chip.settings": "Brein-instellingen…",
-        "brain.chip.externalNote": "Een externe AI kies je bewust in Instellingen › Brein.",
+        "brain.chip.addExternal": "Een externe AI toevoegen…",
+        "brain.chip.localDetail": "Blijft op je Mac. Kost niets per vraag.",
+        "brain.chip.externalDetail": "Je vragen gaan naar %@. Bronnen die alleen op je Mac mogen, blijven hier.",
+        "brain.chip.noLocal": "Nog geen model op je Mac. Kies er een in Brein-instellingen.",
 
         // Model advice
         "brain.advice.title": "Aanbevolen voor deze Mac",
@@ -339,7 +342,10 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "brain.chip.help": "The model Nook thinks with right now. Local: stays on your Mac, no cost per question.",
         "brain.chip.installed": "On your Mac",
         "brain.chip.settings": "Brain settings…",
-        "brain.chip.externalNote": "You choose an external AI deliberately in Settings › Brain.",
+        "brain.chip.addExternal": "Add an external AI…",
+        "brain.chip.localDetail": "Stays on your Mac. No cost per question.",
+        "brain.chip.externalDetail": "Your questions go to %@. Sources marked “only on this Mac” stay here.",
+        "brain.chip.noLocal": "No model on your Mac yet. Pick one in Brain settings.",
 
         "brain.advice.title": "Recommended for this Mac",
         "brain.advice.memory": "%ld GB memory",
@@ -588,7 +594,10 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "brain.chip.help": "Das Modell, mit dem Nook gerade denkt. Lokal: bleibt auf deinem Mac, keine Kosten pro Frage.",
         "brain.chip.installed": "Auf deinem Mac",
         "brain.chip.settings": "Gehirn-Einstellungen…",
-        "brain.chip.externalNote": "Eine externe KI wählst du bewusst in Einstellungen › Gehirn.",
+        "brain.chip.addExternal": "Externe KI hinzufügen…",
+        "brain.chip.localDetail": "Bleibt auf deinem Mac. Keine Kosten pro Frage.",
+        "brain.chip.externalDetail": "Deine Fragen gehen an %@. Quellen, die nur auf deinem Mac bleiben dürfen, bleiben hier.",
+        "brain.chip.noLocal": "Noch kein Modell auf deinem Mac. Wähle eines in den Gehirn-Einstellungen.",
 
         "brain.advice.title": "Empfohlen für diesen Mac",
         "brain.advice.memory": "%ld GB Arbeitsspeicher",
