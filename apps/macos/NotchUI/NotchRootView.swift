@@ -33,6 +33,8 @@ struct NotchRootView: View {
             .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
             .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
+            // Open, the sides and bottom corners can be dragged to make the notch larger or smaller.
+            .overlay { if case .panel = viewModel.state { NotchResizeHandles(viewModel: viewModel) } }
             .shadow(color: Color.black.opacity(floating ? (isExpanded ? 0.45 : (bare ? 0 : 0.3)) : 0), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
@@ -442,6 +444,48 @@ extension NotchRootView {
         case .nook(let id):
             app.openConversation(id)
         }
+    }
+}
+
+/// Thin strips along the open notch's sides and bottom, and its bottom corners: drag one to make the notch larger or
+/// smaller, double-click it to go back to the size each tab starts at. The top stays under the camera.
+private struct NotchResizeHandles: View {
+    @ObservedObject var viewModel: NotchViewModel
+    /// How far into the notch a side reaches: well inside the margin around the content, so nothing there is covered.
+    private let thickness: CGFloat = 8
+    private let corner: CGFloat = 24
+
+    var body: some View {
+        // Below the strip along the top, which belongs to the camera (and, floating, to moving the notch).
+        let top = viewModel.geometry.notchHeight
+        Color.clear
+            .allowsHitTesting(false)
+            .overlay(alignment: .leading) {
+                handle(.left, .leading).frame(width: thickness).padding(.top, top).padding(.bottom, corner)
+            }
+            .overlay(alignment: .trailing) {
+                handle(.right, .trailing).frame(width: thickness).padding(.top, top).padding(.bottom, corner)
+            }
+            .overlay(alignment: .bottom) {
+                handle(.bottom, .bottom).frame(height: thickness).padding(.horizontal, corner)
+            }
+            .overlay(alignment: .bottomLeading) { handle(.bottomLeft, .bottomLeading).frame(width: corner, height: corner) }
+            .overlay(alignment: .bottomTrailing) { handle(.bottomRight, .bottomTrailing).frame(width: corner, height: corner) }
+    }
+
+    private func handle(_ edge: NotchResize.Edge, _ position: FrameResizePosition) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .pointerStyle(.frameResize(position: position))
+            .gesture(
+                // Global coordinates: the edge itself moves while you drag it.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { viewModel.resize(edge, translation: $0.translation) }
+                    .onEnded { _ in viewModel.endResize() }
+            )
+            .onTapGesture(count: 2) { viewModel.resetPanelSize() }
+            .help(tr("notch.resize"))
+            .accessibilityLabel(tr("notch.resize"))
     }
 }
 
