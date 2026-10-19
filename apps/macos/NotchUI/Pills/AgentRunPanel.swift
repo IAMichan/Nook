@@ -814,9 +814,8 @@ struct AgentRunPanel: View {
                             focused = true
                         }
                     },
-                    steer: canSteer ? { workspace.steerQueued(runID, message: $0) } : nil,
                     move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
-                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
+                    sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
             }
             SessionComposer(
                 text: $draft,

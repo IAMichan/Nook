@@ -158,11 +158,10 @@ struct QueuedMessagesStrip: View {
     var editing: UUID? = nil
     let remove: (UUID) -> Void
     var edit: ((UUID) -> Void)? = nil
-    /// Take the message into the running turn now; nil when the agent cannot be steered right now.
-    var steer: ((UUID) -> Void)? = nil
     var move: ((UUID, Int) -> Void)? = nil
-    /// After a stop or a failure the queue waits for you: this sends the first message now.
-    var sendNow: (() -> Void)? = nil
+    /// Sends the message right away: into the running turn, or as the next turn when the agent is idle. Nil when
+    /// neither can happen right now.
+    var sendNow: ((UUID) -> Void)? = nil
     @State private var collapsed = false
 
     var body: some View {
@@ -174,7 +173,12 @@ struct QueuedMessagesStrip: View {
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                     Text(tr("compose.queue.title", queue.count))
                         .font(NookTheme.font(11.5, .semibold))
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 8)
+                    Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
+                        .font(NookTheme.font(11))
+                        .foregroundStyle(queue.isHeld ? NookTheme.amber : NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 .foregroundStyle(NookTheme.textSecondary)
                 .padding(.horizontal, 4)
@@ -182,20 +186,12 @@ struct QueuedMessagesStrip: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("compose.queue.title", queue.count))
+            .accessibilityHint(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
             .accessibilityValue(collapsed ? "" : tr("compose.queue.expanded"))
             if !collapsed {
                 ForEach(Array(queue.messages.enumerated()), id: \.element.id) { index, message in
                     row(message, index: index)
                 }
-                HStack(spacing: 8) {
-                    Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
-                        .font(NookTheme.font(11))
-                        .foregroundStyle(queue.isHeld ? NookTheme.amber : NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 6)
-                    if let sendNow { SmallGhostButton(title: tr("compose.queue.sendNow"), action: sendNow) }
-                }
-                .padding(.leading, 4)
             }
         }
     }
@@ -211,7 +207,7 @@ struct QueuedMessagesStrip: View {
                 iconButton("chevron.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
             }
             if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
-            if let steer { iconButton("arrow.turn.down.right", tr("compose.queue.steerNow"), enabled: !isEditing) { steer(message.id) } }
+            if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
             iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
         }
         .font(NookTheme.font(12))
