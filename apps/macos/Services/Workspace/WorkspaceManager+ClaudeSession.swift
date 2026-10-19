@@ -16,12 +16,14 @@ extension WorkspaceManager {
     func parkClaudeProcess(_ id: UUID, stopping: Bool) {
         guard let process = processes[id] else { return }
         processes[id] = nil
+        // Settings changed during the turn: an empty key never matches, so the next message starts a fresh process.
+        let changed = claudeChangedDuringTurn.remove(id) != nil
         guard !stopping, process.isRunning, let run = run(id) else {
             process.closeInput()
             return
         }
         closeClaudeProcess(id)
-        claudeIdle[id] = (process, claudeKey(run))
+        claudeIdle[id] = (process, changed ? "" : claudeKey(run))
         let seconds = idleSeconds(id, Self.claudeIdleSeconds)
         claudeIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
@@ -29,6 +31,22 @@ extension WorkspaceManager {
             self?.closeClaudeProcess(id)
         }
         sendQueued(id)
+    }
+
+    /// Settings changed while a turn runs. Claude Code takes the permission mode and the model over at once (control
+    /// requests on stdin); other agents read the rights live where they answer approvals in Nook, and the rest from
+    /// their next turn.
+    func applyLive(_ id: UUID, from old: WorkspaceRun, to new: WorkspaceRun) {
+        guard new.provider == .claude, let process = processes[id], process.isRunning else { return }
+        let oldMode = AgentCommand.claudePermissionMode(mode: old.mode, permission: old.permission)
+        let newMode = AgentCommand.claudePermissionMode(mode: new.mode, permission: new.permission)
+        if oldMode != newMode {
+            process.send(ClaudeStreamParser.setPermissionModeRequest(id: "nook-mode-" + UUID().uuidString.prefix(8), mode: newMode))
+        }
+        if old.model != new.model {
+            process.send(ClaudeStreamParser.setModelRequest(id: "nook-model-" + UUID().uuidString.prefix(8), model: new.model))
+        }
+        if oldMode != newMode || old.model != new.model || old.instructions != new.instructions { claudeChangedDuringTurn.insert(id) }
     }
 
     /// Sends the next message to the waiting process. False when there is none, or it was started with other settings.

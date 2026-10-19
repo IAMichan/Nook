@@ -122,7 +122,8 @@ extension AppModel {
         }
         return TodayItem(id: "autocomplete-attention", title: tr("autocomplete.today.attention"), subtitle: subtitle,
                          action: tr("autocomplete.today.fix"), color: NookTheme.amber,
-                         target: .action { [weak self] in self?.openAutocompleteSettings(.general) })
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.general) },
+                         logo: .symbol("keyboard"))
     }
 
     func autocompleteTodayItem() -> TodayItem? {
@@ -133,7 +134,8 @@ extension AppModel {
         return TodayItem(id: "autocomplete-today", title: tr("autocomplete.today.used", today.takes),
                          subtitle: tr("autocomplete.today.usedSub", today.words, minutes),
                          action: tr("button.view"), color: NookTheme.mint,
-                         target: .action { [weak self] in self?.openAutocompleteSettings(.stats) })
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.stats) },
+                         logo: .symbol("text.cursor"))
     }
 
     func openAutocompleteSettings(_ tab: AutocompleteSettingsTab) {

@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [selectionTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {

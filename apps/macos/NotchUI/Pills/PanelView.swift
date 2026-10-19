@@ -18,6 +18,7 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
                 header
+                PanelApprovalBar(viewModel: viewModel, tab: tab, hub: app.hub, workspace: app.workspace)
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
@@ -102,6 +103,81 @@ struct PanelView: View {
         case .agents: AgentsTab(viewModel: viewModel)
         case .music: MusicTab()
         }
+    }
+}
+
+/// A permission request that comes in while the panel is open: one compact bar under the tabs instead of a card over
+/// the whole notch. Hidden while the session that asks is on screen, which shows the whole request itself.
+private struct PanelApprovalBar: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let tab: PanelTab
+    @ObservedObject var hub: AgentHub
+    @ObservedObject var workspace: WorkspaceManager
+    @ObservedObject private var bridge = WorkspaceBridge.shared
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        let waiting = app.approvals.pending
+        if let approval = waiting.first(where: { !onScreen($0) }) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(approval.title)
+                        .font(NookTheme.font(12.5, .medium))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    Text(subtitle(approval, more: waiting.count - 1))
+                        .font(NookTheme.font(11))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                }
+                .help(approval.command)
+                Spacer(minLength: 6)
+                if let key = sessionKey(approval) {
+                    NookGhostButton(title: tr("button.view")) {
+                        viewModel.selectedAgentID = key
+                        viewModel.show(.panel(.agents))
+                    }
+                }
+                NookGhostButton(title: tr("button.deny")) { decide(approval, .deny) }
+                NookPrimaryButton(title: tr("button.allow")) { decide(approval, .allow) }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, lineWidth: 1))
+            .padding(.top, 10)
+            .transition(.opacity.combined(with: .offset(y: -4)))
+        }
+    }
+
+    private func subtitle(_ approval: AgentApproval, more: Int) -> String {
+        let line = approval.agentName + " · " + approval.project
+        return more > 0 ? line + " · " + tr("ws.approval.more", more) : line
+    }
+
+    private func decide(_ approval: AgentApproval, _ decision: ApprovalDecision) {
+        app.approvals.decide(approval, decision)
+        // The card that waited in line for when the panel closes is answered too.
+        viewModel.dismissCard(id: approval.cardToken)
+    }
+
+    /// The Agents entry of the session that asks ("run:<id>" for sessions Nook runs).
+    private func sessionKey(_ approval: AgentApproval) -> String? {
+        switch approval.origin {
+        case .run(let runID, _):
+            return "run:" + runID.uuidString
+        case .bridge(let request):
+            guard case .run(let runID) = bridge.pending.first(where: { $0.id == request })?.caller.kind else { return nil }
+            return "run:" + runID.uuidString
+        case .hook(let request):
+            return hub.sessions.first { $0.approvalID == request }?.id
+        }
+    }
+
+    /// The session's own view shows the whole request, with the same buttons.
+    private func onScreen(_ approval: AgentApproval) -> Bool {
+        guard tab == .agents, viewModel.sheet == nil, let key = sessionKey(approval) else { return false }
+        return viewModel.selectedAgentID == key
     }
 }
 

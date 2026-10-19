@@ -358,27 +358,25 @@ extension WorkspaceRun {
     }
 }
 
-/// Mode, permissions and model for the next turn of a session Nook runs. Only while the agent is idle.
+/// Mode, permissions and model for the next turn of a session Nook runs, also while it works (see
+/// `WorkspaceManager.configure`).
 struct NextTurnSettings: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     let run: WorkspaceRun
 
     var body: some View {
-        let idle = !run.status.isActive
         let capabilities = run.provider.capabilities
         Picker(tr("agents.run.mode"), selection: Binding(get: { run.mode }, set: { workspace.configure(run.id, mode: $0) })) {
             ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
         }
-        .disabled(!idle || !capabilities.planMode)
+        .disabled(!capabilities.planMode)
         Picker(tr("agents.run.permission"), selection: Binding(get: { run.permission }, set: { workspace.configure(run.id, permission: $0) })) {
             ForEach(capabilities.policies) { Text($0.label).tag($0) }
         }
-        .disabled(!idle)
         Picker(tr("agents.run.model"), selection: Binding(get: { run.model }, set: { workspace.configure(run.id, model: $0) })) {
             ForEach(run.modelChoices, id: \.self) { model in
                 Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
             }
         }
-        .disabled(!idle)
     }
 }

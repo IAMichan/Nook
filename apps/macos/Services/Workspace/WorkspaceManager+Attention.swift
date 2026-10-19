@@ -55,9 +55,10 @@ extension WorkspaceManager {
         return AgentAttention.resolve(input)
     }
 
-    /// The reasoning effort for the next turns. An effort the agent does not offer is skipped, not an error.
+    /// The reasoning effort for the next turns (also chosen while a turn runs). An effort the agent does not offer is
+    /// skipped, not an error.
     func setEffort(_ id: UUID, _ effort: String?) {
-        guard let run = run(id), !run.status.isActive else { return }
+        guard let run = run(id) else { return }
         let offered = EffortLevels.levels(for: run.provider, model: run.model)
         let resolution = EffortResolution.resolve(stored: effort, offered: offered)
         update(id) { $0.effort = resolution.outcome == .use ? resolution.effort : nil }

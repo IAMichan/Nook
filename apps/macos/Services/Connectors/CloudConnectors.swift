@@ -443,19 +443,19 @@ final class GitHubConnector: CloudConnectorConfig {
     private func apply(_ s: Snapshot) {
         let failing = s.mine.filter { $0.ci == .failing }
 
-        var headline = tr("connect.github.openPrs", s.mineTotal)
+        var headline = s.mineTotal == 1 ? tr("connect.github.openPr") : tr("connect.github.openPrs", s.mineTotal)
         if s.reviewTotal > 0 {
-            headline += " · " + tr("connect.github.reviewsForYou", s.reviewTotal)
+            headline += " · " + (s.reviewTotal == 1 ? tr("connect.github.reviewForYou") : tr("connect.github.reviewsForYou", s.reviewTotal))
         }
         let detail: String
         if !failing.isEmpty {
-            detail = "CI failing on " + failing.prefix(3).map { $0.ref }.joined(separator: ", ")
+            detail = tr("connect.github.ciFailing", failing.prefix(3).map { $0.ref }.joined(separator: ", "))
         } else if s.mine.contains(where: { $0.ci == .pending }) {
-            detail = "CI still running"
+            detail = tr("connect.github.ciPending")
         } else if s.mine.isEmpty {
-            detail = "No open PRs authored by you"
+            detail = tr("connect.github.noOpenPrs")
         } else {
-            detail = "CI is green"
+            detail = tr("connect.github.ciGreen")
         }
 
         var items: [ConnectorItem] = []

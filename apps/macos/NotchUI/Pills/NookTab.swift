@@ -71,30 +71,60 @@ struct NookChatView: View {
 
     // MARK: Empty chat: your day and where to start
 
+    /// The date, a greeting that counts what waits, then two quiet sections: "For you" (the Today rows in one card) and
+    /// "Start with" (starters built from your real data, two per row). It scrolls when the notch is short.
     private var emptyState: some View {
-        let items = app.todayItems
-        return VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
-                    .font(NookTheme.font(20, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                Text(tr("chat.emptySubtitle"))
-                    .font(NookTheme.font(13))
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
-
-            if !items.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(items.prefix(compact ? 3 : 6)) { item in
-                        TodayRow(item: item) { open(item) }
-                    }
+        let items = Array(app.todayItems.prefix(compact ? 3 : 6))
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(Self.dateLine())
+                        .font(NookTheme.font(11, .semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
+                        .font(NookTheme.font(22, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                    Text(tr("chat.emptySubtitle"))
+                        .font(NookTheme.font(13))
+                        .foregroundStyle(NookTheme.textSecondary)
                 }
+
+                if !items.isEmpty {
+                    homeSection(tr("home.section.forYou"))
+                    VStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            if index > 0 {
+                                Rectangle().fill(NookTheme.line).frame(height: 1).padding(.leading, 56)
+                            }
+                            TodayRow(item: item) { open(item) }
+                        }
+                    }
+                    .background(NookTheme.field)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                }
+
+                homeSection(tr("home.section.start"))
+                suggestions
             }
-
-            Spacer(minLength: 8)
-
-            suggestions
+            .padding(.bottom, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func homeSection(_ title: String) -> some View {
+        Text(title)
+            .font(NookTheme.font(11.5, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.leading, 2)
+            .padding(.top, 22)
+            .padding(.bottom, 8)
+    }
+
+    /// "MONDAY 19 OCTOBER", in the app's language.
+    private static func dateLine() -> String {
+        NookDates.formatter("EEEE d MMMM", locale: I18n.shared.currentLanguage.rawValue).string(from: Date()).uppercased()
     }
 
     private func open(_ item: TodayItem) {
@@ -113,7 +143,7 @@ struct NookChatView: View {
 
     /// One-click prompt suggestions tailored to your current context (window, event, agents, time of day).
     private var suggestions: some View {
-        SuggestionRow(questions: app.startSuggestions) { app.handleUserText($0) }
+        SuggestionGrid(suggestions: app.startSuggestions) { app.handleUserText($0.text) }
     }
 
     // MARK: Header
@@ -980,42 +1010,49 @@ private struct NookRow: View {
 
 // MARK: Starters
 
-/// Suggested conversation starters as compact buttons.
-private struct SuggestionRow: View {
-    let questions: [String]
-    let ask: (String) -> Void
+/// Suggested conversation starters, two per row so a long one never runs off the side.
+private struct SuggestionGrid: View {
+    let suggestions: [StartSuggestion]
+    let ask: (StartSuggestion) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(questions, id: \.self) { question in
-                SuggestionChip(text: question) { ask(question) }
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(suggestions) { suggestion in
+                SuggestionCard(suggestion: suggestion) { ask(suggestion) }
             }
         }
     }
 }
 
-/// One starter: lifts a little under the pointer, like the rows in the Agents list.
-private struct SuggestionChip: View {
-    let text: String
+/// One starter: the icon of what it is about and the question; it brightens and shows an arrow under the pointer.
+private struct SuggestionCard: View {
+    let suggestion: StartSuggestion
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(NookTheme.iris)
-                Text(text)
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
+            HStack(spacing: 10) {
+                HomeLogo(logo: suggestion.logo, tint: NookTheme.textSecondary, size: 26)
+                Text(suggestion.text)
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(hovering ? NookTheme.paper : Color(hex: 0xD9D7E0))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 11)
-            .frame(height: 28)
-            .background(Capsule().fill(hovering ? Color(hex: 0x26262B) : NookTheme.smoke))
-            .overlay(Capsule().stroke(NookTheme.line2.opacity(hovering ? 1 : 0), lineWidth: 1))
-            .contentShape(Capsule())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(hovering ? NookTheme.line2 : NookTheme.line2.opacity(0.6), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -1023,63 +1060,101 @@ private struct SuggestionChip: View {
     }
 }
 
+/// The icon in front of a Today row or a starter, always in a box of the same size so the text beside it lines up:
+/// a connection's own icon, an agent's logo, or a symbol on a soft tile in the item's color.
+private struct HomeLogo: View {
+    let logo: TodayItem.Logo?
+    var tint: Color
+    var size: CGFloat = 30
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        Group {
+            switch logo {
+            case .agent(let name):
+                AgentLogo(agent: name, size: size * 0.62)
+            case .source(let id):
+                let source = app.connectors.source(id: id)
+                SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? "circle.grid.2x2", tint: tint, size: size * 0.62, source: id)
+            case .symbol(let name):
+                Image(systemName: name)
+                    .font(.system(size: size * 0.42, weight: .medium))
+                    .foregroundStyle(tint)
+            case nil:
+                Circle().fill(tint).frame(width: 8, height: 8)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(tileFill))
+    }
+
+    /// Symbols and dots sit on a tile tinted with their color; real icons get a neutral one.
+    private var tileFill: Color {
+        switch logo {
+        case .symbol, nil: return tint.opacity(0.12)
+        case .agent, .source: return NookTheme.paper.opacity(0.05)
+        }
+    }
+}
+
 private struct TodayRow: View {
     let item: TodayItem
     let action: () -> Void
     @State private var hovering = false
-    @EnvironmentObject private var app: AppModel
 
-    /// The real icon of what the item is about (the agent, the calendar, the connection) with the item's color as a
-    /// small dot on it; a plain dot for the rest.
-    @ViewBuilder private var marker: some View {
+    /// A connection or agent keeps its own icon, with the item's color as a small dot on its corner.
+    private var hasBadge: Bool {
         switch item.logo {
-        case .agent(let name):
-            AgentLogo(agent: name, size: 18).overlay(alignment: .bottomTrailing) { badge }
-        case .source(let id):
-            let source = app.connectors.source(id: id)
-            SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? "circle.grid.2x2", tint: item.color, size: 18, source: id)
-                .overlay(alignment: .bottomTrailing) { badge }
-        case nil:
-            Circle().fill(item.color).frame(width: 8, height: 8)
+        case .agent, .source: return true
+        case .symbol, nil: return false
         }
-    }
-
-    private var badge: some View {
-        Circle().fill(item.color).frame(width: 7, height: 7)
-            .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1.2))
-            .offset(x: 2, y: 2)
     }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                marker
+            HStack(spacing: 12) {
+                HomeLogo(logo: item.logo, tint: item.color)
+                    .overlay(alignment: .bottomTrailing) {
+                        if hasBadge {
+                            Circle().fill(item.color).frame(width: 8, height: 8)
+                                .overlay(Circle().stroke(NookTheme.field, lineWidth: 1.5))
+                                .offset(x: 2, y: 2)
+                        }
+                    }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
-                        .font(NookTheme.font(14.5, .medium))
+                        .font(NookTheme.font(13.5, .medium))
                         .foregroundStyle(NookTheme.paper)
-                    Text(item.subtitle)
-                        .font(NookTheme.font(12.5))
-                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                    if !item.subtitle.isEmpty {
+                        Text(item.subtitle)
+                            .font(NookTheme.font(12))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                    }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if !item.action.isEmpty {
-                    Text(item.action)
-                        .font(NookTheme.font(12.5, .medium))
-                        .foregroundStyle(Color(hex: 0xC9C7D2))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    HStack(spacing: 4) {
+                        Text(item.action)
+                            .font(NookTheme.font(12, .medium))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9.5, weight: .semibold))
+                    }
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.paper.opacity(0.05)))
                 }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
             .frame(maxWidth: .infinity)
-            .background(hovering ? NookTheme.field : Color.clear)
-            .overlay(alignment: .top) { Rectangle().fill(NookTheme.line).frame(height: 1) }
+            .background(hovering ? NookTheme.paper.opacity(0.03) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

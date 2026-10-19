@@ -602,7 +602,8 @@ final class AgentHub: ObservableObject {
         case "UserPromptSubmit":
             record.status = .running
             record.diff = []
-            if let prompt = event["prompt"] as? String {
+            // What the agent injects itself (a finished background task …) is not your last prompt.
+            if let prompt = event["prompt"] as? String, !InjectedPrompt.isInjected(prompt) {
                 record.lastPrompt = prompt
                 record.lastMessage = ""
                 Self.push(&record, .done, "prompt: " + Self.shorten(prompt, 60))

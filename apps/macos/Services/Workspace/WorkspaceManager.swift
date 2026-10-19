@@ -190,6 +190,9 @@ final class WorkspaceManager: ObservableObject {
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
+    /// Sessions whose settings changed during a turn: their Claude Code process is not reused afterwards, so the next turn
+    /// surely starts with the new flags, even when this Claude Code could not take them over live.
+    var claudeChangedDuringTurn: Set<UUID> = []
     /// What you typed, for a turn whose prompt starts with a handoff summary (the timeline shows your words only).
     var displayPrompt: [UUID: String] = [:]
     /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
@@ -235,6 +238,11 @@ final class WorkspaceManager: ObservableObject {
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
         runs = store.loadRuns()
+        // Sessions taken over before agents' tags were left out of titles were called "<task-notification>" and the like.
+        for index in runs.indices where runs[index].title.hasPrefix("<") {
+            let clean = InjectedPrompt.title(runs[index].title)
+            runs[index].title = clean.isEmpty ? runs[index].projectName : clean
+        }
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
@@ -486,7 +494,7 @@ final class WorkspaceManager: ObservableObject {
         }
         let id = UUID()
         let now = Date()
-        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = InjectedPrompt.title(title)
         let permission = provider.capabilities.policies.contains(settings.defaultPermission)
             ? settings.defaultPermission : (provider.capabilities.policies.first ?? .acceptEdits)
         let run = WorkspaceRun(
@@ -533,9 +541,11 @@ final class WorkspaceManager: ObservableObject {
         return id
     }
 
-    /// Changes how the next turn runs: mode, permissions, and model. Only between turns; a running turn keeps its settings.
+    /// Changes how the next turn runs: mode, permissions, and model. Also while a turn runs (a session Nook took over as
+    /// much as one it started): a running Claude Code takes them over at once (see `applyLive`), other agents from their
+    /// next turn, and rights Nook checks itself (ACP, Codex "for this session") count right away.
     func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
-        guard let run = run(id), !run.status.isActive else { return }
+        guard let run = run(id) else { return }
         update(id) {
             if let mode { $0.mode = mode }
             if let permission, run.provider.capabilities.policies.contains(permission) {
@@ -544,6 +554,7 @@ final class WorkspaceManager: ObservableObject {
             }
             if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
+        if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
     }
 
     // MARK: Turns
@@ -1447,6 +1458,7 @@ final class WorkspaceManager: ObservableObject {
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil
+        claudeChangedDuringTurn.remove(id)
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }

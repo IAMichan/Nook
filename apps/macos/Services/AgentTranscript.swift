@@ -413,12 +413,58 @@ enum AgentTranscript {
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.
     private static func isTypedPrompt(_ text: String) -> Bool {
-        for prefix in ["<command-", "<local-command", "<system-reminder", "<bash-", "<user-memory", "Caveat:", "[Request interrupted"]
-        where text.hasPrefix(prefix) { return false }
-        return true
+        !InjectedPrompt.isInjected(text)
     }
 
     private static func clip(_ text: String) -> String {
         text.count > maxMessageLength ? String(text.prefix(maxMessageLength - 1)) + "…" : text
+    }
+}
+
+/// What an agent puts into a conversation as if you typed it: a finished background task (`<task-notification>`), the
+/// output of a slash command, reminders, the environment Codex describes. It is not a prompt of yours, so it never
+/// becomes a session's title or "last prompt".
+enum InjectedPrompt {
+    private static let prefixes = [
+        "<command-", "<local-command", "<system-reminder", "<bash-", "<user-memory", "<task-notification",
+        "<environment_context", "<user_instructions", "<turn_aborted", "Caveat:", "[Request interrupted"
+    ]
+    /// A whole message wrapped in one tag of the agent's own (with a dash or underscore, which HTML tags do not have):
+    /// `<some-tag …>…</some-tag>`.
+    private static let wrapped = try? NSRegularExpression(pattern: #"^<([A-Za-z]\w*[-_][\w-]*)\b[^>]*>[\s\S]*</\1>$"#)
+    /// A block of an agent's own tag and what is inside it.
+    private static let block = try? NSRegularExpression(pattern: #"<([A-Za-z][\w]*[-_][\w-]*)\b[^>]*>[\s\S]*?</\1>"#)
+    /// Any tag left over, also one cut off at the end.
+    private static let tag = try? NSRegularExpression(pattern: #"</?[A-Za-z][\w:-]*\b[^>]*>?"#)
+
+    static func isInjected(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if prefixes.contains(where: { trimmed.hasPrefix($0) }) { return true }
+        return matches(wrapped, trimmed)
+    }
+
+    /// The first line with words in it, without the agent's tags and their blocks; empty when nothing of yours is left.
+    static func title(_ text: String) -> String {
+        var clean = text
+        if clean.contains("<") {
+            clean = replacing(block, in: clean, with: "\n")
+            clean = replacing(tag, in: clean, with: " ")
+        }
+        for line in clean.split(whereSeparator: \.isNewline) {
+            let words = line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if !words.isEmpty { return words }
+        }
+        return ""
+    }
+
+    private static func matches(_ regex: NSRegularExpression?, _ text: String) -> Bool {
+        guard let regex else { return false }
+        return regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)) != nil
+    }
+
+    private static func replacing(_ regex: NSRegularExpression?, in text: String, with template: String) -> String {
+        guard let regex else { return text }
+        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text), withTemplate: template)
     }
 }
