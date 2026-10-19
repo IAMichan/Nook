@@ -27,7 +27,8 @@ struct NookOrb: View {
     @State private var moodSince = Date()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { context in
+        // A dozing Nook keeps animating on every screen, so all orbs nod off together.
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !(animated || dozing))) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)
@@ -35,6 +36,9 @@ struct NookOrb: View {
         .onChange(of: mood) { _, _ in moodSince = Date() }
         .accessibilityHidden(true)
     }
+
+    /// Drowsiness is shared by every screen: the pointer being on one screen (`.seen`) must not keep the others awake.
+    private var dozing: Bool { presence.drowsy && (mood == .rest || mood == .seen) }
 
     private func orb(_ p: Pose) -> some View {
         // The light stays where it is while Nook turns: the highlight moves against his gaze.
@@ -245,7 +249,7 @@ struct NookOrb: View {
         let u = size / 72   // the motions were designed on a 72-point orb
         let dt = tracker.advance(to: t)
         let lively = animated && !reduceMotion
-        let drowsy = presence.drowsy && mood == .rest
+        let drowsy = dozing
         let since = { (moment: Date) -> Double in date.timeIntervalSince(moment) }
 
         // Breathing: faster and shallower while thinking, slow when drowsy.
@@ -265,8 +269,8 @@ struct NookOrb: View {
         if drowsy {
             // Eyes half shut; awake, it nods off now and then and catches itself.
             let c = t.truncatingRemainder(dividingBy: 9)
-            let nod = lively ? bump((c - 4.2) / 1.6) : 0
-            let jerk = lively ? bump((c - 7) / 0.4) : 0
+            let nod = reduceMotion ? 0 : bump((c - 4.2) / 1.6)
+            let jerk = reduceMotion ? 0 : bump((c - 7) / 0.4)
             p.eachEye { e in
                 e.squash *= CGFloat(max(0.08, 0.35 - 0.25 * nod + 0.15 * jerk))
                 e.dy += 2 * u
