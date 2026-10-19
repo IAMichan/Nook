@@ -181,6 +181,27 @@ final class PrefetchTests: XCTestCase {
         XCTAssertTrue(Prefetch.calls(for: "wat staat er morgen op de planning", relevant: ["calendar", "reminders"], available: available).isEmpty)
     }
 
+    func testDayQuestionsAreCheckedInTheCalendar() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        // Monday 19 October 2026, 10:00.
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 19, hour: 10))!
+        func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now))! }
+
+        let tomorrow = try XCTUnwrap(Prefetch.agendaWindow(for: "Heb k morgen gesprek met aron?", now: now, calendar: calendar))
+        XCTAssertEqual(tomorrow.from, day(1))
+        XCTAssertEqual(tomorrow.to, day(2))
+        XCTAssertEqual(Prefetch.agendaWindow(for: "Do I have a meeting today?", now: now, calendar: calendar)?.from, day(0))
+        XCTAssertEqual(Prefetch.agendaWindow(for: "wat heb ik overmorgen", now: now, calendar: calendar)?.from, day(2))
+        XCTAssertEqual(Prefetch.agendaWindow(for: "ben ik vrijdag druk?", now: now, calendar: calendar)?.from, day(4))
+        XCTAssertEqual(Prefetch.agendaWindow(for: "afspraken volgende week", now: now, calendar: calendar)?.from, day(7))
+        XCTAssertEqual(Prefetch.agendaWindow(for: "wat staat er in mijn agenda", now: now, calendar: calendar)?.to, day(7))
+
+        XCTAssertNil(Prefetch.agendaWindow(for: "goede morgen", now: now, calendar: calendar))
+        XCTAssertNil(Prefetch.agendaWindow(for: "wat zei Aron over het budget?", now: now, calendar: calendar))
+        XCTAssertNil(Prefetch.agendaWindow(for: "het weer morgen", now: now, calendar: calendar))
+    }
+
     func testRunCommandBelongsToTheTerminalSource() {
         XCTAssertEqual(SourceCatalog.source(forTool: "run_command"), "terminal")
         XCTAssertEqual(SourceCatalog.title("terminal"), "Terminal")
