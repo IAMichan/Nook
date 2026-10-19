@@ -57,7 +57,7 @@ extension AppModel {
             extra: extra,
             urgent: true
         )
-        viewModel.presentUrgent(card)
+        viewModel.presentUrgent(card, keepPanel: true)
         NookSound.play(.attention)
     }
 

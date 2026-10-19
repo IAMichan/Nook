@@ -137,7 +137,16 @@ extension WorkspaceManager {
     /// summary of what happened. Returns what it came to, so the menu can say why nothing changed.
     @discardableResult
     func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String) -> SelectionTransition {
-        guard canTransfer(id), let run = run(id) else { return .reject("busy") }
+        guard let run = run(id) else { return .reject("busy") }
+        // While a turn runs only the model changes (see `configure`); another agent or account waits until it is idle.
+        if !canTransfer(id) {
+            guard provider == run.provider, profileID == run.profileID else { return .reject("busy") }
+            let clean = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard clean != run.model else { return .reuse }
+            configure(id, model: clean)
+            update(id) { $0.resolvedModel = nil }
+            return .applyOnNextTurn
+        }
         let transition = SelectionTransition.decide(
             currentProvider: run.provider, currentProfile: run.profileID, currentModel: run.model,
             targetProvider: provider, targetProfile: profileID, targetModel: model,

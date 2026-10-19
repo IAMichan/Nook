@@ -152,12 +152,16 @@ final class NotchViewModel: ObservableObject {
 
     /// An agent prompt: takes priority over the panel and regular cards (which return to the queue).
     /// If such a prompt is already shown, this queues behind it, ahead of regular cards.
-    func presentUrgent(_ card: NookCard) {
+    /// - `keepPanel`: an open panel stays: the prompt waits in line (it shows as a card once the panel closes) and the
+    ///   panel asks it in a compact bar of its own (see `PanelApprovalBar`), so it does not take over the whole notch.
+    func presentUrgent(_ card: NookCard, keepPanel: Bool = false) {
         var urgent = card
         urgent.urgent = true
         let firstNormal = pending.firstIndex { !$0.urgent } ?? pending.count
         switch state {
         case .card(let current) where current.urgent:
+            pending.insert(urgent, at: firstNormal)
+        case .panel where keepPanel:
             pending.insert(urgent, at: firstNormal)
         case .card(let current):
             pending.insert(current, at: firstNormal)

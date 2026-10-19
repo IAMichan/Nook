@@ -676,7 +676,7 @@ enum AgentFormat {
 
     /// A session title stripped of tags Claude Code sometimes prefixes ("<pasted_content …>").
     static func title(_ raw: String) -> String {
-        var text = raw
+        var text = InjectedPrompt.title(raw)
         if text.contains("<"), let regex = tagStripperRegex {
             let range = NSRange(text.startIndex..<text.endIndex, in: text)
             text = regex.stringByReplacingMatches(in: text, range: range, withTemplate: " ")

@@ -350,7 +350,6 @@ struct AgentRunPanel: View {
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
             }
             .composerMenu()
-            .disabled(run.status.isActive)
             .help(tr("compose.effort.help"))
         }
     }
@@ -774,30 +773,30 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account and the model. A model counts from the next turn; another account
-    /// or agent moves the session there with a summary of what happened (shown in the timeline).
+    /// The agent with its account and the model. A model counts from the next turn (a running Claude Code switches at
+    /// once); another account or agent moves the session there with a summary of what happened (shown in the timeline),
+    /// which waits until the agent is idle.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
         let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
-        let providers = workspace.canTransfer(runID) ? app.connectedProviders : [run.provider]
+        let idle = workspace.canTransfer(runID)
+        let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
         } content: {
-            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: true) { provider, accountID, option in
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: idle) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
                 let chosen = option ?? (provider == run.provider ? run.model : workspace.settings.model(for: provider))
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen)
             }
         }
-        .disabled(run.status.isActive)
         .help(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {
         ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
-            .disabled(run.status.isActive)
     }
 
     private func permissionMenu(_ run: WorkspaceRun) -> some View {
@@ -814,7 +813,7 @@ struct AgentRunPanel: View {
                 }
             }
         }
-        .disabled(run.status.isActive || run.mode == .plan)
+        .disabled(run.mode == .plan)
         .help(run.permission.help(for: run.provider))
     }
 }
