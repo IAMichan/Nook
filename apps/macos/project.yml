@@ -172,6 +172,7 @@ targets:
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/ReviewComments.swift
+      - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/CodexAppServer.swift

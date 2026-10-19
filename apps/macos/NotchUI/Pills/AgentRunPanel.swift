@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// A session that Nook runs itself, inside the Agents tab: the whole conversation, approvals, stop, follow-up
 /// messages, and the settings for the next turn (mode, permissions, model). Everything you would otherwise do in a
@@ -197,6 +198,12 @@ struct AgentRunPanel: View {
                 Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
                     .disabled(watchablePullRequest() == nil)
             }
+            // shares a thread; Nook keeps it local: copy it, or save it where you want.
+            Button(tr("ws.export.copy")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(SessionExport.markdown(run, events: workspace.timeline(runID)), forType: .string)
+            }
+            Button(tr("ws.export.save")) { saveMarkdown(run) }
             // terminal context: the last lines of this session's terminal go with your message.
             Button(tr("ws.context.terminal")) { addTerminalOutput(run) }
                 .disabled(TerminalStore.shared.sessions(in: run.workingDirectory).isEmpty)
@@ -214,6 +221,15 @@ struct AgentRunPanel: View {
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
         }
+    }
+
+    private func saveMarkdown(_ run: WorkspaceRun) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = SessionExport.fileName(run)
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? SessionExport.markdown(run, events: workspace.timeline(runID)).write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func addTerminalOutput(_ run: WorkspaceRun) {

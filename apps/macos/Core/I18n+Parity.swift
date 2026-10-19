@@ -34,6 +34,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.context.terminal": "Voeg terminaluitvoer toe",
         "code.source": "Bron",
         "code.preview": "Bekijk",
+        "ws.export.copy": "Kopieer gesprek als Markdown",
+        "ws.export.save": "Bewaar als Markdown…",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -64,6 +66,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.context.terminal": "Add terminal output",
         "code.source": "Source",
         "code.preview": "Preview",
+        "ws.export.copy": "Copy conversation as Markdown",
+        "ws.export.save": "Save as Markdown…",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -94,6 +98,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.context.terminal": "Terminalausgabe hinzufügen",
         "code.source": "Quelltext",
         "code.preview": "Vorschau",
+        "ws.export.copy": "Gespräch als Markdown kopieren",
+        "ws.export.save": "Als Markdown sichern…",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -124,6 +130,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.context.terminal": "Ajouter la sortie du terminal",
         "code.source": "Source",
         "code.preview": "Aperçu",
+        "ws.export.copy": "Copier la conversation en Markdown",
+        "ws.export.save": "Enregistrer en Markdown…",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -154,5 +162,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.context.terminal": "Añadir salida del terminal",
         "code.source": "Código",
         "code.preview": "Vista previa",
+        "ws.export.copy": "Copiar la conversación como Markdown",
+        "ws.export.save": "Guardar como Markdown…",
     ],
 ]

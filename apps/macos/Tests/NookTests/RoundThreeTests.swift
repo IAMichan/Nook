@@ -94,4 +94,22 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertTrue(message.contains("<review_comment file=\"App.swift\" line=\"12\">\n> +let x = 1\nUse a constant\n</review_comment>"))
         XCTAssertEqual(ReviewComments.quote("one\ntwo", into: "why?"), "> one\n> two\n\nwhy?")
     }
+
+    // MARK: Export
+
+    func testMarkdownExport() {
+        var run = TestData.run(status: .completed)
+        run.title = "Fix login"
+        let events = [RunEvent(kind: .user, text: "Fix the login"), RunEvent(kind: .thinking, text: "secret thoughts"),
+                      RunEvent(kind: .tool, text: "Bash · npm `test`"), RunEvent(kind: .tool, text: "Edit · Login.swift"),
+                      RunEvent(kind: .assistant, text: "Done."), RunEvent(kind: .result, text: "ok")]
+        let markdown = SessionExport.markdown(run, events: events)
+        XCTAssertTrue(markdown.hasPrefix("# Fix login\n"))
+        XCTAssertTrue(markdown.contains("## You\n\nFix the login"))
+        XCTAssertTrue(markdown.contains("<details><summary>2 steps</summary>"))
+        XCTAssertTrue(markdown.contains("- `Bash · npm 'test'`"))
+        XCTAssertTrue(markdown.contains("## Claude Code\n\nDone."))
+        XCTAssertFalse(markdown.contains("secret thoughts"))
+        XCTAssertEqual(SessionExport.fileName(run), "fix-login.md")
+    }
 }
