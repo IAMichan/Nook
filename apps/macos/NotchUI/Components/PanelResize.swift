@@ -55,6 +55,8 @@ enum PanelLayout {
     static let outputsWide: Double = 620
     /// A command's terminal on the left of a session.
     static let console: Double = 400
+    /// The side panel with a session's terminal, browser or changes.
+    static let tool: Double = 460
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260

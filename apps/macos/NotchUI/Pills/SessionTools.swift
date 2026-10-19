@@ -1,46 +1,55 @@
 import SwiftUI
 
-/// What the right side of the Agents tab shows for a session: its conversation, a terminal in its folder (or worktree),
-/// or Nook's browser, for instance on the dev server the agent started.
+/// What the side panel next to a session in the Agents tab shows: nothing (only the conversation), a terminal in its
+/// folder (or worktree), Nook's browser, for instance on the dev server the agent started, or the folder's changes.
 enum SessionTool: String {
-    case conversation, terminal, browser
-}
+    case conversation, terminal, browser, changes
 
-/// The terminal and the browser as two quiet icons in a session's header. The active one takes you back to the
-/// conversation. When the agent started a process or opened a page there that you have not looked at yet, the icon
-/// carries a small dot.
-struct SessionToolSwitch: View {
-    @ObservedObject var viewModel: NotchViewModel
-    /// The session's folder; empty means no terminal, only the browser.
-    let directory: String
-    @ObservedObject private var bridge = WorkspaceBridge.shared
+    /// The tools the side panel can show, in the order of its tabs.
+    static let panelTools: [SessionTool] = [.terminal, .browser, .changes]
 
-    var body: some View {
-        HStack(spacing: 2) {
-            if !directory.isEmpty { icon(.terminal, symbol: "terminal", label: tr("agents.tool.terminal")) }
-            icon(.browser, symbol: "safari", label: tr("agents.tool.browser"))
+    var symbol: String {
+        switch self {
+        case .conversation: return "bubble.left"
+        case .terminal: return "terminal"
+        case .browser: return "safari"
+        case .changes: return "plus.forwardslash.minus"
         }
     }
 
-    private func icon(_ tool: SessionTool, symbol: String, label: String) -> some View {
+    /// The tab's name in the side panel.
+    var title: String { tr("agents.tool.tab." + rawValue) }
+    /// What the icon in the session's header does.
+    var help: String { tr("agents.tool." + rawValue) }
+}
+
+/// The side panel's quiet icons in a session's header: the terminal, the browser and a button that opens (or closes)
+/// the side panel on what it showed last. A tool's icon opens the panel on it; on the tool the panel shows, it closes
+/// the panel again. When the agent started a process or opened a page there that you have not looked at yet, the icon
+/// carries a small dot.
+struct SessionToolSwitch: View {
+    @ObservedObject var viewModel: NotchViewModel
+    /// The session's folder; empty means no terminal and no changes, only the browser.
+    let directory: String
+    @ObservedObject private var bridge = WorkspaceBridge.shared
+    @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if !directory.isEmpty { icon(.terminal) }
+            icon(.browser)
+            panelToggle
+        }
+    }
+
+    private func icon(_ tool: SessionTool) -> some View {
         let active = viewModel.sessionTool == tool
         let fresh = !active && bridge.hasUnseen(directory, tool.rawValue)
-        let help = fresh ? label + " · " + tr("bridge.tool.unseen") : label
+        let help = fresh ? tool.help + " · " + tr("bridge.tool.unseen") : tool.help
         return Button {
             viewModel.sessionTool = active ? .conversation : tool
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
-                .overlay(alignment: .topTrailing) {
-                    if fresh {
-                        Circle().fill(NookTheme.iris).frame(width: 6, height: 6).padding(5)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .contentShape(Rectangle())
+            SessionToolIcon(symbol: tool.symbol, active: active, fresh: fresh)
         }
         .buttonStyle(.plain)
         .animation(.easeOut(duration: 0.18), value: fresh)
@@ -48,63 +57,157 @@ struct SessionToolSwitch: View {
         .accessibilityLabel(help)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
+
+    /// Opens the side panel on the tool it showed last, or closes it.
+    private var panelToggle: some View {
+        let open = viewModel.sessionTool != .conversation
+        let help = open ? tr("agents.tool.close") : tr("agents.tool.panel")
+        return Button {
+            if open {
+                viewModel.sessionTool = .conversation
+            } else {
+                let last = SessionTool(rawValue: lastTool) ?? .browser
+                viewModel.sessionTool = directory.isEmpty && last != .browser ? .browser : last
+            }
+        } label: {
+            SessionToolIcon(symbol: "sidebar.right", active: open, fresh: false)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(open ? .isSelected : [])
+    }
 }
 
-/// A session in the Agents tab together with the tools it works with. On its conversation the header carries the
-/// terminal and browser icons; with one of them open, the tool fills the space and the header leads back.
-struct SessionWorkbench<Conversation: View>: View {
-    @ObservedObject var viewModel: NotchViewModel
-    let title: String
-    let directory: String
-    @ViewBuilder var conversation: (AnyView) -> Conversation
-    @ObservedObject private var bridge = WorkspaceBridge.shared
+/// One of the header's tool icons: highlighted while its tool is open, with a dot when there is something new.
+private struct SessionToolIcon: View {
+    let symbol: String
+    let active: Bool
+    let fresh: Bool
 
     var body: some View {
-        let tool = directory.isEmpty && viewModel.sessionTool == .terminal ? .conversation : viewModel.sessionTool
-        if tool == .conversation {
-            conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                header(tool)
-                if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
-                ToolSurface {
-                    switch tool {
-                    case .terminal: SessionTerminalsView(directory: directory).id(directory)
-                    default: BrowserView()
-                    }
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
+            .frame(width: 28, height: 28)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
+            .overlay(alignment: .topTrailing) {
+                if fresh {
+                    Circle().fill(NookTheme.iris).frame(width: 6, height: 6).padding(5)
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // What the agent opened here is in view now, also when it opens more while you look.
-            .onAppear { bridge.markSeen(directory, tool.rawValue) }
-            .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
+            .contentShape(Rectangle())
+    }
+}
+
+/// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
+/// browser or the changes open in a side panel on its right, with tabs on top to switch between them. Drag the line
+/// beside the panel to make it wider or narrower.
+struct SessionWorkbench<Conversation: View>: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let directory: String
+    /// A session Nook runs: its changes open in its own review, with comments for the agent.
+    var runID: UUID? = nil
+    @ViewBuilder var conversation: (AnyView) -> Conversation
+    @ObservedObject private var bridge = WorkspaceBridge.shared
+    @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
+    @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
+    @State private var totalWidth: Double = 0
+
+    private var tools: [SessionTool] { directory.isEmpty ? [.browser] : SessionTool.panelTools }
+
+    var body: some View {
+        let tool = tools.contains(viewModel.sessionTool) ? viewModel.sessionTool : .conversation
+        HStack(alignment: .top, spacing: 0) {
+            conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if tool != .conversation {
+                sidePanel(tool)
+                    .padding(.leading, 6)
+                    .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
+                                    available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                    edge: .leading)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .animation(.easeInOut(duration: 0.2), value: tool == .conversation)
+        .onChange(of: tool) { _, next in
+            if next != .conversation { lastTool = next.rawValue }
         }
     }
 
-    /// "‹ Session title · ~/folder" with the same two icons on the right.
-    private func header(_ tool: SessionTool) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                viewModel.sessionTool = .conversation
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                    Text(title).font(NookTheme.font(13.5, .medium)).lineLimit(1)
+    private func sidePanel(_ tool: SessionTool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(tool)
+            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
+            ToolSurface {
+                switch tool {
+                case .terminal: SessionTerminalsView(directory: directory).id(directory)
+                case .changes:
+                    if let runID {
+                        ChangesSheet(runID: runID, initialFile: nil, onClose: close, stacked: true).id(runID)
+                    } else {
+                        FolderChangesSheet(directory: directory, stacked: true).id(directory)
+                    }
+                default: BrowserView()
                 }
-                .foregroundStyle(NookTheme.paper)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help(tr("agents.tool.back"))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // What the agent opened here is in view now, also when it opens more while you look.
+        .onAppear { bridge.markSeen(directory, tool.rawValue) }
+        .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
+        .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
+    }
+
+    private func close() { viewModel.sessionTool = .conversation }
+
+    /// The tabs to choose what the panel shows, and the button that closes it.
+    private func header(_ tool: SessionTool) -> some View {
+        HStack(spacing: 4) {
+            ForEach(tools, id: \.self) { item in
+                let active = item == tool
+                let fresh = !active && bridge.hasUnseen(directory, item.rawValue)
+                Button {
+                    viewModel.sessionTool = item
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: item.symbol).font(.system(size: 10.5, weight: .medium))
+                        Text(item.title).lineLimit(1)
+                        if fresh { Circle().fill(NookTheme.iris).frame(width: 5, height: 5) }
+                    }
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(item.help)
+                .accessibilityAddTraits(active ? .isSelected : [])
+            }
+            Spacer(minLength: 8)
             if tool == .terminal {
                 Text(AgentPathFormat.tilde(directory))
-                    .font(NookTheme.mono(11.5))
+                    .font(NookTheme.mono(11))
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            Spacer(minLength: 8)
-            SessionToolSwitch(viewModel: viewModel, directory: directory)
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("agents.tool.close"))
+            .accessibilityLabel(tr("agents.tool.close"))
         }
         .frame(height: 30)
     }

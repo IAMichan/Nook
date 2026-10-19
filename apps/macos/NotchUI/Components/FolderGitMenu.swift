@@ -159,19 +159,36 @@ struct FolderGitButton: View {
     var body: some View {
         Group {
             if !model.directory.isEmpty {
-                Button { open.toggle() } label: {
-                    if model.isRepository {
-                        label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"), counts: true)
-                    } else {
-                        label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent, counts: false)
+                HStack(spacing: 0) {
+                    Button { open.toggle() } label: {
+                        if model.isRepository {
+                            label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"))
+                        } else {
+                            label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
+                    .popover(isPresented: $open, arrowEdge: .bottom) {
+                        SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
+                    }
+                    // The counts open the changes themselves.
+                    if model.isRepository, !model.changes.isEmpty {
+                        Button(action: showChanges) {
+                            HStack(spacing: 6) {
+                                Text("+\(model.added)").foregroundStyle(NookTheme.mint)
+                                Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
+                            }
+                            .font(NookTheme.font(12, .medium))
+                            .padding(.horizontal, 6)
+                            .frame(height: 26)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(tr("agents.git.changes", model.changes.count))
                     }
                 }
-                .buttonStyle(.plain)
                 .fixedSize()
-                .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
-                .popover(isPresented: $open, arrowEdge: .bottom) {
-                    SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
-                }
             }
         }
         .task(id: model.directory) {
@@ -185,7 +202,7 @@ struct FolderGitButton: View {
         }
     }
 
-    private func label(icon: String, text: String, counts: Bool) -> some View {
+    private func label(icon: String, text: String) -> some View {
         HStack(spacing: 6) {
             if model.working {
                 ProgressView().controlSize(.mini)
@@ -195,10 +212,6 @@ struct FolderGitButton: View {
                 Image(systemName: icon).font(.system(size: 10.5, weight: .medium))
             }
             Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 170, alignment: .leading)
-            if counts, !model.changes.isEmpty {
-                Text("+\(model.added)").foregroundStyle(NookTheme.mint)
-                Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
-            }
             Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
         }
         .font(NookTheme.font(12, .medium))
@@ -216,13 +229,17 @@ struct FolderChangesSheet: View {
     @State private var diff = ""
     @State private var loading = false
     @State private var error: String?
+    /// In a narrow side panel: the file list above the diff instead of beside it.
+    private let stacked: Bool
 
-    init(directory: String) {
+    init(directory: String, stacked: Bool = false) {
         _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        self.stacked = stacked
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(model.changes) { file in
@@ -244,7 +261,9 @@ struct FolderChangesSheet: View {
                     }
                 }
             }
-            .frame(width: 240)
+            .frame(width: stacked ? nil : 240, height: stacked ? 150 : nil)
+            .frame(maxWidth: stacked ? CGFloat.infinity : nil)
+            if stacked { Divider() }
             Group {
                 if loading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -258,6 +277,7 @@ struct FolderChangesSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(stacked ? 8 : 0)
         .task {
             await model.refresh()
             if selected == nil { selected = model.changes.first?.path }

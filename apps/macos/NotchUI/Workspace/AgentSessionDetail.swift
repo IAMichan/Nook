@@ -81,7 +81,12 @@ struct AgentSessionDetail: View {
             if !app.demoMode, let headerAccessory { headerAccessory }
             if !app.demoMode, !directory.isEmpty {
                 FolderGitButton(directory: directory, agentWorking: agentWorking) {
-                    app.viewModel.open(.folderChanges(directory))
+                    // Next to the conversation when it has the side panel, otherwise as a task of its own.
+                    if headerAccessory != nil {
+                        app.viewModel.sessionTool = .changes
+                    } else {
+                        app.viewModel.open(.folderChanges(directory))
+                    }
                 }
                 .id(directory)
             }

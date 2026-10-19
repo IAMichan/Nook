@@ -231,7 +231,12 @@ struct AgentRunPanel: View {
                 if let headerAccessory { headerAccessory }
                 FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive, showChanges: {
                     workspace.markReviewed(runID)
-                    app.viewModel.open(.changes(runID, file: nil))
+                    // Next to the conversation when it has the side panel, otherwise as a task of its own.
+                    if headerAccessory != nil {
+                        app.viewModel.sessionTool = .changes
+                    } else {
+                        app.viewModel.open(.changes(runID, file: nil))
+                    }
                 }, onChange: {
                     workspace.refreshGit(runID)
                 })
@@ -302,8 +307,10 @@ struct AgentRunPanel: View {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
             .disabled(run.isRemote)
-            Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
-                .disabled(run.repoRoot == nil)
+            Button(tr("agents.run.changes")) {
+                if headerAccessory != nil { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
+            }
+            .disabled(run.repoRoot == nil)
             Divider()
             Button(tr("agents.run.archive")) {
                 workspace.setArchived(runID, true)
