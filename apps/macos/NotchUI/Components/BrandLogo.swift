@@ -2,11 +2,11 @@ import SwiftUI
 import AppKit
 
 // The real marks of the AI brands Nook talks to (Claude, OpenAI, Gemini, Mistral, Ollama, Grok, Groq, OpenRouter, DeepSeek,
-// Qwen, Kimi, LM Studio, Meta, Gemma), as vector paths so they stay sharp at any size and need no image assets.
+// Qwen, Kimi, LM Studio, Meta, Gemma, OpenCode, Cursor), as vector paths so they stay sharp at any size and need no image assets.
 // The marks belong to their owners and are used here only to say which model or agent is meant.
 
 enum BrandLogo: String, CaseIterable {
-    case claude, openai, gemini, mistral, ollama, grok, groq, openrouter, deepseek, qwen, kimi, lmstudio, meta, gemma
+    case claude, openai, gemini, mistral, ollama, grok, groq, openrouter, deepseek, qwen, kimi, lmstudio, meta, gemma, opencode, cursor
 
     /// The brand a model or agent name points at ("claude-haiku-5-5", "Qwen 3 (4B)", "gpt-4o", "Codex"), if we have its mark.
     static func forName(_ raw: String) -> BrandLogo? {
@@ -15,7 +15,8 @@ enum BrandLogo: String, CaseIterable {
             ("claude", .claude), ("anthropic", .claude), ("codex", .openai), ("openai", .openai), ("gpt", .openai),
             ("gemma", .gemma), ("gemini", .gemini), ("mistral", .mistral), ("mixtral", .mistral), ("ollama", .ollama),
             ("grok", .grok), ("groq", .groq), ("openrouter", .openrouter), ("deepseek", .deepseek), ("qwen", .qwen),
-            ("kimi", .kimi), ("moonshot", .kimi), ("lm studio", .lmstudio), ("lmstudio", .lmstudio), ("llama", .meta)
+            ("kimi", .kimi), ("moonshot", .kimi), ("lm studio", .lmstudio), ("lmstudio", .lmstudio), ("llama", .meta),
+            ("opencode", .opencode), ("cursor", .cursor)
         ]
         return table.first { name.contains($0.0) }?.1
     }
@@ -51,12 +52,12 @@ enum BrandLogo: String, CaseIterable {
         case .qwen: return AnyShapeStyle(Color(hex: 0x7C78F5))
         case .kimi: return AnyShapeStyle(Color(hex: 0x3A9BFF))
         case .meta: return AnyShapeStyle(Color(hex: 0x1D9BF0))
-        case .openai, .ollama, .grok, .lmstudio: return AnyShapeStyle(Self.ink)
+        case .openai, .ollama, .grok, .lmstudio, .opencode, .cursor: return AnyShapeStyle(Self.ink)
         }
     }
 
     /// Whether the mark is one plain color (black or white in the brand's own art), so it can follow the text color.
-    var isMonochrome: Bool { [.openai, .ollama, .grok, .lmstudio].contains(self) }
+    var isMonochrome: Bool { [.openai, .ollama, .grok, .lmstudio, .opencode, .cursor].contains(self) }
 
     /// Light on dark surfaces (the notch, the workspace), dark on light ones (Settings in light mode).
     private static let ink = Color(nsColor: NSColor(name: nil) { appearance in
@@ -80,6 +81,8 @@ enum BrandLogo: String, CaseIterable {
         case .lmstudio: return BrandPaths.lmstudio(point)
         case .meta: return BrandPaths.meta(point)
         case .gemma: return BrandPaths.gemma(point)
+        case .opencode: return BrandPaths.opencode(point)
+        case .cursor: return BrandPaths.cursor(point)
         }
     }
 }
@@ -1574,6 +1577,62 @@ private enum BrandPaths {
             p.addCurve(to: P(13.95, 10.05), control1: P(15.757, 11.541), control2: P(14.78, 10.876))
             p.addCurve(to: P(11.99, 7.17), control1: P(13.124, 9.22), control2: P(12.459, 8.243))
             p.addCurve(to: P(10.05, 10.05), control1: P(11.533, 8.245), control2: P(10.875, 9.223))
+            p.closeSubpath()
+            result.append(p)
+        }
+        return result
+    }
+
+    /// opencode, 24×24.
+    static func opencode(_ P: (CGFloat, CGFloat) -> CGPoint) -> [Path] {
+        var result: [Path] = []
+        do {
+            var p = Path()
+            p.move(to: P(16, 6))
+            p.addLine(to: P(8, 6))
+            p.addLine(to: P(8, 18))
+            p.addLine(to: P(16, 18))
+            p.addLine(to: P(16, 6))
+            p.closeSubpath()
+            p.move(to: P(20, 22))
+            p.addLine(to: P(4, 22))
+            p.addLine(to: P(4, 2))
+            p.addLine(to: P(20, 2))
+            p.addLine(to: P(20, 22))
+            p.closeSubpath()
+            result.append(p)
+        }
+        return result
+    }
+
+    /// cursor, 24×24.
+    static func cursor(_ P: (CGFloat, CGFloat) -> CGPoint) -> [Path] {
+        var result: [Path] = []
+        do {
+            var p = Path()
+            p.move(to: P(22.106, 5.68))
+            p.addLine(to: P(12.5, 0.135))
+            p.addCurve(to: P(11.502, 0.135), control1: P(12.191, -0.043), control2: P(11.811, -0.043))
+            p.addLine(to: P(1.893, 5.68))
+            p.addCurve(to: P(1.474, 6.406), control1: P(1.634, 5.83), control2: P(1.474, 6.107))
+            p.addLine(to: P(1.474, 17.592))
+            p.addCurve(to: P(1.894, 18.319), control1: P(1.474, 17.892), control2: P(1.634, 18.169))
+            p.addLine(to: P(11.501, 23.866))
+            p.addCurve(to: P(12.499, 23.866), control1: P(11.81, 24.044), control2: P(12.19, 24.044))
+            p.addLine(to: P(22.107, 18.319))
+            p.addCurve(to: P(22.527, 17.592), control1: P(22.367, 18.169), control2: P(22.527, 17.892))
+            p.addLine(to: P(22.527, 6.407))
+            p.addCurve(to: P(22.107, 5.681), control1: P(22.526, 6.107), control2: P(22.366, 5.831))
+            p.closeSubpath()
+            p.move(to: P(21.503, 6.856))
+            p.addLine(to: P(12.228, 22.92))
+            p.addCurve(to: P(12, 22.859), control1: P(12.165, 23.028), control2: P(12, 22.984))
+            p.addLine(to: P(12, 12.34))
+            p.addCurve(to: P(11.705, 11.83), control1: P(12, 12.13), control2: P(11.887, 11.935))
+            p.addLine(to: P(2.595, 6.57))
+            p.addCurve(to: P(2.657, 6.342), control1: P(2.488, 6.508), control2: P(2.532, 6.342))
+            p.addLine(to: P(21.207, 6.342))
+            p.addCurve(to: P(21.503, 6.856), control1: P(21.471, 6.342), control2: P(21.635, 6.628))
             p.closeSubpath()
             result.append(p)
         }
