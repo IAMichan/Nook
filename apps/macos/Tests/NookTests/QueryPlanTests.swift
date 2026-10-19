@@ -49,6 +49,26 @@ final class QueryPlanTests: XCTestCase {
         XCTAssertEqual(calls.last?.input["query"] as? String, "prijsopgave", "the synonym the model thought of is searched too")
     }
 
+    func testAPlannedCalendarIsCheckedForThePlannedDays() throws {
+        let reply = #"{"goal": "Whether a talk with Aron is planned tomorrow", "kind": "lookup", "sources": ["calendar", "whatsapp"], "queries": ["Aron"], "from": "2026-10-20", "to": "2026-10-20"}"#
+        let plan = try XCTUnwrap(QueryPlanner.parse(reply, known: known.union(["calendar"])))
+        XCTAssertEqual(plan.sources, ["calendar", "whatsapp"])
+        let from = try XCTUnwrap(plan.from)
+        let to = try XCTUnwrap(plan.to)
+        XCTAssertEqual(to.timeIntervalSince(from), 86_400, accuracy: 3_600, "a date-only to includes that whole day")
+
+        let withAgenda = available + [.init(name: "check_availability", source: "calendar", required: ["from"])]
+        let calls = QueryPlanner.lookups(plan, question: "Heb k morgen gesprek met aron?", available: withAgenda)
+        XCTAssertEqual(calls.map(\.tool), ["check_availability", "search_whatsapp"], "the calendar is read first, for the planned day")
+        XCTAssertEqual(calls.first?.input["from"] as? String, NookDates.iso(from))
+    }
+
+    func testAPlanWithoutDaysHasNone() {
+        let plan = QueryPlanner.parse(#"{"goal": "x", "kind": "lookup", "sources": ["mail"], "queries": ["offerte"]}"#, known: known)
+        XCTAssertNil(plan?.from)
+        XCTAssertNil(QueryPlanner.window(from: "gisteren", to: nil))
+    }
+
     func testAPlanGivesTheTermsToRankWith() {
         let terms = QueryPlan(goal: "", kind: .lookup, sources: [], queries: ["Lisa offerte", "keuken"]).terms
         XCTAssertTrue(terms.words.contains("offerte"))

@@ -140,13 +140,21 @@ extension AppModel {
         var ids = Set(available.map(\.source))
         ids.formUnion(connectors.sources.map(\.id))
         let order = SourceCatalog.all.map(\.id)
-        return ids.filter { scope.allows($0) && !Prefetch.inContext.contains($0) }
+        // The calendar is in the context only for the coming week of Apple Calendar. The planner can still pick it, as
+        // one source for every calendar (Apple Calendar, ICS calendars, Cal.com), so a question about a day is checked
+        // in all of them.
+        ids.subtract(QueryPlanner.agendas)
+        if scope.allows("calendar") { ids.insert("calendar") }
+        let agendaActive = connectors.agendaSources.contains { $0.isActive }
+        return ids.filter { scope.allows($0) && (!Prefetch.inContext.contains($0) || $0 == "calendar") }
             .sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }
             .map { id in
                 let tools = available.filter { $0.source == id }
-                let title = SourceCatalog.title(id) + (active.contains(id) ? "" : " (cannot be read right now)")
+                let agenda = id == "calendar"
+                let readable = agenda ? agendaActive : active.contains(id)
+                let title = SourceCatalog.title(id) + (agenda ? " (all calendars, by date)" : "") + (readable ? "" : " (cannot be read right now)")
                 return QueryPlanner.Source(id: id, title: title, canSearch: tools.contains(where: Research.isSearch),
-                                           canList: tools.contains { $0.required.isEmpty })
+                                           canList: agenda || tools.contains { $0.required.isEmpty })
             }
     }
 
@@ -300,7 +308,11 @@ extension AppModel {
             // The sources the question names itself ("in WhatsApp"), or the plan picked: the user said where to look, so
             // Nook never searches everywhere else instead, and says so plainly when it cannot read that source right now.
             let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids } + (plan?.sources ?? [])).filter { scope.allows($0) }
-            let unreachable = connectors.sources.filter { named.contains($0.id) && !activeIDs.contains($0.id) }
+            // Any connected calendar can answer for "calendar": check_availability reads them all.
+            let agendaActive = connectors.agendaSources.contains { $0.isActive }
+            let unreachable = connectors.sources.filter {
+                named.contains($0.id) && !activeIDs.contains($0.id) && !(agendaActive && QueryPlanner.agendas.contains($0.id))
+            }
             for source in unreachable {
                 let reason = Self.unreachableReason(source)
                 blocked.append("\(source.title) (\(reason))")
@@ -314,7 +326,7 @@ extension AppModel {
             if let plan, !plan.sources.isEmpty || plan.kind == .general || plan.kind == .chat {
                 // The plan says where to look and with which words (several searches, synonyms included).
                 var usable = plan
-                usable.sources = plan.sources.filter { activeIDs.contains($0) && scope.allows($0) }
+                usable.sources = plan.sources.filter { (activeIDs.contains($0) || (agendaActive && QueryPlanner.agendas.contains($0))) && scope.allows($0) }
                 if plan.kind == .lookup, named.isEmpty {
                     usable.sources += learned.sorted().filter { !usable.sources.contains($0) }
                 }
@@ -324,6 +336,13 @@ extension AppModel {
                 sources = Research.sources(question: text, intent: intent, terms: terms, relevant: named.isEmpty ? relevant.union(learned) : relevant, previous: previous,
                                            named: named, available: available, active: activeIDs.filter { scope.allows($0) })
                 calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
+            }
+            // Fallback when the brain gave no plan in time: a question about a day ("heb ik morgen een gesprek met Aron?")
+            // is still checked in every calendar. With a plan, the planner decides whether the calendar is needed.
+            if plan == nil, scope.allows("calendar"), intent.primaryAction.map({ ["create_event", "update_event"].contains($0) }) ?? true,
+               agendaActive, !calls.contains(where: { $0.tool == "check_availability" }),
+               let window = Prefetch.agendaWindow(for: text) {
+                calls.insert(Prefetch.Call(tool: "check_availability", input: ["from": NookDates.iso(window.from), "to": NookDates.iso(window.to)]), at: 0)
             }
             // An app the question names is read from its window, unless Nook already reads its data directly (a closed
             // app would otherwise be launched for nothing). Without that access, its window is the next best thing.
