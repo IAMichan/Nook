@@ -14,12 +14,27 @@ final class CompanionStore: ObservableObject {
         didSet { UserDefaults.standard.set(enabled, forKey: Self.enabledKey) }
     }
 
+    /// What gets pushed and when; persisted.
+    @Published var push: PushSettings {
+        didSet { if let data = try? JSONEncoder().encode(push) { UserDefaults.standard.set(data, forKey: Self.pushKey) } }
+    }
+    /// The APNs key id and team id the user created in the Apple developer account; the .p8 itself is in the Keychain.
+    @Published var apnsKeyID: String { didSet { UserDefaults.standard.set(apnsKeyID, forKey: Self.keyIDKey) } }
+    @Published var apnsTeamID: String { didSet { UserDefaults.standard.set(apnsTeamID, forKey: Self.teamIDKey) } }
+
+    private static let pushKey = "companion.push.v1"
+    private static let keyIDKey = "companion.apns.keyID"
+    private static let teamIDKey = "companion.apns.teamID"
+    private static let apnsKeyAccount = "companion.apns.key"
     private static let listKey = "companion.devices.v1"
     private static let enabledKey = "companion.enabled"
     static let portKey = "companion.port"
 
     init() {
         enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        push = UserDefaults.standard.data(forKey: Self.pushKey).flatMap { try? JSONDecoder().decode(PushSettings.self, from: $0) } ?? PushSettings()
+        apnsKeyID = UserDefaults.standard.string(forKey: Self.keyIDKey) ?? ""
+        apnsTeamID = UserDefaults.standard.string(forKey: Self.teamIDKey) ?? "35SMNHP9K7"
         if let data = UserDefaults.standard.data(forKey: Self.listKey),
            let list = try? JSONDecoder().decode([PairedDevice].self, from: data) {
             devices = list.filter { Self.key(for: $0.id) != nil }
@@ -66,6 +81,31 @@ final class CompanionStore: ObservableObject {
         pending = nil
         save()
         return device
+    }
+
+    // MARK: Push
+
+    var hasAPNsKey: Bool { Keychain.read(Self.apnsKeyAccount).map { !$0.isEmpty } ?? false }
+
+    /// The contents of the .p8 file. Only a private key in PEM form is accepted; it is never shown or logged.
+    @discardableResult
+    func saveAPNsKey(pem: String) -> Bool {
+        let text = pem.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("-----BEGIN PRIVATE KEY-----"), text.hasSuffix("-----END PRIVATE KEY-----"), text.count < 4_000 else { return false }
+        return Keychain.write(text, account: Self.apnsKeyAccount) == errSecSuccess
+    }
+
+    func removeAPNsKey() { Keychain.write("", account: Self.apnsKeyAccount) }
+
+    func apnsKeyPEM() -> String? { Keychain.read(Self.apnsKeyAccount).flatMap { $0.isEmpty ? nil : $0 } }
+
+    var canPush: Bool { hasAPNsKey && APNsJWT.validIdentifier(apnsKeyID) && APNsJWT.validIdentifier(apnsTeamID) }
+
+    func setPush(device id: String, token: String?, production: Bool?) {
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        devices[index].pushToken = token
+        devices[index].pushProduction = token == nil ? nil : production
+        save()
     }
 
     func touch(_ id: String, now: Date = Date()) {

@@ -110,7 +110,10 @@ extension AppModel {
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
-        workspace.onQuestion = { [weak self] run, _ in self?.workspaceQuestion(run) }
+        workspace.onQuestion = { [weak self] run, pending in
+            CompanionNotifier.shared.question(run, pending)
+            self?.workspaceQuestion(run)
+        }
         // Codex reports new limits while it works: show them right away.
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
@@ -187,6 +190,7 @@ extension AppModel {
     }
 
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
+        CompanionNotifier.shared.approval(run, pending)
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
         // Looking at the conversation: the request is right there. With the terminal or browser open it is not, so a card.
@@ -210,6 +214,7 @@ extension AppModel {
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
+        CompanionNotifier.shared.turnFinished(run)
         recap.turnEnded(session: "run-" + run.id.uuidString)
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }

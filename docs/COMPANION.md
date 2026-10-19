@@ -20,7 +20,7 @@ Een kleine iPhone-app die laat zien welke Agents-sessies jou nodig hebben, en wa
 ## Grenzen (bewust)
 
 - Alleen in hetzelfde lokale netwerk (of via een VPN zoals Tailscale als je het adres van de Mac daarin gebruikt; de koppelcode bevat de hostnaam `….local`).
-- Geen pushmeldingen: de app ververst elke 5 seconden terwijl ze open is. Pushmeldingen vragen een server en een Apple-certificaat; dat is een aparte stap.
+- Acties (goedkeuren, antwoorden) vragen nog steeds dat de telefoon de Mac bereikt; een pushmelding werkt overal waar de telefoon internet heeft, maar de knoppen erin pas als de Mac bereikbaar is.
 - De Mac luistert alleen als de metgezel aanstaat.
 
 ## Waar zit het
@@ -28,3 +28,21 @@ Een kleine iPhone-app die laat zien welke Agents-sessies jou nodig hebben, en wa
 - Gedeeld: `Companion/Shared/CompanionModels.swift` (protocol, framing, regels; getest in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit).
 - Mac: `Services/Companion/CompanionServer.swift` (NWListener + Bonjour `_nookcompanion._tcp`), `CompanionStore.swift` (toestellen, koppelvenster), `App/Settings/CompanionSettings.swift`.
 - iPhone: `Companion/iOS/` (target `NookCompanion` in `project.yml`).
+
+## Pushmeldingen
+
+Nook stuurt ze zelf, zonder server van ons: de Mac ondertekent een verzoek met jouw eigen APNs-sleutel en stuurt het naar Apple (`api.push.apple.com`), die het naar de telefoon brengt.
+
+**Eenmalig instellen (Apple Developer-account):**
+1. Zet Push Notifications aan voor de app-id `nl.imdigital.nook.companion` (Certificates, Identifiers & Profiles › Identifiers).
+2. Maak een APNs-sleutel (Keys › + › Apple Push Notifications service) en download het `.p8`-bestand. Noteer het sleutel-id en je team-id.
+3. Nook › Instellingen › iPhone-metgezel › Pushmeldingen: vul de twee id’s in en importeer het `.p8`-bestand (het gaat naar de sleutelhanger). Met "Stuur testmelding" controleer je alles.
+4. Op de iPhone: sta meldingen toe als de app erom vraagt. De app geeft haar token (versleuteld) door aan de Mac.
+
+**Wat je krijgt:** een melding bij toestemming nodig, een vraag, een klare sessie, een mislukte sessie en een bereikte limiet (elk aan/uit), met op de toestemmingsmelding de knoppen *Weiger* (en *Sta toe* als het laag risico is) zonder de app te openen. Het app-icoon toont hoeveel sessies je nodig hebben.
+
+**Regels:** alleen als je niet bij de Mac bent (twee minuten inactief of scherm vergrendeld), stille uren (toestemming en vragen komen desgewenst toch door), en per melding één keer (geen dubbele).
+
+**Privacy:** Apple ziet de tekst. Die noemt standaard alleen de agent en wat er nodig is ("Claude Code · Wacht op jouw toestemming"); de sessietitel staat er alleen in als je dat aanzet. Nooit een commando, bestand of antwoord.
+
+**Let op:** een development-build van de app (Xcode) gebruikt Apple’s sandbox-omgeving, TestFlight/App Store de productie-omgeving; de app meldt dat zelf aan de Mac. Een verlopen of ingetrokken token wordt bij Apple’s antwoord (410) automatisch vergeten.

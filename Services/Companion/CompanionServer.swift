@@ -161,7 +161,7 @@ final class CompanionServer: ObservableObject {
         } else {
             store.touch(claimed)
         }
-        let response = await handle(request)
+        let response = await handle(request, deviceID: claimed)
         send(response, key: key, deviceID: claimed, on: connection)
     }
 
@@ -171,7 +171,7 @@ final class CompanionServer: ObservableObject {
 
     // MARK: Requests
 
-    private func handle(_ request: CompanionRequest) async -> CompanionResponse {
+    private func handle(_ request: CompanionRequest, deviceID: String) async -> CompanionResponse {
         guard let app else { return .failure(request.id, .failed) }
         let workspace = app.workspace
         let macName = Host.current().localizedName ?? "Mac"
@@ -180,6 +180,16 @@ final class CompanionServer: ObservableObject {
             return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace))
         case .list:
             return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace))
+        case .register:
+            // The token goes into a URL on Apple's host: only hex is accepted.
+            guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
+            CompanionStore.shared.setPush(device: deviceID, token: token.lowercased(), production: request.item != "development")
+            audit("push_registered", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+            return CompanionResponse(id: request.id, ok: true, macName: macName,
+                                     message: CompanionStore.shared.canPush && CompanionStore.shared.push.enabled ? "push" : "nopush")
+        case .unregister:
+            CompanionStore.shared.setPush(device: deviceID, token: nil, production: nil)
+            return CompanionResponse(id: request.id, ok: true)
         case .decide:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)

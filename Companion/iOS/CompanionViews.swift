@@ -4,9 +4,10 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 switch client.phase {
                 case .unpaired, .pairing: PairingView()
@@ -17,6 +18,12 @@ struct RootView: View {
         }
         .tint(Palette.iris)
         .task { client.startPolling() }
+        // A tapped notification opens its session.
+        .onChange(of: client.openSession) { _, id in
+            guard let id else { return }
+            path = [id]
+            client.openSession = nil
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { client.startPolling() } else { client.stopPolling() }
         }
@@ -142,8 +149,21 @@ struct SessionListView: View {
             if case .offline(let reason) = client.phase {
                 Label(reason.isEmpty ? "Zoeken naar je Mac…" : reason, systemImage: "wifi.slash").foregroundStyle(Palette.amber)
             }
+            if client.macPushReady == false {
+                Label("Pushmeldingen staan op je Mac nog niet klaar (Instellingen › iPhone-metgezel).", systemImage: "bell.slash")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             ForEach(sorted) { session in
                 NavigationLink(value: session.id) { SessionRow(session: session) }
+                    // The first thing that waits, one swipe away: deny always, allow when the Mac says it is low risk.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if let item = session.items.first(where: { $0.kind == .approval }) {
+                            Button("Weiger", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
+                            if item.canAllow {
+                                Button("Sta toe") { Task { await client.decide(session, item: item, allow: true) } }.tint(Palette.mint)
+                            }
+                        }
+                    }
             }
             if client.sessions.isEmpty, client.phase == .connected {
                 Text("Geen sessies.").foregroundStyle(.secondary)

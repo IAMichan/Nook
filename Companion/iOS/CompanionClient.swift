@@ -1,11 +1,14 @@
 import Foundation
 import Network
 import UIKit
+import UserNotifications
 
 /// The phone's side: one short connection per request (connect, send a sealed request, read the sealed answer, close).
 /// While the app is in front it asks for the list every few seconds; nothing runs in the background.
 @MainActor
 final class CompanionClient: ObservableObject {
+    static let shared = CompanionClient()
+
     enum Phase: Equatable {
         case unpaired
         case pairing
@@ -17,6 +20,11 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var sessions: [SessionDigest] = []
     @Published private(set) var macName = ""
     @Published var notice: String?
+    /// Set when a notification was tapped: the session to open.
+    @Published var openSession: String?
+    /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
+    @Published private(set) var macPushReady: Bool?
+    private(set) var pushToken: String?
 
     private var link: PairingLink?
     private var poll: Task<Void, Never>?
@@ -44,6 +52,7 @@ final class CompanionClient: ObservableObject {
                 sessions = response.sessions ?? []
                 phase = .connected
                 startPolling()
+                await Notifications.requestAndRegister()
             } catch {
                 phase = link == nil ? .unpaired : .offline(error.localizedDescription)
                 notice = "Koppelen mislukt: \(error.localizedDescription) De code werkt vijf minuten en één keer; maak op de Mac een nieuwe."
@@ -79,6 +88,30 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .list))
     }
 
+    /// The token iOS gave this app for pushes: kept, and sent to the Mac (sealed) so it can notify this phone.
+    func registerPush(token: Data) async {
+        let hex = APNsJWT.tokenHex(token)
+        pushToken = hex
+        await sendPushRegistration()
+    }
+
+    func sendPushRegistration() async {
+        guard let link, let pushToken else { return }
+        #if DEBUG
+        let environment = "development"
+        #else
+        let environment = "production"
+        #endif
+        if let response = try? await request(CompanionRequest(op: .register, item: environment, text: pushToken), using: link), response.ok {
+            macPushReady = response.message == "push"
+        }
+    }
+
+    /// An action from a notification (Allow / Deny), done without opening the app.
+    func decide(sessionID: String, itemID: String, allow: Bool) async {
+        await perform(CompanionRequest(op: .decide, session: sessionID, item: itemID, allow: allow))
+    }
+
     func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool) async {
         await perform(CompanionRequest(op: .decide, session: session.id, item: item.id, allow: allow))
     }
@@ -100,7 +133,7 @@ final class CompanionClient: ObservableObject {
         do {
             let response = try await request(req, using: link)
             if response.ok {
-                if let list = response.sessions { sessions = list }
+                if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
                 if let name = response.macName { macName = name }
                 phase = .connected
                 if let message = response.message { notice = message == "queued" ? "In de wachtrij: de sessie is nog bezig." : nil }
@@ -204,5 +237,31 @@ private enum Exchange {
             lock.unlock()
             c?.resume(with: result)
         }
+    }
+}
+
+/// Notification permission, the push token, the buttons on a notification and the badge.
+enum Notifications {
+    static func requestAndRegister() async {
+        let center = UNUserNotificationCenter.current()
+        registerCategories()
+        let granted = (try? await center.requestAuthorization(options: [.alert, .badge, .sound, .timeSensitive])) ?? false
+        if granted { UIApplication.shared.registerForRemoteNotifications() }
+    }
+
+    static func registerCategories() {
+        let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: "Weiger", options: [.destructive])
+        let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: "Sta toe", options: [])
+        let center = UNUserNotificationCenter.current()
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: PushCategory.approvalDeny, actions: [deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: PushCategory.approvalAllow, actions: [deny, allow], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: PushCategory.question, actions: [], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: PushCategory.info, actions: [], intentIdentifiers: [], options: [])
+        ])
+    }
+
+    static func setBadge(_ count: Int) {
+        UNUserNotificationCenter.current().setBadgeCount(count) { _ in }
     }
 }

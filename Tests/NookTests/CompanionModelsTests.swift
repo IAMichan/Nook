@@ -89,6 +89,20 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertNotEqual(PairedDevice.identifier(forKey: key), PairedDevice.identifier(forKey: Data(repeating: 9, count: 32)))
     }
 
+    func testPairedDeviceDecodesWithoutPushFields() throws {
+        let old = #"{"id":"a","name":"iPhone","pairedAt":0}"#
+        let device = try JSONDecoder().decode(PairedDevice.self, from: Data(old.utf8))
+        XCTAssertNil(device.pushToken)
+        XCTAssertNil(device.pushProduction)
+    }
+
+    func testBadgeCountsSessionsWithItems() {
+        let item = SessionDigest.Item(id: "i", kind: .approval, title: "t", detail: "", canAllow: false, options: [])
+        let a = SessionDigest(id: "1", title: "", agent: "", attention: "approval", folder: "", branch: nil, updated: 0, excerpt: "", items: [item, item])
+        let b = SessionDigest(id: "2", title: "", agent: "", attention: "idle", folder: "", branch: nil, updated: 0, excerpt: "", items: [])
+        XCTAssertEqual([a, b].needingYou, 1)
+    }
+
     func testRequestResponseCodable() throws {
         let request = CompanionRequest(op: .decide, session: "s", item: "i", allow: true)
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)

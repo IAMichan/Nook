@@ -74,6 +74,8 @@ enum Base64URL {
 
 enum CompanionOp: String, Codable, Sendable {
     case hello, list, decide, answer, send, stop
+    /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
+    case register, unregister
 }
 
 /// One request from the phone. `id` is unique per request; `sent` is the phone's clock (seconds since 1970).
@@ -212,8 +214,21 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var pairedAt: Date
     var lastSeen: Date?
+    /// Where pushes go; nil until the phone allowed notifications. Environment matters: a development build has sandbox tokens.
+    var pushToken: String?
+    var pushProduction: Bool?
+
+    init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
+        self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen
+        self.pushToken = pushToken; self.pushProduction = pushProduction
+    }
 
     static func identifier(forKey key: Data) -> String {
         PureSHA256.hash(key).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
+}
+
+extension Array where Element == SessionDigest {
+    /// Sessions that wait on you (an approval or a question), for the app badge.
+    var needingYou: Int { filter { !$0.items.isEmpty }.count }
 }
