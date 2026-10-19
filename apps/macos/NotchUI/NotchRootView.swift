@@ -31,7 +31,7 @@ struct NotchRootView: View {
             .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
             .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
-            .shadow(color: Color.black.opacity(isExpanded ? 0.45 : (floating && !bare ? 0.3 : 0)), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
+            .shadow(color: Color.black.opacity(floating ? (isExpanded ? 0.45 : (bare ? 0 : 0.3)) : 0), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
             .animation(.spring(duration: 0.3, bounce: 0.3), value: hoverGrow)
