@@ -52,14 +52,14 @@ enum Palette {
 
     static func word(_ attention: String) -> String {
         switch attention {
-        case "approval": return "Wacht op toestemming"
-        case "input": return "Heeft een vraag"
-        case "failed": return "Mislukt"
-        case "limited": return "Limiet bereikt"
-        case "working": return "Aan het werk"
-        case "ready": return "Klaar"
-        case "finished": return "Afgerond"
-        default: return "Rust"
+        case "approval": return String(localized: "Waiting for approval")
+        case "input": return String(localized: "Has a question")
+        case "failed": return String(localized: "Failed")
+        case "limited": return String(localized: "Limit reached")
+        case "working": return String(localized: "Working")
+        case "ready": return String(localized: "Ready")
+        case "finished": return String(localized: "Finished")
+        default: return String(localized: "Idle")
         }
     }
 }
@@ -74,16 +74,16 @@ struct PairingView: View {
     var body: some View {
         Form {
             Section {
-                Text("Zet op je Mac in Nook › Instellingen de iPhone-metgezel aan en kies ‘Koppel een iPhone’. Scan dan de code, of plak de link. Je telefoon en Mac moeten op hetzelfde wifi zitten.")
+                Text("On your Mac, turn on the iPhone companion in Nook › Settings and choose ‘Pair an iPhone’. Then scan the code, or paste the link. Your phone and Mac must be on the same Wi‑Fi.")
                     .font(.callout)
             }
             Section {
                 if DataScannerViewController.isSupported {
-                    Button { scanning = true } label: { Label("Scan de code", systemImage: "qrcode.viewfinder") }
+                    Button { scanning = true } label: { Label("Scan the code", systemImage: "qrcode.viewfinder") }
                 }
                 TextField("nook://pair?…", text: $text, axis: .vertical)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
-                Button("Koppel") { client.pair(link: text) }
+                Button("Pair") { client.pair(link: text) }
                     .disabled(text.isEmpty || client.phase == .pairing)
                 if client.phase == .pairing { ProgressView() }
             }
@@ -147,10 +147,10 @@ struct SessionListView: View {
     var body: some View {
         List {
             if case .offline(let reason) = client.phase {
-                Label(reason.isEmpty ? "Zoeken naar je Mac…" : reason, systemImage: "wifi.slash").foregroundStyle(Palette.amber)
+                Label(reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, systemImage: "wifi.slash").foregroundStyle(Palette.amber)
             }
             if client.macPushReady == false {
-                Label("Pushmeldingen staan op je Mac nog niet klaar (Instellingen › iPhone-metgezel).", systemImage: "bell.slash")
+                Label("Push notifications are not ready on your Mac yet (Settings › iPhone companion).", systemImage: "bell.slash")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(sorted) { session in
@@ -158,15 +158,15 @@ struct SessionListView: View {
                     // The first thing that waits, one swipe away: deny always, allow when the Mac says it is low risk.
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if let item = session.items.first(where: { $0.kind == .approval }) {
-                            Button("Weiger", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
+                            Button("Deny", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
                             if item.canAllow {
-                                Button("Sta toe") { Task { await client.decide(session, item: item, allow: true) } }.tint(Palette.mint)
+                                Button("Allow") { Task { await client.decide(session, item: item, allow: true) } }.tint(Palette.mint)
                             }
                         }
                     }
             }
             if client.sessions.isEmpty, client.phase == .connected {
-                Text("Geen sessies.").foregroundStyle(.secondary)
+                Text("No sessions.").foregroundStyle(.secondary)
             }
         }
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
@@ -174,7 +174,7 @@ struct SessionListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Ontkoppel van deze Mac", role: .destructive) { client.unpair() }
+                    Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
@@ -216,16 +216,16 @@ struct SessionDetailView: View {
                     Text("\(session.agent) · \(session.folder)\(session.branch.map { " · \($0)" } ?? "")").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(session.items) { item in
-                    Section(item.kind == .approval ? "Toestemming" : "Vraag") {
+                    Section(Self.sectionTitle(for: item)) {
                         ItemView(session: session, item: item)
                     }
                 }
                 if !session.excerpt.isEmpty {
-                    Section("Laatste antwoord") { Text(session.excerpt).font(.callout) }
+                    Section("Latest reply") { Text(session.excerpt).font(.callout) }
                 }
-                Section("Stuur een bericht") {
-                    TextField("Bericht aan de agent", text: $message, axis: .vertical).lineLimit(1...5)
-                    Button("Verstuur") {
+                Section("Send a message") {
+                    TextField("Message to the agent", text: $message, axis: .vertical).lineLimit(1...5)
+                    Button("Send") {
                         let text = message
                         message = ""
                         Task { await client.send(session, text: text) }
@@ -240,12 +240,17 @@ struct SessionDetailView: View {
             }
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
-            .confirmationDialog("De sessie stoppen?", isPresented: $confirmStop, titleVisibility: .visible) {
-                Button("Stop de sessie", role: .destructive) { Task { await client.stop(session) } }
+            .confirmationDialog("Stop this session?", isPresented: $confirmStop, titleVisibility: .visible) {
+                Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
         } else {
-            Text("Deze sessie is er niet meer.").foregroundStyle(.secondary)
+            Text("This session is gone.").foregroundStyle(.secondary)
         }
+    }
+
+    /// The heading above an item: typed, so both texts go through the String Catalog.
+    private static func sectionTitle(for item: SessionDigest.Item) -> LocalizedStringKey {
+        item.kind == .approval ? "Approval" : "Question"
     }
 }
 
@@ -262,15 +267,15 @@ struct ItemView: View {
             switch item.kind {
             case .approval:
                 HStack {
-                    Button("Weiger", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
+                    Button("Deny", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
                         .buttonStyle(.bordered)
                     if item.canAllow {
-                        Button("Sta toe") { Task { await client.decide(session, item: item, allow: true) } }
+                        Button("Allow") { Task { await client.decide(session, item: item, allow: true) } }
                             .buttonStyle(.borderedProminent)
                     }
                 }
                 if !item.canAllow {
-                    Text("Dit is riskant of onbekend: toestaan kan alleen op je Mac.").font(.caption).foregroundStyle(Palette.amber)
+                    Text("This is risky or unknown: it can only be allowed on your Mac.").font(.caption).foregroundStyle(Palette.amber)
                 }
             case .question:
                 if item.canAllow {
@@ -278,8 +283,8 @@ struct ItemView: View {
                         Button(option) { Task { await client.answer(session, item: item, text: option) } }.buttonStyle(.bordered)
                     }
                     HStack {
-                        TextField("Eigen antwoord", text: $text)
-                        Button("Stuur") {
+                        TextField("Your own answer", text: $text)
+                        Button("Send") {
                             let answer = text
                             text = ""
                             Task { await client.answer(session, item: item, text: answer) }
@@ -287,7 +292,7 @@ struct ItemView: View {
                         .disabled(text.isEmpty)
                     }
                 } else {
-                    Text("Meerdere vragen tegelijk: beantwoord ze op je Mac.").font(.caption).foregroundStyle(Palette.amber)
+                    Text("Several questions at once: answer them on your Mac.").font(.caption).foregroundStyle(Palette.amber)
                 }
             }
         }
