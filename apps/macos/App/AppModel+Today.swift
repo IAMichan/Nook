@@ -10,6 +10,16 @@ extension AppModel {
         demoMode ? DemoContent.agents : hub.sessions + hub.detected
     }
 
+    /// How many things Today shows, for the badge in the closed notch. Every screen's notch redraws on any change in the
+    /// app, and building the items reads every source: the count is reused for a second.
+    var todayCount: Int {
+        let now = Date()
+        if let cached = todayCountCache, now.timeIntervalSince(cached.at) < 1 { return cached.count }
+        let count = todayItems.count
+        todayCountCache = (count, now)
+        return count
+    }
+
     /// Connected agents actively working or awaiting approval/input.
     var activeAgents: [AgentSession] {
         agentSessions.filter {

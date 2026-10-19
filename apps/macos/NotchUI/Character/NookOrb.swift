@@ -20,6 +20,9 @@ struct NookOrb: View {
     var curious: Bool = false
     /// Soft light around the orb. Off when docked in the notch, where the glow only smudges the black.
     var glow: Bool = true
+    /// Frames per second while awake. The closed notch thinks along at a lower rate for hours on end (an agent working
+    /// or waiting), where its slow breathing looks the same and costs a fraction of the redraws.
+    var frameRate: Double = 30
 
     @ObservedObject private var presence = NookPresence.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,8 +30,10 @@ struct NookOrb: View {
     @State private var moodSince = Date()
 
     var body: some View {
-        // A dozing Nook keeps animating on every screen, so all orbs nod off together.
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !(animated || dozing))) { context in
+        // A dozing Nook keeps animating on every screen, so all orbs nod off together; its slow breathing and nodding
+        // need only a few frames a second, and it can doze for hours.
+        TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, frameRate) : 1.0 / Self.dozingFrameRate,
+                                paused: !(animated || dozing))) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)
@@ -36,6 +41,8 @@ struct NookOrb: View {
         .onChange(of: mood) { _, _ in moodSince = Date() }
         .accessibilityHidden(true)
     }
+
+    private static let dozingFrameRate: Double = 8
 
     /// Drowsiness is shared by every screen: the pointer being on one screen (`.seen`) must not keep the others awake.
     private var dozing: Bool { presence.drowsy && (mood == .rest || mood == .seen) }
@@ -50,7 +57,8 @@ struct NookOrb: View {
             if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
             Circle()
                 .fill(mood.color)
-                .shadow(color: mood.color.opacity(glow ? p.glowOpacity : 0), radius: p.glowRadius)
+                // Without glow the radius is 0 as well: an invisible shadow is still blurred every frame otherwise.
+                .shadow(color: mood.color.opacity(glow ? p.glowOpacity : 0), radius: glow ? p.glowRadius : 0)
             Circle()
                 .fill(RadialGradient(
                     gradient: Gradient(stops: [
