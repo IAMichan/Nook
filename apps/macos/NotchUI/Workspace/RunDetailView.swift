@@ -628,9 +628,8 @@ struct ApprovalRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(color)
                 Text(tr("ws.approval.asks", event.tool ?? "tool"))
-                    .font(NookTheme.font(12.5, .semibold))
+                    .font(NookTheme.font(12.5, .medium))
                     .foregroundStyle(WS.text)
                 Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.secondary).lineLimit(1)
                 Spacer(minLength: 0)
@@ -641,8 +640,9 @@ struct ApprovalRow: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 9).fill(color.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(color.opacity(0.25), lineWidth: 1))
+        // Calm: the state label carries the color, the row itself stays neutral.
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.03)))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .onTapGesture { toggle() }
     }
 
