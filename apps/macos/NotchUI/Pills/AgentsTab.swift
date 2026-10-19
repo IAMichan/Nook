@@ -967,8 +967,8 @@ enum WorkspaceRunsSection {
     }
 }
 
-/// "#12" with the state of the pull request as its icon and colour: open (ready to merge) mint, merge conflict coral,
-/// merged violet, draft and closed grey. `compact` shows the icon alone, for a slim row.
+/// "#12" with the state of the pull request as its icon (GitHub's marks, drawn) and colour: open (ready to merge) mint,
+/// merge conflict coral, merged violet, draft and closed grey. `compact` shows the icon alone, for a slim row.
 struct PullRequestPill: View {
     let badge: PullRequestBadge
     var compact = false
@@ -983,21 +983,11 @@ struct PullRequestPill: View {
         }
     }
 
-    private var symbol: String {
-        switch badge.glyph {
-        case .open, .draft: return "arrow.triangle.pull"
-        case .conflict: return "exclamationmark.triangle.fill"
-        case .merged: return "arrow.triangle.merge"
-        case .closed: return "xmark.circle"
-        case .stack: return "square.stack.3d.up"
-        }
-    }
-
     private var status: String { tr("inbox.pr.state." + badge.glyph.rawValue) }
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+            PullRequestStateGlyph(glyph: badge.glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
             if !compact { Text(label).font(NookTheme.font(11, .medium)).lineLimit(1) }
         }
         .foregroundStyle(tint)
