@@ -6,12 +6,24 @@ import Foundation
 enum McpUI {
     static let fence = "```mcp-ui"
 
+    static let appFence = "```mcp-app"
+
     struct Resource: Equatable, Sendable {
         var uri: String
         /// The page itself (text/html), or
         var html: String?
-        /// a page to open elsewhere (text/uri-list).
+        /// a page to open elsewhere (text/uri-list), or
         var link: URL?
+        /// an app Nook saved (from Codex), with its page in a file.
+        var app: McpApp.Reference? = nil
+    }
+
+    /// The tool output for an app Nook saved: its reference, then the tool's own result text.
+    static func encode(app: McpApp.Reference, resultText: String) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let json = (try? encoder.encode(app)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        return appFence + "\n" + json + "\n```" + (resultText.isEmpty ? "" : "\n" + resultText)
     }
 
     /// A tool result's content block as text for the output: the fenced resource, or nil when it is not a UI resource.
@@ -38,6 +50,12 @@ enum McpUI {
 
     /// The UI resource in a tool's output, if any.
     static func resource(in output: String?) -> Resource? {
+        if let output, let start = output.range(of: appFence + "\n") {
+            let rest = output[start.upperBound...]
+            guard let close = rest.range(of: "\n```"),
+                  let app = try? JSONDecoder().decode(McpApp.Reference.self, from: Data(rest[rest.startIndex..<close.lowerBound].utf8)) else { return nil }
+            return Resource(uri: app.resourceUri, html: nil, link: nil, app: app)
+        }
         guard let output, let start = output.range(of: fence) else { return nil }
         let rest = output[start.upperBound...]
         let isLink = rest.hasPrefix("-link ")
@@ -53,6 +71,9 @@ enum McpUI {
 
     /// The output without the resource block: what is left to read.
     static func stripped(_ output: String) -> String {
+        if let start = output.range(of: appFence + "\n"), let close = output[start.upperBound...].range(of: "\n```") {
+            return (String(output[..<start.lowerBound]) + output[close.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         guard let start = output.range(of: fence),
               let close = output[start.upperBound...].range(of: "\n```", options: .backwards) else { return output }
         let tail = output[close.upperBound...]

@@ -477,4 +477,98 @@ final class RoundThreeTests: XCTestCase {
         let remove = RemoteLaunch.run("rm", ["-f", "--", "a b.txt"], target: target, directory: "/srv/app").last ?? ""
         XCTAssertTrue(remove.contains("exec rm -f -- '\\''a b.txt'\\''") || remove.contains("a b.txt"))
     }
+
+    func testMcpAppDocumentAndPolicy() {
+        let html = "<!doctype html><html><body>App</body></html>"
+        let contents: [Any] = [
+            ["uri": "ui://other", "mimeType": McpApp.mimeType, "text": "<p>no</p>"],
+            ["uri": "ui://chart", "mimeType": "text/html; profile=mcp-app", "text": html,
+             "_meta": ["ui": ["csp": ["connectDomains": ["https://api.example.com", "javascript:alert(1)"], "resourceDomains": ["https://*.cdn.dev"]],
+                              "permissions": ["clipboardWrite": [String: Any](), "camera": true], "prefersBorder": false]]],
+        ]
+        let document = McpApp.document(contents: contents, uri: "ui://chart")
+        XCTAssertEqual(document?.html, html)
+        XCTAssertEqual(document?.csp?.connectDomains, ["https://api.example.com"])
+        XCTAssertEqual(document?.permissions, ["clipboardWrite"])
+        XCTAssertEqual(document?.prefersBorder, false)
+        XCTAssertNil(McpApp.document(contents: [["uri": "ui://chart", "mimeType": "text/html", "text": html]], uri: "ui://chart"))
+
+        let policy = McpApp.contentSecurityPolicy(document?.csp)
+        XCTAssertTrue(policy.hasPrefix("default-src 'none'; script-src 'unsafe-inline' https://*.cdn.dev"))
+        XCTAssertTrue(policy.contains("connect-src https://api.example.com"))
+        XCTAssertTrue(policy.contains("frame-src 'none'"))
+        let prepared = McpApp.prepared(html, csp: document?.csp)
+        XCTAssertTrue(prepared.hasPrefix("<!doctype html><meta http-equiv=\"Content-Security-Policy\""))
+        XCTAssertTrue(McpApp.prepared("<p>x</p>", csp: nil).hasPrefix("<!doctype html><meta"))
+        XCTAssertEqual(McpApp.allowAttribute(["camera", "clipboardWrite"]), "camera; clipboard-write")
+        XCTAssertEqual(McpApp.clampHeight(10), 80)
+        XCTAssertEqual(McpApp.clampHeight(5000), 2000)
+        XCTAssertEqual(McpApp.downloadName(uri: "ui://x/report.csv", name: nil), "report.csv")
+        XCTAssertEqual(McpApp.downloadName(uri: nil, name: "../a:b"), "..-a-b")
+        XCTAssertTrue(McpApp.callableByApp(meta: nil))
+        XCTAssertFalse(McpApp.callableByApp(meta: ["ui": ["visibility": ["model"]]]))
+        XCTAssertEqual(McpApp.resourceUri(codexItem: ["mcpAppUi": ["resourceUri": "ui://a"]]), "ui://a")
+        XCTAssertEqual(McpApp.resourceUri(meta: ["ui/resourceUri": "ui://b"]), "ui://b")
+        XCTAssertEqual(McpApp.modelContext(content: [["type": "text", "text": "Selected: 3 rows"]], structured: nil), .some("Selected: 3 rows"))
+        XCTAssertEqual(McpApp.modelContext(content: [], structured: nil), .some(nil))
+        XCTAssertNil(McpApp.modelContext(content: [["type": "image"]], structured: nil))
+        XCTAssertTrue(McpApp.contextPreamble([(key: "mcp_app_1", text: "hi")]).contains("trust=\"untrusted\""))
+
+        let reference = McpApp.Reference(file: "/tmp/a.html", server: "charts", tool: "plot", resourceUri: "ui://chart")
+        let output = McpUI.encode(app: reference, resultText: "Plotted")
+        XCTAssertEqual(McpUI.resource(in: output)?.app, reference)
+        XCTAssertEqual(McpUI.stripped(output), "Plotted")
+    }
+
+    func testMcpAppHostProtocol() {
+        var posted: [[String: Any]] = []
+        var sent: [String] = []
+        var context: String??
+        var actions = McpAppHost.Actions(
+            post: { posted.append($0) },
+            hostContext: { ["theme": "dark", "displayMode": "inline", "availableDisplayModes": ["inline", "fullscreen"]] },
+            callTool: { name, _, done in done(.success(["content": [["type": "text", "text": name]], "_meta": NSNull()])) },
+            readResource: { _, done in done(.success(["contents": []])) },
+            openLink: { _, done in done(.success(())) },
+            sendMessage: { text, done in sent.append(text); done(.success(())) },
+            updateModelContext: { text, done in context = .some(text); done(.success(())) },
+            requestDisplayMode: { mode, done in done(mode) },
+            downloadFiles: { _, done in done(.success(())) },
+            onSizeChanged: { _, _ in },
+            onRequestTeardown: {})
+        actions.onSizeChanged = { _, _ in }
+        let reference = McpApp.Reference(file: nil, server: "charts", tool: "plot", resourceUri: "ui://chart",
+                                         arguments: #"{"x":1}"#, result: #"{"content":[{"type":"text","text":"ok"}],"structuredContent":null}"#)
+        let host = McpAppHost(reference: reference, hostVersion: "1.0", actions: actions)
+
+        host.receive(["jsonrpc": "2.0", "id": 1, "method": "ui/initialize", "params": ["protocolVersion": "2026-01-26"]])
+        let initialize = posted.last?["result"] as? [String: Any]
+        XCTAssertEqual(initialize?["protocolVersion"] as? String, McpApp.protocolVersion)
+        XCTAssertEqual((initialize?["hostInfo"] as? [String: Any])?["name"] as? String, "nook")
+        XCTAssertNotNil((initialize?["hostCapabilities"] as? [String: Any])?["serverTools"])
+
+        host.receive(["jsonrpc": "2.0", "method": "ui/notifications/initialized"])
+        let methods = posted.compactMap { $0["method"] as? String }
+        XCTAssertEqual(methods, ["ui/notifications/tool-input", "ui/notifications/tool-result"])
+        let toolResult = posted.last?["params"] as? [String: Any]
+        XCTAssertNil(toolResult?["structuredContent"], "null fields are dropped")
+
+        host.receive(["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "refresh", "arguments": [String: Any]()]])
+        XCTAssertNil(((posted.last?["result"] as? [String: Any])?["_meta"]))
+        host.receive(["jsonrpc": "2.0", "id": 3, "method": "ui/message", "params": ["role": "user", "content": [["type": "text", "text": "Explain this"]]]])
+        XCTAssertEqual(sent, ["Explain this"])
+        host.receive(["jsonrpc": "2.0", "id": 4, "method": "ui/open-link", "params": ["url": "file:///etc/passwd"]])
+        XCTAssertEqual((posted.last?["error"] as? [String: Any])?["code"] as? Int, -32602)
+        host.receive(["jsonrpc": "2.0", "id": 5, "method": "ui/update-model-context", "params": ["content": [["type": "text", "text": "row 3"]]]])
+        XCTAssertEqual(context, .some("row 3"))
+        host.receive(["jsonrpc": "2.0", "id": 6, "method": "ui/request-display-mode", "params": ["mode": "fullscreen"]])
+        XCTAssertEqual((posted.last?["result"] as? [String: Any])?["mode"] as? String, "fullscreen")
+        host.receive(["jsonrpc": "2.0", "id": 7, "method": "nope"])
+        XCTAssertEqual((posted.last?["error"] as? [String: Any])?["code"] as? Int, -32601)
+        host.receive(["jsonrpc": "2.0", "id": 8, "method": "ping", "params": ["pad": String(repeating: "x", count: McpApp.maxMessageBytes)]])
+        XCTAssertEqual((posted.last?["error"] as? [String: Any])?["code"] as? Int, -32600)
+        XCTAssertEqual(McpAppHost.downloads([["type": "resource", "resource": ["uri": "ui://r/a.txt", "text": "hi"]]]),
+                       [.embedded(name: "a.txt", mimeType: "application/octet-stream", data: Data("hi".utf8))])
+        XCTAssertNil(McpAppHost.downloads([["type": "image"]]))
+    }
 }

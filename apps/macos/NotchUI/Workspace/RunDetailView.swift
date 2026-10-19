@@ -541,7 +541,7 @@ struct ToolRow: View {
 
             // An MCP app is there to be used: shown whether or not the call is open.
             if let app = McpUI.resource(in: event.output) {
-                McpAppBlock(resource: app).padding(.leading, 22)
+                McpAppBlock(resource: app, event: event).padding(.leading, 22)
             }
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {

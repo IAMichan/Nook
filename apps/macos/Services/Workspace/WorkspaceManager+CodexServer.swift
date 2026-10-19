@@ -103,9 +103,14 @@ extension WorkspaceManager {
         // Without a model name Codex's own plan mode is unavailable: the read-only sandbox and this line keep it to a plan.
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]
-        let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
+        var params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
                                               mode: run.mode, permission: run.permission, planModel: planModel,
                                               effort: run.effort)
+        // What MCP apps told the agent: text an MCP server wrote, so it goes in as untrusted context (as does).
+        let appContexts = takeMcpAppContexts(id)
+        if !appContexts.isEmpty {
+            params["additionalContext"] = Dictionary(uniqueKeysWithValues: appContexts.map { ($0.key, ["kind": "untrusted", "value": $0.text]) })
+        }
         client.request("turn/start", params) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -240,6 +245,8 @@ extension WorkspaceManager {
             case .rateLimits(let limits):
                 codexLimitSnapshots[id] = limits
                 onRateLimits?()
+            case .mcpApp(let callID, let server, let tool, let arguments, let result, let uri):
+                captureMcpApp(id, client, callID: callID, server: server, tool: tool, arguments: arguments, result: result, resourceUri: uri)
             case .commandFinished(let callID, let command, let output, let exitCode)
                 where turns[id] == nil && run(id)?.status.isActive != true:
                 // A command left running in the background finished after the turn: its result goes to Codex as a new

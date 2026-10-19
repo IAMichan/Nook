@@ -292,8 +292,16 @@ enum CodexAppServerMapper {
                 name = tool.label
                 detail = ((item["arguments"] as? [String: Any]).flatMap(BridgeTool.detail)).map { ToolSummary.oneLine($0, 120) } ?? ""
             }
-            return [.toolCall(id: id, name: name, detail: detail, finished: finished && (item["status"] as? String) != "inProgress",
-                              failed: (item["status"] as? String) == "failed")]
+            var events: [CodexStreamEvent] = [.toolCall(id: id, name: name, detail: detail, finished: finished && (item["status"] as? String) != "inProgress",
+                                                        failed: (item["status"] as? String) == "failed")]
+            // A finished call with an app: Nook fetches its page (as, only for a call that completed without error).
+            if finished, (item["status"] as? String) == "completed", item["error"] == nil || item["error"] is NSNull,
+               let result = item["result"], !(result is NSNull), let uri = McpApp.resourceUri(codexItem: item),
+               let server = item["server"] as? String, let tool = item["tool"] as? String {
+                events.append(.mcpApp(id: id, server: server, tool: tool, arguments: item["arguments"].flatMap { McpApp.json($0) },
+                                      result: McpApp.json(result), resourceUri: uri))
+            }
+            return events
         case "dynamicToolCall":
             return [.toolCall(id: id, name: (item["tool"] as? String) ?? "tool", detail: "",
                               finished: finished, failed: (item["success"] as? Bool) == false)]

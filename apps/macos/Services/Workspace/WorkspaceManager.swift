@@ -115,6 +115,8 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
+    var mcpAppContexts: [UUID: [String: String]] = [:]
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -587,7 +589,10 @@ final class WorkspaceManager: ObservableObject {
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
-        launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable, showPrompt: !shown)
+        // What MCP apps told the agent goes with this turn: Codex takes it as context of its own, the others ahead of it.
+        let appContext = run.provider == .codex ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
+                   showPrompt: !shown)
         return true
     }
 
@@ -1432,6 +1437,9 @@ final class WorkspaceManager: ObservableObject {
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)
+        mcpAppContexts[id] = nil
+        let appFolder = Self.mcpAppFolder(id)
+        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil

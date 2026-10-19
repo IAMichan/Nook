@@ -316,6 +316,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case commandFinished(id: String, command: String, output: String, exitCode: Int?)
     case fileChanges(id: String, changes: [CodexFileChange])
     case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool)
+    /// An MCP tool call that finished with an app (`ui://` page) to show (codex app-server): arguments and result as JSON.
+    case mcpApp(id: String, server: String, tool: String, arguments: String?, result: String?, resourceUri: String)
     case turnCompleted(TurnUsage)
     case failed(String)
     // `codex app-server` only (see CodexAppServer.swift).
