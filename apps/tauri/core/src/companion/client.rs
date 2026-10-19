@@ -99,7 +99,12 @@ pub async fn request(link: &PairingLink, req: &CompanionRequest, resolver: &dyn 
     let framed = FrameReader::frame(&sealed).ok_or(ClientError::BadResponse)?;
     let addresses = resolver.resolve(&link.host, link.port).await;
     if addresses.is_empty() {
-        return Err(ClientError::Unreachable(format!("{} niet gevonden", link.host)));
+        let hint = if link.host.to_ascii_lowercase().ends_with(".local") {
+            "; lukt het niet, vervang dan in de link h=… door het IP-adres van je computer"
+        } else {
+            ""
+        };
+        return Err(ClientError::Unreachable(format!("{} niet gevonden{hint}", link.host)));
     }
     let reply = exchange(&addresses, &framed).await?;
     let opened = seal::open(&reply, &link.key, Direction::Response).map_err(|_| ClientError::BadResponse)?;

@@ -1,6 +1,8 @@
 package nl.imdigital.nook
 
+import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -14,16 +16,30 @@ import org.json.JSONObject
  * - veilige marges (statusbalk, notch, gebarenbalk) en de hoogte van het toetsenbord, als CSS-pixels;
  * - "Delen met Nook": tekst die een andere app deelt, wordt een nieuwe vraag.
  * Beide via `window.NookAndroid` en de events `nook-insets` en `nook-share`.
+ * Zolang de app voor staat mag hij multicast ontvangen, zodat de companion een Mac of pc als `naam.local` (mDNS) vindt.
  */
 class MainActivity : TauriActivity() {
   private var webView: WebView? = null
   @Volatile private var insetsJson = "{\"top\":0,\"bottom\":0,\"left\":0,\"right\":0,\"keyboard\":0}"
   @Volatile private var shared: String? = null
+  private var multicast: WifiManager.MulticastLock? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     takeShare(intent)
+  }
+
+  override fun onResume() {
+    super.onResume()
+    val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    multicast = multicast ?: wifi?.createMulticastLock("nook-companion")?.apply { setReferenceCounted(false) }
+    multicast?.acquire()
+  }
+
+  override fun onPause() {
+    multicast?.release()
+    super.onPause()
   }
 
   override fun onNewIntent(intent: Intent) {
