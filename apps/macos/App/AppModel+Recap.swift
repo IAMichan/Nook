@@ -69,7 +69,8 @@ extension AppModel {
             subtitle: tr("app.recap.subtitle", RecapStore.duration(lastWeek.activeSeconds), lastWeek.sessions),
             action: tr("button.view"),
             color: NookTheme.mint,
-            target: .action { [weak self] in self?.showWeekRecap() }
+            target: .action { [weak self] in self?.showWeekRecap() },
+            logo: .symbol("chart.bar.xaxis")
         )
     }
 
