@@ -120,7 +120,9 @@ final class NotchViewModel: ObservableObject {
                 target = .music
             }
         }
-        if case .panel = target, state.kind != "panel" { app?.warmUp() }
+        // Only where you can ask something: with the brain on this Mac, warming up loads a model of several gigabytes, and
+        // opening the panel for the agents or the music is no reason for that.
+        if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook { app?.warmUp() }
         if case .panel(let tab) = target {
             switch tab {
             case .chat, .agents: lastTab = tab

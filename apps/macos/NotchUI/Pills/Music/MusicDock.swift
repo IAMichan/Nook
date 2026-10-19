@@ -31,6 +31,9 @@ struct MusicDock: View {
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.04), lineWidth: 1))
                 .opacity(expanded ? 0 : 1)
         }
+        // The position and volume shown here need the player polled every couple of seconds; nothing else does.
+        .onAppear { service.addViewer() }
+        .onDisappear { service.removeViewer() }
     }
 }
 

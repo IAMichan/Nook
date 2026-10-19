@@ -138,7 +138,8 @@ final class NoteTaker: ObservableObject {
     }
 
     private func tick(force: Bool) {
-        level = max(mine.level, others.level)
+        let loudest = max(mine.level, others.level)
+        if abs(loudest - level) > 0.005 { level = loudest }
         if let chunk = mine.takeChunk(force: force) { transcribe(chunk, mine: true) }
         if let chunk = others.takeChunk(force: force) { transcribe(chunk, mine: false) }
     }
@@ -286,25 +287,50 @@ private final class OnceFlag: @unchecked Sendable {
     }
 }
 
-/// The others' side of a call in memory (at most 90 minutes, about 350 MB), only so the diarizer can tell the people
+/// The others' side of a call in memory (at most 90 minutes, about 175 MB), only so the diarizer can tell the people
 /// apart at the end; never written to disk, gone as soon as the note is made.
+///
+/// Kept as 16-bit samples in chunks of a minute: half the memory of floats for the whole call (more than enough
+/// precision to tell voices apart), and no ever larger copies of one growing array.
 private final class SideBuffer: @unchecked Sendable {
-    private let samples = OSAllocatedUnfairLock(initialState: [Float]())
+    private struct State: Sendable {
+        var chunks: [[Int16]] = []
+        var count = 0
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
     private let limit = 16_000 * 60 * 90
+    private static let chunkSize = 16_000 * 60
 
     /// From the audio thread.
     func append(_ new: [Float]) {
-        samples.withLock { all in
-            guard all.count + new.count <= limit else { return }
-            all.append(contentsOf: new)
+        state.withLock { state in
+            guard state.count + new.count <= limit else { return }
+            for sample in new {
+                if state.chunks.isEmpty || state.chunks[state.chunks.count - 1].count >= Self.chunkSize {
+                    var chunk: [Int16] = []
+                    chunk.reserveCapacity(Self.chunkSize)
+                    state.chunks.append(chunk)
+                }
+                state.chunks[state.chunks.count - 1].append(Int16(max(-1, min(1, sample)) * 32_767))
+            }
+            state.count += new.count
         }
     }
 
     func take() -> [Float] {
-        samples.withLock { all in
-            let out = all
-            all = []
+        var chunks = state.withLock { state -> [[Int16]] in
+            let out = state.chunks
+            state = State()
             return out
         }
+        var out: [Float] = []
+        out.reserveCapacity(chunks.reduce(0) { $0 + $1.count })
+        // Chunk by chunk, each one released once converted, so the floats never sit next to the whole 16-bit copy.
+        chunks.reverse()
+        while let chunk = chunks.popLast() {
+            out.append(contentsOf: chunk.lazy.map { Float($0) / 32_767 })
+        }
+        return out
     }
 }

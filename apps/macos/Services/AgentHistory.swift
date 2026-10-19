@@ -636,7 +636,8 @@ private final class HistoryScanner: @unchecked Sendable {
         files.sort { $0.key.modified > $1.key.modified }
         files = Array(files.prefix(Self.maxFiles))
 
-        let antigravitySummaries = readAntigravitySummaries(homes)
+        // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
+        var antigravitySummaries: [String: (title: String, cwd: String)]?
         var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
         var parsedAll: [(profile: String, parsed: Parsed)] = []
         for file in files {
@@ -649,7 +650,10 @@ private final class HistoryScanner: @unchecked Sendable {
                 case .claude: parsed = parseClaude(file.url, key: file.key)
                 case .codex: parsed = parseCodex(file.url, key: file.key)
                 case .gemini: parsed = parseGemini(file.url)
-                case .antigravity: parsed = parseAntigravity(file.url, summaries: antigravitySummaries)
+                case .antigravity:
+                    let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
+                    antigravitySummaries = summaries
+                    parsed = parseAntigravity(file.url, summaries: summaries)
                 case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                 }
             }
@@ -778,9 +782,16 @@ private final class HistoryScanner: @unchecked Sendable {
 
     private var foundExecutables: [AgentKind: String] = [:]
     private var lastShellLookup = Date.distantPast
+    /// How long to wait before asking the shell again, and which agents it was asked about last time.
+    private var shellLookupInterval: TimeInterval = Self.shellLookupMinimum
+    private var shellLookupMissing: [AgentKind] = []
+    private static let shellLookupMinimum: TimeInterval = 60
+    private static let shellLookupMaximum: TimeInterval = 30 * 60
 
     /// Where claude, codex, and gemini are located. First checks known locations; for anything missing, Nook
-    /// queries the user's shell at most once per minute (for nvm, asdf, etc.).
+    /// queries the user's shell (for nvm, asdf, etc.): a minute after the first scan, then less and less often (up to
+    /// half an hour) while the answer stays the same. Hardly anyone has every agent installed, and a login shell with
+    /// its startup files is the most expensive thing a scan can start.
     private func locateExecutables() -> [AgentKind: String] {
         let fm = FileManager.default
         var missing: [AgentKind] = []
@@ -797,19 +808,29 @@ private final class HistoryScanner: @unchecked Sendable {
                 missing.append(kind)
             }
         }
-        if !missing.isEmpty, Date().timeIntervalSince(lastShellLookup) > 60 {
+        // A different set of missing agents (one was just uninstalled, or a new kind was added) is asked about soon.
+        if missing != shellLookupMissing {
+            shellLookupMissing = missing
+            shellLookupInterval = Self.shellLookupMinimum
+        }
+        if !missing.isEmpty, Date().timeIntervalSince(lastShellLookup) > shellLookupInterval {
             lastShellLookup = Date()
             let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
             // Each response receives its own prefix: an interactive shell may output extraneous text.
             let script = missing.map { "printf 'NOOK-\($0.rawValue):%s\\n' \"$(command -v \($0.command) 2>/dev/null)\"" }
                 .joined(separator: "; ")
             let lines = Self.run(shell, ["-ilc", script], timeout: 6)?.components(separatedBy: .newlines) ?? []
+            var foundAny = false
             for kind in missing {
                 let prefix = "NOOK-\(kind.rawValue):"
                 guard let line = lines.last(where: { $0.hasPrefix(prefix) }) else { continue }
                 let path = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
-                if path.hasPrefix("/"), fm.isExecutableFile(atPath: path) { foundExecutables[kind] = path }
+                if path.hasPrefix("/"), fm.isExecutableFile(atPath: path) {
+                    foundExecutables[kind] = path
+                    foundAny = true
+                }
             }
+            shellLookupInterval = foundAny ? Self.shellLookupMinimum : min(shellLookupInterval * 2, Self.shellLookupMaximum)
         }
         return foundExecutables
     }
@@ -1307,25 +1328,25 @@ private final class HistoryScanner: @unchecked Sendable {
             candidates.insert(home.appendingPathComponent(".claude.json"), at: 0)
         }
         for url in candidates {
-            guard let data = try? Data(contentsOf: url),
-                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
-            if let oauth = root["oauthAccount"] as? [String: Any] {
-                let email = (oauth["emailAddress"] as? String) ?? (oauth["displayName"] as? String) ?? "Claude-account"
-                let org = (oauth["organizationName"] as? String) ?? ""
+            // Parsed again only when the file changed: it can be megabytes, and accounts are read every 30 seconds.
+            guard let account = ClaudeAccountFile.read(url) else { continue }
+            if account.hasOAuth {
+                let email = account.email ?? account.displayName ?? "Claude-account"
+                let org = account.organizationName ?? ""
                 // An organization simply named "<email>'s Organization" adds no useful detail.
                 let cleanOrg = org.contains(email) || org.hasSuffix("'s Organization") ? "" : org
-                return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(oauth))
+                return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(account.plan))
             }
-            if root["primaryApiKey"] != nil {
+            if account.hasAPIKey {
                 return AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "")
             }
         }
         return nil
     }
 
-    private static func claudePlan(_ oauth: [String: Any]) -> String {
+    private static func claudePlan(_ plan: [String: String]) -> String {
         for key in ["subscriptionType", "planType", "rateLimitTier"] {
-            if let value = oauth[key] as? String, !value.isEmpty { return planName(value) }
+            if let value = plan[key], !value.isEmpty { return planName(value) }
         }
         return ""
     }

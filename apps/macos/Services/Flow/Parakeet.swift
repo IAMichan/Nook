@@ -33,8 +33,36 @@ final class Parakeet: ObservableObject {
     }
 
     private var loading: Task<AsrManager, Error>?
+    /// The loaded models stay in memory (about a gigabyte, on the Neural Engine) only while they are used: released after
+    /// `idleSeconds` without a transcription, and at once when macOS runs low on memory. Loading again takes a second or
+    /// two, and dictation starts it while you speak (`FlowDictation.begin`).
+    private var idleTask: Task<Void, Never>?
+    private var pressureSource: DispatchSourceMemoryPressure?
+    private static let idleSeconds: UInt64 = 10 * 60
 
-    private init() { refresh() }
+    private init() {
+        refresh()
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.unload() } }
+        source.resume()
+        pressureSource = source
+    }
+
+    /// Drops the loaded models; a transcription still running keeps its own reference and finishes.
+    func unload() {
+        idleTask?.cancel()
+        idleTask = nil
+        loading = nil
+    }
+
+    private func scheduleUnload() {
+        idleTask?.cancel()
+        idleTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.unload()
+        }
+    }
 
     nonisolated static var isSupported: Bool {
         #if arch(arm64)
@@ -116,6 +144,7 @@ final class Parakeet: ObservableObject {
 
     /// Loads Parakeet once; later calls get the same instance.
     func manager() async throws -> AsrManager {
+        scheduleUnload()
         if let loading { return try await loading.value }
         let task = Task<AsrManager, Error> {
             let models = try await AsrModels.load(from: Self.asrDirectory, version: Self.version)

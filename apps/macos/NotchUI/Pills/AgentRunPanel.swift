@@ -290,8 +290,9 @@ struct AgentRunPanel: View {
             if run.prWatch != nil {
                 Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
             } else {
-                Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
-                    .disabled(watchablePullRequest() == nil)
+                let watchable = watchablePullRequest()
+                Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
+                    .disabled(watchable == nil)
             }
             // Kept local: copy it, or save it where you want.
             Button(tr("ws.export.copy")) {

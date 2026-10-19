@@ -27,7 +27,7 @@ enum SystemControl {
 
             scriptQueue.async {
                 defer { scriptQueueBusy.release() }
-                guard let script = NSAppleScript(source: wrapped) else {
+                guard let script = compiledScript(wrapped) else {
                     semaphore.signal()
                     return
                 }
@@ -52,6 +52,20 @@ enum SystemControl {
         } else {
             return runOsaScript(wrapped, timeout: timeout)
         }
+    }
+
+    /// Compiled scripts by source, used only on `scriptQueue`. Connectors run the same scripts every refresh (the inbox,
+    /// the browser's tabs, the notes), and compiling one costs about as much as running it. Scripts that carry a query
+    /// differ each time, so the cache starts over once it is full instead of growing.
+    private nonisolated(unsafe) static var compiledScripts: [String: NSAppleScript] = [:]
+    private nonisolated static let compiledScriptLimit = 64
+
+    private nonisolated static func compiledScript(_ source: String) -> NSAppleScript? {
+        if let known = compiledScripts[source] { return known }
+        guard let script = NSAppleScript(source: source) else { return nil }
+        if compiledScripts.count >= compiledScriptLimit { compiledScripts.removeAll() }
+        compiledScripts[source] = script
+        return script
     }
 
     /// Wraps `tell application` blocks in `with timeout of N seconds` so macOS aborts stalled AppleEvents at the Mach level.

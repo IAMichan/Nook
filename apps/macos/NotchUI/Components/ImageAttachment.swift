@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 
 /// A picture added to a message by dragging, pasting or choosing it. Big pictures are scaled down first, so a screenshot
@@ -14,7 +15,33 @@ struct ImageAttachment: Identifiable, Equatable {
     static let maxEdge: CGFloat = 1568
 
     var base64: String { data.base64EncodedString() }
-    var thumbnail: NSImage? { NSImage(data: data) }
+    /// Decoded once per picture, at thumbnail size: the strip above the composer redraws on every keystroke and a sent
+    /// message on every redraw of the chat, and decoding the full picture (up to 1568 pixels) each time was the cost.
+    var thumbnail: NSImage? {
+        let key = id as NSUUID
+        if let known = Self.thumbnails.object(forKey: key) { return known }
+        guard let made = Self.makeThumbnail(data) else { return nil }
+        Self.thumbnails.setObject(made, forKey: key)
+        return made
+    }
+
+    private static let thumbnails: NSCache<NSUUID, NSImage> = {
+        let cache = NSCache<NSUUID, NSImage>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    /// At most 256 pixels on the longest side: sharp at the 96-point size of a sent picture on a Retina screen.
+    private static func makeThumbnail(_ data: Data) -> NSImage? {
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 256,
+        ] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return NSImage(data: data) }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
     var fileExtension: String { mediaType == "image/png" ? "png" : "jpg" }
 
     init?(image: NSImage, name: String) {

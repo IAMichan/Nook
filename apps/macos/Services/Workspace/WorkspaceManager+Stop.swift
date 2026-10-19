@@ -72,11 +72,10 @@ extension WorkspaceManager {
     /// A turn ended: nothing may stay "running" (a command that never reported back, a streaming message, an approval
     /// nobody can answer any more). Each way a turn ends has its own reason; settling twice changes nothing.
     func settleOpenWork(_ id: UUID, reason: SettleReason) {
-        guard var list = events[id] else { return }
+        guard let list = events[id] else { return }
         let settlements = OpenWork.settle(events: list, reason: reason)
         guard !settlements.isEmpty else { return }
-        OpenWork.apply(settlements, to: &list)
-        events[id] = list
+        OpenWork.apply(settlements, to: &events[id]!)
         scheduleEventSave(id)
     }
 }

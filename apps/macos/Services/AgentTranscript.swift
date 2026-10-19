@@ -88,6 +88,12 @@ enum AgentTranscript {
         let modified: Date
         let limit: Int
         let messages: [AgentChatMessage]
+        /// JSONL only: the messages of every complete line read so far, where those lines end in the file, and how many
+        /// lines that was. A transcript an agent is writing grows every few seconds while the view polls it: it is read
+        /// on from `parsedTo` instead of parsing up to eight megabytes again.
+        var parsed: [AgentChatMessage] = []
+        var parsedTo: UInt64 = 0
+        var lines = 0
     }
 
     private static let cacheLock = NSLock()
@@ -112,6 +118,7 @@ enum AgentTranscript {
 
         var messages: [AgentChatMessage]
         var size: UInt64 = attrSize ?? 0
+        var progress: (parsed: [AgentChatMessage], to: UInt64, lines: Int)?
         if isGemini {
             guard let data = FileManager.default.contents(atPath: path) else { return [] }
             size = UInt64(data.count)
@@ -121,18 +128,52 @@ enum AgentTranscript {
             defer { try? handle.close() }
             guard let end = try? handle.seekToEnd() else { return [] }
             size = end
-            let start = end > tailBytes ? end - tailBytes : 0
-            try? handle.seek(toOffset: start)
-            guard var data = try? handle.readToEnd() else { return [] }
-            // If reading started mid-line, skip the initial partial line.
-            if start > 0, let newline = data.firstIndex(of: 0x0A) { data = data[data.index(after: newline)...] }
-            messages = jsonl(data)
+            cacheLock.lock()
+            let previous = cache[path]
+            cacheLock.unlock()
+            let base: (parsed: [AgentChatMessage], to: UInt64, lines: Int)
+            var data: Data
+            if let previous, previous.parsedTo > 0, end >= previous.parsedTo, end - previous.parsedTo <= tailBytes {
+                // The file grew: only what was added since the last complete line.
+                base = (previous.parsed, previous.parsedTo, previous.lines)
+                try? handle.seek(toOffset: previous.parsedTo)
+                guard let added = try? handle.readToEnd() else { return [] }
+                data = added
+            } else {
+                let start = end > tailBytes ? end - tailBytes : 0
+                try? handle.seek(toOffset: start)
+                guard let read = try? handle.readToEnd() else { return [] }
+                data = read
+                var from = start
+                // If reading started mid-line, skip the initial partial line.
+                if start > 0, let newline = data.firstIndex(of: 0x0A) {
+                    data = Data(data[data.index(after: newline)...])
+                    from = start + UInt64(newline + 1)
+                }
+                base = ([], from, 0)
+            }
+            // Lines up to the last newline are final; a line still being written is parsed for this answer only, and
+            // read again (complete) next time.
+            let cut = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+            let complete = data[data.startIndex..<cut]
+            let parsed = jsonl(complete, continuing: base.parsed, firstLine: base.lines)
+            let lines = base.lines + complete.split(separator: 0x0A).count
+            let rest = data[cut...]
+            messages = rest.isEmpty ? parsed : jsonl(rest, continuing: parsed, firstLine: lines)
+            // Bounded like a full read: the newest messages are all anyone sees.
+            progress = (Array(parsed.suffix(fullLimit)), base.to + UInt64(cut - data.startIndex), lines)
         }
         let result = Array(messages.suffix(limit))
         if let attrMod {
+            var entry = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
+            if let progress {
+                entry.parsed = progress.parsed
+                entry.parsedTo = progress.to
+                entry.lines = progress.lines
+            }
             cacheLock.lock()
             if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
-            cache[path] = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
+            cache[path] = entry
             cacheLock.unlock()
         }
         return result
@@ -140,8 +181,15 @@ enum AgentTranscript {
 
     /// Claude Code, Antigravity and Codex: one JSON object per line.
     static func jsonl(_ data: Data) -> [AgentChatMessage] {
-        var messages: [AgentChatMessage] = []
-        for (index, line) in data.split(separator: 0x0A).enumerated() {
+        jsonl(data, continuing: [], firstLine: 0)
+    }
+
+    /// Parses more lines of a transcript after `earlier` (what its first `firstLine` lines gave): the same messages as
+    /// parsing all lines at once, since every line only adds to or finishes what came before.
+    static func jsonl(_ data: Data, continuing earlier: [AgentChatMessage], firstLine: Int) -> [AgentChatMessage] {
+        var messages = earlier
+        for (offset, line) in data.split(separator: 0x0A).enumerated() {
+            let index = firstLine + offset
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
             let id = (object["uuid"] as? String) ?? (object["id"] as? String) ?? "\(object["step_index"] ?? index)"
             let type = (object["type"] as? String) ?? ""

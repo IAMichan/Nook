@@ -43,31 +43,66 @@ enum LocalAgentScanner {
 
     static func scan() async -> [DetectedAgent] {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
+            queue.async {
                 continuation.resume(returning: scanNow())
             }
         }
     }
 
+    /// Scans run one after the other: `seen` is only touched here.
+    private static let queue = DispatchQueue(label: "nl.imdigital.nook.agent-scan", qos: .utility)
+
+    /// What the command line of a process said, kept for as long as that process lives.
+    private struct Seen {
+        /// When the process started (seconds and microseconds): a pid that comes back with another start time is a new process.
+        let started: (UInt64, UInt64)
+        /// The agent this process is, with its account directory; nil when it is no agent of yours.
+        let agent: (name: String, home: String)?
+    }
+
+    /// Per pid: what its command line and environment said the last time they were read. Arguments and environment
+    /// never change after a process starts, so a scan reads them only for processes it has not seen before; the
+    /// hundreds of other processes on a Mac cost one small kernel read each instead of a copy of their whole argument
+    /// area, and no string work at all.
+    nonisolated(unsafe) private static var seen: [pid_t: Seen] = [:]
+
     /// Reads the process table straight from the kernel, as `ps`, `ps -E` and `lsof` would, but without starting any of
     /// them: this runs every ten seconds, and three short-lived processes per scan cost far more than the reads themselves.
     private static func scanNow() -> [DetectedAgent] {
         let me = ProcessInfo.processInfo.processIdentifier
-        var buffer = [UInt8](repeating: 0, count: argumentsMax)
+        var buffer: [UInt8] = []
         var found: [DetectedAgent] = []
+        var alive: [pid_t: Seen] = [:]
         for pid in allProcesses() where pid > 0 && pid != me {
-            // Fails for other users' processes, like `ps` does; those are never your agents.
-            guard let process = arguments(pid, buffer: &buffer), !process.arguments.isEmpty,
-                  let name = identify(process.arguments.joined(separator: " ")),
-                  let parent = parentProcess(pid), parent != me else { continue }   // Ignore Nook's own helper processes (codex app-server, claude -p)
-            // The same line `ps -E` prints: the command line, then the environment.
-            let line = (process.arguments + process.environment).joined(separator: " ")
-            guard !AgentProcessEnvironment.isNookOwned(line) else { continue }
-            let home = AgentProcessEnvironment.value(of: "CLAUDE_CONFIG_DIR", in: line)
-                ?? AgentProcessEnvironment.value(of: "CODEX_HOME", in: line) ?? ""
-            found.append(DetectedAgent(pid: pid, name: name, cwd: workingDirectory(pid) ?? "", home: home))
+            guard let info = processInfo(pid) else { continue }
+            let started = (info.pbi_start_tvsec, info.pbi_start_tvusec)
+            let entry: Seen
+            if let known = seen[pid], known.started == started {
+                entry = known
+            } else {
+                if buffer.isEmpty { buffer = [UInt8](repeating: 0, count: argumentsMax) }
+                entry = Seen(started: started, agent: inspect(pid, buffer: &buffer))
+            }
+            alive[pid] = entry
+            // Ignore Nook's own helper processes (codex app-server, claude -p).
+            guard let agent = entry.agent, pid_t(info.pbi_ppid) != me else { continue }
+            found.append(DetectedAgent(pid: pid, name: agent.name, cwd: workingDirectory(pid) ?? "", home: agent.home))
         }
+        seen = alive
         return found.sorted { $0.pid < $1.pid }
+    }
+
+    /// Reads the command line and environment of one process and decides whether it is an agent of yours.
+    private static func inspect(_ pid: pid_t, buffer: inout [UInt8]) -> (name: String, home: String)? {
+        // Fails for other users' processes, like `ps` does; those are never your agents.
+        guard let process = arguments(pid, buffer: &buffer), !process.arguments.isEmpty,
+              let name = identify(process.arguments.joined(separator: " ")) else { return nil }
+        // The same line `ps -E` prints: the command line, then the environment.
+        let line = (process.arguments + process.environment).joined(separator: " ")
+        guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
+        let home = AgentProcessEnvironment.value(of: "CLAUDE_CONFIG_DIR", in: line)
+            ?? AgentProcessEnvironment.value(of: "CODEX_HOME", in: line) ?? ""
+        return (name, home)
     }
 
     // MARK: Kernel reads
@@ -123,11 +158,12 @@ enum LocalAgentScanner {
         return (arguments, environment)
     }
 
-    private static func parentProcess(_ pid: pid_t) -> pid_t? {
-        var info = proc_bsdshortinfo()
-        let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, size) == size else { return nil }
-        return pid_t(info.pbsi_ppid)
+    /// The parent and start time of a process: one fixed-size kernel read.
+    private static func processInfo(_ pid: pid_t) -> proc_bsdinfo? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info
     }
 
     /// The working directory, as `lsof -d cwd` reports it.

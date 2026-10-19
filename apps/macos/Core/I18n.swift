@@ -64,38 +64,54 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         [selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
-    public static func lookup(_ key: String, for lang: AppLanguage) -> String {
-        for table in tables { if let val = table[lang]?[key] { return val } }
-        // Everyone but a Dutch reader falls back to English before Dutch.
-        let fallbacks: [AppLanguage] = lang == .nl ? [.nl, .en] : [.en, .nl]
-        for fallback in fallbacks where fallback != lang {
-            for table in tables { if let val = table[fallback]?[key] { return val } }
+    /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
+    /// the fallback languages underneath. Built once, so a lookup is a single dictionary read: `tr` runs thousands of
+    /// times per redraw of the notch, and walking fourteen tables (three times over for a missing key) for each of them
+    /// was a measurable share of every frame.
+    private static let resolved: [AppLanguage: [String: String]] = {
+        // Earlier tables win over later ones: merge back to front so an earlier text overwrites a later one.
+        var merged: [AppLanguage: [String: String]] = [:]
+        for table in tables.reversed() {
+            for (language, texts) in table { merged[language, default: [:]].merge(texts) { _, earlier in earlier } }
         }
-        return key
+        var result: [AppLanguage: [String: String]] = [:]
+        for language in AppLanguage.allCases {
+            // Everyone but a Dutch reader falls back to English before Dutch.
+            let fallbacks: [AppLanguage] = language == .nl ? [.en] : [.en, .nl].filter { $0 != language }
+            var texts: [String: String] = [:]
+            for fallback in fallbacks.reversed() { texts.merge(merged[fallback] ?? [:]) { _, preferred in preferred } }
+            texts.merge(merged[language] ?? [:]) { _, own in own }
+            result[language] = texts
+        }
+        return result
+    }()
+
+    /// `String(format:locale:)` needs a Locale; making one per call is not free.
+    private static let locales: [AppLanguage: Locale] = Dictionary(uniqueKeysWithValues: AppLanguage.allCases.map { ($0, Locale(identifier: $0.rawValue)) })
+
+    public static func lookup(_ key: String, for lang: AppLanguage) -> String {
+        resolved[lang]?[key] ?? key
     }
 
     public func lookup(_ key: String, for lang: AppLanguage) -> String {
         Self.lookup(key, for: lang)
     }
 
+    /// Resolves a key for a language, and fills in the arguments when there are any.
+    static func text(_ key: String, _ args: [CVarArg], for lang: AppLanguage) -> String {
+        let format = lookup(key, for: lang)
+        if args.isEmpty { return format }
+        return String(format: format, locale: locales[lang], arguments: args)
+    }
+
     public func tr(_ key: String, _ args: CVarArg...) -> String {
-        let lang = currentLanguage
-        let format = Self.lookup(key, for: lang)
-        if args.isEmpty {
-            return format
-        }
-        return String(format: format, locale: Locale(identifier: lang.rawValue), arguments: args)
+        Self.text(key, args, for: currentLanguage)
     }
 }
 
 /// Translates a key to the active language.
 public func tr(_ key: String, _ args: CVarArg...) -> String {
-    let lang = I18n.shared.currentLanguage
-    let format = I18n.lookup(key, for: lang)
-    if args.isEmpty {
-        return format
-    }
-    return String(format: format, locale: Locale(identifier: lang.rawValue), arguments: args)
+    I18n.text(key, args, for: I18n.shared.currentLanguage)
 }
 
 // MARK: - Translations (NL, EN, DE)

@@ -101,7 +101,8 @@ struct NotchRootView: View {
             mood = viewModel.pointerInside ? .seen : .rest
         }
         let side = NotchViewModel.floatingOrbSide
-        return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy)
+        return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
+                       frameRate: viewModel.pointerInside ? 30 : 12)
             .frame(width: side, height: side)
             .overlay(alignment: .topTrailing) { bareBadge }
             .contentShape(Circle())
@@ -158,7 +159,7 @@ struct NotchRootView: View {
             }
         case .music:
             wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
-                EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true)
+                EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true, frameRate: 20)
             }
             .contentShape(Rectangle())
             .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
@@ -220,7 +221,9 @@ struct NotchRootView: View {
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
-            NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating)
+            // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
+            NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
+                    frameRate: viewModel.pointerInside ? 30 : 12)
                 .offset(x: orbInset)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
@@ -350,7 +353,9 @@ struct NotchRootView: View {
         ring: Bool = false,
         @ViewBuilder inner: () -> Inner
     ) -> some View {
-        HStack(alignment: .top, spacing: ring ? 34 : 20) {
+        // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
+        let items = ring ? ringItems : []
+        return HStack(alignment: .top, spacing: ring ? 34 : 20) {
             Button {
                 NookPresence.shared.poke()
                 viewModel.show(.panel(.nook))
@@ -361,11 +366,11 @@ struct NotchRootView: View {
             .accessibilityLabel(tr("notch.goToHome"))
             .background {
                 if ring {
-                    NookTaskRing(items: ringItems, orbSize: 46, hovered: $ringHovered) { openRingItem($0) }
+                    NookTaskRing(items: items, orbSize: 46, hovered: $ringHovered) { openRingItem($0) }
                 }
             }
             .overlay {
-                if ring { NookTaskRingLabel(items: ringItems, hovered: ringHovered, orbSize: 46) }
+                if ring { NookTaskRingLabel(items: items, hovered: ringHovered, orbSize: 46) }
             }
             .zIndex(1)
             inner()
@@ -447,7 +452,8 @@ private struct AgentDots: View {
     var body: some View {
         let shown = Array(sessions.prefix(4))
         let anyWaiting = shown.contains { $0.status == .waiting || $0.approvalID != nil }
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !anyWaiting)) { context in
+        // A gentle pulse, possibly for hours (an approval left open): ten frames a second are smooth enough.
+        TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !anyWaiting)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let pulse = anyWaiting ? (0.55 + 0.45 * abs(sin(t * 2.4))) : 1.0
             HStack(spacing: 5) {
