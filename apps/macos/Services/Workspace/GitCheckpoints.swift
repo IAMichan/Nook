@@ -49,8 +49,18 @@ extension GitService {
             try git(["read-tree", ref], in: directory, env: env)
             try git(["checkout-index", "-a", "-f", "-q"], in: directory, env: env)
         }
+        let gone = current.subtracting(target).filter { !$0.split(separator: "/").contains("..") && !$0.hasPrefix("/") }.sorted()
+        if let remote, !gone.isEmpty {
+            // On the other machine: the same files removed there, a batch at a time.
+            for start in stride(from: 0, to: gone.count, by: 200) {
+                let batch = Array(gone[start..<min(start + 200, gone.count)])
+                _ = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("rm", ["-f", "--"] + batch, target: remote, directory: directory),
+                                           environment: ProcessInfo.processInfo.environment, timeout: 120)
+            }
+            return
+        }
         let root = URL(fileURLWithPath: directory, isDirectory: true).standardizedFileURL
-        for path in current.subtracting(target) where !path.contains("..") {
+        for path in gone {
             let url = root.appendingPathComponent(path).standardizedFileURL
             guard url.path.hasPrefix(root.path + "/") else { continue }
             try? FileManager.default.removeItem(at: url)
@@ -67,6 +77,15 @@ extension GitService {
     // MARK: Helpers
 
     func withTemporaryIndex<T>(_ directory: String, _ body: ([String: String]) throws -> T) throws -> T {
+        if let remote {
+            // The index lives where git runs: on the other machine.
+            let index = "/tmp/nook-index-\(UUID().uuidString)"
+            defer {
+                _ = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("rm", ["-f", "--", index], target: remote, directory: nil),
+                                           environment: ProcessInfo.processInfo.environment, timeout: 30)
+            }
+            return try body(["GIT_INDEX_FILE": index])
+        }
         let index = FileManager.default.temporaryDirectory.appendingPathComponent("nook-index-\(UUID().uuidString)").path
         defer { try? FileManager.default.removeItem(atPath: index) }
         return try body(["GIT_INDEX_FILE": index])
@@ -79,7 +98,16 @@ extension GitService {
         for (key, value) in ["GIT_AUTHOR_NAME": "Nook", "GIT_AUTHOR_EMAIL": "nook@localhost",
                              "GIT_COMMITTER_NAME": "Nook", "GIT_COMMITTER_EMAIL": "nook@localhost"] { env[key] = value }
         for (key, value) in extra { env[key] = value }
-        let output = try ProcessRunner.run(executable, ["-C", directory] + arguments, in: directory, environment: env, timeout: 120)
+        let output: ProcessRunner.Output
+        if let remote {
+            var variables = extra
+            for key in ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"] { variables[key] = env[key] }
+            output = try ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.git(["-C", directory] + arguments, target: remote, directory: directory,
+                                                                               environment: variables),
+                                           environment: ProcessInfo.processInfo.environment, timeout: 120)
+        } else {
+            output = try ProcessRunner.run(executable, ["-C", directory] + arguments, in: directory, environment: env, timeout: 120)
+        }
         guard output.status == 0, !output.timedOut else {
             let message = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             throw GitError(message.isEmpty ? "git \(arguments.first ?? "") failed (\(output.status))." : message)

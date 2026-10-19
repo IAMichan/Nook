@@ -102,15 +102,25 @@ enum RemoteLaunch {
 
     /// The ssh arguments for one git command on the remote machine, in `directory` there (a leading `-C <folder>` becomes
     /// the folder). One shared connection per machine (ControlMaster) keeps the many small git calls fast.
-    static func git(_ arguments: [String], target: RemoteTarget, directory: String?) -> [String] {
+    static func git(_ arguments: [String], target: RemoteTarget, directory: String?, environment: [String: String] = [:]) -> [String] {
         var rest = arguments
         var folder = directory
         if rest.count >= 2, rest[0] == "-C" {
             folder = rest[1]
             rest.removeFirst(2)
         }
-        var line = "GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 LC_ALL=C exec git " + rest.map(CustomAgents.quote).joined(separator: " ")
-        if let folder { line = "cd " + quotedDirectory(folder) + " && " + line }
+        var variables = ["GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"]
+        for (key, value) in environment { variables[key] = value }
+        return run("git", rest, target: target, directory: folder, environment: variables)
+    }
+
+    /// One program on the remote machine, in `directory` there, with `environment` set; over the shared connection.
+    static func run(_ program: String, _ arguments: [String], target: RemoteTarget, directory: String?,
+                    environment: [String: String] = [:]) -> [String] {
+        let exports = environment.keys.sorted().filter { $0.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil }
+            .map { $0 + "=" + CustomAgents.quote(environment[$0] ?? "") + " " }.joined()
+        var line = exports + "exec " + ([program] + arguments).map(CustomAgents.quote).joined(separator: " ")
+        if let folder = directory { line = "cd " + quotedDirectory(folder) + " && " + line }
         var ssh = ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
                    "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/nook-ssh-%C", "-o", "ControlPersist=120"]
         if let port = target.port { ssh += ["-p", String(port)] }
