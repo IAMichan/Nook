@@ -10,6 +10,9 @@ import MLXLMCommon
 /// each key continues from the newest checkpoint the new prompt still starts with. So a letter typed costs a few dozen
 /// tokens, also on models whose cache cannot be cut back (hybrid models like Qwen 3.5, sliding windows like Gemma 4).
 ///
+/// The brain's models are chat models: the prompt goes in their chat template as a request, with their answer begun by the
+/// text typed so far (`CompletionChat`), instead of as a bare document they would answer instead of continue.
+///
 /// It only ever uses the model the brain itself uses, and never loads another one: the chat keeps its model in memory. A chat
 /// answer always goes first: while the brain is writing one, autocomplete shows nothing.
 final class BrainCompleter: CompletionEngine, @unchecked Sendable {
@@ -28,6 +31,8 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     private let work = NSLock()
     private var checkpoint: Checkpoint?
     private var biasCache: (owner: ObjectIdentifier, version: Int, bias: [Int: Float], array: MLXArray?)?
+    /// The user's turn in the chat template for the last context, in tokens; nil tokens when the model has no template.
+    private var request: (owner: ObjectIdentifier, context: String, tokens: [Int]?)?
 
     private struct Checkpoint {
         let owner: ObjectIdentifier
@@ -59,7 +64,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    func complete(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
         let id = begin()
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID) else {
             // The model left memory (or the chat is busy with it): the checkpoint belongs to a model that may be gone.
@@ -80,7 +85,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
 
     /// Reads `prompt` up to its checkpoint without writing anything, so the next request only reads the last few tokens. Does
     /// not stop the running request; a newer request stops it between pieces and goes on from what it read.
-    func warm(prompt: String) {
+    func warm(prompt: CompletionPrompt) {
         let id = lock.withLock { latest }
         Task {
             guard let container = try? await EmbeddedModel.shared.completionContainer(self.modelID), !self.superseded(id) else { return }
@@ -91,7 +96,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    func alternatives(prompt: String, excluding: String, count: Int) async -> [String] {
+    func alternatives(prompt: CompletionPrompt, excluding: String, count: Int) async -> [String] {
         let id = begin()
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID), !superseded(id) else { return [] }
         let owner = ObjectIdentifier(container)
@@ -104,11 +109,27 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
 
     // MARK: Under the work lock
 
+    /// The prompt in tokens: the user's turn in the model's chat template, then the text as the start of its answer. Without a
+    /// template, the prompt as a document. Too long, the text is cut from the front, the request kept.
+    private func tokens(_ context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt) -> [Int] {
+        if request?.owner != owner || request?.context != prompt.context {
+            let message: [String: any Sendable] = ["role": "user", "content": CompletionChat.request(context: prompt.context)]
+            // No thinking first (Qwen 3): the answer has to start right away.
+            let frame = try? context.tokenizer.applyChatTemplate(messages: [message], tools: nil, additionalContext: ["enable_thinking": false])
+            request = (owner, prompt.context, frame)
+        }
+        guard let frame = request?.tokens, !frame.isEmpty else {
+            let tokens = context.tokenizer.encode(text: prompt.document, addSpecialTokens: true)
+            return Array(tokens.suffix(Self.maxPromptTokens))
+        }
+        let text = context.tokenizer.encode(text: prompt.text, addSpecialTokens: false)
+        return frame + text.suffix(max(0, Self.maxPromptTokens - frame.count))
+    }
+
     /// A cache that holds the prompt up to the newest usable checkpoint, and the tokens still to be read (at least one).
-    private func prime(_ context: ModelContext, owner: ObjectIdentifier, prompt: String,
+    private func prime(_ context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt,
                        isCancelled: () -> Bool) throws -> (layers: [KVCache], fresh: [Int], all: [Int])? {
-        var tokens = context.tokenizer.encode(text: prompt, addSpecialTokens: true)
-        if tokens.count > Self.maxPromptTokens { tokens.removeFirst(tokens.count - Self.maxPromptTokens) }
+        let tokens = self.tokens(context, owner: owner, prompt: prompt)
         guard !tokens.isEmpty else { return nil }
         if lock.withLock({ () -> Bool in defer { dropCheckpoint = false }; return dropCheckpoint }) { checkpoint = nil }
 
@@ -178,7 +199,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         return ids
     }
 
-    private func generate(context: ModelContext, owner: ObjectIdentifier, prompt: String, options: CompletionOptions, stops: Set<String>,
+    private func generate(context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt, options: CompletionOptions, stops: Set<String>,
                           partial: (@Sendable (String) -> Void)?, isCancelled: () -> Bool) -> CompletionResult? {
         guard !isCancelled() else { return nil }
         do {
@@ -233,10 +254,10 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    private func rankedWords(context: ModelContext, owner: ObjectIdentifier, prompt: String, excluding: String, count: Int,
+    private func rankedWords(context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt, excluding: String, count: Int,
                              isCancelled: () -> Bool) -> [String] {
         var text = prompt
-        while text.last == " " { text.removeLast() }
+        while text.text.last == " " { text.text.removeLast() }
         do {
             guard !isCancelled(), let (layers, fresh, all) = try prime(context, owner: owner, prompt: text, isCancelled: isCancelled) else { return [] }
             let bonus = bias(context.tokenizer, owner: owner)

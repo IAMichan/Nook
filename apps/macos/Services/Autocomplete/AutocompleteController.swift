@@ -766,7 +766,7 @@ final class AutocompleteController: ObservableObject {
     /// Builds the prompt. Everything around the typed text (instructions, memory, screen, clipboard, writing samples, where you
     /// write) is taken once per field and then kept: it comes before the text in the prompt, so if it changed with every key
     /// the model would have to read the whole prompt again. With it fixed, a key costs only the last few tokens.
-    private func prompt(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> String {
+    private func prompt(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> CompletionPrompt {
         let bundleID = app.bundleIdentifier
         let key = CompletionFieldKey.make(app: bundleID, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
         // A message was sent (the field emptied), or the context is a few minutes old: new messages may have come in, so read

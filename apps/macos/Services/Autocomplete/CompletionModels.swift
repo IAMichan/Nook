@@ -53,7 +53,8 @@ enum CompletionModelLocator {
     }
 
     /// The model file to use: the one the user picked if it is still there, otherwise the best fit for completing text: a
-    /// base model before a chat or code model, then one found on this Mac before one Nook downloaded, then the newest.
+    /// chat model before a base model before a code model, then one found on this Mac before one Nook downloaded, then the
+    /// newest.
     static func resolve(storedPath: String, candidates: [CompletionModelFile]) -> CompletionModelFile? {
         if !storedPath.isEmpty {
             if let known = candidates.first(where: { $0.url.path == storedPath }) { return known }
@@ -64,14 +65,16 @@ enum CompletionModelLocator {
         }?.element
     }
 
-    /// How well a model suits continuing your text, from its file name and own name. Base (pretrained) models continue text
-    /// as it goes; chat models answer it, and code and math models write code and sums.
+    /// How well a model suits continuing your text, from its file name and own name. Chat models, given the request in their
+    /// own template (`CompletionChat`), are much surer of the next words than base models of the same size: with Gemma 4 E4B
+    /// on eight everyday messages, the chat model made a suggestion for all eight and the base model for two. Code and math
+    /// models write code and sums.
     static func suitability(_ file: CompletionModelFile) -> Int {
         let name = (file.url.lastPathComponent + " " + (file.info?.name ?? "")).lowercased()
-        var score = 0
-        if name.contains("base") || name.range(of: #"[-_. ]pt[-_. ]"#, options: .regularExpression) != nil { score += 2 }
-        if ["instruct", "-it", "_it", "chat", "code", "math", "rerank", "embed", "vision", "guard"].contains(where: name.contains) { score -= 2 }
-        return score
+        if ["code", "math", "rerank", "embed", "vision", "guard"].contains(where: name.contains) { return -2 }
+        if ["instruct", "-it", "_it", " it", "chat"].contains(where: name.contains) { return 2 }
+        if name.contains("base") || name.range(of: #"[-_. ]pt[-_. ]"#, options: .regularExpression) != nil { return 1 }
+        return 0
     }
 
     /// The GGUF files Nook downloaded or the user dropped in its models folder.
@@ -153,8 +156,8 @@ enum CompletionSource: Equatable {
     }
 }
 
-/// A model Nook can download for autocomplete when none is on this Mac yet. Base (not chat) models: plain continuation is
-/// what inline completion needs.
+/// A model Nook can download for autocomplete when none is on this Mac yet. Mostly base models, which continue text as it goes;
+/// the chat models get the prompt as a request in their own template (`CompletionChat`) and follow what you reply to closely.
 struct CompletionCatalogModel: Identifiable, Equatable {
     var name: String
     var fileName: String
@@ -202,12 +205,18 @@ struct CompletionCatalogModel: Identifiable, Equatable {
                                repository: "mradermacher/Qwen3-4B-Base-i1-GGUF", sizeGB: 2.5, minimumMemoryGB: 16, noteKey: "autocomplete.note.better"),
         CompletionCatalogModel(name: "Gemma 3 4B", fileName: "gemma-3-4b-pt.i1-Q4_K_M.gguf",
                                repository: "mradermacher/gemma-3-4b-pt-i1-GGUF", sizeGB: 2.5, minimumMemoryGB: 16, noteKey: "autocomplete.note.gemmaLarge"),
+        CompletionCatalogModel(name: "Gemma 4 E2B Instruct", fileName: "gemma-4-E2B-it.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/gemma-4-E2B-it-i1-GGUF", sizeGB: 3.4, minimumMemoryGB: 16, noteKey: "autocomplete.note.chatSmall"),
+        CompletionCatalogModel(name: "Gemma 4 E4B Instruct", fileName: "gemma-4-E4B-it.i1-Q4_K_M.gguf",
+                               repository: "mradermacher/gemma-4-E4B-it-i1-GGUF", sizeGB: 5.3, minimumMemoryGB: 24, noteKey: "autocomplete.note.chatLarge"),
         CompletionCatalogModel(name: "Qwen3 8B Base", fileName: "Qwen3-8B-Base.i1-Q4_K_M.gguf",
                                repository: "mradermacher/Qwen3-8B-Base-i1-GGUF", sizeGB: 5.0, minimumMemoryGB: 24, noteKey: "autocomplete.note.best"),
     ]
 
-    /// The best model this Mac runs comfortably. Gemma, because it writes Dutch (Nook's first language) better than Qwen.
+    /// The best model this Mac runs comfortably. Gemma, because it writes Dutch (Nook's first language) better than Qwen; the
+    /// chat models where there is room for them (see `CompletionModelLocator.suitability`).
     static func recommended(memoryGB: Int) -> CompletionCatalogModel {
-        memoryGB >= 16 ? catalog[4] : catalog[2]
+        let name = memoryGB >= 24 ? "Gemma 4 E4B Instruct" : memoryGB >= 16 ? "Gemma 4 E2B Instruct" : "Gemma 3 1B"
+        return catalog.first { $0.name == name } ?? catalog[0]
     }
 }

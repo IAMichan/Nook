@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 // Apps that open inside Nook, next to the chat: "@open whatsapp" shows WhatsApp beside the conversation, so you chat in
 // WhatsApp itself and ask Nook about it at the same time. When the app is installed on this Mac, that is the Mac app

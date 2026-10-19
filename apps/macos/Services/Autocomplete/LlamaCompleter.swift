@@ -8,6 +8,8 @@ import LlamaSwift
 /// - Greedy, with a certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its
 ///   certainty drops.
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
+/// - A chat model (one with a chat template that is not a base model) gets the prompt as a request in its own template, with
+///   its answer begun by the text typed so far (`CompletionChat`); a base model reads it as a document.
 final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     let path: String
     var identity: String { path }
@@ -20,6 +22,10 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private let context: OpaquePointer
     private let vocab: OpaquePointer
     private let vocabSize: Int
+    /// The chat template's text before and after the user's turn, with the model's turn opened; nil for a base model.
+    private let chat: (head: String, tail: String)?
+    /// The user's turn for the last context, in tokens (the context stays the same for every key in a field).
+    private var request: (context: String, tokens: [llama_token])?
     /// What sequence 0 of the cache holds now.
     private var cached: [llama_token] = []
     /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
@@ -49,6 +55,29 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         self.context = context
         vocab = llama_model_get_vocab(model)
         vocabSize = Int(llama_vocab_n_tokens(vocab))
+        chat = Self.chatFrame(model)
+    }
+
+    /// The model's chat template around one user message, split where the message goes, or nil when the model has no template
+    /// llama.cpp knows or is a base model.
+    private static func chatFrame(_ model: OpaquePointer) -> (head: String, tail: String)? {
+        guard let template = llama_model_chat_template(model, nil) else { return nil }
+        var buffer = [CChar](repeating: 0, count: 256)
+        let name = llama_model_meta_val_str(model, "general.name", &buffer, buffer.count) > 0 ? String(cString: buffer) : ""
+        let source = llama_model_meta_val_str(model, "general.source.url", &buffer, buffer.count) > 0 ? String(cString: buffer) : ""
+        guard CompletionChat.isChatModel(name: name + " " + source, hasTemplate: true) else { return nil }
+        let marker = "\u{E000}NOOK\u{E000}"
+        let rendered: String? = marker.withCString { content in
+            "user".withCString { role in
+                var message = llama_chat_message(role: role, content: content)
+                var output = [CChar](repeating: 0, count: 4_096)
+                let length = llama_chat_apply_template(template, &message, 1, true, &output, Int32(output.count))
+                guard length > 0, Int(length) < output.count else { return nil }
+                return String(decoding: output.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            }
+        }
+        guard let rendered, let range = rendered.range(of: marker) else { return CompletionChat.frame(forTemplate: String(cString: template)) }
+        return (String(rendered[..<range.lowerBound]), String(rendered[range.upperBound...]))
     }
 
     deinit {
@@ -92,7 +121,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private func superseded(_ id: Int) -> Bool { lock.withLock { latest != id } }
 
     /// Continues `prompt`; nil when superseded, not sure enough, or the model failed.
-    func complete(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
         let id = begin()
         return await withCheckedContinuation { continuation in
             queue.async {
@@ -103,7 +132,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
 
     /// Words that could come next after `prompt`, most likely first, each with the space before it when the model would put
     /// one there. For other words for a selected word, and alternatives to the next suggested word.
-    func alternatives(prompt: String, excluding: String, count: Int) async -> [String] {
+    func alternatives(prompt: CompletionPrompt, excluding: String, count: Int) async -> [String] {
         let id = begin()
         return await withCheckedContinuation { continuation in
             queue.async { continuation.resume(returning: self.rankedWords(prompt: prompt, excluding: excluding, count: count) { self.superseded(id) }) }
@@ -112,7 +141,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
 
     /// Reads `prompt` into the cache without writing anything, so the next request only has to read its last few tokens.
     /// Does not stop the running request; a newer request stops it between pieces and goes on from what it read.
-    func warm(prompt: String) {
+    func warm(prompt: CompletionPrompt) {
         let id = lock.withLock { latest }
         queue.async {
             let isCancelled = { self.superseded(id) }
@@ -142,11 +171,30 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
+    /// The prompt in tokens, laid out for this model. The template's own markers are read as control tokens; the context and
+    /// the text never are, so they cannot open or close a turn. Too long, the text is cut from the front, the request kept.
+    private func tokens(for prompt: CompletionPrompt, limit: Int) -> [llama_token] {
+        guard let chat else {
+            var tokens = tokenize(prompt.document, special: true)
+            if tokens.count > limit { tokens.removeFirst(tokens.count - limit) }
+            return tokens
+        }
+        if request?.context != prompt.context {
+            var head = tokenize(chat.head, special: true, parse: true)
+            // A template that writes its own <bos> after the one the tokenizer adds would give two.
+            if head.count >= 2, head[0] == head[1], head[0] == llama_vocab_bos(vocab) { head.removeFirst() }
+            request = (prompt.context, head + tokenize(CompletionChat.request(context: prompt.context), special: false)
+                + tokenize(chat.tail, special: false, parse: true))
+        }
+        let frame = request?.tokens ?? []
+        var text = tokenize(prompt.text, special: false)
+        if frame.count + text.count > limit { text.removeFirst(min(text.count, frame.count + text.count - limit)) }
+        return frame + text
+    }
+
     /// Reads `prompt` into the cache, reusing what it shares with the last one. Returns the prompt's length in tokens.
-    private func prime(_ prompt: String, reserve: Int, isCancelled: () -> Bool) -> Int? {
-        var tokens = tokenize(prompt, special: true)
-        let limit = Int(Self.contextLength) - reserve - 1
-        if tokens.count > limit { tokens.removeFirst(tokens.count - limit) }
+    private func prime(_ prompt: CompletionPrompt, reserve: Int, isCancelled: () -> Bool) -> Int? {
+        let tokens = self.tokens(for: prompt, limit: Int(Self.contextLength) - reserve - 1)
         guard !tokens.isEmpty else { return nil }
         // Read at least the last token again, for fresh logits.
         var shared = min(zip(tokens, cached).prefix { $0 == $1 }.count, tokens.count - 1)
@@ -189,13 +237,13 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return true
     }
 
-    private func generate(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
+    private func generate(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                           isCancelled: () -> Bool) -> CompletionResult? {
         // Mid-word, read the prompt without the word and let the model spell it again (see CompletionHealing). While you type
         // the rest of that word the prompt stays the same, so the cache has nothing new to read.
-        let healing = options.heal ? CompletionHealing.split(prompt) : (stem: prompt, pending: "")
+        let healing = options.heal ? prompt.healed() : (prompt: prompt, pending: "")
         var required = Array(healing.pending.utf8)
-        guard !isCancelled(), prime(healing.stem, reserve: options.maxTokens + 8, isCancelled: isCancelled) != nil else { return nil }
+        guard !isCancelled(), prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) != nil else { return nil }
         var bytes: [UInt8] = []
         var truncated = true
         var unfinished = false
@@ -269,9 +317,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return (best.0, 1 / sum)
     }
 
-    private func rankedWords(prompt: String, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {
+    private func rankedWords(prompt: CompletionPrompt, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {
         var text = prompt
-        while text.last == " " { text.removeLast() }
+        while text.text.last == " " { text.text.removeLast() }
         guard !isCancelled(), let length = prime(text, reserve: 8, isCancelled: isCancelled), let logits = llama_get_logits_ith(context, -1) else { return [] }
         let candidates = topTokens(logits, count: count * 4)
         var results: [String] = []
@@ -311,16 +359,19 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return true
     }
 
-    private func tokenize(_ text: String, special: Bool) -> [llama_token] {
+    /// - Parameters:
+    ///   - special: add the model's start token (BOS) when it wants one.
+    ///   - parse: read control-token text ("<start_of_turn>") as those tokens: only for the chat template's own text.
+    private func tokenize(_ text: String, special: Bool, parse: Bool = false) -> [llama_token] {
         let bytes = Array(text.utf8CString.dropLast())
         guard !bytes.isEmpty else { return [] }
         var capacity = Int32(bytes.count + 8)
         var tokens = [llama_token](repeating: 0, count: Int(capacity))
-        var count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, false)
+        var count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, parse)
         if count < 0 {
             capacity = -count
             tokens = [llama_token](repeating: 0, count: Int(capacity))
-            count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, false)
+            count = llama_tokenize(vocab, bytes, Int32(bytes.count), &tokens, capacity, special, parse)
         }
         return count > 0 ? Array(tokens.prefix(Int(count))) : []
     }
