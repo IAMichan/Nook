@@ -44,6 +44,17 @@ pub fn visible(partial: &str) -> String {
     text.trim().to_string()
 }
 
+/// Kleine letters zonder accenten, zodat "café" "cafe" vindt en "Überweisung" "uberweisung".
+pub fn fold(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    text.nfd().filter(|c| !unicode_normalization::char::is_combining_mark(*c)).collect::<String>().to_lowercase()
+}
+
+/// De eerste `n` tekens (niet bytes).
+pub fn prefix(text: &str, n: usize) -> String {
+    text.chars().take(n).collect()
+}
+
 pub fn first_sentence(text: &str) -> String {
     match text.find(". ") {
         Some(end) => format!("{}.", &text[..end]),

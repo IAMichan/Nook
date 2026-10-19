@@ -19,6 +19,13 @@ regex.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
 log.workspace = true
+fancy-regex = "0.14"
+unicode-normalization = "0.1"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.37"
+pdf-extract = "0.9"
+iana-time-zone = "0.1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

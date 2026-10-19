@@ -4,6 +4,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::brain::chart::ChatChart;
+pub use crate::brain::retrieval::{Outcome, RetrievalStep, SourceReference};
+use crate::brain::sources::{self, SourceScope};
 use crate::brain::{ChatTurn, PlannedAction};
 use crate::paths;
 
@@ -20,15 +23,44 @@ pub enum PlanState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "detail")]
 pub enum StepState {
+    /// Voorgesteld; de gebruiker heeft nog niet besloten.
     Pending,
+    /// De gebruiker klikte Uitvoeren; wacht op zijn beurt.
+    Approved,
     Running,
+    /// De dienst meldde succes.
     Done(String),
+    /// Gelukt, en Nook las het resultaat terug bij de dienst.
+    Verified(String),
     Failed(String),
+    /// Niet aan toe gekomen omdat een eerdere stap mislukte.
+    NotRun,
+    /// Uitgezet door de gebruiker.
     Skipped,
     /// Niet herhaald: al eerder uitgevoerd.
     Duplicate(String),
 }
 
+impl StepState {
+    pub fn is_finished(&self) -> bool {
+        matches!(self, Self::Done(_) | Self::Verified(_) | Self::Skipped | Self::Duplicate(_))
+    }
+
+    /// De uitkomst van een gelukte stap.
+    pub fn result(&self) -> Option<&str> {
+        match self {
+            Self::Done(r) | Self::Verified(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// Of deze stap (nog eens) mag draaien.
+    pub fn can_run(&self) -> bool {
+        matches!(self, Self::Pending | Self::Approved | Self::Failed(_) | Self::NotRun)
+    }
+}
+
+/// Een mailconcept in de chat: aan te passen, en pas weg na een klik op Versturen.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MailDraft {
@@ -38,31 +70,25 @@ pub struct MailDraft {
     pub cc: String,
     pub subject: String,
     pub body: String,
+    /// draft, sending, sent, opened of failed.
     #[serde(default)]
     pub state: String,
+    #[serde(default)]
+    pub error: String,
 }
 
-/// Een genummerde bron onder een antwoord ([1], [2]).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SourceReference {
-    pub number: u32,
-    pub title: String,
-    #[serde(default)]
-    pub detail: String,
-    #[serde(default)]
-    pub url: Option<String>,
-}
-
-/// Per bron: doorzocht, niets gevonden of mislukt.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RetrievalStep {
-    pub source: String,
-    pub source_title: String,
-    pub outcome: String,
-    #[serde(default)]
-    pub detail: String,
+impl MailDraft {
+    pub fn new(to: &str, cc: &str, subject: &str, body: &str) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            to: to.into(),
+            cc: cc.into(),
+            subject: subject.into(),
+            body: body.into(),
+            state: "draft".into(),
+            error: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,12 +102,17 @@ pub struct ChatMessage {
     pub streaming: bool,
     pub status: String,
     pub images: Vec<String>,
+    /// Context zonder tools: een bijlage of de schermtekst.
     pub sources: Vec<String>,
+    /// Wat Nook voor dit antwoord raadpleegde, met de uitkomst per bron.
     pub retrieval: Vec<RetrievalStep>,
     pub references: Vec<SourceReference>,
+    /// Bronnen waarvan de samenvatting volledig meeging.
+    pub context_sources: Vec<String>,
+    /// De toegestane bronnen als de gebruiker ze beperkte ("Alleen Agenda en Mail").
+    pub scope_label: String,
     pub notices: Vec<String>,
-    /// Grafieken als JSON (zelfde vorm als `ChatChart` op de Mac).
-    pub charts: Vec<Value>,
+    pub charts: Vec<ChatChart>,
     pub mails: Vec<MailDraft>,
     pub actions: Vec<PlannedAction>,
     pub plan_state: Option<PlanState>,
@@ -106,6 +137,8 @@ impl Default for ChatMessage {
             sources: vec![],
             retrieval: vec![],
             references: vec![],
+            context_sources: vec![],
+            scope_label: String::new(),
             notices: vec![],
             charts: vec![],
             mails: vec![],
@@ -128,12 +161,65 @@ impl ChatMessage {
         Self { text: text.into(), ..Default::default() }
     }
 
+    /// Of dit antwoord met een van deze bronnen gemaakt is (opgezocht, geciteerd of in de context).
+    pub fn used(&self, ids: &std::collections::BTreeSet<String>) -> bool {
+        if self.retrieval.iter().any(|s| s.source_id.as_ref().is_some_and(|id| ids.contains(id))) {
+            return true;
+        }
+        if self.references.iter().any(|r| ids.contains(&r.source_id)) {
+            return true;
+        }
+        let titles: std::collections::HashSet<String> = ids.iter().map(|id| sources::title(id)).collect();
+        if self.context_sources.iter().any(|c| titles.contains(c)) {
+            return true;
+        }
+        ids.contains(sources::SCREEN) && !self.sources.is_empty()
+    }
+
     /// Wat het brein bij een vervolgvraag van deze beurt te zien krijgt, inclusief wat er met een plan gebeurde.
     pub fn history_text(&self) -> String {
-        let mut parts = vec![self.text.clone()];
+        let mut parts = vec![];
+        if !self.text.is_empty() {
+            parts.push(self.text.clone());
+        }
+        for chart in &self.charts {
+            parts.push(format!("[chart displayed: {}]", chart.title));
+        }
+        for mail in &self.mails {
+            let state = match mail.state.as_str() {
+                "sent" => "sent",
+                "opened" => "opened in the mail app",
+                _ => "not yet sent",
+            };
+            parts.push(format!(
+                "[draft email to {}, subject \"{}\", {state}]",
+                if mail.to.is_empty() { "?" } else { &mail.to },
+                mail.subject
+            ));
+        }
+        if !self.retrieval.is_empty() {
+            let searched: Vec<String> = self
+                .retrieval
+                .iter()
+                .map(|s| match &s.outcome {
+                    Outcome::Failed(e) => format!("{} (error: {e})", s.source_title),
+                    Outcome::Empty => format!("{} (nothing found)", s.source_title),
+                    _ if s.query.is_empty() => s.source_title.clone(),
+                    _ => format!("{} \"{}\"", s.source_title, s.query),
+                })
+                .collect();
+            parts.push(format!("[searched: {}]", searched.join(", ")));
+        }
         if !self.references.is_empty() {
-            let list: Vec<String> = self.references.iter().take(8).map(|r| format!("[{}] {}", r.number, r.title)).collect();
-            parts.push(format!("Sources: {}", list.join("; ")));
+            let list: Vec<String> = self
+                .references
+                .iter()
+                .take(8)
+                .map(|r| {
+                    format!("[{}] {}{}", r.number, r.title, if r.detail.is_empty() { String::new() } else { format!(" — {}", r.detail) })
+                })
+                .collect();
+            parts.push(format!("[sources for this reply: {}]", list.join("; ")));
         }
         if !self.actions.is_empty() {
             let state = match &self.plan_state {
@@ -149,7 +235,7 @@ impl ChatMessage {
                 .enumerate()
                 .map(|(i, a)| {
                     let outcome = match self.action_states.get(i) {
-                        Some(StepState::Done(r)) => format!("completed: {r}"),
+                        Some(StepState::Done(r)) | Some(StepState::Verified(r)) => format!("completed: {r}"),
                         Some(StepState::Failed(e)) => format!("failed: {e}"),
                         Some(StepState::Skipped) => "skipped".into(),
                         Some(StepState::Duplicate(w)) => format!("not repeated, already executed on {w}"),
@@ -186,9 +272,9 @@ pub struct Conversation {
     pub busy: bool,
     #[serde(default)]
     pub unread: bool,
-    /// Welke bronnen dit gesprek mag gebruiken ("automatic" of een lijst).
+    /// Welke bronnen dit gesprek mag gebruiken (de bronkiezer naast het invoerveld).
     #[serde(default)]
-    pub scope: Option<Vec<String>>,
+    pub scope: Option<SourceScope>,
     #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
@@ -255,11 +341,26 @@ impl Conversation {
 
     /// De beurten die als geschiedenis met een nieuwe vraag meegaan (zonder fouten en lege berichten).
     pub fn history(&self, limit: usize) -> Vec<ChatTurn> {
-        let turns: Vec<ChatTurn> = self
-            .messages
-            .iter()
-            .filter(|m| !m.is_error && !m.streaming && !m.text.trim().is_empty())
-            .map(|m| ChatTurn { from_user: m.from_user, text: m.history_text() })
+        self.history_hiding(limit, &Default::default())
+    }
+
+    /// Zonder de antwoorden die met een verborgen bron gemaakt zijn, en de vraag ervoor: een extern brein krijgt die niet.
+    pub fn history_hiding(&self, limit: usize, hidden: &std::collections::BTreeSet<String>) -> Vec<ChatTurn> {
+        let mut kept: Vec<&ChatMessage> = vec![];
+        for message in &self.messages {
+            if !hidden.is_empty() && !message.from_user && message.used(hidden) {
+                if kept.last().is_some_and(|m| m.from_user) {
+                    kept.pop();
+                }
+                continue;
+            }
+            kept.push(message);
+        }
+        let turns: Vec<ChatTurn> = kept
+            .into_iter()
+            .filter(|m| !m.is_error && !m.streaming)
+            .map(|m| ChatTurn { from_user: m.from_user, text: m.history_text().chars().take(4_000).collect() })
+            .filter(|t| !t.text.trim().is_empty())
             .collect();
         let start = turns.len().saturating_sub(limit);
         turns[start..].to_vec()
