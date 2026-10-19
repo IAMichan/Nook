@@ -432,7 +432,12 @@ struct NookOrb: View {
 
         // Looking at a piece of the task ring under the pointer, else following the pointer when it is near.
         var target = CGPoint.zero
-        if size >= 30, let angle = presence.lookAngle {
+        let track = since(presence.trackChangedAt)
+        if track >= 0, track < 4 {
+            // A new track: glance at the cover beside him, then back.
+            let k = ease(track / 0.25) * (1 - ease((track - 3.4) / 0.4))
+            target = CGPoint(x: 0.95 * k, y: 0.1 * k)
+        } else if size >= 30, let angle = presence.lookAngle {
             target = CGPoint(x: cos(angle) * 0.95, y: sin(angle) * 0.95)
         } else if mood != .think, mood != .done, reading < 0.5, !onOrb, let pointer {
             let distance = hypot(pointer.x, pointer.y)

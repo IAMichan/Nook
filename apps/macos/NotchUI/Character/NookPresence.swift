@@ -27,6 +27,7 @@ final class NookPresence: ObservableObject {
     private(set) var heardAt: Date = .distantPast
     private(set) var noddedAt: Date = .distantPast
     private(set) var giggledAt: Date = .distantPast
+    private(set) var trackChangedAt: Date = .distantPast
     private var pokes: [Date] = []
 
     /// Where something Nook should look at sits, as an angle around him (0 = right, clockwise, y pointing down): a piece of
@@ -63,6 +64,12 @@ final class NookPresence: ObservableObject {
     /// Something Nook or an agent worked on is finished: a short, content nod.
     func nod() {
         noddedAt = Date()
+        noteActivity()
+    }
+
+    /// A new track started: Nook looks at it for a moment (the cover sits to his right in the track strip).
+    func trackChanged() {
+        trackChangedAt = Date()
         noteActivity()
     }
 
