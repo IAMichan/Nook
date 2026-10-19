@@ -111,6 +111,31 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(events[1].kind, .review("APPROVED"))
     }
 
+    func testTimelineMergesCommitsAndEvents() throws {
+        let timeline = try list("""
+        [{"id": 10, "event": "labeled", "actor": {"login": "ada"}, "label": {"name": "bug"}, "created_at": "2026-10-01T11:00:00Z"},
+         {"id": 11, "event": "subscribed", "actor": {"login": "ada"}, "created_at": "2026-10-01T11:01:00Z"},
+         {"id": 12, "event": "commented", "actor": {"login": "bob"}, "created_at": "2026-10-01T11:02:00Z"},
+         {"id": 13, "event": "review_requested", "actor": {"login": "ada"}, "requested_reviewer": {"login": "bob"}, "created_at": "2026-10-01T13:00:00Z"},
+         {"event": "cross-referenced", "actor": {"login": "eve"}, "created_at": "2026-10-03T09:00:00Z",
+          "source": {"issue": {"number": 7, "title": "Crash", "repository": {"full_name": "acme/app"}}}},
+         {"id": 14, "event": "merged", "actor": {"login": "ada"}, "commit_id": "fedcba9876", "created_at": "2026-10-04T09:00:00Z"}]
+        """)
+        let commits = [PullRequestCommit(sha: "1234567890", message: "Add merging", author: "ada",
+                                         date: PullRequestDetailParser.date("2026-10-01T10:00:00Z"))]
+        let events = PullRequestDetailParser.events(reviews: [], comments: [], lineComments: [], timeline: timeline, commits: commits)
+        XCTAssertEqual(events.map(\.kind), [
+            .commit(sha: "1234567890"),
+            .activity(type: "labeled", detail: "bug"),
+            .activity(type: "review_requested", detail: "@bob"),
+            .activity(type: "cross-referenced", detail: "acme/app#7 Crash"),
+            .activity(type: "merged", detail: "fedcba9"),
+        ])
+        XCTAssertEqual(events[0].body, "Add merging")
+        XCTAssertEqual(events[1].author, "ada")
+        XCTAssertEqual(Set(events.map(\.id)).count, events.count)
+    }
+
     func testCommitsAndFiles() throws {
         let commits = PullRequestDetailParser.commits(try list("""
         [{"sha": "1234567890", "author": null, "commit": {"message": "Add merging\\n\\nBody", "author": {"name": "Ada", "date": "2026-10-01T10:00:00Z"}}}]

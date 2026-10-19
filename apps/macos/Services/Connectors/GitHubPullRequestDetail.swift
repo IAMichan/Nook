@@ -48,6 +48,7 @@ enum GitHubPullRequestDetail {
         async let lineComments = all("/pulls/\(number)/comments", pages: 3)
         async let commits = all("/pulls/\(number)/commits", pages: 3)
         async let files = all("/pulls/\(number)/files", pages: 30)
+        async let timeline = all("/issues/\(number)/timeline", pages: 5)
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: await repository) else {
             throw NookError("GitHub returned an unexpected response.")
         }
@@ -57,8 +58,9 @@ enum GitHubPullRequestDetail {
             detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
-        detail.events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments)
         detail.commits = PullRequestDetailParser.commits(await commits)
+        detail.events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
+                                                       timeline: await timeline, commits: detail.commits)
         detail.files = PullRequestDetailParser.files(await files)
         return detail
     }

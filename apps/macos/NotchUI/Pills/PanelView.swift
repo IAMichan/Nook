@@ -7,7 +7,6 @@ struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
     @EnvironmentObject private var app: AppModel
-    @Namespace private var selection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,32 +31,8 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 2) {
-                ForEach(PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)) { t in
-                    Button {
-                        viewModel.show(.panel(t), inNotch: true)
-                    } label: {
-                        Text(t.title)
-                            .font(NookTheme.font(13, .medium))
-                            .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background {
-                                if t == tab {
-                                    Capsule()
-                                        .fill(NookTheme.smoke)
-                                        .matchedGeometryEffect(id: "selection", in: selection)
-                                }
-                            }
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(t.title)
-                    .accessibilityAddTraits(t == tab ? .isSelected : [])
-                }
-            }
-            .padding(3)
-            .background(Capsule().fill(Color.white.opacity(0.04)))
+            NookTabBar(items: PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music).map { NookTabBar<PanelTab>.Item(value: $0, title: $0.title) },
+                       selected: tab) { viewModel.show(.panel($0), inNotch: true) }
             Spacer()
             HStack(spacing: 2) {
                 talkButton
