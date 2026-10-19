@@ -214,14 +214,9 @@ struct EmbeddedSplitHandle: View {
     @State private var dragging = false
 
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(hovering || dragging ? NookTheme.line2 : Color(hex: 0x19191B))
-                .frame(width: 1)
-            Capsule()
-                .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
-                .frame(width: 4, height: 36)
-        }
+        Capsule()
+            .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
+            .frame(width: 4, height: 36)
         .frame(width: EmbeddedSplit.handle)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
