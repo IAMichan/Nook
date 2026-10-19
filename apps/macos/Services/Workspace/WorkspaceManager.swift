@@ -431,6 +431,14 @@ final class WorkspaceManager: ObservableObject {
                 runScript?(worktreePath, script.command, script.name)
                 append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
             }
+        } else if repoRoot != nil, let git {
+            // In your own folder too, a snapshot before the agent starts: what each turn changed can then be shown on
+            // its own. Taking it changes nothing: not the files, the index or a branch.
+            let ref = GitService.checkpointRef(session: id, index: 0)
+            let directory = workingDirectory
+            if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(directory, ref: ref) }.value) != nil {
+                update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] }
+            }
         }
         let visibleTask = ContextRefs.visible(config.task)
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
@@ -506,6 +514,8 @@ final class WorkspaceManager: ObservableObject {
         }
         append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
         scheduleSave()
+        // The starting point for what the next turns change.
+        captureCheckpoint(id)
         return id
     }
 
@@ -583,9 +593,10 @@ final class WorkspaceManager: ObservableObject {
         captureCheckpoint(id)
     }
 
-    /// Only for sessions in their own worktree (as): restoring there can never touch your own checkout.
+    /// A snapshot after each turn, for every session in a repository: it shows what each turn changed. Putting files back
+    /// stays for sessions in their own worktree (see canRevert): restoring there can never touch your own checkout.
     func captureCheckpoint(_ id: UUID) {
-        guard let run = run(id), run.isolation == .worktree, let git = gitService, worktreeExists(run) else { return }
+        guard let run = run(id), run.repoRoot != nil, let git = sessionGit(for: run), canSnapshot(run) else { return }
         let directory = run.workingDirectory
         let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
         // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
@@ -1531,6 +1542,12 @@ final class WorkspaceManager: ObservableObject {
         update(id) { $0.statusDetail = "worktreeRemoved" }
         self.git[id] = nil
         refreshWorktrees()
+    }
+
+    /// The session's files are there to snapshot: its worktree, or its folder.
+    func canSnapshot(_ run: WorkspaceRun) -> Bool {
+        if run.isRemote { return false }
+        return run.isolation == .worktree ? worktreeExists(run) : FileManager.default.fileExists(atPath: run.workingDirectory)
     }
 
     func worktreeExists(_ run: WorkspaceRun) -> Bool {
