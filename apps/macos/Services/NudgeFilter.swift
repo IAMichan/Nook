@@ -31,6 +31,28 @@ enum NudgeFilter {
         return dates.allSatisfy { $0.timeIntervalSince(now) > horizon }
     }
 
+    /// Numeric dates written in the text: "2027-09-20", "20-09-2027" or "20/9/2027". A portable backstop for the system's date detector.
+    static func numericDates(in text: String) -> [Date] {
+        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#) else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> Date? in
+            let number = { (group: Int) -> Int? in
+                Range(match.range(at: group), in: text).flatMap { Int(text[$0]) }
+            }
+            let isoOrder = number(1) != nil
+            guard let year = number(isoOrder ? 1 : 6), let month = number(isoOrder ? 2 : 5), let day = number(isoOrder ? 3 : 4),
+                  (1...12).contains(month), (1...31).contains(day) else { return nil }
+            return calendar.date(from: DateComponents(year: year, month: month, day: day))
+        }
+    }
+
+    /// An offer without an action must not ask anything: accepting a question ("Shall I…?") would then do nothing,
+    /// wherever in the text the question sits.
+    static func asksWithoutAction(_ body: String, hasActions: Bool) -> Bool {
+        !hasActions && body.contains("?")
+    }
+
     /// Lowercased letters, digits and single spaces.
     static func normalize(_ text: String) -> String {
         text.lowercased()

@@ -27,4 +27,20 @@ final class NudgeFilterTests: XCTestCase {
         XCTAssertFalse(NudgeFilter.similar("Zal ik hem herinneren aan de deadline van IMDigital.info?",
                                            "Zal ik een concept-antwoord aan Sanne schrijven?"))
     }
+
+    func testNumericDatesAreReadInBothOrders() {
+        let body = "Tip: dit kan ook in één keer.\nZal ik hem herinneren aan de deadline van IMDigital.info (2027-09-20)?"
+        XCTAssertEqual(NudgeFilter.numericDates(in: body).count, 1)
+        XCTAssertTrue(NudgeFilter.isFarOff(NudgeFilter.numericDates(in: body), now: now))
+        XCTAssertTrue(NudgeFilter.isFarOff(NudgeFilter.numericDates(in: "verloopt op 20-09-2027"), now: now))
+        XCTAssertFalse(NudgeFilter.isFarOff(NudgeFilter.numericDates(in: "deadline 20/10/2026"), now: now))
+        XCTAssertTrue(NudgeFilter.numericDates(in: "versie 1.2.3, build 2027-13-40").isEmpty)
+    }
+
+    func testAQuestionAnywhereNeedsAnAction() {
+        let body = "Tip: dit kan ook in één keer.\nZal ik hem herinneren aan de deadline van IMDigital.info (2027-09-20)?"
+        XCTAssertTrue(NudgeFilter.asksWithoutAction(body, hasActions: false), "the question hides behind a tip on the first line")
+        XCTAssertFalse(NudgeFilter.asksWithoutAction(body, hasActions: true))
+        XCTAssertFalse(NudgeFilter.asksWithoutAction("Tip: met ⌘⇧T open je het tabblad weer.", hasActions: false))
+    }
 }
