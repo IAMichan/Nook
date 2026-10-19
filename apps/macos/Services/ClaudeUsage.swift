@@ -1,6 +1,13 @@
 import Foundation
 import CryptoKit
 
+enum ClaudeLogin: Equatable, Sendable {
+    case valid(String)
+    /// Signed in, but the token ran out: Claude Code renews it the next time it runs.
+    case expired
+    case missing
+}
+
 /// Reads the subscription limits of every Claude account straight from Anthropic, so they show up right after linking
 /// an account instead of only once a session has run (the status line only reports while a session is open).
 ///
@@ -106,6 +113,12 @@ final class ClaudeUsage {
 
     /// The OAuth access token of this account, if it is signed in with a subscription and the token is still valid.
     nonisolated static func accessToken(home: URL, isDefault: Bool) -> String? {
+        if case .valid(let token) = login(home: home, isDefault: isDefault) { return token }
+        return nil
+    }
+
+    /// The account's login as Claude Code keeps it, telling a token that ran out apart from no login at all.
+    nonisolated static func login(home: URL, isDefault: Bool) -> ClaudeLogin {
         var candidates: [Data] = []
         // Claude Code keeps the login in the Keychain; every extra account directory has its own entry, named after a hash of the path.
         var services = [isDefault ? "Claude Code-credentials" : "Claude Code-credentials-" + hash(home.path)]
@@ -116,14 +129,18 @@ final class ClaudeUsage {
         }
         if let file = try? Data(contentsOf: home.appendingPathComponent(".credentials.json")) { candidates.append(file) }
 
+        var expired = false
         for data in candidates {
             guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let oauth = object["claudeAiOauth"] as? [String: Any],
                   let token = oauth["accessToken"] as? String, !token.isEmpty else { continue }
-            if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue, expires / 1000 < Date().timeIntervalSince1970 { continue }
-            return token
+            if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue, expires / 1000 < Date().timeIntervalSince1970 {
+                expired = true
+                continue
+            }
+            return .valid(token)
         }
-        return nil
+        return expired ? .expired : .missing
     }
 
     private nonisolated static func hash(_ path: String) -> String {

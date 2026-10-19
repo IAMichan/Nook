@@ -66,6 +66,18 @@ final class ClaudeCloudSessionsTests: XCTestCase {
         XCTAssertEqual(parse("not json"), [])
     }
 
+    func testABareListIsReadToo() {
+        let list = parse(#"[{"id": "session_1", "title": "Bare", "session_status": "SESSION_STATUS_RUNNING"}]"#)
+        XCTAssertEqual(list.map(\.title), ["Bare"])
+        XCTAssertEqual(list.first?.status, .running)
+    }
+
+    func testOrganizationFromTheProfile() {
+        let profile = #"{"account": {"uuid": "a1"}, "organization": {"uuid": "org-1", "name": "Mine"}}"#
+        XCTAssertEqual(ClaudeCloudSessions.organization(fromProfile: Data(profile.utf8)), "org-1")
+        XCTAssertNil(ClaudeCloudSessions.organization(fromProfile: Data(#"{"account": {}}"#.utf8)))
+    }
+
     func testARunningCloudSessionIsActiveAndAnIdleOneIsEarlier() {
         func record(_ phase: AgentSessionRecord.Phase) -> AgentSessionRecord {
             AgentSessionRecord(id: "c", sources: [.cloud], agent: "Claude (cloud)", accountHome: "", conversationID: "session_1",
