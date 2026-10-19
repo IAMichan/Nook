@@ -4,16 +4,6 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = AppModel.shared
     private var statusItem: NSStatusItem?
-    private var talkItem: NSMenuItem?
-    private var screenItem: NSMenuItem?
-    private var weekRecapItem: NSMenuItem?
-    private var workspaceItem: NSMenuItem?
-    private var demoScenesItem: NSMenuItem?
-    private var demoSubmenu: NSMenu?
-    private var hoverItem: NSMenuItem?
-    private var demoItem: NSMenuItem?
-    private var settingsItem: NSMenuItem?
-    private var quitItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -36,12 +26,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
+        item.menu = menu
+        statusItem = item
+    }
 
-        talkItem = add(to: menu, title: tr("menu.talk"), action: #selector(talk))
-        screenItem = add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen))
-        weekRecapItem = add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap))
-        workspaceItem = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
-        workspaceItem?.keyEquivalentModifierMask = [.command, .option]
+    /// The menu shows what is going on right now (next meeting, agents, music), so it is rebuilt every time it opens.
+    private func rebuild(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        // Status: only what needs attention.
+        var status = false
+        if let event = model.upcoming.first(where: { $0.end > Date() }) {
+            let when = event.start <= Date() ? tr("menu.now") : Self.timeFormatter.string(from: event.start)
+            addInfo(to: menu, title: tr("menu.nextEvent", event.title, when), action: #selector(openChat), icon: "calendar.badge.clock")
+            status = true
+        }
+        let active = model.activeAgents
+        if !active.isEmpty {
+            let waiting = active.filter { $0.status == .waiting || $0.approvalID != nil }.count
+            let title = waiting > 0 ? tr("menu.agentsWaiting", active.count, waiting) : tr("menu.agentsRunning", active.count)
+            addInfo(to: menu, title: title, action: #selector(openAgents), icon: "sparkles")
+            status = true
+        }
+        if let track = model.nowPlaying.current {
+            let line = track.artist.isEmpty ? track.title : "\(track.title) – \(track.artist)"
+            let header = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            header.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
+            header.isEnabled = false
+            menu.addItem(header)
+            add(to: menu, title: track.isPlaying ? tr("menu.pause") : tr("menu.play"), action: #selector(playPause))
+            add(to: menu, title: tr("menu.nextTrack"), action: #selector(nextTrack))
+            status = true
+        }
+        if status { menu.addItem(.separator()) }
+
+        // Actions.
+        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat), icon: "bubble.left")
+        add(to: menu, title: tr("menu.talk"), action: #selector(talk), icon: "mic")
+        add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), icon: "eye")
+        add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap), icon: "calendar")
+        let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w", icon: "macwindow")
+        workspace.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
         // Demo scenes show made-up confirmations: only in development builds. Sample data stays in Settings › General.
@@ -56,24 +81,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         demo.submenu = demoMenu
         menu.addItem(demo)
-        demoScenesItem = demo
-        demoSubmenu = demoMenu
-
         let demoData = add(to: menu, title: tr("menu.demoData"), action: #selector(toggleDemo(_:)))
-        demoItem = demoData
+        demoData.state = model.demoMode ? .on : .off
         menu.addItem(.separator())
         #endif
 
         let hover = add(to: menu, title: tr("menu.hover"), action: #selector(toggleHover(_:)))
-        hoverItem = hover
-
-        settingsItem = add(to: menu, title: tr("menu.settings"), action: #selector(openSettings), key: ",")
+        hover.state = model.viewModel.openOnHover ? .on : .off
+        add(to: menu, title: tr("menu.settings"), action: #selector(openSettings), key: ",")
         menu.addItem(.separator())
-        quitItem = add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
-
-        item.menu = menu
-        statusItem = item
+        add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
     }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     /// Nook itself, mirroring the notch design: a circular glow with two eyes. Custom-drawn for crispness,
     /// configured as a template image to adapt to light and dark menu bars.
@@ -99,34 +123,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    private func add(to menu: NSMenu, title: String, action: Selector, key: String = "") -> NSMenuItem {
+    private func add(to menu: NSMenu, title: String, action: Selector, key: String = "", icon: String? = nil) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
         entry.target = self
+        if let icon { entry.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }
         menu.addItem(entry)
         return entry
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        talkItem?.title = tr("menu.talk")
-        screenItem?.title = tr("menu.screen")
-        weekRecapItem?.title = tr("menu.weekRecap")
-        workspaceItem?.title = tr("menu.window")
-        demoScenesItem?.title = tr("menu.demoScenes")
-        if let demoSubmenu = demoSubmenu {
-            for item in demoSubmenu.items {
-                if let raw = item.representedObject as? String, let scene = DemoScene(rawValue: raw) {
-                    item.title = scene.title
-                }
-            }
-        }
-        demoItem?.title = tr("menu.demoData")
-        hoverItem?.title = tr("menu.hover")
-        settingsItem?.title = tr("menu.settings")
-        quitItem?.title = tr("menu.quit")
-        hoverItem?.state = model.viewModel.openOnHover ? .on : .off
-        demoItem?.state = model.demoMode ? .on : .off
+    /// A status line that opens the matching part of the panel when clicked.
+    private func addInfo(to menu: NSMenu, title: String, action: Selector, icon: String) {
+        add(to: menu, title: title, action: action, icon: icon)
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        rebuild(menu)
+    }
+
+    @objc private func openChat() { model.viewModel.focusChat = true; model.viewModel.show(.panel(.chat)) }
+    @objc private func openAgents() { model.viewModel.show(.panel(.agents)) }
+    @objc private func playPause() { model.nowPlaying.control(.playPause) }
+    @objc private func nextTrack() { model.nowPlaying.control(.next) }
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func weekRecap() { model.showWeekRecap() }
@@ -141,11 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleHover(_ sender: NSMenuItem) {
         model.viewModel.openOnHover.toggle()
-        sender.state = model.viewModel.openOnHover ? .on : .off
     }
 
     @objc private func toggleDemo(_ sender: NSMenuItem) {
         model.demoMode.toggle()
-        sender.state = model.demoMode ? .on : .off
     }
 }
