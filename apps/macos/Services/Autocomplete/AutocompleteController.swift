@@ -82,12 +82,12 @@ final class AutocompleteController: ObservableObject {
         var choices: [CompletionEmoji]
         var selected = 0
         var anchor: CGRect
+        /// The text before the colon: emoji that fit it come first.
+        var context: String
     }
 
     /// Emoji per row in the picker: 1 to 9 pick from the row with the selection.
     private static let emojiColumns = 9
-    /// Marks which emoji a stretch of the picker's text belongs to, for clicks.
-    private static let emojiIndexKey = NSAttributedString.Key("nookEmojiIndex")
     /// A click that took an emoji: its mouse up does not reach the app either.
     private var swallowMouseUp = false
 
@@ -100,8 +100,6 @@ final class AutocompleteController: ObservableObject {
     private var readToken = 0
 
     private var proposal: Proposal?
-    /// The read token of a suggestion still being written, word by word.
-    private var streaming: Int?
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
     private var upcoming: Upcoming?
@@ -360,7 +358,7 @@ final class AutocompleteController: ObservableObject {
             return false
         case .leftMouseDown, .rightMouseDown:
             if type == .leftMouseDown, case .emoji(let picker) = proposal,
-               let index = overlay.cardValue(at: NSEvent.mouseLocation, key: Self.emojiIndexKey), picker.choices.indices.contains(index) {
+               let index = overlay.emojiIndex(at: NSEvent.mouseLocation), picker.choices.indices.contains(index) {
                 take(index, from: picker)
                 swallowMouseUp = true
                 return true
@@ -477,7 +475,8 @@ final class AutocompleteController: ObservableObject {
                 if !commandLike, let query = emojiQuery(picker.query, after: key) {
                     readToken += 1
                     refreshWork?.cancel()
-                    let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4)
+                    let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4,
+                                                                 context: picker.context)
                     if choices.isEmpty {
                         dismiss()
                     } else {
@@ -507,16 +506,18 @@ final class AutocompleteController: ObservableObject {
     /// Types `text`. What is left of the suggestion stays: the word lands where its ghost was, so the overlay only moves once
     /// the app has caught up, without a flicker or a new model call.
     private func accept(_ raw: String, leaving rest: Completion) {
-        let text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
+        var text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
+        var ahead = rest.suggestion.isEmpty ? writtenAhead(after: rest.anchor + text, from: rest) : nil
+        // The model ends the sentence right after the last word: its period comes along with the same key, not with another.
+        if prefs.attachedPunctuation, var next = ahead, let mark = next.takeAttachedPunctuation() {
+            text += mark
+            ahead = next.isEmpty ? nil : next
+        }
         AutocompleteTyper.type(text)
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
-        // Taken while the model was still writing it: the rest of that stream is dropped (the text changed), so nothing would
-        // write ahead. Start that now, from what is on screen.
-        let wasStreaming = streaming != nil
-        streaming = nil
         if rest.suggestion.isEmpty {
             let anchor = rest.anchor + text
-            if continueAtOnce(after: anchor, typed: text, from: rest) { return }
+            if continueAtOnce(after: anchor, typed: text, from: rest, ahead: ahead) { return }
             proposal = nil
             overlay.hide()
             followUp(after: anchor)
@@ -525,7 +526,6 @@ final class AutocompleteController: ObservableObject {
             rest.anchor += text
             rest.fresh = false
             proposal = .completion(rest)
-            if wasStreaming { writeAhead(for: rest) }
             overlay.advance(over: text, remaining: rest.suggestion.remaining)
             settle()
         }
@@ -534,11 +534,8 @@ final class AutocompleteController: ObservableObject {
     /// After the last word of a suggestion is taken: when the next one is already written (see `upcoming`), show it right
     /// away, moved past the word just typed as if the app had drawn it already. `settle()` then puts it where the app shows
     /// the cursor. No pause, no read first, no model call: Tab, Tab, Tab goes on as fast as you press it.
-    private func continueAtOnce(after anchor: String, typed: String, from previous: Completion) -> Bool {
-        guard let ahead = upcoming, ahead.done, ahead.app == previous.app.bundleIdentifier, ahead.before == anchor, let result = ahead.result,
-              let suggestion = CompletionSuggestion.make(raw: result.text, before: anchor, after: previous.after, maxWords: previous.maxWords,
-                                                         truncated: result.truncated, unfinished: result.unfinished),
-              overlay.advance(over: typed, remaining: suggestion.remaining) else { return false }
+    private func continueAtOnce(after anchor: String, typed: String, from previous: Completion, ahead: CompletionSuggestion?) -> Bool {
+        guard let suggestion = ahead, overlay.advance(over: typed, remaining: suggestion.remaining) else { return false }
         var next = previous
         next.suggestion = suggestion
         next.anchor = anchor
@@ -552,13 +549,19 @@ final class AutocompleteController: ObservableObject {
         return true
     }
 
+    /// The suggestion written ahead (see `upcoming`) for the text `anchor`, when the model is done with it.
+    private func writtenAhead(after anchor: String, from previous: Completion) -> CompletionSuggestion? {
+        guard let ahead = upcoming, ahead.done, ahead.app == previous.app.bundleIdentifier, ahead.before == anchor, let result = ahead.result else { return nil }
+        return CompletionSuggestion.make(raw: result.text, before: anchor, after: previous.after, maxWords: previous.maxWords,
+                                         truncated: result.truncated, unfinished: result.unfinished)
+    }
+
     private func dismiss() {
         readToken += 1
         refreshWork?.cancel()
         selectionWork?.cancel()
         completer?.cancel()
         proposal = nil
-        streaming = nil
         alternatives = nil
         overlay.hide()
     }
@@ -634,10 +637,11 @@ final class AutocompleteController: ObservableObject {
         if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
 
         if prefs.emoji, let anchor = snapshot.caret ?? snapshot.fieldFrame, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
-            let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4)
+            let context = String(snapshot.before.dropLast(query.count + 1))
+            let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4, context: context)
             // A colon with no emoji by that name is just a colon.
             guard !choices.isEmpty else { return }
-            let picker = EmojiPicker(query: query, choices: choices, anchor: anchor)
+            let picker = EmojiPicker(query: query, choices: choices, anchor: anchor, context: context)
             proposal = .emoji(picker)
             showEmojiPicker(picker)
             return
@@ -674,52 +678,39 @@ final class AutocompleteController: ObservableObject {
         let prompt = self.prompt(for: snapshot, in: app)
         let token = readToken
         let after = midLine ? snapshot.after : ""
-        // Each finished word is shown as soon as the model has it; the rest follows.
-        let partial: @Sendable (String) -> Void = { [weak self] text in
-            Task { @MainActor in self?.present(text, truncated: true, final: false, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app) }
-        }
         // Written ahead while the last suggestion was on screen: no need to ask the model again.
         let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
         upcoming = nil
         Task {
             if let ahead, let result = await ahead.value {
                 guard token == readToken else { return }
-                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
                 return
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
-            let result = await completer.complete(prompt: prompt, options: options, partial: partial)
+            // The whole suggestion at once, never word by word as the model writes it.
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
             scheduleUnload()
             if let result {
-                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
-            } else if streaming == token {
-                streaming = nil
             }
         }
     }
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
-    /// on screen. A suggestion still being written (`final` false) is replaced by the next part and the final one.
-    private func present(_ text: String, truncated: Bool, unfinished: Bool = false, final: Bool, token: Int, snapshot: AutocompleteFieldSnapshot,
+    /// on screen.
+    private func present(_ text: String, truncated: Bool, unfinished: Bool = false, token: Int, snapshot: AutocompleteFieldSnapshot,
                          after: String, maxWords: Int, app: NSRunningApplication) {
-        guard token == readToken, alternatives == nil, proposal == nil || streaming == token else { return }
-        guard let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
-                                                         unfinished: unfinished) else {
-            if final { streaming = nil }
-            return
-        }
-        let first = proposal == nil
-        if case .completion(let shown) = proposal, shown.suggestion == suggestion {
-            if final { streaming = nil }
-            return
-        }
-        proposal = .completion(Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords))
-        streaming = final ? nil : token
+        guard token == readToken, alternatives == nil, proposal == nil,
+              let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
+                                                         unfinished: unfinished) else { return }
+        let completion = Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords)
+        proposal = .completion(completion)
         show(suggestion, for: snapshot, in: app)
-        if first { store.recordShown() }
-        if final, case .completion(let shown) = proposal { writeAhead(for: shown) }
+        store.recordShown()
+        writeAhead(for: completion)
     }
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
@@ -933,30 +924,13 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    /// The picker as a card under the cursor: rows of emoji with the selected one marked, the numbers 1 to 9 over the row
-    /// with the selection, and the selected one's name below.
+    /// The picker under the cursor: a grid of emoji with the selected one marked, the numbers 1 to 9 in the row with the
+    /// selection, and the selected one's name below.
     private func showEmojiPicker(_ picker: EmojiPicker) {
-        let text = NSMutableAttributedString()
-        let big = NSFont.systemFont(ofSize: 20)
-        let small = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
-        let row = picker.selected / Self.emojiColumns
-        for (index, emoji) in picker.choices.enumerated() {
-            if index > 0 { text.append(NSAttributedString(string: index % Self.emojiColumns == 0 ? "\n" : "  ", attributes: [.font: big])) }
-            // Every emoji has its number; only the row with the selection shows it, so the rows stay in line.
-            let numbered = index / Self.emojiColumns == row
-            text.append(NSAttributedString(string: "\(index % Self.emojiColumns + 1)", attributes: [
-                .font: small, .foregroundColor: numbered ? NSColor.secondaryLabelColor : NSColor.clear, Self.emojiIndexKey: index,
-            ]))
-            var attributes: [NSAttributedString.Key: Any] = [.font: big, Self.emojiIndexKey: index]
-            if index == picker.selected { attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.35) }
-            text.append(NSAttributedString(string: CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone), attributes: attributes))
-        }
-        let name = picker.choices[picker.selected].shortcodes[0]
-        text.append(NSAttributedString(string: "\n:\(name):", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]))
-        text.append(NSAttributedString(string: "   1–9  ←→↑↓  " + prefs.acceptWord.label + " ↩", attributes: [
-            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.tertiaryLabelColor,
-        ]))
-        overlay.showCard(text, below: picker.anchor)
+        let emoji = picker.choices.map { CompletionEmojiCatalog.render($0, skinTone: prefs.skinTone) }
+        let name = ":\(picker.choices[picker.selected].shortcodes[0]):"
+        overlay.showEmojiPicker(emoji, selected: picker.selected, columns: Self.emojiColumns, name: name,
+                                hint: "1–9  ←→↑↓  " + prefs.acceptWord.label + " ↩", below: picker.anchor)
     }
 
     private func card(_ text: String) -> NSAttributedString {

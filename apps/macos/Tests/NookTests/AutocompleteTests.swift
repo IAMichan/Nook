@@ -147,6 +147,23 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(suggestion.isEmpty)
     }
 
+    func testAttachedPunctuationComesWithTheLastWord() {
+        var period = CompletionSuggestion(".")
+        XCTAssertEqual(period.takeAttachedPunctuation(), ".")
+        XCTAssertTrue(period.isEmpty)
+        var sentence = CompletionSuggestion("! See you")
+        XCTAssertEqual(sentence.takeAttachedPunctuation(), "!")
+        XCTAssertEqual(sentence.remaining, " See you")
+        var trailing = CompletionSuggestion(". ")
+        XCTAssertEqual(trailing.takeAttachedPunctuation(), ".")
+        XCTAssertTrue(trailing.isEmpty)
+        var word = CompletionSuggestion(" and more")
+        XCTAssertNil(word.takeAttachedPunctuation())
+        var domain = CompletionSuggestion(".com")
+        XCTAssertNil(domain.takeAttachedPunctuation(), "not the end of a sentence")
+        XCTAssertEqual(domain.remaining, ".com")
+    }
+
     func testTrailingSpaceOption() {
         let suggestion = CompletionSuggestion(" see you")
         XCTAssertEqual(suggestion.nextChunk(.init(trailingSpace: true)), " see ")
@@ -306,6 +323,18 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(opening.filter { $0.character == "🔥" }.count, 1)
         XCTAssertEqual(CompletionEmojiCatalog.choices(for: "lachen", recent: [], limit: 9).first?.character, "😂")
         XCTAssertTrue(CompletionEmojiCatalog.choices(for: "zzzzqq", recent: [], limit: 9).isEmpty)
+    }
+
+    func testPickerSuggestsEmojiThatFitTheText() {
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Gefeliciteerd met je verjaardag!").map(\.character), ["🎂", "🎉"])
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Bedankt voor je hulp").first?.character, "🙏")
+        XCTAssertEqual(CompletionEmojiCatalog.contextual(for: "Zullen we morgen koffie drinken?").first?.character, "☕")
+        XCTAssertTrue(CompletionEmojiCatalog.contextual(for: "").isEmpty)
+        let opening = CompletionEmojiCatalog.choices(for: "", recent: ["🔥"], limit: 9, context: "Ik ben zo moe, ga slapen")
+        XCTAssertEqual(opening.first?.character, "😴", "what fits the text comes before the recent ones")
+        XCTAssertEqual(opening.dropFirst().first?.character, "🔥")
+        let named = CompletionEmojiCatalog.choices(for: "s", recent: [], limit: 36, context: "welterusten, slaap lekker")
+        XCTAssertEqual(named.first?.character, "😴", "among the matches by name, those that fit the text first")
     }
 
     func testSkinTone() {
