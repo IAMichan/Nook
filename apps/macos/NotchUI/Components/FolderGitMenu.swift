@@ -174,20 +174,22 @@ struct FolderGitButton: View {
                     }
                     // The counts open the changes themselves.
                     if model.isRepository, !model.changes.isEmpty {
+                        ToolbarGroupDivider()
                         Button(action: showChanges) {
                             HStack(spacing: 6) {
                                 Text("+\(model.added)").foregroundStyle(NookTheme.mint)
                                 Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
                             }
-                            .font(NookTheme.font(12, .medium))
+                            .font(NookTheme.font(11.5, .medium))
                             .padding(.horizontal, 6)
-                            .frame(height: 26)
+                            .frame(height: ToolbarGroup.itemHeight)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help(tr("agents.git.changes", model.changes.count))
                     }
                 }
+                .toolbarGroup()
                 .fixedSize()
             }
         }
@@ -209,15 +211,15 @@ struct FolderGitButton: View {
             } else if model.error != nil {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(NookTheme.coral)
             } else {
-                Image(systemName: icon).font(.system(size: 10.5, weight: .medium))
+                Image(systemName: icon).font(.system(size: 10, weight: .medium))
             }
-            Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 170, alignment: .leading)
-            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
+            Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
+            Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold)).opacity(0.5)
         }
-        .font(NookTheme.font(12, .medium))
+        .font(NookTheme.font(11.5, .medium))
         .foregroundStyle(NookTheme.textSecondary)
-        .padding(.horizontal, 6)
-        .frame(height: 26)
+        .padding(.horizontal, 7)
+        .frame(height: ToolbarGroup.itemHeight)
         .contentShape(Rectangle())
     }
 }

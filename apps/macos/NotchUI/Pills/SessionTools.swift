@@ -45,8 +45,10 @@ struct SessionToolSwitch: View {
         HStack(spacing: 2) {
             if !directory.isEmpty { icon(.terminal) }
             icon(.browser)
+            ToolbarGroupDivider()
             panelToggle
         }
+        .toolbarGroup()
     }
 
     private func icon(_ tool: SessionTool) -> some View {
@@ -95,17 +97,41 @@ private struct SessionToolIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-            .frame(width: 28, height: 28)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
+            .frame(width: 26, height: ToolbarGroup.itemHeight)
+            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
             .overlay(alignment: .topTrailing) {
                 if fresh {
-                    Circle().fill(NookTheme.iris).frame(width: 6, height: 6).padding(5)
+                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(4)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
             .contentShape(Rectangle())
+    }
+}
+
+/// The header's buttons sit in a few quiet groups (outputs, the side panel's tools, the branch) instead of loose
+/// icons: each group on one dark, softly outlined surface with its buttons inside.
+enum ToolbarGroup {
+    static let itemHeight: CGFloat = 22
+    static let itemRadius: CGFloat = 6
+    static let padding: CGFloat = 2
+}
+
+extension View {
+    func toolbarGroup() -> some View {
+        padding(ToolbarGroup.padding)
+            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius + ToolbarGroup.padding, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius + ToolbarGroup.padding, style: .continuous)
+                .stroke(NookTheme.line2.opacity(0.7), lineWidth: 0.5))
+    }
+}
+
+/// The thin line between buttons inside one group.
+struct ToolbarGroupDivider: View {
+    var body: some View {
+        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 12).padding(.horizontal, 2)
     }
 }
 
