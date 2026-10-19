@@ -847,7 +847,8 @@ struct AgentConversation: View {
     var body: some View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
-                               working: session.status == .running, fallback: fallback, onReply: onReply)
+                               working: session.status == .running, fallback: fallback, onReply: onReply,
+                               directory: session.cwd)
             .id(session.id)
     }
 }

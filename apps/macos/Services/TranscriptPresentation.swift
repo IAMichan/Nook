@@ -52,6 +52,35 @@ extension ToolTally {
             }
         }
         if files.count + edits > 0 { counts[.edit] = files.count + edits }
+        checks = Verification.latest(steps.compactMap(Verification.check))
+    }
+}
+
+extension Verification {
+    /// A transcript step that checks the agent's work, and how it went.
+    static func check(_ step: AgentToolStep) -> VerificationCheck? {
+        guard ToolCategory.of(tool: step.name) == .command, let command = step.command ?? (step.summary.isEmpty ? nil : step.summary),
+              let kind = kind(command: command) else { return nil }
+        let outcome: VerificationCheck.Outcome = step.state == .failed ? .failed : step.state == .done ? .passed : .running
+        return VerificationCheck(kind: kind, outcome: outcome, command: command)
+    }
+}
+
+extension AgentActivity {
+    /// A step of a transcript, which keeps the tool's name, what it was about and, for a command, its command line.
+    static func of(_ step: AgentToolStep) -> AgentActivity {
+        var input: [String: Any] = [:]
+        switch ToolCategory.of(tool: step.name) {
+        case .command:
+            input["command"] = step.command ?? step.summary
+            if step.command != nil, step.summary != step.command { input["description"] = step.summary }
+        case .edit, .read:
+            input["file_path"] = step.summary
+        default:
+            input["description"] = step.summary
+        }
+        if step.tasks != nil { return .planning }
+        return of(tool: step.name, input: input, fallback: step.summary)
     }
 }
 
@@ -147,8 +176,85 @@ enum TranscriptPresentation {
         return rows
     }
 
+    /// What the agent does now in the turn that runs: the step that runs, else what it did last.
+    static func activity(_ messages: [AgentChatMessage]) -> AgentActivity {
+        let turn = split(messages.filter { !($0.isThinking && $0.text.isEmpty) }).last ?? []
+        guard let last = turn.last else { return .starting }
+        switch last.kind {
+        case .user:
+            return .starting
+        case .assistant:
+            return .writing
+        case .thinking:
+            return .thinking(headline(last.text))
+        case .tools:
+            guard let step = last.steps.last else { return .reviewing }
+            if step.state == .running { return AgentActivity.of(step) }
+            return step.state == .failed ? .recovering : .reviewing
+        }
+    }
+
+    /// Every step inside rows, in order: what a fold holds.
+    static func steps(_ rows: [TranscriptRow]) -> [AgentToolStep] {
+        rows.flatMap { row -> [AgentToolStep] in
+            switch row {
+            case .step(let step): return [step]
+            case .group(_, let steps): return steps
+            case .fold(_, _, let inner): return self.steps(inner)
+            case .live(let step): return step.map { [$0] } ?? []
+            default: return []
+            }
+        }
+    }
+
+    /// The agent's latest task list in the conversation, nil when it kept none. A list an earlier turn finished is
+    /// done with: only the turn that set it, or a list still open, shows (all of them with `includeFinished`).
+    static func tasks(_ messages: [AgentChatMessage], includeFinished: Bool = false) -> [RunTaskStep]? {
+        let turns = split(messages)
+        for (index, turn) in turns.enumerated().reversed() {
+            for message in turn.reversed() where message.isTools {
+                guard let tasks = message.steps.last(where: { $0.tasks != nil })?.tasks else { continue }
+                if tasks.isEmpty || !includeFinished && index != turns.count - 1 && RunTasks.isFinished(tasks) { return nil }
+                return tasks
+            }
+        }
+        return nil
+    }
+
     /// A thought on one line: its first bold heading or its first sentence, as Code shows reasoning in the work log.
     static func headline(_ text: String) -> String {
         TimelinePresentation.headline(text)
+    }
+}
+
+extension SessionOutputs {
+    /// The outputs of a conversation read from an agent's transcript: its latest task list, the plans it proposed and
+    /// the files worth seeing it wrote. A transcript keeps no time for each step, so the time of its message stands in.
+    static func collect(_ messages: [AgentChatMessage], directory: String) -> [SessionOutput] {
+        var outputs: [SessionOutput] = []
+        var files: [String: Int] = [:]
+        let fallback = Date(timeIntervalSince1970: 0)
+        for (index, message) in messages.enumerated() where message.isTools {
+            // Steps keep their order within a message; a fraction of a second apart keeps it in the sort.
+            for (offset, step) in message.steps.enumerated() {
+                let date = (message.updated ?? message.date ?? fallback.addingTimeInterval(Double(index)))
+                    .addingTimeInterval(Double(offset) / 1000)
+                if let plan = step.plan, !plan.isEmpty {
+                    outputs.append(SessionOutput(id: "plan:" + step.id, kind: .plan(plan), title: PlanPreview.title(from: plan) ?? "",
+                                                 path: nil, date: date))
+                }
+                guard let raw = step.path, step.state != .failed else { continue }
+                let path = resolve(raw, in: directory)
+                guard let kind = kind(path: path) else { continue }
+                let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+                                           path: path, date: date)
+                if let at = files[path] { outputs[at] = output } else { files[path] = outputs.count; outputs.append(output) }
+            }
+        }
+        if let tasks = TranscriptPresentation.tasks(messages, includeFinished: true) {
+            let date = messages.last(where: { $0.steps.contains { $0.tasks != nil } }).flatMap { $0.updated ?? $0.date } ?? fallback
+            outputs.append(SessionOutput(id: "tasks", kind: .tasks(tasks), title: "", path: nil, date: date))
+        }
+        return outputs.sorted { $0.date > $1.date }
     }
 }

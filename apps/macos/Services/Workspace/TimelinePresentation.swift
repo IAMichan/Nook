@@ -37,6 +37,8 @@ enum ToolCategory: Int, Comparable, Sendable {
 struct ToolTally: Equatable, Sendable {
     var counts: [ToolCategory: Int] = [:]
     var failed = false
+    /// The tests, builds and linters among the calls: the latest outcome of each kind.
+    var checks: [VerificationCheck] = []
 
     init(_ events: [RunEvent]) {
         var editedFiles: Set<String> = []
@@ -60,6 +62,7 @@ struct ToolTally: Equatable, Sendable {
         }
         let editCount = max(editedFiles.count, edits)
         if editCount > 0 { counts[.edit] = editCount }
+        checks = Verification.checks(events)
     }
 
     /// The categories with a count, in summary order.
@@ -139,6 +142,17 @@ enum TimelinePresentation {
         let tool = turn.last { $0.kind == .tool && $0.state == .running } ?? turn.last { $0.kind == .tool }
         let thought = turn.last { $0.kind == .thinking }.map { headline($0.text) }
         return LiveActivity(tool: tool?.text, thought: thought.flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    /// Every event inside blocks, in order: what a fold or a group holds.
+    static func events(_ blocks: [TimelineBlock]) -> [RunEvent] {
+        blocks.flatMap { block -> [RunEvent] in
+            switch block {
+            case .event(let event): return [event]
+            case .tools(_, let events, _): return events
+            case .fold(_, _, let inner): return events(inner)
+            }
+        }
     }
 
     /// The first bold heading of a thought ("**Checking the tests**"), or its first sentence.

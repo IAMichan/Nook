@@ -21,8 +21,14 @@ struct TranscriptConversation: View {
     var interval: UInt64 = 2_000_000_000
     @State private var messages: [AgentChatMessage] = []
     @State private var loaded = false
+    /// The session's folder on this Mac, for the files the agent wrote; nil when they are not here (a cloud session).
+    var directory: String? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
+    /// The panel next to the conversation with what the agent produced.
+    @State private var outputsOpen = false
+    @State private var outputSelection: String?
+    @State private var outputsWide = false
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
@@ -30,37 +36,68 @@ struct TranscriptConversation: View {
         let rows = TranscriptPresentation.rows(shown, working: working)
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: true) {
-                // Lazy: a long conversation only lays out what is on screen.
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    if shown.isEmpty {
-                        Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
+        let outputs = SessionOutputs.collect(shown, directory: directory ?? "").filter { directory != nil || !$0.isFile }
+        HStack(alignment: .top, spacing: 14) {
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: true) {
+                    // Lazy: a long conversation only lays out what is on screen.
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if shown.isEmpty {
+                            Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
+                                .font(NookTheme.font(12.5))
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                        ForEach(rows) { row in
+                            self.row(row, answerable: answerable).id(row.id)
+                        }
+                        if let footer {
+                            Text(footer)
+                                .font(NookTheme.font(11.5))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .padding(.top, 4)
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
                     }
-                    ForEach(rows) { row in
-                        self.row(row, answerable: answerable).id(row.id)
-                    }
-                    if let footer {
-                        Text(footer)
-                            .font(NookTheme.font(11.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.top, 4)
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
+                .defaultScrollAnchor(.bottom)
+                .onChange(of: shown) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: loaded) { _, _ in scrollToEnd(proxy) }
+                .onAppear {
+                    scrollToEnd(proxy)
+                    DispatchQueue.main.async { scrollToEnd(proxy) }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: shown) { _, _ in scrollToEnd(proxy) }
-            .onChange(of: loaded) { _, _ in scrollToEnd(proxy) }
-            .onAppear {
-                scrollToEnd(proxy)
-                DispatchQueue.main.async { scrollToEnd(proxy) }
+            .overlay(alignment: .topTrailing) {
+                // What the agent produced, a click away once there is something.
+                if !outputsOpen, !outputs.isEmpty {
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = true } } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "sidebar.right").font(.system(size: 11, weight: .medium))
+                            Text(tr("ws.outputs.title")).font(NookTheme.font(11.5, .medium))
+                            Text("\(outputs.count)").font(NookTheme.mono(10.5, .medium)).foregroundStyle(NookTheme.textTertiary)
+                        }
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(Capsule().fill(NookTheme.smoke))
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(tr("ws.outputs.show"))
+                    .padding(.top, 4)
+                    .padding(.trailing, 8)
+                }
+            }
+            if outputsOpen {
+                SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: $outputsWide) {
+                    withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
+                }
+                .frame(width: outputsWide ? 620 : 380)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .task(id: path + (working ? "#working" : "")) {
@@ -89,7 +126,8 @@ struct TranscriptConversation: View {
             let key = "fold:" + id
             VStack(alignment: .leading, spacing: 6) {
                 TranscriptFoldLine(text: seconds.map { tr("ws.fold.worked", AgentPathFormat.duration($0)) } ?? tr("agents.timeline.worked"),
-                                   open: open.contains(key)) { toggle(key) }
+                                   open: open.contains(key),
+                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(inner) { flatRow($0, answerable: nil).id($0.id) }
@@ -118,9 +156,7 @@ struct TranscriptConversation: View {
         case .thinking(let message):
             thinking(message)
         case .step(let step):
-            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
-                               failed: step.state == .failed)
-                .help(step.summary)
+            stepLine(step)
         case .group(let id, let steps):
             group(id: id, steps: steps)
         case .fold:
@@ -128,10 +164,15 @@ struct TranscriptConversation: View {
         case .working(let since):
             TranscriptWorkingLine(since: since)
         case .live(let step):
-            if let step {
-                TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step), live: true)
-            } else {
-                TranscriptWorkLine(symbol: "brain", label: tr("agents.timeline.thinking"), live: true)
+            // The agent's task list, live, and what it does now in words rather than a bare "Thinking…".
+            let tasks = TranscriptPresentation.tasks(shown)
+            let activity = step.map { AgentActivity.of($0) } ?? TranscriptPresentation.activity(shown)
+            VStack(alignment: .leading, spacing: 8) {
+                if let tasks { TaskChecklistCard(steps: tasks) }
+                TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
+                                   label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
+                                   live: true)
+                    .help(step.map(Self.label) ?? "")
             }
         }
     }
@@ -141,17 +182,34 @@ struct TranscriptConversation: View {
         let tally = ToolTally(steps: steps)
         return VStack(alignment: .leading, spacing: 2) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
-                               failed: tally.failed, open: open.contains(key)) { toggle(key) }
+                               failed: tally.failed, checks: tally.checks, open: open.contains(key)) { toggle(key) }
             if open.contains(key) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(steps) { step in
-                        TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
-                                           failed: step.state == .failed)
-                            .help(step.summary)
+                        stepLine(step)
                     }
                 }
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1).padding(.leading, 9) }
+            }
+        }
+    }
+
+    /// One step. A step that set the agent's task list (TodoWrite, update_plan) opens to that list.
+    private func stepLine(_ step: AgentToolStep) -> some View {
+        let key = "plan:" + step.id
+        let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
+        return VStack(alignment: .leading, spacing: 4) {
+            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
+                               failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
+                               open: tasks == nil ? nil : open.contains(key)) { toggle(key) }
+                .help(step.summary)
+            if let tasks, open.contains(key) {
+                TaskListRows(steps: tasks)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    .padding(.leading, 26)
+                    .padding(.bottom, 4)
             }
         }
     }
@@ -337,6 +395,8 @@ struct TranscriptWorkLine: View {
     let label: String
     var failed = false
     var live = false
+    /// The tests, builds and linters it stands for, and how they went.
+    var checks: [VerificationCheck] = []
     /// Nil: the line does not open.
     var open: Bool? = nil
     var action: (() -> Void)? = nil
@@ -363,6 +423,7 @@ struct TranscriptWorkLine: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
+            if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
         }
         .font(NookTheme.font(12.5))
@@ -384,6 +445,8 @@ struct TranscriptWorkLine: View {
 struct TranscriptFoldLine: View {
     let text: String
     let open: Bool
+    /// What the turn's tests and builds came to, in sight while its work is folded.
+    var checks: [VerificationCheck] = []
     let action: () -> Void
     @State private var hovering = false
 
@@ -394,6 +457,7 @@ struct TranscriptFoldLine: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
             .font(NookTheme.font(12.5))
