@@ -8,6 +8,7 @@
   import Brain from "./settings/Brain.svelte";
   import Memory from "./settings/Memory.svelte";
   import Privacy from "./settings/Privacy.svelte";
+  import Accounts from "./settings/Accounts.svelte";
   import About from "./settings/About.svelte";
   import Companion from "./settings/Companion.svelte";
 
@@ -23,6 +24,7 @@
     { id: "general", title: "Algemeen", component: General },
     { id: "brain", title: "Brein", component: Brain },
     { id: "memory", title: "Geheugen", component: Memory },
+    { id: "accounts", title: "Accounts & koppelingen", component: Accounts },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
     { id: "companion", title: "Companion", component: Companion, when: () => !!nook.info?.capabilities.desktop },
     { id: "about", title: "Over Nook", component: About },

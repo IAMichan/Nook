@@ -6,6 +6,7 @@
 
 pub mod brain;
 pub mod companion;
+pub mod connectors;
 pub mod error;
 pub mod nooks;
 pub mod paths;

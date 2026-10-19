@@ -20,6 +20,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::state::AppState;
 use crate::tools;
 
+pub mod connectors;
+
 type Res<T> = Result<T, String>;
 
 #[derive(Serialize)]
@@ -194,7 +196,7 @@ pub fn ask(app: AppHandle, state: State<'_, AppState>, nook_id: String, text: St
     updated(&app, &nook_id);
 
     let settings = state.settings();
-    let ctx = tools::ToolCtx::new(&app, &text);
+    let ctx = tools::ToolCtx::new(&app, &text).in_nook(&nook_id);
     let env = BrainEnv { key: state.key_for(settings.provider), memory_gb: 16, country: None, timezone: None };
     let task_app = app.clone();
     let (nid, mid) = (nook_id.clone(), message_id.clone());
@@ -325,7 +327,7 @@ pub async fn execute_plan(
     let Some(actions) = actions else { return Err("Dit plan bestaat niet meer.".into()) };
     updated(&app, &nook_id);
     let store = state.store.clone();
-    let ctx = tools::ToolCtx::new(&app, "");
+    let ctx = tools::ToolCtx::new(&app, "").in_nook(&nook_id);
     let mut failed = None;
     for (index, action) in actions.iter().enumerate() {
         let step = if !included.get(index).copied().unwrap_or(true) {

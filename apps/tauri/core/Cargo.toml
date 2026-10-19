@@ -27,6 +27,10 @@ sha2 = "0.10"
 base64 = "0.22"
 # Ondertekening (ES256) van het APNs-token met je eigen .p8-sleutel.
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+chrono-tz = "0.10"
+hmac = "0.12"
+rand = "0.8"
+url = "2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

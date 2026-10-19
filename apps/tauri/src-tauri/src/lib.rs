@@ -3,6 +3,7 @@
 
 mod commands;
 mod companion;
+mod connectors;
 mod platform;
 mod state;
 mod tools;
@@ -36,6 +37,7 @@ pub fn run() {
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
             companion::setup(app.handle());
+            connectors::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -110,7 +112,45 @@ pub fn run() {
             commands::companion::companion_client_stop,
             commands::companion::companion_client_clear_notice,
             commands::companion::companion_client_visible,
+            commands::connectors::connectors_overview,
+            commands::connectors::connector_save,
+            commands::connectors::connector_disconnect,
+            commands::connectors::connector_toggle,
+            commands::connectors::connector_refresh,
+            commands::connectors::account_add,
+            commands::connectors::account_rename,
+            commands::connectors::account_remove,
+            commands::connectors::account_token,
+            commands::connectors::github_cli,
+            commands::connectors::github_device_start,
+            commands::connectors::github_pull_requests,
+            commands::connectors::mcp_paste,
+            commands::connectors::mcp_add,
+            commands::connectors::mcp_remove,
+            commands::connectors::mcp_set_enabled,
+            commands::connectors::mcp_test,
+            commands::connectors::mcp_connect_service,
+            commands::connectors::mcp_sign_in,
+            commands::connectors::gitlab_save,
+            commands::connectors::gitlab_remove,
+            commands::connectors::whatsapp_view,
+            commands::connectors::whatsapp_save,
+            commands::connectors::whatsapp_credential,
+            commands::connectors::whatsapp_test,
+            commands::connectors::whatsapp_chats,
+            commands::connectors::whatsapp_reply,
+            commands::connectors::whatsapp_mark_read,
+            commands::connectors::whatsapp_ignore,
+            commands::connectors::whatsapp_unmute,
+            commands::connectors::chat_accounts,
+            commands::connectors::chat_accounts_set,
+            commands::connectors::service_icon,
         ])
-        .run(tauri::generate_context!())
-        .expect("Nook kon niet starten");
+        .build(tauri::generate_context!())
+        .expect("Nook kon niet starten")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                connectors::shutdown(app);
+            }
+        });
 }
