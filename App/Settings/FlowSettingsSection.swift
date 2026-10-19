@@ -73,3 +73,44 @@ struct FlowSettingsSection: View {
         }
     }
 }
+
+/// Settings › Voice & sound › Parakeet: download, use or remove the offline speech recognition.
+struct ParakeetSettingsSection: View {
+    @ObservedObject private var parakeet = Parakeet.shared
+
+    var body: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("parakeet.title"))
+                    Text(parakeet.state == .unsupported ? tr("parakeet.unsupported") : tr("parakeet.detail"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                switch parakeet.state {
+                case .unsupported:
+                    EmptyView()
+                case .missing:
+                    Button(tr("parakeet.download")) { parakeet.download() }
+                case .downloading(let fraction):
+                    VStack(alignment: .trailing, spacing: 2) {
+                        ProgressView(value: fraction).frame(width: 110)
+                        Text(tr("parakeet.downloading", Int(fraction * 100))).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                case .ready:
+                    Button(tr("parakeet.remove"), role: .destructive) { parakeet.remove() }
+                case .failed(let why):
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Button(tr("parakeet.download")) { parakeet.download() }
+                        Text(why).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    }
+                }
+            }
+            if parakeet.isReady {
+                Toggle(tr("parakeet.use"), isOn: $parakeet.enabled)
+            }
+        }
+    }
+}

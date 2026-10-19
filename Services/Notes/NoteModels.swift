@@ -2,7 +2,7 @@
 // recordings. Foundation only, tested in Tests/NookTests/NoteTests.swift.
 //
 // Adapted from Coucou (github.com/Louis-CFM/coucou, NotchBuddy/Sources/App/NoteModels.swift), MIT License,
-// Copyright (c) 2026 Louis Raillé. Nook leaves out the diarizer: the microphone is you, the Mac's sound is the others.
+// Copyright (c) 2026 Louis Raillé. Without Parakeet the microphone is you and the Mac's sound is "the others"; with it, the diarizer tells the others apart.
 
 import Foundation
 
@@ -77,6 +77,15 @@ struct TimedWord: Hashable, Sendable {
     var text: String
     var start: Double
     var end: Double
+}
+
+/// A stretch of audio where one voice speaks, from the diarizer.
+struct SpeakerTurn: Hashable, Sendable {
+    var speaker: String
+    var start: Double
+    var end: Double
+    /// The voice's fingerprint on this stretch (empty when unknown).
+    var embedding: [Float] = []
 }
 
 /// Builds the transcript of a call from the two recordings (Tests/NookTests/NoteTests.swift): the microphone is you,
@@ -324,4 +333,118 @@ extension NoteBuilder {
         if !note.todos.isEmpty { line += " To-dos: " + note.todos.map(\.text).joined(separator: "; ") }
         return line
     }
+}
+
+// MARK: - Speakers (with Parakeet's diarizer)
+
+extension NoteBuilder {
+    /// The others' words, each given to the voice speaking at that moment (or the nearest one).
+    static func assign(_ words: [TimedWord], to turns: [SpeakerTurn], fallback: String) -> [(speaker: String, word: TimedWord)] {
+        words.map { word -> (speaker: String, word: TimedWord) in
+            let mid = (word.start + word.end) / 2
+            if let turn = turns.first(where: { mid >= $0.start && mid <= $0.end }) {
+                return (speaker: turn.speaker, word: word)
+            }
+            let nearest = turns.min { distance(mid, $0) < distance(mid, $1) }
+            if let nearest, distance(mid, nearest) < 2 { return (speaker: nearest.speaker, word: word) }
+            return (speaker: fallback, word: word)
+        }
+    }
+
+    private static func distance(_ t: Double, _ turn: SpeakerTurn) -> Double {
+        t < turn.start ? turn.start - t : (t > turn.end ? t - turn.end : 0)
+    }
+
+    /// A voice heard only in short bits ("Yeah.", "Sure.", the end of a sentence) is almost always
+    /// someone already there: such bits are too short for the diarizer to recognise the voice, and
+    /// it makes a new person of them. Each bit goes to the closest real voice (by fingerprint,
+    /// else the nearest in time). A voice is real once it speaks 3 s in a row, or long enough overall.
+    static let fragmentLongest = 3.0
+
+    static func mergingFragments(_ turns: [SpeakerTurn]) -> [SpeakerTurn] {
+        var total: [String: Double] = [:], longest: [String: Double] = [:]
+        for turn in turns {
+            let length = turn.end - turn.start
+            total[turn.speaker, default: 0] += length
+            longest[turn.speaker] = max(longest[turn.speaker] ?? 0, length)
+        }
+        guard total.count > 1 else { return turns }
+        let all = total.values.reduce(0, +)
+        let solid = Set(total.keys.filter { (longest[$0] ?? 0) >= fragmentLongest || (total[$0] ?? 0) >= max(20, all * 0.1) })
+        guard !solid.isEmpty, solid.count < total.count else { return turns }
+
+        // Each real voice's fingerprint: the mean of its turns', longer turns counting more.
+        var centroids: [String: [Float]] = [:]
+        for speaker in solid {
+            var sum: [Float] = []
+            for turn in turns where turn.speaker == speaker && !turn.embedding.isEmpty {
+                let unit = normalized(turn.embedding)
+                let weight = Float(turn.end - turn.start)
+                if sum.isEmpty { sum = [Float](repeating: 0, count: unit.count) }
+                guard unit.count == sum.count else { continue }
+                for k in sum.indices { sum[k] += unit[k] * weight }
+            }
+            if !sum.isEmpty { centroids[speaker] = normalized(sum) }
+        }
+        let solidTurns = turns.filter { solid.contains($0.speaker) }
+        return turns.map { turn in
+            guard !solid.contains(turn.speaker) else { return turn }
+            var turn = turn
+            if !turn.embedding.isEmpty, centroids.count == solid.count {
+                let unit = normalized(turn.embedding)
+                if let best = centroids.max(by: { dot(unit, $0.value) < dot(unit, $1.value) }) {
+                    turn.speaker = best.key
+                    return turn
+                }
+            }
+            let mid = (turn.start + turn.end) / 2
+            if let nearest = solidTurns.min(by: { distance(mid, $0) < distance(mid, $1) }) {
+                turn.speaker = nearest.speaker
+            }
+            return turn
+        }
+    }
+
+    private static func normalized(_ v: [Float]) -> [Float] {
+        let norm = v.reduce(0) { $0 + $1 * $1 }.squareRoot()
+        return norm > 0 ? v.map { $0 / norm } : v
+    }
+
+    private static func dot(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count else { return -1 }
+        var sum: Float = 0
+        for i in a.indices { sum += a[i] * b[i] }
+        return sum
+    }
+
+    /// The whole transcript: your lines (echo removed) and the others', in time order, with the
+    /// speakers named in the order they first speak.
+    static func build(mine: [TimedWord], others: [TimedWord], turns: [SpeakerTurn],
+                      meName: String, personName: (Int) -> String) -> (speakers: [NoteSpeaker], lines: [NoteLine]) {
+        let myLines = lines(from: mine.map { (speaker: meID, word: $0) })
+        let theirLines = lines(from: assign(others, to: turns, fallback: "others"))
+        let all = (removingEcho(mine: myLines, others: theirLines) + theirLines).sorted { $0.start < $1.start }
+        var speakers: [NoteSpeaker] = []
+        if !myLines.isEmpty || others.isEmpty {
+            speakers.append(NoteSpeaker(id: meID, name: meName, color: 0, isMe: true))
+        }
+        var ids: [String: String] = [:]
+        var renamed: [NoteLine] = []
+        for var line in all {
+            if line.speaker != meID {
+                if let id = ids[line.speaker] {
+                    line.speaker = id
+                } else {
+                    let number = speakers.filter { !$0.isMe }.count + 2
+                    let id = "p\(number)"
+                    ids[line.speaker] = id
+                    speakers.append(NoteSpeaker(id: id, name: personName(number), color: number - 1))
+                    line.speaker = id
+                }
+            }
+            renamed.append(line)
+        }
+        return (speakers, renamed)
+    }
+
 }

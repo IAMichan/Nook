@@ -2,12 +2,14 @@ import AppKit
 import AVFoundation
 import Combine
 import Speech
+import os
 
 /// The Notetaker: records a call (your microphone, and what the Mac plays for the other people), writes the transcript
 /// while you talk, and afterwards the summary, key points and to-dos with your own brain (on this Mac by default).
 ///
 /// Unlike Coucou, the audio never touches the disk: each stretch is transcribed on the Mac as soon as it ends on a pause
-/// and then forgotten. Notes are kept as JSON in Application Support/Nook/Notes, and Nook can search them in the chat
+/// and then forgotten. With Parakeet the others' side also stays in memory during the call, only so the diarizer can
+/// tell the people apart at the end. Notes are kept as JSON in Application Support/Nook/Notes, and Nook can search them in the chat
 /// ("wat spraken we af met Lisa?"). No bot joins the call: tell the other people that you take notes.
 @MainActor
 final class NoteTaker: ObservableObject {
@@ -34,6 +36,8 @@ final class NoteTaker: ObservableObject {
     private var myWords: [TimedWord] = []
     private var theirWords: [TimedWord] = []
     private var loop: Task<Void, Never>?
+    /// With Parakeet: the others' side, kept in memory only so the diarizer can tell the people apart.
+    private var othersFile: SideBuffer?
     private var transcribing = 0
     private var starting = false
 
@@ -72,12 +76,18 @@ final class NoteTaker: ObservableObject {
         _ = mine.takeChunk(force: true)
         _ = others.takeChunk(force: true)
         let mineChannel = mine, othersChannel = others
+        othersFile = Parakeet.shared.inUse ? SideBuffer() : nil
+        let writer = othersFile
         guard mic.start(sink: { mineChannel.append($0) }) else {
+            othersFile = nil
             problem = tr("notes.problem.mic")
             return
         }
         do {
-            try system.start(sink: { othersChannel.append($0) })
+            try system.start(sink: { samples in
+                othersChannel.append(samples)
+                writer?.append(samples)
+            })
         } catch {
             // Without the Mac's sound (permission refused): only your side, and the room through the microphone.
             Log.app.info("Notetaker: no system audio: \(error.localizedDescription, privacy: .public)")
@@ -123,8 +133,10 @@ final class NoteTaker: ObservableObject {
     private func transcribe(_ chunk: (start: Double, samples: [Float]), mine: Bool) {
         transcribing += 1
         let locale = locale()
+        let parakeet = Parakeet.shared.inUse
         Task { @MainActor [weak self] in
-            let words = await Self.recognize(chunk.samples, offset: chunk.start, locale: locale)
+            let words = parakeet ? await Parakeet.shared.words(chunk.samples, offset: chunk.start)
+                : await Self.recognize(chunk.samples, offset: chunk.start, locale: locale)
             guard let self else { return }
             self.transcribing -= 1
             if mine { self.myWords += words } else { self.theirWords += words }
@@ -177,8 +189,17 @@ final class NoteTaker: ObservableObject {
 
     private func finish(_ recorded: Note) async {
         var note = recorded
-        let built = NoteBuilder.build(mine: myWords.sorted { $0.start < $1.start }, others: theirWords.sorted { $0.start < $1.start },
-                                      meName: tr("notes.me"), othersName: tr("notes.others"))
+        let mine = myWords.sorted { $0.start < $1.start }, theirs = theirWords.sorted { $0.start < $1.start }
+        var built = NoteBuilder.build(mine: mine, others: theirs, meName: tr("notes.me"), othersName: tr("notes.others"))
+        // With Parakeet: who of the others said what ("Persoon 2", "Persoon 3"). The temporary recording goes right after.
+        if let buffer = othersFile {
+            othersFile = nil
+            let audio = buffer.take()
+            if !theirs.isEmpty, audio.count > 16_000, let turns = try? await Parakeet.diarize(audio), !turns.isEmpty {
+                built = NoteBuilder.build(mine: mine, others: theirs, turns: NoteBuilder.mergingFragments(turns),
+                                          meName: tr("notes.me"), personName: { tr("notes.person", $0) })
+            }
+        }
         note.speakers = built.speakers
         note.lines = built.lines
         guard !note.lines.isEmpty else {
@@ -248,5 +269,28 @@ private final class OnceFlag: @unchecked Sendable {
         if done { return false }
         done = true
         return true
+    }
+}
+
+/// The others' side of a call in memory (at most 90 minutes, about 350 MB), only so the diarizer can tell the people
+/// apart at the end; never written to disk, gone as soon as the note is made.
+private final class SideBuffer: @unchecked Sendable {
+    private let samples = OSAllocatedUnfairLock(initialState: [Float]())
+    private let limit = 16_000 * 60 * 90
+
+    /// From the audio thread.
+    func append(_ new: [Float]) {
+        samples.withLock { all in
+            guard all.count + new.count <= limit else { return }
+            all.append(contentsOf: new)
+        }
+    }
+
+    func take() -> [Float] {
+        samples.withLock { all in
+            let out = all
+            all = []
+            return out
+        }
     }
 }

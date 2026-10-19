@@ -63,4 +63,12 @@ final class NoteTests: XCTestCase {
         XCTAssertTrue(markdown.contains("**Ik** (1:15) : hallo"))
         XCTAssertEqual(NoteBuilder.clock(3725), "1:02:05")
     }
+
+    func testOthersToldApartWithTheDiarizer() {
+        let theirs = words("goedemorgen allemaal", from: 0) + words("ik heb de cijfers", from: 5)
+        let turns = [SpeakerTurn(speaker: "A", start: 0, end: 1), SpeakerTurn(speaker: "B", start: 4.8, end: 6.5)]
+        let built = NoteBuilder.build(mine: [], others: theirs, turns: turns, meName: "Ik", personName: { "Persoon \($0)" })
+        XCTAssertEqual(built.speakers.filter { !$0.isMe }.map(\.name), ["Persoon 2", "Persoon 3"])
+        XCTAssertEqual(built.lines.map(\.speaker), ["p2", "p3"])
+    }
 }

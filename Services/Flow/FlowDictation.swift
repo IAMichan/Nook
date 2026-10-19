@@ -47,6 +47,7 @@ final class FlowDictation: ObservableObject {
         }
         installMonitors()
         if !trusted { waitForTrust() }
+        Parakeet.shared.preload()
     }
 
     func askForAccessibility() {
@@ -145,7 +146,38 @@ final class FlowDictation: ObservableObject {
 
     /// One listen, from the key press to the paste. Cancelling it drops its words.
     @MainActor private final class Listen {
-        let dictation = MultiDictation()
+        /// The Mac's recognizer in your languages, or Parakeet when it is downloaded and on (Settings).
+        let apple: MultiDictation?
+        let parakeet: ParakeetDictation?
+
+        init(useParakeet: Bool) {
+            apple = useParakeet ? nil : MultiDictation()
+            parakeet = useParakeet ? ParakeetDictation() : nil
+        }
+
+        var isRecording: Bool { apple?.isRecording ?? parakeet?.isRecording ?? false }
+        /// Parakeet writes everything at the end: no live words.
+        var transcript: String { apple?.transcript ?? "" }
+
+        func start() async {
+            if let apple { await apple.start(from: "") } else if let parakeet { await parakeet.start() }
+        }
+
+        func finish() async -> String {
+            if let apple { return await apple.finish() }
+            if let parakeet { return await parakeet.finish() }
+            return ""
+        }
+
+        func stop() {
+            apple?.stop()
+            parakeet?.stop()
+        }
+
+        func onLevel(_ handler: @escaping @MainActor (Double) -> Void) {
+            apple?.onLevel = handler
+            parakeet?.onLevel = handler
+        }
         var cancelled = false
         /// The app the words go to, seen when the key went down.
         let app = NSWorkspace.shared.frontmostApplication
@@ -154,15 +186,15 @@ final class FlowDictation: ObservableObject {
     }
 
     private func begin() {
-        let listen = Listen()
+        let listen = Listen(useParakeet: Parakeet.shared.inUse)
         current = listen
         pill.show(logic.phase == .locked ? .locked : .listening)
-        listen.dictation.onLevel = { [weak self] level in self?.pill.level = level }
+        listen.onLevel { [weak self] level in self?.pill.level = level }
         startTask = Task { @MainActor [weak self] in
-            await listen.dictation.start(from: "")
+            await listen.start()
             guard let self else { return }
-            if listen.cancelled { listen.dictation.stop(); return }
-            if !listen.dictation.isRecording, self.current === listen {
+            if listen.cancelled { listen.stop(); return }
+            if !listen.isRecording, self.current === listen {
                 // No permission, no recognizer for these languages, or no microphone.
                 self.logic.reset()
                 self.current = nil
@@ -172,7 +204,7 @@ final class FlowDictation: ObservableObject {
         // Live words in the pill while you speak.
         Task { @MainActor [weak self] in
             while let self, self.current === listen, !listen.cancelled {
-                self.pill.words = listen.dictation.transcript
+                self.pill.words = listen.transcript
                 try? await Task.sleep(nanoseconds: 120_000_000)
             }
         }
@@ -187,7 +219,7 @@ final class FlowDictation: ObservableObject {
             await opening?.value
             try? await Task.sleep(nanoseconds: Self.tailNanoseconds)
             guard !listen.cancelled else { return }
-            let heard = await listen.dictation.finish().trimmingCharacters(in: .whitespacesAndNewlines)
+            let heard = await listen.finish().trimmingCharacters(in: .whitespacesAndNewlines)
             guard let self, !listen.cancelled else { return }
             let text = await self.shape(heard, app: listen.app)
             guard !listen.cancelled else { return }
@@ -240,7 +272,7 @@ final class FlowDictation: ObservableObject {
         tickTask?.cancel()
         if let listen = current {
             listen.cancelled = true
-            listen.dictation.stop()
+            listen.stop()
         }
         current = nil
         pill.hide()

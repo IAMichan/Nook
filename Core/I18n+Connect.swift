@@ -193,7 +193,15 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "system.connector.headline": "Processor, geheugen, batterij en schijf",
         "system.connector.detail": "Alleen gelezen als je ernaar vraagt",
         "attach.window.failed": "Ik kon het venster van %@ niet vastleggen.",
-        "attach.window.done": "Ik kijk naar **%@**. Wat wil je erover weten?"
+        "attach.window.done": "Ik kijk naar **%@**. Wat wil je erover weten?",
+        "notes.person": "Persoon %ld",
+        "parakeet.title": "Parakeet (offline, nauwkeuriger)",
+        "parakeet.detail": "NVIDIA's spraakherkenning op de Neural Engine van je Mac: nauwkeuriger, 25 talen, zonder internet. Eén keer ±650 MB downloaden. Ook herkent Nook dan in gesprekken wie van de anderen iets zei.",
+        "parakeet.download": "Downloaden",
+        "parakeet.downloading": "Downloaden… %ld%%",
+        "parakeet.remove": "Verwijderen",
+        "parakeet.use": "Gebruiken voor dicteren en gesprekken",
+        "parakeet.unsupported": "Parakeet vraagt een Mac met Apple silicon. Nook gebruikt de spraakherkenning van je Mac."
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -384,7 +392,15 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "system.connector.headline": "Processor, memory, battery and disk",
         "system.connector.detail": "Only read when you ask",
         "attach.window.failed": "I could not capture the window of %@.",
-        "attach.window.done": "I'm looking at **%@**. What would you like to know?"
+        "attach.window.done": "I'm looking at **%@**. What would you like to know?",
+        "notes.person": "Person %ld",
+        "parakeet.title": "Parakeet (offline, more accurate)",
+        "parakeet.detail": "NVIDIA's speech recognition on your Mac's Neural Engine: more accurate, 25 languages, no internet. A one-time download of about 650 MB. Nook then also tells the other people in a call apart.",
+        "parakeet.download": "Download",
+        "parakeet.downloading": "Downloading… %ld%%",
+        "parakeet.remove": "Remove",
+        "parakeet.use": "Use for dictation and calls",
+        "parakeet.unsupported": "Parakeet needs a Mac with Apple silicon. Nook uses your Mac's speech recognition."
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -575,6 +591,14 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "system.connector.headline": "Prozessor, Speicher, Akku und Festplatte",
         "system.connector.detail": "Nur gelesen, wenn du fragst",
         "attach.window.failed": "Ich konnte das Fenster von %@ nicht aufnehmen.",
-        "attach.window.done": "Ich sehe mir **%@** an. Was möchtest du wissen?"
+        "attach.window.done": "Ich sehe mir **%@** an. Was möchtest du wissen?",
+        "notes.person": "Person %ld",
+        "parakeet.title": "Parakeet (offline, genauer)",
+        "parakeet.detail": "NVIDIAs Spracherkennung auf der Neural Engine deines Macs: genauer, 25 Sprachen, ohne Internet. Einmal etwa 650 MB laden. Dann unterscheidet Nook in Gesprächen auch die anderen Personen.",
+        "parakeet.download": "Laden",
+        "parakeet.downloading": "Lädt… %ld%%",
+        "parakeet.remove": "Entfernen",
+        "parakeet.use": "Für Diktat und Gespräche verwenden",
+        "parakeet.unsupported": "Parakeet braucht einen Mac mit Apple Silicon. Nook nutzt die Spracherkennung deines Macs."
     ]
 ]
