@@ -4,6 +4,7 @@ import SwiftUI
 /// "Resume at reset", which sends "Continue where you left off." once it has.
 struct UsageLimitBanner: View {
     @EnvironmentObject private var workspace: WorkspaceManager
+    @EnvironmentObject private var app: AppModel
     let run: WorkspaceRun
 
     var body: some View {
@@ -23,6 +24,12 @@ struct UsageLimitBanner: View {
                     }
                 }
                 Spacer(minLength: 6)
+                if let suggestion = suggestion() {
+                    SmallGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
+                        _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id)
+                    }
+                    .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
+                }
                 if run.limitResetAt != nil {
                     SmallGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
                         workspace.setAutoResume(run.id, !auto)
@@ -35,6 +42,29 @@ struct UsageLimitBanner: View {
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
         }
+    }
+
+    /// Another account with room left (same agent first), when this one is nearly out (LimitAdvisor).
+    private func suggestion() -> (provider: RunProvider, profile: AgentProfile, sameAgent: Bool)? {
+        var states: [LimitState] = []
+        var profiles: [String: AgentProfile] = [:]
+        for provider in app.connectedProviders where workspace.executable(provider) != nil {
+            for profile in app.connectedProfiles(for: provider) {
+                let limits = app.quota.limits(for: profile)
+                let fraction = limits.map(\.percent).max().map { $0 / 100 }
+                states.append(LimitState(provider: provider, profileID: profile.id, usedFraction: limits.isEmpty ? nil : fraction,
+                                         resetAt: limits.compactMap(\.resetsAt).min()))
+                profiles[profile.id] = profile
+            }
+        }
+        // This session's own account counts as full: it hit the limit.
+        if let index = states.firstIndex(where: { $0.provider == run.provider && $0.profileID == run.profileID }) {
+            states[index].usedFraction = max(states[index].usedFraction ?? 0, 1)
+        }
+        guard workspace.canTransfer(run.id),
+              let pick = LimitAdvisor.suggest(states: states, current: (run.provider, run.profileID), now: Date()),
+              let profile = profiles[pick.profileID] else { return nil }
+        return (pick.provider, profile, pick.sameAgent)
     }
 
     private func line(now: Date, auto: Bool) -> String {

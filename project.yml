@@ -149,6 +149,7 @@ targets:
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
       - path: Services/Workspace/WebhookSecurity.swift
+      - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/Keybindings.swift
       - path: Services/Workspace/PromptLink.swift

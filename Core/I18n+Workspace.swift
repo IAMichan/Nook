@@ -6,6 +6,9 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.limit.switchTo": "Ga verder met %@",
+        "ws.limit.switchHelp": "Zet de sessie over naar dit account; de gesprekscontext gaat mee.",
+        "ws.limit.switchHelpSame": "Zelfde agent, ander account: de sessie gaat daar verder.",
         "palette.placeholder": "Zoek een sessie of actie (> voor acties)",
         "palette.none": "Niets gevonden",
         "promptLink.filled": "Dit komt uit een link: lees het goed voordat je het verstuurt.",
@@ -690,6 +693,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.limit.switchTo": "Continue with %@",
+        "ws.limit.switchHelp": "Moves the session to this account; the conversation context goes along.",
+        "ws.limit.switchHelpSame": "Same agent, other account: the session continues there.",
         "palette.placeholder": "Find a session or action (> for actions)",
         "palette.none": "Nothing found",
         "promptLink.filled": "This came from a link: read it carefully before you send it.",
@@ -1374,6 +1380,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.limit.switchTo": "Weiter mit %@",
+        "ws.limit.switchHelp": "Verschiebt die Sitzung auf dieses Konto; der Gesprächskontext wird mitgenommen.",
+        "ws.limit.switchHelpSame": "Gleicher Agent, anderes Konto: die Sitzung läuft dort weiter.",
         "palette.placeholder": "Sitzung oder Aktion suchen (> für Aktionen)",
         "palette.none": "Nichts gefunden",
         "promptLink.filled": "Das stammt aus einem Link: lies es sorgfältig, bevor du es sendest.",
