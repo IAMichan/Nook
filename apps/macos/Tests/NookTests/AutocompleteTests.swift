@@ -10,9 +10,9 @@ final class AutocompleteTests: XCTestCase {
     private func string(_ text: String) -> [UInt8] { le(UInt64(text.utf8.count)) + Array(text.utf8) }
 
     /// A minimal GGUF header: name and architecture as strings, a context length, and a string array in between that must be skipped.
-    private func sampleGGUF(version: UInt32 = 3) -> Data {
+    private func sampleGGUF(version: UInt32 = 3, architecture: String = "qwen3") -> Data {
         var bytes = Array("GGUF".utf8) + le(version) + le(UInt64(0)) + le(UInt64(4))
-        bytes += string("general.architecture") + le(UInt32(8)) + string("qwen3")
+        bytes += string("general.architecture") + le(UInt32(8)) + string(architecture)
         bytes += string("general.name") + le(UInt32(8)) + string("Qwen3 0.6B")
         bytes += string("general.tags") + le(UInt32(9)) + le(UInt32(8)) + le(UInt64(2)) + string("a") + string("bb")
         bytes += string("qwen3.context_length") + le(UInt32(4)) + le(UInt32(32_768))
@@ -39,7 +39,7 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertNotNil(GGUFReader.parse(Data(bytes)))
     }
 
-    // MARK: Finding Cotypist's model
+    // MARK: Finding models on this Mac
 
     private func makeHome() throws -> URL {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("nook-ac-\(UUID().uuidString)")
@@ -48,23 +48,27 @@ final class AutocompleteTests: XCTestCase {
         return home
     }
 
-    func testFindsGGUFInCotypistFolderOnly() throws {
+    func testFindsTextModelsOnThisMac() throws {
         let home = try makeHome()
-        let models = home.appendingPathComponent("Library/Application Support/Cotypist/Models", isDirectory: true)
-        let other = home.appendingPathComponent("Library/Application Support/SomethingElse", isDirectory: true)
-        for folder in [models, other] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let models = home.appendingPathComponent("Library/Application Support/SomeWriter/Models", isDirectory: true)
+        let nook = home.appendingPathComponent("Library/Application Support/Nook/Autocomplete/Models", isDirectory: true)
+        let studio = home.appendingPathComponent(".lmstudio/models/qwen", isDirectory: true)
+        for folder in [models, nook, studio] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
         try sampleGGUF().write(to: models.appendingPathComponent("qwen.gguf"))
         try sampleGGUF().write(to: models.appendingPathComponent("vision-mmproj.gguf"))
         try Data("junk".utf8).write(to: models.appendingPathComponent("broken.gguf"))
-        try sampleGGUF().write(to: other.appendingPathComponent("elsewhere.gguf"))
+        try sampleGGUF(architecture: "nomic-bert").write(to: models.appendingPathComponent("embedding.gguf"))
+        try sampleGGUF().write(to: nook.appendingPathComponent("own.gguf"))
+        try sampleGGUF().write(to: studio.appendingPathComponent("studio.gguf"))
 
-        let found = CompletionModelLocator.cotypistModels(home: home, applications: [])
-        XCTAssertEqual(found.map { $0.url.lastPathComponent }, ["qwen.gguf"])
+        let found = CompletionModelLocator.foundModels(home: home, minimumBytes: 0)
+        XCTAssertEqual(Set(found.map { $0.url.lastPathComponent }), ["qwen.gguf", "studio.gguf"], "Nook's own folder, projectors, embeddings and broken files are left out")
+        XCTAssertTrue(found.allSatisfy { $0.source == .found })
         XCTAssertEqual(found.first?.title, "Qwen3 0.6B")
-        XCTAssertEqual(found.first?.source, .cotypist)
+        XCTAssertTrue(CompletionModelLocator.foundModels(home: home).isEmpty, "test files are far below the size of a language model")
     }
 
-    func testStoredPathWinsOverCotypist() throws {
+    func testStoredPathWinsOverFoundModels() throws {
         let home = try makeHome()
         let own = home.appendingPathComponent("mine.gguf")
         try sampleGGUF().write(to: own)
@@ -73,6 +77,25 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(picked?.source, .custom)
         XCTAssertNil(CompletionModelLocator.resolve(storedPath: home.appendingPathComponent("gone.gguf").path, candidates: []))
         XCTAssertNil(CompletionModelLocator.resolve(storedPath: "", candidates: []))
+    }
+
+    func testSourceFallsBackToTheBrainModel() throws {
+        let home = try makeHome()
+        let file = home.appendingPathComponent("base.gguf")
+        try sampleGGUF().write(to: file)
+        let gguf = try XCTUnwrap(CompletionModelLocator.model(at: file, source: .found))
+        let brains = [(id: "mlx-community/gemma", title: "Gemma"), (id: "mlx-community/qwen", title: "Qwen")]
+
+        XCTAssertEqual(CompletionSource.resolve(stored: "", files: [gguf], brainModels: brains, preferredBrain: nil)?.identity, file.path,
+                       "a GGUF model goes first")
+        XCTAssertEqual(CompletionSource.resolve(stored: "", files: [], brainModels: brains, preferredBrain: "mlx-community/qwen"),
+                       .brain(id: "mlx-community/qwen", title: "Qwen"), "without one, the model the brain uses")
+        XCTAssertEqual(CompletionSource.resolve(stored: "", files: [], brainModels: brains, preferredBrain: "apple")?.title, "Gemma")
+        XCTAssertEqual(CompletionSource.resolve(stored: "brain:mlx-community/gemma", files: [gguf], brainModels: brains, preferredBrain: nil),
+                       .brain(id: "mlx-community/gemma", title: "Gemma"), "a chosen brain model wins over a GGUF file")
+        XCTAssertNil(CompletionSource.resolve(stored: "brain:gone", files: [gguf], brainModels: brains, preferredBrain: nil))
+        XCTAssertNil(CompletionSource.resolve(stored: "", files: [], brainModels: [], preferredBrain: nil))
+        XCTAssertEqual(CompletionSource.brain(id: "x", title: "X").identity, "brain:x")
     }
 
     func testRecommendedModelIsGemmaForDutch() {
@@ -322,5 +345,21 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionTypography.smartQuotes(" \"top\" en it's", after: "s"), " “top” en it’s")
         XCTAssertEqual(CompletionTypography.smartQuotes("'s avonds", after: " "), "’s avonds")
         XCTAssertEqual(CompletionTypography.smartQuotes("'sterk'", after: " "), "‘sterk’")
+    }
+
+    func testDownloadLinks() {
+        let page = CompletionCatalogModel.custom(from: " https://huggingface.co/someone/Model-GGUF/blob/main/model.Q4_K_M.gguf?download=true ")
+        XCTAssertEqual(page?.url.absoluteString, "https://huggingface.co/someone/Model-GGUF/resolve/main/model.Q4_K_M.gguf")
+        XCTAssertEqual(page?.fileName, "model.Q4_K_M.gguf")
+        XCTAssertEqual(page?.name, "model.Q4_K_M")
+        XCTAssertEqual(CompletionCatalogModel.custom(from: "https://hf.co/a/b/resolve/main/sub/x.gguf")?.url.absoluteString,
+                       "https://huggingface.co/a/b/resolve/main/sub/x.gguf")
+        XCTAssertEqual(CompletionCatalogModel.custom(from: "https://example.com/models/y.gguf")?.fileName, "y.gguf")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "http://example.com/y.gguf"), "only https")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "https://huggingface.co/a/b"), "a page, not a file")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "https://huggingface.co/a/b/blob/main/mmproj-x.gguf"), "a vision projector")
+        XCTAssertNil(CompletionCatalogModel.custom(from: "hallo"))
+        XCTAssertEqual(CompletionCatalogModel.catalog.first?.url.absoluteString,
+                       "https://huggingface.co/mradermacher/Qwen3-0.6B-Base-i1-GGUF/resolve/main/Qwen3-0.6B-Base.i1-Q4_K_M.gguf")
     }
 }

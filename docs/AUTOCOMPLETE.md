@@ -4,38 +4,24 @@ Terwijl je in een andere app typt, stelt Nook voor hoe je zin verdergaat. Dat ge
 
 Aanzetten doe je bij **Instellingen › Aanvullen**. Dat paneel heeft vier tabbladen:
 
-- **Algemeen**: aan/uit en de status, het model (dat van Cotypist, een eigen bestand of een download), hoe lang en hoe gretig de voorstellen zijn, en de toetsen.
+- **Algemeen**: aan/uit en de status, het model (dat van je brein, een GGUF-model op je Mac, een eigen bestand of een download), hoe lang en hoe gretig de voorstellen zijn, en de toetsen.
 - **Apps**: al je geïnstalleerde apps met hun icoon en een schakelaar. Zoek een app of filter op Aan of Uit. Klik op een app voor eigen uitleg, Tab aan de app laten, midden in een regel, leren, tekstgrootte, hoogte en pauzeren. Daaronder staan websites: die zet je apart uit of geef je eigen uitleg, ook als de browser aan staat. Terminals, code-editors en wachtwoordmanagers staan standaard uit.
 - **Stijl en context**: wat het model weet (app en venster, je geheugen, je scherm, het klembord), jouw stijl en leren, emoji, typfouten, batterij en andere woorden.
 - **Statistiek**: hoe vaak je aanvullen gebruikte vandaag, deze week en in totaal, een grafiek van 30 dagen, bespaarde typtijd, ingevulde tekens, hoeveel voorstellen je nam, je reeks en in welke apps je het meest aanvult. Een keer is elke Tab die iets invult. Nook bewaart alleen aantallen, nooit wat je typte.
 
 In de notch staat bij Vandaag een regel als aanvullen aan staat maar niet kan werken (geen toegang of geen model), met een knop die het juiste tabblad opent. Heb je vandaag aangevuld en is er ruimte, dan zie je daar ook hoe vaak, met een link naar Statistiek. Het menubalkmenu heeft een knop om te pauzeren met het aantal woorden van vandaag, en in de zijbalk van Instellingen krijgt Aanvullen een badge als er iets moet gebeuren.
 
-## Nook naast Cotypist
+## Wat het kan
 
-| | Cotypist | Nook |
-| --- | --- | --- |
-| Voorstellen in elke app, als grijze tekst | ✓ | ✓ |
-| Woord voor woord (Tab) of alles (⇧Tab), doortypen | ✓ | ✓, toetsen vrij te kiezen |
-| Model op je eigen Mac (llama.cpp, GGUF) | ✓ | ✓, en het model dat Cotypist al downloadde |
-| Woordlimiet | 100 per dag gratis, daarna abonnement | geen |
-| Eigen instructies | Plus | ✓ |
-| Instructies per app | Pro | ✓, ook per website |
-| Apps uitzetten | ✓ | ✓, met een lijst van al je apps, zoeken en filteren |
-| Klembord als context | Pro | ✓ |
-| Midden in een regel | Pro (Labs) | ✓ |
-| Modelcatalogus | Pro | ✓, met advies voor jouw Mac |
-| Emoji op naam | ✓ | ✓, ook met Nederlandse namen (`:lachen`, `:duim`) |
-| Typfouten | autocorrect | verbetering die je met Tab neemt |
-| Wat je geheugen weet (naam, werk, mensen) | – | ✓ |
-| Wat er op je scherm staat (de mail waarop je antwoordt) | – | ✓, uit Nooks eigen schermlezing |
-| Leren van je eigen schrijven | ✓ | ✓, lokaal, geheimen (ook BSN) weggefilterd, te wissen |
-| Andere woorden kiezen met een cijfer | – | ✓ (proef) |
-| Batterij: korter of pauzeren | – | ✓ |
-| Slimme aanhalingstekens volgens macOS | ✓ | ✓, met `'s` en `'t` goed |
-| Statistiek | ✓ | ✓, per dag, per week en per app, met grafiek, reeks en bespaarde tijd |
-
-De kolom Cotypist komt uit openbare reviews en hun prijspagina. Wil je het precies weten? Draai dan `scripts/inspect-cotypist.sh` op een Mac waar Cotypist op staat (zie onder).
+- Voorstellen in elke app als grijze tekst in de regel. **Tab** neemt een woord en **⇧Tab** alles; je kunt ook doortypen. Alle toetsen kun je zelf kiezen.
+- Een model op je eigen Mac: het model van je brein (MLX) of een GGUF-model (llama.cpp). Er is geen woordlimiet en geen abonnement.
+- Je eigen instructies, ook per app en per website. Per app zet je aanvullen aan of uit, met een lijst van al je apps.
+- Context uit je geheugen (naam, werk, mensen), van je scherm (de mail waarop je antwoordt) en van het klembord.
+- Midden in een regel, emoji op naam (ook Nederlands: `:lachen`, `:duim`), typfouten verbeteren en andere woorden kiezen met een cijfer.
+- Leren van je eigen schrijven, lokaal. Geheimen, ook een BSN, worden eruit gefilterd en je kunt alles wissen.
+- Slimme aanhalingstekens volgens macOS, met `'s` en `'t` goed.
+- Kortere voorstellen of pauze op batterij.
+- Statistiek per dag, per week en per app.
 
 ## Hoe het werkt
 
@@ -50,31 +36,32 @@ De kolom Cotypist komt uit openbare reviews en hun prijspagina. Wil je het preci
 
 Velden zonder gewone tekstwaarde, zoals rich-text editors in de browser (Gmail, Notion, Slack, Google Docs met toegankelijkheid aan), leest Nook via text markers. Chromium-browsers krijgen `AXEnhancedUserInterface` en Electron-apps `AXManualAccessibility`, zodat ze hun velden laten zien. Een webpagina die je alleen leest, telt niet als veld.
 
-## Het model van Cotypist
+## Welk model
 
-`CompletionModelLocator` zoekt in `~/Library/Application Support`, `Caches`, `Containers`, `Group Containers` en `/Applications` naar mappen met "cotypist" in de naam. Het neemt elk `.gguf`-bestand daarin, behalve `mmproj`. `GGUFReader` leest van elk bestand de header (naam, architectuur, contextlengte) zonder het model te laden. Nook kiest het nieuwste model van Cotypist, en anders een eigen model uit `~/Library/Application Support/Nook/Autocomplete/Models`. Nook leest het bestand alleen: geen kopie, geen wijziging.
+**Automatisch** kiest in deze volgorde:
 
-Heeft Cotypist geen los GGUF-bestand, dan download je in Instellingen een model uit de catalogus. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft.
+1. **Een GGUF-model dat al op je Mac staat.** Andere apps en tools hebben het dan al gedownload. `CompletionModelLocator` zoekt in `~/Library/Application Support`, `~/Library/Caches`, de map van LM Studio en de caches van Hugging Face en llama.cpp. De containers van andere apps slaat het over, want daarvoor vraagt macOS toestemming. Projectoren voor beeld, embedding-modellen en bestanden onder 50 MB tellen niet mee. `GGUFReader` leest van elk bestand alleen de header (naam, architectuur, contextlengte). Nook leest zo'n bestand alleen, op de plek waar het staat: geen kopie, geen wijziging.
+2. **Een GGUF-model dat je in Instellingen downloadde.** Dat doe je bij **Instellingen › Aanvullen › Algemeen › GGUF-modellen downloaden**. Daar staat een lijst basismodellen met hun grootte en het geheugen dat ze vragen. Nook raadt Gemma aan, omdat dat het beste Nederlands schrijft. Je kunt ook een eigen link naar een `.gguf`-bestand plakken, zoals een Hugging Face-pagina of een directe link. Je ziet de voortgang in GB en kunt de download annuleren. Is een download klaar, dan controleert Nook of het echt een GGUF-model is en gebruikt het meteen. Gedownloade modellen kun je weer verwijderen. Staat er nog geen enkel model op je Mac, dan zit de knop voor het aanbevolen model direct in de melding "Nog geen model".
+3. **Het model van je brein.** Dat is het MLX-model dat je bij **Instellingen › Brein** installeerde. Je hoeft dan niets te downloaden.
 
-## Cotypist uitlezen
+Je kunt ook zelf een model kiezen, of een `.gguf`-bestand.
 
-```sh
-scripts/inspect-cotypist.sh        # schrijft ~/Desktop/cotypist-report.txt
-```
+### Het model van je brein
 
-Het script leest alleen. Het toont:
-- de bundel, frameworks en entitlements;
-- de instellingssleutels, met waarden afgekapt op 60 tekens;
-- de mappen met hun groottes;
-- de modelbestanden met hun GGUF-metadata, waaronder het chat-sjabloon;
-- de strings in het programma die over prompts, sampling en macOS-API's gaan.
+`BrainCompleter` gebruikt hetzelfde model als het brein via `EmbeddedModel`, en werkt net als `LlamaCompleter`:
 
-Je getypte tekst en je schrijfgeschiedenis leest het nooit. Kijk het rapport na voordat je het deelt. Met dat rapport kan Nook nog dichter bij Cotypist komen, bijvoorbeeld met hetzelfde prompt-formaat of dezelfde samplinginstellingen.
+- **Zekerheidsdrempel:** een `LogitSampler` kiest steeds het waarschijnlijkste token en onthoudt hoe zeker het model daarvan was. Is het model onzeker over het eerste token, dan toont Nook niets. Daarna stopt het voorstel waar die zekerheid wegzakt.
+- **Een eigen cache:** de prompt blijft in een eigen key-value-cache staan. Bij de volgende toets snijdt Nook die terug tot het gedeelde begin, zodat het model alleen leest wat nieuw is. Hybride modellen, waarvan de cache niet terug te snijden is, lezen de prompt opnieuw.
+- **Jouw woorden:** woorden die je vaak schrijft krijgen een bonus.
+- **Andere woorden:** Nook neemt de waarschijnlijkste eerste tokens en spelt elk woord daarna uit.
+- **Spaties:** Nook decodeert tokens samen met het laatste token van de prompt. Anders laat de tokenizer de spatie vooraan vallen en plakt een voorstel aan het vorige woord vast.
+
+Een chatantwoord gaat altijd voor: zolang het brein schrijft, toont aanvullen niets. Een chatmodel zet gewone tekst goed voort, maar een GGUF-basismodel is daar het best in.
 
 ## Bouwen en testen
 
 Het pakket `LlamaSwift` ([mattt/llama.swift](https://github.com/mattt/llama.swift), vastgezet op 2.10549.0, dat is llama.cpp b10549) staat in `apps/macos/project.yml`. Draai na een `git pull` `xcodegen` zoals gewoonlijk.
 
-De logica zonder AppKit heeft tests in `Tests/NookTests/AutocompleteTests.swift`. Dat zijn `GGUFReader`, `CompletionModels`, `CompletionSuggestion`, `CompletionPreferences`, `CompletionEmoji`, `CompletionPrivacy` en `CompletionLearning`. Ze draaien ook zonder Xcode met `scripts/core-tests.sh --filter AutocompleteTests`. De engine, het toetsfilter, de veldlezer en de overlay test je alleen op een Mac.
+De logica zonder AppKit heeft tests in `Tests/NookTests/AutocompleteTests.swift`. Dat zijn `GGUFReader`, `CompletionModels` (ook de modelkeuze), `CompletionSuggestion`, `CompletionPreferences`, `CompletionEmoji`, `CompletionPrivacy` en `CompletionLearning`. Ze draaien ook zonder Xcode met `scripts/core-tests.sh --filter AutocompleteTests`. De engine, het toetsfilter, de veldlezer en de overlay test je alleen op een Mac.
 
-Een deel van het ontwerp en de code komt uit [Typist](https://github.com/BrodySalvucci/Typist) (MIT). Dat is een open-source app die het gedrag van Cotypist bestudeerde, zonder Cotypists code. Zie `THIRD-PARTY-NOTICES.md`.
+Een deel van het ontwerp en de code komt uit [Typist](https://github.com/BrodySalvucci/Typist) (MIT). Zie `THIRD-PARTY-NOTICES.md`.

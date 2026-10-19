@@ -2,7 +2,8 @@ import Foundation
 
 /// A GGUF model file on this Mac that autocompletion can run.
 struct CompletionModelFile: Identifiable, Equatable {
-    enum Source: Equatable { case cotypist, nook, custom }
+    /// found: another app or tool on this Mac downloaded it; nook: Nook's own models folder; custom: picked by hand.
+    enum Source: Equatable { case found, nook, custom }
 
     let url: URL
     let bytes: Int64
@@ -21,38 +22,44 @@ struct CompletionModelFile: Identifiable, Equatable {
     var sizeText: String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
 }
 
-/// Finds the language model that Cotypist downloaded, so Nook can complete text with the same file instead of fetching a
-/// second copy. Nothing is copied or changed: the file is only read, in place.
+/// Finds GGUF language models already on this Mac (downloaded by other apps and tools), so Nook can complete text with a
+/// file that is there instead of fetching a second copy. Nothing is copied or changed: a file is only read, in place.
 ///
-/// Cotypist is a closed app and does not document where it keeps its models, so this looks for folders named after it
-/// (Application Support, Containers, Caches, and the app bundle) and takes every GGUF file inside. A file in another format
-/// is not recognised and is skipped; the user can always pick a file by hand.
+/// It looks in the places such apps keep their models: Application Support, Caches, LM Studio's folder and the Hugging Face
+/// and llama.cpp caches. Other apps' sandbox containers are left alone (macOS asks permission for those). Vision projectors,
+/// embedding models and files too small to be a language model are skipped; the user can always pick a file by hand.
 enum CompletionModelLocator {
-    /// Names of folders and apps that belong to Cotypist, compared in lowercase.
-    static let needles = ["cotypist"]
+    /// Model types that cannot write text.
+    static let notTextModels: Set<String> = ["bert", "nomic-bert", "jina-bert-v2", "t5encoder", "clip", "wavtokenizer-dec"]
 
-    static func cotypistModels(home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                               applications: [URL] = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/Applications/Utilities")]) -> [CompletionModelFile] {
-        var roots: [URL] = []
+    static func foundModels(home: URL = FileManager.default.homeDirectoryForCurrentUser, minimumBytes: Int64 = 50_000_000) -> [CompletionModelFile] {
         let library = home.appendingPathComponent("Library", isDirectory: true)
-        for parent in ["Application Support", "Caches", "Containers", "Group Containers"] {
-            roots += children(of: library.appendingPathComponent(parent, isDirectory: true)).filter(matches)
-        }
-        for folder in applications { roots += children(of: folder).filter(matches) }
+        let nook = library.appendingPathComponent("Application Support/Nook", isDirectory: true).standardizedFileURL.path
+        let roots: [(URL, Int)] = [
+            (library.appendingPathComponent("Application Support", isDirectory: true), 6),
+            (library.appendingPathComponent("Caches", isDirectory: true), 5),
+            (home.appendingPathComponent(".lmstudio/models", isDirectory: true), 4),
+            (home.appendingPathComponent(".cache/lm-studio/models", isDirectory: true), 4),
+            (home.appendingPathComponent(".cache/huggingface/hub", isDirectory: true), 5),
+            (home.appendingPathComponent(".cache/llama.cpp", isDirectory: true), 2),
+        ]
         var seen = Set<String>()
-        let files = roots.flatMap { ggufFiles(in: $0) }.filter { seen.insert($0.standardizedFileURL.path).inserted }
-        return files.compactMap { model(at: $0, source: .cotypist) }
+        let files = roots.flatMap { ggufFiles(in: $0.0, maxDepth: $0.1) }
+            .filter { !$0.standardizedFileURL.path.hasPrefix(nook) }
+            .filter { seen.insert($0.resolvingSymlinksInPath().path).inserted }
+        return files.compactMap { model(at: $0, source: .found) }
+            .filter { $0.bytes >= minimumBytes && !notTextModels.contains($0.info?.architecture ?? "") }
             .sorted { $0.modified > $1.modified }
     }
 
-    /// The model file to use: the one the user picked if it is still there, otherwise the newest one Cotypist has, then
+    /// The model file to use: the one the user picked if it is still there, otherwise the newest one found on this Mac, then
     /// one Nook downloaded itself.
     static func resolve(storedPath: String, candidates: [CompletionModelFile]) -> CompletionModelFile? {
         if !storedPath.isEmpty {
             if let known = candidates.first(where: { $0.url.path == storedPath }) { return known }
             return model(at: URL(fileURLWithPath: storedPath), source: .custom)
         }
-        return candidates.first { $0.source == .cotypist } ?? candidates.first
+        return candidates.first { $0.source == .found } ?? candidates.first
     }
 
     /// The GGUF files Nook downloaded or the user dropped in its models folder.
@@ -62,8 +69,10 @@ enum CompletionModelLocator {
 
     /// A readable GGUF file, or nil.
     static func model(at url: URL, source: CompletionModelFile.Source) -> CompletionModelFile? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
-              values.isRegularFile == true, let info = GGUFReader.read(url) else { return nil }
+        // The Hugging Face cache keeps its files as links to blobs: read what the link points at.
+        let file = url.resolvingSymlinksInPath()
+        guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
+              values.isRegularFile == true, let info = GGUFReader.read(file) else { return nil }
         return CompletionModelFile(url: url, bytes: Int64(values.fileSize ?? 0), modified: values.contentModificationDate ?? .distantPast,
                                    info: info, source: source)
     }
@@ -74,7 +83,7 @@ enum CompletionModelLocator {
         var isDirectory: ObjCBool = false
         guard manager.fileExists(atPath: root.path, isDirectory: &isDirectory) else { return [] }
         if !isDirectory.boolValue { return isModelFile(root) ? [root] : [] }
-        guard let walker = manager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsPackageDescendants]) else { return [] }
+        guard let walker = manager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsPackageDescendants, .skipsHiddenFiles]) else { return [] }
         var found: [URL] = []
         for case let url as URL in walker {
             if walker.level > maxDepth { walker.skipDescendants(); continue }
@@ -87,18 +96,52 @@ enum CompletionModelLocator {
     private static func isModelFile(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == "gguf" && !url.lastPathComponent.lowercased().contains("mmproj")
     }
+}
 
-    private static func children(of folder: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+/// What autocomplete runs on: a GGUF file through llama.cpp, or the model Nook's brain already downloaded (MLX).
+enum CompletionSource: Equatable {
+    case gguf(CompletionModelFile)
+    case brain(id: String, title: String)
+
+    /// Stored in the settings as the model choice: a file path, or "brain:" and the model's id.
+    var identity: String {
+        switch self {
+        case .gguf(let file): return file.url.path
+        case .brain(let id, _): return Self.brainPrefix + id
+        }
     }
 
-    private static func matches(_ url: URL) -> Bool {
-        let name = url.lastPathComponent.lowercased()
-        return needles.contains { name.contains($0) }
+    var title: String {
+        switch self {
+        case .gguf(let file): return file.title
+        case .brain(_, let title): return title
+        }
+    }
+
+    static let brainPrefix = "brain:"
+
+    /// The source to use.
+    /// - Parameters:
+    ///   - stored: the setting: empty for automatic, a GGUF path, or "brain:<id>".
+    ///   - files: GGUF files found on this Mac and in Nook's folder, best first.
+    ///   - brainModels: the brain's installed models (id, title).
+    ///   - preferredBrain: the model the brain uses now, when it is one of them.
+    /// Automatic takes a GGUF model found on this Mac, then one in Nook's folder, then the brain's model: every Mac with a
+    /// local brain can complete without downloading anything.
+    static func resolve(stored: String, files: [CompletionModelFile], brainModels: [(id: String, title: String)],
+                        preferredBrain: String?) -> CompletionSource? {
+        if stored.hasPrefix(brainPrefix) {
+            let id = String(stored.dropFirst(brainPrefix.count))
+            return brainModels.first { $0.id == id }.map { .brain(id: $0.id, title: $0.title) }
+        }
+        if !stored.isEmpty { return CompletionModelLocator.resolve(storedPath: stored, candidates: files).map { .gguf($0) } }
+        if let file = CompletionModelLocator.resolve(storedPath: "", candidates: files) { return .gguf(file) }
+        let brain = brainModels.first { $0.id == preferredBrain } ?? brainModels.first
+        return brain.map { .brain(id: $0.id, title: $0.title) }
     }
 }
 
-/// A model Nook can download for autocomplete when Cotypist's is not there. Base (not chat) models: plain continuation is
+/// A model Nook can download for autocomplete when none is on this Mac yet. Base (not chat) models: plain continuation is
 /// what inline completion needs. The list follows Typist's catalog (MIT, © 2026 Brody Salvucci).
 struct CompletionCatalogModel: Identifiable, Equatable {
     var name: String
@@ -110,8 +153,31 @@ struct CompletionCatalogModel: Identifiable, Equatable {
     /// Key of the one-line note (i18n).
     var noteKey: String
 
+    /// A link of its own, for a model you paste instead of picking from the list.
+    var link: URL? = nil
+
     var id: String { fileName }
-    var url: URL { URL(string: "https://huggingface.co/\(repository)/resolve/main/\(fileName)")! }
+    var url: URL { link ?? URL(string: "https://huggingface.co/\(repository)/resolve/main/\(fileName)")! }
+
+    /// A model from a pasted link to a `.gguf` file: a Hugging Face page of the file ("…/blob/main/x.gguf", turned into its
+    /// download link) or any https link ending in `.gguf`. Nil for anything else.
+    static func custom(from text: String) -> CompletionCatalogModel? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed), components.scheme == "https", let host = components.host, !host.isEmpty else { return nil }
+        var parts = components.path.split(separator: "/").map(String.init)
+        guard let last = parts.last, last.lowercased().hasSuffix(".gguf"), !last.lowercased().contains("mmproj") else { return nil }
+        if host == "huggingface.co" || host == "hf.co" {
+            // owner/repo/(blob|resolve)/revision/path…
+            guard parts.count >= 5, ["blob", "resolve"].contains(parts[2]) else { return nil }
+            parts[2] = "resolve"
+            components.host = "huggingface.co"
+            components.path = "/" + parts.joined(separator: "/")
+            components.query = nil
+        }
+        guard let url = components.url else { return nil }
+        let name = String(last.dropLast(5))
+        return CompletionCatalogModel(name: name, fileName: last, repository: "", sizeGB: 0, minimumMemoryGB: 0, noteKey: "", link: url)
+    }
 
     static let catalog: [CompletionCatalogModel] = [
         CompletionCatalogModel(name: "Qwen3 0.6B Base", fileName: "Qwen3-0.6B-Base.i1-Q4_K_M.gguf",

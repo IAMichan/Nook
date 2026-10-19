@@ -10,8 +10,9 @@ import LlamaSwift
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
 ///
 /// The approach (threshold, word bonus, word alternatives) follows Typist's engine (MIT, © 2026 Brody Salvucci).
-final class LlamaCompleter: @unchecked Sendable {
+final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     let path: String
+    var identity: String { path }
 
     private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInitiated)
     private let lock = NSLock()
@@ -173,7 +174,6 @@ final class LlamaCompleter: @unchecked Sendable {
         guard !isCancelled(), let length = prime(text, reserve: 8), let logits = llama_get_logits_ith(context, -1) else { return [] }
         let candidates = topTokens(logits, count: count * 4)
         var results: [String] = []
-        let excluded = excluding.lowercased()
         for candidate in candidates {
             if isCancelled() { return [] }
             if results.count == count { break }
@@ -191,12 +191,9 @@ final class LlamaCompleter: @unchecked Sendable {
                 bytes += piece
                 next = [token]
             }
-            let raw = String(decoding: bytes, as: UTF8.self)
-            let word = raw.trimmingCharacters(in: .whitespaces)
-            let entry = (raw.first == " " ? " " : "") + word
-            guard word.count >= 2, word.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "-" }), word.lowercased() != excluded,
-                  !results.contains(where: { $0.lowercased() == entry.lowercased() }) else { continue }
-            results.append(entry)
+            if let entry = CompletionWords.acceptable(String(decoding: bytes, as: UTF8.self), excluding: excluding, among: results) {
+                results.append(entry)
+            }
         }
         return results
     }

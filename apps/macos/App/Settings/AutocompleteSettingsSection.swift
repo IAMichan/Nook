@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Autocomplete: suggestions as you type in any app, with the model of Cotypist or one of Nook's own.
+/// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
 struct AutocompleteSettingsSection: View {
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
@@ -15,6 +15,8 @@ struct AutocompleteSettingsSection: View {
     @State private var search = ""
     @State private var filter: AppFilter = .all
     @State private var newSite = ""
+    @State private var customLink = ""
+    @State private var pendingDelete: CompletionCatalogModel?
 
     enum AppFilter: String, CaseIterable, Identifiable {
         case all, on, off
@@ -50,6 +52,7 @@ struct AutocompleteSettingsSection: View {
                     if store.prefs.enabled { status }
                 }
                 modelSection
+                downloadSection
                 suggestionsSection
                 keysSection
             case .apps:
@@ -74,7 +77,14 @@ struct AutocompleteSettingsSection: View {
                 Button(tr("flow.settings.allow")) { autocomplete.openAccessibilitySettings() }
             }
         case .noModel:
-            StatusRow(title: tr("autocomplete.noModel"), detail: tr("autocomplete.noModelDetail"), state: .warning) { EmptyView() }
+            StatusRow(title: tr("autocomplete.noModel"), detail: tr("autocomplete.noModelDetail"), state: .warning) {
+                if let model = downloads.downloading {
+                    ProgressView(value: downloads.progress).frame(width: 80).help(model.name)
+                } else {
+                    Button(tr("autocomplete.download.named", recommended.name)) { start(recommended) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
         case .failed(let message):
             StatusRow(title: tr("autocomplete.failed"), detail: message, state: .error) {
                 Button(tr("autocomplete.retry")) { autocomplete.refresh() }
@@ -83,7 +93,7 @@ struct AutocompleteSettingsSection: View {
             StatusRow(title: tr("autocomplete.loading"), detail: autocomplete.activeModel?.title ?? "", state: .todo) { ProgressView().controlSize(.small) }
         case .ready:
             StatusRow(title: autocomplete.isPausedEverywhere ? tr("autocomplete.paused") : tr("autocomplete.ready"),
-                      detail: autocomplete.activeModel.map { "\($0.title) · \(sourceLabel($0.source))" } ?? "",
+                      detail: autocomplete.activeModel.map { "\($0.title) · \(sourceLabel($0))" } ?? "",
                       state: autocomplete.isPausedEverywhere ? .todo : .done) {
                 Button(autocomplete.isPausedEverywhere ? tr("autocomplete.resume") : tr("autocomplete.pause")) { autocomplete.togglePauseEverywhere() }
             }
@@ -94,9 +104,16 @@ struct AutocompleteSettingsSection: View {
 
     private func sourceLabel(_ source: CompletionModelFile.Source) -> String {
         switch source {
-        case .cotypist: return tr("autocomplete.source.cotypist")
+        case .found: return tr("autocomplete.source.found")
         case .nook: return tr("autocomplete.source.nook")
         case .custom: return tr("autocomplete.source.custom")
+        }
+    }
+
+    private func sourceLabel(_ source: CompletionSource) -> String {
+        switch source {
+        case .gguf(let file): return sourceLabel(file.source)
+        case .brain: return tr("autocomplete.source.brain")
         }
     }
 
@@ -106,10 +123,14 @@ struct AutocompleteSettingsSection: View {
         Section {
             Picker(tr("autocomplete.model"), selection: $store.prefs.modelPath) {
                 Text(tr("autocomplete.modelAuto")).tag("")
+                ForEach(autocomplete.brainModels, id: \.id) { model in
+                    Text("\(model.title) · \(tr("autocomplete.source.brain"))").tag(CompletionSource.brainPrefix + model.id)
+                }
                 ForEach(autocomplete.candidates) { model in
                     Text("\(model.title) · \(model.sizeText) · \(sourceLabel(model.source))").tag(model.url.path)
                 }
-                if !store.prefs.modelPath.isEmpty, !autocomplete.candidates.contains(where: { $0.url.path == store.prefs.modelPath }) {
+                if !store.prefs.modelPath.isEmpty, !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix),
+                   !autocomplete.candidates.contains(where: { $0.url.path == store.prefs.modelPath }) {
                     Text(URL(fileURLWithPath: store.prefs.modelPath).lastPathComponent).tag(store.prefs.modelPath)
                 }
             }
@@ -121,40 +142,102 @@ struct AutocompleteSettingsSection: View {
                     Button(tr("button.openFolder")) { NSWorkspace.shared.open(AutocompleteStore.modelsFolder) }
                 }
             }
-            DisclosureGroup(tr("autocomplete.catalog")) {
-                let recommended = CompletionCatalogModel.recommended(memoryGB: EmbeddedModel.memoryGB)
-                ForEach(CompletionCatalogModel.catalog) { model in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(model.name)
-                                if model == recommended { Text(tr("autocomplete.recommended")).font(.caption).foregroundStyle(.tint) }
-                            }
-                            Text("\(String(format: "%.1f", model.sizeGB)) GB · \(tr(model.noteKey))").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if downloads.downloading == model {
-                            ProgressView(value: downloads.progress).frame(width: 80)
-                            Button(tr("button.cancel")) { downloads.cancel() }
-                        } else if downloads.isInstalled(model) {
-                            Button(tr("autocomplete.use")) {
-                                store.prefs.modelPath = AutocompleteStore.modelsFolder.appendingPathComponent(model.fileName).path
-                            }
-                        } else {
-                            Button(tr("autocomplete.download")) {
-                                downloads.download(model) { url in store.prefs.modelPath = url.path }
-                            }
-                            .disabled(downloads.downloading != nil)
-                        }
-                    }
-                }
-                if let error = downloads.error { Text(error).font(.caption).foregroundStyle(.red) }
-            }
         } header: {
             Text(tr("autocomplete.section.model"))
         } footer: {
             Text(tr("autocomplete.modelFooter"))
         }
+    }
+
+    // MARK: Downloading
+
+    private var downloadSection: some View {
+        Section {
+            ForEach(CompletionCatalogModel.catalog) { model in downloadRow(model) }
+            HStack {
+                TextField(tr("autocomplete.download.linkPlaceholder"), text: $customLink)
+                    .onSubmit(downloadLink)
+                Button(tr("autocomplete.download"), action: downloadLink)
+                    .disabled(CompletionCatalogModel.custom(from: customLink) == nil || downloads.downloading != nil)
+            }
+            if let model = downloads.downloading, !CompletionCatalogModel.catalog.contains(model) { downloadRow(model) }
+            if let error = downloads.error { Text(error).font(.caption).foregroundStyle(.red) }
+        } header: {
+            Text(tr("autocomplete.section.download"))
+        } footer: {
+            Text(tr("autocomplete.download.footer"))
+        }
+        .id(downloads.changes)
+    }
+
+    private var recommended: CompletionCatalogModel { CompletionCatalogModel.recommended(memoryGB: EmbeddedModel.memoryGB) }
+
+    private func downloadRow(_ model: CompletionCatalogModel) -> some View {
+        let installed = downloads.isInstalled(model)
+        let inUse = installed && autocomplete.activeModel?.identity == downloads.file(for: model).path
+        return HStack(spacing: 10) {
+            Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
+                .foregroundStyle(installed ? Color.green : Color.secondary)
+                .font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(model.name)
+                    if model == recommended {
+                        Text(tr("autocomplete.recommended"))
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                    }
+                }
+                if downloads.downloading == model {
+                    Text(downloads.progressText).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                } else if model.sizeGB > 0 {
+                    Text("\(String(format: "%.1f", model.sizeGB)) GB · \(tr(model.noteKey))\(model.minimumMemoryGB > EmbeddedModel.memoryGB ? " · " + tr("autocomplete.download.tooBig", model.minimumMemoryGB) : "")")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if downloads.downloading == model {
+                ProgressView(value: downloads.progress).frame(width: 90)
+                Button(tr("button.cancel")) { downloads.cancel() }
+            } else if installed {
+                if inUse {
+                    Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Button(tr("autocomplete.use")) { store.prefs.modelPath = downloads.file(for: model).path }
+                }
+                Button { pendingDelete = model } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .help(tr("autocomplete.download.delete"))
+            } else {
+                Button(tr("autocomplete.download")) { start(model) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(downloads.downloading != nil)
+            }
+        }
+        .confirmationDialog(tr("autocomplete.download.deleteConfirm", model.name), isPresented: Binding(
+            get: { pendingDelete == model }, set: { if !$0 { pendingDelete = nil } })) {
+            Button(tr("autocomplete.download.delete"), role: .destructive) { delete(model) }
+        }
+    }
+
+    /// Downloads a model and uses it as soon as it is there.
+    private func start(_ model: CompletionCatalogModel) {
+        downloads.download(model) { url in store.prefs.modelPath = url.path }
+    }
+
+    private func downloadLink() {
+        guard let model = CompletionCatalogModel.custom(from: customLink) else { return }
+        customLink = ""
+        start(model)
+    }
+
+    private func delete(_ model: CompletionCatalogModel) {
+        let path = downloads.file(for: model).path
+        downloads.delete(model)
+        pendingDelete = nil
+        if store.prefs.modelPath == path { store.prefs.modelPath = "" } else { autocomplete.refresh() }
     }
 
     private func chooseFile() {

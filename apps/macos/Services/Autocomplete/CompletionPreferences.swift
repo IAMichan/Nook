@@ -90,12 +90,12 @@ struct CompletionPreferences: Codable, Equatable {
     var attachedPunctuation = true
     var escape = CompletionEscape.dismiss
     var pauseMinutes = 5
-    /// Ghost text in the line (like Cotypist) or a small card below it.
+    /// Ghost text in the line or a small card below it.
     var inlineGhost = true
     /// Wait this long after the last key, in milliseconds.
     var delayMilliseconds = 120
 
-    // Model: a file path; empty means the newest model of Cotypist, then Nook's own.
+    // Model: a GGUF path, "brain:<id>" for the brain's model, or empty for automatic (see CompletionSource.resolve).
     var modelPath = ""
 
     // Context
