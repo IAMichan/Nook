@@ -190,6 +190,7 @@ struct Keycap: View {
 struct WorkspaceSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
+    @ObservedObject private var inbox = InboxStore.shared
 
     var body: some View {
         Group {
@@ -256,6 +257,12 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
+            Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
+            if inbox.autoSettle.enabled {
+                Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
+                        value: $inbox.autoSettle.inactivityDays, in: 1...30)
+            }
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         } header: {
             Text(tr("settings.ws.title"))

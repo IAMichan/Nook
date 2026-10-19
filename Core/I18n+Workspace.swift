@@ -6,6 +6,9 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "settings.ws.inboxWorking": "Toon sessies die aan het werk zijn op een eigen plank",
+        "settings.ws.autoSettle": "Oude sessies automatisch afhandelen",
+        "settings.ws.autoSettleDays": "Na %ld dagen stil",
         "ws.plan.copy": "Kopieer plan",
         "ws.plan.save": "Bewaar als bestand",
         "ws.plan.expand": "Toon volledig plan",
@@ -679,6 +682,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "settings.ws.inboxWorking": "Show working sessions on their own shelf",
+        "settings.ws.autoSettle": "Settle old sessions automatically",
+        "settings.ws.autoSettleDays": "After %ld days of quiet",
         "ws.plan.copy": "Copy plan",
         "ws.plan.save": "Save as file",
         "ws.plan.expand": "Show full plan",
@@ -1352,6 +1358,9 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "settings.ws.inboxWorking": "Laufende Sitzungen in einem eigenen Fach zeigen",
+        "settings.ws.autoSettle": "Alte Sitzungen automatisch erledigen",
+        "settings.ws.autoSettleDays": "Nach %ld Tagen Ruhe",
         "ws.plan.copy": "Plan kopieren",
         "ws.plan.save": "Als Datei sichern",
         "ws.plan.expand": "Ganzen Plan zeigen",
