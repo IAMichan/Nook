@@ -12,7 +12,11 @@ extension AppModel {
 
     /// Connected agents actively working or awaiting approval/input.
     var activeAgents: [AgentSession] {
-        agentSessions.filter { !$0.isDetected && ($0.status == .running || $0.status == .waiting || $0.approvalID != nil) }
+        agentSessions.filter {
+            guard !$0.isDetected, $0.status == .running || $0.status == .waiting || $0.approvalID != nil else { return false }
+            // A chat you marked as finished is not busy, even if its turn still hangs; it only counts when it needs you.
+            return $0.status == .waiting || $0.approvalID != nil || !isSettledWhileBusy($0)
+        }
     }
 
     var todayItems: [TodayItem] {

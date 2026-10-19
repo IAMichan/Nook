@@ -10,6 +10,8 @@ struct TaskRingItem: Identifiable, Equatable {
     let detail: String
     let state: Kind
     let target: Target
+    /// Drawn in place from the start, without the draw-in animation (a chat you marked as finished).
+    var instant = false
 
     var color: Color {
         switch state {
@@ -98,9 +100,9 @@ struct NookTaskRing: View {
         let pulse = item.state == .waiting && !reduceMotion ? 0.5 + 0.5 * abs(cos(t * 2)) : 1
         return ZStack {
             Circle()
-                .trim(from: span.start, to: shown ? span.end : span.start)
+                .trim(from: span.start, to: shown || item.instant ? span.end : span.start)
                 .stroke(item.color.opacity(item.state == .running ? 0.28 : pulse), style: StrokeStyle(lineWidth: width, lineCap: .round))
-                .animation(.spring(duration: 0.7, bounce: 0.15).delay(0.3 + Double(i) * 0.08), value: shown)
+                .animation(item.instant ? nil : .spring(duration: 0.7, bounce: 0.15).delay(0.3 + Double(i) * 0.08), value: shown)
             if item.state == .running, settled {
                 let light = comet(span, t: t)
                 Circle()
