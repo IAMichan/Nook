@@ -29,6 +29,12 @@ extension AppModel {
         return history.sessions.first { $0.agent == kind && $0.cwd == session.cwd && (account == nil || $0.profileID == account) }?.sessionID
     }
 
+    /// You marked this chat as finished while it still read as busy (a turn that hangs): it is finished, not working.
+    func isSettledWhileBusy(_ session: AgentSession) -> Bool {
+        let key = FinishedSessions.key(agent: session.name, conversation: conversationID(for: session), fallback: session.id)
+        return FinishedSessions.shared.isMarkedWhileBusy(key)
+    }
+
     /// Can Nook continue this running session's conversation itself?
     func canTakeOver(_ session: AgentSession) -> Bool {
         nookProvider(for: AgentKind(agentName: session.name)) != nil && !session.cwd.isEmpty && conversationID(for: session) != nil

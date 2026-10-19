@@ -5,6 +5,8 @@ struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
     @State private var ringHovered: String?
+    // Redraws the ring when you mark a chat as finished.
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     var body: some View {
         let size = viewModel.size
@@ -390,10 +392,13 @@ extension NotchRootView {
         let recent = Date().addingTimeInterval(-20 * 60)
         for session in app.agentSessions where !session.isDetected {
             let kind: TaskRingItem.Kind
+            var settled = false
             if session.status == .waiting || session.approvalID != nil {
                 kind = .waiting
             } else if session.status == .running {
-                kind = .running
+                // Marked as finished by you: shown as done, drawn at once.
+                kind = app.isSettledWhileBusy(session) ? .done : .running
+                settled = kind == .done
             } else if session.status == .failed {
                 kind = .failed
             } else if session.status == .done, app.demoMode || (session.updated ?? .distantPast) > recent {
@@ -401,9 +406,9 @@ extension NotchRootView {
             } else {
                 continue
             }
-            let label = kind == .waiting ? AgentStatus.waiting.label : session.status.label
+            let label = kind == .waiting ? AgentStatus.waiting.label : (settled ? AgentStatus.done.label : session.status.label)
             let detail = session.project.isEmpty ? label : "\(session.project) · \(label)"
-            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail, state: kind, target: .agent(session.id)))
+            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail, state: kind, target: .agent(session.id), instant: settled))
         }
         for conversation in app.chat.list(query: "", showArchived: false) {
             let kind: TaskRingItem.Kind
