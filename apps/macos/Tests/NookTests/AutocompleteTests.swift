@@ -383,4 +383,60 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertLessThanOrEqual(a.count, builder.windowLength + builder.windowStep)
         XCTAssertTrue(b.hasPrefix(a), "one more letter keeps the same start, so the model's cache still fits")
     }
+
+    // MARK: Quality
+
+    func testHealingTakesOffTheWordAtTheCursor() {
+        XCTAssertEqual(CompletionHealing.split("Header\n\nIk zie je morg").stem, "Header\n\nIk zie je")
+        XCTAssertEqual(CompletionHealing.split("Header\n\nIk zie je morg").pending, " morg")
+        XCTAssertEqual(CompletionHealing.split("Hoi Lisa,").pending, "", "after punctuation there is nothing to heal")
+        XCTAssertEqual(CompletionHealing.split("Hallo").pending, "", "a word that is all there is stays")
+        XCTAssertEqual(CompletionHealing.split("Zie je\nmorg").pending, "morg")
+        XCTAssertTrue(CompletionHealing.fits(Array(" mor".utf8), Array(" morg".utf8)))
+        XCTAssertTrue(CompletionHealing.fits(Array(" morgen".utf8), Array(" morg".utf8)))
+        XCTAssertFalse(CompletionHealing.fits(Array(" maan".utf8), Array(" morg".utf8)))
+        XCTAssertFalse(CompletionHealing.fits([], Array(" morg".utf8)))
+        XCTAssertTrue(CompletionHealing.continuesWord("en"))
+        XCTAssertFalse(CompletionHealing.continuesWord(" om"))
+        XCTAssertFalse(CompletionHealing.continuesWord(","))
+    }
+
+    func testHalfWordsAreNeverShown() {
+        XCTAssertEqual(CompletionSuggestion.make(raw: " see you tomor", before: "I'll", maxWords: 8, unfinished: true)?.remaining, " see you")
+        XCTAssertNil(CompletionSuggestion.make(raw: " tomor", before: "I'll", maxWords: 8, unfinished: true))
+        XCTAssertEqual(CompletionSuggestion.make(raw: " see you ", before: "I'll", maxWords: 8, unfinished: true)?.remaining, " see you",
+                       "a word that ended with a space is whole")
+    }
+
+    func testCopiedTextIsNoSuggestion() {
+        let before = "Thanks for the update on the project. Thanks for"
+        XCTAssertNil(CompletionSuggestion.make(raw: " the update on", before: before, maxWords: 8))
+        XCTAssertNotNil(CompletionSuggestion.make(raw: " your quick reply", before: before, maxWords: 8))
+        XCTAssertNotNil(CompletionSuggestion.make(raw: " the update", before: before, maxWords: 8), "two words may repeat")
+    }
+
+    func testOptionsAskForASureSuggestion() {
+        let careful = CompletionOptions(maxWords: 4, eagerness: 0)
+        let eager = CompletionOptions(maxWords: 4, eagerness: 1)
+        XCTAssertGreaterThan(careful.minSequenceProbability, eager.minSequenceProbability)
+        XCTAssertGreaterThan(CompletionOptions().minFirstProbability, 0.15)
+        XCTAssertFalse(CompletionOptions().heal)
+    }
+
+    func testScreenTextKeepsSentencesNotButtons() {
+        let text = "Inbox\nReply\nArchive\nHoi Michan, kun je morgen om tien uur langskomen?\nSend"
+        XCTAssertEqual(CompletionScreenText.prose(text), "Hoi Michan, kun je morgen om tien uur langskomen?")
+    }
+
+    func testBaseModelsGoBeforeChatModels() {
+        func file(_ name: String, _ source: CompletionModelFile.Source = .found) -> CompletionModelFile {
+            CompletionModelFile(url: URL(fileURLWithPath: "/models/\(name)"), bytes: 1, modified: Date(), info: nil, source: source)
+        }
+        let chat = file("Qwen2.5-7B-Instruct-Q4_K_M.gguf")
+        let coder = file("qwen2.5-coder-1.5b.gguf")
+        let base = file("gemma-3-1b-pt.i1-Q4_K_M.gguf", .nook)
+        XCTAssertEqual(CompletionModelLocator.resolve(storedPath: "", candidates: [chat, coder, base]), base)
+        XCTAssertEqual(CompletionModelLocator.resolve(storedPath: "", candidates: [chat, coder]), chat, "otherwise the newest, as before")
+        XCTAssertGreaterThan(CompletionModelLocator.suitability(file("Qwen3-1.7B-Base.i1-Q4_K_M.gguf")), CompletionModelLocator.suitability(chat))
+    }
 }

@@ -169,20 +169,47 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
 
     private func generate(prompt: String, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                           isCancelled: () -> Bool) -> CompletionResult? {
-        guard !isCancelled(), prime(prompt, reserve: options.maxTokens) != nil else { return nil }
+        // Mid-word, read the prompt without the word and let the model spell it again (see CompletionHealing). While you type
+        // the rest of that word the prompt stays the same, so the cache has nothing new to read.
+        let healing = options.heal ? CompletionHealing.split(prompt) : (stem: prompt, pending: "")
+        var required = Array(healing.pending.utf8)
+        guard !isCancelled(), prime(healing.stem, reserve: options.maxTokens + 8) != nil else { return nil }
         var bytes: [UInt8] = []
         var truncated = true
+        var unfinished = false
+        var started = false
+        var sure: Float = 1
         var reported = 0
-        for step in 0..<options.maxTokens {
+        for _ in 0..<(options.maxTokens + (required.isEmpty ? 0 : 6)) {
             if isCancelled() { return nil }
             guard let logits = llama_get_logits_ith(context, -1) else { return nil }
-            let (token, probability) = mostLikely(logits)
-            if step == 0, probability < options.minFirstProbability { return nil }
-            if probability < options.minProbability || llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
+            let choice: (llama_token, Float)? = required.isEmpty ? mostLikely(logits) : healed(logits, required: required)
+            guard let choice else { return nil }
+            let (token, probability) = choice
+            if llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
+                if !started { return nil }
                 truncated = false
                 break
             }
-            let piece = self.piece(token)
+            var piece = self.piece(token)
+            if !required.isEmpty {
+                // What spells the word that was already typed is not part of the suggestion.
+                let spelled = min(piece.count, required.count)
+                required.removeFirst(spelled)
+                piece.removeFirst(spelled)
+            }
+            if !piece.isEmpty {
+                sure *= probability
+                if !started {
+                    if probability < options.minFirstProbability || sure < options.minSequenceProbability { return nil }
+                    started = true
+                } else if probability < options.minProbability || sure < options.minSequenceProbability {
+                    // Not sure any more: end here, and never in the middle of a word.
+                    unfinished = CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self))
+                    truncated = false
+                    break
+                }
+            }
             if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
                 bytes += piece[..<newline]
                 truncated = false
@@ -203,9 +230,21 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             var next = [token]
             guard decode(&next) else { break }
         }
+        guard started else { return nil }
         // The generated tokens stay in the cache; the shared-prefix check trims them on the next request.
         let text = String(decoding: bytes, as: UTF8.self).replacingOccurrences(of: "\u{FFFD}", with: "")
-        return CompletionResult(text: text, truncated: truncated)
+        return CompletionResult(text: text, truncated: truncated, unfinished: unfinished)
+    }
+
+    /// The most likely token that fits the word still to be spelled, with its probability among the tokens that fit.
+    private func healed(_ logits: UnsafeMutablePointer<Float>, required: [UInt8]) -> (llama_token, Float)? {
+        var fitting: [(llama_token, Float)] = []
+        for candidate in topTokens(logits, count: 64) where !llama_vocab_is_control(vocab, candidate) {
+            if CompletionHealing.fits(piece(candidate), required) { fitting.append((candidate, logits[Int(candidate)])) }
+        }
+        guard let best = fitting.first else { return nil }
+        let sum = fitting.reduce(Float(0)) { $0 + exp($1.1 - best.1) }
+        return (best.0, 1 / sum)
     }
 
     private func rankedWords(prompt: String, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {

@@ -59,6 +59,17 @@ Een voorstel moet er zijn voordat je verder typt. Daarom:
 - **Writing ahead:** while a suggestion is on screen, Nook already writes how the text goes on after it. Taking the last word (or typing it to the end) shows the next suggestion as soon as the app has the text, without the pause after a key or a new model call.
 - **Model blijft geladen.** Gebruikt aanvullen het model van het brein, dan blijft dat tijdens het typen een kwartier in het geheugen in plaats van anderhalve minuut.
 
+### Quality
+
+What keeps suggestions in line with your sentence, and what keeps out the odd ones:
+
+- **Token healing (GGUF):** with the cursor in the middle of a word, the prompt is read without that word, and the model has to spell it again from the tokens that fit it (`CompletionHealing`). A cut-off word like "morg" tokenizes unlike anything the model learned from, which made it guess wildly. It is faster too: while you type the rest of the word, the prompt stays the same.
+- **Sure of the whole suggestion:** besides the threshold per token, the product of all token probabilities must stay above a threshold (`minSequenceProbability`), so a suggestion ends where it starts to drift. The thresholds are stricter than before; "Eagerness" still sets them.
+- **No half words:** when the model stops because it is no longer sure, it stops at the last whole word.
+- **No copies:** three words or more that already stand in the last lines before the cursor are not shown.
+- **Screen text without the interface:** only lines of four words or more go into the prompt, not buttons, labels and menus.
+- **Base models first:** automatic model choice prefers a base model over a chat, code or math model found on this Mac.
+
 ### Het model van je brein
 
 `BrainCompleter` gebruikt hetzelfde model als het brein via `EmbeddedModel`, en werkt net als `LlamaCompleter`:

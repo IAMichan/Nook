@@ -497,7 +497,8 @@ final class AutocompleteController: ObservableObject {
         guard let model = activeModel, policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
         var maxWords = prefs.maxWords
         if prefs.shorterOnBattery, onBattery { maxWords = min(maxWords, 4) }
-        let options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        options.heal = Self.midWord(snapshot.before)
         let prompt = self.prompt(for: snapshot, in: app)
         let token = readToken
         let after = midLine ? snapshot.after : ""
@@ -511,14 +512,16 @@ final class AutocompleteController: ObservableObject {
         Task {
             if let ahead, let result = await ahead.value {
                 guard token == readToken else { return }
-                present(result.text, truncated: result.truncated, final: true, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app)
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                        after: after, maxWords: maxWords, app: app)
                 return
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
             let result = await completer.complete(prompt: prompt, options: options, partial: partial)
             scheduleUnload()
             if let result {
-                present(result.text, truncated: result.truncated, final: true, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app)
+                present(result.text, truncated: result.truncated, unfinished: result.unfinished, final: true, token: token, snapshot: snapshot,
+                        after: after, maxWords: maxWords, app: app)
             } else if streaming == token {
                 streaming = nil
             }
@@ -527,10 +530,11 @@ final class AutocompleteController: ObservableObject {
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
     /// on screen. A suggestion still being written (`final` false) is replaced by the next part and the final one.
-    private func present(_ text: String, truncated: Bool, final: Bool, token: Int, snapshot: AutocompleteFieldSnapshot, after: String,
-                         maxWords: Int, app: NSRunningApplication) {
+    private func present(_ text: String, truncated: Bool, unfinished: Bool = false, final: Bool, token: Int, snapshot: AutocompleteFieldSnapshot,
+                         after: String, maxWords: Int, app: NSRunningApplication) {
         guard token == readToken, alternatives == nil, proposal == nil || streaming == token else { return }
-        guard let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated) else {
+        guard let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
+                                                         unfinished: unfinished) else {
             if final { streaming = nil }
             return
         }
@@ -554,12 +558,19 @@ final class AutocompleteController: ObservableObject {
         var next = snapshot
         next.before = completion.anchor + typed
         let prompt = self.prompt(for: next, in: app)
-        let options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        options.heal = Self.midWord(next.before)
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
             return await completer.complete(prompt: prompt, options: options, partial: nil)
         }
         upcoming = (app.bundleIdentifier, next.before, task)
+    }
+
+    /// The cursor stands right after a letter or digit: the model has to finish that word first (see `CompletionOptions.heal`).
+    private static func midWord(_ before: String) -> Bool {
+        guard let last = before.last else { return false }
+        return last.isLetter || last.isNumber
     }
 
     /// After the last word of a suggestion is taken: waits until the app shows it, then suggests again right away, without
@@ -607,7 +618,7 @@ final class AutocompleteController: ObservableObject {
             let own = snapshot.before + snapshot.after
             let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
             if let seen {
-                input.screenText = CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: ""))
+                input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
             } else if let read = windowText, read.key == key {
                 input.screenText = read.text
             } else {
@@ -635,7 +646,7 @@ final class AutocompleteController: ObservableObject {
         let limit = builder.maxContextLength * 3
         windowQueue.async {
             let text = AppTextReader.focusedWindowText(pid: pid, limit: limit).map { text in
-                CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: ""))
+                CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: "")))
             }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {

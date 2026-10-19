@@ -52,14 +52,26 @@ enum CompletionModelLocator {
             .sorted { $0.modified > $1.modified }
     }
 
-    /// The model file to use: the one the user picked if it is still there, otherwise the newest one found on this Mac, then
-    /// one Nook downloaded itself.
+    /// The model file to use: the one the user picked if it is still there, otherwise the best fit for completing text: a
+    /// base model before a chat or code model, then one found on this Mac before one Nook downloaded, then the newest.
     static func resolve(storedPath: String, candidates: [CompletionModelFile]) -> CompletionModelFile? {
         if !storedPath.isEmpty {
             if let known = candidates.first(where: { $0.url.path == storedPath }) { return known }
             return model(at: URL(fileURLWithPath: storedPath), source: .custom)
         }
-        return candidates.first { $0.source == .found } ?? candidates.first
+        return candidates.enumerated().max { a, b in
+            (suitability(a.element), a.element.source == .found ? 1 : 0, -a.offset) < (suitability(b.element), b.element.source == .found ? 1 : 0, -b.offset)
+        }?.element
+    }
+
+    /// How well a model suits continuing your text, from its file name and own name. Base (pretrained) models continue text
+    /// as it goes; chat models answer it, and code and math models write code and sums.
+    static func suitability(_ file: CompletionModelFile) -> Int {
+        let name = (file.url.lastPathComponent + " " + (file.info?.name ?? "")).lowercased()
+        var score = 0
+        if name.contains("base") || name.range(of: #"[-_. ]pt[-_. ]"#, options: .regularExpression) != nil { score += 2 }
+        if ["instruct", "-it", "_it", "chat", "code", "math", "rerank", "embed", "vision", "guard"].contains(where: name.contains) { score -= 2 }
+        return score
     }
 
     /// The GGUF files Nook downloaded or the user dropped in its models folder.
