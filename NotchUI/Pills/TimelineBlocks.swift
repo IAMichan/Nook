@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// One block of a session's timeline (see TimelinePresentation): a single event, a group of tool calls behind one
 /// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place.
@@ -238,6 +240,11 @@ struct PlanCard: View {
     /// "Implement in a new session" (split button): the plan goes to a fork, this session stays as it is.
     var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
+    @State private var open = false
+    @State private var copied = false
+
+    private var title: String { PlanPreview.title(from: text) ?? tr("ws.plan.title") }
+    private var collapsible: Bool { PlanPreview.needsExpand(text) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -245,9 +252,24 @@ struct PlanCard: View {
                 Image(systemName: "list.bullet.clipboard").font(.system(size: 11, weight: .semibold))
                 Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
                 Spacer(minLength: 0)
+                iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    copied = true
+                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+                }
+                iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.iris)
-            MarkdownView(text: text, size: 12.5)
+            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 12.5)
+            if collapsible {
+                Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
+                    Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.iris)
+                }
+                .buttonStyle(.plain)
+            }
             if canAct {
                 HStack(spacing: 8) {
                     Spacer()
@@ -261,5 +283,24 @@ struct PlanCard: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.07)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.25), lineWidth: 1))
+    }
+
+    private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    /// "Save as file"; the name comes from the plan's title.
+    private func save() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = PlanPreview.fileName(forTitle: title)
+        panel.allowedContentTypes = [.plainText]
+        if panel.runModal() == .OK, let url = panel.url {
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 }

@@ -6,6 +6,10 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.plan.copy": "Kopieer plan",
+        "ws.plan.save": "Bewaar als bestand",
+        "ws.plan.expand": "Toon volledig plan",
+        "ws.plan.collapse": "Toon minder",
         "timeline.search.placeholder": "Zoek in sessie",
         "timeline.search.previous": "Vorige",
         "timeline.search.next": "Volgende",
@@ -675,6 +679,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.plan.copy": "Copy plan",
+        "ws.plan.save": "Save as file",
+        "ws.plan.expand": "Show full plan",
+        "ws.plan.collapse": "Show less",
         "timeline.search.placeholder": "Find in session",
         "timeline.search.previous": "Previous",
         "timeline.search.next": "Next",
@@ -1344,6 +1352,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.plan.copy": "Plan kopieren",
+        "ws.plan.save": "Als Datei sichern",
+        "ws.plan.expand": "Ganzen Plan zeigen",
+        "ws.plan.collapse": "Weniger zeigen",
         "timeline.search.placeholder": "In Sitzung suchen",
         "timeline.search.previous": "Zurück",
         "timeline.search.next": "Weiter",
