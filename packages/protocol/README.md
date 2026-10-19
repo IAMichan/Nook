@@ -1,15 +1,13 @@
 # protocol
 
-Wat de Nook-apps met elkaar delen om te praten: nu het Companion-protocol tussen Mac en iPhone.
+Shared communication and security primitives across Nook apps—currently the Companion protocol between macOS and iPhone.
 
-```
+```text
 Sources/
-  CompanionModels.swift   berichten, framing en regels (getest in CompanionModelsTests)
-  CompanionPush.swift     inhoud van pushmeldingen
-  CompanionSeal.swift     verzegeling met ChaCha20-Poly1305 (CryptoKit)
-  WebhookSecurity.swift   SHA-256/HMAC zonder CryptoKit, ook voor webhooks op de Mac
+  CompanionModels.swift   Messages, framing, and policy rules (tested in CompanionModelsTests)
+  CompanionPush.swift     APNs push payload formatting and JWT signing helpers
+  CompanionSeal.swift     Authenticated encryption with ChaCha20-Poly1305 (CryptoKit)
+  WebhookSecurity.swift   Pure-Swift SHA-256 and HMAC verification (no CryptoKit dependency)
 ```
 
-Dit is (nog) geen Swift-pakket: `apps/macos/project.yml` en `apps/ios/project.yml` nemen de bestanden rechtstreeks op, zodat ze in hetzelfde module zitten en niets `public` hoeft te zijn. Wordt het een pakket, maak de types dan `public` en voeg een `Package.swift` toe.
-
-Houd het platformonafhankelijk. Alleen `CompanionSeal.swift` gebruikt CryptoKit; op Linux, Windows en Android is daar een vervanger nodig (bv. swift-crypto).
+`apps/macos/project.yml` and `apps/ios/project.yml` compile these source files directly into their respective targets. Keep all files portable (`Foundation`-only), with the sole exception of `CompanionSeal.swift` which uses `CryptoKit` on Apple platforms.

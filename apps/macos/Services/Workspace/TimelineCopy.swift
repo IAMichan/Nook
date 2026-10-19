@@ -32,10 +32,10 @@ struct WorkGroupSummary: Equatable, Sendable {
     var otherCount: Int
     var hasFailure: Bool
 
-    /// Mirrors `summarizeToolGroup` (work-log/presentation.ts): one group per action, the two highest by
-    /// priority (ties: first seen) are shown in their original order, the rest is counted. We differ in three places:
-    /// thoughts mixed with tools are ignored (as does) but never counted as "other"; reads rank below
-    /// search/web/mcp; and per-tool-source and MCP groupings are not modelled.
+    /// Summarizes a tool group into one group per action: the two highest by
+    /// priority (ties: first seen) are shown in their original order, and the rest is counted.
+    /// Thoughts mixed with tools are ignored and never counted as "other", and reads rank below
+    /// search/web/mcp.
     static func make(_ items: [WorkGroupItem]) -> WorkGroupSummary {
         guard !items.isEmpty else { return WorkGroupSummary(kind: .empty, parts: [], otherCount: 0, hasFailure: false) }
         let tools = items.filter { $0.action != .thought }

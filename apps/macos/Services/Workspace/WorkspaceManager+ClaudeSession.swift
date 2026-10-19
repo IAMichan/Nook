@@ -1,6 +1,6 @@
 import Foundation
 
-/// Claude Code kept alive between turns runs it: after a turn the process waits on stdin, and the next
+/// Claude Code kept alive between turns: after a turn the process waits on stdin, and the next
 /// message goes straight to it, warm cache and all. A change of model, mode or rights (they are command-line flags),
 /// a copy of the conversation, or ten quiet minutes start a fresh process that resumes the conversation instead.
 extension WorkspaceManager {

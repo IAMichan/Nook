@@ -23,8 +23,8 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// The per-session queue of follow-up messages (: queued-run reorder / cancel / edit, promote-to-steer,
-/// queue.resume, queueHeld). It is *held* after a failure, a stop or a restart so nothing is sent on top of a
+/// The per-session queue of follow-up messages (reorder / cancel / edit, promote-to-steer,
+/// resume, held state). It is *held* after a failure, a stop or a restart so nothing is sent on top of a
 /// problem; the user resumes it explicitly.
 struct MessageQueue: Codable, Equatable, Sendable {
     static let limit = 50

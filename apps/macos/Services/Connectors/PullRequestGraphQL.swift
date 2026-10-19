@@ -31,7 +31,7 @@ struct AccountPullRequests: Identifiable, Equatable, Codable, Sendable {
     var errorKind: ConnectorErrorKind? = nil
 }
 
-/// The whole list in one GraphQL request per account lists pull requests: two aliased searches (yours,
+/// The whole list in one GraphQL request per account: two aliased searches (yours,
 /// and the ones waiting for your review), your login, and each pull request's CI as one rolled-up state of its latest
 /// commit, instead of a request per pull request. Foundation only, so tests can use it.
 enum PullRequestGraphQL {

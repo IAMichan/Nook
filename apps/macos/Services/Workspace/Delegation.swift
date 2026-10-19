@@ -1,6 +1,6 @@
 import Foundation
 
-// Agents that start agents (`delegate_task`): a session hands a task to a child session through the workspace
+// Agents that start agents: a session hands a task to a child session through the workspace
 // bridge, and gets the result back. The rules here keep that safe: a child never has more rights than its parent, the
 // child sees only the task (not the parent's conversation), and the chain is bounded.
 // Foundation only, so tests can use it independently.

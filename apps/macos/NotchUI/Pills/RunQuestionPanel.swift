@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A question from the agent in place of the composer, one at a time (way): its options as buttons (keys 1–9
+/// A question from the agent in place of the composer, one at a time: its options as buttons (keys 1–9
 /// pick one), several for a multiple choice, or an answer of your own. A single choice moves on by itself.
 struct RunQuestionPanel: View {
     let question: PendingQuestion

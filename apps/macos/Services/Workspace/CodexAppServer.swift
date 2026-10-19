@@ -1,9 +1,9 @@
 import Foundation
 
-// Codex through `codex app-server` drives it: one long-lived process per session speaking newline-delimited
+// Codex through `codex app-server`: one long-lived process per session speaking newline-delimited
 // JSON-RPC over stdin/stdout. Compared with one `codex exec --json` per turn this gives approvals and questions in Nook,
 // steering a running turn, live reasoning and command output, and the context window.
-// Message shapes follow the schema Codex generates itself (as vendored by). Everything in this file depends only
+// Message shapes follow the schema Codex generates itself. Everything in this file depends only
 // on Foundation so tests can use it independently.
 
 /// A JSON-RPC id as Codex sends it: a number or a string.
@@ -119,7 +119,7 @@ enum CodexRPC {
     static func initializeParams(version: String = "1") -> [String: Any] {
         [
             "clientInfo": ["name": clientName, "title": "Nook", "version": version],
-            // opts out of the per-turn diff stream; Nook reads changes from git.
+            // Nook opts out of the per-turn diff stream and reads changes directly from git.
             "capabilities": ["experimentalApi": true, "optOutNotificationMethods": ["turn/diff/updated"]]
         ]
     }
@@ -140,7 +140,7 @@ enum CodexRPC {
         return params
     }
 
-    /// The approval policy, reviewer and sandbox for a turn maps its runtime modes.
+    /// The approval policy, reviewer and sandbox for a turn.
     static func policy(mode: ExecutionMode, permission: PermissionPolicy) -> (approval: String, sandbox: [String: Any]) {
         if mode == .plan { return ("untrusted", ["type": "readOnly"]) }
         switch permission {

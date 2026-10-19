@@ -140,7 +140,7 @@ struct AgentsToolPage<Content: View>: View {
     }
 }
 
-/// The local servers this session's folder runs (found, see DevServerScanner), as small buttons
+/// The local servers this session's folder runs, as small buttons
 /// above the browser: one tap opens it. Checked every few seconds while the browser is open.
 struct DevServerStrip: View {
     let directory: String

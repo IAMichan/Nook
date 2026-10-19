@@ -1,7 +1,7 @@
 import Foundation
 
 /// Second opinion on a hooked session that still reads as busy. Hooks can go missing (Nook restarted mid-turn, a hook
-/// timed out, an agent version that skips `Stop`), and then a session would show "working" for hours., Nook
+/// timed out, an agent version that skips `Stop`), and then a session would show "working" for hours. Nook
 /// treats "running" as a claim to verify: the transcript says whether the last turn ended, the process list says
 /// whether the agent is still there at all.
 enum SessionLiveness {

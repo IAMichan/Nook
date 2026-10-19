@@ -35,7 +35,7 @@ targets:
       base:
         PRODUCT_NAME: Nook Companion
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
-        DEVELOPMENT_TEAM: 35SMNHP9K7
+        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
     entitlements:

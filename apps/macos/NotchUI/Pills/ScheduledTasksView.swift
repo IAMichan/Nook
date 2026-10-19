@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The list of scheduled tasks (scheduled tasks): what runs, when it runs next, how the last run went, with an
+/// The list of scheduled tasks: what runs, when it runs next, how the last run went, with an
 /// enable switch and "run now" per task, and an editor sheet. Opened from Settings › Agents › Workspace; the whole feature
 /// is behind `WorkspaceSettings.scheduledTasksEnabled`.
 struct ScheduledTasksView: View {

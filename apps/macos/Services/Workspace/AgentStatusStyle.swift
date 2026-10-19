@@ -1,6 +1,6 @@
 import Foundation
 
-// One source for the word, symbol and colour role of every Agents status (docs/AGENTS-PLAN.md §4.2). Colour is never the
+// One source for the word, symbol and colour role of every Agents status. Colour is never the
 // only difference: every state has its own symbol and word. Foundation only; the views map `StatusTone` to real colours.
 
 /// What the list, the notch ring and the project row show: the attention states plus the two that come from snoozing.
