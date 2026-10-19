@@ -28,12 +28,12 @@ enum ProcessRunner {
         let group = DispatchGroup()
         try process.run()
         group.enter()
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             outData.data = out.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
         group.enter()
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .userInitiated).async {
             errData.data = err.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }

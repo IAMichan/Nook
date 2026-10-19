@@ -191,6 +191,11 @@ final class EmbeddedModel: ObservableObject {
             ] as MLXLMCommon.ToolSpec
         }
 
+        // Typed on its own: inside the `? nil :` ternary the closure was not inferred as @Sendable.
+        let dispatch: (@Sendable (ToolCall) async throws -> String)? = specs.isEmpty ? nil : { call in
+            await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
+        }
+
         let session = ChatSession(
             container,
             instructions: system,
@@ -205,9 +210,7 @@ final class EmbeddedModel: ObservableObject {
             // easy ones slow, so Nook only allows it when the question calls for it. The reasoning is never shown.
             additionalContext: ["enable_thinking": thinking],
             tools: specs.isEmpty ? nil : specs,
-            toolDispatch: specs.isEmpty ? nil : { call in
-                await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
-            }
+            toolDispatch: dispatch
         )
         // Pictures go in with the first message only, as files the model's own image reader opens.
         let pictures: [UserInput.Image] = (option?.seesImages ?? false)
