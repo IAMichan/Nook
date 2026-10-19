@@ -347,7 +347,7 @@ final class AppSettings: ObservableObject {
         } else {
             appLanguage = I18n.shared.language
         }
-        language = defaults.string(forKey: "language") ?? "en"
+        language = defaults.string(forKey: "language") ?? "auto"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
