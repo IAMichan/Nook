@@ -271,6 +271,28 @@ struct GitService: Sendable {
         return status
     }
 
+    /// Where the branch split off `base`; nil when they share no history or `base` does not exist.
+    func mergeBase(_ directory: String, base: String) -> String? {
+        let text = (try? run(["merge-base", base, "HEAD"], in: directory))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text?.isEmpty ?? true) ? nil : text
+    }
+
+    /// Everything that differs from `ref` (a commit the branch grew from): committed or not, plus untracked files from
+    /// `status`. So work the agent already committed still shows up as a change of the branch.
+    func changes(_ directory: String, since ref: String, status: GitStatus) throws -> [GitFileChange] {
+        var files = Self.parseNameStatus(try run(["diff", "--name-status", "-z", "-M", ref], in: directory))
+        let counts = Self.parseNumstat((try? run(["diff", "--numstat", "-z", "-M", ref], in: directory)) ?? "")
+        for index in files.indices {
+            if let count = counts[files[index].path] {
+                files[index].added = count.added
+                files[index].removed = count.removed
+            }
+        }
+        let known = Set(files.map(\.path))
+        files += status.files.filter { $0.kind == .untracked && !known.contains($0.path) }
+        return files
+    }
+
     /// Number of commits this branch is ahead of (and behind) `base`.
     func divergence(_ directory: String, base: String) -> (ahead: Int, behind: Int)? {
         guard let text = try? run(["rev-list", "--left-right", "--count", base + "...HEAD"], in: directory) else { return nil }
@@ -489,6 +511,34 @@ struct GitService: Sendable {
         let parts = head.components(separatedBy: "...")
         status.branch = parts[0]
         if parts.count > 1 { status.upstream = parts[1] }
+    }
+
+    /// `git diff --name-status -z`: the kind of change per path; a rename or copy carries its old path.
+    static func parseNameStatus(_ text: String) -> [GitFileChange] {
+        var files: [GitFileChange] = []
+        var fields = text.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)[...]
+        while let code = fields.first?.first {
+            fields = fields.dropFirst()
+            var oldPath: String?
+            if code == "R" || code == "C" {
+                oldPath = fields.first
+                fields = fields.dropFirst()
+            }
+            guard let path = fields.first else { break }
+            fields = fields.dropFirst()
+            let kind: GitChangeKind
+            switch code {
+            case "A": kind = .added
+            case "D": kind = .deleted
+            case "R": kind = .renamed
+            case "C": kind = .copied
+            case "T": kind = .typeChanged
+            case "U": kind = .conflicted
+            default: kind = .modified
+            }
+            files.append(GitFileChange(path: path, oldPath: oldPath, kind: kind, staged: false, unstaged: false))
+        }
+        return files
     }
 
     /// `git diff --numstat -z`: lines added and removed per path (nil for binary files).
