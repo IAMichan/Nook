@@ -105,8 +105,24 @@ struct LiveActivityRow: View {
     /// Waiting for an answer to a question rather than for an approval.
     var asking = false
     let accent: Color
+    /// Opens the terminal with the command that runs; nil when no command runs.
+    var openConsole: (() -> Void)? = nil
+    @State private var hovering = false
 
     var body: some View {
+        if let openConsole, !waiting {
+            Button(action: openConsole) { row.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .help(tr("ws.console.open"))
+                .accessibilityHint(tr("ws.console.open"))
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder
+    private var row: some View {
         let headline = AgentActivityText.headline(activity, step: step)
         // The second line adds what the first does not say yet.
         let detail = [live.thought, step].compactMap { $0 }.first { !$0.isEmpty && $0 != headline }
@@ -129,13 +145,19 @@ struct LiveActivityRow: View {
                     }
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(live.tool ?? headline)
+                    .help(openConsole == nil ? live.tool ?? headline : tr("ws.console.open"))
                     if let since, !waiting {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(AgentPathFormat.duration(context.date.timeIntervalSince(since)))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .monospacedDigit()
                         }
+                    }
+                    if openConsole != nil, !waiting {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+                            .opacity(hovering ? 1 : 0.6)
                     }
                 }
                 if let detail, !waiting {

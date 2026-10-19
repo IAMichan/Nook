@@ -44,11 +44,21 @@ struct AgentRunPanel: View {
     @State private var outputsWide = false
     /// The outputs (by signature) you have seen, for the dot on the panel's button; nil until the session shows.
     @State private var seenOutputs: Set<String>?
+    /// The terminal on the left: the command it shows; nil while it is closed.
+    @State private var consoleEventID: UUID?
 
     var body: some View {
         if let run = workspace.run(runID) {
             let outputs = SessionOutputs.collect(workspace.timeline(runID), tasks: run.tasks, directory: run.workingDirectory)
+            let runningCommand = CommandConsole.running(workspace.timeline(runID))?.id
             HStack(alignment: .top, spacing: 14) {
+                if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
+                    CommandConsolePanel(event: event) {
+                        withAnimation(.easeInOut(duration: 0.2)) { self.consoleEventID = nil }
+                    }
+                    .frame(width: 400)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
                 VStack(alignment: .leading, spacing: 10) {
                     header(run, outputs: outputs)
                     timeline(run)
@@ -84,6 +94,10 @@ struct AgentRunPanel: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // An open terminal follows the agent to the next command it runs.
+            .onChange(of: runningCommand) { _, next in
+                if consoleEventID != nil, let next { consoleEventID = next }
+            }
             .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
             }
@@ -116,6 +130,7 @@ struct AgentRunPanel: View {
                 outputsOpen = false
                 outputSelection = nil
                 seenOutputs = nil
+                consoleEventID = nil
             }
         } else {
             Text(tr("agents.run.gone"))
@@ -479,7 +494,10 @@ struct AgentRunPanel: View {
                                         step: run.tasks.flatMap(TaskChecklist.activeStep),
                                         since: run.turnStartedAt,
                                         waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: run.provider.color)
+                                        accent: run.provider.color,
+                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
+                                            { withAnimation(.easeInOut(duration: 0.2)) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                        })
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
