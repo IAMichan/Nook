@@ -324,6 +324,8 @@ final class AutocompleteController: ObservableObject {
                 if !commandLike, completion.suggestion.consume(typed: key.characters), !completion.suggestion.isEmpty {
                     completion.anchor += key.characters
                     self.proposal = .completion(completion)
+                    // Move the ghost past the new letter right away; settle() puts it exactly where the app drew it.
+                    overlay.advance(over: key.characters, remaining: completion.suggestion.remaining)
                     settle()
                     return false
                 }
@@ -363,6 +365,7 @@ final class AutocompleteController: ObservableObject {
             rest.anchor += text
             rest.fresh = false
             proposal = .completion(rest)
+            overlay.advance(over: text, remaining: rest.suggestion.remaining)
             settle()
         }
     }
@@ -520,15 +523,22 @@ final class AutocompleteController: ObservableObject {
 
     private func show(_ suggestion: CompletionSuggestion, for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
         let rule = prefs.app(app.bundleIdentifier)
-        if let caret = snapshot.caret {
-            if prefs.inlineGhost {
-                overlay.showGhost(suggestion.remaining, at: caret, fontScale: rule.fontScale, verticalOffset: rule.verticalOffset)
-            } else {
-                overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: caret)
+        if let caret = snapshot.caret, prefs.inlineGhost {
+            let font = GhostOverlay.font(name: snapshot.fontName, size: snapshot.fontSize, caretHeight: caret.height, scale: rule.fontScale)
+            let shown = overlay.showGhost(suggestion.remaining, at: caret, font: font, limit: snapshot.fieldFrame.map { $0.maxX - 4 },
+                                          verticalOffset: rule.verticalOffset)
+            if !shown.isEmpty {
+                // Only what is on screen can be taken: Tab must never type words you did not see.
+                if shown.count < suggestion.remaining.count, case .completion(var completion) = proposal {
+                    completion.suggestion = CompletionSuggestion(shown)
+                    proposal = .completion(completion)
+                }
+                return
             }
-        } else if let field = snapshot.fieldFrame {
-            // The app does not say where the cursor is: under the field instead.
-            overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: field)
+        }
+        // No room in the line, no cursor position, or the card style chosen: a card under the cursor or the field.
+        if let anchor = snapshot.caret ?? snapshot.fieldFrame {
+            overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
         } else {
             proposal = nil
             overlay.hide()

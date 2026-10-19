@@ -2,9 +2,12 @@ import AppKit
 import ApplicationServices
 
 // The text-marker helpers are in ApplicationServices but not in its headers. Chromium, Electron and WebKit give the cursor's
-// place only through them. Create/Copy return an owned reference.
+// place, and the text of rich editors (contenteditable: Gmail, Notion, Slack in the browser), only through them.
+// Create/Copy return an owned reference.
 @_silgen_name("AXTextMarkerRangeCreate")
 private func AXTextMarkerRangeCreate(_ allocator: CFAllocator?, _ start: CFTypeRef, _ end: CFTypeRef) -> CFTypeRef?
+@_silgen_name("AXTextMarkerRangeCopyStartMarker")
+private func AXTextMarkerRangeCopyStartMarker(_ range: CFTypeRef) -> CFTypeRef?
 @_silgen_name("AXTextMarkerRangeCopyEndMarker")
 private func AXTextMarkerRangeCopyEndMarker(_ range: CFTypeRef) -> CFTypeRef?
 
@@ -13,7 +16,7 @@ struct AutocompleteFieldSnapshot {
     var before: String
     var after: String
     var hasSelection: Bool
-    /// The cursor in AppKit screen coordinates (origin bottom left).
+    /// The cursor in AppKit screen coordinates (origin bottom left): x is where the next letter goes, the height is the line's.
     var caret: CGRect?
     var selectedText = ""
     var selectionRect: CGRect?
@@ -23,50 +26,87 @@ struct AutocompleteFieldSnapshot {
     var placeholder: String?
     /// The website's host, in browsers.
     var site: String?
+    /// The font of the text at the cursor, so the suggestion looks like the text it continues.
+    var fontName: String?
+    var fontSize: CGFloat?
 }
 
 /// Reads the focused field of the front app through the Accessibility API. Password fields are never read. Slow apps can take
-/// tens of milliseconds to answer, so this runs off the main thread. After Typist's reader (MIT, © 2026 Brody Salvucci).
+/// tens of milliseconds to answer, so this runs off the main thread. After Typist's reader (MIT, © 2026 Brody Salvucci), with
+/// rich web editors, the app's font and a stricter cursor added.
 enum AutocompleteField {
-    /// Chromium and Electron apps only build their accessibility tree when asked.
+    /// Browsers built on Chromium: they build their accessibility tree for web pages only when a client says it needs it.
+    private static let chromium: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.canary", "com.brave.Browser", "com.microsoft.edgemac",
+        "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "ai.perplexity.comet", "com.openai.atlas"
+    ]
+
+    /// Asks the app to build its accessibility tree: Electron apps listen to AXManualAccessibility, Chromium browsers to
+    /// AXEnhancedUserInterface.
     static func wake(_ app: NSRunningApplication) {
         let element = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        if chromium.contains(app.bundleIdentifier ?? "") {
+            AXUIElementSetAttributeValue(element, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        }
     }
+
+    /// Roles that take typed text.
+    private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
 
     /// - Parameter screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
     static func read(screenHeight: CGFloat) -> AutocompleteFieldSnapshot? {
-        guard AXIsProcessTrusted(), let element = focusedElement() else { return nil }
+        guard AXIsProcessTrusted(), let element = focusedElement(), isEditable(element) else { return nil }
         let role: String? = attribute(element, kAXRoleAttribute)
         let subrole: String? = attribute(element, kAXSubroleAttribute)
         guard role != "AXSecureTextField", subrole != (kAXSecureTextFieldSubrole as String) else { return nil }
-        guard let value: String = attribute(element, kAXValueAttribute), let range = selectedRange(of: element) else { return nil }
-        let text = value as NSString
-        guard range.location >= 0, range.location + range.length <= text.length else { return nil }
-
         let flip = { (rect: CGRect) in CGRect(x: rect.minX, y: screenHeight - rect.maxY, width: rect.width, height: rect.height) }
-        // Web content gives trailing spaces as non-breaking spaces.
-        var snapshot = AutocompleteFieldSnapshot(
-            before: text.substring(to: range.location).replacingOccurrences(of: "\u{00A0}", with: " "),
-            after: text.substring(from: range.location + range.length).replacingOccurrences(of: "\u{00A0}", with: " "),
-            hasSelection: range.length > 0,
-            caret: caretRect(in: element, at: range.location + range.length).map(flip)
-        )
-        if range.length > 0 {
-            snapshot.selectedText = text.substring(with: NSRange(location: range.location, length: range.length))
-            snapshot.selectionRect = bounds(in: element, location: range.location, length: range.length).map(flip)
+
+        var snapshot: AutocompleteFieldSnapshot
+        var fontLocation: Int?
+        if let value: String = attribute(element, kAXValueAttribute), let range = selectedRange(of: element),
+           range.location >= 0, range.location + range.length <= (value as NSString).length {
+            let text = value as NSString
+            let cursor = range.location + range.length
+            snapshot = AutocompleteFieldSnapshot(
+                before: clean(text.substring(to: range.location)),
+                after: clean(text.substring(from: cursor)),
+                hasSelection: range.length > 0,
+                caret: caretRect(in: element, at: cursor, text: text).map(flip)
+            )
+            if range.length > 0 {
+                snapshot.selectedText = text.substring(with: NSRange(location: range.location, length: range.length))
+                snapshot.selectionRect = bounds(in: element, location: range.location, length: range.length).map(flip)
+            }
+            if snapshot.caret == nil { snapshot.caret = markerCaret(in: element).map(flip) }
+            fontLocation = cursor > 0 ? cursor - 1 : (text.length > 0 ? 0 : nil)
+        } else if let marked = markerText(in: element) {
+            // A rich editor without a plain value: the text comes from the text markers.
+            snapshot = marked
+            snapshot.caret = markerCaret(in: element).map(flip)
+        } else {
+            return nil
         }
+
         if let size: CGSize = axValue(element, kAXSizeAttribute, .cgSize), let origin: CGPoint = axValue(element, kAXPositionAttribute, .cgPoint) {
             snapshot.fieldFrame = flip(CGRect(origin: origin, size: size))
         }
-        if snapshot.caret == nil { snapshot.caret = markerCaret(in: element).map(flip) }
+        // A cursor outside its own field (scrolled away, a stale answer) would put the suggestion somewhere else on screen.
+        if let caret = snapshot.caret, let field = snapshot.fieldFrame, field.width > 0,
+           !field.insetBy(dx: -4, dy: -4).contains(CGPoint(x: caret.minX, y: caret.midY)) {
+            snapshot.caret = nil
+        }
+        if let location = fontLocation, let font = font(in: element, at: location) {
+            snapshot.fontName = font.name
+            snapshot.fontSize = font.size
+        }
         snapshot.placeholder = attribute(element, kAXPlaceholderValueAttribute)
         if let window: AXUIElement = attribute(element, kAXWindowAttribute) { snapshot.windowTitle = attribute(window, kAXTitleAttribute) }
         snapshot.site = site(containing: element)
         return snapshot
     }
 
-    // MARK: Private
+    // MARK: Which element
 
     private static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
@@ -80,6 +120,65 @@ enum AutocompleteField {
         AXUIElementSetMessagingTimeout(owner, 0.25)
         return attribute(owner, kAXFocusedUIElementAttribute)
     }
+
+    /// A field you can type in: a text role, a value that can be set, or (in browsers) an editable web element. A focused web
+    /// page you only read is not one.
+    private static func isEditable(_ element: AXUIElement) -> Bool {
+        if let role: String = attribute(element, kAXRoleAttribute), textRoles.contains(role) { return true }
+        var settable: DarwinBoolean = false
+        if AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue { return true }
+        if let editable: AXUIElement = attribute(element, "AXEditableAncestor"), CFGetTypeID(editable) == AXUIElementGetTypeID() { return true }
+        if let editable: Bool = attribute(element, "AXEditable"), editable { return true }
+        return false
+    }
+
+    // MARK: Text
+
+    /// Web content gives spaces as non-breaking spaces, and some editors end with an object replacement character.
+    private static func clean(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{00A0}", with: " ").replacingOccurrences(of: "\u{FFFC}", with: "")
+    }
+
+    /// Before and after the cursor from text markers: from the start of the field to the selection, and from the selection to
+    /// the end.
+    private static func markerText(in element: AXUIElement) -> AutocompleteFieldSnapshot? {
+        var selection: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXSelectedTextMarkerRange" as CFString, &selection) == .success, let selection,
+              let whole = parameterized(element, "AXTextMarkerRangeForUIElement", element),
+              let fieldStart = AXTextMarkerRangeCopyStartMarker(whole), let fieldEnd = AXTextMarkerRangeCopyEndMarker(whole),
+              let selectionStart = AXTextMarkerRangeCopyStartMarker(selection), let selectionEnd = AXTextMarkerRangeCopyEndMarker(selection),
+              let beforeRange = AXTextMarkerRangeCreate(nil, fieldStart, selectionStart),
+              let afterRange = AXTextMarkerRangeCreate(nil, selectionEnd, fieldEnd) else { return nil }
+        let before = string(element, beforeRange) ?? ""
+        let after = string(element, afterRange) ?? ""
+        let selected = string(element, selection) ?? ""
+        var snapshot = AutocompleteFieldSnapshot(before: clean(before), after: clean(after), hasSelection: !selected.isEmpty, caret: nil)
+        snapshot.selectedText = selected
+        return snapshot
+    }
+
+    private static func string(_ element: AXUIElement, _ range: CFTypeRef) -> String? {
+        parameterized(element, "AXStringForTextMarkerRange", range) as? String
+    }
+
+    private static func parameterized(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value) == .success else { return nil }
+        return value
+    }
+
+    /// The font of one character, from the attributed string the app gives for it.
+    private static func font(in element: AXUIElement, at location: Int) -> (name: String?, size: CGFloat)? {
+        var range = CFRange(location: location, length: 1)
+        guard let parameter = AXValueCreate(.cfRange, &range),
+              let value = parameterized(element, kAXAttributedStringForRangeParameterizedAttribute, parameter),
+              let attributed = value as? NSAttributedString, attributed.length > 0,
+              let font = attributed.attribute(NSAttributedString.Key("AXFont"), at: 0, effectiveRange: nil) as? [String: Any],
+              let size = (font["AXFontSize"] as? NSNumber).map({ CGFloat($0.doubleValue) }), size >= 6, size <= 96 else { return nil }
+        return (font["AXFontName"] as? String, size)
+    }
+
+    // MARK: Values
 
     private static func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
         var value: CFTypeRef?
@@ -105,54 +204,58 @@ enum AutocompleteField {
 
     private static func bounds(in element: AXUIElement, location: Int, length: Int) -> CGRect? {
         var range = CFRange(location: location, length: length)
-        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
-        var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &value) == .success,
-              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        guard let parameter = AXValueCreate(.cfRange, &range),
+              let value = parameterized(element, kAXBoundsForRangeParameterizedAttribute, parameter),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
         guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1, rect.height < 400 else { return nil }
         return rect
     }
 
-    /// Most apps give no box for an empty range: then the right edge of the character before the cursor.
-    private static func caretRect(in element: AXUIElement, at location: Int) -> CGRect? {
-        if let caret = bounds(in: element, location: location, length: 0) {
-            return CGRect(x: caret.minX, y: caret.minY, width: 0, height: caret.height)
-        }
-        if location > 0, let previous = bounds(in: element, location: location - 1, length: 1) {
+    // MARK: The cursor
+
+    /// Where the next letter goes. Many apps answer badly for an empty range (x 0, the whole line, the next character), so the
+    /// right edge of the character before the cursor comes first: the suggestion then starts exactly where the text ends and
+    /// never covers it. Only when the cursor is on a new line (wrapped or after a return) does the empty range decide.
+    private static func caretRect(in element: AXUIElement, at location: Int, text: NSString) -> CGRect? {
+        let empty = bounds(in: element, location: location, length: 0)
+        let previousIsNewline = location > 0 && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: location - 1))
+        if location > 0, !previousIsNewline, let previous = bounds(in: element, location: location - 1, length: 1),
+           previous.width > 0, previous.width < 200 {
+            // The cursor wrapped to the next line: the empty range is lower down than the character before it.
+            if let empty, empty.height > 1, abs(empty.minY - previous.minY) > previous.height / 2, empty.width < 4 {
+                return CGRect(x: empty.minX, y: empty.minY, width: 0, height: empty.height)
+            }
             return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+        }
+        if let empty, empty.height > 1 {
+            return CGRect(x: empty.minX, y: empty.minY, width: 0, height: min(empty.height, 200))
         }
         return nil
     }
 
     private static func markerBounds(in element: AXUIElement, range: CFTypeRef) -> CGRect? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForTextMarkerRange" as CFString, range, &value) == .success,
-              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        guard let value = parameterized(element, "AXBoundsForTextMarkerRange", range), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
         guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1 else { return nil }
         return rect
     }
 
-    private static func marker(_ name: String, of marker: CFTypeRef, in element: AXUIElement) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, marker, &value) == .success else { return nil }
-        return value
-    }
-
-    /// The cursor from the selected text-marker range (web content).
+    /// The cursor from the selected text-marker range (web content): the right edge of the character before it first, like
+    /// `caretRect`.
     private static func markerCaret(in element: AXUIElement) -> CGRect? {
         var selection: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "AXSelectedTextMarkerRange" as CFString, &selection) == .success, let selection else { return nil }
-        if let caret = markerBounds(in: element, range: selection) {
-            return CGRect(x: caret.maxX, y: caret.minY, width: 0, height: caret.height)
-        }
-        guard let end = AXTextMarkerRangeCopyEndMarker(selection) else { return nil }
-        if let previous = marker("AXPreviousTextMarkerForTextMarker", of: end, in: element),
-           let range = AXTextMarkerRangeCreate(nil, previous, end), let box = markerBounds(in: element, range: range) {
+        guard AXUIElementCopyAttributeValue(element, "AXSelectedTextMarkerRange" as CFString, &selection) == .success, let selection,
+              let end = AXTextMarkerRangeCopyEndMarker(selection) else { return nil }
+        if let previous = parameterized(element, "AXPreviousTextMarkerForTextMarker", end),
+           let range = AXTextMarkerRangeCreate(nil, previous, end), let box = markerBounds(in: element, range: range), box.width > 0,
+           (string(element, range).map { !$0.contains("\n") } ?? true) {
             return CGRect(x: box.maxX, y: box.minY, width: 0, height: box.height)
         }
-        if let next = marker("AXNextTextMarkerForTextMarker", of: end, in: element),
+        if let caret = markerBounds(in: element, range: selection) {
+            return CGRect(x: caret.minX, y: caret.minY, width: 0, height: caret.height)
+        }
+        if let next = parameterized(element, "AXNextTextMarkerForTextMarker", end),
            let range = AXTextMarkerRangeCreate(nil, end, next), let box = markerBounds(in: element, range: range) {
             return CGRect(x: box.minX, y: box.minY, width: 0, height: box.height)
         }
