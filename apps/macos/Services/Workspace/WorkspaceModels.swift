@@ -571,8 +571,8 @@ enum WorktreeNaming {
 
     /// A short title from the first line of the task prompt.
     static func title(from task: String, limit: Int = 60) -> String {
-        let firstLine = task.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let clean = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The first line of your own words: an agent's tags (`<task-notification>` …) are no title.
+        let clean = InjectedPrompt.title(task)
         guard !clean.isEmpty else { return "Nieuwe sessie" }
         if clean.count <= limit { return clean }
         let cut = clean.prefix(limit)

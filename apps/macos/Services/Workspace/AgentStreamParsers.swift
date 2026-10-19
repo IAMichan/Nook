@@ -299,6 +299,18 @@ enum ClaudeStreamParser {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "interrupt"]])
     }
 
+    /// Changes the permission mode of a running Claude Code ("default", "acceptEdits", "bypassPermissions", "plan").
+    static func setPermissionModeRequest(id: String, mode: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "set_permission_mode", "mode": mode]])
+    }
+
+    /// Changes the model of a running Claude Code; an empty model goes back to its default.
+    static func setModelRequest(id: String, model: String) -> String {
+        var request: [String: Any] = ["subtype": "set_model"]
+        if !model.isEmpty { request["model"] = model }
+        return line(["type": "control_request", "request_id": id, "request": request])
+    }
+
     private static func line(_ object: [String: Any]) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return (String(data: data, encoding: .utf8) ?? "{}") + "\n"

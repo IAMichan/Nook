@@ -881,7 +881,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 continue
             }
         }
-        session.title = Self.oneLine(session.title, 90)
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
@@ -1025,7 +1025,7 @@ private final class HistoryScanner: @unchecked Sendable {
         guard session.prompts > 0 || !session.title.isEmpty || !session.lastReply.isEmpty else {
             return Parsed(session: nil, entries: entries)
         }
-        session.title = Self.oneLine(session.title, 90)
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: entries)
@@ -1106,7 +1106,7 @@ private final class HistoryScanner: @unchecked Sendable {
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
         if !result.summaryTitle.isEmpty { session.title = result.summaryTitle }
-        session.title = Self.oneLine(session.title, 90)
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: result.entries)
@@ -1163,11 +1163,8 @@ private final class HistoryScanner: @unchecked Sendable {
 
     /// User-typed input, excluding what Claude Code injects automatically (commands, output, interrupts).
     private static func isTypedPrompt(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        for prefix in ["<command-", "<local-command", "<system-reminder", "<bash-", "<user-memory", "Caveat:", "[Request interrupted"]
-        where trimmed.hasPrefix(prefix) { return false }
-        return true
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return !InjectedPrompt.isInjected(text)
     }
 
     /// ~/.claude.json: which account Claude Code is logged in with. When using a custom directory (CLAUDE_CONFIG_DIR),
@@ -1223,7 +1220,7 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
-        session.title = Self.oneLine(session.title, 90)
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
         return Parsed(session: session, entries: result.entries)
@@ -1249,7 +1246,7 @@ private final class HistoryScanner: @unchecked Sendable {
             switch payload["type"] as? String {
             case "user_message":
                 let text = (payload["message"] as? String) ?? ""
-                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !InjectedPrompt.isInjected(text) else { return }
                 state.session.prompts += 1
                 state.session.lastPrompt = text
                 if state.session.title.isEmpty { state.session.title = text }

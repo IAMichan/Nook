@@ -115,7 +115,7 @@ struct RunDetailView: View {
                     Chip(text: tr("ws.header.accountGone"), color: NookTheme.amber, systemImage: "person.crop.circle.badge.exclamationmark")
                 }
                 Chip(text: (run.resolvedModel ?? (run.model.isEmpty ? tr("ws.model.default") : run.model)), systemImage: "cpu")
-                // Mode, permissions and model of the next turn: click to change (only while the agent is idle).
+                // Mode, permissions and model of the next turn: click to change, also while the agent works.
                 Menu {
                     Section(tr("agents.run.nextTurn")) { NextTurnSettings(run: run) }
                 } label: {
