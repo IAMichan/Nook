@@ -496,18 +496,28 @@ struct AgentSessionDetail: View {
 
     // MARK: Cloud session
 
-    /// A session in Anthropic's cloud (Claude app, claude.ai/code). Its conversation lives there, not on this Mac: Nook
-    /// shows where it stands and opens it in Claude.
+    /// A session in Anthropic's cloud (Claude app, claude.ai/code): where it stands, then its conversation, read from
+    /// Anthropic with the account's login (again every few seconds while it works). Typing on happens in Claude.
     private func cloudDetail(_ session: PastSession, _ cloud: CloudSession) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let profile = app.profile(for: session)
+        let home = profile?.homeURL, isDefault = profile?.isDefault ?? true
+        let id = cloud.id
+        let load: (@Sendable () -> [AgentChatMessage]?)? = home.map { home in
+            { @Sendable in CloudSessionFetch.conversation(id: id, home: home, isDefault: isDefault) }
+        }
+        return VStack(alignment: .leading, spacing: 12) {
             header(folder: session.project, title: AgentFormat.title(session.title), directory: "", agentWorking: false)
-            VStack(alignment: .leading, spacing: 8) {
-                Label(cloudStatus(cloud), systemImage: "cloud")
-                    .font(NookTheme.font(13.5, .medium))
-                    .foregroundStyle(cloud.status == .needsYou ? NookTheme.amber : NookTheme.paper)
-                Text(tr("agents.cloud.explain"))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Label(cloudStatus(cloud), systemImage: "cloud")
+                        .font(NookTheme.font(13.5, .medium))
+                        .foregroundStyle(cloud.status == .needsYou ? NookTheme.amber : NookTheme.paper)
+                    Spacer(minLength: 8)
+                    Button(tr("agents.cloud.open")) {
+                        if let url = URL(string: cloud.url) { NSWorkspace.shared.open(url) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
                 let details = [cloudOrigin(cloud.origin), cloud.repository, cloud.branch, cloud.model].filter { !$0.isEmpty }
                 if !details.isEmpty {
                     Text(details.joined(separator: " · "))
@@ -515,16 +525,20 @@ struct AgentSessionDetail: View {
                         .lineLimit(2)
                         .textSelection(.enabled)
                 }
-                Text(tr("agents.cloud.updated", NookDates.ago(cloud.updated)))
-                    .foregroundStyle(NookTheme.textTertiary)
-                Button(tr("agents.cloud.open")) {
-                    if let url = URL(string: cloud.url) { NSWorkspace.shared.open(url) }
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
+                Text(tr("agents.cloud.explain"))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(NookTheme.font(12.5))
-            Spacer(minLength: 0)
+
+            TranscriptConversation(
+                path: "", author: AppModel.cloudAgentName, accent: session.agent.color,
+                working: cloud.status == .running,
+                footer: tr("agents.cloud.updated", NookDates.ago(cloud.updated)),
+                load: load,
+                interval: 5_000_000_000
+            )
+            .id("cloud:" + session.id)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

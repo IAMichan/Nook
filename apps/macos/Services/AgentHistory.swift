@@ -451,17 +451,12 @@ enum CloudSessionFetch {
 
     /// The account's recent cloud sessions, or why they could not be read.
     static func sessions(home: URL, isDefault: Bool) -> Result<[CloudSession], CloudSessionProblem> {
-        let token: String
-        switch ClaudeUsage.login(home: home, isDefault: isDefault) {
-        case .valid(let value): token = value
-        case .expired: return .failure(.loginExpired)
-        case .missing: return .failure(.notSignedIn)
+        let login: (token: String, org: String?)
+        switch access(home: home, isDefault: isDefault) {
+        case .success(let value): login = value
+        case .failure(let problem): return .failure(problem)
         }
-        // Claude Code keeps the organization in its account file; without it, ask Anthropic who is signed in, like Claude Code does.
-        var org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault)
-        if org == nil, case (200, let data?) = get(ClaudeCloudSessions.profileEndpoint, token: token, beta: "oauth-2025-04-20") {
-            org = ClaudeCloudSessions.organization(fromProfile: data)
-        }
+        let token = login.token, org = login.org
         var (status, payload) = get(ClaudeCloudSessions.endpoint, token: token, beta: ClaudeCloudSessions.beta, org: org)
         // Earlier Claude Code versions list sessions without a beta header: should Anthropic stop accepting this one, ask that way.
         if status == 400 || status == 404 {
@@ -474,6 +469,58 @@ enum CloudSessionFetch {
         }
         let since = Date().addingTimeInterval(-Double(days) * 86_400)
         return .success(ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since })
+    }
+
+    /// The conversation of one cloud session, or nil when it could not be read (offline, login expired). Read-only.
+    /// While a session works it is read again every few seconds: after the first time only the events after the last one.
+    static func conversation(id: String, home: URL, isDefault: Bool) -> [AgentChatMessage]? {
+        guard case .success(let login) = access(home: home, isDefault: isDefault) else { return nil }
+        eventsLock.lock()
+        let known = eventCache[id]
+        eventsLock.unlock()
+        var events = known?.events ?? []
+        var after = known?.lastID
+        var read = false
+        // A long session spans several pages; a cap keeps a runaway one from holding the reader.
+        for _ in 0..<10 {
+            let (status, payload) = get(ClaudeCloudSessions.eventsEndpoint(id, after: after), token: login.token,
+                                        beta: ClaudeCloudSessions.beta, org: login.org)
+            guard status == 200, let payload, let page = ClaudeCloudSessions.eventPage(payload) else {
+                Log.agents.error("Cloud session events: HTTP \(status, privacy: .public)")
+                break
+            }
+            read = true
+            events += page.events
+            guard let last = page.lastID, last != after else { break }
+            after = last
+            if !page.hasMore { break }
+        }
+        guard read || known != nil else { return nil }
+        eventsLock.lock()
+        if eventCache.count > 16 { eventCache.removeAll() }
+        eventCache[id] = (events, after)
+        eventsLock.unlock()
+        return ClaudeCloudSessions.conversation(events)
+    }
+
+    /// Per cloud session: the events read so far and the id of the last one, to page on from.
+    private nonisolated(unsafe) static var eventCache: [String: (events: [[String: Any]], lastID: String?)] = [:]
+    private static let eventsLock = NSLock()
+
+    /// The account's login and organization, as Claude Code itself uses them for its cloud sessions.
+    private static func access(home: URL, isDefault: Bool) -> Result<(token: String, org: String?), CloudSessionProblem> {
+        let token: String
+        switch ClaudeUsage.login(home: home, isDefault: isDefault) {
+        case .valid(let value): token = value
+        case .expired: return .failure(.loginExpired)
+        case .missing: return .failure(.notSignedIn)
+        }
+        // Claude Code keeps the organization in its account file; without it, ask Anthropic who is signed in, like Claude Code does.
+        var org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault)
+        if org == nil, case (200, let data?) = get(ClaudeCloudSessions.profileEndpoint, token: token, beta: "oauth-2025-04-20") {
+            org = ClaudeCloudSessions.organization(fromProfile: data)
+        }
+        return .success((token, org))
     }
 
     /// A read-only request with the account's login; the status is 0 without an answer.

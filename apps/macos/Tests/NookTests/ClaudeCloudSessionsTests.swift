@@ -88,4 +88,54 @@ final class ClaudeCloudSessionsTests: XCTestCase {
         XCTAssertEqual(record(.finished).section, .earlier)
         XCTAssertFalse(record(.finished).isLive)
     }
+
+    // MARK: Conversation
+
+    func testTheConversationIsReadFromStreamEvents() throws {
+        let page = try XCTUnwrap(ClaudeCloudSessions.eventPage(Data(#"""
+        {"data": [
+          {"type": "user", "uuid": "u1", "timestamp": "2026-10-19T08:00:00Z",
+           "message": {"role": "user", "content": "Kan je deze niet ook weergeven?"}},
+          {"type": "assistant", "uuid": "a1", "timestamp": "2026-10-19T08:00:05Z",
+           "message": {"role": "assistant", "content": [
+             {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+             {"type": "text", "text": "Ja, dat kan."}]}},
+          {"type": "assistant", "uuid": "a2", "parent_tool_use_id": "t9", "timestamp": "2026-10-19T08:00:06Z",
+           "message": {"role": "assistant", "content": [{"type": "text", "text": "subagent"}]}},
+          {"type": "result", "uuid": "r1"}
+        ], "has_more": true, "last_id": "r1"}
+        """#.utf8)))
+        XCTAssertTrue(page.hasMore)
+        XCTAssertEqual(page.lastID, "r1")
+        let messages = ClaudeCloudSessions.conversation(page.events)
+        XCTAssertEqual(messages.first?.kind, .user)
+        XCTAssertEqual(messages.first?.text, "Kan je deze niet ook weergeven?")
+        XCTAssertEqual(messages.last?.kind, .assistant)
+        XCTAssertEqual(messages.last?.text, "Ja, dat kan.")
+        XCTAssertTrue(messages.contains { $0.kind == .tools })
+        XCTAssertFalse(messages.contains { $0.text == "subagent" })
+    }
+
+    func testWrappedEventsAreReadOldestFirstAndOnlyOnce() throws {
+        let page = try XCTUnwrap(ClaudeCloudSessions.eventPage(Data(#"""
+        {"data": [
+          {"created_at": "2026-10-19T08:00:05Z", "assistant": {"uuid": "a1", "internal_anthropic_catchall": {
+            "timestamp": "2026-10-19T08:00:05Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "Klaar."}]}}}},
+          {"created_at": "2026-10-19T08:00:00Z", "user": {"uuid": "u1", "internal_anthropic_catchall": {
+            "message": {"role": "user", "content": "Maak het af"}}}},
+          {"created_at": "2026-10-19T08:00:00Z", "user": {"uuid": "u1", "internal_anthropic_catchall": {
+            "message": {"role": "user", "content": "Maak het af"}}}}
+        ], "has_more": false}
+        """#.utf8)))
+        let messages = ClaudeCloudSessions.conversation(page.events)
+        XCTAssertEqual(messages.map(\.text), ["Maak het af", "Klaar."])
+    }
+
+    func testTheEventsEndpointPagesOn() {
+        XCTAssertEqual(ClaudeCloudSessions.eventsEndpoint("session_1").absoluteString,
+                       "https://api.anthropic.com/v1/sessions/session_1/events?limit=1000")
+        XCTAssertEqual(ClaudeCloudSessions.eventsEndpoint("session_1", after: "e9").absoluteString,
+                       "https://api.anthropic.com/v1/sessions/session_1/events?limit=1000&after_id=e9")
+    }
 }

@@ -15,6 +15,10 @@ struct TranscriptConversation: View {
     var fallback: [AgentChatMessage] = []
     var onReply: ((String) -> Void)? = nil
     var footer: String? = nil
+    /// Reads the conversation from somewhere else than a transcript file (a session in the cloud); nil when it could not.
+    var load: (@Sendable () -> [AgentChatMessage]?)? = nil
+    /// How often the conversation is read again while the agent works.
+    var interval: UInt64 = 2_000_000_000
     @State private var messages: [AgentChatMessage] = []
     @State private var loaded = false
     /// Folds, groups and thoughts you opened.
@@ -31,7 +35,7 @@ struct TranscriptConversation: View {
                 // Lazy: a long conversation only lays out what is on screen.
                 LazyVStack(alignment: .leading, spacing: 6) {
                     if shown.isEmpty {
-                        Text(loaded || path.isEmpty ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
+                        Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
                             .font(NookTheme.font(12.5))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
@@ -62,14 +66,17 @@ struct TranscriptConversation: View {
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
                 let path = self.path
-                if !path.isEmpty {
+                if let load = self.load {
+                    // Without an answer the conversation already shown stays.
+                    if let fresh = await Task.detached(priority: .utility) { load() }.value, fresh != messages { messages = fresh }
+                } else if !path.isEmpty {
                     let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
                     if fresh != messages { messages = fresh }
                 }
                 loaded = true
                 // An earlier session does not change any more: read once.
                 guard working else { break }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: interval)
             }
         }
     }
