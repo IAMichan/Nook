@@ -9,7 +9,8 @@ import Foundation
 struct AgentSessionRecord: Identifiable, Equatable {
     /// Richer sources win when the same conversation is known from several.
     enum Source: Int, Comparable {
-        case transcript = 0, process, hook, nook
+        /// `cloud`: a session in Anthropic's cloud (Claude app, claude.ai/code), known from the account's session list.
+        case transcript = 0, cloud, process, hook, nook
         static func < (a: Source, b: Source) -> Bool { a.rawValue < b.rawValue }
     }
 
@@ -43,7 +44,11 @@ struct AgentSessionRecord: Identifiable, Equatable {
 
     var leading: Source { sources.max() ?? .transcript }
     /// Is the conversation going on right now (as opposed to a record of one that ended)?
-    var isLive: Bool { sources.contains(.hook) || sources.contains(.process) || (sources.contains(.nook) && phase != .finished) }
+    var isLive: Bool {
+        sources.contains(.hook) || sources.contains(.process) || (sources.contains(.nook) && phase != .finished)
+            // A cloud session counts while it works or waits; an idle one is listed with the earlier sessions.
+            || (sources.contains(.cloud) && (phase == .working || phase == .needsYou))
+    }
 
     var section: Section {
         if phase == .needsYou || phase == .failed && isLive { return .needsYou }

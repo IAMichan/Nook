@@ -21,6 +21,11 @@ final class AudioLevelMonitor: @unchecked Sendable {
     private var lastSignalTime: CFAbsoluteTime = 0
 
     private var bundlePrefix: String?
+    /// The player that is playing, whether or not anything shows the bars.
+    private var wantedBundle: String?
+    /// How many equalizers are on screen. The tap only runs while one is: nobody sees the levels otherwise.
+    private var viewers = 0
+    private static let weights: [Float] = [2.8, 1.8, 1.2, 0.8]
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
@@ -58,18 +63,45 @@ final class AudioLevelMonitor: @unchecked Sendable {
     /// Follows the player with this bundle ID (or its helpers). Calling again with the same player is cheap.
     func start(bundleID: String) {
         Self.queue.async { [self] in
-            if tapID != kAudioObjectUnknown, bundlePrefix == bundleID { return }
-            teardown()
-            bundlePrefix = bundleID
-            setUp(bundleID: bundleID)
+            wantedBundle = bundleID
+            update()
         }
     }
 
     func stop() {
         Self.queue.async { [self] in
-            teardown()
-            bundlePrefix = nil
+            wantedBundle = nil
+            update()
         }
+    }
+
+    /// An equalizer appeared on screen.
+    func addViewer() {
+        Self.queue.async { [self] in
+            viewers += 1
+            update()
+        }
+    }
+
+    /// An equalizer left the screen.
+    func removeViewer() {
+        Self.queue.async { [self] in
+            viewers = max(0, viewers - 1)
+            update()
+        }
+    }
+
+    /// Runs the tap for the playing player while an equalizer shows it, and tears it down otherwise.
+    private func update() {
+        guard let bundleID = wantedBundle, viewers > 0 else {
+            if tapID != kAudioObjectUnknown || bundlePrefix != nil { teardown() }
+            bundlePrefix = nil
+            return
+        }
+        if tapID != kAudioObjectUnknown, bundlePrefix == bundleID { return }
+        teardown()
+        bundlePrefix = bundleID
+        setUp(bundleID: bundleID)
     }
 
     private func setUp(bundleID: String) {
@@ -176,7 +208,7 @@ final class AudioLevelMonitor: @unchecked Sendable {
         // Normalized band weighting to compensate for differing filter bandwidths.
         // Bass filter (80Hz) has narrow physical bandwidth, so needs higher gain.
         // Treble filter (6kHz) has wide bandwidth, so needs lower gain.
-        let weights: [Float] = [2.8, 1.8, 1.2, 0.8]
+        let weights = Self.weights
         let dt = Float(Double(frames) / sampleRate)
         let release = expf(-dt / 0.12)
         let now = CFAbsoluteTimeGetCurrent()

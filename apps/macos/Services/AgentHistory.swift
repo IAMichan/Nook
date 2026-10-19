@@ -221,10 +221,13 @@ struct PastSession: Identifiable, Equatable {
     var profileID = ""
     /// The transcript file the session was read from.
     var path = ""
+    /// A session in Anthropic's cloud (started in the Claude app or on claude.ai): no transcript or folder on this Mac.
+    var cloud: CloudSession?
 
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
     var project: String {
+        if let cloud { return cloud.repository.isEmpty ? "cloud" : URL(fileURLWithPath: cloud.repository).lastPathComponent }
         let name = URL(fileURLWithPath: cwd).lastPathComponent
         return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
     }
@@ -330,6 +333,7 @@ final class AgentHistory: ObservableObject {
 
     /// Refreshes if more than `minimumInterval` has elapsed. Called by the Agents tab when opened.
     func refresh(minimumInterval: TimeInterval = 20) {
+        refreshCloud(minimumInterval: max(minimumInterval, Self.cloudInterval))
         guard !loading, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
         loading = true
         lastRefresh = Date()
@@ -353,11 +357,57 @@ final class AgentHistory: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.loading = false
-                if self.sessions != result.sessions { self.sessions = result.sessions }
+                self.localSessions = result.sessions
+                self.publishSessions()
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
                 if self.installed != result.installed { self.installed = result.installed }
                 if self.executables != result.executables { self.executables = result.executables }
+            }
+        }
+    }
+
+    // MARK: Cloud
+
+    private var localSessions: [PastSession] = []
+    /// Per account (`AgentProfile.id`): its sessions in Anthropic's cloud.
+    private var cloudSessions: [String: [PastSession]] = [:]
+    private var lastCloudRefresh = Date.distantPast
+    private var cloudLoading = false
+    /// The cloud list is a network request: at most this often, also when the local scan runs more often.
+    private static let cloudInterval: TimeInterval = 60
+
+    private func publishSessions() {
+        // Two accounts signed in to the same organization see the same cloud sessions: list each once.
+        var seen = Set<String>()
+        let cloud = cloudSessions.keys.sorted().flatMap { cloudSessions[$0] ?? [] }.filter { seen.insert($0.id).inserted }
+        let all = (localSessions + cloud).sorted { $0.ended > $1.ended }
+        if sessions != all { sessions = all }
+    }
+
+    /// Sessions of every Claude subscription account that run in the cloud: started in the Claude app (desktop or phone)
+    /// or on claude.ai/code. They are read with the account's own login, like the usage limits (`ClaudeUsage`).
+    private func refreshCloud(minimumInterval: TimeInterval) {
+        guard !cloudLoading, Date().timeIntervalSince(lastCloudRefresh) >= minimumInterval else { return }
+        let accounts = profiles.filter { $0.kind == .claude && !$0.usesAPIKey }
+            .map { (id: $0.id, home: $0.homeURL, isDefault: $0.isDefault) }
+        guard !accounts.isEmpty else { return }
+        cloudLoading = true
+        lastCloudRefresh = Date()
+        Task.detached(priority: .utility) { [weak self] in
+            var found: [String: [PastSession]] = [:]
+            for account in accounts {
+                if let list = CloudSessionFetch.sessions(home: account.home, isDefault: account.isDefault) {
+                    found[account.id] = list.map { CloudSessionFetch.pastSession($0, profileID: account.id) }
+                }
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.cloudLoading = false
+                // An account that could not be read (offline, token just expired) keeps what it had, so rows don't flicker away.
+                for (id, list) in found { self.cloudSessions[id] = list }
+                for id in self.cloudSessions.keys where !accounts.contains(where: { $0.id == id }) { self.cloudSessions[id] = nil }
+                self.publishSessions()
             }
         }
     }
@@ -379,6 +429,53 @@ struct ProfileHome: Sendable {
     var isDefault: Bool
     /// This account logs in using an API key from Nook's Keychain (Claude Code).
     var apiKey = false
+}
+
+// MARK: Cloud sessions
+
+/// Reads an account's cloud sessions from Anthropic, with the login Claude Code keeps for it. Read-only; the token is used
+/// only for this request and never stored or logged.
+enum CloudSessionFetch {
+    /// How far back cloud sessions are listed, like the transcripts on this Mac.
+    static let days = 30
+
+    /// nil when the account is not signed in with a subscription, or the list could not be read.
+    static func sessions(home: URL, isDefault: Bool) -> [CloudSession]? {
+        guard let token = ClaudeUsage.accessToken(home: home, isDefault: isDefault),
+              let org = ClaudeCloudSessions.organizationID(configHome: home, isDefault: isDefault) else { return nil }
+        var request = URLRequest(url: ClaudeCloudSessions.endpoint)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue(ClaudeCloudSessions.beta, forHTTPHeaderField: "anthropic-beta")
+        request.setValue(org, forHTTPHeaderField: "x-organization-uuid")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var payload: Data?
+        var status = 0
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            payload = data
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            semaphore.signal()
+        }.resume()
+        guard semaphore.wait(timeout: .now() + 20) == .success, status == 200, let payload else { return nil }
+        let since = Date().addingTimeInterval(-Double(days) * 86_400)
+        return ClaudeCloudSessions.parse(payload).filter { $0.isActive || $0.updated >= since }
+    }
+
+    static func pastSession(_ cloud: CloudSession, profileID: String) -> PastSession {
+        var session = PastSession(
+            agent: .claude, sessionID: cloud.id,
+            title: cloud.title.isEmpty ? cloud.repository : cloud.title,
+            cwd: "", branch: cloud.branch, model: cloud.model,
+            started: cloud.created, ended: cloud.updated,
+            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+        )
+        session.profileID = profileID
+        session.cloud = cloud
+        return session
+    }
 }
 
 // MARK: Reading
@@ -466,8 +563,8 @@ private final class HistoryScanner: @unchecked Sendable {
                 parsed = hit.parsed
             } else {
                 switch file.agent {
-                case .claude: parsed = parseClaude(file.url)
-                case .codex: parsed = parseCodex(file.url)
+                case .claude: parsed = parseClaude(file.url, key: file.key)
+                case .codex: parsed = parseCodex(file.url, key: file.key)
                 case .gemini: parsed = parseGemini(file.url)
                 case .antigravity: parsed = parseAntigravity(file.url, summaries: antigravitySummaries)
                 case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
@@ -479,6 +576,8 @@ private final class HistoryScanner: @unchecked Sendable {
             parsedAll.append((file.profile, parsed))
         }
         cache = fresh
+        claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
+        codexProgress = codexProgress.filter { fresh[$0.key] != nil }
 
         // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
         let sessions = parsedAll.compactMap { $0.parsed.session }
@@ -939,73 +1038,127 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeSummary = Data(#""type":"summary""#.utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
 
-    private func parseClaude(_ url: URL) -> Parsed {
-        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return Parsed(session: nil, entries: []) }
-        var session = PastSession(
-            agent: .claude, sessionID: url.deletingPathExtension().lastPathComponent,
-            title: "", cwd: "", branch: "", model: "",
-            started: .distantFuture, ended: .distantPast,
-            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
-        )
+    /// How far a transcript has been read: the state after every complete line up to `offset`. Transcripts only grow, so
+    /// while a session runs, the next scan reads just its new lines instead of the whole file again.
+    private struct Progress<State> {
+        var state: State
+        var offset: Int
+        var size: Int
+    }
+
+    private struct ClaudeState {
+        var session: PastSession
         var summaryTitle = ""
         var entries: [UsageEntry] = []
         var seenUsage = Set<String>()
+    }
 
-        forEachLine(data) { line in
-            if line.range(of: Self.claudeSummary) != nil, summaryTitle.isEmpty,
-               let object = json(line), object["type"] as? String == "summary" {
-                summaryTitle = (object["summary"] as? String) ?? ""
-                return
-            }
-            let isAssistant = line.range(of: Self.claudeAssistant) != nil
-            let isUser = !isAssistant && line.range(of: Self.claudeUser) != nil && line.range(of: Self.toolResult) == nil
-            guard isAssistant || isUser, let object = json(line) else { return }
+    private struct CodexState {
+        var session: PastSession
+        var entries: [UsageEntry] = []
+        var previous = TokenTally()
+    }
 
-            if let stamp = (object["timestamp"] as? String).flatMap({ self.date($0) }) {
-                session.started = min(session.started, stamp)
-                session.ended = max(session.ended, stamp)
-            }
-            if let cwd = object["cwd"] as? String, !cwd.isEmpty {
-                if session.cwd.isEmpty { session.cwd = cwd }
-                session.lastCwd = cwd == session.cwd ? "" : cwd
-            }
-            if let branch = object["gitBranch"] as? String, !branch.isEmpty, branch != "HEAD" { session.branch = branch }
-            let message = (object["message"] as? [String: Any]) ?? [:]
+    private var claudeProgress: [String: Progress<ClaudeState>] = [:]
+    private var codexProgress: [String: Progress<CodexState>] = [:]
+    /// Only transcripts touched this recently keep their progress: older ones rarely grow, and this bounds the memory.
+    private static let progressWindow: TimeInterval = 6 * 3600
 
-            if isAssistant {
-                if let model = message["model"] as? String, !model.hasPrefix("<") { session.model = model }
-                let text = Self.text(message["content"])
-                if !text.isEmpty { session.lastReply = text }
-                if let raw = message["usage"] as? [String: Any] {
-                    let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
-                    // Claude Code writes a line per block for each reply, each containing identical usage.
-                    guard id == ":" || seenUsage.insert(id).inserted else { return }
-                    let tokens = TokenTally(
-                        input: Self.int(raw["input_tokens"]),
-                        output: Self.int(raw["output_tokens"]),
-                        cacheRead: Self.int(raw["cache_read_input_tokens"]),
-                        cacheWrite: Self.int(raw["cache_creation_input_tokens"])
-                    )
-                    session.tokens += tokens
-                    let when = (object["timestamp"] as? String).flatMap({ self.date($0) }) ?? session.ended
-                    entries.append(UsageEntry(key: id == ":" ? UUID().uuidString : id, date: when, tokens: tokens))
-                }
-            } else {
-                if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
-                let text = Self.text(message["content"])
-                guard Self.isTypedPrompt(text) else { return }
-                session.prompts += 1
-                session.lastPrompt = text
-                if session.title.isEmpty { session.title = text }
-            }
+    /// Reads `url` line by line from where the previous scan stopped, or from the start when the file is new or was
+    /// rewritten. Gives the same state as reading the whole file. Nil when the file can't be read.
+    private func readLines<State>(_ url: URL, key: CacheKey, progress: inout [String: Progress<State>],
+                                  initial: () -> State, line: (Data, inout State) -> Void) -> State? {
+        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else {
+            progress[url.path] = nil
+            return nil
         }
+        var saved: Progress<State>
+        if let known = progress[url.path], known.offset <= data.count, known.size <= data.count,
+           known.offset == 0 || data[data.startIndex + known.offset - 1] == 0x0A {
+            saved = known
+        } else {
+            saved = Progress(state: initial(), offset: 0, size: 0)
+        }
+        // Complete lines advance the saved state; a line still being written is read on top of a copy only.
+        let fresh = data[(data.startIndex + saved.offset)...]
+        let complete = fresh.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? fresh.startIndex
+        forEachLine(data[fresh.startIndex..<complete]) { line($0, &saved.state) }
+        saved.offset = complete - data.startIndex
+        saved.size = data.count
+        progress[url.path] = Date().timeIntervalSince(key.modified) < Self.progressWindow ? saved : nil
+        var state = saved.state
+        if complete < data.endIndex { forEachLine(data[complete...]) { line($0, &state) } }
+        return state
+    }
 
-        guard session.ended > .distantPast else { return Parsed(session: nil, entries: entries) }
-        if !summaryTitle.isEmpty { session.title = summaryTitle }
+    private func parseClaude(_ url: URL, key: CacheKey) -> Parsed {
+        let initial = {
+            ClaudeState(session: PastSession(
+                agent: .claude, sessionID: url.deletingPathExtension().lastPathComponent,
+                title: "", cwd: "", branch: "", model: "",
+                started: .distantFuture, ended: .distantPast,
+                prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+            ))
+        }
+        guard let result = readLines(url, key: key, progress: &claudeProgress, initial: initial, line: claudeLine) else {
+            return Parsed(session: nil, entries: [])
+        }
+        var session = result.session
+        guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
+        if !result.summaryTitle.isEmpty { session.title = result.summaryTitle }
         session.title = Self.oneLine(session.title, 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
-        return Parsed(session: session, entries: entries)
+        return Parsed(session: session, entries: result.entries)
+    }
+
+    private func claudeLine(_ line: Data, into progress: inout ClaudeState) {
+        if line.range(of: Self.claudeSummary) != nil, progress.summaryTitle.isEmpty,
+           let object = json(line), object["type"] as? String == "summary" {
+            progress.summaryTitle = (object["summary"] as? String) ?? ""
+            return
+        }
+        let isAssistant = line.range(of: Self.claudeAssistant) != nil
+        let isUser = !isAssistant && line.range(of: Self.claudeUser) != nil && line.range(of: Self.toolResult) == nil
+        guard isAssistant || isUser, let object = json(line) else { return }
+
+        if let stamp = (object["timestamp"] as? String).flatMap({ self.date($0) }) {
+            progress.session.started = min(progress.session.started, stamp)
+            progress.session.ended = max(progress.session.ended, stamp)
+        }
+        if let cwd = object["cwd"] as? String, !cwd.isEmpty {
+            if progress.session.cwd.isEmpty { progress.session.cwd = cwd }
+            progress.session.lastCwd = cwd == progress.session.cwd ? "" : cwd
+        }
+        if let branch = object["gitBranch"] as? String, !branch.isEmpty, branch != "HEAD" { progress.session.branch = branch }
+        let message = (object["message"] as? [String: Any]) ?? [:]
+
+        if isAssistant {
+            if let model = message["model"] as? String, !model.hasPrefix("<") { progress.session.model = model }
+            let text = Self.text(message["content"])
+            if !text.isEmpty { progress.session.lastReply = text }
+            if let raw = message["usage"] as? [String: Any] {
+                let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
+                // Claude Code writes a line per block for each reply, each containing identical usage.
+                guard id == ":" || progress.seenUsage.insert(id).inserted else { return }
+                let tokens = TokenTally(
+                    input: Self.int(raw["input_tokens"]),
+                    output: Self.int(raw["output_tokens"]),
+                    cacheRead: Self.int(raw["cache_read_input_tokens"]),
+                    cacheWrite: Self.int(raw["cache_creation_input_tokens"])
+                )
+                progress.session.tokens += tokens
+                let when = (object["timestamp"] as? String).flatMap({ self.date($0) }) ?? progress.session.ended
+                progress.entries.append(UsageEntry(key: id == ":" ? UUID().uuidString : id, date: when, tokens: tokens))
+            }
+        } else {
+            if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
+            let text = Self.text(message["content"])
+            guard Self.isTypedPrompt(text) else { return }
+            progress.session.prompts += 1
+            progress.session.lastPrompt = text
+            if progress.session.title.isEmpty { progress.session.title = text }
+        }
     }
 
     /// User-typed input, excluding what Claude Code injects automatically (commands, output, interrupts).
@@ -1051,80 +1204,83 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Codex
 
-    private func parseCodex(_ url: URL) -> Parsed {
-        guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return Parsed(session: nil, entries: []) }
+    private static let codexMarkers = ["session_meta", "turn_context", "user_message", "agent_message", "token_count"].map { Data($0.utf8) }
+
+    private func parseCodex(_ url: URL, key: CacheKey) -> Parsed {
         // rollout-2026-10-14T10-12-33-<uuid>.jsonl: the uuid is what `codex resume` expects.
         let base = url.deletingPathExtension().lastPathComponent
         let fallbackID = base.count > 36 ? String(base.suffix(36)) : base
-        var session = PastSession(
-            agent: .codex, sessionID: fallbackID,
-            title: "", cwd: "", branch: "", model: "",
-            started: .distantFuture, ended: .distantPast,
-            prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
-        )
-        var entries: [UsageEntry] = []
-        var previous = TokenTally()
-        let markers = ["session_meta", "turn_context", "user_message", "agent_message", "token_count"].map { Data($0.utf8) }
-
-        forEachLine(data) { line in
-            guard markers.contains(where: { line.range(of: $0) != nil }), let object = json(line) else { return }
-            let when = (object["timestamp"] as? String).flatMap({ self.date($0) })
-            if let when {
-                session.started = min(session.started, when)
-                session.ended = max(session.ended, when)
-            }
-            let payload = (object["payload"] as? [String: Any]) ?? [:]
-            switch object["type"] as? String {
-            case "session_meta":
-                if let id = payload["id"] as? String, !id.isEmpty { session.sessionID = id }
-                if let cwd = payload["cwd"] as? String { session.cwd = cwd }
-                if let git = payload["git"] as? [String: Any], let branch = git["branch"] as? String { session.branch = branch }
-            case "turn_context":
-                if let model = payload["model"] as? String { session.model = model }
-                if session.cwd.isEmpty, let cwd = payload["cwd"] as? String { session.cwd = cwd }
-            case "event_msg":
-                switch payload["type"] as? String {
-                case "user_message":
-                    let text = (payload["message"] as? String) ?? ""
-                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    session.prompts += 1
-                    session.lastPrompt = text
-                    if session.title.isEmpty { session.title = text }
-                case "agent_message":
-                    if let text = payload["message"] as? String, !text.isEmpty { session.lastReply = text }
-                case "token_count":
-                    // Cumulative session total so far; the delta with the previous line is the incremental usage.
-                    guard let info = payload["info"] as? [String: Any],
-                          let total = info["total_token_usage"] as? [String: Any] else { return }
-                    let cached = Self.int(total["cached_input_tokens"])
-                    let current = TokenTally(
-                        input: max(0, Self.int(total["input_tokens"]) - cached),
-                        output: Self.int(total["output_tokens"]),
-                        cacheRead: cached,
-                        cacheWrite: 0
-                    )
-                    guard current.total > previous.total else { return }
-                    let delta = TokenTally(
-                        input: max(0, current.input - previous.input),
-                        output: max(0, current.output - previous.output),
-                        cacheRead: max(0, current.cacheRead - previous.cacheRead)
-                    )
-                    previous = current
-                    session.tokens = current
-                    entries.append(UsageEntry(key: "\(session.sessionID):\(current.total)", date: when ?? session.ended, tokens: delta))
-                default:
-                    break
-                }
-            default:
-                break
-            }
+        let initial = {
+            CodexState(session: PastSession(
+                agent: .codex, sessionID: fallbackID,
+                title: "", cwd: "", branch: "", model: "",
+                started: .distantFuture, ended: .distantPast,
+                prompts: 0, tokens: TokenTally(), lastPrompt: "", lastReply: ""
+            ))
         }
-
-        guard session.ended > .distantPast else { return Parsed(session: nil, entries: entries) }
+        guard let result = readLines(url, key: key, progress: &codexProgress, initial: initial, line: codexLine) else {
+            return Parsed(session: nil, entries: [])
+        }
+        var session = result.session
+        guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
         session.title = Self.oneLine(session.title, 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
-        return Parsed(session: session, entries: entries)
+        return Parsed(session: session, entries: result.entries)
+    }
+
+    private func codexLine(_ line: Data, into state: inout CodexState) {
+        guard Self.codexMarkers.contains(where: { line.range(of: $0) != nil }), let object = json(line) else { return }
+        let when = (object["timestamp"] as? String).flatMap({ self.date($0) })
+        if let when {
+            state.session.started = min(state.session.started, when)
+            state.session.ended = max(state.session.ended, when)
+        }
+        let payload = (object["payload"] as? [String: Any]) ?? [:]
+        switch object["type"] as? String {
+        case "session_meta":
+            if let id = payload["id"] as? String, !id.isEmpty { state.session.sessionID = id }
+            if let cwd = payload["cwd"] as? String { state.session.cwd = cwd }
+            if let git = payload["git"] as? [String: Any], let branch = git["branch"] as? String { state.session.branch = branch }
+        case "turn_context":
+            if let model = payload["model"] as? String { state.session.model = model }
+            if state.session.cwd.isEmpty, let cwd = payload["cwd"] as? String { state.session.cwd = cwd }
+        case "event_msg":
+            switch payload["type"] as? String {
+            case "user_message":
+                let text = (payload["message"] as? String) ?? ""
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                state.session.prompts += 1
+                state.session.lastPrompt = text
+                if state.session.title.isEmpty { state.session.title = text }
+            case "agent_message":
+                if let text = payload["message"] as? String, !text.isEmpty { state.session.lastReply = text }
+            case "token_count":
+                // Cumulative session total so far; the delta with the previous line is the incremental usage.
+                guard let info = payload["info"] as? [String: Any],
+                      let total = info["total_token_usage"] as? [String: Any] else { return }
+                let cached = Self.int(total["cached_input_tokens"])
+                let current = TokenTally(
+                    input: max(0, Self.int(total["input_tokens"]) - cached),
+                    output: Self.int(total["output_tokens"]),
+                    cacheRead: cached,
+                    cacheWrite: 0
+                )
+                guard current.total > state.previous.total else { return }
+                let delta = TokenTally(
+                    input: max(0, current.input - state.previous.input),
+                    output: max(0, current.output - state.previous.output),
+                    cacheRead: max(0, current.cacheRead - state.previous.cacheRead)
+                )
+                state.previous = current
+                state.session.tokens = current
+                state.entries.append(UsageEntry(key: "\(state.session.sessionID):\(current.total)", date: when ?? state.session.ended, tokens: delta))
+            default:
+                break
+            }
+        default:
+            break
+        }
     }
 
     /// ~/.codex/auth.json: logged in with ChatGPT (email and plan in id-token) or with an API key.

@@ -159,10 +159,13 @@ enum CloudHelp {
     static func money(_ minor: Int, currency: String) -> String {
         let code = currency.lowercased()
         let amount = zeroDecimal.contains(code) ? Double(minor) : Double(minor) / 100
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale(identifier: "nl_NL")
-        formatter.currencyCode = code.uppercased()
+        let formatter = NookDates.cached("money|\(code)") { () -> NumberFormatter in
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .currency
+            formatter.locale = Locale(identifier: "nl_NL")
+            formatter.currencyCode = code.uppercased()
+            return formatter
+        }
         return formatter.string(from: NSNumber(value: amount)) ?? "\(amount) \(code.uppercased())"
     }
 
@@ -2102,13 +2105,16 @@ final class ResendConnector: CloudConnectorConfig {
     private func parseDate(_ value: Any?) -> Date? {
         guard let text = value as? String, !text.isEmpty else { return nil }
         if let date = NookDates.parse(text) { return date }
-        let head = String(text.prefix(19))
+        return Self.resendFormat.date(from: String(text.prefix(19)))
+    }
+
+    private static let resendFormat: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.date(from: head)
-    }
+        return formatter
+    }()
 
     private func eventLabel(_ event: String) -> String {
         switch event {

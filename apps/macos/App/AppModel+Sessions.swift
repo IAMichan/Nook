@@ -58,18 +58,30 @@ extension AppModel {
         for past in history.sessions {
             records.append(AgentSessionRecord(
                 id: "past:" + past.id,
-                sources: [.transcript],
-                agent: past.agent.name,
+                sources: [past.cloud == nil ? AgentSessionRecord.Source.transcript : .cloud],
+                agent: past.cloud == nil ? past.agent.name : AppModel.cloudAgentName,
                 accountHome: accountHome(profileID: past.profileID),
                 conversationID: past.sessionID,
                 pid: nil,
                 cwd: past.cwd,
                 title: past.title,
-                phase: .finished,
+                phase: past.cloud.map(AppModel.phase) ?? .finished,
                 updated: past.ended
             ))
         }
         return records
+    }
+
+    /// How cloud sessions are named in the list, next to "Claude Code" and "Claude (app)".
+    static let cloudAgentName = "Claude (cloud)"
+
+    private static func phase(_ cloud: CloudSession) -> AgentSessionRecord.Phase {
+        switch cloud.status {
+        case .running: return .working
+        case .needsYou: return .needsYou
+        case .failed: return .failed
+        case .idle, .archived: return .finished
+        }
     }
 
     /// The merged list: every conversation once, grouped by what needs the user first.

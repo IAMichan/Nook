@@ -25,7 +25,7 @@ struct NookOrb: View {
     @State private var moodSince = Date()
 
     var body: some View {
-        TimelineView(.animation(paused: !animated)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)

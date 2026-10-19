@@ -87,6 +87,56 @@ extension AppModel {
             await self?.brain.rewrite(system: system, prompt: text, timeout: timeout)
         }
         FlowDictation.shared.refresh()
+        startAutocomplete()
+    }
+
+    /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
+    func startAutocomplete() {
+        let autocomplete = AutocompleteController.shared
+        autocomplete.facts = { [weak self] in
+            guard let self, self.settings.useMemory else { return [] }
+            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil }
+                .sorted { $0.strength > $1.strength }.prefix(8).map(\.text)
+        }
+        autocomplete.screenText = { [weak self] bundleID in
+            let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []
+            return (windows.first { $0.isFront } ?? windows.first)?.text
+        }
+        autocomplete.refresh()
+    }
+}
+
+/// Autocomplete in the notch's Today: a line when it is on but cannot work, and what it saved you today.
+extension AppModel {
+    func autocompleteAttentionItem() -> TodayItem? {
+        let autocomplete = AutocompleteController.shared
+        guard autocomplete.needsAttention else { return nil }
+        let subtitle: String
+        switch autocomplete.state {
+        case .noAccess: subtitle = tr("autocomplete.today.noAccess")
+        case .noModel: subtitle = tr("autocomplete.today.noModel")
+        case .failed(let message): subtitle = message
+        default: subtitle = ""
+        }
+        return TodayItem(id: "autocomplete-attention", title: tr("autocomplete.today.attention"), subtitle: subtitle,
+                         action: tr("autocomplete.today.fix"), color: NookTheme.amber,
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.general) })
+    }
+
+    func autocompleteTodayItem() -> TodayItem? {
+        let store = AutocompleteStore.shared
+        let today = store.stats.day()
+        guard store.prefs.enabled, today.takes > 0 else { return nil }
+        let minutes = max(1, Int((Double(today.words) / 40).rounded()))
+        return TodayItem(id: "autocomplete-today", title: tr("autocomplete.today.used", today.takes),
+                         subtitle: tr("autocomplete.today.usedSub", today.words, minutes),
+                         action: tr("button.view"), color: NookTheme.mint,
+                         target: .action { [weak self] in self?.openAutocompleteSettings(.stats) })
+    }
+
+    func openAutocompleteSettings(_ tab: AutocompleteSettingsTab) {
+        AutocompleteStore.shared.settingsTab = tab
+        openSettings(section: .autocomplete)
     }
 }
 
