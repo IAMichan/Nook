@@ -7,7 +7,7 @@ options:
   developmentLanguage: en
   # Matches the Xcode the project is built with, so Xcode does not ask to "Update to recommended settings".
   xcodeVersion: "26.0"
-  # Signs local builds with your Apple Development certificate when there is one (see Config/Signing.xcconfig).
+  # Gives local builds a stable signing identity, so macOS keeps granted permissions (see Config/Signing.xcconfig).
   preGenCommand: sh Config/local-signing.sh
 settings:
   base:
@@ -263,6 +263,12 @@ schemes:
     build:
       targets:
         Nook: all
+      # Without an Apple Development certificate: re-signs the ad-hoc build with the stable local identity, so macOS keeps
+      # the permissions you granted (see Config/local-signing.sh). Does nothing when Xcode already signs with a team.
+      postActions:
+        - name: Sign with local identity
+          settingsTarget: Nook
+          script: sh "$SRCROOT/Config/resign-local.sh"
     test:
       targets:
         - NookTests
