@@ -28,6 +28,7 @@ final class LyricsService: ObservableObject {
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 30
         configuration.httpAdditionalHeaders = ["User-Agent": "Nook (https://github.com/IAMichan/nook)"]
         return URLSession(configuration: configuration)
     }()
@@ -46,10 +47,18 @@ final class LyricsService: ObservableObject {
         state = .loading
         task = Task { [weak self] in
             guard let self else { return }
-            let result = await self.lookup(info, online: online)
+            var (result, settled) = await self.lookup(info, online: online)
+            // lrclib.net fetches a track it does not have yet from other sources while the first request waits, which can
+            // outlast that request; the lyrics are there moments later, so look once more before showing a miss.
+            if !settled {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard !Task.isCancelled, self.trackKey == key else { return }
+                (result, settled) = await self.lookup(info, online: online)
+            }
             guard !Task.isCancelled, self.trackKey == key else { return }
             self.state = result
-            self.remember(result, for: key)
+            // A miss after a failed request is not remembered, so the next visit looks again.
+            if settled { self.remember(result, for: key) }
         }
     }
 
@@ -59,7 +68,8 @@ final class LyricsService: ObservableObject {
         while cacheOrder.count > 60 { cache[cacheOrder.removeFirst()] = nil }
     }
 
-    private func lookup(_ info: NowPlayingInfo, online: Bool) async -> State {
+    /// The lyrics for `info`, and whether that answer is settled (`false` when a request to lrclib.net failed or timed out).
+    private func lookup(_ info: NowPlayingInfo, online: Bool) async -> (State, settled: Bool) {
         let local: Lyrics? = await withCheckedContinuation { continuation in
             NowPlayingService.libraryQueue.async {
                 let text = NowPlayingService.playerLyrics(app: info.app)
@@ -71,16 +81,17 @@ final class LyricsService: ObservableObject {
                 continuation.resume(returning: lyrics?.lines.isEmpty == false ? lyrics : nil)
             }
         }
-        if let local, local.isSynced { return .found(local) }
-        guard online else { return local.map(State.found) ?? .offline }
-        let remote = await fetchRemote(info)
-        if let remote, remote.isSynced || remote.instrumental { return .found(remote) }
-        if let local { return .found(local) }
-        return remote.map(State.found) ?? .notFound
+        if let local, local.isSynced { return (.found(local), true) }
+        guard online else { return (local.map(State.found) ?? .offline, true) }
+        let (remote, settled) = await fetchRemote(info)
+        if let remote, remote.isSynced || remote.instrumental { return (.found(remote), true) }
+        if let local { return (.found(local), settled) }
+        return (remote.map(State.found) ?? .notFound, remote != nil || settled)
     }
 
     /// `/api/get` with the exact track first (it also matches on length), then `/api/search` with a cleaned-up title.
-    private func fetchRemote(_ info: NowPlayingInfo) async -> Lyrics? {
+    /// `settled` is `false` when one of the requests failed, so a miss may not be final.
+    private func fetchRemote(_ info: NowPlayingInfo) async -> (Lyrics?, settled: Bool) {
         let duration = Double(info.duration)
         var exact = [
             URLQueryItem(name: "track_name", value: info.title),
@@ -88,23 +99,34 @@ final class LyricsService: ObservableObject {
         ]
         if !info.album.isEmpty { exact.append(URLQueryItem(name: "album_name", value: info.album)) }
         if info.duration > 0 { exact.append(URLQueryItem(name: "duration", value: String(info.duration))) }
-        if !info.artist.isEmpty, let record = LyricsParser.records(from: await get("get", exact)).first,
-           let lyrics = LyricsParser.lyrics(from: record) {
-            return lyrics
+        var settled = true
+        if !info.artist.isEmpty {
+            // `/api/get` may look the track up elsewhere first, so it gets more time than the search.
+            let data = await get("get", exact, timeout: 20)
+            if data == nil { settled = false }
+            if let record = LyricsParser.records(from: data ?? Data()).first, let lyrics = LyricsParser.lyrics(from: record) {
+                return (lyrics, true)
+            }
         }
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled else { return (nil, false) }
         var search = [URLQueryItem(name: "track_name", value: LyricsParser.cleanTitle(info.title))]
         if !info.artist.isEmpty { search.append(URLQueryItem(name: "artist_name", value: LyricsParser.primaryArtist(info.artist))) }
-        let records = LyricsParser.records(from: await get("search", search))
-        return LyricsParser.best(records, duration: duration).flatMap(LyricsParser.lyrics)
+        let data = await get("search", search)
+        if data == nil { settled = false }
+        let records = LyricsParser.records(from: data ?? Data())
+        return (LyricsParser.best(records, duration: duration).flatMap(LyricsParser.lyrics), settled)
     }
 
-    private func get(_ path: String, _ items: [URLQueryItem]) async -> Data {
+    /// The response body; empty for a clear miss (404), `nil` when the request failed.
+    private func get(_ path: String, _ items: [URLQueryItem], timeout: TimeInterval = 8) async -> Data? {
         var components = URLComponents(string: "https://lrclib.net/api/\(path)")
         components?.queryItems = items
         guard let url = components?.url else { return Data() }
-        guard let (data, response) = try? await session.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return Data() }
-        return data
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
+        guard let (data, response) = try? await session.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode else { return nil }
+        if status == 200 { return data }
+        return status == 404 ? Data() : nil
     }
 }
