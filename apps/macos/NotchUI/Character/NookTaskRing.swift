@@ -31,11 +31,13 @@ struct NookTaskRing: View {
     let items: [TaskRingItem]
     /// Size of Nook inside the ring.
     var orbSize: CGFloat = 46
+    /// The piece Nook looks at (shared with `NookTaskRingLabel`).
+    @Binding var hovered: String?
+    /// Last, so a call can pass it as a trailing closure.
     let onOpen: (TaskRingItem) -> Void
 
     @State private var shown = false
     @State private var appeared = Date()
-    @Binding var hovered: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var radius: CGFloat { orbSize / 2 + 12 }
