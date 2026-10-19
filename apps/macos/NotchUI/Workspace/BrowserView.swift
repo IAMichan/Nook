@@ -260,7 +260,7 @@ private final class WebViewContainer: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
 }
 
-private struct WebViewHost: NSViewRepresentable {
+struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
 
     func makeNSView(context: Context) -> NSView {

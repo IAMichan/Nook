@@ -56,6 +56,23 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(ChatIntent.detect("ja", history: reminder).primaryAction, "create_reminder")
     }
 
+    func testRetryCarriesTheLastAction() {
+        // "Probeer het opnieuw" after a message that never arrived: it is that WhatsApp message again, to approve.
+        let sent = [
+            ChatTurn(fromUser: true, text: "App Arjan: Mooi idee, maar nog niet volledig"),
+            ChatTurn(fromUser: false, text: "Ik heb het bericht aan Arjan via WhatsApp klaargezet."),
+            ChatTurn(fromUser: true, text: "Stuur"),
+            ChatTurn(fromUser: false, text: "Het bericht is verzonden.")
+        ]
+        XCTAssertEqual(ChatIntent.detect("Hij is niet aangekomen, probeer het opnieuw", history: sent).primaryAction, "whatsapp_send")
+        XCTAssertEqual(ChatIntent.detect("nog een keer", history: sent).primaryAction, "whatsapp_send")
+        XCTAssertEqual(ChatIntent.detect("try again", history: sent).primaryAction, "whatsapp_send")
+        let reminder = [ChatTurn(fromUser: true, text: "Herinner me morgen om 9 uur aan de tandarts"), ChatTurn(fromUser: false, text: "Dat lukte niet.")]
+        XCTAssertEqual(ChatIntent.detect("probeer opnieuw", history: reminder).primaryAction, "create_reminder")
+        XCTAssertNil(ChatIntent.detect("Wat stond er nog eens in die mail?", history: sent).primaryAction, "a question, not a retry")
+        XCTAssertNil(ChatIntent.detect("opnieuw", history: []).primaryAction, "nothing to do again")
+    }
+
     func testFollowUpWithoutAnOpenQuestionStaysPlain() {
         let sent = [
             ChatTurn(fromUser: true, text: "App Lisa dat ik later ben"),

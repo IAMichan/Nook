@@ -113,6 +113,10 @@ Integrations can have multiple accounts (`AccountRegistry`, e.g., `"GitHub · Wo
 
 `run_command` (*Terminal* source) is always an explicit action: the full command is shown in the plan, `CommandRisk` evaluates token-level risk, dangerous commands are blocked by `ActionGate`, and approved commands run inside a visible workspace terminal. `read_nook_browser` reads the active page in Nook's built-in browser; `open_in_nook_browser` only allows `https://` URLs and requires approval.
 
+### Apps Next to the Chat
+
+`@open whatsapp` (or `@whatsapp`, `open whatsapp in nook`) opens an app's web version next to the chat: WhatsApp Web, Telegram, Slack, Gmail, Notion and others from `EmbeddedAppCatalog`, or any `https` address (`@open notion.so`). You work in the app itself while you chat with Nook beside it; `@close` puts it away. Each app keeps its own sign-in across launches in a separate `WKWebsiteDataStore`, so WhatsApp asks for the QR code only once; the pane's menu signs out and removes that data. `read_open_app` (*Browser* source) reads what the app shows when you ask about it; Nook never types or clicks in it.
+
 ### Source Chips & Citations
 
 Above every answer, Nook shows a status chip per source:

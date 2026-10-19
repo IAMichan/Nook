@@ -146,12 +146,24 @@ final class BrainService {
                 return BrainPlan(text: focused.text, actions: plan.actions + focused.actions)
             }
         }
+        // A WhatsApp message asked for while no phone is linked: Nook cannot send it at all yet, so say how to link one
+        // instead of letting the model pretend it did.
+        if plan.actions.isEmpty, intent.primaryAction == "whatsapp_send", !allTools.contains(where: { $0.name == "whatsapp_send" }) {
+            return BrainPlan(text: tr("brain.whatsAppNotLinked"), actions: plan.actions)
+        }
         // Nothing runs before the user approves it, so a reply without a proposed action that says the message was sent
-        // (or the event was made) is never true. Say plainly that nothing happened instead.
-        if intent.wantsAction, plan.actions.isEmpty, Self.claimsDone(plan.text) {
+        // (or the event was made) is never true. Say plainly that nothing happened instead. "Sent again" is never true
+        // without an action, whatever the request looked like: sending again is a new message to approve.
+        if plan.actions.isEmpty, intent.wantsAction || Self.claimsRedone(plan.text), Self.claimsDone(plan.text) {
             return BrainPlan(text: tr("brain.notDone"), actions: plan.actions)
         }
         return plan
+    }
+
+    /// The reply says it did something once more: "opnieuw verzonden", "sent it again".
+    static func claimsRedone(_ text: String) -> Bool {
+        text.range(of: #"\b(opnieuw|nogmaals|nog een keer|nog eens|again|erneut|nochmal|noch einmal|de nouveau|à nouveau|otra vez|de nuevo)\b"#,
+                   options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     /// The reply says an action already happened: "Het bericht is verzonden", "I've sent it", "Ich habe … erstellt".
