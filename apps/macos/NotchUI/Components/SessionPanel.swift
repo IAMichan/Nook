@@ -1,4 +1,5 @@
 import SwiftUI
+import SystemConfiguration
 import AppKit
 
 /// Where "Open in" opens a session's folder: Finder, Nook's terminal, an installed terminal app or an editor.
@@ -36,9 +37,10 @@ struct OpenInTarget: Identifiable, Hashable {
     }
 }
 
-/// This Mac's name, as Finder shows it. Looked up once, off the main thread (it can take a moment).
+/// This Mac's name, as Finder shows it (Settings › General › Sharing). Read from the system configuration, which answers
+/// at once; `Host.current()` resolves every host name and address first and can block for seconds.
 enum MachineName {
-    static let local: String = Host.current().localizedName ?? "Mac"
+    static let local: String = (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "Mac"
 }
 
 /// What you can do with a session at a glance: the machine it runs on, open its folder in the app you

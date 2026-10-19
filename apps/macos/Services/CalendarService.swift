@@ -39,6 +39,22 @@ final class CalendarService {
 
     func events(from start: Date, to end: Date) -> [CalEvent] {
         guard hasEventAccess else { return [] }
+        return Self.eventList(store, from: start, to: end)
+    }
+
+    /// Same as `events(from:to:)`, read off the main thread: a cold EventKit query can take a moment, and launching Nook
+    /// (or a background refresh) should not wait for it.
+    func loadEvents(from start: Date, to end: Date) async -> [CalEvent] {
+        guard hasEventAccess else { return [] }
+        let store = store
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: Self.eventList(store, from: start, to: end))
+            }
+        }
+    }
+
+    private nonisolated static func eventList(_ store: EKEventStore, from start: Date, to end: Date) -> [CalEvent] {
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         return store.events(matching: predicate)
             .sorted { $0.startDate < $1.startDate }

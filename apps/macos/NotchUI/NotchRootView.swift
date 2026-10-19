@@ -114,6 +114,8 @@ struct NotchRootView: View {
     @ViewBuilder
     private var bareBadge: some View {
         let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
+        // Built from every source and session: worked out once per redraw.
+        let today = waiting > 0 ? 0 : app.todayItems.count
         if waiting > 0 {
             Circle()
                 .fill(NookTheme.amber)
@@ -197,9 +199,9 @@ struct NotchRootView: View {
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.amber)
             }
-        } else if app.todayItems.count > 0 {
+        } else if today > 0 {
             // Calm: what is on today is information, not an alarm. Amber is kept for things that wait for you.
-            Text("\(app.todayItems.count)")
+            Text("\(today)")
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
         }

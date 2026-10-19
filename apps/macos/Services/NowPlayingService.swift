@@ -71,6 +71,7 @@ final class NowPlayingService: ObservableObject {
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var lastPoll = Date.distantPast
+    private var startedAt = Date()
     /// The one queue every Apple Event to the players runs on (also used by `LyricsService`), so the compiled script
     /// cache is never touched from two threads.
     nonisolated static let libraryQueue = DispatchQueue(label: "nl.imdigital.nook.nowplaying")
@@ -82,6 +83,7 @@ final class NowPlayingService: ObservableObject {
     private var volumeInFlight = false
 
     func start() {
+        startedAt = Date()
         timer?.invalidate()
         // Players announce every track and play/pause change; react to that at once. The timer is only a safety net.
         if observers.isEmpty {
@@ -95,8 +97,11 @@ final class NowPlayingService: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                // Nothing playing: the players' notifications announce a start, so the safety net can be slow.
-                if self.current?.isPlaying != true, Date().timeIntervalSince(self.lastPoll) < 10 { return }
+                // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
+                // launch it keeps checking every tick until a player answers: a player that was still starting (or a cold
+                // first AppleScript run) should not keep the Music tab away for ten seconds.
+                let settling = self.current == nil && Date().timeIntervalSince(self.startedAt) < 20
+                if self.current?.isPlaying != true, !settling, Date().timeIntervalSince(self.lastPoll) < 10 { return }
                 self.poll()
             }
         }

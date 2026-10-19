@@ -241,11 +241,12 @@ final class AppModel: ObservableObject {
     // MARK: Opstarten
 
     func start() {
+        // First, so the player's answer (a cold AppleScript round trip) is already on its way while the rest starts up.
+        nowPlaying.start()
         viewModel.app = self
         notch.start(app: self)
 
         reloadLoops()
-        nowPlaying.start()
 
         // Always install newest hook script version so existing integrations stay up to date.
         try? HookScript.install()
