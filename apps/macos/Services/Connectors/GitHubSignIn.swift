@@ -68,7 +68,7 @@ final class GitHubSignIn: ObservableObject {
         cancel()
         phase = .checkingCLI
         task = Task {
-            if case .success(let token) = await Task.detached({ Self.cliToken() }).value {
+            if case .success(let token) = await Task.detached(operation: { Self.cliToken() }).value {
                 store(token)
                 return
             }
@@ -84,7 +84,7 @@ final class GitHubSignIn: ObservableObject {
             let deadline = Date().addingTimeInterval(15 * 60)
             while Date() < deadline {
                 do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
-                if case .success(let token) = await Task.detached({ Self.cliToken() }).value {
+                if case .success(let token) = await Task.detached(operation: { Self.cliToken() }).value {
                     store(token)
                     return
                 }
