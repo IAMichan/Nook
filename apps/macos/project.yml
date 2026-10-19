@@ -215,6 +215,7 @@ targets:
       - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
+      - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
