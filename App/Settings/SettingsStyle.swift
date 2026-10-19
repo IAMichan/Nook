@@ -15,6 +15,7 @@ extension SettingsSection {
         case .display: return "macwindow"
         case .brain: return "brain"
         case .assistant: return "sparkles"
+        case .memory: return "brain.head.profile"
         case .connections: return "app.connected.to.app.below.fill"
         case .mcp: return "puzzlepiece.extension.fill"
         case .agents: return "terminal.fill"
@@ -29,6 +30,7 @@ extension SettingsSection {
         case .display: return (Color(hex: 0x6CB6FF), Color(hex: 0x3478F6))
         case .brain: return (Color(hex: 0xF58FCB), Color(hex: 0xD24C9E))
         case .assistant: return (Color(hex: 0xFFC961), Color(hex: 0xF59E2E))
+        case .memory: return (Color(hex: 0xB9AEFF), Color(hex: 0x8B7CF6))
         case .connections: return (Color(hex: 0x5BE3B1), Color(hex: 0x1DB67F))
         case .mcp: return (Color(hex: 0x5ED6EE), Color(hex: 0x1FA2C6))
         case .agents: return (Color(hex: 0x62626F), Color(hex: 0x34343E))

@@ -39,6 +39,8 @@ extension AppModel {
         if case .done = message.planState, force.isEmpty { return }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         let steps = message.actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }
+        // Fields the user changed before running teach Nook their habits.
+        learnFromPlan(message: id, actions: message.actions, include: message.actionIncluded, states: nil)
         store.audit(tool: "plan_goedgekeurd", args: planSteps(message.actions).enumerated()
             .filter { index, _ in index < message.actionIncluded.count ? message.actionIncluded[index] : true }
             .map(\.element.text).joined(separator: " | "), result: "")
@@ -48,6 +50,7 @@ extension AppModel {
         }
         Task {
             let states = await runner.run(steps, states: message.actionStates, include: message.actionIncluded, force: force)
+            learnFromPlan(message: id, actions: message.actions, include: message.actionIncluded, states: states)
             reloadLoops()
             await refreshUpcoming()
             let outcome = Self.planOutcome(states)
@@ -156,6 +159,7 @@ extension AppModel {
         if (message.actionStates[safe: index] ?? .pending).result != nil { return }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         var action = message.actions[index]
+        noteEditOrigin(message: id, index: index, key: key, old: action.input[key])
         action.input[key] = value
         if let spec = allTools.first(where: { $0.name == action.tool }) {
             action.input = ActionGate.normalized(action.input, schema: spec.schema)
@@ -233,7 +237,11 @@ extension AppModel {
     /// Only when the user's own words ask for each action. The prompt also carries text from others (screen, mail, web, invites),
     /// and such text must never be enough to make Nook act without a click. `request == nil` means no user request is known.
     func canRunWithoutAsking(_ plan: BrainPlan, request: String?) -> Bool {
-        guard settings.autoRunSafe, !plan.actions.isEmpty, let request else { return false }
+        guard !plan.actions.isEmpty, let request else { return false }
+        // Remembering or forgetting what the user's own words ask for: it stays on this Mac and is undone in
+        // Settings › Memory, so it needs no click (and no "small things" setting).
+        if plan.actions.allSatisfy({ Self.memoryTools.contains($0.tool) && Self.request(request, asksFor: $0) }) { return true }
+        guard settings.autoRunSafe else { return false }
         return plan.actions.allSatisfy { Self.safeTools.contains($0.tool) && Self.request(request, asksFor: $0) }
     }
 
@@ -250,6 +258,13 @@ extension AppModel {
             return mentions(#"volume|geluid|harder|zachter|louder|quieter|lauter|leiser|mute|dempen"#)
         case "create_reminder":
             return mentions(#"herinner|reminder|erinner|onthoud|remember"#)
+        case "remember":
+            // Only what the user said: a memory planted by text on screen or in a mail is never stored without a click.
+            let memory = (action.input["text"] as? String) ?? ""
+            return MemoryRequest.asksToRemember(request) && MemoryText.grounded(memory, in: request)
+        case "forget":
+            let what = (action.input["what"] as? String) ?? ""
+            return MemoryRequest.asksToForget(request) && MemoryText.grounded(what, in: request)
         case "add_open_loop", "complete_open_loop":
             return mentions(#"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt"#)
         default:

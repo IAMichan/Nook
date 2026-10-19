@@ -316,11 +316,15 @@ extension AppModel {
             if !withheld.isEmpty {
                 notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
             }
-            let actions = plan.actions.map { action -> PlannedAction in
+            let normalized = plan.actions.map { action -> PlannedAction in
                 var copy = action
                 if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }
                 return copy
             }
+            // Fields the user keeps choosing (a calendar, a list) are filled in when the brain left them empty.
+            let habits = withHabits(normalized, tools: tools)
+            let actions = habits.actions
+            notices += habits.notices
             let problems: [[String]] = actions.map { actionProblems($0, scope: scope) }
             chat.update(id) { message in
                 message.text = body
@@ -351,8 +355,10 @@ extension AppModel {
             chat.setBusy(false, conversation: conversation)
             NookPresence.shared.nod()
             nookFinished(conversation)
+            // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
+            learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(plan, request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
