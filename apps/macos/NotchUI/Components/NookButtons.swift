@@ -11,6 +11,8 @@ struct NookPrimaryButton: View {
             Text(title)
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(NookTheme.ink)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 18)
                 .frame(height: 38)
                 .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
@@ -25,15 +27,19 @@ struct NookPrimaryButton: View {
 /// Subtle secondary button alongside the primary button.
 struct NookGhostButton: View {
     let title: String
+    /// Smaller text and padding, for a row with many buttons.
+    var compact: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(NookTheme.font(14, .semibold))
+                .font(NookTheme.font(compact ? 13 : 14, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                .padding(.horizontal, 12)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, compact ? 8 : 12)
                 .frame(height: 38)
                 .contentShape(Rectangle())
                 .scaleEffect(hovering ? 1.02 : 1)

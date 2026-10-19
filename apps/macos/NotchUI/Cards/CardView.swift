@@ -14,6 +14,7 @@ struct CardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
+                if let source = card.appIcon { CardAppIcon(source: source) }
                 Text(card.context)
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
@@ -31,7 +32,7 @@ struct CardView: View {
                 }
             }
 
-            if card.input {
+            if card.input, card.title.count > 140 {
                 // Long answers scroll and can be selected; they are never truncated.
                 ScrollView(showsIndicators: false) {
                     titleText.frame(maxWidth: .infinity, alignment: .leading)
@@ -42,7 +43,7 @@ struct CardView: View {
             }
 
             detail
-                .padding(.top, 14)
+                .padding(.top, Self.isChat(card.detail) ? 10 : 14)
 
             Spacer(minLength: 12)
 
@@ -50,20 +51,34 @@ struct CardView: View {
 
             if card.input { replyField.padding(.bottom, 10) }
 
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
-                if !card.secondary.label.isEmpty {
-                    NookGhostButton(title: card.secondary.label) { onAction(card.secondary) }
-                }
-                ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
-                    NookGhostButton(title: action.label) { onAction(action) }
-                }
-                Spacer()
-                NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
+            // Buttons stay on one line each; when they do not fit side by side, they tighten up instead of wrapping.
+            ViewThatFits(in: .horizontal) {
+                buttonRow(compact: false)
+                buttonRow(compact: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onExitCommand { onAction(card.escape ?? card.primary) }
+    }
+
+    private func buttonRow(compact: Bool) -> some View {
+        HStack(spacing: compact ? 0 : 4) {
+            NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
+                .padding(.trailing, compact ? 4 : 0)
+            if !card.secondary.label.isEmpty {
+                NookGhostButton(title: card.secondary.label, compact: compact) { onAction(card.secondary) }
+            }
+            ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
+                NookGhostButton(title: action.label, compact: compact) { onAction(action) }
+            }
+            Spacer(minLength: 4)
+            NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
+        }
+    }
+
+    private static func isChat(_ detail: CardDetail) -> Bool {
+        if case .chat = detail { return true }
+        return false
     }
 
     /// Short sentences large; longer answers in readable text, with **bold**, *italic*, and links.
@@ -143,11 +158,98 @@ struct CardView: View {
             DiffDetail(title: title, lines: lines, note: note)
         case .facts(let facts):
             FactsDetail(facts: facts)
+        case .chat(let bubbles):
+            ChatDetail(bubbles: bubbles)
         }
     }
 }
 
 // MARK: Detail lines
+
+/// The real icon of the app a card comes from (WhatsApp, Mail…), before the context line; its symbol while the app is not on this Mac.
+private struct CardAppIcon: View {
+    let source: String
+    @ObservedObject private var favicons = FaviconStore.shared
+
+    var body: some View {
+        Group {
+            if let image = SourceBrand.appIcon(for: source)
+                ?? SourceBrand.domain(for: source).flatMap({ favicons.image(for: $0) }) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "app.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(NookTheme.textSecondary)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The last lines of a conversation as bubbles, oldest at the top: theirs on the left, yours on the right.
+/// More than fits scrolls, starting at the newest message.
+private struct ChatDetail: View {
+    let bubbles: [ChatBubble]
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            stack
+            ScrollView(showsIndicators: false) { stack }
+                .defaultScrollAnchor(.bottom)
+        }
+    }
+
+    private var stack: some View {
+        VStack(spacing: 5) {
+            ForEach(bubbles) { bubble in
+                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ChatBubbleView: View {
+    let bubble: ChatBubble
+    let newest: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if bubble.fromMe { Spacer(minLength: 70) }
+            VStack(alignment: .leading, spacing: 2) {
+                if !bubble.sender.isEmpty {
+                    Text(bubble.sender)
+                        .font(NookTheme.font(11.5, .semibold))
+                        .foregroundStyle(NookTheme.mint)
+                        .lineLimit(1)
+                }
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text(bubble.text)
+                        .font(NookTheme.font(14, newest ? .medium : .regular))
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Text(bubble.time)
+                        .font(NookTheme.font(10.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)
+            )
+            if !bubble.fromMe { Spacer(minLength: 70) }
+        }
+    }
+}
 
 /// An offer from Nook as a button, preceded by a sparkle.
 private struct OfferChip: View {

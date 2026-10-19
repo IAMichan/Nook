@@ -50,6 +50,16 @@ struct Fact: Equatable, Identifiable {
     var value: String
 }
 
+/// A message in a chat card (WhatsApp): incoming on the left, your own on the right.
+struct ChatBubble: Equatable, Identifiable {
+    var id: String
+    var text: String
+    var time: String
+    /// In a group: who wrote it. Empty in a private chat, where the card's title already says who.
+    var sender: String = ""
+    var fromMe: Bool = false
+}
+
 enum CardDetail: Equatable {
     case none
     case event(top: String, big: String, line: String, subline: String)
@@ -59,12 +69,15 @@ enum CardDetail: Equatable {
     case choices(ChoiceSet)
     case diff(title: String, lines: [DiffLine], note: String)
     case facts([Fact])
+    case chat([ChatBubble])
 }
 
 struct NookCard: Equatable, Identifiable {
     var id: String
     var mood: NookMood
     var context: String
+    /// The source whose app icon goes before the context ("whatsapp"), as in `SourceBrand`.
+    var appIcon: String? = nil
     var title: String
     var detail: CardDetail
     var primary: CardAction
