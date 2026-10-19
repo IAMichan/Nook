@@ -6,6 +6,7 @@ use std::sync::Arc;
 use nook_core::secrets::{clean_secret, SecretStore};
 
 /// Zelfde servicenaam als de Keychain op de Mac.
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub const SERVICE: &str = "nl.imdigital.nook";
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]

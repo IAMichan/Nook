@@ -19,6 +19,12 @@
   --radius: 14px;
   --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
+  /* Veilige marges op de telefoon (notch, gebarenbalk) en de hoogte van het toetsenbord; Android zet ze precies. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --keyboard: 0px;
   color-scheme: dark;
 }
 
