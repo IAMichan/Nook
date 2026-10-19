@@ -3,6 +3,8 @@ import Foundation
 /// Which chats count as finished in the Agents list. Two ways in: you mark a chat as finished, or the agent is done and
 /// nothing has happened in the chat for a while (`autoFinishAfter`). A finished chat comes back by itself when the agent
 /// starts working in it again, and you can reopen it by hand; a chat you reopened stays open until it has new activity.
+/// A chat you mark while it still reads as busy (a turn that hangs, a hook that never came) stays finished until that turn
+/// ends and a new one starts.
 ///
 /// Chats are identified by agent and conversation, not by the row they are shown in, so a mark follows a conversation from
 /// a running session to the earlier sessions list.
@@ -15,11 +17,14 @@ final class FinishedSessions: ObservableObject {
     private var order: [String]
     private static let defaultsKey = "agents.finishedSessions"
     private static let keptKey = "agents.keptOpenSessions"
+    private static let busyKey = "agents.finishedWhileBusy"
     /// How long an idle chat stays in the list before it moves to "Finished" by itself.
     static let autoFinishAfter: TimeInterval = 10 * 60
     /// Chats you reopened, and when.
     @Published private(set) var kept: [String: Date]
     private static let limit = 500
+    /// Chats you marked while they were busy, until that busy spell ends.
+    private var markedWhileBusy: Set<String>
 
     private init() {
         let stored = UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? []
@@ -27,12 +32,16 @@ final class FinishedSessions: ObservableObject {
         keys = Set(stored)
         let raw = UserDefaults.standard.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
         kept = raw.mapValues { Date(timeIntervalSince1970: $0) }
+        markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(keys)
     }
 
     func contains(_ key: String) -> Bool { keys.contains(key) }
 
-    func mark(_ key: String) {
-        guard !key.isEmpty, !keys.contains(key) else { return }
+    /// `busy`: the chat still reads as busy, so the mark must outlast the current turn (see `reconcile(busy:)`).
+    func mark(_ key: String, busy: Bool = false) {
+        guard !key.isEmpty else { return }
+        if busy, markedWhileBusy.insert(key).inserted { saveBusy() }
+        guard !keys.contains(key) else { return }
         order.append(key)
         if order.count > Self.limit { order.removeFirst(order.count - Self.limit) }
         keys = Set(order)
@@ -40,6 +49,7 @@ final class FinishedSessions: ObservableObject {
     }
 
     func reopen(_ key: String) {
+        if markedWhileBusy.remove(key) != nil { saveBusy() }
         if kept.removeValue(forKey: key) != nil {
             UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
         }
@@ -49,13 +59,23 @@ final class FinishedSessions: ObservableObject {
         save()
     }
 
-    func reopenAll(_ many: Set<String>) {
-        let gone = many.intersection(keys)
+    /// The chats that are busy right now. One you marked while it was busy stays finished as long as it stays busy; any other
+    /// marked chat that works again is not finished after all. A busy spell that ended frees the mark for the next one.
+    func reconcile(busy: Set<String>) {
+        let ended = markedWhileBusy.subtracting(busy)
+        if !ended.isEmpty {
+            markedWhileBusy.subtract(ended)
+            saveBusy()
+        }
+        let gone = busy.subtracting(markedWhileBusy).intersection(keys)
         guard !gone.isEmpty else { return }
         order.removeAll { gone.contains($0) }
         keys = Set(order)
         save()
     }
+
+    /// Marked by you while busy, and still in that busy spell: the list shows it as finished anyway.
+    func isMarkedWhileBusy(_ key: String) -> Bool { markedWhileBusy.contains(key) }
 
     /// You reopen a chat: it leaves "Finished" and stays out of it until the agent has done something new in it.
     func reopenByUser(_ key: String) {
@@ -84,6 +104,10 @@ final class FinishedSessions: ObservableObject {
 
     private func save() {
         UserDefaults.standard.set(order, forKey: Self.defaultsKey)
+    }
+
+    private func saveBusy() {
+        UserDefaults.standard.set(Array(markedWhileBusy), forKey: Self.busyKey)
     }
 
     // MARK: Keys
