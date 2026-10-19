@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Autocomplete: suggestions as you type in any app, with the model of Cotypist or one of Nook's own.
+/// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
 struct AutocompleteSettingsSection: View {
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
@@ -83,7 +83,7 @@ struct AutocompleteSettingsSection: View {
             StatusRow(title: tr("autocomplete.loading"), detail: autocomplete.activeModel?.title ?? "", state: .todo) { ProgressView().controlSize(.small) }
         case .ready:
             StatusRow(title: autocomplete.isPausedEverywhere ? tr("autocomplete.paused") : tr("autocomplete.ready"),
-                      detail: autocomplete.activeModel.map { "\($0.title) · \(sourceLabel($0.source))" } ?? "",
+                      detail: autocomplete.activeModel.map { "\($0.title) · \(sourceLabel($0))" } ?? "",
                       state: autocomplete.isPausedEverywhere ? .todo : .done) {
                 Button(autocomplete.isPausedEverywhere ? tr("autocomplete.resume") : tr("autocomplete.pause")) { autocomplete.togglePauseEverywhere() }
             }
@@ -94,9 +94,16 @@ struct AutocompleteSettingsSection: View {
 
     private func sourceLabel(_ source: CompletionModelFile.Source) -> String {
         switch source {
-        case .cotypist: return tr("autocomplete.source.cotypist")
+        case .found: return tr("autocomplete.source.found")
         case .nook: return tr("autocomplete.source.nook")
         case .custom: return tr("autocomplete.source.custom")
+        }
+    }
+
+    private func sourceLabel(_ source: CompletionSource) -> String {
+        switch source {
+        case .gguf(let file): return sourceLabel(file.source)
+        case .brain: return tr("autocomplete.source.brain")
         }
     }
 
@@ -106,10 +113,14 @@ struct AutocompleteSettingsSection: View {
         Section {
             Picker(tr("autocomplete.model"), selection: $store.prefs.modelPath) {
                 Text(tr("autocomplete.modelAuto")).tag("")
+                ForEach(autocomplete.brainModels, id: \.id) { model in
+                    Text("\(model.title) · \(tr("autocomplete.source.brain"))").tag(CompletionSource.brainPrefix + model.id)
+                }
                 ForEach(autocomplete.candidates) { model in
                     Text("\(model.title) · \(model.sizeText) · \(sourceLabel(model.source))").tag(model.url.path)
                 }
-                if !store.prefs.modelPath.isEmpty, !autocomplete.candidates.contains(where: { $0.url.path == store.prefs.modelPath }) {
+                if !store.prefs.modelPath.isEmpty, !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix),
+                   !autocomplete.candidates.contains(where: { $0.url.path == store.prefs.modelPath }) {
                     Text(URL(fileURLWithPath: store.prefs.modelPath).lastPathComponent).tag(store.prefs.modelPath)
                 }
             }

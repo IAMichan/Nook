@@ -148,6 +148,24 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
+    // MARK: Autocomplete
+
+    /// Autocomplete's way in to the brain's model: loaded (and kept a while longer), without taking the one-question lock, so
+    /// a suggestion of a few words never makes a chat answer wait for it. Nil while an answer is being written (that goes
+    /// first) or when the model is not installed.
+    func completionContainer(_ id: String) async throws -> ModelContainer? {
+        guard installed.contains(id), !busy else { return nil }
+        idleTask?.cancel()
+        let container = try await load(id)
+        scheduleUnload()
+        return container
+    }
+
+    /// The installed models, with their names, for Settings › Autocomplete.
+    var installedModels: [(id: String, title: String)] {
+        Self.options.filter { installed.contains($0.id) }.map { ($0.id, $0.title) }
+    }
+
     // MARK: Inference
 
     /// Small test query without tools.

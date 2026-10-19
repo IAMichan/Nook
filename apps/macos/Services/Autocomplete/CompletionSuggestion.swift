@@ -2,7 +2,7 @@ import Foundation
 
 // Autocomplete's plain logic: when to suggest, what the model reads, and how its answer is shown and accepted. No AppKit, so
 // it is tested on its own (AutocompleteTests). The shape of Suggestion, CompletionPolicy and PromptBuilder follows Typist
-// (MIT, © 2026 Brody Salvucci; see THIRD-PARTY-NOTICES.md), which studied how Cotypist behaves.
+// (MIT, © 2026 Brody Salvucci; see THIRD-PARTY-NOTICES.md).
 
 /// A suggestion on screen: the text that would be typed at the cursor. It shrinks as words are accepted or typed through.
 struct CompletionSuggestion: Equatable {
@@ -131,7 +131,7 @@ struct CompletionContext {
     var before: String
     /// The user's own instructions: general, for this app and for this website.
     var instructions: [String] = []
-    /// What Nook knows about the user (Memory): name, work, people. Cotypist cannot know this.
+    /// What Nook knows about the user (Memory): name, work, people.
     var facts: [String] = []
     /// Earlier writing of the user, for their style.
     var samples: [String] = []

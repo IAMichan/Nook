@@ -17,7 +17,7 @@ private let autocompleteTapCallback: CGEventTapCallBack = { _, type, event, refc
 ///
 /// The text before the cursor is read through the Accessibility API, given to the model on this Mac and forgotten again.
 /// Password fields are never read, and nothing runs while macOS Secure Input is on. The model is a GGUF file: by default the
-/// one Cotypist downloaded, or one Nook downloads itself.
+/// one already on this Mac, one Nook downloads itself, or the model Nook's brain downloaded (MLX).
 ///
 /// The flow (key watcher → short pause → read the field → proposal → overlay) follows Typist's coordinator (MIT, © 2026
 /// Brody Salvucci). Nook adds what it knows: your memory and the text it already reads on screen.
@@ -31,9 +31,11 @@ final class AutocompleteController: ObservableObject {
     }
 
     @Published private(set) var state: State = .off
-    /// Cotypist's models and Nook's own, newest first.
+    /// GGUF models found on this Mac and Nook's own, newest first.
     @Published private(set) var candidates: [CompletionModelFile] = []
-    @Published private(set) var activeModel: CompletionModelFile?
+    @Published private(set) var activeModel: CompletionSource?
+    /// The brain's installed models (MLX), which autocomplete can use too.
+    @Published private(set) var brainModels: [(id: String, title: String)] = []
     @Published private(set) var trusted = AXIsProcessTrusted()
     /// Apps typed in since launch (bundle id → name), for the per-app settings.
     @Published private(set) var seenApps: [String: String] = [:]
@@ -80,8 +82,8 @@ final class AutocompleteController: ObservableObject {
     private var trustTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
 
-    private var completer: LlamaCompleter?
-    private var loading: (path: String, task: Task<LlamaCompleter?, Never>)?
+    private var completer: (any CompletionEngine)?
+    private var loading: (identity: String, task: Task<(any CompletionEngine)?, Never>)?
 
     /// How often to re-read the field while the app takes in a key, and how many times.
     private let settleInterval: TimeInterval = 0.03
@@ -108,11 +110,13 @@ final class AutocompleteController: ObservableObject {
         Task {
             let folder = AutocompleteStore.modelsFolder
             let found = await Task.detached(priority: .utility) {
-                CompletionModelLocator.cotypistModels() + CompletionModelLocator.nookModels(in: folder)
+                CompletionModelLocator.foundModels() + CompletionModelLocator.nookModels(in: folder)
             }.value
             candidates = found
-            let model = CompletionModelLocator.resolve(storedPath: prefs.modelPath, candidates: found)
-            if model?.url.path != activeModel?.url.path { unload() }
+            brainModels = EmbeddedModel.shared.installedModels
+            let preferred = AppSettings.shared.localModel
+            let model = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
+            if model?.identity != activeModel?.identity { unload() }
             activeModel = model
             guard prefs.enabled else { return }
             guard trusted, start() else {
@@ -124,6 +128,7 @@ final class AutocompleteController: ObservableObject {
             state = .ready
             // Load it now, so the first suggestion does not wait.
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
+            if case .brain(let id, _) = model { EmbeddedModel.shared.preload(id) }
         }
     }
 
@@ -651,28 +656,33 @@ final class AutocompleteController: ObservableObject {
 
     // MARK: The model
 
-    private func loadedCompleter(for model: CompletionModelFile) async -> LlamaCompleter? {
-        let path = model.url.path
-        if let completer, completer.path == path { return completer }
-        if let loading, loading.path == path { return await loading.task.value }
+    private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
+        let identity = model.identity
+        if let completer, completer.identity == identity { return completer }
+        if let loading, loading.identity == identity { return await loading.task.value }
         state = .loading
-        let task = Task { () -> LlamaCompleter? in
+        let task = Task { () -> (any CompletionEngine)? in
             do {
-                let loaded = try await LlamaCompleter.load(path: path)
+                let loaded: any CompletionEngine
+                switch model {
+                case .gguf(let file): loaded = try await LlamaCompleter.load(path: file.url.path)
+                // The brain's model is loaded by the brain itself, on the first suggestion; nothing to wait for here.
+                case .brain(let id, _): loaded = BrainCompleter(modelID: id)
+                }
                 // Another model was chosen while this one loaded: let it go.
-                guard activeModel?.url.path == path else { return nil }
+                guard activeModel?.identity == identity else { return nil }
                 completer = loaded
                 applyPersonalization()
                 state = .ready
                 return loaded
             } catch {
-                if activeModel?.url.path == path { state = .failed(error.localizedDescription) }
+                if activeModel?.identity == identity { state = .failed(error.localizedDescription) }
                 return nil
             }
         }
-        loading = (path, task)
+        loading = (identity, task)
         let result = await task.value
-        if loading?.path == path { loading = nil }
+        if loading?.identity == identity { loading = nil }
         return result
     }
 

@@ -26,7 +26,7 @@ packages:
     url: https://github.com/FluidInference/FluidAudio
     exactVersion: 0.17.7
   LlamaSwift:
-    # llama.cpp as a ready-built xcframework (MIT): runs the GGUF model that autocomplete uses (Cotypist's, or one you pick).
+    # llama.cpp as a ready-built xcframework (MIT): runs the GGUF model that autocomplete uses (one on this Mac or one you pick).
     url: https://github.com/mattt/llama.swift
     exactVersion: 2.10549.0
   SwiftTerm:
