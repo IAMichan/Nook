@@ -50,12 +50,13 @@ enum ContextHandoff {
 
     /// The summary of `events` from index `start` on, or nil when there is nothing to tell. The newest items are kept when
     /// the budget runs out; the summary says how many older ones are left out.
-    static func render(events: [RunEvent], from start: Int = 0, source: String, budget: Int = tokenBudget) -> Rendered? {
+    static func render(events: [RunEvent], from start: Int = 0, source: String, budget: Int = tokenBudget, header customHeader: String? = nil,
+                       footer customFooter: String? = nil) -> Rendered? {
         let slice = events.indices.contains(start) ? Array(events[start...]) : []
         let lines = slice.compactMap(line)
         guard !lines.isEmpty else { return nil }
 
-        let header = "[Context handoff] This session continues work that \(source) did before you. What happened (oldest first; you cannot see that conversation):"
+        let header = customHeader ?? "[Context handoff] This session continues work that \(source) did before you. What happened (oldest first; you cannot see that conversation):"
         var kept: [String] = []
         var used = approxTokens(header) + 40
         for line in lines.reversed() {
@@ -69,7 +70,7 @@ enum ContextHandoff {
         var parts = [header]
         if omitted > 0 { parts.append("(\(omitted) earlier item\(omitted == 1 ? "" : "s") left out)") }
         parts += kept
-        parts.append("[End of handoff] Continue from here. Check the files yourself before relying on any of this.")
+        parts.append(customFooter ?? "[End of handoff] Continue from here. Check the files yourself before relying on any of this.")
         return Rendered(text: parts.joined(separator: "\n"), included: kept.count, omitted: omitted, coveredEvents: events.count)
     }
 

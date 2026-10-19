@@ -126,6 +126,17 @@ targets:
       - path: Services/Workspace/ComposerCore.swift
       - path: Services/Workspace/AgentStatusStyle.swift
       - path: Services/Workspace/TimelineCopy.swift
+      - path: Services/Workspace/InboxLayout.swift
+      - path: Services/Workspace/UndoLog.swift
+      - path: Services/Workspace/AutoSettlePolicy.swift
+      - path: Services/Workspace/MessageQueue.swift
+      - path: Services/Workspace/TurnSafety.swift
+      - path: Services/Workspace/FailureClassifier.swift
+      - path: Services/Workspace/ChangedFilesTree.swift
+      - path: Services/Workspace/TimelineSearch.swift
+      - path: Services/Workspace/ScrollModel.swift
+      - path: Services/Workspace/HistoryWindow.swift
+      - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift

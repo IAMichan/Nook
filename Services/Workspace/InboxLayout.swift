@@ -27,6 +27,9 @@ struct InboxRow: Identifiable, Equatable, Sendable {
 
     /// Needs you, from either source: the derived attention or a raw request flag.
     var needsYou: Bool { hasOpenRequest || attention.needsYou }
+
+    /// A raw open request counts as approval even when the derived attention lags behind.
+    var effectiveAttention: AgentAttention { hasOpenRequest && !attention.needsYou ? .approval : attention }
 }
 
 /// What the user decided about the list: stored, so it survives a restart. Every field is optional on decode.
@@ -129,7 +132,7 @@ enum InboxLayout {
             let isPinned = row.pinned || pinRank[row.id] != nil
             let isSettled = row.settled || state.settled.contains(row.id)
             let dismissed = row.wokeDismissed || state.dismissedWoke.contains(row.id)
-            let attention = row.hasOpenRequest && !row.attention.needsYou ? AgentAttention.approval : row.attention
+            let attention = row.effectiveAttention
             let hidden = SnoozePolicy.isSnoozed(until: row.snoozedUntil, since: row.snoozedAt, attention: attention,
                                                 finishedAt: row.lastActivity, now: now)
             let woke = row.snoozedUntil != nil && !hidden && !dismissed
@@ -154,7 +157,7 @@ enum InboxLayout {
 
         pinned.sort { (pinRank[$0.id] ?? Int.max, $1.row.lastActivity, $0.id) < (pinRank[$1.id] ?? Int.max, $0.row.lastActivity, $1.id) }
         active.sort {
-            if $0.row.attention != $1.row.attention { return $0.row.attention < $1.row.attention }
+            if $0.row.effectiveAttention != $1.row.effectiveAttention { return $0.row.effectiveAttention < $1.row.effectiveAttention }
             let (a, b) = (orderRank[$0.id] ?? Int.max, orderRank[$1.id] ?? Int.max)
             if a != b { return a < b }
             if $0.row.lastActivity != $1.row.lastActivity { return $0.row.lastActivity > $1.row.lastActivity }

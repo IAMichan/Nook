@@ -39,7 +39,7 @@ final class TimelineSearchTests: XCTestCase {
 
     func testUnicodeUTF16Offsets() {
         let r = TimelineSearch.search([ev(.assistant, "😀 hi 😀 hi")], query: "hi")
-        XCTAssertEqual(r.matches.map(\.range), [3..<5, 8..<10])
+        XCTAssertEqual(r.matches.map(\.range), [3..<5, 9..<11])
     }
 
     func testTooLongQueryFails() {

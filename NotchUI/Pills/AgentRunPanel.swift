@@ -162,6 +162,14 @@ struct AgentRunPanel: View {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
+            if run.lineage != nil {
+                Button(tr("agents.mergeBack")) {
+                    if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
+                        app.viewModel.selectedAgentID = "run:" + parent.uuidString
+                    }
+                }
+                .disabled(!workspace.canTransfer(runID))
+            }
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
@@ -302,10 +310,32 @@ struct AgentRunPanel: View {
                         revertTarget = event
                     }
                     .disabled(!workspace.canRevert(runID, before: event.date))
+                    // A fork that starts before this message, to try another way.
+                    Button(tr("agents.fork.here")) { forkBefore(event) }
+                        .disabled(!workspace.canTransfer(runID))
+                }
+        } else if event.kind == .assistant {
+            eventView(event)
+                .contextMenu {
+                    // "Fork from this response".
+                    Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
+                        .disabled(!workspace.canTransfer(runID))
                 }
         } else {
             eventView(event)
         }
+    }
+
+    private func forkBefore(_ event: RunEvent) {
+        guard let index = workspace.timeline(runID).firstIndex(where: { $0.id == event.id }),
+              let id = workspace.fork(runID, keepingEvents: index) else { return }
+        app.viewModel.selectedAgentID = "run:" + id.uuidString
+    }
+
+    private func forkThrough(_ event: RunEvent) {
+        guard let index = workspace.timeline(runID).firstIndex(where: { $0.id == event.id }),
+              let id = workspace.fork(runID, keepingEvents: index + 1) else { return }
+        app.viewModel.selectedAgentID = "run:" + id.uuidString
     }
 
     private func revertConfirmation(_ target: RunEvent) -> some View {

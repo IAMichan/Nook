@@ -72,11 +72,15 @@ extension WorkspaceManager {
     /// A new session that starts from this one: Claude Code forks its own conversation; any other agent starts from a
     /// summary. It works in the same folder (a fork never owns a worktree, so removing it cannot take the original's).
     @discardableResult
-    func fork(_ id: UUID) -> UUID? {
+    func fork(_ id: UUID, keepingEvents keep: Int? = nil) -> UUID? {
         guard canTransfer(id), let source = run(id) else { return nil }
         loadTimeline(id)
-        let events = timeline(id)
-        let nativeFork = source.provider.capabilities.nativeFork
+        let all = timeline(id)
+        // A fork from an earlier point keeps only the timeline up to there; the agent's own fork would copy the whole
+        // conversation, so such a fork always starts from a summary.
+        let partial = keep.map { $0 < all.count } ?? false
+        let events = keep.map { Array(all.prefix(max(0, $0))) } ?? all
+        let nativeFork = source.provider.capabilities.nativeFork && !partial
         let strategy = ContextTransfer.forFork(nativeFork: nativeFork, hasNativeSession: source.providerSessionID != nil)
 
         let newID = UUID()
@@ -150,5 +154,29 @@ extension WorkspaceManager {
             if !switchProvider(id, to: provider, profileID: profileID, model: model) { return .reject("unavailable") }
         }
         return transition
+    }
+
+    // MARK: Merge back
+
+    /// Sends what a fork found out to the session it came from, as one message (merge-back): the summary of the
+    /// fork's timeline since the point where it split off. The parent takes it up as soon as it is idle.
+    @discardableResult
+    func mergeBack(_ id: UUID) -> Bool {
+        guard canTransfer(id), let fork = run(id), let lineage = fork.lineage,
+              let parent = run(lineage.parentID), !parent.archived else { return false }
+        loadTimeline(id)
+        guard let handoff = ContextHandoff.render(
+            events: timeline(id), from: lineage.atEvent, source: fork.title,
+            header: "[Result of a fork] This is what the fork \"\(fork.title)\" of this session did since it split off (oldest first):",
+            footer: "[End of the fork's result] Take over what is useful; check the files yourself before relying on it."
+        ) else { return false }
+        append(parent.id, RunEvent(kind: .system, text: tr("ws.event.mergedBackParent", fork.title)))
+        if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
+            send(parent.id, text: handoff.text)
+        } else {
+            enqueue(parent.id, text: handoff.text)
+        }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.mergedBack", parent.title)))
+        return true
     }
 }

@@ -55,7 +55,8 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertEqual(e[second.startIndex].kind, .user)
         XCTAssertTrue(second.hasMore)
         let third = HistoryWindow.earlier(events: e, from: second.startIndex)
-        XCTAssertEqual(third, .init(startIndex: 0, hasMore: false))
+        XCTAssertEqual(third, .init(startIndex: 20, hasMore: true))
+        XCTAssertEqual(HistoryWindow.earlier(events: e, from: third.startIndex), .init(startIndex: 0, hasMore: false))
         XCTAssertEqual(HistoryWindow.earlier(events: e, from: 0), .init(startIndex: 0, hasMore: false))
         XCTAssertEqual(HistoryWindow.earlier(events: [], from: 5).startIndex, 0)
     }

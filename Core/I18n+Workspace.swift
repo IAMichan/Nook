@@ -6,6 +6,11 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.fork.here": "Vork vóór dit bericht",
+        "agents.fork.fromResponse": "Vork vanaf dit antwoord",
+        "agents.mergeBack": "Terug samenvoegen met de oorspronkelijke sessie",
+        "ws.event.mergedBack": "Het resultaat van deze vork is naar \"%@\" gestuurd.",
+        "ws.event.mergedBackParent": "Het resultaat van de vork \"%@\" komt hier binnen.",
         "ws.plan.implementNew": "In een nieuwe sessie",
         "agents.status.approval.long": "Wacht op goedkeuring",
         "agents.status.approval.short": "Goedkeuring",
@@ -594,6 +599,11 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "agents.fork.here": "Fork before this message",
+        "agents.fork.fromResponse": "Fork from this response",
+        "agents.mergeBack": "Merge back into the original session",
+        "ws.event.mergedBack": "The result of this fork was sent to \"%@\".",
+        "ws.event.mergedBackParent": "The result of the fork \"%@\" arrives here.",
         "ws.plan.implementNew": "In a new session",
         "agents.status.approval.long": "Waiting for approval",
         "agents.status.approval.short": "Approval",
@@ -1182,6 +1192,11 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "agents.fork.here": "Fork vor dieser Nachricht",
+        "agents.fork.fromResponse": "Fork ab dieser Antwort",
+        "agents.mergeBack": "Mit der ursprünglichen Sitzung zusammenführen",
+        "ws.event.mergedBack": "Das Ergebnis dieses Forks ging an „%@“.",
+        "ws.event.mergedBackParent": "Das Ergebnis des Forks „%@“ kommt hier an.",
         "ws.plan.implementNew": "In einer neuen Sitzung",
         "agents.status.approval.long": "Wartet auf Freigabe",
         "agents.status.approval.short": "Freigabe",
