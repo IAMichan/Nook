@@ -96,20 +96,35 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
     @State private var showSetup = false
     @State private var isOn = true
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
-    /// Whether this row started the GitHub sign-in, so only this row reacts to it finishing.
+    @ObservedObject private var mcpSignIn = MCPSignIn.shared
+    @EnvironmentObject private var app: AppModel
+    /// Whether this row started a sign-in, so only this row reacts to it finishing.
     @State private var repairing = false
+    /// Why signing in on the service's own page didn't work, shown in the row until the next try.
+    @State private var repairFailure: String?
 
     private var health: ConnectionHealth { ServiceState.health(of: connector, configured: true, isOn: isOn) }
 
-    /// GitHub repairs in place: straight to the GitHub login (or the existing gh login), never via a token.
-    private var repairsInPlace: Bool { connector.id == "github" && health == .needsYou }
+    /// The same service with its own sign-in page (Notion, Stripe, Vercel): an expired key is repaired by signing in.
+    private var signInService: MCPRemoteService? { MCPRemoteService.all.first { $0.id == connector.id } }
+
+    /// Repairs in place by signing in again, never via a key: GitHub's login (or the gh login), or the service's own page.
+    private var repairsInPlace: Bool { health == .needsYou && (connector.id == "github" || signInService != nil) }
 
     private var signingIn: Bool {
         guard repairing else { return false }
+        if connector.id != "github" {
+            if case .connecting = mcpSignIn.phase { return true }
+            return false
+        }
         switch gitHubSignIn.phase {
         case .checkingCLI, .waiting, .waitingForCLI: return true
         case .idle, .done, .failed: return false
         }
+    }
+
+    private var signingInDetail: String {
+        connector.id == "github" ? tr("connector.githubFinishLogin") : tr("connect.waiting", connector.title)
     }
 
     var body: some View {
@@ -119,9 +134,9 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
                     ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30, source: connector.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
-                        Text(signingIn ? tr("connector.githubFinishLogin") : ServiceState.summary(of: connector, health: health))
+                        Text(signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health))
                             .font(.caption)
-                            .foregroundStyle(health == .broken ? health.color : Color.secondary)
+                            .foregroundStyle(health == .broken || repairFailure != nil ? ConnectionHealth.broken.color : Color.secondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
@@ -174,6 +189,25 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
                 break
             }
         }
+        .onChange(of: mcpSignIn.phase) { _, phase in
+            guard repairing, connector.id != "github" else { return }
+            switch phase {
+            case .done:
+                // Signed in on the service's own page: the expired key has had its day, the sign-in takes over.
+                repairing = false
+                for field in connector.configFields where field.secret {
+                    Keychain.write("", account: field.account)
+                }
+                refresh()
+            case .failed(_, let message):
+                repairing = false
+                repairFailure = message
+            case .idle:
+                repairing = false
+            case .connecting:
+                break
+            }
+        }
     }
 
     private func repair() {
@@ -182,7 +216,12 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
             return
         }
         repairing = true
-        gitHubSignIn.reconnect()
+        repairFailure = nil
+        if let signInService, connector.id != "github" {
+            mcpSignIn.connect(signInService, app: app)
+        } else {
+            gitHubSignIn.reconnect()
+        }
     }
 
     private func setOn(_ on: Bool) {
