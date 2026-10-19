@@ -73,9 +73,12 @@ extension AppModel {
         [Meedenken] De gebruiker is nu bezig in \(appName)\(window.isEmpty ? "" : " (venster: \(window.prefix(80)))"). \
         Je kijkt ongevraagd mee. Is er één concreet ding dat jij nu voor hem kunt overnemen met een actie-tool (iets inplannen, \
         een herinnering of open punt, een concept schrijven, een app of link openen), of weet je een duidelijk slimmere of snellere \
-        aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan. Begin je tekst met één korte vraag of tip van hooguit \
-        acht woorden, zoals "Zal ik dit in je agenda zetten?" of "Tip: dit kan ook in één keer", daarna hooguit twee zinnen uitleg. \
+        aanpak voor wat hij nu doet? Roep bij een actie meteen de tool aan; bied nooit iets aan ("Zal ik…?") zonder die tool aan te roepen. \
+        Begin je tekst met één korte vraag of tip van hooguit acht woorden, zoals "Zal ik hem herinneren aan de deadline van vrijdag?" \
+        of "Tip: dit kan ook in één keer", daarna hooguit twee zinnen uitleg. \
         Alleen als het hem echt tijd scheelt of voorkomt dat hij iets vergeet; samenvattingen, complimenten of wat hij al doet tellen niet. \
+        Plan of herinner alleen iets als er op het scherm een concrete datum, tijd, deadline of afspraak met iemand staat. \
+        Gewoon bezig zijn met werk (code, een pull request, een document, een tool of app) is nooit een reden voor een agendapunt of herinnering. \
         Kijk bij datums van herinneringen en afspraken altijd naar het volledige jaartal en vergelijk met de huidige datum ("Nu"): \
         alleen wat binnen twee dagen valt of al verlopen is, is dichtbij; iets over weken, maanden of een jaar is geen reden om te melden. \
         Twijfel je, antwoord dan alleen NONE.
@@ -109,6 +112,8 @@ extension AppModel {
 
         let line = Self.nudgeLine(body: body, fallback: planSteps(plan.actions).first.map { tr("app.nudge.shall", $0.text) })
         guard !line.isEmpty, !thinkAlong.alreadyOffered(line) else { return }
+        // An offer ("Shall I…?") without an action would do nothing when accepted; only plain tips may go without one.
+        guard !plan.actions.isEmpty || !line.hasSuffix("?") else { return }
 
         let offer = BrainPlan(text: body, actions: plan.actions)
         let card = nudgeCard(offer, offers: split.offers, bundleID: bundleID, appName: appName)
