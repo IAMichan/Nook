@@ -1,7 +1,8 @@
 import SwiftUI
+import AppKit
 
-// What the agent is doing besides talking, above the composer: its own task list, and the subagents it
-// started.
+// What the agent is doing besides talking, above the composer: its own task list, the subagents it
+// started, and the pull request the session watches.
 
 /// "Tasks Running the tests 3/7" with a bar per step; opens into the whole list (ComposerTasksBadge).
 struct TasksStrip: View {
@@ -183,5 +184,56 @@ struct SubagentBar: View {
                 .padding(.leading, 20)
             }
         }
+    }
+}
+
+/// "Watching PR · CI passed · 2 reviews" with a way to stop.
+struct PullRequestWatchStrip: View {
+    let watch: PullRequestWatch
+    let stop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "eye").font(.system(size: 10.5, weight: .semibold))
+            Text(tr("ws.prwatch.watching")).foregroundStyle(NookTheme.textTertiary)
+            Text(summary).lineLimit(1)
+            Spacer(minLength: 6)
+            if let url = URL(string: watch.url) {
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Image(systemName: "arrow.up.right.square").font(.system(size: 10.5, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.prwatch.open"))
+            }
+            Button(action: stop) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help(tr("ws.prwatch.stop"))
+            .accessibilityLabel(tr("ws.prwatch.stop"))
+        }
+        .font(NookTheme.font(12))
+        .foregroundStyle(NookTheme.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+    }
+
+    private var summary: String {
+        var parts: [String] = []
+        switch watch.state {
+        case "merged": parts.append(tr("ws.prwatch.merged"))
+        case "closed": parts.append(tr("ws.prwatch.closed"))
+        default: break
+        }
+        switch watch.checks {
+        case "success": parts.append(tr("ws.prwatch.ciPassed"))
+        case "failure": parts.append(tr("ws.prwatch.ciFailed"))
+        case "pending": parts.append(tr("ws.prwatch.ciPending"))
+        default: break
+        }
+        if watch.reviewCount > 0 { parts.append(tr("ws.prwatch.reviews", watch.reviewCount)) }
+        if watch.checkedAt == nil { parts.append(tr("ws.prwatch.loading")) }
+        return parts.joined(separator: " · ")
     }
 }

@@ -96,6 +96,8 @@ extension WorkspaceManager {
             if let create = pullRequestCreate, let link = try await create(repo, title, body, branch, base) {
                 openPullRequests[id] = link
                 append(id, RunEvent(kind: .system, text: tr("ws.event.prOpened", link.absoluteString)))
+                // A GitHub pull request Nook opened for the session is watched from the start.
+                if run(id)?.prWatch == nil, GitHubPullRequests.parse(link) != nil { watchPullRequest(id, url: link) }
                 return link
             }
         } catch {

@@ -270,6 +270,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var effort: String? = nil
     /// The agent's own task list, as it last reported it (Tasks above the composer).
     var tasks: [RunTaskStep]? = nil
+    /// The pull request this session watches (PR watch): what it last saw, so only news wakes it.
+    var prWatch: PullRequestWatch? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -351,6 +353,85 @@ enum RunTasks {
     static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
         guard let steps, !steps.isEmpty else { return true }
         return steps.allSatisfy { $0.status == .done }
+    }
+}
+
+/// What a watched pull request last looked like. A change in it is news for the session.
+struct PullRequestWatch: Codable, Equatable, Sendable {
+    var url: String
+    /// "open", "merged", "closed".
+    var state: String = "open"
+    /// "success", "failure", "pending", or empty when there are no checks.
+    var checks: String = ""
+    /// Reviews and comments seen so far.
+    var reviewCount: Int = 0
+    var commentCount: Int = 0
+    /// Send news to the agent as a message (otherwise it only shows in the timeline).
+    var wakeAgent: Bool = true
+    var checkedAt: Date? = nil
+}
+
+/// How a pull request looks right now, as fetched for a watch.
+struct PullRequestSnapshot: Equatable, Sendable {
+    struct Note: Equatable, Sendable {
+        var author: String
+        /// A review's verdict ("APPROVED", "CHANGES_REQUESTED", "COMMENTED"), empty for a comment.
+        var verdict: String
+        var text: String
+    }
+    var state: String
+    var checks: String
+    var failedChecks: [String]
+    /// All reviews and comments, oldest first.
+    var reviews: [Note]
+    var comments: [Note]
+}
+
+/// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.
+enum PullRequestNews {
+    static func lines(old: PullRequestWatch, new: PullRequestSnapshot) -> [String] {
+        var lines: [String] = []
+        if new.state != old.state {
+            lines.append(new.state == "merged" ? "The pull request was merged." : new.state == "closed" ? "The pull request was closed." : "The pull request was reopened.")
+        }
+        if new.checks != old.checks {
+            switch new.checks {
+            case "failure":
+                lines.append("CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."))
+            case "success" where !old.checks.isEmpty: lines.append("CI passed.")
+            default: break
+            }
+        }
+        for review in new.reviews.dropFirst(min(old.reviewCount, new.reviews.count)) {
+            let text = review.text.isEmpty ? "" : ": " + ToolSummary.oneLine(review.text, 600)
+            lines.append("Review from @\(review.author) (\(review.verdict.lowercased().replacingOccurrences(of: "_", with: " ")))" + text)
+        }
+        for comment in new.comments.dropFirst(min(old.commentCount, new.comments.count)) {
+            lines.append("Comment from @\(comment.author): " + ToolSummary.oneLine(comment.text, 600))
+        }
+        return lines
+    }
+
+    /// Worth waking the agent for: something it can act on (failed CI, reviews, comments), not a merge or a pass.
+    static func needsAgent(old: PullRequestWatch, new: PullRequestSnapshot) -> Bool {
+        guard new.state == "open" else { return false }
+        return (new.checks == "failure" && old.checks != "failure") || new.reviews.count > old.reviewCount
+            || new.comments.count > old.commentCount
+    }
+
+    static func message(url: String, lines: [String]) -> String {
+        "Update on your pull request \(url):\n" + lines.map { "- " + $0 }.joined(separator: "\n")
+            + "\n\nLook into this and fix what is needed; push when done."
+    }
+
+    static func updated(_ watch: PullRequestWatch, with snapshot: PullRequestSnapshot, at date: Date) -> PullRequestWatch {
+        var next = watch
+        next.state = snapshot.state
+        next.checks = snapshot.checks
+        next.reviewCount = snapshot.reviews.count
+        next.commentCount = snapshot.comments.count
+        next.checkedAt = date
+        return next
     }
 }
 

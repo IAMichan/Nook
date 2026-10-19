@@ -59,4 +59,25 @@ final class RoundThreeTests: XCTestCase {
         // Only the latest turn counts.
         XCTAssertEqual(Subagents.latest([user, task, RunEvent(kind: .user, text: "next")]), [])
     }
+
+    // MARK: Pull request watch
+
+    func testPullRequestNews() {
+        let old = PullRequestWatch(url: "https://github.com/o/r/pull/1", state: "open", checks: "pending", reviewCount: 1,
+                                   commentCount: 0, checkedAt: Date())
+        let review = PullRequestSnapshot.Note(author: "ann", verdict: "CHANGES_REQUESTED", text: "Rename this")
+        let new = PullRequestSnapshot(state: "open", checks: "failure", failedChecks: ["build"],
+                                      reviews: [PullRequestSnapshot.Note(author: "bob", verdict: "COMMENTED", text: ""), review],
+                                      comments: [PullRequestSnapshot.Note(author: "cy", verdict: "", text: "App.swift: typo")])
+        XCTAssertEqual(PullRequestNews.lines(old: old, new: new),
+                       ["CI failed: build.", "Review from @ann (changes requested): Rename this", "Comment from @cy: App.swift: typo"])
+        XCTAssertTrue(PullRequestNews.needsAgent(old: old, new: new))
+        XCTAssertTrue(PullRequestNews.message(url: old.url, lines: ["CI failed."]).contains("- CI failed."))
+        let seen = PullRequestNews.updated(old, with: new, at: Date())
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: new), [])
+        var merged = new
+        merged.state = "merged"
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: merged), ["The pull request was merged."])
+        XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: merged))
+    }
 }

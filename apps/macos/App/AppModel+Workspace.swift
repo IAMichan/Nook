@@ -118,6 +118,7 @@ extension AppModel {
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
+        workspace.pullRequestSnapshot = { url in await GitHubPullRequests.snapshot(url: url) }
         workspace.pullRequestLookup = { repo, branch in
             guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return nil }
             return found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }

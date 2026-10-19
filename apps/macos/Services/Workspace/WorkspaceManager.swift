@@ -124,6 +124,9 @@ final class WorkspaceManager: ObservableObject {
     /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
     var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
     var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    /// A watched pull request as it is now (GitHub, with your connected accounts).
+    var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
+    var watchesInFlight: Set<UUID> = []
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -218,6 +221,13 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in runs where run.autoResume == true { armLimitResume(run.id) }
+        // Watched pull requests are looked at every half minute (each at most every two minutes).
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                self?.checkPullRequestWatches()
+            }
+        }
         Task.detached(priority: .utility) {
             let service = GitService.shared
             await MainActor.run { [weak self] in
@@ -1296,6 +1306,51 @@ final class WorkspaceManager: ObservableObject {
     /// The agent's latest task list. An empty list clears it.
     func setTasks(_ id: UUID, _ steps: [RunTaskStep]) {
         update(id) { $0.tasks = steps.isEmpty ? nil : steps }
+    }
+
+    // MARK: Watching pull requests
+
+    /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
+    /// what the agent can act on goes to it as a message (PR watch).
+    func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
+        update(id) { $0.prWatch = url.map { PullRequestWatch(url: $0.absoluteString, wakeAgent: wakeAgent) } }
+        if url != nil { checkPullRequestWatches(force: true) }
+    }
+
+    /// Looks at each watched pull request at most every two minutes.
+    func checkPullRequestWatches(force: Bool = false) {
+        guard let fetch = pullRequestSnapshot else { return }
+        let now = Date()
+        for run in runs {
+            guard let watch = run.prWatch, watch.state == "open", !run.archived, !watchesInFlight.contains(run.id),
+                  force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                  let url = URL(string: watch.url) else { continue }
+            let id = run.id
+            watchesInFlight.insert(id)
+            Task { [weak self] in
+                let snapshot = await fetch(url)
+                self?.watchesInFlight.remove(id)
+                guard let self, let snapshot, let current = self.run(id)?.prWatch, current.url == watch.url else { return }
+                self.pullRequestChanged(id, old: current, new: snapshot)
+            }
+        }
+    }
+
+    private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
+        let now = Date()
+        // The first look only sets what counts as seen.
+        guard old.checkedAt != nil else {
+            update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+            return
+        }
+        let lines = PullRequestNews.lines(old: old, new: new)
+        let wake = old.wakeAgent && PullRequestNews.needsAgent(old: old, new: new)
+        update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+        guard !lines.isEmpty else { return }
+        append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
+        guard wake, let run = run(id) else { return }
+        let message = PullRequestNews.message(url: old.url, lines: lines)
+        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.

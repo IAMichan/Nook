@@ -190,6 +190,13 @@ struct AgentRunPanel: View {
                 }
                 .disabled(!workspace.canTransfer(runID))
             }
+            // PR watch: CI, reviews and comments on the session's pull request wake the agent.
+            if run.prWatch != nil {
+                Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
+            } else {
+                Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchablePullRequest()) }
+                    .disabled(watchablePullRequest() == nil)
+            }
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
@@ -204,6 +211,14 @@ struct AgentRunPanel: View {
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
         }
+    }
+
+    /// The session's open GitHub pull request, from the git button or the pull request list.
+    private func watchablePullRequest() -> URL? {
+        if let url = workspace.openPullRequests[runID], GitHubPullRequests.parse(url) != nil { return url }
+        return PullRequestSync.shared.links[runID]?
+            .first { ($0.state == .open || $0.state == .draft) && $0.host == .github }
+            .flatMap { URL(string: $0.url) }
     }
 
     private func saveQueuedEdit() {
@@ -629,6 +644,9 @@ struct AgentRunPanel: View {
             let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
             if let tasks = run.tasks, !tasks.isEmpty { TasksStrip(steps: tasks) }
+            if let watch = run.prWatch {
+                PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
+            }
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
                 QueuedMessagesStrip(
                     queue: waiting, editing: editingQueued,
