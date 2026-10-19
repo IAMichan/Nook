@@ -214,7 +214,7 @@ struct NotchRootView: View {
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
-            NookOrb(mood: mood, size: 24, animated: animated)
+            NookOrb(mood: mood, size: 24, animated: animated, glow: viewModel.geometry.isFloating)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()
@@ -230,7 +230,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             // Left wing: Nook pinned to the far left, album cover beside it
             HStack(spacing: 8) {
-                NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true)
+                NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true, glow: viewModel.geometry.isFloating)
                 TrackCover(artworkURL: app.nowPlaying.current?.artworkURL)
                 Spacer(minLength: 0)
             }
@@ -273,7 +273,7 @@ struct NotchRootView: View {
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .done, size: 24)
+                NookOrb(mood: .done, size: 24, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -303,7 +303,7 @@ struct NotchRootView: View {
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .seen, size: 24, animated: true, curious: true)
+                NookOrb(mood: .seen, size: 24, animated: true, curious: true, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -348,7 +348,7 @@ struct NotchRootView: View {
                 NookPresence.shared.poke()
                 viewModel.show(.panel(.nook))
             } label: {
-                NookOrb(mood: mood, size: 46)
+                NookOrb(mood: mood, size: 46, glow: viewModel.geometry.isFloating)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("notch.goToHome"))
