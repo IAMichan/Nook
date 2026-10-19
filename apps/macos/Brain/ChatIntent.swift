@@ -52,7 +52,7 @@ struct ChatIntent: Equatable {
     // MARK: Recognition
 
     static func detect(_ raw: String) -> ChatIntent {
-        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = fixingSendTypo(raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
         var intent = ChatIntent()
         guard !text.isEmpty else { return intent }
 
@@ -79,7 +79,7 @@ struct ChatIntent: Equatable {
         if has(#"notitie|noteer|\bnotes?\b|aantekening|\bmemo|notiz|schrijf (dit|het|dat) op|write (this|it|that) down"#) { kinds.append(.note) }
         if has(#"\btaak\b|\btaken\b|\btodos?\b|to-do|open punt|actiepunt|nog (te )?doen|moet ik (vandaag|nog)|\btasks?\b|\baufgabe"#) { kinds.append(.todo) }
         if !writesMail, has(#"\bmails?\b|e-?mails?\b|inbox|ongelezen|unread|postvak|\bpost\b"#) { kinds.append(.mailRead) }
-        if !writesMail, !writesChat, has(#"whats-?app|imessage|\bsms|\bchats?\b|\bchatje|\bappjes?\b|ge-?appt|\bappte|\bberichten\b(?!-?app)|\bmessages?\b|\btexts?\b|\btexted|\bnachrichten"#) { kinds.append(.chats) }
+        if !writesMail, !writesChat, has(#"whats-?app|imessage|app-?groep|groeps-?app|groeps-?chat|group ?chat|gruppenchat|\bsms|\bchats?\b|\bchatje|\bappjes?\b|ge-?appt|\bappte|\bberichten\b(?!-?app)|\bmessages?\b|\btexts?\b|\btexted|\bnachrichten"#) { kinds.append(.chats) }
         if has(#"telefoonnummer|nummer van|mailadres|e-?mailadres|adres van|\bcontact|phone number|email address|telefonnummer"#) { kinds.append(.contacts) }
         if has(#"muziek|liedje|\bnummer\b(?! van)|\bspeel|afspelen|spotify|pauzeer|\bmusic\b|\bsong|\bplay\b|\bmusik"#) { kinds.append(.music) }
         if has(#"volume|\bgeluid|harder|zachter|louder|quieter|lautstärke|leiser|lauter"#) { kinds.append(.volume) }
@@ -118,6 +118,7 @@ struct ChatIntent: Equatable {
     /// a WhatsApp message to Arjan names no channel itself; read alone it asks for nothing, and a small model then only
     /// claims it sent the message. Here it becomes that WhatsApp message (or mail) again, so the action is proposed.
     static func detect(_ raw: String, history: [ChatTurn]) -> ChatIntent {
+        let raw = fixingSendTypo(raw)
         var intent = detect(raw)
         guard !history.isEmpty, intent.primaryAction == nil else { return intent }
         let recent = Array(history.suffix(6).reversed())
@@ -127,16 +128,18 @@ struct ChatIntent: Equatable {
         guard !intent.isSmallTalk || goAhead else { return intent }
         // "Opnieuw", "probeer het nog eens", "try again": the last thing the user asked Nook to do, once more.
         let retry = retries(raw) && !questions(raw)
+        // "Nee, naar de appgroep Doosturen", "nee, om 4 uur": the same request with one detail changed, not a new one.
+        let correction = corrects(raw) && !questions(raw)
         let carried: Kind?
-        if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
+        if correction {
+            // The newest request the user made, with its channel when it was a message.
+            carried = recent.lazy.filter(\.fromUser).compactMap { turn -> Kind? in
+                if let kind = detect(turn.text).kinds.first(where: { actionByKind[$0] != nil }) { return kind }
+                return sends(turn.text) ? channel(of: recent) : nil
+            }.first ?? (recent.contains { !$0.fromUser && sends($0.text) } ? channel(of: recent) : nil)
+        } else if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
             || (retry && recent.contains { $0.fromUser && sends($0.text) }) {
-            // The channel is the one the conversation is about: the newest turn that names chats or mail.
-            carried = recent.lazy.compactMap { turn -> Kind? in
-                let kinds = detect(turn.text).kinds
-                if kinds.contains(.chatWrite) || kinds.contains(.chats) { return .chatWrite }
-                if kinds.contains(.mailWrite) || kinds.contains(.mailRead) { return .mailWrite }
-                return nil
-            }.first
+            carried = channel(of: recent)
         } else if goAhead {
             // "Ja, doe maar" after "maak een herinnering voor morgen": the action the user asked for last.
             carried = recent.first(where: \.fromUser).flatMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }
@@ -151,6 +154,42 @@ struct ChatIntent: Equatable {
         intent.wantsAction = true
         intent.isSmallTalk = false
         return intent
+    }
+
+    /// The channel the conversation is about: the newest turn that names chats or mail.
+    private static func channel(of recent: [ChatTurn]) -> Kind? {
+        recent.lazy.compactMap { turn -> Kind? in
+            let kinds = detect(turn.text).kinds
+            if kinds.contains(.chatWrite) || kinds.contains(.chats) { return .chatWrite }
+            if kinds.contains(.mailWrite) || kinds.contains(.mailRead) { return .mailWrite }
+            return nil
+        }.first
+    }
+
+    /// A correction of what was just asked: "nee, naar de appgroep Doosturen", "nee, om 4 uur", "niet naar Jan maar naar
+    /// Lisa", "ik bedoel Lisa", "no, to Lisa". A bare "nee", "nee, laat maar" or "nee, op dit moment niet" declines instead.
+    static func corrects(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count <= 120 else { return false }
+        return text.range(of: #"^(nee|neen|nope|no|nein|non)\b[\s,.!:;-]*(niet|not|nicht|pas)?\s*((naar|aan|to|an|nach|à)\s+(?!be\b)\S|(om|at|um|à)\s+\d)"#, options: .regularExpression) != nil
+            || text.range(of: #"^((nee|no|nein)[\s,.!]*)?(ik bedoel(de)?|i meant?|ich meine|je veux dire|quiero decir)\b"#, options: .regularExpression) != nil
+            || text.range(of: #"^(niet|not|nicht|pas|no) [^.?!]{1,40}\b(maar|but|sondern|mais|sino)\b"#, options: .regularExpression) != nil
+    }
+
+    /// Verbs a short follow-up starts with, so a typo in them ("vestuur", "verstur") is still read as that verb.
+    private static let sendVerbs = ["verstuur", "verzend", "stuur", "sende", "schick"]
+
+    /// The text with a mistyped send verb at its start written out ("Vestuur" → "verstuur"): one wrong letter, in words
+    /// of five letters or more, and only when one verb is that close.
+    static func fixingSendTypo(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = trimmed.firstIndex(where: { !$0.isLetter }) ?? trimmed.endIndex
+        let word = trimmed[..<end].lowercased()
+        // "Stuurt", "verstuurd", "sender" are other words that start with the verb, not typos.
+        guard word.count >= 5, !sendVerbs.contains(where: { word.hasPrefix($0) }) else { return raw }
+        let close = sendVerbs.filter { Fuzzy.distance(word, $0) == 1 }
+        guard close.count == 1, let verb = close.first else { return raw }
+        return verb + trimmed[end...]
     }
 
     /// Sending a message, with or without a channel: "stuur: …", "ik wil een bericht naar Arjan sturen", "verzend".
@@ -185,6 +224,21 @@ struct ChatIntent: Equatable {
     private static func asks(_ text: String) -> Bool {
         let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("»") }
         return lines.last?.hasSuffix("?") ?? false
+    }
+
+    // MARK: Replies
+
+    /// The reply says Nook set a message up to send: "Ik heb het bericht voorbereid en klaar om te sturen", "I've prepared
+    /// the WhatsApp message". Only an action the user approves prepares anything, so without one this is never true.
+    /// A prepared summary or overview is not a message and does not count.
+    static func claimsPrepared(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let ready = #"\b(klaar|gereed) (om|voor) (te )?(ver)?(sturen|zenden|verzenden|versturen)\b|\bready to (be )?sen[dt]\b|\bbereit zum (senden|versenden|verschicken)\b|\bprêt à (être )?envoy|\blisto para (ser )?enviar"#
+        let prepared = #"\b(ik heb|heb ik|i have|i've|ich habe|habe ich|j'ai|he)\b[^.?!]{0,60}\b(voorbereid|klaargezet|klaar gezet|opgesteld|prepared|drafted|vorbereitet|entworfen|préparé|rédigé|preparado|redactado)\b"#
+        // "Een overzicht van je mail" is about mail, not a message.
+        let message = #"(?<!van |of |from |von |uit |über |over |about |sur |sobre |je |your |deine |tes |tus )\b(bericht|berichtje|appje|message|nachricht|whats-?app|e-?mail|mail|mailtje|courriel|mensaje|correo)\b"#
+        func has(_ pattern: String) -> Bool { lower.range(of: pattern, options: .regularExpression) != nil }
+        return has(ready) || (has(prepared) && has(message))
     }
 
     // MARK: Tables
