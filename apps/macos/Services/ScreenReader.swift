@@ -42,14 +42,14 @@ final class ScreenReader {
     func capture() async throws -> ScreenSnapshot {
         // No CGRequestScreenCaptureAccess here: this runs without the user asking (think-along, the brain's read_screen),
         // and a build macOS no longer matches to its switch would get the system prompt on every read.
-        guard CGPreflightScreenCaptureAccess() else { throw ScreenError.noPermission }
+        guard ScreenAccess.isUsable else { throw ScreenError.noPermission }
         guard let app = NSWorkspace.shared.frontmostApplication else { throw ScreenError.nothing }
         let appName = app.localizedName ?? "this app"
         if let bundle = app.bundleIdentifier, Self.excludedBundles.contains(bundle) {
             throw ScreenError.excluded(appName)
         }
 
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let content = try await Self.shareableContent()
         let windows = content.windows.filter {
             $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 200
         }
@@ -308,7 +308,7 @@ final class ScreenReader {
         }
 
         // 4. Window OCR via ScreenCaptureKit (reads visible windows without activating)
-        if CGPreflightScreenCaptureAccess() {
+        if ScreenAccess.isUsable {
             let windows = await Self.windows(of: app)
             if !windows.isEmpty {
                 var sections: [(title: String, text: String)] = []
@@ -381,9 +381,19 @@ final class ScreenReader {
         return ScreenSnapshot(appName: name, windowTitle: name, text: (note.map { $0 + "\n\n" } ?? "") + body)
     }
 
+    /// The on-screen windows and displays; a refusal turns automatic reads off (`ScreenAccess`).
+    private static func shareableContent() async throws -> SCShareableContent {
+        do {
+            return try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        } catch {
+            ScreenAccess.note(error)
+            throw ScreenAccess.refused ? ScreenError.noPermission : error
+        }
+    }
+
     /// An app's on-screen windows (including covered ones), largest first.
     private static func windows(of app: NSRunningApplication) async -> [SCWindow] {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return [] }
+        guard let content = try? await shareableContent() else { return [] }
         return content.windows.filter {
             $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 200 && $0.frame.height > 100
         }.sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
@@ -394,14 +404,14 @@ final class ScreenReader {
     func captureAll(maxWindows: Int = 6, totalLimit: Int = 9000) async throws -> ScreenSnapshot {
         // No CGRequestScreenCaptureAccess here: this runs without the user asking (think-along, the brain's read_screen),
         // and a build macOS no longer matches to its switch would get the system prompt on every read.
-        guard CGPreflightScreenCaptureAccess() else { throw ScreenError.noPermission }
+        guard ScreenAccess.isUsable else { throw ScreenError.noPermission }
         let front = NSWorkspace.shared.frontmostApplication
         let frontName = front?.localizedName ?? "this app"
         if let bundle = front?.bundleIdentifier, Self.excludedBundles.contains(bundle) {
             throw ScreenError.excluded(frontName)
         }
 
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let content = try await Self.shareableContent()
         let candidates = content.windows.filter { window in
             guard window.windowLayer == 0, window.frame.width > 200, window.frame.height > 100,
                   let owner = window.owningApplication else { return false }

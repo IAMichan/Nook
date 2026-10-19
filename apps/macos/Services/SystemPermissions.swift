@@ -3,7 +3,27 @@ import ApplicationServices
 import AVFoundation
 import Contacts
 import EventKit
+import ScreenCaptureKit
 import Speech
+
+/// Whether Nook may read the screen without the user asking (the screen context timer, think-along, the brain's
+/// read_screen). `CGPreflightScreenCaptureAccess` can say yes while ScreenCaptureKit still says no: after a rebuild macOS
+/// no longer matches to the Screen Recording switch (an ad-hoc signature changes with every build), the switch still
+/// shows Nook as on, and every capture shows the system prompt again. The first such refusal stops automatic reads until
+/// Nook restarts, which macOS asks for after changing the switch anyway.
+@MainActor
+enum ScreenAccess {
+    private(set) static var refused = false
+
+    /// True when an automatic read may call ScreenCaptureKit.
+    static var isUsable: Bool { !refused && CGPreflightScreenCaptureAccess() }
+
+    /// Called with the error of a failed capture: a refusal turns automatic reads off for this launch.
+    static func note(_ error: Error) {
+        let error = error as NSError
+        if error.domain == SCStreamErrorDomain, error.code == SCStreamError.Code.userDeclined.rawValue { refused = true }
+    }
+}
 
 /// Every macOS privacy permission Nook asks for, in one place: whether it is granted, how to ask for it, and where it lives in
 /// System Settings › Privacy & Security.
@@ -39,7 +59,7 @@ enum SystemPermission: String, CaseIterable, Identifiable {
     /// Asks macOS without showing anything.
     var isGranted: Bool {
         switch self {
-        case .screen: return CGPreflightScreenCaptureAccess()
+        case .screen: return ScreenAccess.isUsable
         case .accessibility: return AXIsProcessTrusted()
         case .inputMonitoring: return CGPreflightListenEventAccess()
         case .calendar: return EKEventStore.authorizationStatus(for: .event) == .fullAccess
@@ -93,7 +113,8 @@ enum SystemPermission: String, CaseIterable, Identifiable {
         if wasDenied { openSettings(); return }
         switch self {
         case .screen:
-            if !CGRequestScreenCaptureAccess() { openSettings() }
+            // Refused while the switch is on: asking again shows nothing useful, the switch needs turning off and on.
+            if ScreenAccess.refused || !CGRequestScreenCaptureAccess() { openSettings() }
         case .accessibility:
             if !AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) { openSettings() }
         case .inputMonitoring:

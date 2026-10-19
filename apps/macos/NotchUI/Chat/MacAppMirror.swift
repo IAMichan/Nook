@@ -107,7 +107,7 @@ final class MacAppMirror: ObservableObject {
     }
 
     func requestScreenAccess() {
-        if !CGRequestScreenCaptureAccess() { SystemPermission.screen.openSettings() }
+        if ScreenAccess.refused || !CGRequestScreenCaptureAccess() { SystemPermission.screen.openSettings() }
     }
 
     // MARK: Starting
@@ -115,7 +115,7 @@ final class MacAppMirror: ObservableObject {
     private func start() {
         guard let app else { return }
         notice = nil
-        guard CGPreflightScreenCaptureAccess() else {
+        guard ScreenAccess.isUsable else {
             status = .needsScreenAccess
             return
         }
@@ -146,8 +146,19 @@ final class MacAppMirror: ObservableObject {
         guard let pid else { return }
         for attempt in 0..<tries {
             if Task.isCancelled { return }
-            if let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true),
-               let window = Self.mainWindow(in: content, pid: pid) {
+            let content: SCShareableContent?
+            do {
+                content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            } catch {
+                ScreenAccess.note(error)
+                content = nil
+            }
+            // Refused: every further try would bring the system prompt back.
+            if ScreenAccess.refused {
+                status = .needsScreenAccess
+                return
+            }
+            if let content, let window = Self.mainWindow(in: content, pid: pid) {
                 await show(window, in: content)
                 return
             }

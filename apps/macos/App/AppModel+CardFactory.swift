@@ -56,7 +56,7 @@ extension AppModel {
     /// The selection is macOS's own; the picture stays in a temporary folder on this Mac until a brain is asked about it.
     func captureScreenPart() {
         guard !capturingScreenPart else { return }
-        guard CGPreflightScreenCaptureAccess() else {
+        guard ScreenAccess.isUsable else {
             _ = CGRequestScreenCaptureAccess()
             viewModel.show(.card(errorCard(tr("chat.capture.permission"))))
             return
@@ -182,7 +182,7 @@ extension AppModel {
         viewModel.register("\(token)#later") { [weak self] in self?.settings.onboardingDone = true }
         let facts = [
             Fact(label: tr("app.welcome.brain"), value: settings.brainReady ? tr("app.welcome.ready") : tr("app.welcome.chooseBrain")),
-            Fact(label: tr("app.welcome.screen"), value: CGPreflightScreenCaptureAccess() ? tr("app.welcome.on") : tr("app.welcome.allow")),
+            Fact(label: tr("app.welcome.screen"), value: ScreenAccess.isUsable ? tr("app.welcome.on") : tr("app.welcome.allow")),
             Fact(label: tr("app.welcome.calendar"), value: calendar.hasEventAccess ? tr("app.welcome.connected") : tr("app.welcome.allow")),
             Fact(label: tr("app.welcome.connections"), value: tr("app.welcome.connectionsValue"))
         ]
