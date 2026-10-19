@@ -8,6 +8,18 @@ struct QuotaLimit: Identifiable, Equatable {
     /// Shown instead of a reset time, e.g. when the window has not started yet.
     var note: String? = nil
     var id: String { label }
+
+    /// The model group of a label like "Gemini 4 Pro · Week" ("Gemini 4 Pro"), or nil for a plain window ("5 hours").
+    var group: String? {
+        guard let range = label.range(of: " · ", options: .backwards) else { return nil }
+        return String(label[..<range.lowerBound])
+    }
+
+    /// The window part of the label: "Week" for "Gemini 4 Pro · Week".
+    var window: String {
+        guard let range = label.range(of: " · ", options: .backwards) else { return label }
+        return String(label[range.upperBound...])
+    }
 }
 
 /// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Usage

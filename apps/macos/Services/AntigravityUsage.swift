@@ -193,9 +193,12 @@ final class AntigravityUsage: ObservableObject {
         let body = (try? JSONSerialization.data(withJSONObject: project.map { ["project": $0] } ?? [:])) ?? Data("{}".utf8)
 
         // The endpoints can report different groups (the daily one has returned Claude & GPT without Gemini): every
-        // endpoint's windows count, the most used reading of a window wins.
+        // endpoint's windows count, the most used reading of a window wins. The summary has the 5-hour and weekly
+        // windows; the model list adds models with a quota of their own (a newly released Gemini, say) that the
+        // summary does not cover yet.
+        var summary: [Window] = []
+        var models: [Window] = []
         for operation in ["retrieveUserQuotaSummary", "fetchAvailableModels"] {
-            var merged: [QuotaLimit] = []
             for endpoint in endpoints {
                 var request = URLRequest(url: URL(string: "\(endpoint)/v1internal:\(operation)")!)
                 request.httpMethod = "POST"
@@ -204,17 +207,15 @@ final class AntigravityUsage: ObservableObject {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = body
                 guard let object = send(request) as? [String: Any] else { continue }
-                for window in operation == "retrieveUserQuotaSummary" ? summaryWindows(object) : modelWindows(object) {
-                    if let index = merged.firstIndex(where: { $0.id == window.id }) {
-                        if window.percent > merged[index].percent { merged[index] = window }
-                    } else {
-                        merged.append(window)
-                    }
+                if operation == "retrieveUserQuotaSummary" {
+                    merge(summaryWindows(object), into: &summary)
+                } else {
+                    merge(modelWindows(object), into: &models)
                 }
             }
-            if !merged.isEmpty { return merged }
         }
-        return nil
+        let combined = combine(summary: summary, models: models)
+        return combined.isEmpty ? nil : combined
     }
 
     private nonisolated static func form(_ values: [String: String]) -> Data {
@@ -242,18 +243,55 @@ final class AntigravityUsage: ObservableObject {
 
     // MARK: Parsing
 
+    /// A window with the model family it belongs to, to match model quotas against the summary.
+    struct Window {
+        var family: String
+        var limit: QuotaLimit
+    }
+
     private nonisolated static func limit(label: String, quota: [String: Any]) -> QuotaLimit? {
         guard let remaining = (quota["remainingFraction"] as? NSNumber)?.doubleValue, remaining.isFinite else { return nil }
         let reset = (quota["resetTime"] as? String).flatMap(parseDate)
         return QuotaLimit(label: label, percent: (1 - min(1, max(0, remaining))) * 100, resetsAt: reset)
     }
 
-    private nonisolated static func summaryWindows(_ summary: [String: Any]) -> [QuotaLimit] {
+    /// Adds windows to a list; a window that is already there keeps its most used reading.
+    nonisolated static func merge(_ windows: [Window], into list: inout [Window]) {
+        for window in windows {
+            if let index = list.firstIndex(where: { $0.limit.id == window.limit.id }) {
+                if window.limit.percent > list[index].limit.percent { list[index] = window }
+            } else {
+                list.append(window)
+            }
+        }
+    }
+
+    /// The summary's windows, then every model quota the summary does not already show: a model whose reading
+    /// equals a window of its family is that window, so it is left out.
+    nonisolated static func combine(summary: [Window], models: [Window]) -> [QuotaLimit] {
+        var result = summary.map(\.limit)
+        for model in models {
+            let covered = summary.contains { window in
+                window.family.localizedCaseInsensitiveContains(model.family)
+                    && abs(window.limit.percent - model.limit.percent) < 0.5
+                    && sameReset(window.limit.resetsAt, model.limit.resetsAt)
+            }
+            if !covered, !result.contains(where: { $0.id == model.limit.id }) { result.append(model.limit) }
+        }
+        return result
+    }
+
+    private nonisolated static func sameReset(_ a: Date?, _ b: Date?) -> Bool {
+        guard let a, let b else { return a == nil && b == nil }
+        return abs(a.timeIntervalSince(b)) < 120
+    }
+
+    nonisolated static func summaryWindows(_ summary: [String: Any]) -> [Window] {
         let groups = (summary["groups"] as? [[String: Any]]) ?? []
         let sources: [(name: String, buckets: [[String: Any]])] = groups.contains(where: { !(($0["buckets"] as? [Any]) ?? []).isEmpty })
             ? groups.map { (($0["displayName"] as? String) ?? "", ($0["buckets"] as? [[String: Any]]) ?? []) }
             : [("", (summary["buckets"] as? [[String: Any]]) ?? [])]
-        var result: [QuotaLimit] = []
+        var result: [Window] = []
         for source in sources {
             for bucket in source.buckets {
                 guard (bucket["disabled"] as? Bool) != true, let id = bucket["bucketId"] as? String else { continue }
@@ -261,30 +299,61 @@ final class AntigravityUsage: ObservableObject {
                 let family = id.hasPrefix("gemini-") ? "Gemini" : id.hasPrefix("3p-") ? "Claude & GPT" : (trimmedGroup.isEmpty ? id : trimmedGroup)
                 let window = bucket["window"] as? String
                 let name = (bucket["displayName"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-                let kind = window == "weekly" ? tr("agents.week") : window == "5h" ? tr("agents.fiveHour") : (name.isEmpty ? "Quota" : name)
-                if let entry = limit(label: "\(family) · \(kind)", quota: bucket) { result.removeAll { $0.id == entry.id }; result.append(entry) }
+                let kind = window == "weekly" ? tr("agents.week") : window == "5h" ? tr("agents.fiveHour") : (name.isEmpty ? tr("agents.usage.quota") : name)
+                // A bucket of one model version ("gemini-4-pro-5h") is named after it, so Gemini 3 and Gemini 4 stay apart.
+                let model = modelName(id: id)
+                let title = model.contains(where: \.isNumber) ? model : family
+                guard let entry = limit(label: "\(title) · \(kind)", quota: bucket) else { continue }
+                merge([Window(family: family, limit: entry)], into: &result)
             }
         }
         return result
     }
 
-    /// Older accounts only list model quotas without a window length.
-    private nonisolated static func modelWindows(_ object: [String: Any]) -> [QuotaLimit] {
+    /// Every model's own quota, named after the model ("Gemini 4 Pro"). Older accounts only list these, without a window length.
+    nonisolated static func modelWindows(_ object: [String: Any]) -> [Window] {
         guard let models = object["models"] as? [String: [String: Any]] else { return [] }
-        var best: [String: QuotaLimit] = [:]
-        for (id, model) in models {
+        var result: [Window] = []
+        for (id, model) in models.sorted(by: { $0.key < $1.key }) {
             let provider = model["modelProvider"] as? String
             let family = provider == "MODEL_PROVIDER_GOOGLE" || id.hasPrefix("gemini-") ? "Gemini"
                 : provider == "MODEL_PROVIDER_ANTHROPIC" || id.hasPrefix("claude-") ? "Claude"
                 : provider == "MODEL_PROVIDER_OPENAI" || id.hasPrefix("gpt-") ? "GPT" : nil
             guard let family else { continue }
-            for (key, suffix) in [("quotaInfo", "Quota"), ("weeklyQuotaInfo", tr("agents.week"))] {
+            let display = ((model["displayName"] as? String) ?? "")
+                .replacingOccurrences(of: "\\s*\\([^)]*\\)", with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+            let derived = modelName(id: id)
+            let name = !display.isEmpty ? display : derived.isEmpty ? family : derived
+            for (key, suffix) in [("quotaInfo", tr("agents.usage.quota")), ("weeklyQuotaInfo", tr("agents.week"))] {
                 guard let quota = model[key] as? [String: Any],
-                      let entry = limit(label: "\(family) · \(suffix)", quota: quota) else { continue }
-                if best[entry.id].map({ entry.percent > $0.percent }) ?? true { best[entry.id] = entry }
+                      let entry = limit(label: "\(name) · \(suffix)", quota: quota) else { continue }
+                merge([Window(family: family, limit: entry)], into: &result)
             }
         }
-        return best.values.sorted { $0.label < $1.label }
+        return result.sorted { $0.limit.label.localizedStandardCompare($1.limit.label) == .orderedAscending }
+    }
+
+    /// A readable model name from an id: "gemini-4-pro-high" → "Gemini 4 Pro", "claude-sonnet-4-5" → "Claude Sonnet 4.5", "3p-weekly" → "".
+    nonisolated static func modelName(id: String) -> String {
+        let dropped: Set<String> = ["3p", "5h", "weekly", "week", "daily", "quota", "bucket", "high", "low", "medium",
+                                    "thinking", "preview", "latest", "exp", "experimental"]
+        let known = ["gemini": "Gemini", "claude": "Claude", "gpt": "GPT", "oss": "OSS"]
+        let words = id.lowercased()
+            .split(whereSeparator: { $0 == "-" || $0 == "_" || $0 == " " })
+            .map(String.init)
+            // Long numbers are release dates ("20250514"), not versions.
+            .filter { !dropped.contains($0) && !($0.count > 2 && $0.allSatisfy(\.isNumber)) }
+        // "4", "5" is version 4.5.
+        var parts: [String] = []
+        for word in words {
+            if let last = parts.last, last.allSatisfy({ $0.isNumber || $0 == "." }), word.allSatisfy(\.isNumber) {
+                parts[parts.count - 1] = last + "." + word
+            } else {
+                parts.append(known[word] ?? (word.prefix(1).uppercased() + word.dropFirst()))
+            }
+        }
+        return parts.joined(separator: " ")
     }
 
     private nonisolated static func parseDate(_ text: String) -> Date? {
