@@ -129,6 +129,9 @@ final class ScreenContext: ObservableObject {
         // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
+        // A hot or busy Mac (a build on every core, Low Power Mode): the timer's read waits. A question still reads the
+        // screen (`snapshot`), and switching apps still reads the new window.
+        guard !SystemLoad.isConstrained else { return }
         await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }
 

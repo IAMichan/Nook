@@ -191,7 +191,10 @@ final class FlowDictation: ObservableObject {
     }
 
     private func begin() {
-        let listen = Listen(useParakeet: Parakeet.shared.inUse)
+        let useParakeet = Parakeet.shared.inUse
+        // Released after a while unused: load it again now, while you speak, so the words come as fast as before.
+        if useParakeet { Parakeet.shared.preload() }
+        let listen = Listen(useParakeet: useParakeet)
         current = listen
         pill.show(logic.phase == .locked ? .locked : .listening)
         listen.onLevel { [weak self] level in self?.pill.level = level }

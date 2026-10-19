@@ -53,7 +53,12 @@ final class ThinkAlong: ObservableObject {
     }
 
     /// Should Nook observe now? `bundleID` and `window` describe the frontmost window, `print` its content fingerprint.
-    func shouldLook(bundleID: String, window: String, print: UInt64, now: Date = Date()) -> Bool {
+    /// Between two looks when the brain runs on this Mac: each look is a full model run on the GPU, and the model would
+    /// otherwise never leave memory (`EmbeddedModel` releases it after a few idle minutes).
+    static let localLookGap: TimeInterval = 600
+
+    /// - Parameter minGap: at least this long since the last look, when more than the usual gap.
+    func shouldLook(bundleID: String, window: String, print: UInt64, minGap: TimeInterval? = nil, now: Date = Date()) -> Bool {
         guard !bundleID.isEmpty, bundleID != Bundle.main.bundleIdentifier, mutedApps[bundleID] == nil,
               !ScreenReader.excludedBundles.contains(bundleID) else { return false }
         // Away from the Mac: nothing to proactively assist with.
@@ -67,7 +72,7 @@ final class ThinkAlong: ObservableObject {
             return false
         }
         guard now.timeIntervalSince(focusSince) >= settle,
-              now.timeIntervalSince(lastLook) >= minLookGap,
+              now.timeIntervalSince(lastLook) >= max(minLookGap, minGap ?? 0),
               now.timeIntervalSince(lastOffer) >= offerGap else { return false }
         if let previous = looked[key] {
             guard previous.print != print, now.timeIntervalSince(previous.date) >= sameWindowGap else { return false }
