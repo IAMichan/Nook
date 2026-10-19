@@ -39,8 +39,11 @@ struct NewSessionComposer: View {
             if showClone { cloneRow }
             if remoteMachine != nil { remoteRow }
             VStack(alignment: .leading, spacing: 8) {
-                box
-                belowBox
+                // Where it works and the branch it starts from sit in a tray tucked under the box.
+                VStack(spacing: 0) {
+                    box.zIndex(1)
+                    belowBox
+                }
                 notice
             }
             .frame(maxWidth: 640)
@@ -164,7 +167,7 @@ struct NewSessionComposer: View {
 
     private var composerConfig: ComposerConfig {
         var rich = ComposerConfig()
-        rich.tint = config.provider.color
+        rich.tint = config.provider.composerTint
         rich.fileRoot = config.projectPath.isEmpty ? nil : config.projectPath
         rich.keepsBigPastes = true
         return rich
@@ -260,7 +263,20 @@ struct NewSessionComposer: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 10)
+        .padding(.top, Self.trayTuck + 4)
+        .padding(.bottom, 4)
+        .background(trayShape.fill(Color(hex: 0x0E0E10)))
+        .overlay(trayShape.stroke(Color(hex: 0x222226), lineWidth: 1))
+        .padding(.top, -Self.trayTuck)
+        .padding(.horizontal, 14)
+    }
+
+    /// How far the tray runs on under the box, so it reads as coming out from underneath.
+    private static let trayTuck: CGFloat = 14
+
+    private var trayShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
     }
 
     /// Where the agent works: the folder as it is, or a new worktree.
