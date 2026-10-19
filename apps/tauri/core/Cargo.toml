@@ -19,6 +19,8 @@ regex.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
 log.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
+percent-encoding = "2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
