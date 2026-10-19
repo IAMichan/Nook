@@ -447,13 +447,15 @@ extension NotchRootView {
     }
 }
 
-/// Thin strips along the open notch's sides and bottom, and its bottom corners: drag one to make the notch larger or
-/// smaller, double-click it to go back to the size each tab starts at. The top stays under the camera.
+/// Strips along the open notch's sides and bottom, and its bottom corners: drag one to make the notch larger or smaller,
+/// double-click it to go back to the size each tab starts at. The top stays under the camera. A small grip in each bottom
+/// corner shows that it can be done, and the edge under the pointer lights up.
 private struct NotchResizeHandles: View {
     @ObservedObject var viewModel: NotchViewModel
-    /// How far into the notch a side reaches: well inside the margin around the content, so nothing there is covered.
-    private let thickness: CGFloat = 8
-    private let corner: CGFloat = 24
+    /// How far into the notch a side reaches: inside the margin around the content, so nothing there is covered.
+    private let thickness: CGFloat = 12
+    private let corner: CGFloat = 32
+    @State private var hovered: NotchResize.Edge?
 
     var body: some View {
         // Below the strip along the top, which belongs to the camera (and, floating, to moving the notch).
@@ -474,18 +476,58 @@ private struct NotchResizeHandles: View {
     }
 
     private func handle(_ edge: NotchResize.Edge, _ position: FrameResizePosition) -> some View {
-        Color.clear
+        let lit = hovered == edge
+        return Color.clear
+            .overlay { marker(edge, lit: lit) }
             .contentShape(Rectangle())
             .pointerStyle(.frameResize(position: position))
+            .onHover { inside in
+                if inside { hovered = edge } else if hovered == edge, !viewModel.resizing { hovered = nil }
+            }
             .gesture(
                 // Global coordinates: the edge itself moves while you drag it.
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { viewModel.resize(edge, translation: $0.translation) }
-                    .onEnded { _ in viewModel.endResize() }
+                    .onChanged { hovered = edge; viewModel.resize(edge, translation: $0.translation) }
+                    .onEnded { _ in viewModel.endResize(); hovered = nil }
             )
             .onTapGesture(count: 2) { viewModel.resetPanelSize() }
             .help(tr("notch.resize"))
             .accessibilityLabel(tr("notch.resize"))
+            .animation(.easeOut(duration: 0.15), value: lit)
+    }
+
+    /// What you see of a handle: a grip in the bottom corners (always, faintly), a short bar on a side or the bottom
+    /// while the pointer is on it.
+    @ViewBuilder
+    private func marker(_ edge: NotchResize.Edge, lit: Bool) -> some View {
+        switch edge {
+        case .bottomLeft, .bottomRight:
+            ResizeGrip(mirrored: edge == .bottomLeft)
+                .stroke(Color.white.opacity(lit ? 0.75 : 0.28), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .frame(width: 10, height: 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .bottomLeft ? .bottomLeading : .bottomTrailing)
+                .padding(edge == .bottomLeft ? .leading : .trailing, 11)
+                .padding(.bottom, 11)
+        case .left, .right:
+            Capsule().fill(Color.white.opacity(lit ? 0.45 : 0)).frame(width: 3, height: 44)
+        case .bottom:
+            Capsule().fill(Color.white.opacity(lit ? 0.45 : 0)).frame(width: 44, height: 3)
+        }
+    }
+}
+
+/// Two short diagonal lines, the usual sign for "drag this corner".
+private struct ResizeGrip: Shape {
+    var mirrored: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let x = { (value: CGFloat) in mirrored ? rect.maxX - value : rect.minX + value }
+        path.move(to: CGPoint(x: x(rect.width), y: rect.minY))
+        path.addLine(to: CGPoint(x: x(0), y: rect.maxY))
+        path.move(to: CGPoint(x: x(rect.width), y: rect.midY))
+        path.addLine(to: CGPoint(x: x(rect.width / 2), y: rect.maxY))
+        return path
     }
 }
 
