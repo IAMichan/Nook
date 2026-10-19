@@ -134,6 +134,7 @@ extension AppModel {
             window.center()
             settingsWindow = window
         }
+        if let settingsWindow { DockPresence.shared.track(settingsWindow) }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
