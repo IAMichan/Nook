@@ -30,7 +30,8 @@ enum GitHubPullRequestList {
                                                            mine: list.mine, reviews: list.reviews, error: nil))
                     } catch {
                         return (index, AccountPullRequests(id: target.id, name: target.name, login: target.login, mine: [], reviews: [],
-                                                           error: CloudHelp.errorText(error, service: "GitHub")))
+                                                           error: CloudHelp.errorText(error, service: "GitHub"),
+                                                           errorKind: ConnectorErrorKind.classify(error)))
                     }
                 }
             }
@@ -101,9 +102,10 @@ final class PullRequestStore: ObservableObject {
             guard account.error != nil, let old = accounts.first(where: { $0.id == account.id }) else { return account }
             var kept = old
             kept.error = account.error
+            kept.errorKind = account.errorKind
             return kept
         }
-        let snapshot = accounts.map { var copy = $0; copy.error = nil; return copy }
+        let snapshot = accounts.map { var copy = $0; copy.error = nil; copy.errorKind = nil; return copy }
         let file = self.file
         Task.detached(priority: .utility) {
             if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: file, options: .atomic) }

@@ -19,6 +19,7 @@ final class GitHubSignIn: ObservableObject {
 
     enum Phase: Equatable {
         case idle
+        case checkingCLI
         /// Waiting for code confirmation on github.com.
         case waiting(code: String, uri: URL)
         case done
@@ -40,6 +41,44 @@ final class GitHubSignIn: ObservableObject {
         case token(String)
         case pending
         case slowDown
+    }
+
+    /// Take over the login of the GitHub CLI (`gh auth login`): no OAuth app needed, the token comes from `gh auth token`.
+    func useGitHubCLI() {
+        cancel()
+        phase = .checkingCLI
+        task = Task {
+            let result = await Task.detached { Self.cliToken() }.value
+            switch result {
+            case .success(let token):
+                if Keychain.write(token, account: GitHubConnector.tokenAccount) == errSecSuccess {
+                    phase = .done
+                } else {
+                    phase = .failed(tr("connector.keychainDenied"))
+                }
+            case .failure(let error):
+                phase = .failed(error.message)
+            }
+        }
+    }
+
+    private struct CLIError: Error { let message: String }
+
+    private nonisolated static func cliToken() -> Result<String, CLIError> {
+        let home = NSHomeDirectory()
+        let directories = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "\(home)/.local/bin"]
+        guard let gh = directories.map({ "\($0)/gh" }).first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            return .failure(CLIError(message: tr("connector.ghMissing")))
+        }
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = (directories + [environment["PATH"] ?? ""]).joined(separator: ":")
+        environment["GH_PROMPT_DISABLED"] = "1"
+        guard let output = try? ProcessRunner.run(gh, ["auth", "token"], environment: environment, timeout: 15),
+              output.status == 0 else {
+            return .failure(CLIError(message: tr("connector.ghNotLoggedIn")))
+        }
+        let token = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? .failure(CLIError(message: tr("connector.ghNotLoggedIn"))) : .success(token)
     }
 
     func start() {

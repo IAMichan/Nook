@@ -27,6 +27,8 @@ struct AccountPullRequests: Identifiable, Equatable, Codable, Sendable {
     var reviews: [PullRequestItem]
     /// Set when this account could not be read (token rejected, no connection).
     var error: String?
+    /// What kind of failure `error` is, so the view can offer the way out (signing in again for `.auth`).
+    var errorKind: ConnectorErrorKind? = nil
 }
 
 /// The whole list in one GraphQL request per account lists pull requests: two aliased searches (yours,
