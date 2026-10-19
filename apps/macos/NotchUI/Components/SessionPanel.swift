@@ -379,7 +379,7 @@ struct SessionPanel: View {
     // MARK: Changes
 
     private var changesRow: some View {
-        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
+        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.changes
         let added = files.compactMap(\.added).reduce(0, +)
         let removed = files.compactMap(\.removed).reduce(0, +)
         return PanelRow(icon: symbol("plus.forwardslash.minus"),
@@ -445,9 +445,13 @@ private struct PanelRow: View {
                         content
                         chevron.frame(width: 30, height: 34)
                     }
+                    .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
-                .composerMenu()
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity)
             } else {
                 content.opacity(enabled ? 1 : 0.55)
             }

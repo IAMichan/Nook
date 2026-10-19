@@ -46,6 +46,8 @@ struct NookOrb: View {
         let shadeCenter = UnitPoint(x: light.x + 0.08, y: light.y + 0.1)
         let turn = min(abs(p.gaze.x), 1)
         return ZStack {
+            // Inside the orb's stack, so the headphones hop, squash and tilt with Nook; what turns away goes behind him.
+            if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
             Circle()
                 .fill(mood.color)
                 .shadow(color: mood.color.opacity(glow ? p.glowOpacity : 0), radius: p.glowRadius)
@@ -85,8 +87,7 @@ struct NookOrb: View {
                 .offset(y: size * 0.14)
                 .opacity(p.cheeks)
             }
-            // Inside the orb's stack, so the headphones hop, squash and tilt with Nook.
-            if presence.listeningToMusic { headphones(gaze: p.gaze) }
+            if presence.listeningToMusic { NookHeadphones(size: size, gaze: p.gaze, layer: .front) }
         }
         .frame(width: size, height: size)
         .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
@@ -127,44 +128,6 @@ struct NookOrb: View {
             .rotationEffect(.degrees(e.rotation))
             .offset(x: e.dx, y: e.dy)
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
-    }
-
-    /// Headphones while music plays: a band over the top and an ear cup on each side.
-    ///
-    /// They turn with Nook's head: looking right, the band narrows and slides along, the left cup comes round towards
-    /// you (wider) and the right cup turns away (narrower); looking down, the band tips forward a little.
-    private func headphones(gaze: CGPoint) -> some View {
-        let band = max(1.5, size * 0.07)
-        let cupWidth = size * 0.17
-        let cupHeight = size * 0.34
-        let angle = Double(max(-1, min(gaze.x, 1))) * 0.5   // head turn in radians
-        let across = CGFloat(cos(angle))
-        let side = CGFloat(sin(angle))
-        let reach = size * 0.455   // distance from the center to each cup
-        return ZStack {
-            Circle()
-                .trim(from: 0.5, to: 1)
-                .stroke(Color(hex: 0x4A4A58), style: StrokeStyle(lineWidth: band, lineCap: .round))
-                .frame(width: size * 1.02, height: size * 1.02)
-                .scaleEffect(x: across, y: 1 - 0.06 * abs(gaze.y))
-                .offset(x: side * size * 0.06, y: size * 0.01 + gaze.y * size * 0.03)
-            cup(width: cupWidth * (1 + 0.3 * side), height: cupHeight)
-                .offset(x: -reach * across + side * size * 0.04, y: gaze.y * size * 0.02)
-            cup(width: cupWidth * (1 - 0.3 * side), height: cupHeight)
-                .offset(x: reach * across + side * size * 0.04, y: gaze.y * size * 0.02)
-        }
-        .frame(width: size, height: size)
-        .allowsHitTesting(false)
-    }
-
-    private func cup(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
-            .fill(Color(hex: 0x4A4A58))
-            .overlay(
-                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
-                    .stroke(Color.white.opacity(0.35), lineWidth: 0.6)
-            )
-            .frame(width: width, height: height)
     }
 
     private var cheek: some View {
