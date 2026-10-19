@@ -225,8 +225,10 @@ final class EmbeddedModel: ObservableObject {
         }
 
         // Typed on its own: inside the `? nil :` ternary the closure was not inferred as @Sendable.
-        let dispatch: (@Sendable (ToolCall) async throws -> String)? = specs.isEmpty ? nil : { call in
-            await runner.handle(name: call.function.name, input: call.function.arguments.mapValues { $0.anyValue }).output
+        let dispatch: (@Sendable (ToolCall) async throws -> String)? = specs.isEmpty ? nil : { @Sendable call in
+            let name = call.function.name
+            let input = call.function.arguments.mapValues { $0.anyValue }
+            return await runner.handle(name: name, input: input).output
         }
 
         let session = ChatSession(

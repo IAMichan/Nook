@@ -101,12 +101,12 @@ final class CompanionServer: ObservableObject {
             }
         }
         connection.start(queue: queue)
-        let deadline = DispatchWorkItem { connection.cancel() }
-        queue.asyncAfter(deadline: .now() + 30, execute: deadline)
-        read(connection, reader: CompanionFrameReader(), deadline: deadline)
+        // A connection lives at most 30 seconds.
+        queue.asyncAfter(deadline: .now() + 30) { connection.cancel() }
+        read(connection, reader: CompanionFrameReader())
     }
 
-    private func read(_ connection: NWConnection, reader: CompanionFrameReader, deadline: DispatchWorkItem) {
+    private func read(_ connection: NWConnection, reader: CompanionFrameReader) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
             var reader = reader
             guard let self else { return }
@@ -116,7 +116,7 @@ final class CompanionServer: ObservableObject {
                 let remaining = reader
                 Task { @MainActor in
                     for frame in frames { await self.respond(to: frame, on: connection) }
-                    if !complete, error == nil { self.read(connection, reader: remaining, deadline: deadline) } else { connection.cancel() }
+                    if !complete, error == nil { self.read(connection, reader: remaining) } else { connection.cancel() }
                 }
             } else if complete || error != nil {
                 connection.cancel()

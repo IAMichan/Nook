@@ -152,7 +152,7 @@ final class WorkspaceSettings: ObservableObject {
     ]
 
     /// The terminal inside Nook's main window (Agents › Terminals).
-    static let builtInTerminal = "nook.builtin"
+    nonisolated static let builtInTerminal = "nook.builtin"
 
     static let terminalCandidates: [AppChoice] = [
         AppChoice(bundleID: builtInTerminal, name: "Nook"),

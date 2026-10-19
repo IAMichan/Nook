@@ -440,10 +440,14 @@ final class ScreenReader {
         return ScreenSnapshot(appName: frontName, windowTitle: "all visible windows", text: sections.joined(separator: "\n\n"))
     }
 
+    private nonisolated static let ocrQueue = DispatchQueue(label: "nook.screen.ocr", attributes: .concurrent)
+
     /// `fast`: Vision fast recognition level (significantly faster, slightly less accurate), for background tracking.
     nonisolated static func recognize(_ image: CGImage, fast: Bool = false) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            // No QoS on purpose: Vision waits on its own worker threads, which have no QoS class. Running this at
+            // user-initiated made a higher-priority thread wait on a lower one (a priority inversion).
+            ocrQueue.async(flags: .noQoS) {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = fast ? .fast : .accurate
                 request.recognitionLanguages = ["nl-NL", "en-US"]
