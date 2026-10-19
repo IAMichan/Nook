@@ -214,7 +214,7 @@ struct NewSessionComposer: View {
 
     private var permissionMenu: some View {
         ComposerDropdown(width: 300) {
-            ComposerPill(symbol: config.permission == .bypass ? "lock.open" : "lock",
+            ComposerPill(symbol: config.mode == .plan ? "lock" : config.permission.symbol,
                  dot: nil,
                  text: config.mode == .plan ? tr("compose.readOnly") : config.permission.label,
                  tint: config.permission == .bypass && config.mode != .plan ? NookTheme.coralSoft : nil)
