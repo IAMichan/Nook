@@ -783,7 +783,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private var foundExecutables: [AgentKind: String] = [:]
     private var lastShellLookup = Date.distantPast
     /// How long to wait before asking the shell again, and which agents it was asked about last time.
-    private var shellLookupInterval: TimeInterval = Self.shellLookupMinimum
+    private var shellLookupInterval: TimeInterval = HistoryScanner.shellLookupMinimum
     private var shellLookupMissing: [AgentKind] = []
     private static let shellLookupMinimum: TimeInterval = 60
     private static let shellLookupMaximum: TimeInterval = 30 * 60
