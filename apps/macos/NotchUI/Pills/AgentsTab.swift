@@ -187,11 +187,14 @@ struct AgentsTab: View {
                              selection: Selection) -> some View {
         let current = selectedID(selection)
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
-        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
+        // A cloud session that works or waits for you (Claude app, claude.ai/code) is listed with the running ones.
+        let cloudActive = past.filter { $0.cloud?.isActive == true }
+        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) } + cloudActive.map { item($0) })
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
+        let earlier = past.filter { $0.cloud?.isActive != true }
 
         return TimelineView(.periodic(from: .now, by: 30)) { context in
-            AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+            AgentInboxList(items: running, past: earlier.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
                            current: current, now: context.date) { viewModel.selectedAgentID = $0 }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
@@ -297,15 +300,22 @@ struct AgentsTab: View {
     }
 
     private func item(_ session: PastSession) -> AgentListItem {
-        AgentListItem(
+        var status = AgentListItem.Status.finished
+        switch session.cloud?.status {
+        case .running?: status = .working
+        case .needsYou?: status = .waiting
+        case .failed?: status = .failed
+        default: break
+        }
+        return AgentListItem(
             id: "past:" + session.id,
             folder: session.project,
             title: AgentFormat.title(session.title),
             branch: session.branch.isEmpty ? nil : session.branch,
-            agent: session.agent.name,
+            agent: session.cloud == nil ? session.agent.name : AppModel.cloudAgentName,
             account: account(app.profile(for: session)),
-            status: .finished,
-            started: session.ended,
+            status: status,
+            started: session.cloud?.isActive == true ? session.started : session.ended,
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id)
         )

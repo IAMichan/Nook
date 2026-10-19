@@ -12,6 +12,7 @@ Bij **Instellingen › Agents** koppel je deze agents met één klik. Nook laat 
 |---|---|---|---|
 | Claude Code | `~/.claude/settings.json` | hooks, `--agent claude-code` | voortgang, toestemming, vragen |
 | Claude (app) | zelfde hooks | herkend aan `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | voortgang, toestemming, vragen |
+| Claude (cloud) | niets te koppelen | sessielijst van je Claude-account | status, titel, repo; openen in Claude |
 | Codex | `~/.codex/hooks.json` | hooks, `--agent codex` | voortgang, toestemming |
 | Gemini CLI | `~/.gemini/settings.json` | hooks, `--agent gemini` | voortgang |
 | Antigravity (`agy`) | `~/.gemini/config/hooks.json` | eigen groep `nook`, `--agent antigravity`, pad zonder spaties via `~/.nook/nook-hook`, geen `PreToolUse` | voortgang |
@@ -42,6 +43,8 @@ Er is één lijst van agentsessies (`AgentSessionRegistry`). Hooks, het proces-o
 - **Limieten** per account (5 uur en week) staan bij Instellingen › Gebruik (`QuotaService`); Codex wordt per accountmap gelezen.
 
 Sessies die Nook zelf draait staan onder **In Nook**. Dat kan bij Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Grok en Antigravity, elk met één verbinding per sessie: Codex via `codex app-server`, Claude Code als één proces dat tussen beurten blijft wachten, en de rest via ACP (Antigravity op Google's ACP-server, die Nook eenmalig installeert). Goedkeuringen en vragen beantwoord je in Nook; Codex en Claude Code kun je tijdens een beurt bijsturen; bij een sessie in een eigen worktree kun je de bestanden terugzetten naar vóór een bericht. Een nieuwe sessie krijgt vanzelf een korte titel, één git-knop doet commit, push en pull request (de agent schrijft de teksten), en een sessie die op een gebruikslimiet stuit kan vanzelf verdergaan zodra die vrij is. Gesprekken uit de Antigravity-app beantwoord je via zijn agent-API; andere agents kun je vanuit Nook volgen en beëindigen. Zie [AGENTS-PARITY.md](AGENTS-PARITY.md).
+
+**Cloudsessies.** Sessies die in de cloud van Anthropic draaien (gestart in de Claude-app op je Mac of telefoon, of op claude.ai/code) hebben geen proces en geen transcript op je Mac. Nook leest ze met de login die Claude Code al bewaart (dezelfde als voor de gebruikslimieten) uit de sessielijst van je account, hooguit eens per minuut en alleen lezend. Ze staan als **Claude (cloud)** in de lijst: bezig of wachtend bij de actieve sessies, de rest bij eerdere. Het gesprek zelf staat in de cloud; **Open in Claude** brengt je erheen.
 
 **Het hele gesprek.** Bij elke sessie, lopend of eerder, zie je het volledige gesprek uit het transcript van de agent, met zijn denkstappen ingeklapt ertussen: Claude Code, Codex (de redeneersamenvattingen), Gemini CLI (`thoughts`) en Antigravity. Neem je een sessie over, dan neemt Nook dat hele gesprek mee.
 
