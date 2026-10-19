@@ -380,7 +380,7 @@ final class NotchViewModel: ObservableObject {
                 // The physical notch area; without a notch, a thin hover trigger strip at the top.
                 return CGSize(width: nw, height: geometry.hasNotch ? nh : 5)
             }
-            return CGSize(width: nw + 44, height: nh)
+            return CGSize(width: nw + 56, height: nh)
         case .music:
             return CGSize(width: nw + 92, height: nh)
         case .track(let title, let artist):
