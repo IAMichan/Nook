@@ -398,6 +398,17 @@ struct AgentRunPanel: View {
                         .padding(.top, 4)
                 }
             }
+            // A mark per message of yours, to jump through a long session (minimap).
+            .overlay(alignment: .topTrailing) {
+                let turns = events.filter { $0.kind == .user }
+                if turns.count >= 4, !finding {
+                    TurnMinimap(turns: turns) { id in
+                        scroll.userScrolled()
+                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                    .padding(.top, 8)
+                }
+            }
             .background {
                 Button("") { openFind() }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
             }

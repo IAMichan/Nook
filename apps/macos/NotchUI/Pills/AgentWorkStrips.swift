@@ -237,3 +237,27 @@ struct PullRequestWatchStrip: View {
         return parts.joined(separator: " · ")
     }
 }
+
+/// A thin column next to the conversation with a mark per message of yours (turn minimap): hover shows the
+/// message, a click goes there.
+struct TurnMinimap: View {
+    let turns: [RunEvent]
+    let jump: (UUID) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(turns) { turn in
+                Button { jump(turn.id) } label: {
+                    Capsule().fill(NookTheme.textTertiary.opacity(0.6)).frame(width: 8, height: 3)
+                        .frame(maxHeight: .infinity)
+                        .frame(width: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(ToolSummary.oneLine(turn.text, 120))
+            }
+        }
+        .frame(width: 14)
+        .frame(maxHeight: CGFloat(turns.count) * 18)
+    }
+}

@@ -218,6 +218,8 @@ private struct MarkdownCodeBlock: View {
     let code: String
     let size: CGFloat
     @State private var copied = false
+    /// HTML, SVG and Mermaid: shown as what they draw instead of their source.
+    @State private var rendered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -226,6 +228,16 @@ private struct MarkdownCodeBlock: View {
                     .font(NookTheme.mono(size - 3))
                     .foregroundStyle(NookTheme.textTertiary)
                 Spacer()
+                if CodeRenderView.canRender(language) {
+                    Button { rendered.toggle() } label: {
+                        Label(rendered ? tr("code.source") : tr("code.preview"),
+                              systemImage: rendered ? "chevron.left.forwardslash.chevron.right" : "eye")
+                            .font(NookTheme.font(size - 3, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
+                }
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(code, forType: .string)
@@ -240,14 +252,21 @@ private struct MarkdownCodeBlock: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 8)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(NookTheme.mono(size - 1.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: true, vertical: true)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .padding(.bottom, 12)
+            if rendered {
+                CodeRenderView(language: language, code: code)
+                    .frame(height: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(8)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(code)
+                        .font(NookTheme.mono(size - 1.5))
+                        .foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                        .padding(.bottom, 12)
+                }
             }
         }
         .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))

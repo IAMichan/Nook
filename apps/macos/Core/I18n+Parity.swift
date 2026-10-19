@@ -32,6 +32,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.review.send": "Stuur naar agent",
         "ws.review.quote": "Citeer in je bericht",
         "ws.context.terminal": "Voeg terminaluitvoer toe",
+        "code.source": "Bron",
+        "code.preview": "Bekijk",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -60,6 +62,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.review.send": "Send to agent",
         "ws.review.quote": "Quote in your message",
         "ws.context.terminal": "Add terminal output",
+        "code.source": "Source",
+        "code.preview": "Preview",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -88,6 +92,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.review.send": "An Agenten senden",
         "ws.review.quote": "In deiner Nachricht zitieren",
         "ws.context.terminal": "Terminalausgabe hinzufügen",
+        "code.source": "Quelltext",
+        "code.preview": "Vorschau",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -116,6 +122,8 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.review.send": "Envoyer à l'agent",
         "ws.review.quote": "Citer dans votre message",
         "ws.context.terminal": "Ajouter la sortie du terminal",
+        "code.source": "Source",
+        "code.preview": "Aperçu",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -144,5 +152,7 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "ws.review.send": "Enviar al agente",
         "ws.review.quote": "Citar en tu mensaje",
         "ws.context.terminal": "Añadir salida del terminal",
+        "code.source": "Código",
+        "code.preview": "Vista previa",
     ],
 ]
