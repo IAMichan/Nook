@@ -269,6 +269,8 @@ final class MacAppMirror: ObservableObject {
         tracker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.checkWindow() }
         }
+        // Following a window is not frame-accurate work: a little slack lets macOS batch the wake-ups.
+        tracker?.tolerance = 0.1
     }
 
     private func checkWindow() {
