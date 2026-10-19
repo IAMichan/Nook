@@ -91,6 +91,8 @@ final class AgentHub: ObservableObject {
         var lastPrompt: String = ""
         /// When Nook first heard of this session.
         var started = Date()
+        /// When the current turn began (your last prompt); nil between turns.
+        var turnStarted: Date? = nil
     }
 
     private enum PendingKind {
@@ -235,6 +237,7 @@ final class AgentHub: ObservableObject {
         var lastPrompt: String
         var linesAdded: Int
         var linesRemoved: Int
+        var turnStarted: Date?
     }
 
     private nonisolated static var recordsURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-sessions.json") }
@@ -250,7 +253,7 @@ final class AgentHub: ObservableObject {
                         steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
                         updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
                         sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
-                        linesAdded: r.linesAdded, linesRemoved: r.linesRemoved)
+                        linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted)
         }
         // A burst of hook events becomes one write.
         saveWork = Task.detached(priority: .utility) {
@@ -294,6 +297,7 @@ final class AgentHub: ObservableObject {
             record.transcriptPath = item.transcriptPath
             record.lastPrompt = item.lastPrompt
             record.started = item.started
+            record.turnStarted = status == .done ? nil : item.turnStarted
             restored[item.key] = record
         }
         unconfirmed = Set(restored.keys)
@@ -601,6 +605,7 @@ final class AgentHub: ObservableObject {
             record.status = .running
         case "UserPromptSubmit":
             record.status = .running
+            record.turnStarted = Date()
             record.diff = []
             // What the agent injects itself (a finished background task …) is not your last prompt.
             if let prompt = event["prompt"] as? String, !InjectedPrompt.isInjected(prompt) {
@@ -614,6 +619,8 @@ final class AgentHub: ObservableObject {
             if let path = Self.filePath(input) { record.file = Self.shortPath(path) }
             if let edit = Self.editDiff(tool: tool, input: input) { record.diff = edit.lines }
             Self.push(&record, .running, Self.describe(tool: tool, input: input))
+            // The prompt was missed (Nook started mid-turn): this turn is at least this old.
+            if record.turnStarted == nil { record.turnStarted = Date() }
             recap?.toolUse(tool)
         case "PostToolUse":
             Self.complete(&record, as: .done)
@@ -634,6 +641,7 @@ final class AgentHub: ObservableObject {
             let idle = message.lowercased().contains("waiting for your input")
             if idle && !asking {
                 if record.status != .done { record.status = .done }
+                record.turnStarted = nil
                 Self.push(&record, .done, "done, waiting for your next prompt")
             } else if !asking {
                 record.status = .waiting
@@ -642,6 +650,7 @@ final class AgentHub: ObservableObject {
             }
         case "Stop":
             record.status = .done
+            record.turnStarted = nil
             if let last = (event["last-assistant-message"] as? String) ?? (event["last_assistant_message"] as? String) {
                 record.lastMessage = last
             }
@@ -651,6 +660,7 @@ final class AgentHub: ObservableObject {
             recap?.turnEnded(session: key)
         case "StopFailure":
             record.status = .failed
+            record.turnStarted = nil
             let error = (event["error"] as? String) ?? (event["message"] as? String) ?? "stopped with an error"
             Self.complete(&record, as: .failed)
             Self.push(&record, .failed, Self.shorten(error, 70))
@@ -663,6 +673,7 @@ final class AgentHub: ObservableObject {
             Self.complete(&record, as: .done)
         case "Interrupt":
             record.status = .done
+            record.turnStarted = nil
             Self.complete(&record, as: .failed)
             Self.push(&record, .failed, "interrupted")
             recap?.turnEnded(session: key)
@@ -886,6 +897,7 @@ final class AgentHub: ObservableObject {
                     lastPrompt: record.lastPrompt,
                     lastReply: record.lastMessage,
                     started: record.started,
+                    turnStarted: record.turnStarted,
                     updated: record.updated
                 )
             }

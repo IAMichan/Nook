@@ -308,7 +308,9 @@ struct AgentsTab: View {
             agent: session.name,
             account: account(app.profile(for: session)),
             status: status,
-            started: status == .idle ? (session.updated ?? session.started ?? known?.started) : (session.started ?? known?.started),
+            // Busy: how long this turn runs, not how long ago the session started.
+            started: status == .idle ? (session.updated ?? session.started ?? known?.started)
+                : (session.turnStarted ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
             unseen: session.status == .done && unseen(session.id, session.updated)
