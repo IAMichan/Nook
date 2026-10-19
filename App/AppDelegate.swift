@@ -11,6 +11,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         installStatusItem()
     }
 
+    /// `nook://prompt?text=…`: fills a draft in a new session, never sends it (see PromptLink).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let link = PromptLink.parse(url: url) else { continue }
+            PromptLinkInbox.shared.pending = link
+            model.viewModel.selectedAgentID = "new"
+            model.viewModel.show(.panel(.agents))
+            return
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()

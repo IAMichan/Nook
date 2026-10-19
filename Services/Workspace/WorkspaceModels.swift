@@ -35,12 +35,12 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude:
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass])
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
         case .codex:
             // Over app-server (way) Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass])
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -75,6 +75,10 @@ struct ProviderCapabilities: Equatable, Sendable {
     var reportsContextWindow: Bool
     var reportsCacheTokens: Bool
     var policies: [PermissionPolicy]
+    /// A message sent during a turn changes that turn (Codex `turn/steer`, Claude Code's priority message); otherwise it queues.
+    var steering = false
+    /// The agent can fork its own conversation (Claude Code's `--fork-session`); otherwise a fork starts from a summary.
+    var nativeFork = false
 }
 
 /// Agent: permitted to execute. Plan: read-only analysis and plan creation, no modifications.
@@ -247,6 +251,23 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil
+    /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
+    var continuations: Int? = nil
+    /// Snoozed until this time, and since when (see `SnoozePolicy`).
+    var snoozedUntil: Date? = nil
+    var snoozedAt: Date? = nil
+    /// Set when another session delegated this one as a task (see `Delegation`).
+    var delegation: DelegationLink? = nil
+    /// Each agent's own conversation in this session, by agent, and how much of the timeline it has taken part in: a switch
+    /// back to an agent resumes its conversation and hands over only what it missed (see `ContextTransfer`).
+    var providerSessions: [String: String]? = nil
+    var handoffCursors: [String: Int]? = nil
+    /// The summary the next turn starts with, after a fork or a switch to another agent.
+    var pendingHandoff: String? = nil
+    /// Set for a fork.
+    var lineage: RunLineage? = nil
+    /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
+    var effort: String? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -335,6 +356,8 @@ struct NewRunConfig: Equatable, Sendable {
     var branchName = ""
     var worktreeRoot = ""
     var instructions = ""
+    /// Set for a task that another session delegated.
+    var delegation: DelegationLink? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {

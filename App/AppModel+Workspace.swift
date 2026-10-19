@@ -106,22 +106,34 @@ extension AppModel {
             guard let self, let profile = self.profiles.profile(id: profileID) else { return [:] }
             return self.profiles.launchEnvironment(profile)
         }
+        workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
-        workspace.onQuestion = { [weak self] run, _ in self?.workspaceQuestion(run) }
+        workspace.onQuestion = { [weak self] run, pending in
+            CompanionNotifier.shared.question(run, pending)
+            self?.workspaceQuestion(run)
+        }
         // Codex reports new limits while it works: show them right away.
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
-        workspace.pullRequestLookup = { repo, branch in await GitHubPullRequests.openPullRequest(repo: repo, branch: branch) }
+        workspace.pullRequestLookup = { repo, branch in
+            guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return nil }
+            return found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }
+        }
         workspace.pullRequestCreate = { repo, title, body, head, base in
-            guard GitHubPullRequests.isAvailable else { return nil }
-            return try await GitHubPullRequests.create(repo: repo, title: title, body: body, head: head, base: base, draft: false)
+            guard SourceForge.canCreate(repo) else { return nil }
+            return try await SourceForge.create(repo: repo, title: title, body: body, head: head, base: base, draft: false)
         }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         startWorkspaceBridge()
+        // Sessions a restart cut off go on, once the agents' executables are known (history loads in the background).
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            self?.workspace.continueInterruptedRuns()
+        }
     }
 
     /// Nook's terminal, browser and pull requests for the agents (see WorkspaceBridge): requests that need you appear as
@@ -178,6 +190,7 @@ extension AppModel {
     }
 
     private func presentWorkspaceApproval(_ run: WorkspaceRun, _ pending: PendingPermission) {
+        CompanionNotifier.shared.approval(run, pending)
         // If the user is already looking at this session in the workspace, the prompt is shown there; no overlapping card.
         if WorkspaceWindowController.shared.isKey && workspace.selectedRunID == run.id { return }
         // Looking at the conversation: the request is right there. With the terminal or browser open it is not, so a card.
@@ -201,9 +214,12 @@ extension AppModel {
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
+        CompanionNotifier.shared.turnFinished(run)
         recap.turnEnded(session: "run-" + run.id.uuidString)
         // An agent may have pushed or opened a pull request: the list refreshes when you look next.
         PullRequestStore.shared.markStale()
+        let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
+        guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)

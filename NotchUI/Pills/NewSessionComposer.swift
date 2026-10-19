@@ -24,6 +24,9 @@ struct NewSessionComposer: View {
     @State private var cloneURL = ""
     @State private var cloning = false
     @State private var pendingID = UUID()
+    @StateObject private var composerModel = ComposerModel()
+    @ObservedObject private var promptLinks = PromptLinkInbox.shared
+    @State private var linkNotice: String?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -40,7 +43,8 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { prepare(); app.refreshAgentModels() }
+        .onAppear { prepare(); app.refreshAgentModels(); applyPromptLink() }
+        .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
     }
 
     // MARK: Heading
@@ -105,13 +109,32 @@ struct NewSessionComposer: View {
             focus: $focused,
             onSend: start
         ) {
+            // The same row as in a running session and in the chat: plus menu, the agent and model, then mode and rights.
+            ComposerPlusMenu(attach: attachFile) {}
             agentMenu
             ComposerDivider()
             modeMenu
             ComposerDivider()
             permissionMenu
         }
+        .rich(composerModel, composerConfig)
         .images($images)
+        .trailing { ComposerMic(text: $config.task) }
+    }
+
+    private var composerConfig: ComposerConfig {
+        var rich = ComposerConfig()
+        rich.tint = config.provider.color
+        rich.fileRoot = config.projectPath.isEmpty ? nil : config.projectPath
+        rich.keepsBigPastes = true
+        return rich
+    }
+
+    private func attachFile() {
+        guard !config.projectPath.isEmpty,
+              let ref = ComposerFilePicker.pick(startingIn: config.projectPath) else { return }
+        config.task += (config.task.isEmpty || config.task.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        focused = true
     }
 
     // MARK: Choices in the box
@@ -207,6 +230,12 @@ struct NewSessionComposer: View {
                 .foregroundStyle(NookTheme.coralSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
+        } else if let linkNotice {
+            Text(linkNotice)
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
         } else if config.provider == .antigravity, antigravity.installed == nil {
             AntigravitySetupRow().padding(.horizontal, 8)
         } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
@@ -296,6 +325,20 @@ struct NewSessionComposer: View {
 
     // MARK: Actions
 
+    /// A link only fills the draft (and picks a project, agent or model when they exist here); you read it and press send.
+    private func applyPromptLink() {
+        guard let link = promptLinks.pending else { return }
+        promptLinks.pending = nil
+        config.task = link.text
+        if let path = link.project, FileManager.default.fileExists(atPath: path) { select(path) }
+        if let name = link.agent?.lowercased(),
+           let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {
+            choose(provider, account: (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id)
+            if let model = link.model { config.model = model }
+        }
+        linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
+    }
+
     private func prepare() {
         // Your default agent, unless it is not connected: then the first one that is.
         let connected = app.connectedProviders
@@ -384,6 +427,8 @@ struct NewSessionComposer: View {
         starting = true
         error = nil
         var request = checkedConfig
+        // References in the text reach the agent as markers plus the context envelope.
+        request.task = composerModel.outgoing(request.task).send
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
         let finalConfig = request

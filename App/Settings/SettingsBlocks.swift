@@ -190,11 +190,41 @@ struct Keycap: View {
 struct WorkspaceSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
+    @ObservedObject private var inbox = InboxStore.shared
+    @ObservedObject private var webhook = WebhookListener.shared
+    @State private var showScheduled = false
 
     var body: some View {
         Group {
             defaults
+            scheduled
             bridge
+        }
+    }
+
+    /// Scheduled tasks: off until you turn it on; the list and editor open in a sheet.
+    private var scheduled: some View {
+        Section {
+            Toggle(tr("sched.settings.enable"), isOn: $ws.scheduledTasksEnabled)
+            if ws.scheduledTasksEnabled {
+                TextField(tr("sched.settings.port"), value: $ws.scheduledWebhookPort, format: .number.grouping(.never))
+                if ws.scheduledWebhookPort != 0, !(1024...65535).contains(ws.scheduledWebhookPort) {
+                    Text(tr("sched.settings.portInvalid")).font(.caption).foregroundStyle(.orange)
+                } else if case .listening(let port) = webhook.state {
+                    Text(tr("sched.settings.listening", Int(port))).font(.caption).foregroundStyle(.secondary)
+                } else if case .failed(let message) = webhook.state {
+                    Text(tr("sched.webhook.failed", message)).font(.caption).foregroundStyle(.orange)
+                }
+                Button(tr("sched.settings.open")) { showScheduled = true }
+            }
+        } header: {
+            Text(tr("sched.title"))
+        } footer: {
+            Text(tr("sched.settings.footer"))
+        }
+        .sheet(isPresented: $showScheduled) {
+            ScheduledTasksView { showScheduled = false }
+                .environmentObject(app)
         }
     }
 
@@ -254,7 +284,18 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
+            Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
+            Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
+            if inbox.autoSettle.enabled {
+                Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
+                Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
+                        value: $inbox.autoSettle.inactivityDays, in: 1...30)
+            }
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
+            GitLabSettingsRows()
+            CompanionSettingsRows()
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {

@@ -40,6 +40,7 @@ targets:
       - path: Core
       - path: Services
       - path: Brain
+      - path: Companion/Shared
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -66,6 +67,9 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: AppIcon
         LSUIElement: true
+        CFBundleURLTypes:
+          - CFBundleURLName: app.nook.link
+            CFBundleURLSchemes: [nook]
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
         NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.
@@ -130,6 +134,40 @@ targets:
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
+      - path: Services/Workspace/AgentAttention.swift
+      - path: Services/Workspace/Delegation.swift
+      - path: Services/Workspace/ContextHandoff.swift
+      - path: Services/Workspace/ComposerCore.swift
+      - path: Services/Workspace/AgentStatusStyle.swift
+      - path: Services/Workspace/TimelineCopy.swift
+      - path: Services/Workspace/InboxLayout.swift
+      - path: Services/Workspace/UndoLog.swift
+      - path: Services/Workspace/AutoSettlePolicy.swift
+      - path: Services/Workspace/MessageQueue.swift
+      - path: Services/Workspace/TurnSafety.swift
+      - path: Services/Workspace/FailureClassifier.swift
+      - path: Services/Workspace/ChangedFilesTree.swift
+      - path: Services/Workspace/TimelineSearch.swift
+      - path: Services/Workspace/ScrollModel.swift
+      - path: Services/Workspace/HistoryWindow.swift
+      - path: Services/Workspace/TimelineHandles.swift
+      - path: Services/Workspace/SkillIndex.swift
+      - path: Services/Workspace/ComposerDrafts.swift
+      - path: Services/Workspace/AgentCommands.swift
+      - path: Services/Workspace/EffortLevels.swift
+      - path: Services/Workspace/AgentAdvice.swift
+      - path: Services/Workspace/SourceControlHost.swift
+      - path: Companion/Shared/CompanionModels.swift
+      - path: Companion/Shared/CompanionPush.swift
+      - path: Services/Workspace/GitLabAPI.swift
+      - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/ScheduledTasks.swift
+      - path: Services/Workspace/WebhookSecurity.swift
+      - path: Services/Workspace/WebhookHTTP.swift
+      - path: Services/Workspace/SettingsResolver.swift
+      - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/PromptLink.swift
+      - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift
@@ -167,6 +205,42 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
+  # iPhone companion (docs/COMPANION.md): sessions that need you, with approve / answer / send / stop. It shares the
+  # protocol and the sealing with the Mac app and nothing else.
+  NookCompanion:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Companion/iOS
+      - path: Companion/Shared
+      - path: Services/Workspace/WebhookSecurity.swift
+    info:
+      path: Companion/iOS/Info.plist
+      properties:
+        CFBundleName: Nook Companion
+        CFBundleDisplayName: Nook Companion
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
+        NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
+        UIBackgroundModes: [remote-notification]
+    settings:
+      base:
+        PRODUCT_NAME: Nook Companion
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
+        DEVELOPMENT_TEAM: 35SMNHP9K7
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+    entitlements:
+      path: Companion/iOS/NookCompanion.entitlements
+      properties:
+        # Becomes production in a distribution build. Needs Push Notifications on the app id nl.imdigital.nook.companion.
+        aps-environment: development
+        com.apple.developer.usernotifications.time-sensitive: true
 schemes:
   Nook:
     build:
@@ -177,3 +251,7 @@ schemes:
         - NookTests
     run:
       config: Debug
+  NookCompanion:
+    build:
+      targets:
+        NookCompanion: all

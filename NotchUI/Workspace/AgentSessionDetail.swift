@@ -17,6 +17,7 @@ struct AgentSessionDetail: View {
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @State private var draft = ""
+    @StateObject private var composerModel = ComposerModel()
     @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
@@ -235,8 +236,9 @@ struct AgentSessionDetail: View {
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canSend else { return }
+            let outgoing = composerModel.outgoing(text).send
             perform {
-                try await app.reply(to: session, message: text)
+                try await app.reply(to: session, message: outgoing)
                 draft = ""
             }
         }
@@ -253,10 +255,12 @@ struct AgentSessionDetail: View {
                 sending: working,
                 onSend: send
             ) {
-                agentPill(name: session.name, profile: app.profile(for: session))
                 sessionMenu(session)
+                agentPill(name: session.name, profile: app.profile(for: session))
             }
+            .rich(composerModel, composerConfig(folder: session.cwd, tint: NookTheme.iris))
             .images($images)
+            .trailing { ComposerMic(text: $draft) }
         }
     }
 
@@ -275,6 +279,8 @@ struct AgentSessionDetail: View {
         return ComposerDropdown(width: 250) {
             moreLabel
         } content: {
+            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
+            DropdownDivider()
             DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
                         title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
                         disabledReason: busy ? tr("ws.error.busy") : nil) {
@@ -447,8 +453,9 @@ struct AgentSessionDetail: View {
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, canContinue else { return }
+            let outgoing = composerModel.outgoing(text).send
             perform {
-                try await app.reply(to: session, message: text)
+                try await app.reply(to: session, message: outgoing)
                 draft = ""
             }
         }
@@ -475,11 +482,13 @@ struct AgentSessionDetail: View {
                 sending: working,
                 onSend: send
             ) {
-                agentPill(name: session.agent.name, profile: app.profile(for: session))
                 // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
                 pastMenu(session, canContinue: app.canContinueInNook(session))
+                agentPill(name: session.agent.name, profile: app.profile(for: session))
             }
+            .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.color))
             .images($images)
+            .trailing { ComposerMic(text: $draft) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -492,11 +501,29 @@ struct AgentSessionDetail: View {
         return messages
     }
 
+    /// A file you add to the message: a reference in the text, the agent reads it itself.
+    private func attachFile(in folder: String) {
+        guard !folder.isEmpty, let ref = ComposerFilePicker.pick(startingIn: folder) else { return }
+        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+    }
+
+    /// The same box as the chat and the sessions Nook runs: `/` commands are for those; here `@` points at files and the
+    /// agent's own tint colors the box.
+    private func composerConfig(folder: String, tint: Color) -> ComposerConfig {
+        var config = ComposerConfig()
+        config.tint = tint
+        config.fileRoot = folder.isEmpty ? nil : folder
+        config.keepsBigPastes = true
+        return config
+    }
+
     /// Open the whole conversation in Nook without a message, or its folder or a terminal there.
     private func pastMenu(_ session: PastSession, canContinue: Bool) -> some View {
         ComposerDropdown(width: 250) {
             moreLabel
         } content: {
+            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
+            DropdownDivider()
             if canContinue {
                 DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.open")) {
                     perform { try await app.continueInNook(session) }

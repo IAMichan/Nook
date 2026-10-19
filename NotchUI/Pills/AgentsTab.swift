@@ -8,9 +8,9 @@ import AppKit
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    @State private var showFinished = false
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    @State private var palette = false
 
     private enum Selection {
         case live(AgentSession)
@@ -79,6 +79,16 @@ struct AgentsTab: View {
             }
             .padding(.leading, 18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .overlay(alignment: .top) {
+            if palette {
+                AgentCommandPalette(viewModel: viewModel) { palette = false }
+                    .padding(.top, 40)
+                    .transition(.opacity)
+            }
+        }
+        .background {
+            Button("") { palette.toggle() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true)
         }
         .onAppear {
             app.hub.refreshDetected()
@@ -181,59 +191,8 @@ struct AgentsTab: View {
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
 
         return TimelineView(.periodic(from: .now, by: 30)) { context in
-            // Marked as finished by you, or done and quiet for ten minutes: the chat moves down. Not while the agent works.
-            let moved = running.filter { entry in
-                guard !entry.isBusy else { return false }
-                // A process Nook only sees (id "proc-…") is running in a terminal: never finished by itself.
-                let idle = (entry.status == .idle || entry.status == .finished) && !entry.id.hasPrefix("proc-")
-                return finishedMarks.isFinished(key: entry.finishKey, idle: idle, lastActive: entry.started, now: context.date)
-            }
-            let active = running.filter { entry in !moved.contains { $0.id == entry.id } }
-            let movedKeys = Set(moved.map(\.finishKey))
-            let finished = moved.map { $0.markedFinished() } + past.map { item($0) }.filter { !movedKeys.contains($0.finishKey) }
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(active) { entry in
-                        AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
-                            viewModel.selectedAgentID = entry.id
-                        }
-                        .contextMenu { finishMenu(entry, finished: false) }
-                    }
-                    if active.isEmpty && finished.isEmpty {
-                        Text(app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(12)
-                    }
-                    if !finished.isEmpty {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.18)) { showFinished.toggle() }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(tr("agents.finishedCount", finished.count))
-                                Image(systemName: showFinished ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 8.5, weight: .bold))
-                                Spacer(minLength: 0)
-                            }
-                            .font(NookTheme.font(12, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, active.isEmpty ? 0 : 6)
-                        if showFinished {
-                            ForEach(finished) { entry in
-                                AgentListRow(item: entry, now: context.date, selected: current == entry.id) {
-                                    viewModel.selectedAgentID = entry.id
-                                }
-                                .contextMenu { finishMenu(entry, finished: true) }
-                            }
-                        }
-                    }
-                }
-            }
+            AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+                           current: current, now: context.date) { viewModel.selectedAgentID = $0 }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
@@ -249,30 +208,17 @@ struct AgentsTab: View {
         }
     }
 
-    /// The finish/reopen action of a row, in its context menu.
-    @ViewBuilder
-    private func finishMenu(_ entry: AgentListItem, finished: Bool) -> some View {
-        if entry.isBusy {
-            Button(tr("agents.finish.mark")) {}.disabled(true)
-        } else if finished {
-            // Earlier sessions from transcripts are finished by nature; only chats that were running can be reopened.
-            if !entry.id.hasPrefix("past:") {
-                Button(tr("agents.finish.reopen")) { finishedMarks.reopenByUser(entry.finishKey) }
-            }
-        } else {
-            Button(tr("agents.finish.mark")) { finishedMarks.mark(entry.finishKey) }
-        }
-    }
-
     /// Waiting for you first, then working, then the rest; newest first within each.
     private func sorted(_ items: [AgentListItem]) -> [AgentListItem] {
         func rank(_ status: AgentListItem.Status) -> Int {
             switch status {
             case .waiting: return 0
-            case .failed: return 1
-            case .working: return 2
-            case .idle: return 3
-            case .finished: return 4
+            case .input: return 1
+            case .failed: return 2
+            case .limited: return 3
+            case .working: return 4
+            case .idle: return 5
+            case .finished: return 6
             }
         }
         return items.enumerated().sorted { a, b in
@@ -288,13 +234,18 @@ struct AgentsTab: View {
     }
 
     private func item(_ run: WorkspaceRun) -> AgentListItem {
+        // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
+        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
+                                                includeSnooze: false)
         let status: AgentListItem.Status
-        switch run.status {
-        case .preparing, .running: status = .working
-        case .waitingApproval: status = .waiting
+        switch attention {
+        case .approval: status = .waiting
+        case .input: status = .input
         case .failed: status = .failed
-        case .completed: status = .idle
-        case .stopped: status = .finished
+        case .limited: status = .limited
+        case .working: status = .working
+        case .ready, .idle: status = .idle
+        case .finished: status = .finished
         }
         return AgentListItem(
             id: "run:" + run.id.uuidString,
@@ -307,7 +258,9 @@ struct AgentsTab: View {
             started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
-            unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt)
+            unseen: attention == .ready,
+            snoozedUntil: run.snoozedUntil,
+            snoozedAt: run.snoozedAt
         )
     }
 
@@ -382,7 +335,7 @@ struct AgentsTab: View {
 
 /// One session in the list, the same for every kind of session.
 struct AgentListItem: Identifiable {
-    enum Status { case working, waiting, failed, idle, finished }
+    enum Status { case working, waiting, input, failed, limited, idle, finished }
 
     /// The selection id: a hub session id, "run:<uuid>" or "past:<id>".
     let id: String
@@ -400,9 +353,12 @@ struct AgentListItem: Identifiable {
     let finishKey: String
     /// Finished after you last looked at it: "done" in green until you open it.
     var unseen = false
+    /// Snoozed by you: out of the way until the snooze ends or the session needs you.
+    var snoozedUntil: Date? = nil
+    var snoozedAt: Date? = nil
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
-    var isBusy: Bool { status == .working || status == .waiting }
+    var isBusy: Bool { status == .working || status == .waiting || status == .input }
 
     func markedFinished() -> AgentListItem {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
@@ -410,82 +366,180 @@ struct AgentListItem: Identifiable {
     }
 }
 
-/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath.
+/// What a row can do on hover (row actions): the right slot swaps, without shifting the layout, between the
+/// status and these buttons.
+struct AgentRowActions {
+    var pinned: Bool
+    var onPin: () -> Void
+    var settled: Bool
+    var onSettle: () -> Void
+    /// Snoozing and waking are for sessions Nook runs.
+    var onSnooze: ((SnoozePolicy.Choice) -> Void)? = nil
+    var onWake: (() -> Void)? = nil
+}
+
+/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath. A row that
+/// asks nothing of you recedes (lighter text, normal weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View {
     let item: AgentListItem
     let now: Date
     let selected: Bool
+    var receded = false
+    var pinned = false
+    var woke = false
+    /// One line, for the snoozed and settled shelves.
+    var slim = false
+    /// When a snoozed row wakes, as text ("tot 9:00").
+    var wakeLabel: String? = nil
+    var actions: AgentRowActions? = nil
+    /// "#12" of the session's pull request.
+    var pullRequest: PullRequestBadge? = nil
     let action: () -> Void
     @State private var hovering = false
 
     private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
-    private var dimmed: Bool { item.status == .finished }
+    private var dimmed: Bool { item.status == .finished || slim }
+    private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(item.folder)
-                        .lineLimit(1)
-                        .help(AgentPathFormat.tilde(item.path))
-                    Spacer(minLength: 6)
-                    time
-                }
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textSecondary)
-
-                Text(item.title)
-                    .font(NookTheme.font(14.5, .medium))
-                    .foregroundStyle(dimmed ? NookTheme.textSecondary : NookTheme.paper)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
-                    Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 6)
-                    AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
-                        .padding(.trailing, item.account == nil ? 0 : 3)
-                }
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.textTertiary)
+        ZStack(alignment: .topTrailing) {
+            Button(action: action) { content }
+                .buttonStyle(.plain)
+            if let actions {
+                hoverActions(actions)
+                    .padding(.top, slim ? 8 : 9)
+                    .padding(.trailing, 10)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
     }
 
-    /// "bezig 12 min" while it works, "wacht op jou" when it waits, otherwise how long ago.
+    private var content: some View {
+        Group {
+            if slim { slimBody } else { fullBody }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, slim ? 8 : 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
+        .contentShape(Rectangle())
+        .opacity(restOpacity)
+    }
+
+    private var fullBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(item.folder)
+                    .lineLimit(1)
+                    .help(AgentPathFormat.tilde(item.path))
+                if pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary) }
+                Spacer(minLength: 6)
+                slot.opacity(hovering && actions != nil ? 0 : 1)
+            }
+            .font(NookTheme.font(12))
+            .foregroundStyle(receded ? NookTheme.textTertiary : NookTheme.textSecondary)
+
+            Text(item.title)
+                .font(NookTheme.font(14.5, receded ? .regular : .medium))
+                .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
+                if let pullRequest { PullRequestPill(badge: pullRequest) }
+                Spacer(minLength: 6)
+                AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
+                    .padding(.trailing, item.account == nil ? 0 : 3)
+            }
+            .font(NookTheme.font(12))
+            .foregroundStyle(NookTheme.textTertiary)
+        }
+    }
+
+    private var slimBody: some View {
+        HStack(spacing: 8) {
+            AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: true, ring: background)
+            Text(item.title)
+                .font(NookTheme.font(13))
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            slot.opacity(hovering && actions != nil ? 0 : 1)
+        }
+    }
+
+    /// The right slot: the wake time of a snoozed row, "Wakker" for one that woke, otherwise the status or how long ago.
+    @ViewBuilder
+    private var slot: some View {
+        if let wakeLabel {
+            AgentStatusBadge(state: .snoozed, detail: wakeLabel)
+        } else if woke {
+            AgentStatusBadge(state: .woke)
+        } else {
+            time
+        }
+    }
+
+    @ViewBuilder
+    private func hoverActions(_ actions: AgentRowActions) -> some View {
+        HStack(spacing: 2) {
+            if let onSnooze = actions.onSnooze {
+                Menu {
+                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
+                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
+                    }
+                } label: {
+                    rowIcon("clock", tr("agents.snooze.menu"))
+                }
+                .composerMenu()
+            }
+            if let onWake = actions.onWake {
+                rowButton("alarm", tr("agents.snooze.cancel"), onWake)
+            }
+            rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
+            rowButton(actions.settled ? "arrow.uturn.backward" : "checkmark",
+                      actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), actions.onSettle)
+        }
+    }
+
+    private func rowIcon(_ symbol: String, _ label: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help(label)
+            .accessibilityLabel(label)
+    }
+
+    private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { rowIcon(symbol, label) }.buttonStyle(.plain)
+    }
+
+    /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
     @ViewBuilder
     private var time: some View {
         switch item.status {
         case .working:
-            Text(item.started.map { tr("agents.time.busy", AgentFormat.short(now.timeIntervalSince($0))) } ?? tr("agents.live.running"))
-                .foregroundStyle(Color(hex: 0x8CA2FF))
-                .fixedSize()
+            AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) })
         case .waiting:
-            Text(tr("agents.live.waiting"))
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize()
+            AgentStatusBadge(state: .approval)
+        case .input:
+            AgentStatusBadge(state: .input)
         case .failed:
-            Text(tr("agents.live.failed"))
-                .foregroundStyle(NookTheme.coral)
-                .fixedSize()
+            AgentStatusBadge(state: .failed)
+        case .limited:
+            AgentStatusBadge(state: .limited)
         case .idle where item.unseen:
-            HStack(spacing: 4) {
-                Circle().fill(NookTheme.mint).frame(width: 6, height: 6)
-                Text(tr("agents.time.doneUnseen"))
-            }
-            .foregroundStyle(NookTheme.mint)
-            .fixedSize()
+            AgentStatusBadge(state: .ready)
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))
+                    .font(NookTheme.font(11.5))
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize()
             }
@@ -1013,5 +1067,35 @@ enum WorkspaceRunsSection {
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
         return Array(list.prefix(12))
+    }
+}
+
+/// "#12" with the state of the pull request as its colour: open mint, draft grey, merged iris, closed coral.
+struct PullRequestPill: View {
+    let badge: PullRequestBadge
+
+    private var tint: Color {
+        switch badge.glyph {
+        case .open: return NookTheme.mint
+        case .draft: return NookTheme.textTertiary
+        case .merged: return NookTheme.iris
+        case .closed: return NookTheme.coralSoft
+        case .stack: return NookTheme.amber
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: badge.glyph == .merged ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 9, weight: .semibold))
+            Text(label).font(NookTheme.font(11, .medium)).lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .background(Capsule().fill(tint.opacity(0.14)))
+    }
+
+    private var label: String {
+        if case .stack(let count) = badge.label { return tr("inbox.pr.stack", count) }
+        return badge.text ?? ""
     }
 }

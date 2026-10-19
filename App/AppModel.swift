@@ -50,6 +50,8 @@ final class AppModel: ObservableObject {
     let chat = NookChat()
     /// Coding agents spawned and tracked by Nook in dedicated terminal windows.
     let workspace = WorkspaceManager()
+    /// One notification per session and state: a turn that reports its end twice tells you once.
+    var attentionLedger = AttentionLedger()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared)
     /// The subscription limits of every agent account.
@@ -250,6 +252,9 @@ final class AppModel: ObservableObject {
         hub.recap = recap
         workspace.recap = recap
         startWorkspace()
+        ScheduledTaskStore.shared.attach(app: self)
+        CompanionServer.shared.attach(app: self)
+        CompanionNotifier.shared.attach(app: self)
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
         hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }

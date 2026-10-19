@@ -83,7 +83,7 @@ final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
-    @Published private(set) var queued: [UUID: [String]] = [:]
+    @Published private(set) var queued: [UUID: MessageQueue] = [:]
     /// Questions an agent asked in a session and that wait for your answer.
     @Published var questions: [UUID: [PendingQuestion]] = [:]
 
@@ -121,8 +121,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var openPullRequests: [UUID: URL] = [:]
     /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
     /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
-    var pullRequestLookup: ((_ repo: String, _ branch: String) async -> URL?)?
-    var pullRequestCreate: ((_ repo: String, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
+    var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     var modelsRefreshed: [RunProvider: Date] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -148,6 +148,8 @@ final class WorkspaceManager: ObservableObject {
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// The folder an account keeps its login in; two accounts with the same folder share conversations.
+    var accountHome: (String) -> String? = { $0 }
     /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
     var runScript: ((String, String, String) -> Void)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
@@ -168,6 +170,13 @@ final class WorkspaceManager: ObservableObject {
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
+    /// What you typed, for a turn whose prompt starts with a handoff summary (the timeline shows your words only).
+    var displayPrompt: [UUID: String] = [:]
+    /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
+    /// remembers the exact command, so Nook keeps its own), and the background work an agent still has running.
+    var stopCoordinators: [UUID: StopCoordinator] = [:]
+    var sessionApprovals: [UUID: SessionApprovals] = [:]
+    var backgroundRoster: [UUID: BackgroundRoster] = [:]
 
     /// State tracked by Nook during a single turn.
     struct TurnState {
@@ -358,7 +367,7 @@ final class WorkspaceManager: ObservableObject {
         let run = WorkspaceRun(
             id: id,
             title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
-            task: config.task,
+            task: ContextRefs.visible(config.task),
             provider: config.provider,
             profileID: config.profileID,
             model: config.model,
@@ -382,7 +391,8 @@ final class WorkspaceManager: ObservableObject {
             turnStartedAt: nil,
             reviewedAt: nil,
             lastChangeAt: nil,
-            changedFiles: nil
+            changedFiles: nil,
+            delegation: config.delegation
         )
         runs.insert(run, at: 0)
         events[id] = []
@@ -405,6 +415,8 @@ final class WorkspaceManager: ObservableObject {
                 append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
             }
         }
+        let visibleTask = ContextRefs.visible(config.task)
+        if visibleTask != config.task { displayPrompt[id] = visibleTask }
         launchTurn(id, prompt: config.task, executable: executable)
         if title.isEmpty { generateTitle(id) }
         return id
@@ -485,7 +497,10 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id), !run.status.isActive else { return }
         update(id) {
             if let mode { $0.mode = mode }
-            if let permission, run.provider.capabilities.policies.contains(permission) { $0.permission = permission }
+            if let permission, run.provider.capabilities.policies.contains(permission) {
+                $0.permission = permission
+                if permission != run.permission { sessionApprovals[id]?.modeChanged(to: permission) }
+            }
             if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
     }
@@ -501,6 +516,8 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
+        if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return false }
         // The previous turn's snapshot is still being made (a moment): your message shows at once, and
         // goes out right after it, so this turn's edits stay out of that snapshot.
@@ -509,7 +526,7 @@ final class WorkspaceManager: ObservableObject {
                 enqueue(id, text: clean)
             } else {
                 loadTimeline(id)
-                if !shown { append(id, RunEvent(kind: .user, text: clean)) }
+                if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
                 awaitingCheckpoint[id] = clean
             }
             return true
@@ -523,7 +540,11 @@ final class WorkspaceManager: ObservableObject {
             return false
         }
         loadTimeline(id)
-        launchTurn(id, prompt: clean, executable: executable, showPrompt: !shown)
+        // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
+        // What the timeline shows: your words, without a handoff summary or the context envelope of references.
+        let visible = ContextRefs.visible(clean)
+        displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
+        launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable, showPrompt: !shown)
         return true
     }
 
@@ -531,7 +552,16 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        displayPrompt[id] = nil
+        stopCoordinators[id] = nil
+        settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        if run.status == .failed || run.status == .stopped { holdQueue(id) }
+        if run.status == .completed {
+            clearContinuations(id)
+            if run.pendingHandoff != nil { update(id) { $0.pendingHandoff = nil } }
+        }
         onTurnFinished?(run)
+        deliverDelegatedResult(id)
         captureCheckpoint(id)
     }
 
@@ -584,23 +614,66 @@ final class WorkspaceManager: ObservableObject {
 
     /// Keeps a message for when the current turn is done (queue): you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String) {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, run(id) != nil else { return }
-        queued[id, default: []].append(clean)
+        guard run(id) != nil else { return }
+        var queue = queued[id] ?? MessageQueue()
+        queue.enqueue(text)
+        queued[id] = queue.isEmpty ? nil : queue
+    }
+
+    private func store(_ queue: MessageQueue, for id: UUID) {
+        queued[id] = queue.isEmpty && !queue.isHeld ? nil : queue
     }
 
     /// Sends the first queued message now (after a stop or a failure, when the queue waits for you).
     func sendQueuedNow(_ id: UUID) {
-        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var list = queued[id], !list.isEmpty else { return }
-        let next = list.removeFirst()
-        queued[id] = list.isEmpty ? nil : list
-        send(id, text: next)
+        guard let run = run(id), !run.status.isActive, !checkpointing.contains(id), var queue = queued[id] else { return }
+        queue.resume()
+        guard let next = queue.next() else { return store(queue, for: id) }
+        store(queue, for: id)
+        send(id, text: next.text)
     }
 
-    func removeQueued(_ id: UUID, at index: Int) {
-        guard var list = queued[id], list.indices.contains(index) else { return }
-        list.remove(at: index)
-        queued[id] = list.isEmpty ? nil : list
+    func removeQueued(_ id: UUID, message: UUID) {
+        guard var queue = queued[id] else { return }
+        queue.remove(message)
+        store(queue, for: id)
+    }
+
+    func moveQueued(_ id: UUID, message: UUID, toIndex index: Int) {
+        guard var queue = queued[id] else { return }
+        queue.move(message, toIndex: index)
+        store(queue, for: id)
+    }
+
+    /// Takes a queued message into the running turn now. It stays queued when the turn cannot
+    /// take it.
+    func steerQueued(_ id: UUID, message: UUID) {
+        guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+        store(queue, for: id)
+        if !steer(id, text: text) { enqueue(id, text: text) }
+    }
+
+    /// The text of a queued message for the composer; the draft you had is kept for `endEditQueued`.
+    func beginEditQueued(_ id: UUID, message: UUID, currentDraft: String) -> String? {
+        guard var queue = queued[id], let text = queue.beginEdit(message, currentDraft: currentDraft) else { return nil }
+        queued[id] = queue
+        return text
+    }
+
+    /// Ends the edit and returns the draft to put back in the composer.
+    @discardableResult
+    func endEditQueued(_ id: UUID, save: Bool, text: String = "") -> String? {
+        guard var queue = queued[id] else { return nil }
+        let draft = queue.endEdit(save: save, text: text)
+        store(queue, for: id)
+        return draft
+    }
+
+    /// After a failure, a stop or a restart nothing goes out on top of the problem; you resume the queue yourself.
+    func holdQueue(_ id: UUID) {
+        guard var queue = queued[id], !queue.isEmpty else { return }
+        queue.hold()
+        queued[id] = queue
     }
 
     /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
@@ -608,10 +681,9 @@ final class WorkspaceManager: ObservableObject {
     func sendQueued(_ id: UUID) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
         guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
-              var list = queued[id], !list.isEmpty else { return }
-        let next = list.removeFirst()
-        queued[id] = list.isEmpty ? nil : list
-        send(id, text: next)
+              var queue = queued[id], let next = queue.next() else { return }
+        store(queue, for: id)
+        send(id, text: next.text)
     }
 
     /// Retries the previous task (after an error or when stopped).
@@ -624,6 +696,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
+        stopDelegatedChildren(of: id)
+        beginStop(id)
         if stopCodexServerTurn(id) { return }
         if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
@@ -682,7 +756,7 @@ final class WorkspaceManager: ObservableObject {
         )
         if run.provider == .claude, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
         let spec = AgentCommand.spec(input)
-        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
         process.onLines = { [weak self] lines in
@@ -959,9 +1033,11 @@ final class WorkspaceManager: ObservableObject {
             turns[id]?.steered = false
             closeThinking(id)
             // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
-            if result.isError, turns[id]?.stopping != true,
-               !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
-                limitedTurns[id] = .some(UsageLimits.latestReset(turns[id]?.limitWindows ?? [:]))
+            if turns[id]?.stopping != true {
+                let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
+                                               isError: result.isError, rateLimitRejected: !(turns[id]?.limitWindows.isEmpty ?? true),
+                                               rateLimitResets: turns[id]?.limitWindows ?? [:], messageText: result.text)
+                if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence), result.isError { limitedTurns[id] = .some(resetAt) }
             }
             var usage = result.usage
             let state = turns[id]
@@ -1078,15 +1154,8 @@ final class WorkspaceManager: ObservableObject {
         turns[id] = nil
         finishLiveText(id)
         expireApprovals(id)
-        // Tools that were still running are marked finished/failed.
-        if var list = events[id] {
-            var changed = false
-            for index in list.indices where list[index].state == .running {
-                list[index].state = list[index].kind == .assistant || list[index].kind == .thinking ? .done : .failed
-                changed = true
-            }
-            if changed { events[id] = list; scheduleEventSave(id) }
-        }
+        // Whatever was still running is settled: nothing may stay open after the process is gone.
+        settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
             sendQueued(id)
@@ -1238,6 +1307,9 @@ final class WorkspaceManager: ObservableObject {
         awaitingCheckpoint[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
+        stopCoordinators[id] = nil
+        sessionApprovals[id] = nil
+        backgroundRoster[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
@@ -1329,6 +1401,14 @@ final class WorkspaceManager: ObservableObject {
         let directory = run.workingDirectory
         let url = await Task.detached(operation: { git.remoteURL(directory) }).value
         return url.flatMap(GitHubRemote.repository(from:))
+    }
+
+    /// The forge of the session's folder (GitHub, GitLab, Bitbucket…), from its remote; nil without a recognisable remote.
+    func remoteRepository(_ id: UUID) async -> RemoteRepository? {
+        guard let run = run(id), let git = gitService else { return nil }
+        let directory = run.workingDirectory
+        let url = await Task.detached(operation: { git.remoteURL(directory) }).value
+        return SourceForge.repository(remoteURL: url)
     }
 
     func currentBranch(_ id: UUID) async -> String? {
@@ -1490,7 +1570,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleEventSave(id)
     }
 
-    private func scheduleSave() {
+    func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -1500,7 +1580,7 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    private func scheduleEventSave(_ id: UUID) {
+    func scheduleEventSave(_ id: UUID) {
         guard eventSaves[id] == nil else { return }
         eventSaves[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)

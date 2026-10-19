@@ -14,7 +14,7 @@ extension WorkspaceManager {
         guard var run = run(id) else { return }
         codexIdleClose[id]?.cancel()
         codexIdleClose[id] = nil
-        if showPrompt { append(id, RunEvent(kind: .user, text: prompt)) }
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
@@ -104,7 +104,8 @@ extension WorkspaceManager {
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]
         let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
-                                              mode: run.mode, permission: run.permission, planModel: planModel)
+                                              mode: run.mode, permission: run.permission, planModel: planModel,
+                                              effort: run.effort)
         client.request("turn/start", params) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -125,13 +126,13 @@ extension WorkspaceManager {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
         if let process = processes[id], run(id)?.provider == .claude {
-            append(id, RunEvent(kind: .user, text: clean))
+            append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
             turns[id]?.steered = true
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, RunEvent(kind: .user, text: clean))
+        append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
             Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
@@ -177,6 +178,12 @@ extension WorkspaceManager {
     /// Answers a Codex approval request. False when the request is not one of Codex's.
     func decideCodex(_ runID: UUID, requestID: String, _ decision: Decision) -> Bool {
         guard let request = codexRequests.removeValue(forKey: requestID) else { return false }
+        if decision == .always, let run = run(runID) {
+            // Codex's own "for this session" only covers the exact command: Nook remembers the kind for this mode.
+            var granted = sessionApprovals[runID] ?? SessionApprovals()
+            granted.grant(kind: approvalKind(request), mode: run.permission)
+            sessionApprovals[runID] = granted
+        }
         let pending = approvals[runID]?.first { $0.id == requestID }
         codexServers[runID]?.respond(request.rpcID, CodexRPC.decision(request, allow: decision != .deny, always: decision == .always))
         approvals[runID]?.removeAll { $0.id == requestID }
@@ -237,7 +244,18 @@ extension WorkspaceManager {
         }
     }
 
+    private func approvalKind(_ request: CodexApprovalRequest) -> ApprovalKind {
+        request.kind == .command || request.kind == .legacyCommand ? .command : .fileChange
+    }
+
     private func presentCodexApproval(_ id: UUID, _ request: CodexApprovalRequest) {
+        // Allowed for this session before: answer without asking again (a dangerous command is never covered).
+        if let run = run(id), sessionApprovals[id]?.isGranted(kind: approvalKind(request), mode: run.permission) == true,
+           !(request.kind == .command || request.kind == .legacyCommand) || CommandRisk.assess(request.command).level != .danger {
+            codexServers[id]?.respond(request.rpcID, CodexRPC.decision(request, allow: true, always: false))
+            append(id, RunEvent(kind: .system, text: tr("ws.event.sessionAllowed", ToolSummary.oneLine(request.command.isEmpty ? request.reason : request.command, 80))))
+            return
+        }
         let requestID = "codex-" + request.rpcID.text
         let isCommand = request.kind == .command || request.kind == .legacyCommand
         let tool = isCommand ? "shell" : "apply_patch"

@@ -179,7 +179,7 @@ struct PullRequestSheet: View {
     @State private var bodyText = ""
     @State private var base = ""
     @State private var draft = true
-    @State private var repo: String?
+    @State private var repo: RemoteRepository?
     @State private var branch: String?
     @State private var loading = true
     @State private var working = false
@@ -195,16 +195,16 @@ struct PullRequestSheet: View {
                 Text(tr("ws.pr.notGitHub")).font(NookTheme.font(12.5)).foregroundStyle(WS.secondary)
             } else {
                 Form {
-                    LabeledContent(tr("ws.pr.repo"), value: repo ?? "")
+                    LabeledContent(tr("ws.pr.repo"), value: repo?.displayName ?? "")
                     LabeledContent(tr("ws.pr.head"), value: branch ?? "—")
                     TextField(tr("ws.pr.base"), text: $base)
                     TextField(tr("ws.pr.titleField"), text: $title)
                     TextField(tr("ws.pr.body"), text: $bodyText, axis: .vertical).lineLimit(3...8)
                     Toggle(tr("ws.pr.draft"), isOn: $draft)
-                        .disabled(!GitHubPullRequests.isAvailable)
+                        .disabled(!canCreate)
                 }
                 .formStyle(.grouped)
-                Text(GitHubPullRequests.isAvailable ? tr("ws.pr.viaConnector") : tr("ws.pr.viaBrowser"))
+                Text(canCreate ? tr("ws.pr.viaConnector", repo?.hostName ?? "") : tr("ws.pr.viaBrowser", repo?.hostName ?? ""))
                     .font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -215,7 +215,7 @@ struct PullRequestSheet: View {
             HStack {
                 Spacer()
                 Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
-                Button(GitHubPullRequests.isAvailable ? tr("ws.pr.create") : tr("ws.pr.openGitHub")) { create() }
+                Button(canCreate ? tr("ws.pr.create") : tr("ws.pr.openPage", repo?.hostName ?? "")) { create() }
                     .buttonStyle(.borderedProminent)
                     .disabled(working || repo == nil || branch == nil || base.isEmpty || title.isEmpty || created != nil)
             }
@@ -228,17 +228,19 @@ struct PullRequestSheet: View {
             title = run?.title ?? ""
             base = run?.baseBranch ?? ""
             bodyText = run.map { tr("ws.pr.bodyDefault", $0.task) } ?? ""
-            repo = await workspace.githubRepository(runID)
+            repo = await workspace.remoteRepository(runID)
             branch = await workspace.currentBranch(runID)
             loading = false
         }
     }
 
+    private var canCreate: Bool { repo.map(SourceForge.canCreate) ?? false }
+
     private func create() {
         guard let repo, let branch else { return }
         let cleanBase = base.hasPrefix("origin/") ? String(base.dropFirst(7)) : base
-        guard GitHubPullRequests.isAvailable else {
-            if let url = GitHubRemote.compareURL(repo: repo, base: cleanBase, head: branch) { NSWorkspace.shared.open(url) }
+        guard SourceForge.canCreate(repo) else {
+            if let url = SourceForge.newRequestPage(repo: repo, base: cleanBase, head: branch, title: title, body: bodyText, draft: draft) { NSWorkspace.shared.open(url) }
             close()
             return
         }
@@ -246,7 +248,7 @@ struct PullRequestSheet: View {
         error = nil
         Task {
             do {
-                created = try await GitHubPullRequests.create(repo: repo, title: title, body: bodyText, head: branch, base: cleanBase, draft: draft)
+                created = try await SourceForge.create(repo: repo, title: title, body: bodyText, head: branch, base: cleanBase, draft: draft)
             } catch let failure {
                 error = failure.localizedDescription + " " + tr("ws.pr.pushFirst")
             }

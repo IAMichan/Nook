@@ -22,6 +22,18 @@ struct AgentRunPanel: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The `#` list needs the repository ("owner/repo") of the session's folder.
+    @State private var repository: String?
+    /// The agent's skills for `$`, read from its skill folders.
+    @State private var skills: [Skill] = []
+    /// A queued message that is being edited in the composer, and the draft that waits behind it.
+    @State private var editingQueued: UUID?
+    @State private var scroll = ScrollModel()
+    @State private var atEnd = true
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var findIndex: Int?
+    @StateObject private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
@@ -60,12 +72,16 @@ struct AgentRunPanel: View {
                 // The agent's connection opens now, so your first message goes straight in.
                 workspace.prewarm(runID)
                 focused = true
+                Task { repository = await workspace.githubRepository(runID) }
+                loadComposerState(run)
             }
+            .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
             .onChange(of: runID) { _, _ in
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 workspace.prewarm(runID)
                 draft = ""
+                if let fresh = workspace.run(runID) { loadComposerState(fresh) }
                 renaming = false
                 confirmDelete = false
                 // Nothing of the previous session carries over: above all not a pending "restore files".
@@ -138,53 +154,162 @@ struct AgentRunPanel: View {
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
         let idle = !run.status.isActive
-        let finishKey = FinishedSessions.key(run: run)
-        let isFinished = finishedMarks.isFinished(key: finishKey, idle: idle, lastActive: run.updatedAt)
-        return ComposerDropdown(width: 240) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
-        } content: {
-            DropdownRow(symbol: "info.circle", title: tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
-            DropdownDivider()
-            if run.status.isActive {
-                DropdownRow(symbol: "stop.circle", title: tr("ws.action.stop")) { workspace.stop(runID) }
-            } else if run.status == .failed || run.status == .stopped {
-                DropdownRow(symbol: "arrow.clockwise", title: tr("ws.action.retry")) { workspace.retry(runID) }
+        return ComposerPlusMenu(attach: { attachFile(run) }) {
+            Button(tr("compose.stash.set")) {
+                if let text = composerModel.stashKey(composerText: draft) { draft = text; ComposerDraftStore.shared.setStash(composerModel.stash) }
             }
-            DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
-                        title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
-                        disabledReason: idle ? nil : tr("ws.error.busy")) {
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && composerModel.stash.entries.isEmpty)
+            Divider()
+            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
+            Divider()
+            if run.status.isActive {
+                Button(tr("ws.action.stop")) { workspace.stop(runID) }
+            } else if run.status == .failed || run.status == .stopped {
+                Button(tr("ws.action.retry")) { workspace.retry(runID) }
+            }
+            let finishKey = FinishedSessions.key(run: run)
+            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !run.status.isActive, lastActive: run.updatedAt)
+            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
-            DropdownRow(symbol: "pencil", title: tr("agents.run.rename")) {
+            .disabled(run.status.isActive)
+            Button(tr("agents.run.rename")) {
                 titleDraft = run.title
                 renaming = true
             }
-            DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
+            // A fork starts from this session; switching moves it to another agent with a summary of what happened.
+            Button(tr("agents.fork")) {
+                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
+            .disabled(!workspace.canTransfer(runID))
+            if run.lineage != nil {
+                Button(tr("agents.mergeBack")) {
+                    if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
+                        app.viewModel.selectedAgentID = "run:" + parent.uuidString
+                    }
+                }
+                .disabled(!workspace.canTransfer(runID))
+            }
+            Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
-            DropdownRow(symbol: "plusminus", title: tr("agents.run.changes"),
-                        disabledReason: run.repoRoot == nil ? tr("ws.error.notRepository") : nil) {
-                app.viewModel.open(.changes(runID, file: nil))
-            }
-            DropdownDivider()
-            DropdownRow(symbol: "archivebox", title: tr("agents.run.archive"), disabledReason: idle ? nil : tr("ws.error.busy")) {
+            Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
+                .disabled(run.repoRoot == nil)
+            Divider()
+            Button(tr("agents.run.archive")) {
                 workspace.setArchived(runID, true)
                 app.viewModel.selectedAgentID = ""
             }
-            DropdownRow(symbol: "trash", title: tr("agents.run.delete"), tint: NookTheme.coralSoft,
-                        disabledReason: idle ? nil : tr("ws.error.busy")) { confirmDelete = true }
+            .disabled(!idle)
+            Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
+                .disabled(!idle)
         }
-        .help(tr("agents.run.actions"))
+    }
+
+    private func saveQueuedEdit() {
+        guard editingQueued != nil else { return }
+        let restored = workspace.endEditQueued(runID, save: true, text: draft)
+        editingQueued = nil
+        draft = restored ?? ""
+    }
+
+    private func cancelQueuedEdit() {
+        guard editingQueued != nil else { return }
+        let restored = workspace.endEditQueued(runID, save: false)
+        editingQueued = nil
+        draft = restored ?? ""
+    }
+
+    /// A file you add to the message: it sits in the text as a reference, the agent reads it itself.
+    private func attachFile(_ run: WorkspaceRun) {
+        guard let ref = ComposerFilePicker.pick(startingIn: run.workingDirectory) else { return }
+        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        focused = true
+    }
+
+    /// What this composer offers beyond typing: the commands, files and sessions to point at, and the agent's own color.
+    private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
+        var config = ComposerConfig()
+        config.tint = run.provider.color
+        config.fileRoot = run.workingDirectory
+        config.repository = repository
+        config.sessions = { [workspace, runID] in
+            workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
+        }
+        // Only the commands this agent really has (see AgentCommands).
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.skills = skills
+        config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
+        config.keepsBigPastes = true
+        config.onCommand = { [workspace, app, runID] command in
+            switch command.action {
+            case .plan: workspace.configure(runID, mode: .plan)
+            case .fork:
+                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            case .insert, .compact, .new: break
+            }
+        }
+        return config
+    }
+
+    /// The draft you left in this session, the drafts set aside, and the agent's skills.
+    private func loadComposerState(_ run: WorkspaceRun) {
+        let store = ComposerDraftStore.shared
+        if draft.isEmpty, let saved = store.draft(for: runID.uuidString) { draft = saved }
+        composerModel.stash = store.stash
+        composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
+        let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
+        Task {
+            skills = await Task.detached(priority: .utility) {
+                SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
+            }.value
+        }
+    }
+
+    /// The reasoning effort for the next turns, only for agents that have it.
+    @ViewBuilder
+    private func effortMenu(_ run: WorkspaceRun) -> some View {
+        let levels = EffortLevels.levels(for: run.provider, model: run.model)
+        if !levels.isEmpty {
+            ComposerDivider()
+            Menu {
+                Button { workspace.setEffort(runID, nil) } label: {
+                    if run.effort == nil { Label(tr(EffortLevels.label(nil)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(nil))) }
+                }
+                ForEach(levels, id: \.self) { level in
+                    Button { workspace.setEffort(runID, level) } label: {
+                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                    }
+                }
+            } label: {
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+            }
+            .composerMenu()
+            .disabled(run.status.isActive)
+            .help(tr("compose.effort.help"))
+        }
+    }
+
+    /// The context ring, and the microphone next to it.
+    @ViewBuilder
+    private func composerTrailing(_ run: WorkspaceRun) -> some View {
+        HStack(spacing: 2) {
+            if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                ComposerContextRing(used: used, window: window,
+                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
+                                        : { workspace.send(runID, text: "/compact") })
+            }
+            ComposerMic(text: $draft)
+        }
     }
 
     // MARK: Timeline
 
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
+        let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
+        let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
+        let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -194,9 +319,13 @@ struct AgentRunPanel: View {
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    ForEach(TimelinePresentation.blocks(events, active: run.status.isActive)) { block in
+                    ForEach(blocks) { block in
                         TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                            AnyView(eventRow(event))
+                            AnyView(
+                                eventRow(event)
+                                    .padding(.vertical, current == event.id ? 4 : 0)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                            )
                         }
                         .id(block.id)
                     }
@@ -206,7 +335,7 @@ struct AgentRunPanel: View {
                                         accent: run.provider.color)
                     }
                     if run.status == .failed || run.status == .stopped {
-                        recovery(run)
+                        recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -214,17 +343,87 @@ struct AgentRunPanel: View {
             }
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Scrolling away from the end stops the following until you come back (scroll anchoring).
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
+            } action: { _, nowAtEnd in
+                atEnd = nowAtEnd
+                if nowAtEnd { scroll.reachedEnd() }
+            }
+            .onScrollPhaseChange { _, phase in
+                if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+            }
+            .overlay(alignment: .bottom) {
+                if scroll.mode == .free, !atEnd, !finding {
+                    TimelineToEndPill {
+                        scroll.jumpedToEnd()
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+            .overlay(alignment: .top) {
+                if finding {
+                    TimelineFindBar(query: $findQuery, result: found, current: findIndex,
+                                    previous: { stepFind(found, blocks: blocks, proxy: proxy, forward: false) },
+                                    next: { stepFind(found, blocks: blocks, proxy: proxy, forward: true) },
+                                    close: closeFind)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
+                }
+            }
+            .background {
+                Button("") { openFind() }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
+            }
+            .onChange(of: findQuery) { _, _ in
+                findIndex = nil
+                let fresh = TimelineSearch.search(events, query: findQuery)
+                if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
+            }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: events.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                if scroll.shouldFollowEnd { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: events.last?.text.count ?? 0) { _, _ in
-                if run.status.isActive { proxy.scrollTo("bottom", anchor: .bottom) }
+                if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            // You sent something: it is the newest thing and follows again.
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
+                scroll.jumpedToEnd()
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }
 
-    private func recovery(_ run: WorkspaceRun) -> some View {
+    // MARK: Find
+
+    private func openFind() {
+        finding = true
+        scroll.findStarted()
+    }
+
+    private func closeFind() {
+        finding = false
+        findQuery = ""
+        findIndex = nil
+        scroll.findEnded()
+    }
+
+    private func stepFind(_ found: TimelineSearchResult, blocks: [TimelineBlock], proxy: ScrollViewProxy, forward: Bool) {
+        guard let target = forward ? found.next(after: findIndex) : found.previous(before: findIndex) else { return }
+        findIndex = target
+        reveal(found, at: target, blocks: blocks, proxy: proxy)
+    }
+
+    /// Opens the groups around the match, then scrolls to it.
+    private func reveal(_ found: TimelineSearchResult, at index: Int, blocks: [TimelineBlock], proxy: ScrollViewProxy) {
+        guard found.matches.indices.contains(index) else { return }
+        let id = found.matches[index].eventID
+        for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
+        DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) } }
+    }
+
+    private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
         HStack(spacing: 10) {
             Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
                 .foregroundStyle(run.status.color)
@@ -238,6 +437,13 @@ struct AgentRunPanel: View {
                     .lineLimit(3)
             }
             Spacer(minLength: 6)
+            if let failure = FailureJump.firstFailure(in: events) {
+                NookGhostButton(title: tr("timeline.goToFailure")) {
+                    scroll.userScrolled()
+                    for key in TimelineContainers.keys(blocks)[failure] ?? [] { openBlocks.insert(key) }
+                    DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(failure, anchor: .center) } }
+                }
+            }
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
         }
         .padding(10)
@@ -252,7 +458,13 @@ struct AgentRunPanel: View {
             let timeline = workspace.timeline(runID)
             let latest = timeline.last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
             let answered = timeline.contains { $0.kind == .user && $0.date > event.date }
-            PlanCard(text: event.text, canAct: idle && latest && !answered) {
+            PlanCard(text: event.text, canAct: idle && latest && !answered, implementInNew: {
+                // The summary of a fork cuts long messages, so the whole plan goes into the first message.
+                guard let id = workspace.fork(runID) else { return }
+                workspace.configure(id, mode: .agent)
+                workspace.send(id, text: tr("ws.plan.implementPrompt") + "\n\n" + event.text)
+                app.viewModel.selectedAgentID = "run:" + id.uuidString
+            }) {
                 workspace.configure(runID, mode: .agent)
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }
@@ -265,10 +477,32 @@ struct AgentRunPanel: View {
                         revertTarget = event
                     }
                     .disabled(!workspace.canRevert(runID, before: event.date))
+                    // A fork that starts before this message, to try another way.
+                    Button(tr("agents.fork.here")) { forkBefore(event) }
+                        .disabled(!workspace.canTransfer(runID))
+                }
+        } else if event.kind == .assistant {
+            eventView(event)
+                .contextMenu {
+                    // "Fork from this response".
+                    Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
+                        .disabled(!workspace.canTransfer(runID))
                 }
         } else {
             eventView(event)
         }
+    }
+
+    private func forkBefore(_ event: RunEvent) {
+        guard let index = workspace.timeline(runID).firstIndex(where: { $0.id == event.id }),
+              let id = workspace.fork(runID, keepingEvents: index) else { return }
+        app.viewModel.selectedAgentID = "run:" + id.uuidString
+    }
+
+    private func forkThrough(_ event: RunEvent) {
+        guard let index = workspace.timeline(runID).firstIndex(where: { $0.id == event.id }),
+              let id = workspace.fork(runID, keepingEvents: index + 1) else { return }
+        app.viewModel.selectedAgentID = "run:" + id.uuidString
     }
 
     private func revertConfirmation(_ target: RunEvent) -> some View {
@@ -364,23 +598,51 @@ struct AgentRunPanel: View {
         let active = run.status.isActive
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Return while a queued message is open in the box saves it instead of sending.
+            if editingQueued != nil { saveQueuedEdit(); return }
             guard !text.isEmpty, !active else { return }
+            let outgoing = composerModel.outgoing(text)
             draft = ""
-            workspace.send(runID, text: text)
+            workspace.send(runID, text: outgoing.send)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
-        let steers = active && workspace.canSteer(runID)
-        let queue = {
-            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
-            draft = ""
-            if !(steers && workspace.steer(runID, text: text)) { workspace.enqueue(runID, text: text) }
+        // Return does what you chose in Settings, Cmd+Return the other (queue / steer).
+        let canSteer = active && workspace.canSteer(runID)
+        let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
+        func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
+            {
+                if editingQueued != nil { saveQueuedEdit(); return }
+                let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                let outgoing = composerModel.outgoing(text)
+                draft = ""
+                if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
+                   workspace.steer(runID, text: outgoing.send) { return }
+                workspace.enqueue(runID, text: outgoing.send)
+            }
         }
+        let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
+        let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
-                                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
+                QueuedMessagesStrip(
+                    queue: waiting, editing: editingQueued,
+                    remove: { id in
+                        if editingQueued == id { cancelQueuedEdit() }
+                        workspace.removeQueued(runID, message: id)
+                    },
+                    edit: { id in
+                        if editingQueued != nil { cancelQueuedEdit() }
+                        if let text = workspace.beginEditQueued(runID, message: id, currentDraft: draft) {
+                            editingQueued = id
+                            draft = text
+                            focused = true
+                        }
+                    },
+                    steer: canSteer ? { workspace.steerQueued(runID, message: $0) } : nil,
+                    move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
+                    sendNow: active ? nil : { workspace.sendQueuedNow(runID) })
             }
             SessionComposer(
                 text: $draft,
@@ -392,15 +654,20 @@ struct AgentRunPanel: View {
                 focus: $focused,
                 onSend: send
             ) {
+                actionsMenu(run)
                 modelMenu(run)
                 ComposerDivider()
                 modeMenu(run)
                 ComposerDivider()
                 permissionMenu(run)
-                actionsMenu(run)
+                effortMenu(run)
             }
-            // While it works, what you type waits in line and goes out when the turn is done.
-            .queueing(active ? queue : nil, label: steers ? tr("compose.steer") : tr("compose.queue"),
+            .rich(composerModel, composerConfig(run))
+            .trailing { composerTrailing(run) }
+            // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
+            .queueing(active ? deliver(preferred) : nil,
+                      alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
+                      label: steers ? tr("compose.steer") : tr("compose.queue"),
                       symbol: steers ? "arrow.turn.down.right" : "text.append")
             .images($images)
             if !active, run.mode == .plan {
@@ -411,17 +678,21 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account, and the model for the next turn (model picker, for this session's agent).
+    /// The agent with its account and the model (model picker). A model counts from the next turn; another account
+    /// or agent moves the session there with a summary of what happened (shown in the timeline).
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
         let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
-        return ComposerDropdown(width: 296) {
+        let providers = workspace.canTransfer(runID) ? app.connectedProviders : [run.provider]
+        return ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "))
         } content: {
-            AgentModelPicker(providers: [run.provider], provider: run.provider, profileID: nil, model: run.model) { _, _, option in
-                if let option { workspace.configure(runID, model: option) }
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: true) { provider, accountID, option in
+                let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
+                let chosen = option ?? (provider == run.provider ? run.model : workspace.settings.model(for: provider))
+                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen)
             }
         }
         .disabled(run.status.isActive)

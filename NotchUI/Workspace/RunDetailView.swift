@@ -46,7 +46,9 @@ struct RunDetailView: View {
                             .padding(.top, 10)
                     }
                     if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                        QueuedMessagesStrip(messages: waiting, remove: { workspace.removeQueued(runID, at: $0) },
+                        QueuedMessagesStrip(queue: waiting, remove: { workspace.removeQueued(runID, message: $0) },
+                                            steer: workspace.canSteer(runID) ? { workspace.steerQueued(runID, message: $0) } : nil,
+                                            move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
                                             sendNow: run.status.isActive ? nil : { workspace.sendQueuedNow(runID) })
                             .padding(.horizontal, 18)
                             .padding(.top, 10)
@@ -457,6 +459,25 @@ struct EventRow: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.coral.opacity(0.08)))
+
+        case .system where event.tool == "handoff":
+            // What the new agent was given: a summary you can read, not a hidden prompt.
+            DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
+                Text(event.detail ?? "")
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(WS.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.swap").font(.system(size: 10))
+                    Text(event.text).font(NookTheme.font(11.5)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+                }
+                .foregroundStyle(WS.tertiary)
+            }
 
         case .system:
             HStack(spacing: 6) {

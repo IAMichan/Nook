@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// One block of a session's timeline (see TimelinePresentation): a single event, a group of tool calls behind one
 /// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place.
@@ -126,39 +128,83 @@ struct LiveActivityRow: View {
 
 /// Messages waiting for the turn to end, above the composer: each can be taken back before it goes out.
 struct QueuedMessagesStrip: View {
-    let messages: [String]
-    let remove: (Int) -> Void
+    let queue: MessageQueue
+    /// The message that is being edited in the composer.
+    var editing: UUID? = nil
+    let remove: (UUID) -> Void
+    var edit: ((UUID) -> Void)? = nil
+    /// Take the message into the running turn now; nil when the agent cannot be steered right now.
+    var steer: ((UUID) -> Void)? = nil
+    var move: ((UUID, Int) -> Void)? = nil
     /// After a stop or a failure the queue waits for you: this sends the first message now.
     var sendNow: (() -> Void)? = nil
+    @State private var collapsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
-                HStack(spacing: 8) {
-                    Image(systemName: "clock").font(.system(size: 10, weight: .semibold))
-                    Text(ToolSummary.oneLine(message, 120)).lineLimit(1)
-                    Spacer(minLength: 6)
-                    Button { remove(index) } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .help(tr("compose.queue.remove"))
-                    .accessibilityLabel(tr("compose.queue.remove"))
+            Button { withAnimation(.easeInOut(duration: 0.15)) { collapsed.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    Text(tr("compose.queue.title", queue.count))
+                        .font(NookTheme.font(11.5, .semibold))
+                    Spacer(minLength: 0)
                 }
-                .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
             }
-            HStack(spacing: 8) {
-                Text(tr("compose.queue.note")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 6)
-                if let sendNow { SmallGhostButton(title: tr("compose.queue.sendNow"), action: sendNow) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("compose.queue.title", queue.count))
+            .accessibilityValue(collapsed ? "" : tr("compose.queue.expanded"))
+            if !collapsed {
+                ForEach(Array(queue.messages.enumerated()), id: \.element.id) { index, message in
+                    row(message, index: index)
+                }
+                HStack(spacing: 8) {
+                    Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
+                        .font(NookTheme.font(11))
+                        .foregroundStyle(queue.isHeld ? NookTheme.amber : NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    if let sendNow { SmallGhostButton(title: tr("compose.queue.sendNow"), action: sendNow) }
+                }
+                .padding(.leading, 4)
             }
-            .padding(.leading, 4)
         }
+    }
+
+    private func row(_ message: QueuedMessage, index: Int) -> some View {
+        let isEditing = editing == message.id
+        return HStack(spacing: 8) {
+            Image(systemName: isEditing ? "pencil" : "clock").font(.system(size: 10, weight: .semibold))
+            Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120)).lineLimit(1)
+            Spacer(minLength: 6)
+            if let move, queue.count > 1 {
+                iconButton("chevron.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
+                iconButton("chevron.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
+            }
+            if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
+            if let steer { iconButton("arrow.turn.down.right", tr("compose.queue.steerNow"), enabled: !isEditing) { steer(message.id) } }
+            iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
+        }
+        .font(NookTheme.font(12))
+        .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isEditing ? NookTheme.smoke : NookTheme.field))
+    }
+
+    private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 9.5, weight: .bold)).frame(width: 18, height: 18).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.35)
+        .disabled(!enabled)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 
@@ -191,7 +237,14 @@ enum ToolTallyText {
 struct PlanCard: View {
     let text: String
     let canAct: Bool
+    /// "Implement in a new session" (split button): the plan goes to a fork, this session stays as it is.
+    var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
+    @State private var open = false
+    @State private var copied = false
+
+    private var title: String { PlanPreview.title(from: text) ?? tr("ws.plan.title") }
+    private var collapsible: Bool { PlanPreview.needsExpand(text) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -199,12 +252,30 @@ struct PlanCard: View {
                 Image(systemName: "list.bullet.clipboard").font(.system(size: 11, weight: .semibold))
                 Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
                 Spacer(minLength: 0)
+                iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    copied = true
+                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+                }
+                iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.iris)
-            MarkdownView(text: text, size: 12.5)
+            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 12.5)
+            if collapsible {
+                Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
+                    Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.iris)
+                }
+                .buttonStyle(.plain)
+            }
             if canAct {
-                HStack {
+                HStack(spacing: 8) {
                     Spacer()
+                    if let implementInNew {
+                        NookGhostButton(title: tr("ws.plan.implementNew"), action: implementInNew)
+                    }
                     NookPrimaryButton(title: tr("ws.plan.implement"), action: implement)
                 }
             }
@@ -212,5 +283,24 @@ struct PlanCard: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.07)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.25), lineWidth: 1))
+    }
+
+    private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
+    /// "Save as file"; the name comes from the plan's title.
+    private func save() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = PlanPreview.fileName(forTitle: title)
+        panel.allowedContentTypes = [.plainText]
+        if panel.runModal() == .OK, let url = panel.url {
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 }

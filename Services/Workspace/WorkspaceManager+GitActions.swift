@@ -9,16 +9,16 @@ extension WorkspaceManager {
         guard let run = run(id), run.repoRoot != nil, let git = gitService, let status = self.git[id]?.status else { return nil }
         let directory = run.workingDirectory
         let sessionBase = run.baseBranch
-        let facts = await Task.detached(priority: .userInitiated) { () -> (base: String?, remote: Bool, ahead: Int, repo: String?) in
+        let facts = await Task.detached(priority: .userInitiated) { () -> (base: String?, remote: Bool, ahead: Int, repo: RemoteRepository?) in
             let remotes = git.remotes(directory)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
             let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote)
             let ahead = base.flatMap { git.commitsAhead(directory, of: git.comparisonBase(directory, base: $0, remote: remote)) } ?? 0
-            return (base, !remotes.isEmpty, ahead, git.remoteURL(directory, remote: remote).flatMap(GitHubRemote.repository(from:)))
+            return (base, !remotes.isEmpty, ahead, SourceForge.repository(remoteURL: git.remoteURL(directory, remote: remote)))
         }.value
         let branch = status.detached ? nil : status.branch
         if let repo = facts.repo, let branch, let lookup = pullRequestLookup {
-            let key = repo + " " + branch
+            let key = repo.key + " " + branch
             if let last = pullRequestChecked[key], Date().timeIntervalSince(last) < 60 {
                 // Asked a moment ago: keep that answer.
             } else {
@@ -69,7 +69,7 @@ extension WorkspaceManager {
     private func proposePullRequest(_ id: UUID, progress: @escaping (String) -> Void) async throws -> URL {
         guard let run = run(id), let git = gitService else { throw StartError.noGit }
         let directory = run.workingDirectory
-        guard let repo = await githubRepository(id) else { throw StartError.git(tr("ws.quick.noGitHub")) }
+        guard let repo = await remoteRepository(id) else { throw StartError.git(tr("ws.quick.noForge")) }
         guard let branch = await currentBranch(id) else { throw StartError.git(tr("ws.error.detached")) }
         let sessionBase = run.baseBranch
         let root = run.repoRoot ?? directory
@@ -102,9 +102,9 @@ extension WorkspaceManager {
             // GitHub refused (no access, a pull request that already exists…): its own page still lets you finish it.
             append(id, RunEvent(kind: .error, text: error.localizedDescription))
         }
-        // No GitHub connection: GitHub's own page, with the title and description already filled in.
-        guard let compare = Self.compareURL(repo: repo, base: base, head: branch, title: title, body: body) else {
-            throw StartError.git(tr("ws.quick.noGitHub"))
+        // No connected account (or another forge): the forge's own page, with the title and description already filled in.
+        guard let compare = SourceForge.newRequestPage(repo: repo, base: base, head: branch, title: title, body: body) else {
+            throw StartError.git(tr("ws.quick.noForge"))
         }
         NSWorkspace.shared.open(compare)
         append(id, RunEvent(kind: .system, text: tr("ws.event.prCompare", branch)))
