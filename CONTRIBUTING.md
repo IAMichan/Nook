@@ -6,11 +6,12 @@ Fijn dat je wilt helpen. Bugs melden, ideeën en pull requests zijn allemaal wel
 
 ```sh
 brew install xcodegen
+cd apps/macos
 xcodegen
 open Nook.xcodeproj
 ```
 
-Of vanaf de command line:
+Of vanaf de command line (in `apps/macos`):
 
 ```sh
 xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug CODE_SIGNING_ALLOWED=NO build
@@ -19,6 +20,8 @@ xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug CODE_SIGNIN
 Voeg je een bestand toe? Draai daarna opnieuw `xcodegen`. Het Xcode-project staat niet in git.
 
 ## Opbouw in het kort
+
+Nook is een monorepo: `apps/` per platform, `packages/` voor wat gedeeld wordt, zie [docs/MONOREPO.md](docs/MONOREPO.md). De macOS-app staat in `apps/macos`; de paden hieronder zijn daaraan relatief.
 
 - `AppModel` is alleen de samenstelling; elk onderdeel staat in een eigen `AppModel+….swift` (chat, plannen, voice, kaarten, agents, accounts, …). Nieuwe logica hoort in een eigen type of extensie, niet in `AppModel.swift`.
 - Chat, kaarten en Meedenken gebruiken dezelfde `prepareRun`. Maak geen tweede pad naar het brein.
@@ -29,6 +32,7 @@ Voeg je een bestand toe? Draai daarna opnieuw `xcodegen`. Het Xcode-project staa
 ## Tests
 
 ```sh
+# in apps/macos
 xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test
 ```
 

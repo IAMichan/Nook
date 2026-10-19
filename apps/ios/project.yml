@@ -1,0 +1,53 @@
+name: NookCompanion
+options:
+  bundleIdPrefix: nl.imdigital
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: nl
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  # iPhone companion (docs/COMPANION.md): sessions that need you, with approve / answer / send / stop. It shares the
+  # protocol and the sealing with the Mac app (packages/protocol) and nothing else.
+  NookCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: NookCompanion
+      - path: ../../packages/protocol/Sources
+    info:
+      path: NookCompanion/Info.plist
+      properties:
+        CFBundleName: Nook Companion
+        CFBundleDisplayName: Nook Companion
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
+        NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
+        UIBackgroundModes: [remote-notification]
+    settings:
+      base:
+        PRODUCT_NAME: Nook Companion
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
+        DEVELOPMENT_TEAM: 35SMNHP9K7
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+    entitlements:
+      path: NookCompanion/NookCompanion.entitlements
+      properties:
+        # Becomes production in a distribution build. Needs Push Notifications on the app id nl.imdigital.nook.companion.
+        aps-environment: development
+        com.apple.developer.usernotifications.time-sensitive: true
+schemes:
+  NookCompanion:
+    build:
+      targets:
+        NookCompanion: all
+    run:
+      config: Debug

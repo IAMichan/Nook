@@ -1,0 +1,42 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/ios/**', 'packages/protocol/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['apps/ios/**', 'packages/protocol/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select newest Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project NookCompanion.xcodeproj -scheme NookCompanion -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+      - name: Errors and warnings
+        if: always()
+        run: grep -E "error:|warning:" build.log | sort -u || true

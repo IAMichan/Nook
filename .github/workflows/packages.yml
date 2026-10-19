@@ -1,0 +1,31 @@
+name: Packages
+
+on:
+  push:
+    branches: [main]
+    paths: ['packages/**', '.github/workflows/packages.yml']
+  pull_request:
+    paths: ['packages/**', '.github/workflows/packages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: core (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/core
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test
+        run: swift test

@@ -3,7 +3,9 @@ name: Build
 on:
   push:
     branches: [main]
+    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   pull_request:
+    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -16,6 +18,9 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/macos
     steps:
       - uses: actions/checkout@v7
       - name: Select newest Xcode (the MLX packages need Xcode 26)

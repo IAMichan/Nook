@@ -5,7 +5,7 @@ description: Haal de nieuwste versie van Nook van GitHub (IAMichan/nook) binnen,
 
 # Nook bijwerken vanaf GitHub
 
-Werk in de Nook-repo (de map met `project.yml`). Antwoord in het Nederlands. Wees eerlijk over wat wel en niet gelukt is.
+Werk in de Nook-repo (monorepo; de macOS-app staat in `apps/macos`, daar staat `project.yml`). Antwoord in het Nederlands. Wees eerlijk over wat wel en niet gelukt is.
 
 ## Stappen
 
@@ -27,10 +27,10 @@ Werk in de Nook-repo (de map met `project.yml`). Antwoord in het Nederlands. Wee
    - Haal de stash terug met `git stash pop`. Bij conflicten: toon welke bestanden, los ze alleen op als het duidelijk is, en vraag anders de gebruiker.
 
 5. **Genereer het project opnieuw**
-   - `Nook.xcodeproj` staat niet in git en wordt gemaakt door XcodeGen. Draai na elke update `xcodegen generate` (nieuwe of verwijderde bestanden komen er anders niet in).
+   - `Nook.xcodeproj` staat niet in git en wordt gemaakt door XcodeGen. Draai in `apps/macos` na elke update `xcodegen generate` (nieuwe of verwijderde bestanden komen er anders niet in).
 
 6. **Controleer de build**
-   - `xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug build 2>&1 | grep -E "error:|BUILD"`
+   - `cd apps/macos && xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug build 2>&1 | grep -E "error:|BUILD"`
    - Meld `BUILD SUCCEEDED` of de fouten letterlijk. Los fouten niet ongevraagd op.
 
 7. **Rond af**
