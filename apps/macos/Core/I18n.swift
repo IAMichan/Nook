@@ -131,6 +131,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Buttons & Actions
         "button.talk": "Praat met Nook",
+        "button.talkShort": "Praat",
         "button.settings": "Instellingen",
         "button.close": "Sluiten",
         "button.enlarge": "Vergroten",
@@ -893,6 +894,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Buttons & Actions
         "button.talk": "Talk to Nook",
+        "button.talkShort": "Talk",
         "button.settings": "Settings",
         "button.close": "Close",
         "button.enlarge": "Enlarge",
@@ -1655,6 +1657,7 @@ private let translations: [AppLanguage: [String: String]] = [
 
         // MARK: Buttons & Actions
         "button.talk": "Mit Nook sprechen",
+        "button.talkShort": "Sprechen",
         "button.settings": "Einstellungen",
         "button.close": "Schließen",
         "button.enlarge": "Vergrößern",

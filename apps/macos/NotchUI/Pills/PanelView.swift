@@ -7,7 +7,7 @@ struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
     @EnvironmentObject private var app: AppModel
-    @Namespace private var underline
+    @Namespace private var selection
     @ObservedObject private var settings = AppSettings.shared
     private var large: Bool { settings.panelLarge }
 
@@ -31,39 +31,39 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 24) {
+            HStack(spacing: 2) {
                 ForEach(PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)) { t in
                     Button {
                         viewModel.show(.panel(t))
                     } label: {
-                        HStack(spacing: 6) {
-                            Text(t.title)
-                                .font(NookTheme.font(13.5, .medium))
-                                .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
-                            if let dot = dot(for: t) {
-                                Circle().fill(dot).frame(width: 5, height: 5)
+                        Text(t.title)
+                            .font(NookTheme.font(13, .medium))
+                            .foregroundStyle(t == tab ? NookTheme.paper : NookTheme.textTertiary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background {
+                                if t == tab {
+                                    Capsule()
+                                        .fill(NookTheme.smoke)
+                                        .matchedGeometryEffect(id: "selection", in: selection)
+                                }
                             }
-                        }
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                        .overlay(alignment: .bottom) {
-                            if t == tab {
-                                Rectangle()
-                                    .fill(NookTheme.paper)
-                                    .frame(height: 1.5)
-                                    .matchedGeometryEffect(id: "underline", in: underline)
-                            }
-                        }
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(t.title)
                     .accessibilityAddTraits(t == tab ? .isSelected : [])
                 }
             }
+            .padding(3)
+            .background(Capsule().fill(Color.white.opacity(0.04)))
             Spacer()
-            HStack(spacing: 0) {
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
-                    .help(tr("button.talk"))
+            HStack(spacing: 2) {
+                talkButton
+                Rectangle()
+                    .fill(NookTheme.textTertiary.opacity(0.35))
+                    .frame(width: 1, height: 14)
+                    .padding(.horizontal, 6)
                 NookIconButton(
                     systemName: large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                     label: tr(large ? "button.shrink" : "button.enlarge"),
@@ -81,19 +81,22 @@ struct PanelView: View {
         }
     }
 
-    /// A small, quiet dot next to a tab: amber when something there waits for you, white while it is working.
-    private func dot(for tab: PanelTab) -> Color? {
-        switch tab {
-        case .chat, .nook:
-            return app.chat.anyBusy ? NookTheme.iris : nil
-        case .agents:
-            let waiting = !app.hub.approvals.isEmpty || app.agentSessions.contains { $0.status == .waiting }
-                || !app.workspace.approvals.isEmpty
-            if waiting { return NookTheme.amber }
-            return app.activeAgents.isEmpty && app.workspace.activeRuns.isEmpty ? nil : NookTheme.iris
-        default:
-            return nil
+    /// The one filled action in the header; the other buttons stay quiet until hovered.
+    private var talkButton: some View {
+        Button { viewModel.startListening() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "mic").font(.system(size: 12, weight: .semibold))
+                Text(tr("button.talkShort")).font(NookTheme.font(12.5, .medium))
+            }
+            .foregroundStyle(NookTheme.paper)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Capsule().fill(NookTheme.smoke))
+            .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tr("button.talk"))
+        .help(tr("button.talk"))
     }
 
     @ViewBuilder
