@@ -97,7 +97,7 @@ struct CardView: View {
             TextField(
                 "",
                 text: $reply,
-                prompt: Text(tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary)
+                prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary)
             )
             .textFieldStyle(.plain)
             .font(NookTheme.font(14))

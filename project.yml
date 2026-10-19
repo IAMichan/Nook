@@ -21,6 +21,10 @@ packages:
   SwiftTransformers:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.0
+  FluidAudio:
+    # Parakeet speech-to-text and speaker diarization on the Neural Engine (Apache-2.0).
+    url: https://github.com/FluidInference/FluidAudio
+    exactVersion: 0.17.7
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     # The built-in terminal (Workspace › Terminals). Pinned: a stable release whose API matches TerminalSessions.swift.
@@ -51,6 +55,7 @@ targets:
         product: Tokenizers
       - package: SwiftTerm
         product: SwiftTerm
+      - package: FluidAudio
     info:
       path: App/Info.plist
       properties:
@@ -145,6 +150,17 @@ targets:
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
       - path: Brain/ChartRescue.swift
+      - path: Brain/Weather.swift
+      - path: Brain/ChatImage.swift
+      - path: Services/WhatsApp/WhatsAppGateway.swift
+      - path: Services/Flow/FlowLogic.swift
+      - path: Services/Notes/NoteModels.swift
+      - path: Brain/SpokenText.swift
+      - path: Core/Shortcuts.swift
+      - path: Brain/Undo.swift
+      - path: Brain/Fuzzy.swift
+      - path: Brain/MacReport.swift
+      - path: Brain/EnergyVAD.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

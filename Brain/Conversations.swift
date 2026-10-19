@@ -14,10 +14,14 @@ final class AnthropicConversation: ModelConversation {
     private let maxTokens: Int
     private let stream: Stream
 
-    init(model: String, system: String, history: [ChatTurn], prompt: String, webSearchTool: [String: Any]?, maxTokens: Int, stream: @escaping Stream) {
+    init(model: String, system: String, history: [ChatTurn], prompt: String, images: [ChatImage] = [], webSearchTool: [String: Any]?,
+         maxTokens: Int, stream: @escaping Stream) {
         self.model = model
         self.system = [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
-        self.messages = BrainService.alternating(history, then: prompt).map { ["role": $0.role, "content": $0.text] }
+        var messages: [[String: Any]] = BrainService.alternating(history, then: prompt).map { ["role": $0.role, "content": $0.text] }
+        // The question's images go with the question itself: Claude sees them, not only the text read from them.
+        if !images.isEmpty, !messages.isEmpty { messages[messages.count - 1]["content"] = ChatImage.anthropicContent(images, text: prompt) }
+        self.messages = messages
         self.webSearchTool = webSearchTool
         self.maxTokens = maxTokens
         self.stream = stream
@@ -98,13 +102,16 @@ final class OpenAIConversation: ModelConversation {
     private let key: String?
     private let maxTokens: Int?
 
-    init(provider: AIProvider, model: String, key: String?, system: String, history: [ChatTurn], prompt: String, maxTokens: Int?) {
+    init(provider: AIProvider, model: String, key: String?, system: String, history: [ChatTurn], prompt: String,
+         images: [ChatImage] = [], maxTokens: Int?) {
         self.provider = provider
         self.model = model
         self.key = key
         self.maxTokens = maxTokens
-        self.messages = [["role": "system", "content": system]]
+        var messages: [[String: Any]] = [["role": "system", "content": system]]
             + BrainService.alternating(history, then: prompt).map { ["role": $0.role, "content": $0.text] }
+        if !images.isEmpty, messages.count > 1 { messages[messages.count - 1]["content"] = ChatImage.openAIContent(images, text: prompt) }
+        self.messages = messages
     }
 
     func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
@@ -268,14 +275,19 @@ final class OllamaConversation: ModelConversation {
     private let model: String
     private let profile: ModelProfile
 
-    init(model: String, system: String, history: [ChatTurn], prompt: String, profile: ModelProfile) {
+    init(model: String, system: String, history: [ChatTurn], prompt: String, images: [ChatImage] = [], profile: ModelProfile) {
         self.model = model
         self.profile = profile
-        self.messages = [["role": "system", "content": system]]
+        var messages: [[String: Any]] = [["role": "system", "content": system]]
             + BrainService.alternating(history, then: prompt).map { ["role": $0.role, "content": $0.text] }
+        // Ollama takes images as base64 next to the text; vision models (Gemma 3, Qwen 2.5 VL, Llama 3.2 Vision…) read them.
+        if !images.isEmpty, messages.count > 1 { messages[messages.count - 1]["images"] = images.map(\.base64) }
+        self.messages = messages
     }
 
     nonisolated static var baseURL: String { AIProvider.ollama.baseURL.replacingOccurrences(of: "/v1", with: "") }
+
+    nonisolated static var keepAlive: String { ProcessInfo.processInfo.physicalMemory >= 24 << 30 ? "30m" : "5m" }
 
     func next(tools: [LoopTool], onText: ((String) -> Void)?) async throws -> ModelTurn {
         guard let url = URL(string: Self.baseURL + "/api/chat") else { throw NookError("Invalid Ollama address.") }
@@ -284,7 +296,10 @@ final class OllamaConversation: ModelConversation {
             "messages": messages,
             // Streamed, so the answer appears while it is written instead of after the whole answer is done.
             "stream": true,
-            "options": ["num_ctx": profile.contextTokens, "num_predict": profile.maxOutputTokens, "temperature": 0.2]
+            "options": ["num_ctx": profile.contextTokens, "num_predict": profile.maxOutputTokens, "temperature": 0.2],
+            // Ollama unloads a model after 5 idle minutes; with memory to spare it stays loaded, so a follow-up a little
+            // later does not wait for the model to load again.
+            "keep_alive": Self.keepAlive
         ]
         if !tools.isEmpty {
             body["tools"] = tools.map { ["type": "function", "function": ["name": $0.name, "description": $0.description, "parameters": $0.schema]] }

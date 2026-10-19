@@ -8,7 +8,7 @@ import Foundation
 struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
-        case chart, screen, browser, files, github, notion, clipboard, web, chats, memory
+        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory
     }
 
     /// Recognized kinds, strongest first.
@@ -59,8 +59,13 @@ struct ChatIntent: Equatable {
         func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
 
         var kinds: [Kind] = []
-        let writesMail = has(#"(schrijf|stuur|verstuur|beantwoord|antwoord|maak|write|send|draft|reply|answer|schreib|sende|beantworte)\b[^.?!]{0,40}\b(e-?mail|mail|mailtje|bericht)"#)
-            || has(#"\b(e-?mail|mail)(tje)? (naar|aan|to|an)\b"#) || has(#"^(mail|e-?mail) \p{L}+"#) || has(#"\b(reply to|antwoord op|reageer op)\b"#)
+        // "App Lisa dat ik later ben", "stuur via WhatsApp…", "WhatsApp Jan": a chat message, not a mail.
+        let writesChat = has(#"^(app|whatsapp)\s+\p{L}+(\s+\p{L}+)?\s*(:|\b(dat|om|of|that|to|if|dass|ob)\b)"#)
+            || has(#"(stuur|verstuur|beantwoord|antwoord|schrijf|send|reply|write|schick|sende|schreib)\b[^.?!]{0,60}\b(whats-?app|appje|app-?bericht)"#)
+            || has(#"\b(via|over|per|on|through|in|über|bei) whats-?app\b"#) && has(#"\b(stuur|verstuur|zeg|laat \p{L}+ weten|vraag|send|tell|ask|let \p{L}+ know|schick|sag|frag)"#)
+            || has(#"\b(app|whatsapp) (hem|haar|ze|him|her|them|ihm|ihr)\b"#)
+        let writesMail = !writesChat && (has(#"(schrijf|stuur|verstuur|beantwoord|antwoord|maak|write|send|draft|reply|answer|schreib|sende|beantworte)\b[^.?!]{0,40}\b(e-?mail|mail|mailtje|bericht)"#)
+            || has(#"\b(e-?mail|mail)(tje)? (naar|aan|to|an)\b"#) || has(#"^(mail|e-?mail) \p{L}+"#) || has(#"\b(reply to|antwoord op|reageer op)\b"#))
         // Remembering something lasting is memory; "onthoud dat ik morgen moet bellen" is a task and stays a reminder.
         let remembers = MemoryRequest.asksToRemember(text)
         intent.forgets = MemoryRequest.asksToForget(text)
@@ -70,10 +75,11 @@ struct ChatIntent: Equatable {
         if has(#"beschikbaar|\bvrij\b|\bbezet\b|available|availability|\bfree (on|at|this|next|tomorrow|today)|am i free|verfügbar|\bfrei\b|tijd voor een|time for a"#) { kinds.append(.availability) }
         if has(#"afspra|meeting|vergader|overleg|\bcall\b|inplannen|\bplan\b[^.?!]{0,30}\bin\b|agenda|calendar|kalender|\btermin|\bevent|evenement|verplaats|reschedule|\bmove (my|the)\b|verschieb|lunch met|diner met|lunch with|dinner with"#) { kinds.append(.event) }
         if writesMail { kinds.append(.mailWrite) }
+        if writesChat { kinds.append(.chatWrite) }
         if has(#"notitie|noteer|\bnotes?\b|aantekening|\bmemo|notiz|schrijf (dit|het|dat) op|write (this|it|that) down"#) { kinds.append(.note) }
         if has(#"\btaak\b|\btaken\b|\btodos?\b|to-do|open punt|actiepunt|nog (te )?doen|moet ik (vandaag|nog)|\btasks?\b|\baufgabe"#) { kinds.append(.todo) }
         if !writesMail, has(#"\bmails?\b|e-?mails?\b|inbox|ongelezen|unread|postvak|\bpost\b"#) { kinds.append(.mailRead) }
-        if !writesMail, has(#"whats-?app|imessage|\bsms|\bchats?\b|\bchatje|\bappjes?\b|ge-?appt|\bappte|\bberichten\b(?!-?app)|\bmessages?\b|\btexts?\b|\btexted|\bnachrichten"#) { kinds.append(.chats) }
+        if !writesMail, !writesChat, has(#"whats-?app|imessage|\bsms|\bchats?\b|\bchatje|\bappjes?\b|ge-?appt|\bappte|\bberichten\b(?!-?app)|\bmessages?\b|\btexts?\b|\btexted|\bnachrichten"#) { kinds.append(.chats) }
         if has(#"telefoonnummer|nummer van|mailadres|e-?mailadres|adres van|\bcontact|phone number|email address|telefonnummer"#) { kinds.append(.contacts) }
         if has(#"muziek|liedje|\bnummer\b(?! van)|\bspeel|afspelen|spotify|pauzeer|\bmusic\b|\bsong|\bplay\b|\bmusik"#) { kinds.append(.music) }
         if has(#"volume|\bgeluid|harder|zachter|louder|quieter|lautstärke|leiser|lauter"#) { kinds.append(.volume) }
@@ -98,7 +104,7 @@ struct ChatIntent: Equatable {
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
-        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
+        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
         let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
         intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)
@@ -132,20 +138,21 @@ struct ChatIntent: Equatable {
         .notion: ["notion_search", "notion_read_page"],
         .clipboard: ["read_clipboard"],
         .memory: ["remember", "forget", "recall_memory"],
-        .web: ["search_web", "read_webpage"],
-        .chats: ["search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
+        .web: ["get_weather", "search_web", "read_webpage"],
+        .chatWrite: ["whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
+        .chats: ["whatsapp_live", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
-        .memory, .chart, .mailWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .openApp, .shortcut,
+        .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .openApp, .shortcut,
         .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.
     static let actionByKind: [Kind: String] = [
         .reminder: "create_reminder", .event: "create_event", .note: "create_note", .todo: "add_open_loop",
-        .mailWrite: "compose_mail", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
+        .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
         .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember"
     ]
 

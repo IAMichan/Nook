@@ -403,6 +403,10 @@ struct ComposerMoreMenu: View {
     var body: some View {
         Menu {
             Button { app.attachFile() } label: { Label(tr("chat.attachShort"), systemImage: "paperclip") }
+            Button { app.captureScreenPart() } label: { Label(tr("chat.capture.menu"), systemImage: "camera.viewfinder") }
+            Button { NoteTaker.shared.toggle() } label: {
+                Label(NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), systemImage: "waveform.badge.mic")
+            }
             Divider()
             Button { showContext = true } label: { Label(tr("chat.contextShort"), systemImage: "eye") }
         } label: {
@@ -489,11 +493,12 @@ struct ContextInspector: View {
 /// The file attached to your next query, with a dismiss button to remove it.
 struct AttachmentChip: View {
     let name: String
+    var isImage = false
     let remove: () -> Void
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "paperclip").font(.system(size: 10, weight: .semibold)).foregroundStyle(NookTheme.iris)
+            Image(systemName: isImage ? "photo" : "paperclip").font(.system(size: 10, weight: .semibold)).foregroundStyle(NookTheme.iris)
             Text(name).font(NookTheme.font(11.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
             Button(action: remove) {
                 Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).foregroundStyle(NookTheme.textTertiary)

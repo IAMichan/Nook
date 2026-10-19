@@ -6,6 +6,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case nl = "nl"
     case en = "en"
     case de = "de"
+    case fr = "fr"
+    case es = "es"
 
     public var id: String { rawValue }
 
@@ -14,6 +16,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .nl: return "Nederlands"
         case .en: return "English"
         case .de: return "Deutsch"
+        case .fr: return "Français"
+        case .es: return "Español"
         }
     }
 }
@@ -49,7 +53,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
         } else {
             let preferred = Locale.preferredLanguages.first?.prefix(2).lowercased() ?? "nl"
             if preferred == "en" { initial = .en }
-            else if preferred == "de" { initial = .de }
+            else if let lang = AppLanguage(rawValue: preferred) { initial = lang }
             else { initial = .nl }
         }
         self.cachedLanguage = initial
@@ -58,13 +62,13 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [memoryTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [languageTranslations, memoryTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     public static func lookup(_ key: String, for lang: AppLanguage) -> String {
         for table in tables { if let val = table[lang]?[key] { return val } }
-        // German falls back to English before Dutch: closer for a German reader than the other way round.
-        let fallbacks: [AppLanguage] = lang == .de ? [.en, .nl] : [.nl, .en]
+        // Everyone but a Dutch reader falls back to English before Dutch.
+        let fallbacks: [AppLanguage] = lang == .nl ? [.nl, .en] : [.en, .nl]
         for fallback in fallbacks where fallback != lang {
             for table in tables { if let val = table[fallback]?[key] { return val } }
         }

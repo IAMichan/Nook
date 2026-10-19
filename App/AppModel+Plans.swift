@@ -66,6 +66,11 @@ extension AppModel {
                 }
             }
             if case .done = outcome, succeeded.count > 1 { NookPresence.shared.celebrate() }
+            // What can be reversed gets a "Maak ongedaan" button under the answer.
+            let undoable = zip(message.actions, states).contains { action, state in
+                state.result.map { Undo.step(tool: action.tool, input: action.input, result: $0) != nil } ?? false
+            }
+            if undoable { chat.update(id) { if !$0.offers.contains(tr("undo.offer")) { $0.offers.append(tr("undo.offer")) } } }
         }
     }
 
@@ -111,7 +116,10 @@ extension AppModel {
                 }
             },
             executedBefore: { [weak self] key in self?.store.executedAction(key, within: ActionGate.duplicateWindow) },
-            recordExecuted: { [weak self] key, step, result in self?.store.recordExecuted(key, tool: step.tool, result: result) },
+            recordExecuted: { [weak self] key, step, result in
+                self?.store.recordExecuted(key, tool: step.tool, result: result)
+                self?.remember(step, result: result)
+            },
             progress: progress,
             verify: { [weak self] step, result in await self?.verify(step, result: result) }
         )
@@ -292,6 +300,11 @@ extension AppModel {
 
     /// A reply typed on a proposal card: the proposal moves into the chat first, so the question is answered with it in view.
     func handleCardReply(_ text: String, card: NookCard) {
+        // A WhatsApp card's field answers that chat directly.
+        if card.id.hasPrefix(Self.whatsAppCardPrefix) {
+            replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
+            return
+        }
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !question.isEmpty, settings.brainReady, let adopt = cardReplies.removeValue(forKey: card.id) {
             warmUp()

@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat), icon: "bubble.left")
         add(to: menu, title: tr("menu.talk"), action: #selector(talk), icon: "mic")
         add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), icon: "eye")
+        add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), icon: "record.circle")
         add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap), icon: "calendar")
         let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w", icon: "macwindow")
         workspace.keyEquivalentModifierMask = [.command, .option]
@@ -146,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func nextTrack() { model.nowPlaying.control(.next) }
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
+    @objc private func recordCall() { NoteTaker.shared.toggle() }
     @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func openWorkspace() { model.openWindow() }

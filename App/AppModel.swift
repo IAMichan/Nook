@@ -189,8 +189,21 @@ final class AppModel: ObservableObject {
     var spokenRequest = false
     /// File from Shelf attached as prompt context.
     var attachment: (name: String, text: String, date: Date)? {
-        didSet { attachmentName = attachment?.name }
+        didSet {
+            attachmentName = attachment?.name
+            // Images belong to the attachment they came with: another file (or none) leaves them behind.
+            if attachment?.name != oldValue?.name { attachmentImages = [] }
+        }
     }
+    /// The picture itself when the attachment is an image (a dropped photo, a part of the screen), for brains that see.
+    var attachmentImages: [ChatImage] = [] {
+        didSet { attachmentIsImage = !attachmentImages.isEmpty }
+    }
+    @Published private(set) var attachmentIsImage = false
+    /// Actions carried out in the last half hour, for "maak ongedaan".
+    var recentActions: [(item: (tool: String, input: [String: Any], result: String), date: Date)] = []
+    /// macOS's selection for "ask about a part of the screen" is open.
+    var capturingScreenPart = false
     /// Attachment indicator for the input field: file currently included.
     @Published private(set) var attachmentName: String?
 
@@ -318,11 +331,7 @@ final class AppModel: ObservableObject {
             .sink { [weak self] info in self?.notch.announce(info) }
             .store(in: &bag)
 
-        hotKeys = [
-            HotKey(id: 1, keyCode: kVK_Space, modifiers: optionKey) { [weak self] in self?.toggleVoice() },
-            HotKey(id: 2, keyCode: kVK_ANSI_N, modifiers: optionKey | cmdKey) { [weak self] in self?.lookAtScreen(manual: true) },
-            HotKey(id: 3, keyCode: kVK_Space, modifiers: optionKey | cmdKey) { [weak self] in self?.openAsk() }
-        ].compactMap { $0 }
+        reloadHotKeys()
 
         // Connectors: local (calendar, reminders, notes, mail, browser, files, clipboard) and authenticated services.
         connectors.register([
@@ -337,7 +346,11 @@ final class AppModel: ObservableObject {
             MessagesConnector(),
             WhatsAppConnector(),
             BearConnector(),
-            ThingsConnector()
+            ThingsConnector(),
+            // Calls the Notetaker recorded.
+            CallNotesConnector(),
+            // The Mac itself: processor, memory, battery, disk.
+            SystemConnector()
         ])
         connectors.register(CloudConnectors.makeAll())
         // The crypto portfolio (PortfolioConnector) is switched off for now: not registered, not in Settings.
@@ -349,6 +362,10 @@ final class AppModel: ObservableObject {
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
         connectors.start()
+        startWhatsApp()
+        startFlow()
+        startNotes()
+        startWindowAttach()
         codex.homes = { [weak self] in
             guard let self else { return [] }
             return self.profiles.profiles(for: .codex).map { $0.homeURL }

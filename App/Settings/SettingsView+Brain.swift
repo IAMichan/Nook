@@ -292,6 +292,23 @@ extension SettingsView {
 
     var localFields: some View {
         Group {
+            // Apple's own model: already on the Mac (macOS 26 with Apple Intelligence on), nothing to download.
+            if AppleIntelligence.status != .unsupported {
+                HStack {
+                    ModelLogo(name: "Apple")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(AppleModel.title)
+                        Text(AppleIntelligence.isAvailable ? tr("brain.apple.detail") : AppleIntelligence.unavailableReason)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if settings.localModel == AppleModel.id {
+                        Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else if AppleIntelligence.isAvailable {
+                        Button(tr("settings.brain.use")) { settings.localModel = AppleModel.id; testResult = nil }
+                    }
+                }
+            }
             ForEach(EmbeddedModel.options) { option in
                 HStack {
                     ModelLogo(name: option.title + " " + option.id)

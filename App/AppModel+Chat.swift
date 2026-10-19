@@ -15,6 +15,12 @@ extension AppModel {
         if text.isEmpty { text = tr("image.defaultQuestion") }
         NookPresence.shared.heard()
 
+        // "Maak ongedaan": the last actions Nook carried out, reversed as a plan to approve.
+        if Undo.isRequest(text) {
+            proposeUndo(asked: text)
+            return
+        }
+
         // Short deterministic commands handled locally without querying the brain: instant execution.
         if images.isEmpty, let intent = LocalIntent.parse(text) {
             // In chat mode, keep the flow: music and time queries are replied to inline.
@@ -108,7 +114,8 @@ extension AppModel {
         if !images.isEmpty, selection.runtime == .mlx && !(localModel?.seesImages ?? false) {
             reply.notices.append(tr("image.unsupported"))
         }
-        reply.status = settings.useLocal && !EmbeddedModel.shared.isLoaded ? tr("app.status.loadingModel") : tr("app.status.thinking")
+        reply.status = settings.useLocal && settings.localModel != AppleModel.id && !EmbeddedModel.shared.isLoaded
+            ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
         chat.setBusy(true, conversation: conversation)
@@ -139,6 +146,7 @@ extension AppModel {
         // Context from a dropped Shelf file or active screen contents.
         var snapshot: ScreenSnapshot?
         var attachedName: String?
+        var images: [ChatImage] = []
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
         let shouldCaptureScreen: Bool
@@ -148,6 +156,7 @@ extension AppModel {
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
             snapshot = ScreenSnapshot(appName: "Bestand", windowTitle: file.name, text: String(file.text.prefix(limit)))
             attachedName = file.name
+            images = attachmentImages
             shouldCaptureScreen = false
         } else if screenAllowed, explicitScreen || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
@@ -230,6 +239,12 @@ extension AppModel {
                 : "\n\n(Your previous answer was empty, or contained code/JSON or was in the wrong language. Answer the question itself, in plain sentences, \(settings.languageInstruction(for: text)) Use the context and what was looked up; if something is missing, fetch it with the matching tool (a connected source, an app with read_app, the screen, a file or the web). If it really is not possible, briefly say where you looked and what was missing.)"
         }
 
+        // A spoken question is answered aloud while the answer is written, sentence by sentence. Not when a small brain's
+        // answer may still be checked and written again: then it is read once it is final.
+        let speaksLive = spokenRequest && settings.speakAnswers && !retry && correction == nil
+            && !(settings.checkAnswers && settings.brainProfile.isSmall)
+        var spokenQueue = SpokenText.Queue()
+        if speaksLive { speech.stop() }
         do {
             var lastCleanedText = ""
             let plan = try await brain.run(
@@ -239,6 +254,7 @@ extension AppModel {
                 context: brainContext,
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
+                images: images,
                 tools: tools,
                 onText: { [weak self] partial in
                     guard let self, self.replies[conversation] == id else { return }
@@ -250,6 +266,9 @@ extension AppModel {
                     self.chat.update(id) { message in
                         message.text = cleaned
                         message.status = ""
+                    }
+                    if speaksLive {
+                        for sentence in spokenQueue.feed(cleaned) { self.speech.enqueue(sentence, language: self.settings.language) }
                     }
                 }
             )
@@ -359,7 +378,14 @@ extension AppModel {
             if let message = chat.message(id) {
                 let spoken = !message.text.isEmpty ? message.text
                     : (!message.mails.isEmpty ? tr("app.spoken.mail") : (!message.charts.isEmpty ? tr("app.spoken.chart") : tr("app.plan.ready")))
-                speakIfAsked(spoken)
+                if speaksLive {
+                    for sentence in spokenQueue.finish(message.text.isEmpty ? spoken : message.text) {
+                        speech.enqueue(sentence, language: settings.language)
+                    }
+                    spokenRequest = false
+                } else {
+                    speakIfAsked(spoken)
+                }
             }
             replies[conversation] = nil
             chatTasks[conversation] = nil

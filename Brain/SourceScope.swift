@@ -48,6 +48,8 @@ enum SourceCatalog {
         SourceDescriptor(id: "messages", title: "Berichten", kind: .builtIn),
         SourceDescriptor(id: "whatsapp", title: "WhatsApp", kind: .builtIn),
         SourceDescriptor(id: "bear", title: "Bear", kind: .builtIn),
+        SourceDescriptor(id: "callnotes", title: "Gesprekken", kind: .nook),
+        SourceDescriptor(id: "system", title: "Deze Mac", kind: .builtIn),
         SourceDescriptor(id: "things", title: "Things", kind: .builtIn),
         SourceDescriptor(id: loops, title: "Open punten", kind: .nook),
         SourceDescriptor(id: memory, title: "Geheugen", kind: .nook),
@@ -119,7 +121,7 @@ enum SourceCatalog {
 
     /// Sources that hold personal data on this Mac: the preset for "only on this Mac" (Settings › Brain).
     static let personal: Set<String> = [
-        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail",
+        "calendar", "icalfeeds", "reminders", "notes", "messages", "whatsapp", "bear", "things", loops, "mail", "callnotes",
         "browser", "files", "contacts", "clipboard", screen, memory
     ]
 
@@ -133,12 +135,13 @@ enum SourceCatalog {
 
     /// Tools associated with a source. Tools without a source (charts, open app, music…) are always allowed.
     private static let exactTools: [String: String] = [
-        "list_events": "calendar", "create_event": "calendar", "update_event": "calendar",
+        "list_events": "calendar", "create_event": "calendar", "update_event": "calendar", "delete_event": "calendar",
         "check_availability": "calendar",
-        "create_reminder": "reminders", "complete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
+        "create_reminder": "reminders", "complete_reminder": "reminders", "delete_reminder": "reminders", "list_reminders": "reminders", "search_reminders": "reminders",
         "list_notes": "notes", "search_notes": "notes", "read_note": "notes", "create_note": "notes",
         "search_messages": "messages", "read_messages": "messages", "messages_open_chats": "messages",
-        "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp",
+        "search_whatsapp": "whatsapp", "read_whatsapp": "whatsapp", "whatsapp_open_chats": "whatsapp", "whatsapp_live": "whatsapp", "whatsapp_send": "whatsapp",
+        "search_call_notes": "callnotes", "read_call_note": "callnotes", "mac_status": "system",
         "search_bear": "bear", "read_bear": "bear", "search_things": "things",
         "search_mail": "mail", "read_mail": "mail", "mail_unread": "mail", "inbox_mail": "mail",
         "search_files": "files", "read_file": "files",
@@ -149,7 +152,7 @@ enum SourceCatalog {
         "search_contacts": "contacts", "read_clipboard": "clipboard",
         "list_open_loops": loops, "add_open_loop": loops, "complete_open_loop": loops,
         "remember": memory, "forget": memory, "recall_memory": memory,
-        "search_web": web, "read_webpage": web, "web_search": web,
+        "search_web": web, "read_webpage": web, "web_search": web, "get_weather": web,
         "read_source": "customsources", "send_to_source": "customsources",
         "vercel_deployments": "vercel", "stripe_payments": "stripe", "notion_search": "notion", "notion_read_page": "notion",
         "calcom_bookings": "calcom", "n8n_status": "n8n", "resend_overview": "resend"
@@ -182,6 +185,7 @@ enum SourceCatalog {
         (#"imessages?|sms'?(je|jes|en)?|berichten-?app|messages app|appje\w*|ge-?appt|appte\w*"#, ["messages", "whatsapp"]),
         (#"whats-?app\w*"#, ["whatsapp"]),
         (#"bear"#, ["bear"]),
+        (#"(opgenomen|mijn) (gesprekk?en|calls|meetings)|gespreksnotities|notulen|transcript\w*|recorded calls?|call notes|meeting notes"#, ["callnotes"]),
         (#"things( ?3| app|-app)"#, ["things"]),
         (#"contact\w*|telefoon\w*|adresboek|address book"#, ["contacts"]),
         (#"open punten|open loops?"#, [loops]),
@@ -395,6 +399,8 @@ enum SourceRouter {
         (#"tabs?|tabblad\w*|pagina|page|website|site|artikel|article|browser|gelezen|las ik"#, ["browser"]),
         (#"terminal|shell|commando|command\b|npm |yarn |pip |brew |git |draai |run |voer .{0,20}uit|installeer|install\b"#, ["terminal"]),
         (#"notitie\w*|notes?|memo'?s?|aantekening\w*"#, ["notes", "bear"]),
+        (#"traag|langzaam|trage mac|hangt|vastloopt|batterij\w*|accu\w*|geheugen|werkgeheugen|\bram\b|processor|\bcpu\b|ventilator|schijfruimte|harde schijf|schijf vol\w*|opslag\w*|vrije ruimte|slow|battery|memory|disk space|storage|fan\b|langsam|akku|speicher|festplatte"#, ["system"]),
+        (#"call\w*|meeting\w*|vergader\w*|overleg\w*|gesprek\w*|besproken|afgesproken|zei .{0,20}in de|notulen|to-?do'?s? uit|besprechung\w*"#, ["callnotes"]),
         (#"taken|takenlijst|to-?do'?s?|tasks?|projecten|projects?"#, ["things"]),
         (#"contact\w*|telefoon\w*|telefoonnummer|e-?mailadres|adresboek|address book"#, ["contacts"]),
         (#"bestand\w*|files?|document\w*|pdf|rapport|report|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
@@ -429,12 +435,13 @@ enum SourceRouter {
 enum SourceCapabilities {
     private static let phrases: [String: String] = [
         "list_events": "afspraken lezen", "check_availability": "beschikbaarheid in alle agenda's",
-        "create_event": "afspraak maken", "update_event": "afspraak aanpassen",
-        "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken",
+        "create_event": "afspraak maken", "update_event": "afspraak aanpassen", "delete_event": "afspraak verwijderen",
+        "create_reminder": "herinnering maken", "complete_reminder": "herinnering afvinken", "delete_reminder": "herinnering verwijderen",
         "list_reminders": "herinneringen bekijken", "search_reminders": "herinneringen zoeken",
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
-        "read_whatsapp": "chat lezen", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
+        "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
+        "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "mac_status": "processor, geheugen, batterij en schijf", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "search_files": "bestanden zoeken", "read_file": "document lezen",
         "read_browser_tab": "geopende webpagina lezen",
@@ -443,7 +450,7 @@ enum SourceCapabilities {
         "search_contacts": "contacten zoeken", "read_clipboard": "klembord lezen",
         "list_open_loops": "open punten lezen", "add_open_loop": "open punt toevoegen", "complete_open_loop": "open punt afronden",
         "remember": "iets onthouden", "forget": "iets vergeten", "recall_memory": "geheugen doorzoeken",
-        "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken",
+        "search_web": "web doorzoeken", "read_webpage": "webpagina lezen", "web_search": "web doorzoeken", "get_weather": "weer opvragen",
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",
         "github_overview": "je PR's en reviews", "github_pr_details": "PR met diff lezen", "github_search": "issues en PR's zoeken",
         "github_issue_details": "issue lezen", "github_review_pr": "PR beoordelen", "github_comment_pr": "reageren op PR",
@@ -544,6 +551,8 @@ enum Prefetch {
             return matches(reply, text) || matches(pending, text) ? (1, ["days": 14, "unanswered_only": true]) : (2, ["days": 7])
         case "whatsapp_open_chats", "messages_open_chats":
             return (matches(unread, text) || matches(reply, text) || matches(pending, text) ? 0 : 2, [:])
+        // The linked phone is live: its overview goes before what WhatsApp on this Mac has synced.
+        case "whatsapp_live": return (matches(unread, text) || matches(reply, text) || matches(pending, text) ? 0 : 1, [:])
         case "list_notes": return (1, ["limit": 8])
         case "list_reminders": return (1, [:])
         case "read_browser_tab": return (1, [:])

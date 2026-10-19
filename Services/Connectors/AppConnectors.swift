@@ -308,7 +308,85 @@ final class WhatsAppConnector: AppDatabaseConnector {
     LEFT JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
     """
 
+    /// WhatsApp counts as on when its data on this Mac can be read, or when the phone is linked through the gateway.
+    override var isActive: Bool { super.isActive || WhatsAppLink.shared.isConnected }
+
+    override func contextLines() -> [String] {
+        let link = WhatsAppLink.shared
+        guard link.isConnected else { return [] }
+        var lines = ["WhatsApp is linked live (the user's phone through a local gateway): read chats with whatsapp_live, send with whatsapp_send (the user approves first)."]
+        let unread = link.inbox.visible(filters: link.filters).filter { $0.unread > 0 }
+        if !unread.isEmpty {
+            lines.append("Unread WhatsApp chats:\n" + WhatsAppRecipients.overview(unread, limit: 6))
+        }
+        return lines
+    }
+
     override var tools: [ToolSpec] {
+        let live = WhatsAppLink.shared.isConnected ? liveTools : []
+        // Without access to WhatsApp's data on this Mac only the linked phone is there.
+        return super.isActive || !WhatsAppLink.shared.isConnected ? databaseTools + live : live
+    }
+
+    private var liveTools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "whatsapp_live",
+                description: "WhatsApp through the user's linked phone (live, includes what arrived a minute ago). Without chat: the recent conversations with unread counts and the newest message. With chat (a name, number or chat id): the newest messages of that chat.",
+                schema: ["type": "object", "properties": [
+                    "chat": ["type": "string", "description": "Name, phone number or chat id. Leave empty for the overview."],
+                    "limit": ["type": "integer", "description": "How many messages of the chat (default 20, at most 50)."]
+                ]],
+                kind: .read,
+                summarize: { input in
+                    let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespaces)
+                    return chat.isEmpty ? "WhatsApp: recente chats" : "WhatsApp: chat met \(chat)"
+                },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    let link = WhatsAppLink.shared
+                    let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !chat.isEmpty else {
+                        let conversations = link.inbox.visible(filters: link.filters)
+                        if conversations.isEmpty {
+                            let names = link.knownChats.prefix(15).map(\.name).filter { !$0.isEmpty }
+                            return names.isEmpty ? "No recent WhatsApp messages in the last 12 hours."
+                                : "No new WhatsApp messages in the last 12 hours. Recent chats: " + names.joined(separator: ", ") + "."
+                        }
+                        return "Recent WhatsApp conversations (newest first):\n" + WhatsAppRecipients.overview(conversations)
+                    }
+                    guard let target = link.resolve(chat) else {
+                        throw NookError(tr("whatsapp.reply.unknown", chat, link.knownChats.prefix(12).map(\.name).joined(separator: ", ")))
+                    }
+                    let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
+                    let messages = try await link.messages(of: target.jid, limit: limit)
+                    guard !messages.isEmpty else { return "No messages found in the WhatsApp chat with \(target.name)." }
+                    return "WhatsApp chat with \(target.name) (chat id \(target.jid)):\n" + WhatsAppRecipients.lines(messages, chatName: target.name)
+                }
+            ),
+            ToolSpec(
+                name: "whatsapp_send",
+                description: "Sends a WhatsApp message from the user's own account to an existing chat (a contact or group on their phone), through the linked phone. Use when the user asks to app, WhatsApp or message someone on WhatsApp. Write the message as the user would, in their language and tone, without a signature. The user sees the exact text and recipient and approves before anything is sent.",
+                schema: ["type": "object", "properties": [
+                    "to": ["type": "string", "description": "The chat: a contact or group name as on the phone, a phone number, or a chat id from whatsapp_live."],
+                    "message": ["type": "string", "description": "The full text to send."]
+                ], "required": ["to", "message"]],
+                kind: .action,
+                summarize: { input in
+                    let to = AppData.string(input["to"]).trimmingCharacters(in: .whitespaces)
+                    return "WhatsApp → \(to): \(AppData.string(input["message"]))"
+                },
+                tag: { _ in ("sends", .caution) },
+                run: { input in
+                    let to = AppData.string(input["to"])
+                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: to)
+                    return "WhatsApp message sent to \(name)."
+                }
+            )
+        ]
+    }
+
+    private var databaseTools: [ToolSpec] {
         [
             ToolSpec(
                 name: "search_whatsapp",

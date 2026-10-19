@@ -18,6 +18,8 @@ extension SettingsView {
                      ? "With wake word enabled, Nook continuously listens on-device. Audio is never stored or transmitted. The orange microphone indicator will be visible."
                      : "This Mac cannot recognize speech on-device, so wake word cannot be enabled. Use ⌥ Space to talk anytime.")
             }
+            FlowSettingsSection()
+            ParakeetSettingsSection()
             Section {
                 Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
                 LabeledContent(tr("settings.voice.customSounds")) {

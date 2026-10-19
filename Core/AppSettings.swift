@@ -259,6 +259,7 @@ final class AppSettings: ObservableObject {
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
         let memory = ModelAdvisor.Hardware.current.memoryGB
+        if useLocal, localModel == AppleModel.id { return .apple }
         if useLocal { return (ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall).roomier(memoryGB: memory) }
         if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel).roomier(memoryGB: memory) }
         return .cloud
@@ -268,6 +269,7 @@ final class AppSettings: ObservableObject {
     var brainLabel: String {
         if useLocal {
             if localModel.isEmpty { return tr("brain.chip.noModel") }
+            if localModel == AppleModel.id { return AppleModel.title }
             return ModelAdvisor.catalog.first { $0.id == localModel }?.title ?? activeModelName
         }
         let name = activeProviderModel.isEmpty ? tr("brain.chip.firstModel") : activeProviderModel
@@ -296,6 +298,7 @@ final class AppSettings: ObservableObject {
 
     /// Name of the current reasoning engine, for notifications.
     var activeModelName: String {
+        if useLocal, localModel == AppleModel.id { return AppleModel.title }
         if useLocal { return localModel.split(separator: "/").last.map(String.init) ?? localModel }
         let name = activeProviderModel
         return provider == .claude ? name : "\(provider.title) · \(name.isEmpty ? "first model" : name)"

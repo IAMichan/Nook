@@ -30,6 +30,7 @@ final class BrainService {
         context: String,
         untrustedLabel: String? = nil,
         untrusted: String? = nil,
+        images: [ChatImage] = [],
         tools allTools: [ToolSpec],
         onText: ((String) -> Void)? = nil
     ) async throws -> BrainPlan {
@@ -132,7 +133,8 @@ final class BrainService {
         // much better answers there, no waiting on a greeting or a simple action.
         let thinking = ThinkingPolicy.wantsThinking(userText) && !intent.isSmallTalk && intent.primaryAction == nil
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: fitted[0], history: history,
-                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking, onText: onText)
+                                     webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                     images: images, onText: onText)
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out.
@@ -193,6 +195,17 @@ final class BrainService {
         return items
     }
 
+    /// A small rewrite without tools (Flow's clean-up, a dictated prompt): the chosen brain, so on this Mac by default.
+    /// Nil when it takes longer than `timeout` seconds or fails; the caller then keeps the original text.
+    func rewrite(system: String, prompt: String, timeout: Double) async -> String? {
+        guard settings.brainReady else { return nil }
+        let profile = settings.brainProfile
+        return try? await RetrievalLedger.withTimeout(timeout) { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.complete(system: system, prompt: prompt, profile: profile)
+        }
+    }
+
     /// Memory: reads the user's recent messages and names what is worth remembering (see `Reflection`). Runs in the
     /// background after an answer; nil when the brain gives nothing in time. Claude Code is skipped: a whole
     /// command-line session for a background note is too heavy.
@@ -230,9 +243,36 @@ final class BrainService {
 
     /// Runs one conversation on the selected brain, through the shared tool loop.
     private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
-                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false,
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool = false, images: [ChatImage] = [],
+                         onText: ((String) -> Void)?) async throws -> BrainPlan {
+        // Images go to the brains that can take them. A model without vision refuses the request: it then answers from
+        // the text Nook read in the image, which is in the context for every brain.
+        let selection = settings.selection
+        let canSee = selection.runtime != .mlx && !(selection.runtime == .external && selection.provider == .claudeCode)
+        if !images.isEmpty, canSee {
+            do {
+                return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
+                                         webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                         sending: images, onText: onText)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard !Task.isCancelled else { throw error }
+                Log.brain.info("images not accepted, answering from the recognized text: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
+                                 webAllowed: webAllowed, profile: profile, runner: runner, thinking: thinking,
+                                 sending: [], onText: onText)
+    }
+
+    private func execute(system: String, prompt: String, fittedHistory: String, history: [ChatTurn], webAllowed: Bool,
+                         profile: ModelProfile, runner: ToolRunner, thinking: Bool, sending images: [ChatImage],
                          onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
+        if selection.runtime == .mlx, selection.model == AppleModel.id {
+            return try await AppleIntelligence.run(system: system, prompt: fittedHistory + prompt, profile: profile, runner: runner, onText: onText)
+        }
         if selection.runtime == .mlx {
             guard !selection.model.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
             return try await EmbeddedModel.shared.run(model: selection.model, system: system, prompt: fittedHistory + prompt,
@@ -246,11 +286,11 @@ final class BrainService {
                                                         allowWebSearch: webAllowed)
         case .ollama:
             conversation = OllamaConversation(model: settings.activeProviderModel, system: system,
-                                              history: [], prompt: fittedHistory + prompt, profile: profile)
+                                              history: [], prompt: fittedHistory + prompt, images: images, profile: profile)
         case .claude:
             guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
             conversation = AnthropicConversation(
-                model: settings.model, system: system, history: history, prompt: prompt,
+                model: settings.model, system: system, history: history, prompt: prompt, images: images,
                 webSearchTool: webAllowed ? Self.webSearchTool(for: settings.model) : nil, maxTokens: 8192,
                 stream: { [weak self] body, onPartial in
                     guard let self else { throw CancellationError() }
@@ -265,7 +305,7 @@ final class BrainService {
             conversation = OpenAIConversation(
                 provider: provider, model: settings.activeProviderModel, key: settings.providerKey, system: system,
                 history: profile.isSmall ? [] : history, prompt: profile.isSmall ? fittedHistory + prompt : prompt,
-                maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
+                images: images, maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
             )
         }
         let pictures = ReplyContext.images
@@ -365,6 +405,7 @@ final class BrainService {
     func test() async throws -> String {
         if settings.useLocal {
             guard !settings.localModel.isEmpty else { throw NookError(tr("brain.unavailable.noModel")) }
+            if settings.localModel == AppleModel.id { return try await AppleIntelligence.test() }
             return try await EmbeddedModel.shared.test(model: settings.localModel)
         }
         let probe = "Reply with only the word: ready"

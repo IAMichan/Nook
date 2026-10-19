@@ -38,13 +38,21 @@ extension AppModel {
             viewModel.register("listening#done") { [weak self] in self?.voice.finishNow() }
             viewModel.register("listening#cancel") { [weak self] in self?.voice.cancel() }
             viewModel.show(.card(listeningCard("")))
+            let partial: (String) -> Void = { [weak self] text in
+                guard let self else { return }
+                self.viewModel.updateCard(self.listeningCard(text))
+            }
+            let finished: (String) -> Void = { [weak self] text in self?.voiceFinished(text) }
+            // "Taal van mijn vraag": several languages at once; otherwise the chosen one.
+            if settings.language == "auto" {
+                voice.startMultilingual(onPartial: partial, onFinish: finished)
+                return
+            }
             do {
                 try voice.start(
-                    onPartial: { [weak self] text in
-                        guard let self else { return }
-                        self.viewModel.updateCard(self.listeningCard(text))
-                    },
-                    onFinish: { [weak self] text in self?.voiceFinished(text) }
+                    locale: VoiceService.locale(answerLanguage: settings.language, appLanguage: settings.appLanguage.rawValue),
+                    onPartial: partial,
+                    onFinish: finished
                 )
             } catch {
                 viewModel.show(.card(errorCard(error.localizedDescription)))
