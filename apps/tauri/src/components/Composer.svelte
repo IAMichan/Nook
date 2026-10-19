@@ -11,6 +11,7 @@
   import MicButton from "./MicButton.svelte";
   import Listening from "../views/services/Listening.svelte";
   import SourcePicker from "./SourcePicker.svelte";
+  import ChatAccounts from "../views/connectors/ChatAccounts.svelte";
 
   let { autofocus = false, compact = false }: { autofocus?: boolean; compact?: boolean } = $props();
   let text = $state("");
@@ -152,6 +153,7 @@
   {#if nook.info && !compact}
     <div class="under">
       <SourcePicker />
+      <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
       <div class="brain" bind:this={brainRoot}>
         <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
           title={nook.info.brainLocal ? "Denkt op deze computer" : "Externe AI"}>

@@ -2,11 +2,12 @@
   // Welke accounts deze chat mag gebruiken ("GitHub · Werk"), alleen bij diensten met meer dan één account.
   import { connectorsApi, connectorEvents, type ChatService } from "../../lib/connectors";
 
-  let { nookId }: { nookId: string } = $props();
+  // Een nieuwe chat heeft nog geen id: `ensure` maakt hem aan zodra je iets kiest.
+  let { nookId, ensure }: { nookId: string | null; ensure?: () => Promise<string> } = $props();
   let services = $state<ChatService[]>([]);
 
   async function load() {
-    services = await connectorsApi.chatAccounts(nookId);
+    services = await connectorsApi.chatAccounts(nookId ?? "").catch(() => []);
   }
 
   $effect(() => {
@@ -19,7 +20,9 @@
 
   async function toggle(id: string, allowed: boolean) {
     const excluded = services.flatMap((s) => s.accounts).filter((a) => (a.id === id ? !allowed : !a.allowed)).map((a) => a.id);
-    await connectorsApi.setChatAccounts(nookId, excluded);
+    const target = nookId ?? (await ensure?.());
+    if (!target) return;
+    await connectorsApi.setChatAccounts(target, excluded);
     await load();
   }
 </script>
@@ -38,6 +41,6 @@
 {/if}
 
 <style>
-  .accounts { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text2); }
+  .accounts { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--text3); }
   label { display: inline-flex; gap: 5px; align-items: center; }
 </style>

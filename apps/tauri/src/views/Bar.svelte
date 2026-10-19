@@ -55,6 +55,10 @@
   // Muziek: een eigen tab zolang er iets speelt.
   let playing = $state<NowPlaying | null>(null);
   let since = $state(Date.now());
+  // De gekozen tab, of Nook als die tab er nu niet is (niets speelt, of geen terminals op dit platform).
+  const shown = $derived<Tab>(
+    (tab === "music" && !playing) || (tab === "workspace" && nook.info && !nook.info.capabilities.terminals) ? "nook" : tab,
+  );
   $effect(() => {
     services.nowPlaying().then((n) => ((playing = n), (since = Date.now()))).catch(() => {});
     const un = serviceEvents.onNowPlaying((n) => {
@@ -157,29 +161,29 @@
       <header onmousedown={drag}>
         <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
         <nav>
-          <button class:on={tab === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
-          <button class:on={tab === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
-            <button class:on={tab === "workspace"} onclick={() => select("workspace")}>Werkruimte</button>
+            <button class:on={shown === "workspace"} onclick={() => select("workspace")}>Werkruimte</button>
           {/if}
           {#if playing}
-            <button class:on={tab === "music"} onclick={() => select("music")}>Muziek {#if playing.playing}<span class="dot unread"></span>{/if}</button>
+            <button class:on={shown === "music"} onclick={() => select("music")}>Muziek {#if playing.playing}<span class="dot unread"></span>{/if}</button>
           {/if}
         </nav>
         <span class="spacer"></span>
         <button class="ghost icon" title="Open in venster" onclick={() => api.showMain("chat")}>⧉</button>
         <button class="ghost icon" title="Instellingen" onclick={() => api.showMain("settings")}>⚙</button>
       </header>
-      <AgentAlerts requests={tab !== "agents"} onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }} />
+      <AgentAlerts requests={shown !== "agents"} onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }} />
       <div class="body">
-        {#if tab === "nook"}
+        {#if shown === "nook"}
           <div class="nooktab">
             <div class="chatcol"><Chat compact autofocus={pinnedOpen} /></div>
             <div class="side"><Today /></div>
           </div>
-        {:else if tab === "agents"}
+        {:else if shown === "agents"}
           <Agents compact />
-        {:else if tab === "music"}
+        {:else if shown === "music" && playing}
           <Music info={playing} {since} />
         {:else}
           <Workspace compact />
