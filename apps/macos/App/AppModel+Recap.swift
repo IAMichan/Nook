@@ -37,16 +37,18 @@ extension AppModel {
         if let day = summary.busiestDay {
             facts.append(Fact(label: tr("app.recap.busiest"), value: NookDates.weekday(day) + " · " + RecapStore.duration(summary.busiestSeconds)))
         }
+        if !summary.agents.isEmpty {
+            facts.append(Fact(label: tr("app.recap.agents"), value: Self.agentList(summary.agents)))
+        }
         if let project = summary.topProject {
             facts.append(Fact(label: tr("app.recap.topProject"), value: project))
         }
 
-        let who = summary.topAgent.map { tr("app.recap.andCo", $0) } ?? tr("app.recap.yourAgents")
         let card = NookCard(
             id: "recap",
             mood: .done,
             context: tr("app.recap.since", label, NookDates.dayMonth(summary.start)),
-            title: tr("app.recap.worked", who, RecapStore.duration(summary.activeSeconds)),
+            title: tr("app.recap.worked", tr("app.recap.yourAgents"), RecapStore.duration(summary.activeSeconds)),
             detail: .facts(facts),
             primary: CardAction(label: tr("app.ok"), outcome: .dismiss),
             secondary: CardAction(label: "", outcome: .dismiss),
@@ -72,6 +74,12 @@ extension AppModel {
             target: .action { [weak self] in self?.showWeekRecap() },
             logo: .symbol("chart.bar.xaxis")
         )
+    }
+
+    /// "Claude Code, Codex, Antigravity", and "+2" past three so the fact stays on one line.
+    static func agentList(_ agents: [String]) -> String {
+        let shown = agents.prefix(3).joined(separator: ", ")
+        return agents.count > 3 ? shown + " +\(agents.count - 3)" : shown
     }
 
     static func weekKey(_ date: Date) -> String {

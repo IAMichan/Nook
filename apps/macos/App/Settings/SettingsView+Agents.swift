@@ -40,6 +40,17 @@ extension SettingsView {
             if showUsage {
                 usageSection
             }
+            // The week recap lives here only, so the menu bar stays calm.
+            Section {
+                LabeledContent {
+                    Button(tr("button.view")) { app.showWeekRecap() }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("settings.agents.weekRecap"))
+                        Text(tr("settings.agents.weekRecapDetail")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section {
                 settingsLink(.workspace, title: tr("settings.ws.title"), detail: tr("settings.agents.workspaceMoved"))
             }

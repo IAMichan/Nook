@@ -11,6 +11,15 @@ final class ShortcutsTests: XCTestCase {
         XCTAssertTrue(Shortcut(keyCode: 0x7A, modifiers: 0).isValid, "F1 alone is fine")
     }
 
+    func testMenuKeys() {
+        let set = ShortcutSet()
+        XCTAssertEqual(set.shortcut(for: .lookAtScreen)?.menuKey, "n")
+        XCTAssertEqual(set.shortcut(for: .talk)?.menuKey, " ")
+        XCTAssertEqual(Shortcut(keyCode: 0x7A, modifiers: 0).menuKey, "\u{F704}", "F1")
+        XCTAssertEqual(Shortcut(keyCode: 0x6F, modifiers: 0).menuKey, "\u{F70F}", "F12")
+        XCTAssertNil(Shortcut(keyCode: 0x7E, modifiers: Shortcut.option).menuKey, "arrows are not shown")
+    }
+
     func testOneKeyDoesOneThing() {
         var set = ShortcutSet()
         let taken = set.shortcut(for: .lookAtScreen)

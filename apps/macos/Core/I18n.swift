@@ -119,12 +119,11 @@ public func tr(_ key: String, _ args: CVarArg...) -> String {
 private let translations: [AppLanguage: [String: String]] = [
     .nl: [
         // MARK: Menu Bar & General
-        "menu.talk": "Praat met Nook   ⌥ spatie",
-        "menu.screen": "Kijk mee met mijn scherm   ⌥⌘N",
-        "menu.weekRecap": "Weekoverzicht",
+        "menu.talk": "Praat met Nook",
+        "menu.screen": "Kijk mee met mijn scherm",
+        "menu.developer": "Ontwikkelaar",
         "menu.demoScenes": "Voorbeeldscènes",
         "menu.demoData": "Voorbeelddata tonen",
-        "menu.hover": "Openen bij hover",
         "menu.settings": "Instellingen…",
         "menu.quit": "Nook afsluiten",
         "menu.accessibility": "Nook",
@@ -502,6 +501,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.subscriptions": "Abonnementen",
         "settings.agents.weekRecap": "Weekoverzicht",
         "settings.agents.weekRecapCleared": "Weekoverzicht gewist.",
+        "settings.agents.weekRecapDetail": "Wat al je agents deze week voor je deden: tijd, sessies, regels code en wie het meest werkte.",
 
         "settings.voice.speaking": "Praten",
         "settings.voice.speakAnswers": "Lees antwoorden voor als ik iets zeg",
@@ -885,12 +885,11 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         // MARK: Menu Bar & General
-        "menu.talk": "Talk to Nook   ⌥ space",
-        "menu.screen": "Look at my screen   ⌥⌘N",
-        "menu.weekRecap": "Weekly recap",
+        "menu.talk": "Talk to Nook",
+        "menu.screen": "Look at my screen",
+        "menu.developer": "Developer",
         "menu.demoScenes": "Demo scenes",
         "menu.demoData": "Show demo data",
-        "menu.hover": "Open on hover",
         "menu.settings": "Settings…",
         "menu.quit": "Quit Nook",
         "menu.accessibility": "Nook",
@@ -1268,6 +1267,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.subscriptions": "Subscriptions",
         "settings.agents.weekRecap": "Weekly recap",
         "settings.agents.weekRecapCleared": "Weekly recap cleared.",
+        "settings.agents.weekRecapDetail": "What all your agents did for you this week: time, sessions, lines of code and who worked the most.",
 
         "settings.voice.speaking": "Speaking",
         "settings.voice.speakAnswers": "Read answers aloud when I speak",
@@ -1651,12 +1651,11 @@ private let translations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         // MARK: Menu Bar & General
-        "menu.talk": "Mit Nook sprechen   ⌥ Leertaste",
-        "menu.screen": "Auf meinen Bildschirm schauen   ⌥⌘N",
-        "menu.weekRecap": "Wochenrückblick",
+        "menu.talk": "Mit Nook sprechen",
+        "menu.screen": "Auf meinen Bildschirm schauen",
+        "menu.developer": "Entwickler",
         "menu.demoScenes": "Beispielszenen",
         "menu.demoData": "Beispieldaten anzeigen",
-        "menu.hover": "Beim Zeigen öffnen",
         "menu.settings": "Einstellungen…",
         "menu.quit": "Nook beenden",
         "menu.accessibility": "Nook",
@@ -2034,6 +2033,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.subscriptions": "Abonnements",
         "settings.agents.weekRecap": "Wochenrückblick",
         "settings.agents.weekRecapCleared": "Wochenrückblick gelöscht.",
+        "settings.agents.weekRecapDetail": "Was alle deine Agents diese Woche für dich getan haben: Zeit, Sitzungen, Codezeilen und wer am meisten gearbeitet hat.",
 
         "settings.voice.speaking": "Sprechen",
         "settings.voice.speakAnswers": "Antworten vorlesen, wenn ich spreche",

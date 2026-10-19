@@ -92,70 +92,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The menu shows what is going on right now (next meeting, agents, music), so it is rebuilt every time it opens.
+    /// The menu shows what is going on right now (next meeting, agents, music), so it is rebuilt every time it opens. Kept calm on
+    /// purpose: what needs attention, the few things you start from here, and Settings for everything else (the week recap, opening
+    /// on hover …). Shortcuts sit in the right-hand column like in any Mac menu, and follow what you set in Settings › Shortcuts.
     private func rebuild(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // Status: only what needs attention.
+        // Status: only what needs attention, one line each.
         var status = false
         if let event = model.upcoming.first(where: { $0.end > Date() }) {
             let when = event.start <= Date() ? tr("menu.now") : Self.timeFormatter.string(from: event.start)
-            addInfo(to: menu, title: tr("menu.nextEvent", event.title, when), action: #selector(openChat), icon: "calendar.badge.clock")
+            add(to: menu, title: tr("menu.nextEvent", event.title, when), action: #selector(openChat), icon: "calendar")
             status = true
         }
         let active = model.activeAgents
         if !active.isEmpty {
             let waiting = active.filter { $0.status == .waiting || $0.approvalID != nil }.count
             let title = waiting > 0 ? tr("menu.agentsWaiting", active.count, waiting) : tr("menu.agentsRunning", active.count)
-            addInfo(to: menu, title: title, action: #selector(openAgents), icon: "sparkles")
+            add(to: menu, title: title, action: #selector(openAgents), icon: "sparkles")
             status = true
         }
         if let track = model.nowPlaying.current {
+            // The track on one line; play/pause and next live behind it instead of taking two more lines.
             let line = track.artist.isEmpty ? track.title : "\(track.title) – \(track.artist)"
-            let header = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-            header.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
-            header.isEnabled = false
-            menu.addItem(header)
-            add(to: menu, title: track.isPlaying ? tr("menu.pause") : tr("menu.play"), action: #selector(playPause))
-            add(to: menu, title: tr("menu.nextTrack"), action: #selector(nextTrack))
+            let music = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            music.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
+            let controls = NSMenu()
+            add(to: controls, title: track.isPlaying ? tr("menu.pause") : tr("menu.play"), action: #selector(playPause))
+            add(to: controls, title: tr("menu.nextTrack"), action: #selector(nextTrack))
+            music.submenu = controls
+            menu.addItem(music)
             status = true
         }
         if status { menu.addItem(.separator()) }
 
         // Actions.
-        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat), icon: "bubble.left")
-        add(to: menu, title: tr("menu.talk"), action: #selector(talk), icon: "mic")
-        add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), icon: "eye")
-        add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), icon: "record.circle")
-        add(to: menu, title: tr("menu.weekRecap"), action: #selector(weekRecap), icon: "calendar")
-        let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w", icon: "macwindow")
+        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat))
+        add(to: menu, title: tr("menu.talk"), action: #selector(talk), shortcut: .talk)
+        add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), shortcut: .lookAtScreen)
+        add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), shortcut: .recordCall)
+        let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
         workspace.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
 
-        // Demo scenes show made-up confirmations: only in development builds. Sample data stays in Settings › General.
-        #if DEBUG
-        let demo = NSMenuItem(title: tr("menu.demoScenes"), action: nil, keyEquivalent: "")
-        let demoMenu = NSMenu()
-        for scene in DemoScene.allCases {
-            let entry = NSMenuItem(title: scene.title, action: #selector(showScene(_:)), keyEquivalent: "")
-            entry.target = self
-            entry.representedObject = scene.rawValue
-            demoMenu.addItem(entry)
+        if AutocompleteStore.shared.prefs.enabled {
+            let title = AutocompleteController.shared.isPausedEverywhere ? tr("autocomplete.menu.resume") : tr("autocomplete.menu.pause")
+            add(to: menu, title: title, action: #selector(toggleAutocomplete))
         }
-        demo.submenu = demoMenu
-        menu.addItem(demo)
-        let demoData = add(to: menu, title: tr("menu.demoData"), action: #selector(toggleDemo(_:)))
+
+        // Demo scenes show made-up confirmations: only in development builds, tucked away in one submenu.
+        #if DEBUG
+        let developer = NSMenuItem(title: tr("menu.developer"), action: nil, keyEquivalent: "")
+        let developerMenu = NSMenu()
+        let demoData = add(to: developerMenu, title: tr("menu.demoData"), action: #selector(toggleDemo(_:)))
         demoData.state = model.demoMode ? .on : .off
-        menu.addItem(.separator())
+        developerMenu.addItem(.separator())
+        let scenes = NSMenuItem(title: tr("menu.demoScenes"), action: nil, keyEquivalent: "")
+        scenes.isEnabled = false
+        developerMenu.addItem(scenes)
+        for scene in DemoScene.allCases {
+            let entry = add(to: developerMenu, title: scene.title, action: #selector(showScene(_:)))
+            entry.representedObject = scene.rawValue
+            entry.indentationLevel = 1
+        }
+        developer.submenu = developerMenu
+        menu.addItem(developer)
         #endif
 
-        if AutocompleteStore.shared.prefs.enabled {
-            let words = AutocompleteStore.shared.stats.day().words
-            let title = AutocompleteController.shared.isPausedEverywhere ? tr("autocomplete.menu.resume") : tr("autocomplete.menu.pause", words)
-            add(to: menu, title: title, action: #selector(toggleAutocomplete), icon: "text.cursor")
-        }
-        let hover = add(to: menu, title: tr("menu.hover"), action: #selector(toggleHover(_:)))
-        hover.state = model.viewModel.openOnHover ? .on : .off
         add(to: menu, title: tr("menu.settings"), action: #selector(openSettings), key: ",")
         menu.addItem(.separator())
         add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
@@ -195,17 +198,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    private func add(to menu: NSMenu, title: String, action: Selector, key: String = "", icon: String? = nil) -> NSMenuItem {
+    private func add(to menu: NSMenu, title: String, action: Selector, key: String = "", icon: String? = nil,
+                     shortcut: ShortcutAction? = nil) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
         entry.target = self
         if let icon { entry.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }
+        if let shortcut, let set = ShortcutSet.load().shortcut(for: shortcut), let menuKey = set.menuKey {
+            entry.keyEquivalent = menuKey
+            entry.keyEquivalentModifierMask = Self.modifierFlags(set.modifiers)
+        }
         menu.addItem(entry)
         return entry
     }
 
-    /// A status line that opens the matching part of the panel when clicked.
-    private func addInfo(to menu: NSMenu, title: String, action: Selector, icon: String) {
-        add(to: menu, title: title, action: action, icon: icon)
+    /// Carbon modifier flags (how shortcuts are stored) as the flags a menu item shows.
+    private static func modifierFlags(_ carbon: UInt32) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if carbon & Shortcut.command != 0 { flags.insert(.command) }
+        if carbon & Shortcut.option != 0 { flags.insert(.option) }
+        if carbon & Shortcut.shift != 0 { flags.insert(.shift) }
+        if carbon & Shortcut.control != 0 { flags.insert(.control) }
+        return flags
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -219,7 +232,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func recordCall() { NoteTaker.shared.toggle() }
-    @objc private func weekRecap() { model.showWeekRecap() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func openWorkspace() { model.openWindow() }
     @objc private func quit() { NSApp.terminate(nil) }
@@ -227,10 +239,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showScene(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let scene = DemoScene(rawValue: raw) else { return }
         model.viewModel.showScene(scene)
-    }
-
-    @objc private func toggleHover(_ sender: NSMenuItem) {
-        model.viewModel.openOnHover.toggle()
     }
 
     @objc private func toggleDemo(_ sender: NSMenuItem) {

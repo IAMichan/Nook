@@ -32,7 +32,8 @@ final class RecapStore {
         var denied: Int
         var questions: Int
         var topProject: String?
-        var topAgent: String?
+        /// Every agent that got a prompt this week, busiest first.
+        var agents: [String] = []
         var busiestDay: Date?
         var busiestSeconds: Double
 
@@ -146,7 +147,7 @@ final class RecapStore {
         var result = WeekSummary(
             start: start, activeSeconds: 0, sessions: 0, prompts: 0, commands: 0, edits: 0,
             linesAdded: 0, linesRemoved: 0, allowed: 0, denied: 0, questions: 0,
-            topProject: nil, topAgent: nil, busiestDay: nil, busiestSeconds: 0
+            topProject: nil, busiestDay: nil, busiestSeconds: 0
         )
         var projects: [String: Double] = [:]
         var agents: [String: Int] = [:]
@@ -171,7 +172,7 @@ final class RecapStore {
             }
         }
         result.topProject = projects.max { $0.value < $1.value }?.key
-        result.topAgent = agents.max { $0.value < $1.value }?.key
+        result.agents = agents.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
         return result
     }
 
