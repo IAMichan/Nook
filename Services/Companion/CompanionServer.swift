@@ -225,7 +225,7 @@ final class CompanionServer: ObservableObject {
             guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
             if run.status.isActive { workspace.enqueue(runID, text: text) } else { workspace.send(runID, text: text) }
             audit("send", run.title)
-            return CompanionResponse(id: request.id, ok: true, message: run.status.isActive ? "queued" : "sent", sessions: digests(workspace))
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace), message: run.status.isActive ? "queued" : "sent")
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
