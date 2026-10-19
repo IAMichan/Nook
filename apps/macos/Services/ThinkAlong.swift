@@ -8,6 +8,7 @@ import CoreGraphics
 /// - Only after staying with the same window for a while (not on every switch between apps).
 /// - Revisits the same window only after a few minutes, and only if something changed.
 /// - If declined multiple times, Nook waits progressively longer. If accepted, resets back to normal.
+/// - At most a handful of offers a day: interrupting costs attention, so only the best ones should get through.
 /// - Never offers the same thing twice in a day, even reworded; a declined topic stays quiet for a week.
 /// - Remembers "Not in this app" permanently (resettable in Settings).
 @MainActor
@@ -37,6 +38,7 @@ final class ThinkAlong: ObservableObject {
     private let baseOfferGap: TimeInterval = 180
     private let repeatGap: TimeInterval = 24 * 3600
     private let declinedGap: TimeInterval = 7 * 24 * 3600
+    private let dailyLimit = 6
 
     init() {
         mutedApps = (UserDefaults.standard.dictionary(forKey: "thinkAlongMuted") as? [String: String]) ?? [:]
@@ -68,7 +70,8 @@ final class ThinkAlong: ObservableObject {
         }
         guard now.timeIntervalSince(focusSince) >= settle,
               now.timeIntervalSince(lastLook) >= minLookGap,
-              now.timeIntervalSince(lastOffer) >= offerGap else { return false }
+              now.timeIntervalSince(lastOffer) >= offerGap,
+              offered.filter({ now.timeIntervalSince($0.date) < repeatGap }).count < dailyLimit else { return false }
         if let previous = looked[key] {
             guard previous.print != print, now.timeIntervalSince(previous.date) >= sameWindowGap else { return false }
         }

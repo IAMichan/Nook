@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pure checks that keep think-along offers useful: a clean teaser line, no offers about things far away,
-/// and no repeats of a suggestion that was only reworded.
+/// no generic advice that is not about what is on screen, and no repeats of a suggestion that was only reworded.
 enum NudgeFilter {
     /// Dates further away than this are never a reason to interrupt the user.
     static let horizon: TimeInterval = 14 * 24 * 3600
@@ -29,6 +29,53 @@ enum NudgeFilter {
     static func isFarOff(_ dates: [Date], now: Date = Date()) -> Bool {
         guard !dates.isEmpty else { return false }
         return dates.allSatisfy { $0.timeIntervalSince(now) > horizon }
+    }
+
+    /// Numeric dates written in the text: "2027-09-20", "20-09-2027" or "20/9/2027". A portable backstop for the system's date detector.
+    static func numericDates(in text: String) -> [Date] {
+        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b"#) else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match -> Date? in
+            let number = { (group: Int) -> Int? in
+                Range(match.range(at: group), in: text).flatMap { Int(text[$0]) }
+            }
+            let isoOrder = number(1) != nil
+            guard let year = number(isoOrder ? 1 : 6), let month = number(isoOrder ? 2 : 5), let day = number(isoOrder ? 3 : 4),
+                  (1...12).contains(month), (1...31).contains(day) else { return nil }
+            return calendar.date(from: DateComponents(year: year, month: month, day: day))
+        }
+    }
+
+    /// An offer without an action must not ask anything: accepting a question ("Shall I…?") would then do nothing,
+    /// wherever in the text the question sits.
+    static func asksWithoutAction(_ body: String, hasActions: Bool) -> Bool {
+        !hasActions && body.contains("?")
+    }
+
+    /// An offer must be about what is on screen: it names something visible there (a name, a number, a subject),
+    /// or shares at least two longer words with it. Generic advice ("this can be done in one go") and things
+    /// Nook only knows from its own reminders or memory fail this check.
+    static func isGrounded(_ body: String, screen: String) -> Bool {
+        let visible = Set(normalize(screen).split(separator: " ").map(String.init))
+        guard !visible.isEmpty else { return false }
+        if !specificWords(body).isDisjoint(with: visible) { return true }
+        return words(body).filter { $0.count >= 6 }.intersection(visible).count >= 2
+    }
+
+    /// Names, products and numbers in a text: words with a digit, or with a capital where a sentence does not start.
+    static func specificWords(_ text: String) -> Set<String> {
+        var result = Set<String>()
+        var sentenceStart = true
+        for token in text.split(whereSeparator: \.isWhitespace) {
+            let core = token.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
+            let specific = core.contains(where: \.isNumber) || (!sentenceStart && core.first?.isUppercase == true)
+            if specific {
+                result.formUnion(normalize(core).split(separator: " ").map(String.init).filter { $0.count >= 3 })
+            }
+            if let last = token.last { sentenceStart = ".?!:".contains(last) }
+        }
+        return result
     }
 
     /// Lowercased letters, digits and single spaces.
