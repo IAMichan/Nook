@@ -8,7 +8,7 @@ extension WorkspaceManager {
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
-        [run.model, run.mode.rawValue, run.permission.rawValue, run.instructions, bridgeLaunch() == nil ? "" : "bridge"]
+        [run.model, run.mode.rawValue, run.permission.rawValue, run.instructions, bridge(for: run.id) == nil ? "" : "bridge"]
             .joined(separator: "|")
     }
 

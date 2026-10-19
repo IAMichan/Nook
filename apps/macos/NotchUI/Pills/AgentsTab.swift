@@ -251,7 +251,7 @@ struct AgentsTab: View {
             id: "run:" + run.id.uuidString,
             folder: run.projectName,
             title: run.title,
-            branch: run.branch ?? GitHead.branch(for: run.workingDirectory),
+            branch: run.branch ?? (run.isRemote ? nil : GitHead.branch(for: run.workingDirectory)),
             agent: run.provider.displayName,
             account: account(app.profile(for: run)),
             status: status,

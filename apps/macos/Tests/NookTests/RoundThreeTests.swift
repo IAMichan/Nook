@@ -188,4 +188,63 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertTrue(spec.keepsInputOpen)
         XCTAssertTrue(RunProvider.acp.usesACP)
     }
+    // MARK: Remote machines
+
+    func testRemoteCommandRunsTheAgentInTheFolderThere() {
+        let command = RemoteLaunch.command(executable: "/opt/homebrew/bin/claude", arguments: ["-p", "--model", "opus 4"],
+                                           directory: "~/code/my app")
+        let inner = "cd ~/'code/my app' && exec claude -p --model 'opus 4'"
+        XCTAssertEqual(command, #"exec "${SHELL:-/bin/sh}" -lc "# + CustomAgents.quote(inner))
+    }
+
+    func testRemoteQuoting() {
+        XCTAssertEqual(RemoteLaunch.quotedDirectory("~"), "~")
+        XCTAssertEqual(RemoteLaunch.quotedDirectory("~/code/app"), "~/code/app")
+        XCTAssertEqual(RemoteLaunch.quotedDirectory("/srv/my app"), "'/srv/my app'")
+        // An ACP agent's own line runs as it is, with its variables exported first.
+        let acp = RemoteLaunch.command(executable: "/bin/zsh", arguments: ["-ilc", "exec npx -y @k/acp@1.0.0"],
+                                       directory: "/srv/app", environment: ["K_MODE": "acp", "bad key": "x"])
+        XCTAssertEqual(acp, #"exec "${SHELL:-/bin/sh}" -lc 'export K_MODE=acp; cd /srv/app && exec npx -y @k/acp@1.0.0'"#)
+    }
+
+    func testRemoteWrapGoesThroughSSH() {
+        let machine = RemoteMachine(id: "m1", name: "buildbox", host: "me@buildbox", port: 2222)
+        let spec = LaunchSpec(executable: "/usr/local/bin/codex", arguments: ["app-server"],
+                              extraEnvironment: ["CODEX_HOME": "/Users/me/.codex-work"],
+                              workingDirectory: "/srv/app", initialInput: ["hello"], keepsInputOpen: true)
+        let wrapped = RemoteLaunch.wrap(spec, target: RemoteTarget(machine: machine, directory: "/srv/app"))
+        XCTAssertEqual(wrapped.executable, "/usr/bin/ssh")
+        XCTAssertEqual(Array(wrapped.arguments.prefix(7)),
+                       ["-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"])
+        XCTAssertEqual(Array(wrapped.arguments.dropFirst(7).prefix(4)), ["-p", "2222", "--", "me@buildbox"])
+        XCTAssertTrue(wrapped.arguments.last?.contains("cd /srv/app && exec codex app-server") == true)
+        // A local account folder means nothing over there.
+        XCTAssertEqual(wrapped.extraEnvironment, [:])
+        XCTAssertEqual(wrapped.initialInput, ["hello"])
+        XCTAssertTrue(wrapped.keepsInputOpen)
+    }
+
+    func testRemoteValidation() {
+        XCTAssertTrue(RemoteMachines.isValidHost("me@buildbox.local"))
+        XCTAssertTrue(RemoteMachines.isValidHost("buildbox"))
+        XCTAssertFalse(RemoteMachines.isValidHost("-oProxyCommand=evil"))
+        XCTAssertFalse(RemoteMachines.isValidHost("host; rm -rf ~"))
+        XCTAssertTrue(RemoteMachines.isValidDirectory("~/code"))
+        XCTAssertTrue(RemoteMachines.isValidDirectory("/srv/app"))
+        XCTAssertFalse(RemoteMachines.isValidDirectory("code/app"))
+        var config = NewRunConfig()
+        config.task = "Fix it"
+        let machine = RemoteMachine(name: "box", host: "box")
+        config.remote = RemoteTarget(machine: machine, directory: "~/app")
+        XCTAssertNil(config.problem, "a remote session needs no local folder")
+        config.isolation = .worktree
+        XCTAssertEqual(config.problem, .invalidRemote)
+        config.isolation = .folder
+        config.remote?.directory = "relative"
+        XCTAssertEqual(config.problem, .invalidRemote)
+        var run = TestData.run(status: .completed, project: "/srv/app")
+        run.remote = RemoteTarget(machine: machine, directory: "/srv/app")
+        XCTAssertEqual(run.projectName, "box:app")
+        XCTAssertTrue(run.isRemote)
+    }
 }

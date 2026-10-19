@@ -280,11 +280,17 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var tasks: [RunTaskStep]? = nil
     /// The pull request this session watches (PR watch): what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
+    /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
+    var remote: RemoteTarget? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        return name.isEmpty ? projectPath : name
+        let folder = name.isEmpty ? projectPath : name
+        // A session on another machine says which: "buildbox:app".
+        return remote.map { $0.name + ":" + folder } ?? folder
     }
+
+    var isRemote: Bool { remote != nil }
 
     var hasUnreviewedChanges: Bool {
         guard let changed = lastChangeAt, (changedFiles ?? 1) > 0 else { return false }
@@ -506,10 +512,18 @@ struct NewRunConfig: Equatable, Sendable {
     var instructions = ""
     /// Set for a task that another session delegated.
     var delegation: DelegationLink? = nil
+    /// Run on another machine over SSH, in this folder there (no worktree: git stays on that machine).
+    var remote: RemoteTarget? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {
         if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .missingTask }
+        if let remote {
+            guard RemoteMachines.isValidHost(remote.host), RemoteMachines.isValidDirectory(remote.directory),
+                  isolation == .folder, provider != .antigravity else { return .invalidRemote }
+            if !provider.capabilities.policies.contains(permission) { return .unsupportedPolicy }
+            return nil
+        }
         if projectPath.isEmpty { return .missingWorkspace }
         if !provider.capabilities.policies.contains(permission) { return .unsupportedPolicy }
         if isolation == .worktree {
@@ -521,7 +535,7 @@ struct NewRunConfig: Equatable, Sendable {
 }
 
 enum ConfigProblem: String, Equatable, Sendable {
-    case missingTask, missingWorkspace, unsupportedPolicy, missingBaseBranch, invalidBranchName
+    case missingTask, missingWorkspace, unsupportedPolicy, missingBaseBranch, invalidBranchName, invalidRemote
 }
 
 /// Names for sessions, branches, and worktree directories derived from the task prompt.

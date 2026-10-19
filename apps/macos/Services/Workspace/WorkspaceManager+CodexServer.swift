@@ -36,8 +36,8 @@ extension WorkspaceManager {
         guard let run = run(id) else { return }
         var environment = accountEnvironment(run.profileID)
         environment["NOOK_RUN_ID"] = id.uuidString
-        let spec = LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
-                              workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true)
+        let spec = placed(LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
+                                     workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
             Task { @MainActor in self?.handleCodexServer(id, client, message, events) }
@@ -58,9 +58,9 @@ extension WorkspaceManager {
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridgeLaunch() == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let thread = CodexRPC.threadParams(cwd: run.workingDirectory, model: run.model,
-                                           mcpServers: bridgeLaunch()?.codexMCPServers(runID: id),
+                                           mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)
         let method = run.providerSessionID == nil ? "thread/start" : "thread/resume"
         client.request("initialize", CodexRPC.initializeParams()) { [weak self] result in

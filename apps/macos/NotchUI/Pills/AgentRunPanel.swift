@@ -139,14 +139,25 @@ struct AgentRunPanel: View {
                     .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
                     .help(tr("ws.header.contextHelp"))
             }
-            if let headerAccessory { headerAccessory }
-            FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
-                workspace.markReviewed(runID)
-                app.viewModel.open(.changes(runID, file: nil))
-            }, onChange: {
-                workspace.refreshGit(runID)
-            })
-            .id(run.workingDirectory)
+            if let remote = run.remote {
+                // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
+                Button { openRemoteTerminal(remote) } label: {
+                    Label(remote.name, systemImage: "server.rack")
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.remote.terminal", remote.host))
+            } else {
+                if let headerAccessory { headerAccessory }
+                FolderGitButton(directory: run.workingDirectory, agentWorking: run.status.isActive, showChanges: {
+                    workspace.markReviewed(runID)
+                    app.viewModel.open(.changes(runID, file: nil))
+                }, onChange: {
+                    workspace.refreshGit(runID)
+                })
+                .id(run.workingDirectory)
+            }
         }
         .font(NookTheme.font(13.5))
         .frame(height: 30)
@@ -210,6 +221,7 @@ struct AgentRunPanel: View {
             Button(tr("button.openFolder")) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
             }
+            .disabled(run.isRemote)
             Button(tr("agents.run.changes")) { app.viewModel.open(.changes(runID, file: nil)) }
                 .disabled(run.repoRoot == nil)
             Divider()
@@ -221,6 +233,17 @@ struct AgentRunPanel: View {
             Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
                 .disabled(!idle)
         }
+    }
+
+    /// A terminal on the session's machine, in its folder (ssh -t, then your login shell there).
+    private func openRemoteTerminal(_ remote: RemoteTarget) {
+        var parts = ["ssh", "-t"]
+        if let port = remote.port { parts += ["-p", String(port)] }
+        let inner = "cd " + RemoteLaunch.quotedDirectory(remote.directory) + #" && exec "${SHELL:-/bin/sh}" -l"#
+        parts += ["--", remote.host, inner]
+        let command = parts.map(CustomAgents.quote).joined(separator: " ")
+        _ = TerminalStore.shared.open(in: NSHomeDirectory(), command: command, title: remote.name)
+        app.viewModel.selectedAgentID = AgentsPage.terminals
     }
 
     private func saveMarkdown(_ run: WorkspaceRun) {

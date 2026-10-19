@@ -332,6 +332,8 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
+        // On another machine: no folder, git or worktree to prepare here.
+        if let remote = config.remote { return startRemote(config, on: remote) }
         let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
         let verdict = WorkspacePathPolicy.verdict(for: projectPath)
         guard verdict == .ok else { throw StartError.workspace(verdict) }
@@ -544,11 +546,12 @@ final class WorkspaceManager: ObservableObject {
             }
             return true
         }
-        guard let executable = executable(run.provider) else {
+        guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false
         }
-        guard WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
+        // A folder on another machine cannot be checked from here; ssh and the agent there report what is wrong.
+        guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
         }
@@ -766,11 +769,12 @@ final class WorkspaceManager: ObservableObject {
             forkSession: forkNext.contains(id),
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
-            bridge: bridgeLaunch(),
+            bridge: bridge(for: id),
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true
         )
-        if run.provider == .claude, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-        let spec = AgentCommand.spec(input)
+        // The flag probe runs Claude Code on this Mac: not for a session on another machine.
+        if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+        let spec = placed(AgentCommand.spec(input), for: run)
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
@@ -809,17 +813,17 @@ final class WorkspaceManager: ObservableObject {
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
         guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
-              run.providerSessionID != nil, !forkNext.contains(id), let executable = executable(run.provider),
-              WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
+              run.providerSessionID != nil, !forkNext.contains(id), let executable = launchExecutable(run),
+              run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
         switch run.provider {
         case .claude:
             guard claudeIdle[id] == nil else { return }
-            if claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
-            var spec = AgentCommand.spec(AgentCommand.Input(
+            if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+            var spec = placed(AgentCommand.spec(AgentCommand.Input(
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
                 instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
-                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridgeLaunch(),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true))
+                accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
+                thinkingDisplay: claudeThinkingDisplay[executable] == true)), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in

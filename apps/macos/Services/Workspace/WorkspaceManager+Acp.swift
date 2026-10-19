@@ -54,6 +54,7 @@ extension WorkspaceManager {
             spec.extraEnvironment.merge(environment) { $1 }
             spec.removedEnvironment = AntigravityAcp.removedEnvironment
         }
+        spec = placed(spec, for: run)
         let client = AcpClient(spec: spec)
         client.onText = { [weak self] line in
             guard let url = AntigravityAcp.signInURL(inLine: line) else { return }
@@ -77,7 +78,7 @@ extension WorkspaceManager {
         acpClients[id] = client
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
-        let bridge = bridgeLaunch().map { launch in
+        let bridge = self.bridge(for: id).map { launch in
             (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
         }
         let provider = run.provider

@@ -44,6 +44,8 @@ extension SettingsView {
                 usageSection
             case .workspace:
                 WorkspaceSettingsSection()
+                // Machines sessions can run on over SSH.
+                RemoteMachinesSection()
             }
         }
     }
