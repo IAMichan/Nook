@@ -1463,6 +1463,17 @@ final class WorkspaceManager: ObservableObject {
         return try await Task.detached(priority: .userInitiated) { try git.diff(directory, file: file) }.value
     }
 
+    /// What one turn (from `start` to `end`) did to a file: between the snapshots around it when the session has them,
+    /// otherwise the file against its last commit.
+    func turnDiff(_ id: UUID, path: String, start: Date, end: Date) async throws -> String {
+        guard let run = run(id), !run.isRemote, let git = gitService else { throw StartError.noGit }
+        let directory = run.workingDirectory
+        let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
+        let from = around?.before.ref ?? "HEAD"
+        let to = around?.after?.ref
+        return try await Task.detached(priority: .userInitiated) { try git.diff(directory, path: path, from: from, to: to) }.value
+    }
+
     func commit(_ id: UUID, message: String, paths: [String]) async throws -> String {
         guard let run = run(id), let git = gitService else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }

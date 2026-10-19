@@ -248,3 +248,52 @@ enum Subagents {
         }
     }
 }
+
+/// What one turn changed (changed files per turn): the files, from the turn's own edits and file changes, and
+/// the snapshots around it when the session has them.
+enum TurnChanges {
+    struct Turn: Equatable, Sendable {
+        var start: Date
+        var end: Date
+        var files: [String]
+    }
+
+    /// Per finished turn, keyed by the id of the event that ends it (its result): when it ran and the files it touched,
+    /// in order.
+    static func byTurnEnd(_ events: [RunEvent]) -> [UUID: Turn] {
+        var result: [UUID: Turn] = [:]
+        for turn in TimelinePresentation.split(events) {
+            guard let first = turn.first, let end = turn.last(where: { $0.kind == .result }) else { continue }
+            let files = self.files(turn)
+            if !files.isEmpty { result[end.id] = Turn(start: first.date, end: end.date, files: files) }
+        }
+        return result
+    }
+
+    /// The files of a turn: file changes by path, edit tools by the path in their input.
+    static func files(_ turn: [RunEvent]) -> [String] {
+        var seen: [String] = []
+        for event in turn {
+            var path: String?
+            switch event.kind {
+            case .fileChange:
+                path = event.detail ?? event.text
+            case .tool where ToolCategory.of(tool: event.tool ?? "") == .edit:
+                path = event.detail.flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                    .flatMap(ToolSummary.path)
+            default:
+                continue
+            }
+            if let path, !path.isEmpty, !seen.contains(path) { seen.append(path) }
+        }
+        return seen
+    }
+
+    /// The snapshots around a turn that started at `start` and ended at `end`: the last one made before it, and the first
+    /// one made after it (nil: compare with the files as they are now).
+    static func checkpoints(_ checkpoints: [RunCheckpoint], start: Date, end: Date) -> (before: RunCheckpoint, after: RunCheckpoint?)? {
+        guard let before = checkpoints.last(where: { $0.date <= start }) else { return nil }
+        return (before, checkpoints.first { $0.date >= end && $0.date > before.date })
+    }
+}

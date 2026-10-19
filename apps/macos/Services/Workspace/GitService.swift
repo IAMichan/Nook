@@ -286,6 +286,14 @@ struct GitService: Sendable {
         return try run(arguments, in: directory)
     }
 
+    /// One file between two snapshots (`to` nil: the files as they are now), for what a single turn changed.
+    func diff(_ directory: String, path: String, from: String, to: String?) throws -> String {
+        var arguments = ["diff", "--no-color", "-M", from]
+        if let to { arguments.append(to) }
+        arguments += ["--", path]
+        return try run(arguments, in: directory)
+    }
+
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     // MARK: Worktrees

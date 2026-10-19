@@ -373,6 +373,7 @@ struct AgentRunPanel: View {
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
         let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
+        let turnFiles = run.isRemote ? [:] : TurnChanges.byTurnEnd(events)
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
@@ -387,9 +388,16 @@ struct AgentRunPanel: View {
                     ForEach(blocks) { block in
                         TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
                             AnyView(
-                                eventRow(event)
-                                    .padding(.vertical, current == event.id ? 4 : 0)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                VStack(alignment: .leading, spacing: 6) {
+                                    eventRow(event)
+                                    if let turn = turnFiles[event.id] {
+                                        TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
+                                            try await workspace.turnDiff(runID, path: path, start: turn.start, end: turn.end)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, current == event.id ? 4 : 0)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
                             )
                         }
                         .id(block.id)

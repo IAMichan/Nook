@@ -289,4 +289,35 @@ final class RoundThreeTests: XCTestCase {
         XCTAssertEqual(snapshot.comments, [PullRequestSnapshot.Note(author: "ann", verdict: "", text: "App.swift: Rename this")])
         XCTAssertEqual(GitLabAPI.snapshot(mergeRequest: ["state": "merged"], notes: [], approvals: nil, failedJobs: []).state, "merged")
     }
+
+    func testTurnChangesFilesPerTurn() {
+        let start = Date(timeIntervalSince1970: 100)
+        let user = RunEvent(kind: .user, text: "fix it", date: start)
+        let edit = RunEvent(kind: .tool, text: "Edit · App.swift", tool: "Edit",
+                            detail: #"{"file_path":"/repo/App.swift","old_string":"a","new_string":"b"}"#, state: .done)
+        let again = RunEvent(kind: .tool, text: "Write · App.swift", tool: "Write", detail: #"{"file_path":"/repo/App.swift"}"#, state: .done)
+        let read = RunEvent(kind: .tool, text: "Read · Other.swift", tool: "Read", detail: #"{"file_path":"/repo/Other.swift"}"#, state: .done)
+        let change = RunEvent(kind: .fileChange, text: "New.swift", tool: "add", detail: "/repo/New.swift")
+        let end = RunEvent(kind: .result, text: "done", date: Date(timeIntervalSince1970: 160))
+        let quiet = [RunEvent(kind: .user, text: "thanks"), RunEvent(kind: .assistant, text: "ok"), RunEvent(kind: .result, text: "done")]
+        let turns = TurnChanges.byTurnEnd([user, edit, again, read, change, end] + quiet)
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(turns[end.id], TurnChanges.Turn(start: start, end: end.date, files: ["/repo/App.swift", "/repo/New.swift"]))
+        // A turn still running has no result yet: nothing to show.
+        XCTAssertTrue(TurnChanges.byTurnEnd([user, edit]).isEmpty)
+    }
+
+    func testTurnChangesCheckpoints() {
+        let first = RunCheckpoint(ref: "c0", date: Date(timeIntervalSince1970: 10))
+        let second = RunCheckpoint(ref: "c1", date: Date(timeIntervalSince1970: 50))
+        let third = RunCheckpoint(ref: "c2", date: Date(timeIntervalSince1970: 90))
+        let all = [first, second, third]
+        let middle = TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 60), end: Date(timeIntervalSince1970: 85))
+        XCTAssertEqual(middle?.before, second)
+        XCTAssertEqual(middle?.after, third)
+        let last = TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 95), end: Date(timeIntervalSince1970: 120))
+        XCTAssertEqual(last?.before, third)
+        XCTAssertNil(last?.after)
+        XCTAssertNil(TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 5), end: Date(timeIntervalSince1970: 8)))
+    }
 }

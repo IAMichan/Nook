@@ -261,3 +261,85 @@ struct TurnMinimap: View {
         .frame(maxHeight: CGFloat(turns.count) * 18)
     }
 }
+
+/// "3 files changed" under a finished turn (changed files per turn): opens the files, each with what this turn
+/// did to it.
+struct TurnChangesChip: View {
+    let turn: TurnChanges.Turn
+    let directory: String
+    let diff: (String) async throws -> String
+    @State private var open = false
+    @State private var chosen: String?
+    @State private var text: String?
+    @State private var failure: String?
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.badge.ellipsis").font(.system(size: 10.5, weight: .semibold))
+                Text(tr("ws.turnChanges.count", turn.files.count))
+            }
+            .font(NookTheme.font(11.5, .medium))
+            .foregroundStyle(NookTheme.textSecondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(NookTheme.paper.opacity(0.06)))
+            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr("ws.turnChanges.help"))
+        .popover(isPresented: $open, arrowEdge: .bottom) { content.frame(width: 620, height: 420) }
+    }
+
+    private var content: some View {
+        HStack(spacing: 0) {
+            List(turn.files, id: \.self, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { path in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text((path as NSString).lastPathComponent).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Text(relative(path)).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                }
+                .tag(path)
+            }
+            .frame(width: 200)
+            Divider()
+            Group {
+                if let failure {
+                    Text(failure).font(.callout).foregroundStyle(.secondary).padding()
+                } else if let text {
+                    if text.isEmpty {
+                        Text(tr("ws.turnChanges.none")).font(.callout).foregroundStyle(.secondary).padding()
+                    } else {
+                        DiffText(text: text)
+                    }
+                } else if chosen != nil {
+                    ProgressView()
+                } else {
+                    Text(tr("ws.turnChanges.pick")).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear { if chosen == nil, let first = turn.files.first { pick(first) } }
+    }
+
+    private func pick(_ path: String?) {
+        chosen = path
+        text = nil
+        failure = nil
+        guard let path else { return }
+        Task {
+            do {
+                let result = try await diff(path)
+                if chosen == path { text = result }
+            } catch {
+                if chosen == path { failure = error.localizedDescription }
+            }
+        }
+    }
+
+    private func relative(_ path: String) -> String {
+        let root = directory.hasSuffix("/") ? directory : directory + "/"
+        return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : path
+    }
+}

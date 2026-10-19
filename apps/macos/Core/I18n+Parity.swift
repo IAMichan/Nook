@@ -78,6 +78,10 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "remote.host": "Host (alias of gebruiker@host)",
         "remote.port": "Poort (leeg: 22)",
         "remote.badHost": "Alleen letters, cijfers en @ . - _ : zijn mogelijk, en niet beginnen met een streepje.",
+        "ws.turnChanges.count": "Gewijzigde bestanden: %ld",
+        "ws.turnChanges.help": "Wat deze beurt aan je bestanden veranderde",
+        "ws.turnChanges.none": "Geen verschil meer: het bestand is weer zoals het was",
+        "ws.turnChanges.pick": "Kies een bestand",
     ],
     .en: [
         "ws.subagents.title": "Subagents",
@@ -152,6 +156,10 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "remote.host": "Host (alias or user@host)",
         "remote.port": "Port (empty: 22)",
         "remote.badHost": "Only letters, digits and @ . - _ : are allowed, and it cannot start with a dash.",
+        "ws.turnChanges.count": "Files changed: %ld",
+        "ws.turnChanges.help": "What this turn changed in your files",
+        "ws.turnChanges.none": "No difference left: the file is back as it was",
+        "ws.turnChanges.pick": "Pick a file",
     ],
     .de: [
         "ws.subagents.title": "Subagenten",
@@ -226,6 +234,10 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "remote.host": "Host (Alias oder benutzer@host)",
         "remote.port": "Port (leer: 22)",
         "remote.badHost": "Nur Buchstaben, Ziffern und @ . - _ : sind erlaubt, und kein Bindestrich am Anfang.",
+        "ws.turnChanges.count": "Geänderte Dateien: %ld",
+        "ws.turnChanges.help": "Was dieser Zug an deinen Dateien geändert hat",
+        "ws.turnChanges.none": "Kein Unterschied mehr: die Datei ist wieder wie vorher",
+        "ws.turnChanges.pick": "Wähle eine Datei",
     ],
     .fr: [
         "ws.subagents.title": "Sous-agents",
@@ -300,6 +312,10 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "remote.host": "Hôte (alias ou utilisateur@hôte)",
         "remote.port": "Port (vide : 22)",
         "remote.badHost": "Seuls les lettres, chiffres et @ . - _ : sont autorisés, sans tiret au début.",
+        "ws.turnChanges.count": "Fichiers modifiés : %ld",
+        "ws.turnChanges.help": "Ce que ce tour a changé dans vos fichiers",
+        "ws.turnChanges.none": "Plus de différence : le fichier est revenu à son état",
+        "ws.turnChanges.pick": "Choisissez un fichier",
     ],
     .es: [
         "ws.subagents.title": "Subagentes",
@@ -374,5 +390,9 @@ let parityTranslations: [AppLanguage: [String: String]] = [
         "remote.host": "Host (alias o usuario@host)",
         "remote.port": "Puerto (vacío: 22)",
         "remote.badHost": "Solo se permiten letras, cifras y @ . - _ :, y no puede empezar con un guion.",
+        "ws.turnChanges.count": "Archivos modificados: %ld",
+        "ws.turnChanges.help": "Lo que este turno cambió en tus archivos",
+        "ws.turnChanges.none": "Ya no hay diferencia: el archivo vuelve a estar como antes",
+        "ws.turnChanges.pick": "Elige un archivo",
     ],
 ]
