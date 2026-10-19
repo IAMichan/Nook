@@ -2,8 +2,8 @@ import Foundation
 
 // Sessions on another machine, over SSH. The agent runs
 // there and speaks over the SSH connection exactly as it does locally: Claude Code's stream-json, Codex's app-server and
-// ACP all use stdin and stdout. Git runs there too, over ssh (status, diff, commit, push); what needs the folder on this
-// Mac (checkpoints, worktrees, the workspace bridge) is off for such a session. Foundation only, so tests can use it independently.
+// ACP all use stdin and stdout. Git runs there too, over ssh: status, diff, commit, push, snapshots per turn and
+// worktrees (in ~/.nook/worktrees on that machine). Only the workspace bridge needs this Mac and stays off. Foundation only, so tests can use it independently.
 
 /// A machine you can reach with `ssh` without typing a password (a key, or your agent): an alias from ~/.ssh/config or
 /// user@host.
@@ -133,5 +133,28 @@ enum RemoteLaunch {
         if clean == "~" { return "~" }
         if clean.hasPrefix("~/") { return "~/" + CustomAgents.quote(String(clean.dropFirst(2))) }
         return CustomAgents.quote(clean)
+    }
+}
+
+/// Small questions to the remote machine, over the shared connection. Synchronous: call off the main thread.
+enum RemoteShell {
+    /// $HOME there: where Nook keeps its worktrees on that machine.
+    static func home(_ target: RemoteTarget) -> String? {
+        guard let output = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("printenv", ["HOME"], target: target, directory: nil),
+                                                  environment: ProcessInfo.processInfo.environment, timeout: 20),
+              output.status == 0 else { return nil }
+        let home = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return home.hasPrefix("/") ? home : nil
+    }
+
+    static func exists(_ path: String, on target: RemoteTarget) -> Bool {
+        (try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("test", ["-e", path], target: target, directory: nil),
+                                environment: ProcessInfo.processInfo.environment, timeout: 20))?.status == 0
+    }
+
+    /// Where a session's worktree goes on the remote machine: ~/.nook/worktrees/<repository>/<branch> (keeps them
+    /// in ~/.agent/worktrees the same way).
+    static func worktreeRoot(home: String) -> String {
+        (home as NSString).appendingPathComponent(".nook/worktrees")
     }
 }

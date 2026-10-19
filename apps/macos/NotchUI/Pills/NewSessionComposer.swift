@@ -231,26 +231,21 @@ struct NewSessionComposer: View {
     private var belowBox: some View {
         HStack(spacing: 6) {
             if let remoteMachine {
-                // On another machine the agent works in that folder; git, worktrees and checkpoints stay there.
+                // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
                     .help(tr("ws.remote.limits"))
+                isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
-            } else {
-                ComposerDropdown(width: 300) {
-                    ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
-                         text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
-                } content: {
-                    DropdownHeader(title: tr("compose.whereWorks"))
-                    DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
-                                chosen: config.isolation == .folder) {
-                        config.isolation = .folder
-                    }
-                    DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
-                                chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : worktreeBlockedReason) {
-                        config.isolation = .worktree
-                    }
+                if config.isolation == .worktree {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10.5)).foregroundStyle(NookTheme.textTertiary)
+                    TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.font(12))
+                        .frame(width: 150)
+                        .help(tr("ws.remote.baseHelp"))
                 }
-                .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : worktreeBlockedReason)
+            } else {
+                isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
 
                 Spacer(minLength: 8)
 
@@ -266,6 +261,25 @@ struct NewSessionComposer: View {
             }
         }
         .padding(.horizontal, 6)
+    }
+
+    /// Where the agent works: the folder as it is, or a new worktree.
+    private func isolationDropdown(worktreeAllowed: Bool, reason: String) -> some View {
+        ComposerDropdown(width: 300) {
+            ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
+                 text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
+        } content: {
+            DropdownHeader(title: tr("compose.whereWorks"))
+            DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
+                        chosen: config.isolation == .folder) {
+                config.isolation = .folder
+            }
+            DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
+                        chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : reason) {
+                config.isolation = .worktree
+            }
+        }
+        .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
     }
 
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
@@ -368,7 +382,7 @@ struct NewSessionComposer: View {
         copy.branchName = WorktreeNaming.branchName(task: config.task, id: pendingID)
         if let remoteMachine {
             copy.remote = RemoteTarget(machine: remoteMachine, directory: remoteFolder.trimmingCharacters(in: .whitespaces))
-            copy.isolation = .folder
+            copy.baseBranch = config.baseBranch.trimmingCharacters(in: .whitespaces)
         }
         return copy
     }
@@ -428,6 +442,8 @@ struct NewSessionComposer: View {
         remoteMachine = machine
         remoteFolder = UserDefaults.standard.string(forKey: "agents.remoteFolder." + machine.id) ?? "~"
         config.isolation = .folder
+        // The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one.
+        config.baseBranch = ""
         error = nil
     }
 

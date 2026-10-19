@@ -523,7 +523,7 @@ struct NewRunConfig: Equatable, Sendable {
     var instructions = ""
     /// Set for a task that another session delegated.
     var delegation: DelegationLink? = nil
-    /// Run on another machine over SSH, in this folder there (no worktree: git stays on that machine).
+    /// Run on another machine over SSH, in this folder there (or a new worktree of it there).
     var remote: RemoteTarget? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
@@ -531,8 +531,10 @@ struct NewRunConfig: Equatable, Sendable {
         if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .missingTask }
         if let remote {
             guard RemoteMachines.isValidHost(remote.host), RemoteMachines.isValidDirectory(remote.directory),
-                  isolation == .folder, provider != .antigravity else { return .invalidRemote }
+                  provider != .antigravity else { return .invalidRemote }
             if !provider.capabilities.policies.contains(permission) { return .unsupportedPolicy }
+            // A worktree there starts from the branch the folder is on unless you name one.
+            if isolation == .worktree, !WorktreeNaming.isPlausibleBranchName(branchName) { return .invalidBranchName }
             return nil
         }
         if projectPath.isEmpty { return .missingWorkspace }

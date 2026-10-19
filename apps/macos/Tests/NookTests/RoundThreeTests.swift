@@ -238,7 +238,8 @@ final class RoundThreeTests: XCTestCase {
         config.remote = RemoteTarget(machine: machine, directory: "~/app")
         XCTAssertNil(config.problem, "a remote session needs no local folder")
         config.isolation = .worktree
-        XCTAssertEqual(config.problem, .invalidRemote)
+        // A worktree there needs a branch name (filled in from the task when starting).
+        XCTAssertEqual(config.problem, .invalidBranchName)
         config.isolation = .folder
         config.remote?.directory = "relative"
         XCTAssertEqual(config.problem, .invalidRemote)
@@ -452,5 +453,28 @@ final class RoundThreeTests: XCTestCase {
         var running = call
         running.status = "in_progress"
         XCTAssertFalse(AcpEvent.toolCallUpdate(running).isWakeEvidence)
+    }
+
+    func testRemoteWorktreesAndSnapshots() {
+        let machine = RemoteMachine(name: "box", host: "box")
+        var config = NewRunConfig()
+        config.task = "Fix it"
+        config.permission = config.provider.capabilities.policies.first ?? config.permission
+        config.remote = RemoteTarget(machine: machine, directory: "~/code/app")
+        config.isolation = .worktree
+        config.branchName = "nook/fix-it"
+        XCTAssertNil(config.problem, "a worktree on another machine starts from the branch there when none is named")
+        config.branchName = "bad name"
+        XCTAssertEqual(config.problem, .invalidBranchName)
+        XCTAssertEqual(RemoteShell.worktreeRoot(home: "/home/me"), "/home/me/.nook/worktrees")
+
+        // Snapshot commands carry their variables (the temporary index) to the other machine.
+        let target = RemoteTarget(machine: machine, directory: "/srv/app")
+        let line = RemoteLaunch.git(["-C", "/srv/app", "write-tree"], target: target, directory: "/srv/app",
+                                    environment: ["GIT_INDEX_FILE": "/tmp/nook-index-1"]).last ?? ""
+        XCTAssertTrue(line.contains("GIT_INDEX_FILE=/tmp/nook-index-1"))
+        XCTAssertTrue(line.contains("exec git write-tree"))
+        let remove = RemoteLaunch.run("rm", ["-f", "--", "a b.txt"], target: target, directory: "/srv/app").last ?? ""
+        XCTAssertTrue(remove.contains("exec rm -f -- '\\''a b.txt'\\''") || remove.contains("a b.txt"))
     }
 }

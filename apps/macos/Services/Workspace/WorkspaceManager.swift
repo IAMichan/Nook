@@ -343,7 +343,7 @@ final class WorkspaceManager: ObservableObject {
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
         // On another machine: no folder, git or worktree to prepare here.
-        if let remote = config.remote { return startRemote(config, on: remote) }
+        if let remote = config.remote { return try await startRemote(config, on: remote) }
         let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
         let verdict = WorkspacePathPolicy.verdict(for: projectPath)
         guard verdict == .ok else { throw StartError.workspace(verdict) }
@@ -652,7 +652,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). The conversation stays.
     func revertFiles(_ id: UUID, before date: Date) async throws {
-        guard canRevert(id, before: date), let run = run(id), let git = gitService,
+        guard canRevert(id, before: date), let run = run(id), let git = sessionGit(for: run),
               let checkpoint = run.checkpoints?.last(where: { $0.date <= date }) else {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
@@ -1415,7 +1415,7 @@ final class WorkspaceManager: ObservableObject {
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
     func delete(_ id: UUID) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
-        if let root = run.repoRoot, let git = gitService, run.checkpoints != nil {
+        if let root = run.repoRoot, let git = sessionGit(for: run), run.checkpoints != nil {
             Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
         }
         runs.removeAll { $0.id == id }
@@ -1555,7 +1555,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Deletes a session's worktree. Never while the session is running; uncommitted changes require `force`.
     func removeWorktree(_ id: UUID, force: Bool) async throws {
-        guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = gitService else { return }
+        guard let run = run(id), let worktree = run.worktreePath, let repo = run.repoRoot, let git = sessionGit(for: run) else { return }
         guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let others = runs.filter { $0.id != id && $0.status.isActive && $0.workingDirectory == worktree }
         guard others.isEmpty else { throw StartError.git(tr("ws.error.busy")) }
@@ -1568,12 +1568,14 @@ final class WorkspaceManager: ObservableObject {
 
     /// The session's files are there to snapshot: its worktree, or its folder.
     func canSnapshot(_ run: WorkspaceRun) -> Bool {
-        if run.isRemote { return false }
+        // On another machine git there answers for itself (a folder that is gone fails the snapshot, nothing more).
+        if run.isRemote { return true }
         return run.isolation == .worktree ? worktreeExists(run) : FileManager.default.fileExists(atPath: run.workingDirectory)
     }
 
     func worktreeExists(_ run: WorkspaceRun) -> Bool {
         guard let path = run.worktreePath else { return false }
+        if run.isRemote { return true }
         return FileManager.default.fileExists(atPath: path)
     }
 

@@ -314,11 +314,14 @@ struct GitService: Sendable {
         guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
         guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is not a valid branch name.") }
         guard !localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' already exists. Choose a different name.") }
-        guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
-        try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        if remote == nil {
+            guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+        }
         do {
-            try run(["worktree", "add", "-b", branch, path, base], in: repo, timeout: 180)
+            // On another machine git makes the folders on the way itself.
+            try run(["worktree", "add", "-b", branch, "--", path, base], in: repo, timeout: 180)
         } catch {
             throw Self.friendlyWorktreeError(error, base: base)
         }
