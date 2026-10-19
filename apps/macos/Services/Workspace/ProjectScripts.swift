@@ -114,13 +114,8 @@ enum ProjectScripts {
     }
 }
 
-enum ProjectScriptError: LocalizedError, Equatable {
+/// Why a script could not be added. Its user-facing text (`LocalizedError`) lives in the app target, next to the
+/// session panel, because `tr` is not part of the test target.
+enum ProjectScriptError: Error, Equatable {
     case emptyCommand, unreadable
-
-    var errorDescription: String? {
-        switch self {
-        case .emptyCommand: return tr("agents.panel.script.noCommand")
-        case .unreadable: return tr("agents.panel.script.unreadable")
-        }
-    }
 }
