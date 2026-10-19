@@ -405,6 +405,7 @@ extension NotchRootView {
                 kind = .failed
             } else if session.status == .done, app.demoMode || (session.updated ?? .distantPast) > recent {
                 kind = .done
+                settled = app.isMarkedFinished(session)
             } else {
                 continue
             }
