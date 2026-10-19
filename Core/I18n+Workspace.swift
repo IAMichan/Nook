@@ -6,6 +6,10 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "palette.placeholder": "Zoek een sessie of actie (> voor acties)",
+        "palette.none": "Niets gevonden",
+        "promptLink.filled": "Dit komt uit een link: lees het goed voordat je het verstuurt.",
+        "promptLink.stripped": "Dit komt uit een link; verborgen tekens zijn verwijderd. Lees het goed voordat je het verstuurt.",
         "bridge.approval.message": "%@ wil een bericht sturen naar de sessie “%@”",
         "bridge.approval.messageNote": "De andere agent krijgt het als bericht van een agent, niet als jouw eigen opdracht.",
         "inbox.pr.stack": "Stapel van %ld",
@@ -686,6 +690,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "palette.placeholder": "Find a session or action (> for actions)",
+        "palette.none": "Nothing found",
+        "promptLink.filled": "This came from a link: read it carefully before you send it.",
+        "promptLink.stripped": "This came from a link; hidden characters were removed. Read it carefully before you send it.",
         "bridge.approval.message": "%@ wants to send a message to the session “%@”",
         "bridge.approval.messageNote": "The other agent receives it as a message from an agent, not as your own instruction.",
         "inbox.pr.stack": "Stack of %ld",
@@ -1366,6 +1374,10 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "palette.placeholder": "Sitzung oder Aktion suchen (> für Aktionen)",
+        "palette.none": "Nichts gefunden",
+        "promptLink.filled": "Das stammt aus einem Link: lies es sorgfältig, bevor du es sendest.",
+        "promptLink.stripped": "Das stammt aus einem Link; versteckte Zeichen wurden entfernt. Lies es sorgfältig, bevor du es sendest.",
         "bridge.approval.message": "%@ möchte eine Nachricht an die Sitzung „%@“ senden",
         "bridge.approval.messageNote": "Der andere Agent erhält sie als Nachricht eines Agenten, nicht als deine eigene Anweisung.",
         "inbox.pr.stack": "Stapel aus %ld",

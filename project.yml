@@ -58,6 +58,9 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: AppIcon
         LSUIElement: true
+        CFBundleURLTypes:
+          - CFBundleURLName: app.nook.link
+            CFBundleURLSchemes: [nook]
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
         NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.

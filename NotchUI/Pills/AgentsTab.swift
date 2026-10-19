@@ -10,6 +10,7 @@ struct AgentsTab: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    @State private var palette = false
 
     private enum Selection {
         case live(AgentSession)
@@ -78,6 +79,16 @@ struct AgentsTab: View {
             }
             .padding(.leading, 18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .overlay(alignment: .top) {
+            if palette {
+                AgentCommandPalette(viewModel: viewModel) { palette = false }
+                    .padding(.top, 40)
+                    .transition(.opacity)
+            }
+        }
+        .background {
+            Button("") { palette.toggle() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true)
         }
         .onAppear {
             app.hub.refreshDetected()
