@@ -273,7 +273,7 @@ extension AppModel {
         var evidence = ""
         var blocked: [String] = []
         var goal = ""
-        let intent = ChatIntent.detect(text)
+        let intent = ChatIntent.detect(text, history: history)
         if prefetch, !intent.isSmallTalk {
             let profile = settings.brainProfile
             let roomy = !profile.isSmall || profile.contextTokens >= 16_000

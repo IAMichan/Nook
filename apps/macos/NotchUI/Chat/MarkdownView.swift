@@ -351,31 +351,14 @@ private struct TableBlock: View {
         }
     }
 
+    // Split into small typed parts: as one expression the grid takes the compiler too long to type-check.
     private var grid: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 0) {
-                GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-                        Text(MarkdownBlock.inline(cell, size: size))
-                            .font(NookTheme.font(size - 1.5, .semibold))
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .gridColumnAlignment(numeric(column) ? .trailing : .leading)
-                            .padding(.vertical, 8)
-                    }
-                }
+                headerRow
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
                     Divider().overlay(NookTheme.line2).gridCellColumns(header.count)
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
-                            Text(MarkdownBlock.inline(cell, size: size))
-                                .font(NookTheme.font(size - 0.5, column == 0 ? .medium : .regular))
-                                .monospacedDigit()
-                                .foregroundStyle(NookTheme.paper)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.vertical, 7)
-                        }
-                    }
-                    .background(rowIndex.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.02))
+                    bodyRow(row, index: rowIndex)
                 }
             }
             .padding(.horizontal, 12)
@@ -383,5 +366,42 @@ private struct TableBlock: View {
         }
         .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+    }
+
+    private var headerRow: some View {
+        GridRow {
+            ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
+                headerCell(cell, column: column)
+            }
+        }
+    }
+
+    private func headerCell(_ cell: String, column: Int) -> some View {
+        let alignment: HorizontalAlignment = numeric(column) ? .trailing : .leading
+        return Text(MarkdownBlock.inline(cell, size: size))
+            .font(NookTheme.font(size - 1.5, .semibold))
+            .foregroundStyle(NookTheme.textSecondary)
+            .gridColumnAlignment(alignment)
+            .padding(.vertical, 8)
+    }
+
+    private func bodyRow(_ row: [String], index: Int) -> some View {
+        let shade: Color = index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.02)
+        return GridRow {
+            ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
+                bodyCell(cell, column: column)
+            }
+        }
+        .background(shade)
+    }
+
+    private func bodyCell(_ cell: String, column: Int) -> some View {
+        let weight: Font.Weight = column == 0 ? .medium : .regular
+        return Text(MarkdownBlock.inline(cell, size: size))
+            .font(NookTheme.font(size - 0.5, weight))
+            .monospacedDigit()
+            .foregroundStyle(NookTheme.paper)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 7)
     }
 }

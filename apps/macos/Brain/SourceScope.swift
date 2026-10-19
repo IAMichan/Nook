@@ -390,8 +390,10 @@ struct SourceScope: Equatable, Codable {
 /// Which sources should be sent in full for this query. The rest are sent as a single summary line ("Mail: 12 unread,
 /// search with search_mail"), so the brain knows they exist without sending full content on every turn.
 enum SourceRouter {
-    /// Always sent in full: compact and almost always useful for understanding the day.
-    static let core: Set<String> = ["calendar", "reminders", SourceCatalog.loops]
+    /// Always sent in full: compact and almost always useful for understanding the day. Reminders are not: a list of
+    /// to-dos in every prompt pulls a small model off the question ("stuur Arjan een bericht"), so they come along only
+    /// when the question is about reminders, tasks or the day.
+    static let core: Set<String> = ["calendar", SourceCatalog.loops]
 
     private static let intents: [(pattern: String, ids: [String])] = [
         (#"\w*mail\w*|inbox|postvak\w*|ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read|afzender\w*|senders?|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
@@ -402,6 +404,7 @@ enum SourceRouter {
         (#"traag|langzaam|trage mac|hangt|vastloopt|batterij\w*|accu\w*|geheugen|werkgeheugen|\bram\b|processor|\bcpu\b|ventilator|schijfruimte|harde schijf|schijf vol\w*|opslag\w*|vrije ruimte|slow|battery|memory|disk space|storage|fan\b|langsam|akku|speicher|festplatte"#, ["system"]),
         (#"call\w*|meeting\w*|vergader\w*|overleg\w*|gesprek\w*|besproken|afgesproken|zei .{0,20}in de|notulen|to-?do'?s? uit|besprechung\w*"#, ["callnotes"]),
         (#"taken|takenlijst|to-?do'?s?|tasks?|projecten|projects?"#, ["things"]),
+        (#"herinner\w*|reminders?|remind|erinner\w*|taken|taak|takenlijst|to-?do'?s?|tasks?|aufgabe\w*|moet ik|vergeet|vergeten|forget|deadline\w*|planning|mijn dag|my day|vandaag|today|morgen|tomorrow|heute|week|agenda"#, ["reminders"]),
         (#"contact\w*|telefoon\w*|telefoonnummer|e-?mailadres|adresboek|address book"#, ["contacts"]),
         (#"bestand\w*|files?|document\w*|pdf|rapport|report|requirements?|eisen|specificatie\w*|spec\b|offerte|contract"#, ["files", "notion"]),
         (#"code|repo\w*|pull|pr\b|prs\b|issues?|ci\b|build|merge|review|commit\w*|bug\w*|release|requirements?"#, ["github"]),

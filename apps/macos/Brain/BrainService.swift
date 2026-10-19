@@ -42,7 +42,8 @@ final class BrainService {
         let profile = settings.brainProfile
         // What the request is about, recognized on the Mac: its tools are always offered first, so even a small model
         // gets the tool it needs ("herinner me…" always comes with create_reminder).
-        let intent = ChatIntent.detect(userText)
+        // A follow-up ("Verzend", "stuur: …") carries the action of the conversation it continues.
+        let intent = ChatIntent.detect(userText, history: history)
         // A small model only receives tools when the request calls for them (shorter prompt is much faster locally).
         // Nook already looked things up for this question: the model gets the tools to dig further (open a hit, search again).
         let researched = context.contains("\nLooked up for this question")
@@ -145,7 +146,18 @@ final class BrainService {
                 return BrainPlan(text: focused.text, actions: plan.actions + focused.actions)
             }
         }
+        // Nothing runs before the user approves it, so a reply without a proposed action that says the message was sent
+        // (or the event was made) is never true. Say plainly that nothing happened instead.
+        if intent.wantsAction, plan.actions.isEmpty, Self.claimsDone(plan.text) {
+            return BrainPlan(text: tr("brain.notDone"), actions: plan.actions)
+        }
         return plan
+    }
+
+    /// The reply says an action already happened: "Het bericht is verzonden", "I've sent it", "Ich habe … erstellt".
+    static func claimsDone(_ text: String) -> Bool {
+        let pattern = #"\b(is|zijn|werd|werden|heb|heeft|has been|have been|was|were|i've|i have|wurde|wurden|habe|hat|est|a été|ai|ha sido|he)\b[^.?!]{0,40}\b(verzonden|verstuurd|gestuurd|aangemaakt|toegevoegd|ingepland|gemaakt|opgeslagen|sent|delivered|created|added|scheduled|saved|gesendet|verschickt|erstellt|hinzugefügt|gespeichert|envoyé|créé|ajouté|enregistré|enviado|creado|añadido|guardado)\b"#
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     // MARK: Understanding the question
@@ -349,7 +361,8 @@ final class BrainService {
     static func asksBack(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let last = trimmed.split(separator: "\n").last?.trimmingCharacters(in: .whitespaces), last.hasSuffix("?") else { return false }
-        let permission = #"(zal ik|moet ik|wil je dat ik|wilt u dat ik|shall i|should i|do you want me|would you like me|soll ich|möchtest du,? dass ich)"#
+        // "Wil je het bericht nu verzenden?" asks for the go-ahead too, not for a missing detail.
+        let permission = #"(zal ik|moet ik|wil je dat ik|wilt u dat ik|shall i|should i|do you want me|would you like me|soll ich|möchtest du,? dass ich|(wil|wilt) (je|u) (het|dit|dat|deze|de|hem|'?m)\b[^?]{0,60}\b(verzenden|versturen|sturen|toevoegen|maken|aanmaken|plannen|inplannen|opslaan)|do you want (to send|to add|to create|to save)|(sollen|soll) (ich|wir) [^?]{0,40}(senden|schicken))"#
         return last.range(of: permission, options: [.regularExpression, .caseInsensitive]) == nil
     }
 
