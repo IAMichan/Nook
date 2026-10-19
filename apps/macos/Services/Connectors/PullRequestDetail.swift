@@ -85,13 +85,19 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
     var id: String { name + "|" + (url?.absoluteString ?? "") }
 }
 
-/// One entry in the conversation: a review, a comment, or a comment on a line of the diff.
+/// One entry in the timeline: a review, a comment, a comment on a line of the diff, a commit, or something that
+/// happened to the pull request (a label, a review request, a force-push, the merge…).
 struct PullRequestEvent: Identifiable, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case comment
         /// APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.
         case review(String)
         case lineComment(path: String, line: Int?)
+        /// A commit on the branch; the body is its subject.
+        case commit(sha: String)
+        /// One of `PullRequestDetailParser.activityTypes` ("labeled", "merged"…) with what it is about: a label, a
+        /// login, the new title, a short sha or a reference. Shown as one line: "@actor added the label bug".
+        case activity(type: String, detail: String)
     }
 
     let id: String
@@ -203,10 +209,31 @@ enum PullRequestDetailParser {
         return result.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
     }
 
-    /// Reviews, comments and line comments as one conversation, oldest first. Pending reviews (not sent yet) and empty
-    /// "commented" reviews (the wrapper of line comments) are left out.
-    static func events(reviews: [[String: Any]], comments: [[String: Any]], lineComments: [[String: Any]]) -> [PullRequestEvent] {
+    /// The timeline events Nook shows, by GitHub's name. Comments, reviews and commits come from their own lists, which
+    /// carry more; subscriptions and mentions say nothing about the pull request itself.
+    static let activityTypes: Set<String> = [
+        "labeled", "unlabeled", "assigned", "unassigned", "review_requested", "review_request_removed", "renamed",
+        "head_ref_force_pushed", "head_ref_deleted", "head_ref_restored", "base_ref_changed", "merged", "closed", "reopened",
+        "ready_for_review", "convert_to_draft", "cross-referenced", "referenced", "milestoned", "demilestoned",
+        "auto_merge_enabled", "auto_merge_disabled", "review_dismissed",
+    ]
+
+    /// The whole history as one timeline, oldest first: reviews, comments, line comments, commits, and the events of
+    /// `/issues/{number}/timeline` (labels, review requests, force-pushes, the merge…). Pending reviews (not sent yet)
+    /// and empty "commented" reviews (the wrapper of line comments) are left out.
+    static func events(reviews: [[String: Any]], comments: [[String: Any]], lineComments: [[String: Any]],
+                       timeline: [[String: Any]] = [], commits: [PullRequestCommit] = []) -> [PullRequestEvent] {
         var result: [PullRequestEvent] = []
+        for commit in commits {
+            result.append(PullRequestEvent(id: "commit-" + commit.sha, kind: .commit(sha: commit.sha), author: commit.author,
+                                           body: commit.subject, date: commit.date, url: nil))
+        }
+        for (index, item) in timeline.enumerated() {
+            guard let type = item["event"] as? String, activityTypes.contains(type) else { continue }
+            result.append(PullRequestEvent(id: "timeline-\(int(item["id"]).map(String.init) ?? "#\(index)")",
+                                           kind: .activity(type: type, detail: activityDetail(type, item)),
+                                           author: login(item["actor"]), body: "", date: date(item["created_at"]), url: nil))
+        }
         for review in reviews {
             let state = ((review["state"] as? String) ?? "").uppercased()
             let body = ((review["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -232,6 +259,27 @@ enum PullRequestDetailParser {
         return result.enumerated().sorted {
             ($0.element.date ?? .distantPast, $0.offset) < ($1.element.date ?? .distantPast, $1.offset)
         }.map(\.element)
+    }
+
+    /// What a timeline event is about, as shown after its sentence.
+    static func activityDetail(_ type: String, _ item: [String: Any]) -> String {
+        func field(_ key: String, _ name: String) -> String? { (item[key] as? [String: Any])?[name] as? String }
+        switch type {
+        case "labeled", "unlabeled": return field("label", "name") ?? ""
+        case "assigned", "unassigned": return field("assignee", "login").map { "@" + $0 } ?? ""
+        case "review_requested", "review_request_removed":
+            return field("requested_reviewer", "login").map { "@" + $0 } ?? field("requested_team", "name") ?? ""
+        case "renamed": return field("rename", "to") ?? ""
+        case "merged", "referenced": return (item["commit_id"] as? String).map { String($0.prefix(7)) } ?? ""
+        case "milestoned", "demilestoned": return field("milestone", "title") ?? ""
+        case "cross-referenced":
+            let issue = (item["source"] as? [String: Any])?["issue"] as? [String: Any] ?? [:]
+            let repo = ((issue["repository"] as? [String: Any])?["full_name"] as? String) ?? ""
+            let number = int(issue["number"]).map { "#\($0)" } ?? ""
+            let title = (issue["title"] as? String).map { " " + $0 } ?? ""
+            return repo + number + title
+        default: return ""
+        }
     }
 
     static func commits(_ list: [[String: Any]]) -> [PullRequestCommit] {

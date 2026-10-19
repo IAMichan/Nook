@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook: the description, checks and conversation, the commits, and every changed
+/// One pull request, read in full inside Nook: the description, checks and timeline, the commits, and every changed
 /// file with its diff. The bar at the bottom merges it, after you confirm, with the account it was listed under.
 struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
@@ -183,10 +183,14 @@ struct PullRequestDetailView: View {
                 }
             }
             section(tr("agents.pr.conversation")) {
+                if let created = detail.created {
+                    activityRow(symbol: "arrow.triangle.pull", color: NookTheme.mint, author: detail.author,
+                                sentence: tr("agents.pr.timeline.opened"), date: created)
+                }
                 if detail.events.isEmpty {
                     Text(tr("agents.pr.conversation.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
                 } else {
-                    ForEach(detail.events) { event in eventRow(event) }
+                    ForEach(detail.events) { event in timelineRow(event, detail: detail) }
                 }
             }
         }
@@ -223,6 +227,74 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// Commits and events such as a label or the merge take one quiet line; reviews and comments get a card.
+    @ViewBuilder
+    private func timelineRow(_ event: PullRequestEvent, detail: PullRequestDetail) -> some View {
+        switch event.kind {
+        case .commit(let sha):
+            Button {
+                if let url = detail.url?.appendingPathComponent("commits/" + sha) { NSWorkspace.shared.open(url) }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "smallcircle.filled.circle").font(.system(size: 11)).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
+                    Text(String(sha.prefix(7))).font(NookTheme.mono(11.5)).foregroundStyle(NookTheme.textSecondary)
+                    Text(event.body).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.paper).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text("@" + event.author).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                    if let date = event.date {
+                        Text(AgentFormat.short(Date().timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        case .activity(let type, let subject):
+            let look = activityLook(type)
+            activityRow(symbol: look.symbol, color: look.color, author: event.author,
+                        sentence: tr("agents.pr.timeline." + type.replacingOccurrences(of: "-", with: "_"), subject), date: event.date)
+        default:
+            eventRow(event)
+        }
+    }
+
+    private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(color).frame(width: 16)
+            (Text("@" + author + " ").font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
+                + Text(sentence).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if let date {
+                Text(AgentFormat.short(Date().timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+    }
+
+    private func activityLook(_ type: String) -> (symbol: String, color: Color) {
+        switch type {
+        case "labeled", "unlabeled": return ("tag", NookTheme.textTertiary)
+        case "assigned", "unassigned": return ("person", NookTheme.textTertiary)
+        case "review_requested", "review_request_removed", "ready_for_review": return ("eye", NookTheme.textTertiary)
+        case "renamed": return ("pencil", NookTheme.textTertiary)
+        case "convert_to_draft": return ("pencil.circle", NookTheme.textTertiary)
+        case "head_ref_force_pushed": return ("arrow.up.circle", NookTheme.amber)
+        case "head_ref_deleted", "head_ref_restored", "base_ref_changed": return ("arrow.triangle.branch", NookTheme.textTertiary)
+        case "merged": return ("arrow.triangle.merge", NookTheme.violet)
+        case "closed": return ("xmark.circle", NookTheme.coral)
+        case "reopened": return ("arrow.uturn.left.circle", NookTheme.mint)
+        case "cross-referenced", "referenced": return ("link", NookTheme.textTertiary)
+        case "milestoned", "demilestoned": return ("flag", NookTheme.textTertiary)
+        case "auto_merge_enabled", "auto_merge_disabled": return ("bolt", NookTheme.textTertiary)
+        case "review_dismissed": return ("xmark.bubble", NookTheme.textTertiary)
+        default: return ("circle", NookTheme.textTertiary)
+        }
+    }
+
     private func eventRow(_ event: PullRequestEvent) -> some View {
         let (label, color) = eventLabel(event.kind)
         return VStack(alignment: .leading, spacing: 6) {
@@ -253,6 +325,7 @@ struct PullRequestDetailView: View {
     private func eventLabel(_ kind: PullRequestEvent.Kind) -> (String, Color) {
         switch kind {
         case .comment: return (tr("agents.pr.event.comment"), NookTheme.textTertiary)
+        case .commit, .activity: return ("", NookTheme.textTertiary)
         case .lineComment(let path, let line):
             return (tr("agents.pr.event.line", line.map { "\(path):\($0)" } ?? path), NookTheme.textTertiary)
         case .review(let state):
