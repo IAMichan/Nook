@@ -140,10 +140,7 @@ final class ScreenContext: ObservableObject {
     /// Snapshot of currently visible screens. If the front window is older than `maxAge` seconds, it is refreshed first
     /// (isolated to that window for speed); remaining windows are served from cache.
     func snapshot(maxAge: TimeInterval = 2.5, totalLimit: Int = 12_000) async throws -> ScreenSnapshot {
-        guard hasPermission else {
-            CGRequestScreenCaptureAccess()
-            throw ScreenError.noPermission
-        }
+        guard hasPermission else { throw ScreenError.noPermission }
         let front = windows.first { $0.isFront }
         let frontApp = NSWorkspace.shared.frontmostApplication
         let stale = front == nil || Date().timeIntervalSince(front?.captured ?? .distantPast) > maxAge
