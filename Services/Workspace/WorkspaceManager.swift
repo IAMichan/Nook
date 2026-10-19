@@ -166,6 +166,11 @@ final class WorkspaceManager: ObservableObject {
     var forkNext: Set<UUID> = []
     /// What you typed, for a turn whose prompt starts with a handoff summary (the timeline shows your words only).
     var displayPrompt: [UUID: String] = [:]
+    /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
+    /// remembers the exact command, so Nook keeps its own), and the background work an agent still has running.
+    var stopCoordinators: [UUID: StopCoordinator] = [:]
+    var sessionApprovals: [UUID: SessionApprovals] = [:]
+    var backgroundRoster: [UUID: BackgroundRoster] = [:]
 
     /// State tracked by Nook during a single turn.
     struct TurnState {
@@ -480,7 +485,10 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id), !run.status.isActive else { return }
         update(id) {
             if let mode { $0.mode = mode }
-            if let permission, run.provider.capabilities.policies.contains(permission) { $0.permission = permission }
+            if let permission, run.provider.capabilities.policies.contains(permission) {
+                $0.permission = permission
+                if permission != run.permission { sessionApprovals[id]?.modeChanged(to: permission) }
+            }
             if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
     }
@@ -519,6 +527,8 @@ final class WorkspaceManager: ObservableObject {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
         displayPrompt[id] = nil
+        stopCoordinators[id] = nil
+        settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status == .completed {
             clearContinuations(id)
@@ -653,6 +663,7 @@ final class WorkspaceManager: ObservableObject {
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         stopDelegatedChildren(of: id)
+        beginStop(id)
         if stopCodexServerTurn(id) { return }
         if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
@@ -916,9 +927,11 @@ final class WorkspaceManager: ObservableObject {
             }
             turns[id]?.steered = false
             // Stopped by a usage limit (test): remember when it resets, for "Resume at reset".
-            if result.isError, turns[id]?.stopping != true,
-               !(turns[id]?.limitWindows.isEmpty ?? true) || result.terminalReason == "blocking_limit" || result.apiErrorStatus == 429 {
-                limitedTurns[id] = .some(UsageLimits.latestReset(turns[id]?.limitWindows ?? [:]))
+            if turns[id]?.stopping != true {
+                let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
+                                               isError: result.isError, rateLimitRejected: !(turns[id]?.limitWindows.isEmpty ?? true),
+                                               rateLimitResets: turns[id]?.limitWindows ?? [:], messageText: result.text)
+                if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence), result.isError { limitedTurns[id] = .some(resetAt) }
             }
             var usage = result.usage
             let state = turns[id]
@@ -1035,15 +1048,8 @@ final class WorkspaceManager: ObservableObject {
         turns[id] = nil
         finishLiveText(id)
         expireApprovals(id)
-        // Tools that were still running are marked finished/failed.
-        if var list = events[id] {
-            var changed = false
-            for index in list.indices where list[index].state == .running {
-                list[index].state = list[index].kind == .assistant ? .done : .failed
-                changed = true
-            }
-            if changed { events[id] = list; scheduleEventSave(id) }
-        }
+        // Whatever was still running is settled: nothing may stay open after the process is gone.
+        settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
             sendQueued(id)
@@ -1183,6 +1189,9 @@ final class WorkspaceManager: ObservableObject {
         limitResumes.removeValue(forKey: id)?.cancel()
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
+        stopCoordinators[id] = nil
+        sessionApprovals[id] = nil
+        backgroundRoster[id] = nil
         git[id] = nil
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
@@ -1445,7 +1454,7 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    private func scheduleEventSave(_ id: UUID) {
+    func scheduleEventSave(_ id: UUID) {
         guard eventSaves[id] == nil else { return }
         eventSaves[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)

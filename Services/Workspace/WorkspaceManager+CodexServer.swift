@@ -164,6 +164,12 @@ extension WorkspaceManager {
     /// Answers a Codex approval request. False when the request is not one of Codex's.
     func decideCodex(_ runID: UUID, requestID: String, _ decision: Decision) -> Bool {
         guard let request = codexRequests.removeValue(forKey: requestID) else { return false }
+        if decision == .always, let run = run(runID) {
+            // Codex's own "for this session" only covers the exact command: Nook remembers the kind for this mode.
+            var granted = sessionApprovals[runID] ?? SessionApprovals()
+            granted.grant(kind: approvalKind(request), mode: run.permission)
+            sessionApprovals[runID] = granted
+        }
         let pending = approvals[runID]?.first { $0.id == requestID }
         codexServers[runID]?.respond(request.rpcID, CodexRPC.decision(request, allow: decision != .deny, always: decision == .always))
         approvals[runID]?.removeAll { $0.id == requestID }
@@ -224,7 +230,18 @@ extension WorkspaceManager {
         }
     }
 
+    private func approvalKind(_ request: CodexApprovalRequest) -> ApprovalKind {
+        request.kind == .command || request.kind == .legacyCommand ? .command : .fileChange
+    }
+
     private func presentCodexApproval(_ id: UUID, _ request: CodexApprovalRequest) {
+        // Allowed for this session before: answer without asking again (a dangerous command is never covered).
+        if let run = run(id), sessionApprovals[id]?.isGranted(kind: approvalKind(request), mode: run.permission) == true,
+           !(request.kind == .command || request.kind == .legacyCommand) || CommandRisk.assess(request.command).level != .danger {
+            codexServers[id]?.respond(request.rpcID, CodexRPC.decision(request, allow: true, always: false))
+            append(id, RunEvent(kind: .system, text: tr("ws.event.sessionAllowed", ToolSummary.oneLine(request.command.isEmpty ? request.reason : request.command, 80))))
+            return
+        }
         let requestID = "codex-" + request.rpcID.text
         let isCommand = request.kind == .command || request.kind == .legacyCommand
         let tool = isCommand ? "shell" : "apply_patch"

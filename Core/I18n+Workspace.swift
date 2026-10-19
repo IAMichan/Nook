@@ -6,6 +6,8 @@ import Foundation
 
 let workspaceTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "ws.event.stopForced": "De agent reageerde niet op Stop; Nook heeft de sessie afgesloten.",
+        "ws.event.sessionAllowed": "Eerder voor deze sessie toegestaan: %@",
         "compose.stash.detail": "Opzij gezet concept",
         "compose.stash.set": "Concept opzijzetten (⌘S)",
         "compose.context.help": "Contextvenster %@ · %@",
@@ -625,6 +627,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .en: [
+        "ws.event.stopForced": "The agent did not respond to Stop; Nook closed the session.",
+        "ws.event.sessionAllowed": "Allowed earlier for this session: %@",
         "compose.stash.detail": "Draft set aside",
         "compose.stash.set": "Set draft aside (⌘S)",
         "compose.context.help": "Context window %@ · %@",
@@ -1244,6 +1248,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
     ],
 
     .de: [
+        "ws.event.stopForced": "Der Agent reagierte nicht auf Stopp; Nook hat die Sitzung beendet.",
+        "ws.event.sessionAllowed": "Früher für diese Sitzung erlaubt: %@",
         "compose.stash.detail": "Beiseitegelegter Entwurf",
         "compose.stash.set": "Entwurf beiseitelegen (⌘S)",
         "compose.context.help": "Kontextfenster %@ · %@",
