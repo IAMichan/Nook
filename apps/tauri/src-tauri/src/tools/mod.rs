@@ -4,8 +4,12 @@
 //!
 //! Een nieuwe bron: een module met een type dat [`ToolSource`] implementeert, en één regel in [`sources`].
 
+mod calls;
+mod clipboard;
 mod connectors;
+mod files;
 mod loops;
+mod screen;
 mod system;
 
 use std::sync::Arc;
@@ -82,6 +86,10 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(connectors::Mcp),
         Box::new(connectors::Sources),
         Box::new(system::System),
+        Box::new(screen::Screen),
+        Box::new(files::Files),
+        Box::new(clipboard::Clipboard),
+        Box::new(calls::Calls),
     ]
 }
 

@@ -9,6 +9,8 @@
   import Memory from "./settings/Memory.svelte";
   import Privacy from "./settings/Privacy.svelte";
   import Accounts from "./settings/Accounts.svelte";
+  import Assistant from "./settings/Assistant.svelte";
+  import Voice from "./settings/Voice.svelte";
   import About from "./settings/About.svelte";
   import Companion from "./settings/Companion.svelte";
 
@@ -23,8 +25,10 @@
   const sections: Section[] = [
     { id: "general", title: "Algemeen", component: General },
     { id: "brain", title: "Brein", component: Brain },
+    { id: "assistant", title: "Assistent", component: Assistant },
     { id: "memory", title: "Geheugen", component: Memory },
     { id: "accounts", title: "Accounts & koppelingen", component: Accounts },
+    { id: "voice", title: "Stem en geluid", component: Voice },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
     { id: "companion", title: "Companion", component: Companion, when: () => !!nook.info?.capabilities.desktop },
     { id: "about", title: "Over Nook", component: About },

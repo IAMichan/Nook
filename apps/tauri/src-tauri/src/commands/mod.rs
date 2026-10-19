@@ -21,6 +21,7 @@ use crate::state::AppState;
 use crate::tools;
 
 pub mod connectors;
+pub mod services;
 
 type Res<T> = Result<T, String>;
 
@@ -206,7 +207,7 @@ pub fn ask(app: AppHandle, state: State<'_, AppState>, nook_id: String, text: St
             text: text.clone(),
             history,
             context: tools::context(&ctx).await,
-            screen: None,
+            screen: crate::services::screen::for_question(&app, &nid, &mid, &text).await,
             images,
             tools: tools::tools(&ctx),
         };

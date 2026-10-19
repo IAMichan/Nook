@@ -5,6 +5,7 @@ mod commands;
 mod companion;
 mod connectors;
 mod platform;
+mod services;
 mod state;
 mod tools;
 
@@ -26,11 +27,12 @@ pub fn run() {
 
     #[cfg(mobile)]
     {
-        builder = builder.plugin(tauri_plugin_barcode_scanner::init()).plugin(tauri_plugin_notification::init());
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     }
 
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if let Ok(dir) = app.path().app_data_dir() {
                 nook_core::paths::set_support_directory(dir);
@@ -38,6 +40,7 @@ pub fn run() {
             app.manage(state::AppState::new(platform::secrets::system_store()));
             companion::setup(app.handle());
             connectors::setup(app.handle());
+            services::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -145,6 +148,47 @@ pub fn run() {
             commands::connectors::chat_accounts,
             commands::connectors::chat_accounts_set,
             commands::connectors::service_icon,
+            commands::services::services_prefs,
+            commands::services::save_services_prefs,
+            commands::services::voice_info,
+            commands::services::now_playing,
+            commands::services::media_command,
+            commands::services::media_seek,
+            commands::services::media_shuffle,
+            commands::services::media_repeat,
+            commands::services::media_volume,
+            commands::services::voice_start,
+            commands::services::voice_finish,
+            commands::services::voice_cancel,
+            commands::services::voice_follow,
+            commands::services::speak_text,
+            commands::services::speak_stop,
+            commands::services::flow_view,
+            commands::services::save_flow_settings,
+            commands::services::save_flow_dictionary,
+            commands::services::flow_clear_history,
+            commands::services::flow_cancel,
+            commands::services::flow_hands_free,
+            commands::services::notes_list,
+            commands::services::note_markdown,
+            commands::services::note_delete,
+            commands::services::note_toggle,
+            commands::services::note_live,
+            commands::services::look_along,
+            commands::services::nudge_current,
+            commands::services::nudge_answer,
+            commands::services::aside_expand,
+            commands::services::aside_hide,
+            commands::services::aside_show,
+            commands::services::screen_status,
+            commands::services::screen_part_begin,
+            commands::services::screen_part_image,
+            commands::services::screen_part_finish,
+            commands::services::screen_part_cancel,
+            commands::services::today_items,
+            commands::services::recap_view,
+            commands::services::sound_file,
+            commands::services::open_sounds_folder,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")

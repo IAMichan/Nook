@@ -13,6 +13,7 @@ pub mod paths;
 pub mod platform;
 pub mod provider;
 pub mod secrets;
+pub mod services;
 pub mod settings;
 pub mod store;
 
