@@ -49,7 +49,10 @@ struct AgentInboxList: View {
         let isPast = item.id.hasPrefix("past:")
         // A process Nook only sees (id "proc-…") runs in a terminal: it never settles by itself.
         let idle = (item.status == .idle || item.status == .finished) && !item.id.hasPrefix("proc-")
-        let settled = isPast || (!item.isBusy && finishedMarks.isFinished(key: item.finishKey, idle: idle, lastActive: item.started, now: now))
+        // A busy session settles only when you settled it during this busy spell (a turn that hangs).
+        let settledBusy = item.isBusy && finishedMarks.isMarkedWhileBusy(item.finishKey)
+        let settled = isPast || settledBusy
+            || (!item.isBusy && finishedMarks.isFinished(key: item.finishKey, idle: idle, lastActive: item.started, now: now))
         return InboxRow(
             id: item.id, title: item.title, project: item.folder, attention: attention(item),
             pinned: store.state.pinned.contains(item.id), settled: settled,
@@ -309,9 +312,8 @@ struct AgentInboxList: View {
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
             entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry)
         }
-        if item.isBusy {
-            Button(tr("inbox.settle")) {}.disabled(true)
-        } else if item.id.hasPrefix("past:") && entry.row.settled {
+        // A busy session can be settled too: a turn that hangs should not stay in the list forever.
+        if item.id.hasPrefix("past:") && entry.row.settled {
             // Earlier sessions are settled by nature; only a session that ran can be reopened.
             EmptyView()
         } else {
@@ -360,9 +362,9 @@ struct AgentInboxList: View {
         let allPinned = !picked.isEmpty && picked.allSatisfy { store.state.pinned.contains($0.id) }
         let settled = picked.filter { rowByID[$0.id]?.settled == true }
         let allSettled = !picked.isEmpty && settled.count == picked.count
-        // Earlier sessions are settled by nature; only a session that ran can be reopened, and a busy one never settles.
+        // Earlier sessions are settled by nature; only a session that ran can be reopened.
         let reopenable = settled.filter { !$0.id.hasPrefix("past:") }
-        let settleable = picked.filter { !$0.isBusy && rowByID[$0.id]?.settled != true }
+        let settleable = picked.filter { rowByID[$0.id]?.settled != true }
         let archivable = picked.filter { !$0.isBusy && runID($0) != nil }
         var actions: [SelectionAction] = [
             picked.contains(where: \.unseen)

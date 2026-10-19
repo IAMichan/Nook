@@ -209,10 +209,11 @@ struct AgentsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        // The agent works in a chat you had marked as finished: it is not finished after all.
-        .onChange(of: busyKeys) { _, keys in finishedMarks.reopenAll(keys) }
+        // The agent works in a chat you had marked as finished: it is not finished after all,
+        // unless you marked it during this very busy spell.
+        .onChange(of: busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
         .onAppear {
-            finishedMarks.reopenAll(busyKeys)
+            finishedMarks.reconcile(busy: busyKeys)
             visits.visit(current)
         }
         // Looking at a session counts as having seen what it finished.

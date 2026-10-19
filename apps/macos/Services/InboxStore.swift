@@ -82,12 +82,12 @@ final class InboxStore: ObservableObject {
 
     // MARK: Settled
 
-    /// Settles sessions: they move to the shelf at the bottom, and a pin ends.
+    /// Settles sessions: they move to the shelf at the bottom, and a pin ends. A busy one settles too: it may hang.
     func settle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true) {
         let keys = items.map(\.finishKey)
         for item in items {
             state.unpin(item.id)
-            FinishedSessions.shared.mark(item.finishKey)
+            FinishedSessions.shared.mark(item.finishKey, busy: item.isBusy)
         }
         if record { undoLog.record(.settled, ids: keys, now: now) }
         save()

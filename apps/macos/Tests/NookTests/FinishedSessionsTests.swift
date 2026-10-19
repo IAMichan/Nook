@@ -45,6 +45,26 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertTrue(store.isFinished(key: key, idle: true, lastActive: activity, now: now))
     }
 
+    func testBusyChatMarkedByYouStaysFinishedUntilANewTurn() {
+        let store = FinishedSessions.shared
+        store.mark(key, busy: true)
+        store.reconcile(busy: [key])
+        XCTAssertTrue(store.contains(key), "settled during a hanging turn: the turn does not undo it")
+        XCTAssertTrue(store.isMarkedWhileBusy(key))
+        store.reconcile(busy: [])
+        XCTAssertTrue(store.contains(key), "the turn ended: still finished")
+        XCTAssertFalse(store.isMarkedWhileBusy(key))
+        store.reconcile(busy: [key])
+        XCTAssertFalse(store.contains(key), "a new turn reopens it")
+    }
+
+    func testIdleMarkReopensWhenTheAgentWorksAgain() {
+        let store = FinishedSessions.shared
+        store.mark(key)
+        store.reconcile(busy: [key])
+        XCTAssertFalse(store.contains(key))
+    }
+
     func testKeysFollowTheConversation() {
         XCTAssertEqual(FinishedSessions.key(agent: "Codex", conversation: "abc", fallback: "x"), "Codex|abc")
         XCTAssertEqual(FinishedSessions.key(agent: "Codex", conversation: "", fallback: "x"), "x")
