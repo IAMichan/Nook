@@ -1,10 +1,13 @@
 //! Nook voor Windows, Linux en Android. De kern zit in `nook-core`; hier zitten de vensters, het systeemvak,
 //! de sneltoetsen, de commando's voor de interface en de platformlaag.
 
+mod agents;
+pub mod cli;
 mod commands;
 mod platform;
 mod state;
 mod tools;
+mod workspace;
 
 use tauri::Manager;
 
@@ -29,6 +32,7 @@ pub fn run() {
                 nook_core::paths::set_support_directory(dir);
             }
             app.manage(state::AppState::new(platform::secrets::system_store()));
+            agents::setup(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -84,6 +88,33 @@ pub fn run() {
             commands::show_main,
             commands::bar_moved,
             commands::take_route,
+            commands::agents::agents_overview,
+            commands::agents::agents_decide,
+            commands::agents::agents_decide_in_terminal,
+            commands::agents::agents_answer,
+            commands::agents::agents_answer_in_terminal,
+            commands::agents::agents_end,
+            commands::agents::agents_forget,
+            commands::agents::agents_can_end,
+            commands::agents::agents_transcript,
+            commands::agents::agents_history,
+            commands::agents::agents_integrations,
+            commands::agents::agents_prepare_link,
+            commands::agents::agents_apply_link,
+            commands::agents::agents_discard_link,
+            commands::agents::agents_profiles,
+            commands::agents::agents_profile_add,
+            commands::agents::agents_profile_rename,
+            commands::agents::agents_profile_remove,
+            commands::agents::agents_profile_prefer,
+            commands::agents::agents_profile_auth,
+            commands::agents::agents_profile_key,
+            commands::agents::agents_mark_finished,
+            commands::agents::agents_visit,
+            commands::agents::agents_activate_terminal,
+            commands::agents::agents_run_in_terminal,
+            commands::agents::agents_terminal_name,
+            commands::agents::agents_sound,
         ])
         .run(tauri::generate_context!())
         .expect("Nook kon niet starten");

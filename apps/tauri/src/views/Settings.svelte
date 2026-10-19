@@ -9,6 +9,7 @@
   import Memory from "./settings/Memory.svelte";
   import Privacy from "./settings/Privacy.svelte";
   import About from "./settings/About.svelte";
+  import AgentsSettings from "./settings/Agents.svelte";
 
   interface Section {
     id: string;
@@ -22,6 +23,7 @@
     { id: "general", title: "Algemeen", component: General },
     { id: "brain", title: "Brein", component: Brain },
     { id: "memory", title: "Geheugen", component: Memory },
+    { id: "agents", title: "Agents", component: AgentsSettings },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
     { id: "about", title: "Over Nook", component: About },
   ];

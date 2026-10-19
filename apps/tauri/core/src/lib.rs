@@ -4,6 +4,7 @@
 //! staat achter een trait in [`platform`] en wordt in `src-tauri/src/platform` per besturingssysteem ingevuld.
 //! De Swift-code in `apps/macos` is de specificatie: namen en gedrag volgen die zo veel mogelijk.
 
+pub mod agents;
 pub mod brain;
 pub mod error;
 pub mod nooks;
@@ -13,5 +14,6 @@ pub mod provider;
 pub mod secrets;
 pub mod settings;
 pub mod store;
+pub mod workspace;
 
 pub use error::{NookError, Result};
