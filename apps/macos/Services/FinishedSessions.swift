@@ -29,10 +29,11 @@ final class FinishedSessions: ObservableObject {
     private init() {
         let stored = UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? []
         order = stored
-        keys = Set(stored)
+        let storedKeys = Set(stored)
+        keys = storedKeys
         let raw = UserDefaults.standard.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
         kept = raw.mapValues { Date(timeIntervalSince1970: $0) }
-        markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(keys)
+        markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
     }
 
     func contains(_ key: String) -> Bool { keys.contains(key) }
