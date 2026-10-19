@@ -993,11 +993,14 @@ struct PullRequestPill: View {
     var body: some View {
         HStack(spacing: 3) {
             PullRequestStateGlyph(glyph: badge.glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
-            if !compact { Text(label).font(NookTheme.font(11, .medium)).lineLimit(1) }
+                .foregroundStyle(tint)
+            if !compact {
+                Text(label).font(NookTheme.font(11, .medium).monospacedDigit())
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
         }
-        .foregroundStyle(tint)
-        .padding(.horizontal, compact ? 4 : 6).padding(.vertical, 1)
-        .background(Capsule().fill(tint.opacity(0.14)))
+        .modifier(RowBadgeBackground(horizontal: compact ? 3 : 5))
         .help(label.isEmpty ? status : "\(label) · \(status)")
         .accessibilityLabel(label.isEmpty ? status : "\(label), \(status)")
     }
