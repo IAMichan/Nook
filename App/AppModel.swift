@@ -50,6 +50,8 @@ final class AppModel: ObservableObject {
     let chat = NookChat()
     /// Coding agents spawned and tracked by Nook in dedicated terminal windows.
     let workspace = WorkspaceManager()
+    /// One notification per session and state: a turn that reports its end twice tells you once.
+    var attentionLedger = AttentionLedger()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared)
     /// The subscription limits of every agent account.

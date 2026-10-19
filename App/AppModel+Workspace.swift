@@ -208,6 +208,8 @@ extension AppModel {
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
         recap.turnEnded(session: "run-" + run.id.uuidString)
+        let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
+        guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)

@@ -191,6 +191,8 @@ enum ToolTallyText {
 struct PlanCard: View {
     let text: String
     let canAct: Bool
+    /// "Implement in a new session" (split button): the plan goes to a fork, this session stays as it is.
+    var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
 
     var body: some View {
@@ -203,8 +205,11 @@ struct PlanCard: View {
             .foregroundStyle(NookTheme.iris)
             MarkdownView(text: text, size: 12.5)
             if canAct {
-                HStack {
+                HStack(spacing: 8) {
                     Spacer()
+                    if let implementInNew {
+                        NookGhostButton(title: tr("ws.plan.implementNew"), action: implementInNew)
+                    }
                     NookPrimaryButton(title: tr("ws.plan.implement"), action: implement)
                 }
             }

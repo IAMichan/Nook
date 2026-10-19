@@ -487,40 +487,26 @@ struct AgentListRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// "bezig 12 min" while it works, "wacht op jou" when it waits, otherwise how long ago.
+    /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
     @ViewBuilder
     private var time: some View {
         switch item.status {
         case .working:
-            Text(item.started.map { tr("agents.time.busy", AgentFormat.short(now.timeIntervalSince($0))) } ?? tr("agents.live.running"))
-                .foregroundStyle(Color(hex: 0x8CA2FF))
-                .fixedSize()
+            StatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) })
         case .waiting:
-            Text(tr("agents.live.waiting"))
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize()
+            StatusBadge(state: .approval)
         case .input:
-            Text(tr("agents.live.input"))
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize()
+            StatusBadge(state: .input)
         case .failed:
-            Text(tr("agents.live.failed"))
-                .foregroundStyle(NookTheme.coral)
-                .fixedSize()
+            StatusBadge(state: .failed)
         case .limited:
-            Text(tr("agents.live.limited"))
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize()
+            StatusBadge(state: .limited)
         case .idle where item.unseen:
-            HStack(spacing: 4) {
-                Circle().fill(NookTheme.mint).frame(width: 6, height: 6)
-                Text(tr("agents.time.doneUnseen"))
-            }
-            .foregroundStyle(NookTheme.mint)
-            .fixedSize()
+            StatusBadge(state: .ready)
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))
+                    .font(NookTheme.font(11.5))
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize()
             }

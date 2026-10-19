@@ -124,6 +124,8 @@ targets:
       - path: Services/Workspace/Delegation.swift
       - path: Services/Workspace/ContextHandoff.swift
       - path: Services/Workspace/ComposerCore.swift
+      - path: Services/Workspace/AgentStatusStyle.swift
+      - path: Services/Workspace/TimelineCopy.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/DevServers.swift

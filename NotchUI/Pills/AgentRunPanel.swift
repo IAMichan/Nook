@@ -283,7 +283,13 @@ struct AgentRunPanel: View {
             let timeline = workspace.timeline(runID)
             let latest = timeline.last { $0.kind == .assistant && $0.tool == "plan" }?.id == event.id
             let answered = timeline.contains { $0.kind == .user && $0.date > event.date }
-            PlanCard(text: event.text, canAct: idle && latest && !answered) {
+            PlanCard(text: event.text, canAct: idle && latest && !answered, implementInNew: {
+                // The summary of a fork cuts long messages, so the whole plan goes into the first message.
+                guard let id = workspace.fork(runID) else { return }
+                workspace.configure(id, mode: .agent)
+                workspace.send(id, text: tr("ws.plan.implementPrompt") + "\n\n" + event.text)
+                app.viewModel.selectedAgentID = "run:" + id.uuidString
+            }) {
                 workspace.configure(runID, mode: .agent)
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }

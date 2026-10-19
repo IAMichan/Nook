@@ -2237,6 +2237,31 @@ enum GitHubPullRequests {
         return nil
     }
 
+    /// The open pull requests of a repository (newest first, at most 30), for the `#` list in a message. Asked with the first
+    /// account that can see the repository; empty when GitHub is not connected.
+    static func openPullRequests(repo: String) async -> [(number: Int, title: String)] {
+        guard isAvailable else { return [] }
+        for token in tokens {
+            guard var components = URLComponents(string: "https://api.github.com/repos/\(repo)/pulls") else { return [] }
+            components.queryItems = [URLQueryItem(name: "state", value: "open"), URLQueryItem(name: "per_page", value: "30"),
+                                     URLQueryItem(name: "sort", value: "updated"), URLQueryItem(name: "direction", value: "desc")]
+            guard let url = components.url else { return [] }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+            request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+            guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { continue }
+            return list.compactMap { item in
+                guard let number = item["number"] as? Int, let title = item["title"] as? String else { return nil }
+                return (number, title)
+            }
+        }
+        return []
+    }
+
     private static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool, token: String) async throws -> URL {
         let url = try CloudHelp.url("https://api.github.com/repos/\(repo)/pulls")
         var request = URLRequest(url: url)
