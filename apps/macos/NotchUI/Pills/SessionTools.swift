@@ -168,27 +168,11 @@ struct SessionWorkbench<Conversation: View>: View {
     /// The tabs to choose what the panel shows, and the button that closes it.
     private func header(_ tool: SessionTool) -> some View {
         HStack(spacing: 4) {
-            ForEach(tools, id: \.self) { item in
-                let active = item == tool
-                let fresh = !active && bridge.hasUnseen(directory, item.rawValue)
-                Button {
-                    viewModel.sessionTool = item
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: item.symbol).font(.system(size: 10.5, weight: .medium))
-                        Text(item.title).lineLimit(1)
-                        if fresh { Circle().fill(NookTheme.iris).frame(width: 5, height: 5) }
-                    }
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-                    .padding(.horizontal, 9)
-                    .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(item.help)
-                .accessibilityAddTraits(active ? .isSelected : [])
+            NookTabBar(items: tools.map { item in
+                NookTabBar<SessionTool>.Item(value: item, title: item.title, symbol: item.symbol,
+                                             fresh: item != tool && bridge.hasUnseen(directory, item.rawValue), help: item.help)
+            }, selected: tool) { item in
+                withAnimation(NookTheme.swap) { viewModel.sessionTool = item }
             }
             Spacer(minLength: 8)
             if tool == .terminal {
