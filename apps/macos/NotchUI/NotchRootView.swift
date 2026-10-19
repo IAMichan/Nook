@@ -4,6 +4,7 @@ import SwiftUI
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
+    @State private var ringHovered: String?
 
     var body: some View {
         let size = viewModel.size
@@ -353,8 +354,11 @@ struct NotchRootView: View {
             .accessibilityLabel(tr("notch.goToHome"))
             .background {
                 if ring {
-                    NookTaskRing(items: ringItems, orbSize: 46) { openRingItem($0) }
+                    NookTaskRing(items: ringItems, orbSize: 46, hovered: $ringHovered) { openRingItem($0) }
                 }
+            }
+            .overlay {
+                if ring { NookTaskRingLabel(items: ringItems, hovered: ringHovered, orbSize: 46) }
             }
             .zIndex(1)
             inner()

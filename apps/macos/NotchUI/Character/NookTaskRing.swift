@@ -35,7 +35,7 @@ struct NookTaskRing: View {
 
     @State private var shown = false
     @State private var appeared = Date()
-    @State private var hovered: String?
+    @Binding var hovered: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var radius: CGFloat { orbSize / 2 + 12 }
@@ -62,7 +62,6 @@ struct NookTaskRing: View {
             hover(nil)
             onOpen(items[i])
         }
-        .overlay(alignment: .topLeading) { label }
         .onAppear {
             appeared = Date()
             shown = true
@@ -127,9 +126,14 @@ struct NookTaskRing: View {
     }
 
     /// The direction of the middle of piece `i` from the center: 0 is right, clockwise, y pointing down.
-    private func angle(_ i: Int) -> Double {
-        let span = self.span(i)
-        return Double((span.start + span.end) / 2) * 2 * .pi - .pi / 2
+    private func angle(_ i: Int) -> Double { Self.angle(i, count: items.count, radius: radius) }
+
+    static func angle(_ i: Int, count: Int, radius: CGFloat) -> Double {
+        let gap: CGFloat = count > 1 ? 8 / (2 * .pi * radius) : 0
+        let slot = 1 / CGFloat(max(count, 1))
+        let start = CGFloat(i) * slot + gap / 2
+        let end = start + max(0.001, slot - gap)
+        return Double((start + end) / 2) * 2 * .pi - .pi / 2
     }
 
     private func index(at point: CGPoint) -> Int? {
@@ -149,31 +153,6 @@ struct NookTaskRing: View {
         NookPresence.shared.lookAngle = index.map { angle($0) }
         NookPresence.shared.noteActivity()
     }
-
-    /// The name of the piece under the pointer, just outside the ring.
-    @ViewBuilder
-    private var label: some View {
-        if let id = hovered, let i = items.firstIndex(where: { $0.id == id }) {
-            let a = angle(i)
-            HStack(spacing: 5) {
-                Text(items[i].title)
-                    .foregroundStyle(NookTheme.paper)
-                Text(items[i].detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-            }
-            .font(NookTheme.font(12, .medium))
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Color(hex: 0x17171D)))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-            .shadow(color: .black.opacity(0.5), radius: 9, y: 4)
-            .offset(x: side / 2 + CGFloat(cos(a)) * (radius + 10) + 6, y: side / 2 + CGFloat(sin(a)) * (radius + 10) - 12)
-            .allowsHitTesting(false)
-            .transition(.opacity)
-        }
-    }
 }
 
 /// The band the ring takes clicks and hovers in; the middle stays free for Nook himself.
@@ -187,5 +166,41 @@ private struct RingBand: Shape {
         path.addEllipse(in: CGRect(x: center.x - radius - width / 2, y: center.y - radius - width / 2, width: 2 * radius + width, height: 2 * radius + width))
         path.addEllipse(in: CGRect(x: center.x - radius + width / 2, y: center.y - radius + width / 2, width: 2 * radius - width, height: 2 * radius - width))
         return path
+    }
+}
+/// The name of the piece under the pointer, just outside the ring. Lives apart from the ring so it can be drawn above
+/// Nook and the content beside him instead of behind them.
+struct NookTaskRingLabel: View {
+    let items: [TaskRingItem]
+    let hovered: String?
+    var orbSize: CGFloat = 46
+
+    private var radius: CGFloat { orbSize / 2 + 12 }
+    private var side: CGFloat { radius * 2 + 14 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let id = hovered, let i = items.firstIndex(where: { $0.id == id }) {
+                let a = NookTaskRing.angle(i, count: items.count, radius: radius)
+                HStack(spacing: 5) {
+                    Text(items[i].title)
+                        .foregroundStyle(NookTheme.paper)
+                    Text(items[i].detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                .font(NookTheme.font(12, .medium))
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color(hex: 0x17171D)))
+                .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+                .shadow(color: .black.opacity(0.5), radius: 9, y: 4)
+                .offset(x: side / 2 + CGFloat(cos(a)) * (radius + 10) + 6, y: side / 2 + CGFloat(sin(a)) * (radius + 10) - 12)
+                .transition(.opacity)
+            }
+        }
+        .frame(width: side, height: side, alignment: .topLeading)
+        .allowsHitTesting(false)
     }
 }
