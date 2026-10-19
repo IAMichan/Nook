@@ -208,6 +208,17 @@ struct MusicPlaylist: Equatable, Identifiable {
     var trackCount: Int
 }
 
+/// Placeholder colours for things without artwork (Music's queue, playlists): the same name always gets the same pick,
+/// across launches, so a cover is recognisable from one visit to the next.
+enum MusicCoverPalette {
+    static func index(for seed: String, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        var hash: UInt32 = 5381
+        for scalar in seed.unicodeScalars { hash = (hash &* 33) &+ scalar.value }
+        return Int(hash % UInt32(count))
+    }
+}
+
 /// The tracks after the current one in the playlist Music plays from.
 struct MusicQueue: Equatable {
     var playlist: String
