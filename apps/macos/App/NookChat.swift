@@ -153,6 +153,9 @@ struct Conversation: Identifiable, ConversationListItem {
 
     var isEmpty: Bool { messages.isEmpty }
 
+    /// While Nook answers: when you asked, so the list and the header can show how long it has been going.
+    var turnStarted: Date? { busy ? messages.last(where: { $0.role == .user })?.date : nil }
+
     /// Conversation status indicator.
     var status: Status {
         if busy { return .working }

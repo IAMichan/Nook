@@ -6,6 +6,12 @@ import Foundation
 
 let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        // The Nook chat, laid out like the Agents tab.
+        "chat.you": "Jij",
+        "chat.moreActions": "Meer acties",
+        "nooks.section.pinned": "Vastgezet",
+        "nooks.section.recent": "Recent",
+        "nooks.section.archived": "Archief (%ld)",
         "ws.subagents.title": "Subagents",
         "ws.subagents.progress": "%ld van %ld klaar",
         "ws.tasks.title": "Taken",
@@ -188,6 +194,12 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "sim.stream.stalled": "De simulator stuurt geen beeld meer. Opnieuw verbinden…",
     ],
     .en: [
+        // The Nook chat, laid out like the Agents tab.
+        "chat.you": "You",
+        "chat.moreActions": "More actions",
+        "nooks.section.pinned": "Pinned",
+        "nooks.section.recent": "Recent",
+        "nooks.section.archived": "Archive (%ld)",
         "ws.subagents.title": "Subagents",
         "ws.subagents.progress": "%ld of %ld done",
         "ws.tasks.title": "Tasks",
@@ -370,6 +382,12 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "sim.stream.stalled": "The device stream stopped receiving video. Reconnecting…",
     ],
     .de: [
+        // The Nook chat, laid out like the Agents tab.
+        "chat.you": "Du",
+        "chat.moreActions": "Weitere Aktionen",
+        "nooks.section.pinned": "Angeheftet",
+        "nooks.section.recent": "Zuletzt",
+        "nooks.section.archived": "Archiv (%ld)",
         "ws.subagents.title": "Subagenten",
         "ws.subagents.progress": "%ld von %ld fertig",
         "ws.tasks.title": "Aufgaben",
@@ -552,6 +570,12 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "sim.stream.stalled": "Der Simulator sendet kein Bild mehr. Verbinde neu…",
     ],
     .fr: [
+        // The Nook chat, laid out like the Agents tab.
+        "chat.you": "Vous",
+        "chat.moreActions": "Plus d’actions",
+        "nooks.section.pinned": "Épinglés",
+        "nooks.section.recent": "Récents",
+        "nooks.section.archived": "Archives (%ld)",
         "ws.subagents.title": "Sous-agents",
         "ws.subagents.progress": "%ld sur %ld terminés",
         "ws.tasks.title": "Tâches",
@@ -734,6 +758,12 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "sim.stream.stalled": "Le simulateur n’envoie plus d’image. Reconnexion…",
     ],
     .es: [
+        // The Nook chat, laid out like the Agents tab.
+        "chat.you": "Tú",
+        "chat.moreActions": "Más acciones",
+        "nooks.section.pinned": "Fijados",
+        "nooks.section.recent": "Recientes",
+        "nooks.section.archived": "Archivo (%ld)",
         "ws.subagents.title": "Subagentes",
         "ws.subagents.progress": "%ld de %ld hechos",
         "ws.tasks.title": "Tareas",
