@@ -36,6 +36,7 @@ targets:
       - path: Core
       - path: Services
       - path: Brain
+      - path: Companion/Shared
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -146,6 +147,7 @@ targets:
       - path: Services/Workspace/EffortLevels.swift
       - path: Services/Workspace/AgentAdvice.swift
       - path: Services/Workspace/SourceControlHost.swift
+      - path: Companion/Shared/CompanionModels.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
@@ -181,6 +183,35 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
+  # iPhone companion (docs/COMPANION.md): sessions that need you, with approve / answer / send / stop. It shares the
+  # protocol and the sealing with the Mac app and nothing else.
+  NookCompanion:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Companion/iOS
+      - path: Companion/Shared
+      - path: Services/Workspace/WebhookSecurity.swift
+    info:
+      path: Companion/iOS/Info.plist
+      properties:
+        CFBundleName: Nook Companion
+        CFBundleDisplayName: Nook Companion
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
+        NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
+    settings:
+      base:
+        PRODUCT_NAME: Nook Companion
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
+        DEVELOPMENT_TEAM: 35SMNHP9K7
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
 schemes:
   Nook:
     build:
@@ -191,3 +222,7 @@ schemes:
         - NookTests
     run:
       config: Debug
+  NookCompanion:
+    build:
+      targets:
+        NookCompanion: all

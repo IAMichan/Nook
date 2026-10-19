@@ -295,6 +295,7 @@ struct WorkspaceSettingsSection: View {
             }
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
             GitLabSettingsRows()
+            CompanionSettingsRows()
         } header: {
             Text(tr("settings.ws.title"))
         } footer: {
