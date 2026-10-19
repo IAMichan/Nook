@@ -54,9 +54,14 @@ enum BrowserSearchEngine: String, CaseIterable, Identifiable, Sendable {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         let url: URL?
-        if text.contains("."), !text.contains(" "), let parsed = URL(string: text.lowercased().hasPrefix("http") ? text : "https://" + text) {
+        let lowered = text.lowercased()
+        if (lowered.hasPrefix("http://") || lowered.hasPrefix("https://")), !text.contains(" "), let parsed = URL(string: text),
+           parsed.host?.isEmpty == false {
+            // An explicit address, such as http://localhost:3000 from a dev server chip: open it as is.
             url = parsed
-        } else if text.hasPrefix("localhost"), !text.contains(" ") {
+        } else if text.contains("."), !text.contains(" "), let parsed = URL(string: lowered.hasPrefix("http") ? text : "https://" + text) {
+            url = parsed
+        } else if lowered.hasPrefix("localhost"), !text.contains(" ") {
             url = URL(string: "http://" + text)
         } else {
             url = engine.url(for: text)
