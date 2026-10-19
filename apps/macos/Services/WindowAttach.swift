@@ -38,7 +38,7 @@ final class WindowAttach {
         guard let target else { return }
         self.target = nil
         Task { @MainActor in
-            guard CGPreflightScreenCaptureAccess() else {
+            guard ScreenAccess.isUsable else {
                 _ = CGRequestScreenCaptureAccess()
                 onFailure?(tr("chat.capture.permission"))
                 return
@@ -75,8 +75,14 @@ final class WindowAttach {
     }
 
     static func capture(_ windowID: CGWindowID) async -> CGImage? {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true),
-              let window = content.windows.first(where: { $0.windowID == windowID }) else { return nil }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        } catch {
+            ScreenAccess.note(error)
+            return nil
+        }
+        guard let window = content.windows.first(where: { $0.windowID == windowID }) else { return nil }
         let configuration = SCStreamConfiguration()
         let scale = CGFloat(ChatImage.maxSide) / max(window.frame.width, window.frame.height)
         configuration.width = Int(window.frame.width * min(2, max(scale, 0.5)))

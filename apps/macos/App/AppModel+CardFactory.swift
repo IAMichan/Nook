@@ -56,7 +56,7 @@ extension AppModel {
     /// The selection is macOS's own; the picture stays in a temporary folder on this Mac until a brain is asked about it.
     func captureScreenPart() {
         guard !capturingScreenPart else { return }
-        guard CGPreflightScreenCaptureAccess() else {
+        guard ScreenAccess.isUsable else {
             _ = CGRequestScreenCaptureAccess()
             viewModel.show(.card(errorCard(tr("chat.capture.permission"))))
             return
