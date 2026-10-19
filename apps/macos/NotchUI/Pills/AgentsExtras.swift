@@ -208,14 +208,25 @@ private struct UsageGlyph: View {
 // MARK: Pull requests
 
 /// Every open pull request of your GitHub accounts: the ones you wrote, and the ones waiting for your review. A click
-/// opens the pull request on GitHub.
+/// opens the pull request in Nook (see PullRequestDetailView), where it can be read in full and merged.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = PullRequestStore.shared
     private var accounts: [AccountPullRequests] { store.accounts }
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+    /// The pull request shown in full, with the account it is listed under.
+    @State private var opened: (account: String, item: PullRequestItem)?
 
     var body: some View {
+        if let opened {
+            PullRequestDetailView(accountID: opened.account, item: opened.item) { self.opened = nil }
+                .id(opened.account + " " + opened.item.id)
+        } else {
+            list
+        }
+    }
+
+    private var list: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text(tr("agents.footer.pullRequests"))
@@ -293,10 +304,10 @@ struct PullRequestsPanel: View {
                 }
             }
             if !account.reviews.isEmpty {
-                group(title: tr("agents.pulls.reviews", account.reviews.count), items: account.reviews, showAuthor: true)
+                group(title: tr("agents.pulls.reviews", account.reviews.count), items: account.reviews, account: account.id, showAuthor: true)
             }
             if !account.mine.isEmpty {
-                group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, showAuthor: false)
+                group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, account: account.id, showAuthor: false)
             }
         }
     }
@@ -329,14 +340,14 @@ struct PullRequestsPanel: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
     }
 
-    private func group(title: String, items: [PullRequestItem], showAuthor: Bool) -> some View {
+    private func group(title: String, items: [PullRequestItem], account: String, showAuthor: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(NookTheme.font(11.5, .semibold))
                 .foregroundStyle(NookTheme.textTertiary)
                 .padding(.bottom, 3)
             ForEach(items) { item in
-                PullRequestRow(item: item, showAuthor: showAuthor)
+                PullRequestRow(item: item, showAuthor: showAuthor) { opened = (account, item) }
             }
         }
     }
@@ -345,12 +356,11 @@ struct PullRequestsPanel: View {
 private struct PullRequestRow: View {
     let item: PullRequestItem
     let showAuthor: Bool
+    let onOpen: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button {
-            if let url = item.url { NSWorkspace.shared.open(url) }
-        } label: {
+        Button(action: onOpen) {
             HStack(alignment: .center, spacing: 10) {
                 ci.frame(width: 16)
                 VStack(alignment: .leading, spacing: 2) {
@@ -373,7 +383,7 @@ private struct PullRequestRow: View {
                         .font(NookTheme.font(11.5))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                Image(systemName: "arrow.up.right")
+                Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
@@ -385,7 +395,12 @@ private struct PullRequestRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tr("agents.pulls.open"))
+        .help(tr("agents.pulls.view"))
+        .contextMenu {
+            if let url = item.url {
+                Button(tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
+            }
+        }
     }
 
     @ViewBuilder
