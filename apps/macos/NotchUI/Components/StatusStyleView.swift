@@ -24,62 +24,43 @@ extension AgentDisplayState {
     var tone: StatusTone { AgentStatusStyle.tone(self) }
 }
 
-/// A status as a small glass pill: a soft vertical wash of its color, a hairline rim that catches the light at the top,
-/// and a leading beacon (the symbol in its own little disc, or the live dot while working). `detail` sits behind a thin
-/// divider in tabular digits, such as "3m" or "tot 9:00". States that need you (approval, input, failure) glow faintly.
+/// A status as a small tinted capsule that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
+/// It shares its height, type and wash with `PullRequestPill`, so the two read as one family and a row with a badge
+/// is exactly as tall as one without. `detail` follows a middle dot in tabular digits, such as "3m" or "tot 9:00".
 struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
     var long = false
 
-    /// Approval, input and failure: the ones you have to act on.
-    private var needsYou: Bool { AgentStatusStyle.priority(state) >= AgentStatusStyle.priority(.failed) }
-
     var body: some View {
         let tint = state.tone.color
-        HStack(spacing: 5) {
-            beacon(tint)
+        HStack(spacing: 4) {
+            if AgentStatusStyle.pulses(state) {
+                SteppedPulseDot(color: tint, size: 6)
+                    .frame(width: 10, height: 10)
+            } else {
+                Image(systemName: state.symbol)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .frame(width: 10, height: 10)
+            }
             Text(long ? state.longWord : state.word)
-                .font(NookTheme.font(11, .semibold))
+                .font(NookTheme.font(11, .medium))
                 .lineLimit(1)
             if let detail {
-                Capsule().fill(tint.opacity(0.35)).frame(width: 1, height: 9)
+                Text("·").font(NookTheme.font(11, .medium)).opacity(0.5)
                 Text(detail)
-                    .font(NookTheme.font(11, .medium).monospacedDigit())
-                    .foregroundStyle(tint.opacity(0.75))
+                    .font(NookTheme.font(11).monospacedDigit())
+                    .opacity(0.7)
                     .lineLimit(1)
             }
         }
         .foregroundStyle(tint)
-        .padding(.leading, 3)
-        .padding(.trailing, 8)
-        .frame(height: 20)
-        .background(
-            Capsule().fill(LinearGradient(colors: [tint.opacity(0.24), tint.opacity(0.10)], startPoint: .top, endPoint: .bottom))
-        )
-        .overlay(
-            Capsule().strokeBorder(
-                LinearGradient(colors: [tint.opacity(0.55), tint.opacity(0.12)], startPoint: .top, endPoint: .bottom),
-                lineWidth: 0.75
-            )
-        )
-        .shadow(color: needsYou ? tint.opacity(0.35) : .clear, radius: 5)
+        .padding(.horizontal, 6)
+        .frame(height: 16)
+        .background(Capsule().fill(tint.opacity(0.13)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
-    }
-
-    /// A 14pt disc that holds the symbol, so every status starts with the same shape and the words line up in a list.
-    private func beacon(_ tint: Color) -> some View {
-        ZStack {
-            Circle().fill(tint.opacity(0.22))
-            if AgentStatusStyle.pulses(state) {
-                SteppedPulseDot(color: tint, size: 6)
-            } else {
-                Image(systemName: state.symbol).font(.system(size: 8.5, weight: .bold))
-            }
-        }
-        .frame(width: 14, height: 14)
     }
 }
 
