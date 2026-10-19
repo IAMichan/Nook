@@ -285,7 +285,6 @@ New here? Look for issues labeled `good first issue`, or help by adding a transl
 
 ## Acknowledgments & License
 
-- The concept of a utility living inside the MacBook notch was inspired by [boring.notch](https://github.com/TheBoredTeam/boring.notch) (no code was reused).
 - Parts of Flow dictation, Call Notetaker, and Autocomplete adapt open-source MIT/Apache-2.0 components; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for full attributions.
 
 Licensed under the [MIT License](LICENSE) © 2026 Michan van der Hoek.
