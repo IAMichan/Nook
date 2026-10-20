@@ -39,17 +39,20 @@ struct NookTaskRing: View {
     var orbSize: CGFloat = 46
     /// The room the ring may take; the closed notch is not much taller than Nook.
     var maxSide: CGFloat = .infinity
-    /// The piece Nook looks at (shared with `NookTaskRingLabel`).
-    @Binding var hovered: String?
+    /// The piece Nook looks at (`pointer.hovered`, passed as a value so the ring redraws when it changes).
+    var hovered: String?
+    /// Where the pointer is, shared with `NookTaskRingLabel`; nil where the ring only shows.
+    var pointer: TaskRingPointer?
     let onOpen: (TaskRingItem) -> Void
 
     init(items: [TaskRingItem], style: Style = .panel, orbSize: CGFloat = 46, maxSide: CGFloat = .infinity,
-         hovered: Binding<String?> = .constant(nil), onOpen: @escaping (TaskRingItem) -> Void = { _ in }) {
+         hovered: String? = nil, pointer: TaskRingPointer? = nil, onOpen: @escaping (TaskRingItem) -> Void = { _ in }) {
         self.items = items
         self.style = style
         self.orbSize = orbSize
         self.maxSide = maxSide
-        self._hovered = hovered
+        self.hovered = hovered
+        self.pointer = pointer
         self.onOpen = onOpen
     }
 
@@ -83,7 +86,7 @@ struct NookTaskRing: View {
         }
         .onTapGesture { point in
             guard !compact, let i = index(at: point) else { return }
-            hover(nil)
+            pointer?.clear()
             onOpen(items[i])
         }
         .allowsHitTesting(!compact)
@@ -91,7 +94,7 @@ struct NookTaskRing: View {
             appeared = Date()
             shown = true
         }
-        .onDisappear { if !compact { NookPresence.shared.lookAngle = nil } }
+        .onDisappear { if !compact { pointer?.clear() } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tr("notch.taskRing"))
         .accessibilityValue(items.map { "\($0.title), \($0.detail)" }.joined(separator: "; "))
@@ -174,11 +177,50 @@ struct NookTaskRing: View {
     }
 
     private func hover(_ index: Int?) {
-        let id = index.map { items[$0].id }
+        pointer?.onRing(index.map { items[$0].id }, angle: index.map { angle($0) })
+    }
+}
+
+/// Which piece of the ring the pointer is on, shared by the ring and its label. Leaving the ring does not clear it at
+/// once: the label beside the ring stays while you move onto it, so you can click it there to go to that piece.
+@MainActor
+final class TaskRingPointer: ObservableObject {
+    @Published private(set) var hovered: String?
+    private var inRing = false
+    private var inLabel = false
+    private var leaving: Task<Void, Never>?
+
+    /// The pointer moved over the ring: on piece `id` (looked at from `angle`), or off it (nil).
+    func onRing(_ id: String?, angle: Double?) {
+        inRing = id != nil
+        guard let id else { return leaveSoon() }
+        leaving?.cancel()
         guard id != hovered else { return }
         hovered = id
-        NookPresence.shared.lookAngle = index.map { angle($0) }
+        NookPresence.shared.lookAngle = angle
         NookPresence.shared.noteActivity()
+    }
+
+    func onLabel(_ inside: Bool) {
+        inLabel = inside
+        if inside { leaving?.cancel() } else { leaveSoon() }
+    }
+
+    func clear() {
+        leaving?.cancel()
+        inRing = false
+        inLabel = false
+        hovered = nil
+        NookPresence.shared.lookAngle = nil
+    }
+
+    private func leaveSoon() {
+        leaving?.cancel()
+        leaving = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self, !Task.isCancelled, !self.inRing, !self.inLabel else { return }
+            self.clear()
+        }
     }
 }
 
@@ -196,11 +238,13 @@ private struct RingBand: Shape {
     }
 }
 /// The name of the piece under the pointer, just outside the ring. Lives apart from the ring so it can be drawn above
-/// Nook and the content beside him instead of behind them.
+/// Nook and the content beside him instead of behind them. Click it to go to that piece, like the piece itself.
 struct NookTaskRingLabel: View {
     let items: [TaskRingItem]
     let hovered: String?
     var orbSize: CGFloat = 46
+    var pointer: TaskRingPointer?
+    var onOpen: (TaskRingItem) -> Void = { _ in }
 
     private var radius: CGFloat { NookTaskRing.radius(orbSize: orbSize) }
     private var side: CGFloat { radius * 2 + 14 }
@@ -209,25 +253,37 @@ struct NookTaskRingLabel: View {
         ZStack(alignment: .topLeading) {
             if let id = hovered, let i = items.firstIndex(where: { $0.id == id }) {
                 let a = NookTaskRing.angle(i, count: items.count, radius: radius)
-                HStack(spacing: 5) {
-                    Text(items[i].title)
-                        .foregroundStyle(NookTheme.paper)
-                    Text(items[i].detail)
-                        .foregroundStyle(NookTheme.textSecondary)
+                let item = items[i]
+                Button {
+                    pointer?.clear()
+                    onOpen(item)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(item.title)
+                            .foregroundStyle(NookTheme.paper)
+                        Text(item.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                        Image(systemName: "arrow.up.right")
+                            .font(NookTheme.font(10, .semibold))
+                            .foregroundStyle(NookTheme.textSecondary)
+                    }
+                    .font(NookTheme.font(12, .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color(hex: 0x17171D)))
+                    .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+                    .contentShape(Capsule())
                 }
-                .font(NookTheme.font(12, .medium))
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(Color(hex: 0x17171D)))
-                .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+                .buttonStyle(.plain)
+                .onHover { pointer?.onLabel($0) }
+                .help(tr("notch.taskRing.open"))
                 .shadow(color: .black.opacity(0.5), radius: 9, y: 4)
                 .offset(x: side / 2 + CGFloat(cos(a)) * (radius + 10) + 6, y: side / 2 + CGFloat(sin(a)) * (radius + 10) - 12)
                 .transition(.opacity)
             }
         }
         .frame(width: side, height: side, alignment: .topLeading)
-        .allowsHitTesting(false)
     }
 }

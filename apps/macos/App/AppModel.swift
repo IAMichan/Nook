@@ -253,6 +253,12 @@ final class AppModel: ObservableObject {
                 if self.viewModel.state.isResting { self.viewModel.show(self.viewModel.state) }
             }
             .store(in: &bag)
+        // The ring around Nook shows each conversation's status: redraw when one stops waiting for you or is read, not
+        // only when it starts or stops working.
+        chat.$conversations.map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
     }
 
     // MARK: Opstarten
