@@ -30,8 +30,9 @@ final class EmbeddedModel: ObservableObject {
     /// When autocomplete last used the model.
     private var lastAutocomplete: Date?
 
-    /// Unload model from memory after this many seconds of inactivity. High RAM: longer, keeping the next query instant.
-    private static let idleSeconds: UInt64 = memoryGB >= 24 ? 300 : 90
+    /// Unload model from memory after this many seconds of inactivity: the weights take gigabytes of GPU memory, and loading
+    /// them again from the disk cache takes only a second or two.
+    private static let idleSeconds: UInt64 = 90
 
     private init() {
         installed = Set(UserDefaults.standard.stringArray(forKey: "installedLocalModels") ?? [])
@@ -61,6 +62,12 @@ final class EmbeddedModel: ObservableObject {
         container = nil
         loadedID = nil
         Memory.clearCache()
+    }
+
+    /// Unloads the model unless a query is running: for background work (thinking along) that loaded it only for itself.
+    func unloadIfIdle() {
+        guard !busy else { return }
+        unload()
     }
 
     private func scheduleUnload() {
