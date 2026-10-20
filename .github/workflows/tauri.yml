@@ -5,15 +5,20 @@ on:
     branches: [main]
     paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
   pull_request:
+    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
     paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
+# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
+# of merges costs at most two builds instead of cancelling every build before it completes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -22,7 +27,9 @@ defaults:
 jobs:
   checks:
     name: Kern en interface
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -68,6 +75,7 @@ jobs:
             os: ubuntu-22.04
             bundles: deb,appimage
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -103,6 +111,7 @@ jobs:
     name: Android
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       NDK_VERSION: 27.2.12479018
     steps:
