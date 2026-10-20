@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// The pull requests of your GitHub accounts: the ones you wrote, and the ones waiting for your review. Open ones by
+/// The pull requests of your GitHub accounts: the ones you wrote, the ones waiting for your review, and the others in the
+/// organizations and repositories you watch (Settings › Agents). Open ones by
 /// default; the Filters dropdown (see PullRequestFilterMenu) also shows closed and merged ones. A click opens the pull
 /// request in Nook (see PullRequestDetailView), where it can be read in full and merged.
 struct PullRequestsPanel: View {
@@ -9,6 +10,7 @@ struct PullRequestsPanel: View {
     @ObservedObject private var store = PullRequestStore.shared
     private var accounts: [AccountPullRequests] { store.accounts }
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+    @ObservedObject private var watching = PullRequestWatchSettings.shared
     /// The pull request shown in full, with the account it is listed under.
     @State private var opened: (account: String, item: PullRequestItem)?
     /// Search and filters; kept while a pull request is open, so going back shows the same list.
@@ -16,6 +18,12 @@ struct PullRequestsPanel: View {
     @FocusState private var searching: Bool
     /// The accounts with only the pull requests that match the filter.
     private var shown: [AccountPullRequests] { accounts.map(filter.apply) }
+    /// Watched entries that no account could search, still in the watch list.
+    private var unreadable: [String] {
+        let readers = accounts.filter { $0.error == nil }
+        guard !readers.isEmpty else { return [] }
+        return watching.entries.filter { entry in readers.allSatisfy { $0.unreadable.contains(entry) } }
+    }
 
     var body: some View {
         if let opened {
@@ -34,6 +42,7 @@ struct PullRequestsPanel: View {
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
                 if store.loading { ProgressView().controlSize(.small) }
+                NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .agents) }
                 NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
             .frame(height: 30)
@@ -42,11 +51,12 @@ struct PullRequestsPanel: View {
                 empty(title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
                     app.openSettings(section: .connections)
                 }))
-            } else if store.loaded && accounts.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
+            } else if store.loaded && accounts.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                 empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
                 filterBar
-                if shown.allSatisfy({ $0.mine.isEmpty && $0.reviews.isEmpty && $0.error == nil }) {
+                if !unreadable.isEmpty { unreadableNote }
+                if shown.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                     if filter.isActive {
                         empty(title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
                             filter = PullRequestFilter()
@@ -60,7 +70,7 @@ struct PullRequestsPanel: View {
                         VStack(alignment: .leading, spacing: 18) {
                             ForEach(shown) { account in
                                 // An account without matches stays out of a filtered list, unless it has an error to show.
-                                if !filter.isActive || !account.mine.isEmpty || !account.reviews.isEmpty || account.error != nil {
+                                if !filter.isActive || !account.isEmpty || account.error != nil {
                                     accountSection(account, showName: accounts.count > 1)
                                 }
                             }
@@ -81,6 +91,7 @@ struct PullRequestsPanel: View {
         .onChange(of: gitHubSignIn.phase) { _, phase in
             if phase == .done { Task { await store.refresh(force: true) } }
         }
+        .onChange(of: watching.entries) { _, _ in Task { await store.refresh(force: true) } }
     }
 
     // MARK: Search and filters
@@ -110,8 +121,19 @@ struct PullRequestsPanel: View {
                 Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
             }
 
-            PullRequestFilterMenu(filter: $filter, authors: PullRequestFilter.authors(in: accounts))
+            PullRequestFilterMenu(filter: $filter, authors: PullRequestFilter.authors(in: accounts), watching: !watching.entries.isEmpty)
         }
+    }
+
+    /// A watched organization or repository GitHub would not search: a typo, or none of your accounts has access.
+    private var unreadableNote: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.font(11))
+            Text(tr("agents.pulls.unreadable", unreadable.joined(separator: ", ")))
+                .font(NookTheme.font(12))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(NookTheme.coralSoft)
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
@@ -156,6 +178,9 @@ struct PullRequestsPanel: View {
             }
             if !account.mine.isEmpty {
                 group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, account: account.id, showAuthor: false)
+            }
+            if !account.watched.isEmpty {
+                group(title: tr("agents.pulls.watched", account.watched.count), items: account.watched, account: account.id, showAuthor: true)
             }
         }
     }

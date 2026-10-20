@@ -63,4 +63,64 @@ final class PullRequestGraphQLTests: XCTestCase {
         let again = try JSONDecoder().decode(PullRequestItem.self, from: JSONEncoder().encode(item))
         XCTAssertEqual(again, item)
     }
+
+    func testWatchListNormalizes() {
+        XCTAssertEqual(PullRequestWatchList.normalize(" acme "), "acme")
+        XCTAssertEqual(PullRequestWatchList.normalize("@acme"), "acme")
+        XCTAssertEqual(PullRequestWatchList.normalize("acme/web"), "acme/web")
+        XCTAssertEqual(PullRequestWatchList.normalize("https://github.com/acme/web.git"), "acme/web")
+        XCTAssertEqual(PullRequestWatchList.normalize("github.com/acme/web/pull/3"), "acme/web")
+        XCTAssertEqual(PullRequestWatchList.normalize("https://github.com/acme/"), "acme")
+        XCTAssertNil(PullRequestWatchList.normalize(""))
+        XCTAssertNil(PullRequestWatchList.normalize("not an org"))
+        XCTAssertNil(PullRequestWatchList.normalize("-acme"))
+        XCTAssertNil(PullRequestWatchList.normalize("acme/.."))
+        XCTAssertEqual(PullRequestWatchList.adding("acme, ACME other/repo bad!name", to: ["Other/Repo"]), ["Other/Repo", "acme"],
+                       "names ignore case, invalid ones are skipped")
+        XCTAssertEqual(PullRequestWatchList.search("acme", closed: false), "is:pr is:open archived:false org:acme sort:updated-desc")
+        XCTAssertEqual(PullRequestWatchList.search("acme/web", closed: true), "is:pr is:closed archived:false repo:acme/web sort:updated-desc")
+    }
+
+    func testWatchQueryHasTwoSearchesPerEntry() throws {
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.watchBody(["acme", "a/b"])) as? [String: Any])
+        let query = try XCTUnwrap(body["query"] as? String)
+        XCTAssertTrue(query.contains("w0: search(query: $w0"))
+        XCTAssertTrue(query.contains("w1Closed: search(query: $w1Closed"))
+        XCTAssertTrue(query.contains("fragment row on PullRequest"))
+        let variables = try XCTUnwrap(body["variables"] as? [String: String])
+        XCTAssertEqual(variables.count, 4)
+        XCTAssertEqual(variables["w1"], "is:pr is:open archived:false repo:a/b sort:updated-desc")
+    }
+
+    func testParseWatched() throws {
+        let answer = #"""
+        {"data":{
+          "w0":{"nodes":[{"number":1,"title":"Old","isDraft":false,"updatedAt":"2026-10-10T10:00:00Z","author":{"login":"ada"},
+            "repository":{"nameWithOwner":"acme/web"}},
+            {"number":2,"title":"New","isDraft":false,"updatedAt":"2026-10-18T10:00:00Z","author":{"login":"bob"},
+            "repository":{"nameWithOwner":"acme/api"}}]},
+          "w0Closed":{"nodes":[{"number":3,"title":"Done","state":"MERGED","isDraft":false,"author":{"login":"ada"},
+            "repository":{"nameWithOwner":"acme/web"}}]},
+          "w1":{"nodes":[{"number":1,"title":"Old","isDraft":false,"updatedAt":"2026-10-10T10:00:00Z","author":{"login":"ada"},
+            "repository":{"nameWithOwner":"acme/web"}}]},
+          "w1Closed":{"nodes":[]},
+          "w2":null, "w2Closed":null},
+         "errors":[{"message":"Could not resolve","path":["w2"]}]}
+        """#
+        let watched = try PullRequestGraphQL.parseWatched(Data(answer.utf8), entries: ["acme", "acme/web", "nobody/nothing"])
+        XCTAssertEqual(watched.items.map(\.id), ["acme/api#2", "acme/web#1", "acme/web#3"],
+                       "open ones first, newest first, each pull request once")
+        XCTAssertEqual(watched.unreadable, ["nobody/nothing"])
+        XCTAssertThrowsError(try PullRequestGraphQL.parseWatched(Data(#"{"data":null,"errors":[{"message":"No"}]}"#.utf8), entries: ["x"]))
+    }
+
+    func testSavedAccountWithoutWatchedRows() throws {
+        let saved = #"{"id":"github","name":"Work","login":"ada","mine":[],"reviews":[]}"#
+        let account = try JSONDecoder().decode(AccountPullRequests.self, from: Data(saved.utf8))
+        XCTAssertEqual(account.watched, [])
+        XCTAssertEqual(account.unreadable, [])
+        XCTAssertTrue(account.isEmpty)
+        let again = try JSONDecoder().decode(AccountPullRequests.self, from: JSONEncoder().encode(account))
+        XCTAssertEqual(again, account)
+    }
 }

@@ -87,4 +87,20 @@ final class PullRequestFilterTests: XCTestCase {
         XCTAssertEqual(filter.apply(account).mine, [])
         XCTAssertEqual(filter.apply(account).reviews, [])
     }
+
+    func testWatchedScope() {
+        var account = AccountPullRequests(id: "github", name: "Work", login: "ada", mine: [item(1, "Mine")],
+                                          reviews: [item(2, "Theirs", author: "bob")], error: nil)
+        account.watched = [item(3, "Team", author: "cleo")]
+        var filter = PullRequestFilter()
+        XCTAssertEqual(filter.apply(account).watched.map(\.number), [3])
+        XCTAssertEqual(PullRequestFilter.authors(in: [account]).sorted(), ["ada", "bob", "cleo"])
+        filter.scope = .watched
+        let watched = filter.apply(account)
+        XCTAssertEqual(watched.watched.map(\.number), [3])
+        XCTAssertEqual(watched.mine, [])
+        XCTAssertEqual(watched.reviews, [])
+        filter.scope = .mine
+        XCTAssertEqual(filter.apply(account).watched, [])
+    }
 }

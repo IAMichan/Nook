@@ -7,6 +7,8 @@ struct PullRequestFilterMenu: View {
     @Binding var filter: PullRequestFilter
     /// The authors in the lists, for the Author choice.
     let authors: [String]
+    /// Whether organizations or repositories are watched, for the Watched choice.
+    var watching = false
     @State private var kind: Kind = .state
     @State private var hovering = false
 
@@ -138,8 +140,8 @@ struct PullRequestFilterMenu: View {
                                 chosen: filter.state == state) { filter.state = state }
             }
         case .involvement:
-            ForEach(PullRequestFilter.Scope.allCases) { scope in
-                FilterChoiceRow(symbol: scope == .all ? "tray.full" : scope == .reviews ? "eye" : "person",
+            ForEach(PullRequestFilter.Scope.allCases.filter { $0 != .watched || watching || filter.scope == .watched }) { scope in
+                FilterChoiceRow(symbol: Self.symbol(scope),
                                 title: tr("agents.pulls.scope." + scope.rawValue), chosen: filter.scope == scope) { filter.scope = scope }
             }
         case .author:
@@ -159,6 +161,15 @@ struct PullRequestFilterMenu: View {
                 FilterChoiceRow(symbol: Self.symbol(status), tint: Self.tint(status), title: tr("agents.pulls.status." + status.rawValue),
                                 chosen: filter.status == status) { filter.status = status }
             }
+        }
+    }
+
+    private static func symbol(_ scope: PullRequestFilter.Scope) -> String {
+        switch scope {
+        case .all: return "tray.full"
+        case .reviews: return "eye"
+        case .mine: return "person"
+        case .watched: return "binoculars"
         }
     }
 

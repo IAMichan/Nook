@@ -13,21 +13,26 @@ enum GitHubPullRequestList {
         AccountRegistry.shared.accounts(for: "github").filter { CloudHelp.secret($0.key("token")) != nil }
     }
 
-    /// All accounts, in the order they are set up. One failing account does not hide the others.
+    /// All accounts, in the order they are set up. One failing account does not hide the others. Each account also
+    /// searches the watched organizations and repositories; a pull request shows once, under the first account that has it.
     @MainActor
     static func load() async -> [AccountPullRequests] {
         guard ConnectorToggle.isOn("github") else { return [] }
+        let watching = PullRequestWatchSettings.shared.entries
         let targets = accounts.compactMap { account -> (id: String, name: String, login: String, token: String)? in
             guard let token = CloudHelp.secret(account.key("token")) else { return nil }
             return (account.id, GitHubConnector.accountName(account), account.identity ?? "", token)
         }
-        return await withTaskGroup(of: (Int, AccountPullRequests).self) { group in
+        let loaded = await withTaskGroup(of: (Int, AccountPullRequests).self) { group in
             for (index, target) in targets.enumerated() {
                 group.addTask {
                     do {
+                        async let watched = fetchWatched(token: target.token, entries: watching)
                         let list = try await fetch(token: target.token)
+                        let extra = await watched
                         return (index, AccountPullRequests(id: target.id, name: target.name, login: list.login.isEmpty ? target.login : list.login,
-                                                           mine: list.mine, reviews: list.reviews, error: nil))
+                                                           mine: list.mine, reviews: list.reviews, error: nil,
+                                                           watched: extra.items, unreadable: extra.unreadable))
                     } catch {
                         return (index, AccountPullRequests(id: target.id, name: target.name, login: target.login, mine: [], reviews: [],
                                                            error: CloudHelp.errorText(error, service: "GitHub"),
@@ -39,23 +44,91 @@ enum GitHubPullRequestList {
             for await entry in group { result.append(entry) }
             return result.sorted { $0.0 < $1.0 }.map(\.1)
         }
+        // Yours and your reviews stay where they are; a watched one only shows where nothing lists it yet.
+        var seen = Set(loaded.flatMap { ($0.mine + $0.reviews).map(\.id) })
+        return loaded.map { account in
+            var account = account
+            account.watched = account.watched.filter { seen.insert($0.id).inserted }
+            return account
+        }
+    }
+
+    /// The watched entries in one request. When GitHub turns the request down as a whole (one entry it cannot search can
+    /// do that), each entry is asked on its own, so only the entries that fail are left out.
+    private static func fetchWatched(token: String, entries: [String]) async -> (items: [PullRequestItem], unreadable: [String]) {
+        guard !entries.isEmpty else { return ([], []) }
+        do {
+            let data = try await post(PullRequestGraphQL.watchBody(entries), token: token)
+            return try PullRequestGraphQL.parseWatched(data, entries: entries)
+        } catch {
+            // Only GitHub refusing the query points at an entry; a lost connection or a rate limit says nothing about one.
+            guard ConnectorErrorKind.classify(error) == .other else { return ([], []) }
+            guard entries.count > 1 else { return ([], entries) }
+            return await withTaskGroup(of: (Int, [PullRequestItem], [String]).self) { group in
+                for (index, entry) in entries.enumerated() {
+                    group.addTask {
+                        let one = await fetchWatched(token: token, entries: [entry])
+                        return (index, one.items, one.unreadable)
+                    }
+                }
+                var parts: [(Int, [PullRequestItem], [String])] = []
+                for await part in group { parts.append(part) }
+                parts.sort { $0.0 < $1.0 }
+                var seen = Set<String>()
+                let items = parts.flatMap(\.1).filter { seen.insert($0.id).inserted }
+                let open = items.filter { $0.state == .open }
+                return (open + items.filter { $0.state != .open }, parts.flatMap(\.2))
+            }
+        }
     }
 
     private static func fetch(token: String) async throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
+        try PullRequestGraphQL.parse(try await post(PullRequestGraphQL.body(), token: token))
+    }
+
+    private static func post(_ body: Data, token: String) async throws -> Data {
         var request = URLRequest(url: URL(string: "https://api.github.com/graphql")!)
         request.httpMethod = "POST"
-        request.httpBody = PullRequestGraphQL.body()
+        request.httpBody = body
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
-        case 200..<300: return try PullRequestGraphQL.parse(data)
+        case 200..<300: return data
         case 401, 403: throw NookError("The credentials were rejected. Check them in Settings › Integrations.", kind: .auth)
         case 429: throw NookError("Too many requests. Nook will retry shortly.", kind: .rateLimited)
         case let status: throw NookError("GitHub returned an error (\(status)).")
         }
     }
+}
+
+/// The watched organizations and repositories, as set in Settings › Agents (see PullRequestWatchList).
+@MainActor
+final class PullRequestWatchSettings: ObservableObject {
+    static let shared = PullRequestWatchSettings()
+
+    @Published private(set) var entries: [String] {
+        didSet {
+            UserDefaults.standard.set(entries, forKey: PullRequestWatchList.defaultsKey)
+            PullRequestStore.shared.markStale()
+        }
+    }
+
+    private init() {
+        entries = UserDefaults.standard.stringArray(forKey: PullRequestWatchList.defaultsKey) ?? []
+    }
+
+    /// Adds what was typed (one or more entries, separated by commas or spaces); false when nothing in it was a valid new entry.
+    @discardableResult
+    func add(_ text: String) -> Bool {
+        let updated = PullRequestWatchList.adding(text, to: entries)
+        guard updated != entries else { return false }
+        entries = updated
+        return true
+    }
+
+    func remove(_ entry: String) { entries.removeAll { $0 == entry } }
 }
 
 /// The pull request list kept between visits: the last list shows at once, also after a
