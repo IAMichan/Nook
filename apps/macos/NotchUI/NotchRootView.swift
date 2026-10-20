@@ -159,6 +159,8 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
         case .track(let title, let artist):
             trackStrip(title: title, artist: artist, nh: nh, nw: nw)
+        case .done(let message) where viewModel.doneAcknowledge && viewModel.geometry.hasNotch && !viewModel.geometry.isFloating:
+            inlineDoneStrip(message: message, nh: nh, nw: nw)
         case .done(let message):
             doneStrip(message: message, nh: nh)
         case .nudge(let line, _):
@@ -257,6 +259,50 @@ struct NotchRootView: View {
     }
 
     // MARK: Recent action
+
+    /// A compact agent notice in the notch's own row, like a track: mark and message left of the notch, View and OK right
+    /// of it. The notch keeps its height and only grows wider.
+    private func inlineDoneStrip(message: String, nh: CGFloat, nw: CGFloat) -> some View {
+        let wing = (viewModel.size.width - nw) / 2
+        let button = min(24, nh - 8)
+        let tone = viewModel.doneTone
+        return HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: tone.symbol)
+                    .font(.system(size: tone == .waiting ? 13 : 11, weight: .bold))
+                    .foregroundStyle(tone.color)
+                    .frame(width: 16)
+                Text(message)
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(width: wing, height: nh)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
+                    viewModel.doneButtonPressed()
+                }
+                NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds,
+                                      height: button) {
+                    viewModel.show(.idle)
+                }
+                .id(viewModel.doneStamp)
+            }
+            .padding(.trailing, 10)
+            .frame(width: wing, height: nh)
+        }
+        .frame(height: nh)
+        .floatingDrag(viewModel)
+        .accessibilityElement(children: .contain)
+    }
 
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {

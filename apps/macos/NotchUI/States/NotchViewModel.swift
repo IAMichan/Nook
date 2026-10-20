@@ -112,6 +112,12 @@ final class NotchViewModel: ObservableObject {
     /// How long the confirmation strip stays.
     static let doneSeconds: TimeInterval = 4.2
 
+    /// Width of each side of the notch for a compact agent notice: the left holds the mark and the message, the right
+    /// View and OK. Both sides are as wide, so the notch stays centered.
+    static func inlineDoneWing(_ message: String) -> CGFloat {
+        min(280, max(176, CGFloat(message.count) * 6.4 + 52))
+    }
+
     /// A task open inside the panel (new session, changes, commit…). Resizes the panel to give it room.
     @Published var sheet: NotchSheet? {
         didSet {
@@ -602,6 +608,9 @@ final class NotchViewModel: ObservableObject {
             let textLen = max(CGFloat(title.count) * 6.2, CGFloat(artist.count) * 5.4)
             let wing = min(175, max(115, textLen + 46))
             return CGSize(width: nw + 2 * wing, height: nh)
+        case .done(let message) where doneAcknowledge && geometry.hasNotch && !geometry.isFloating:
+            // An agent notice in compact size stays in the notch's own row: the notch only grows wider.
+            return CGSize(width: nw + 2 * Self.inlineDoneWing(message), height: nh)
         case .done:
             return CGSize(width: max(440, nw + 240), height: nh + 40)
         case .nudge:

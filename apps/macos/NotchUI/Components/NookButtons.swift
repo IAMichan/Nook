@@ -57,6 +57,7 @@ struct NookGhostButton: View {
     var symbol: String? = nil
     /// Smaller text and padding, for a row with many buttons.
     var compact: Bool = false
+    var height: CGFloat = 38
     let action: () -> Void
     @State private var hovering = false
 
@@ -70,7 +71,7 @@ struct NookGhostButton: View {
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, compact ? 8 : 12)
-            .frame(height: 38)
+            .frame(height: height)
             .contentShape(Rectangle())
             .hoverLift(hovering)
         }
@@ -86,6 +87,8 @@ struct NookAcknowledgeButton: View {
     var compact: Bool = false
     var countdown: TimeInterval? = nil
     var paused: Bool = false
+    /// A fixed height, e.g. to fit inside the notch's own row; nil follows `compact`.
+    var height: CGFloat? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -100,7 +103,7 @@ struct NookAcknowledgeButton: View {
             .fixedSize()
             .padding(.leading, countdown == nil ? (compact ? 14 : 18) : (compact ? 7 : 9))
             .padding(.trailing, compact ? 14 : 18)
-            .frame(height: compact ? 30 : 38)
+            .frame(height: height ?? (compact ? 30 : 38))
             .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
             .contentShape(Capsule())
             .hoverLift(hovering)
