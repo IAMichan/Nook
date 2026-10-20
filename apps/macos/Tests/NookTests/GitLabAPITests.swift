@@ -53,4 +53,15 @@ final class GitLabAPITests: XCTestCase {
                        "https://gitlab.com/g/p/-/merge_requests/1")
         XCTAssertNil(GitLabAPI.parseCreated(Data("{}".utf8)))
     }
+
+    func testTokenCheckReadsTheUser() {
+        XCTAssertEqual(GitLabTokenCheck.from(status: 200, body: Data(#"{"id":1,"username":"michan"}"#.utf8)), .valid(username: "michan"))
+        XCTAssertEqual(GitLabTokenCheck.from(status: 401, body: Data(#"{"message":"401 Unauthorized"}"#.utf8)), .rejected)
+        XCTAssertEqual(GitLabTokenCheck.from(status: 403, body: Data(#"{"error":"insufficient_scope"}"#.utf8)), .rejected)
+        // Not GitLab, a login page in front of it, or a server error: Nook cannot tell, so it does not call the token bad.
+        XCTAssertEqual(GitLabTokenCheck.from(status: 200, body: Data("<html></html>".utf8)), .unreachable)
+        XCTAssertEqual(GitLabTokenCheck.from(status: 502, body: Data()), .unreachable)
+        XCTAssertTrue(GitLabTokenCheck.valid(username: "a").isValid)
+        XCTAssertFalse(GitLabTokenCheck.rejected.isValid)
+    }
 }

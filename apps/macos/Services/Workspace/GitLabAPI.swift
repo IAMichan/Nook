@@ -143,3 +143,21 @@ enum GitLabAPI {
     }
 }
 
+/// What a GitLab host says about a token: whose it is, that it is refused, or nothing (offline, VPN, not GitLab).
+enum GitLabTokenCheck: Equatable {
+    case valid(username: String)
+    case rejected
+    case unreachable
+
+    var isValid: Bool {
+        if case .valid = self { return true }
+        return false
+    }
+
+    static func from(status: Int, body: Data) -> GitLabTokenCheck {
+        if status == 401 || status == 403 { return .rejected }
+        guard status == 200, let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let username = json["username"] as? String else { return .unreachable }
+        return .valid(username: username)
+    }
+}

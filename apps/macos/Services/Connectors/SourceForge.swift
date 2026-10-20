@@ -40,6 +40,18 @@ enum GitLabCredentials {
         UserDefaults.standard.set((UserDefaults.standard.stringArray(forKey: hostsKey) ?? []).filter { $0 != host.lowercased() },
                                   forKey: hostsKey)
     }
+
+    /// Asks the host whose token this is (GET /api/v4/user), over https only, so Settings can say who is connected.
+    static func check(host: String, token: String) async -> GitLabTokenCheck {
+        let clean = ConnectorField.clean(token)
+        guard let host = normalize(host), !clean.isEmpty, let url = URL(string: "https://\(host)/api/v4/user") else { return .unreachable }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue(clean, forHTTPHeaderField: "PRIVATE-TOKEN")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode else { return .unreachable }
+        return GitLabTokenCheck.from(status: status, body: data)
+    }
 }
 
 /// Merge requests on GitLab with the user's own token (the same two actions as GitHubPullRequests: look up, open).
