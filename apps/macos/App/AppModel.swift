@@ -29,10 +29,13 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Antigravity's quota windows, read from Google.
     let antigravityUsage = AntigravityUsage()
-    /// Claude's subscription limits, asked of the `claude` CLI for every Claude account.
+    /// Claude's subscription limits, asked of the `claude` CLI for every signed-in Claude account.
     private(set) lazy var claudeUsage = ClaudeUsage(
         hub: hub,
-        profiles: { [weak self] in self?.profiles.profiles(for: .claude) ?? [] },
+        profiles: { [weak self] in
+            guard let self else { return [] }
+            return self.profiles.profiles(for: .claude).filter { self.history.profileAccounts[$0.id] != nil }
+        },
         executable: { [weak self] in self?.history.executables[.claude] }
     )
 

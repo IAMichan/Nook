@@ -6,6 +6,11 @@ import Foundation
 /// Nook never touches Claude Code's login itself. It asks the official `claude` CLI, which reads its own login and answers
 /// the `get_usage` control request (the numbers of `/usage`). No prompt is sent, so a reading costs no usage. The CLI runs
 /// in an empty folder with only project settings, so no hooks fire and no session appears in the Agents list.
+///
+/// This stays within Anthropic's rules for the subscription login: the unmodified Claude Code binary signs in with the
+/// user's own account, Nook never reads, stores or forwards credentials, and it asks no more often than someone typing
+/// `/usage` now and then: only for signed-in accounts, every ten minutes at most, and not at all while Claude Code itself
+/// reports the numbers (status line, sessions in Nook).
 @MainActor
 final class ClaudeUsage {
     private let hub: AgentHub
@@ -17,7 +22,7 @@ final class ClaudeUsage {
     private var busy = Set<String>()
 
     /// Per account this often, multiplied by the energy plan's slowdown.
-    private static let interval: TimeInterval = 5 * 60
+    private static let interval: TimeInterval = 10 * 60
     /// `refreshNow` asks again at most this often per account: it is called on every rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60
 
@@ -40,7 +45,7 @@ final class ClaudeUsage {
         timer = nil
     }
 
-    /// Reads every subscription account that was not read in the last minute: after linking, logging in or a limit event.
+    /// Reads every signed-in subscription account that was not read in the last minute: after linking, logging in or a limit event.
     func refreshNow() {
         refresh(after: Self.minimumInterval)
     }
@@ -49,6 +54,8 @@ final class ClaudeUsage {
         guard let executable = executable() else { return }
         for profile in profiles() where profile.kind == .claude && !profile.usesAPIKey {
             if let last = lastFetch[profile.id], Date().timeIntervalSince(last) < interval { continue }
+            // Claude Code reported them itself just now: nothing to ask.
+            if let updated = hub.subscriptionUsage(for: profile)?.updated, Date().timeIntervalSince(updated) < interval { continue }
             fetch(profile, executable: executable)
         }
     }
