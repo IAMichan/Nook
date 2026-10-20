@@ -14,11 +14,13 @@ pub mod custom;
 pub mod dates;
 pub mod feeds;
 pub mod github;
+pub mod github_markdown;
 pub mod gitlab;
 pub mod hub;
 pub mod ics;
 pub mod mcp;
 pub mod oauth;
+pub mod pulls;
 pub mod store;
 pub mod whatsapp;
 

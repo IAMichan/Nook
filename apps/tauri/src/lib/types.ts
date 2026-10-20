@@ -46,6 +46,8 @@ export interface Settings {
   onboardingDone: boolean;
   demoData: boolean;
   shortcuts: Record<string, string>;
+  /// GitHub organizations ("acme") and repositories ("acme/web") whose pull requests show under Agents › Pull requests.
+  watchedPullRequests: string[];
 }
 
 export interface Capabilities {

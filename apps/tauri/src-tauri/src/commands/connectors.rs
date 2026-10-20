@@ -6,16 +6,20 @@ use std::collections::{BTreeSet, HashMap};
 
 use nook_core::connectors::accounts::{self, ServiceAccount};
 use nook_core::connectors::cloud::{self, ServiceInfo};
-use nook_core::connectors::github::{self, AccountPullRequests};
+use nook_core::connectors::github;
+use nook_core::connectors::hub::Connector;
 use nook_core::connectors::hub::ConnectorInfo;
 use nook_core::connectors::mcp::{self, connector as mcp_store, McpServerConfig, McpTool, Pasted, Transport};
+use nook_core::connectors::pulls::{self, PullRequestDetail, PullRequestList};
 use nook_core::connectors::whatsapp::{link::LinkView, Conversation, WhatsAppSettings};
+use nook_core::connectors::ConnectorError;
 use nook_core::connectors::{brand, gitlab};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::connectors::Connectors;
+use crate::state::AppState;
 
 type Res<T> = Result<T, String>;
 
@@ -347,10 +351,90 @@ pub async fn github_device_start(app: AppHandle, c: State<'_, Connectors>, accou
     Ok(code)
 }
 
-/// De open pull requests van alle GitHub-accounts (voor de lijst bij Agents).
+// Pull requests (Agents › Pull requests)
+
+/// The pull requests of every GitHub account: yours, the ones for your review, and the ones in the watched
+/// organizations and repositories.
 #[tauri::command]
-pub async fn github_pull_requests(c: State<'_, Connectors>) -> Res<Vec<AccountPullRequests>> {
-    Ok(c.github.pull_request_list().await)
+pub async fn github_pull_requests(c: State<'_, Connectors>, state: State<'_, AppState>) -> Res<PullRequestList> {
+    let watching = state.settings().watched_pull_requests;
+    Ok(c.github.pull_request_list(&watching).await)
+}
+
+const NO_GITHUB: &str = "Er is geen GitHub-account met een token gekoppeld. Koppel er een onder Instellingen › Accounts & koppelingen.";
+
+fn pull_target(repo: &str, number: i64) -> Res<()> {
+    if !github::is_repository(repo) || number <= 0 {
+        return Err("Deze pull request bestaat niet.".into());
+    }
+    Ok(())
+}
+
+/// One pull request in full, read with the account it was listed under.
+#[tauri::command]
+pub async fn github_pull_request(c: State<'_, Connectors>, account: Option<String>, repo: String, number: i64) -> Res<PullRequestDetail> {
+    pull_target(&repo, number)?;
+    let (_, token) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    Ok(pulls::load_detail(&c.env, &token, &repo, number).await?)
+}
+
+/// Merges a pull request after the user confirmed it in the view, through the same `github_merge_pr` action a plan
+/// runs, with the account it was listed under and the head the view showed (`sha`). Written to the action log either
+/// way.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn github_merge_pull_request(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    account: Option<String>,
+    repo: String,
+    number: i64,
+    method: String,
+    sha: String,
+) -> Res<String> {
+    pull_target(&repo, number)?;
+    if !pulls::MERGE_METHODS.contains(&method.as_str()) {
+        return Err("Onbekende merge-methode.".into());
+    }
+    let (account, _) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    let input = serde_json::json!({"repo": repo, "number": number, "method": method, "sha": sha, "account": account});
+    let short: String = sha.chars().take(7).collect();
+    let args = format!("{repo}#{number} · {method} · {short} · {account}");
+    let result = c.github.execute("github_merge_pr", &input).await.unwrap_or_else(|| Err(ConnectorError::not_set_up("GitHub")));
+    match result {
+        Ok(text) => {
+            state.store.audit("github_merge_pr", &args, &text);
+            Ok(text)
+        }
+        Err(e) => {
+            state.store.audit("github_merge_pr", &args, &format!("FOUT: {}", e.message));
+            Err(e.message)
+        }
+    }
+}
+
+/// Adds what was typed (one or more organizations or repositories, separated by commas or spaces) to the watch list.
+#[tauri::command]
+pub fn pull_watch_add(app: AppHandle, state: State<'_, AppState>, text: String) -> Res<Vec<String>> {
+    let current = state.settings().watched_pull_requests;
+    let updated = pulls::add_watched(&text, &current);
+    if updated == current {
+        return Err(if current.len() >= pulls::WATCH_LIMIT {
+            format!("Je kunt tot {} organisaties en repositories volgen.", pulls::WATCH_LIMIT)
+        } else {
+            "Typ een organisatie (acme), een repository (acme/web) of een GitHub-link die nog niet in de lijst staat.".into()
+        });
+    }
+    let saved = state.update_settings(|s| s.watched_pull_requests = updated);
+    let _ = app.emit("settings-changed", &saved);
+    Ok(saved.watched_pull_requests)
+}
+
+#[tauri::command]
+pub fn pull_watch_remove(app: AppHandle, state: State<'_, AppState>, entry: String) -> Vec<String> {
+    let saved = state.update_settings(|s| s.watched_pull_requests.retain(|e| *e != entry));
+    let _ = app.emit("settings-changed", &saved);
+    saved.watched_pull_requests
 }
 
 // MCP

@@ -38,6 +38,7 @@ al is.
 | Agenda's: ICS ("Andere agenda's"), Cal.com, `check_availability` | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs` |
 | Systeemagenda's (Apple Agenda) | — | Geen API in deze port |
 | GitHub (lezen; beoordelen, samenvoegen, sluiten als actie) | ✓ | `github.rs` |
+| Pull requests bij Agents: van jou, voor jouw review, gevolgde organisaties en repositories (Instellingen › Accounts & koppelingen), Filters (status, betrokkenheid, auteur, concept, checks), lezen met reviews en reacties (GitHub-HTML als Markdown), mergen na bevestiging in de balk, met actielogboek | ◐ (tegen een nep-API getest, niet tegen GitHub zelf) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |
 | Inloggen met GitHub | ◐ | Token plakken of `gh auth token`; device flow wacht op een client-ID |
 | Tweede account per dienst, account per chat | ✓ | `accounts.rs`, `ChatAccounts.svelte` |
 | GitLab, Vercel, Stripe, Notion, Cal.com, n8n, Resend | ✓ | `gitlab.rs`, `cloud.rs` |

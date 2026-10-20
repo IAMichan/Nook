@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use super::accounts::{self, ServiceAccount};
 use super::hub::{Connector, Env, Scope};
+use super::pulls::{self, PullRequestList};
 use super::{
     dates, field, int, link, list, plural, short, with_query, CResult, ConnectorError, ConnectorItem, ConnectorStatus, ErrorKind, Tone,
 };
@@ -34,7 +35,7 @@ pub fn login_base() -> String {
     super::api_base("https://github.com", "NOOK_GITHUB_LOGIN_URL")
 }
 
-fn headers(token: &str) -> Vec<(&'static str, String)> {
+pub(super) fn headers(token: &str) -> Vec<(&'static str, String)> {
     vec![
         ("Authorization", format!("Bearer {token}")),
         ("Accept", "application/vnd.github+json".into()),
@@ -700,12 +701,19 @@ impl GitHub {
                 if !["merge", "squash", "rebase"].contains(&method.as_str()) {
                     return Err(ConnectorError::new("The method must be merge, squash, or rebase."));
                 }
-                let result =
-                    self.send("PUT", &format!("/repos/{repo}/pulls/{number}/merge"), json!({"merge_method": method}), input).await?;
-                if result["merged"] == json!(false) {
-                    return Err(ConnectorError::new(result["message"].as_str().unwrap_or("GitHub did not merge the pull request.")));
+                // `sha` (set by the pull request view, not offered to the brain) merges only the head that was shown:
+                // when someone pushed since, GitHub refuses instead of merging commits nobody looked at.
+                let sha = field(input, "sha");
+                let (_, token) = self.credentials(input)?;
+                let body = pulls::merge_body(&method, sha.as_deref());
+                let url = format!("{}/repos/{repo}/pulls/{number}/merge", api());
+                let (status, bytes) = self.env.http.send("PUT", &url, &headers(&token), Some(&body), "GitHub").await?;
+                let result: Value = serde_json::from_slice(&bytes).unwrap_or(json!({}));
+                if !(200..300).contains(&status) || result["merged"] == json!(false) {
+                    return Err(pulls::merge_error(status, &result));
                 }
-                Ok(format!("Samengevoegd ({method}): {repo}#{number}"))
+                let merged = result["sha"].as_str().map(|s| format!(" · {}", &s[..s.len().min(7)])).unwrap_or_default();
+                Ok(format!("Samengevoegd ({method}): {repo}#{number}{merged}"))
             }
             "github_close_pr" => {
                 let (repo, number) = target(input)?;
@@ -795,37 +803,38 @@ impl GitHub {
         Err(last)
     }
 
-    /// Alle open pull requests van elk account (de lijst onder Agents › Pull requests), in één GraphQL-verzoek per account.
-    pub async fn pull_request_list(&self) -> Vec<AccountPullRequests> {
-        let mut out = vec![];
+    /// The pull requests of every account (the list under Agents › Pull requests): one GraphQL request per account for
+    /// yours and your reviews, and one for the watched organizations and repositories.
+    pub async fn pull_request_list(&self, watching: &[String]) -> PullRequestList {
+        let available = self.env.store.is_on(ID) && !self.accounts().is_empty();
+        if !available {
+            return PullRequestList { available, accounts: vec![] };
+        }
+        let targets: Vec<pulls::Target> = self
+            .accounts()
+            .into_iter()
+            .filter_map(|account| {
+                let token = self.env.secret(&account.key("token"))?;
+                Some(pulls::Target {
+                    id: account.id.clone(),
+                    name: account.name(),
+                    login: account.identity.clone().unwrap_or_default().trim_start_matches('@').to_string(),
+                    token,
+                })
+            })
+            .collect();
+        PullRequestList { available, accounts: pulls::load(&self.env, &targets, watching).await }
+    }
+
+    /// The id and token of the account with this id; without one (or when it lost its token) the first account that
+    /// has a token, so a pull request is read and merged with the account it was listed under.
+    pub fn token_for(&self, account_id: Option<&str>) -> Option<(String, String)> {
         if !self.env.store.is_on(ID) {
-            return out;
+            return None;
         }
-        for account in self.accounts() {
-            let Some(token) = self.env.secret(&account.key("token")) else { continue };
-            let result = graphql_list(&self.env, &token).await;
-            out.push(match result {
-                Ok((login, mine, reviews)) => AccountPullRequests {
-                    id: account.id.clone(),
-                    name: account.name(),
-                    login: if login.is_empty() { account.identity.clone().unwrap_or_default() } else { login },
-                    mine,
-                    reviews,
-                    error: None,
-                    error_kind: None,
-                },
-                Err(e) => AccountPullRequests {
-                    id: account.id.clone(),
-                    name: account.name(),
-                    login: account.identity.clone().unwrap_or_default(),
-                    mine: vec![],
-                    reviews: vec![],
-                    error: Some(e.message.clone()),
-                    error_kind: Some(e.kind),
-                },
-            });
-        }
-        out
+        let available = self.accounts();
+        let chosen = account_id.and_then(|id| available.iter().find(|a| a.id == id)).or(available.first())?;
+        Some((chosen.id.clone(), self.env.secret(&chosen.key("token"))?))
     }
 }
 
@@ -1014,105 +1023,6 @@ impl Connector for GitHub {
     }
 }
 
-// Pull requests van alle accounts in één GraphQL-verzoek
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullRequestItem {
-    pub repo: String,
-    pub number: i64,
-    pub title: String,
-    pub url: Option<String>,
-    pub draft: bool,
-    pub updated: Option<DateTime<Utc>>,
-    pub author: String,
-    pub ci: Ci,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountPullRequests {
-    pub id: String,
-    pub name: String,
-    pub login: String,
-    pub mine: Vec<PullRequestItem>,
-    pub reviews: Vec<PullRequestItem>,
-    pub error: Option<String>,
-    pub error_kind: Option<ErrorKind>,
-}
-
-pub const GRAPHQL_QUERY: &str = "query NookPullRequests($mine: String!, $reviews: String!) {
-  viewer { login }
-  mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...row } }
-  reviews: search(query: $reviews, type: ISSUE, first: 50) { nodes { ...row } }
-}
-fragment row on PullRequest {
-  number title url isDraft updatedAt
-  author { login }
-  repository { nameWithOwner }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-}";
-
-pub fn graphql_body() -> Value {
-    json!({"query": GRAPHQL_QUERY, "variables": {
-        "mine": "is:pr is:open archived:false author:@me sort:updated-desc",
-        "reviews": "is:pr is:open archived:false review-requested:@me sort:updated-desc"
-    }})
-}
-
-pub fn rollup(state: Option<&str>) -> Ci {
-    match state {
-        Some("SUCCESS") => Ci::Passing,
-        Some("FAILURE" | "ERROR") => Ci::Failing,
-        Some("PENDING" | "EXPECTED") => Ci::Pending,
-        _ => Ci::Unknown,
-    }
-}
-
-/// Het antwoord: je login en beide lijsten. Geeft GitHubs eigen melding als de hele query mislukte.
-pub fn parse_graphql(root: &Value) -> CResult<(String, Vec<PullRequestItem>, Vec<PullRequestItem>)> {
-    let Some(data) = root.get("data").filter(|d| d.is_object()) else {
-        let message = root["errors"][0]["message"].as_str().unwrap_or("GitHub returned no data.");
-        return Err(ConnectorError::new(format!("GitHub: {message}")));
-    };
-    let rows = |search: &Value| -> Vec<PullRequestItem> {
-        list(&search["nodes"])
-            .iter()
-            .filter_map(|n| {
-                Some(PullRequestItem {
-                    repo: n["repository"]["nameWithOwner"].as_str()?.to_string(),
-                    number: int(&n["number"])?,
-                    title: n["title"].as_str().unwrap_or("Untitled").into(),
-                    url: n["url"].as_str().map(str::to_string),
-                    draft: n["isDraft"].as_bool().unwrap_or(false),
-                    updated: super::date(&n["updatedAt"]),
-                    author: n["author"]["login"].as_str().unwrap_or("").into(),
-                    ci: rollup(list(&n["commits"]["nodes"]).last().and_then(|c| c["commit"]["statusCheckRollup"]["state"].as_str())),
-                })
-            })
-            .collect()
-    };
-    Ok((data["viewer"]["login"].as_str().unwrap_or("").to_string(), rows(&data["mine"]), rows(&data["reviews"])))
-}
-
-async fn graphql_list(env: &Env, token: &str) -> CResult<(String, Vec<PullRequestItem>, Vec<PullRequestItem>)> {
-    let (status, bytes) = env
-        .http
-        .send("POST", &format!("{}/graphql", api()), &[("Authorization", format!("Bearer {token}"))], Some(&graphql_body()), "GitHub")
-        .await?;
-    match status {
-        200..=299 => {
-            parse_graphql(&serde_json::from_slice(&bytes).map_err(|_| ConnectorError::new("GitHub gaf een onverwacht antwoord."))?)
-        }
-        401 | 403 => Err(ConnectorError::kind(
-            "De inloggegevens werden geweigerd. Controleer ze bij Instellingen › Accounts & koppelingen.",
-            ErrorKind::Auth,
-        )),
-        429 => Err(ConnectorError::kind("Te veel verzoeken. Nook probeert het zo opnieuw.", ErrorKind::RateLimited)),
-        s => Err(ConnectorError::new(format!("GitHub gaf een fout ({s})."))),
-    }
-}
-
 // Koppel met GitHub
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1260,7 +1170,7 @@ mod tests {
         TestServer::start(vec![
             ("GET /user", 200, r#"{"login":"michan"}"#.into()),
             ("GET /search/issues", 200, json!({"total_count": 1, "items": [pr_item("IAMichan/nook", 23, "Tauri-app")]}).to_string()),
-            ("GET /repos/IAMichan/nook/pulls/23", 200, r#"{"title":"Tauri-app","user":{"login":"michan"},"state":"open","head":{"sha":"abc","ref":"tauri"},"base":{"ref":"main"},"additions":10,"deletions":2,"changed_files":1,"mergeable":true,"html_url":"https://github.com/IAMichan/nook/pull/23","body":"Nieuwe app"}"#.into()),
+            ("GET /repos/IAMichan/nook/pulls/23", 200, r#"{"number":23,"title":"Tauri-app","user":{"login":"michan"},"state":"open","head":{"sha":"abc","ref":"tauri"},"base":{"ref":"main"},"additions":10,"deletions":2,"changed_files":1,"mergeable":true,"html_url":"https://github.com/IAMichan/nook/pull/23","body":"Nieuwe app"}"#.into()),
             ("GET /repos/IAMichan/nook/pulls/23/files", 200, r#"[{"filename":"a.rs","status":"added","additions":10,"deletions":2,"patch":"+fn main() {}"}]"#.into()),
             ("GET /repos/IAMichan/nook/pulls/23/reviews", 200, "[]".into()),
             ("GET /repos/IAMichan/nook/commits/abc/check-runs", 200, r#"{"check_runs":[{"status":"completed","conclusion":"failure"}]}"#.into()),
@@ -1269,7 +1179,9 @@ mod tests {
             ("POST /repos/IAMichan/nook/pulls/23/reviews", 422, r#"{"message":"Can not approve your own pull request"}"#.into()),
             ("POST /login/device/code", 200, r#"{"device_code":"d1","user_code":"ABCD-1234","verification_uri":"https://github.com/login/device","expires_in":900,"interval":5}"#.into()),
             ("POST /login/oauth/access_token", 200, r#"{"error":"authorization_pending"}"#.into()),
-            ("POST /graphql", 200, r#"{"data":{"viewer":{"login":"michan"},"mine":{"nodes":[{"number":23,"title":"Tauri-app","url":"https://github.com/IAMichan/nook/pull/23","isDraft":false,"updatedAt":"2026-10-18T12:00:00Z","author":{"login":"michan"},"repository":{"nameWithOwner":"IAMichan/nook"},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}}]},"reviews":{"nodes":[]}}}"#.into()),
+            // One answer for both GraphQL requests: the list's aliases and the watched ones ("w0" for acme; "w1", for
+            // the entry GitHub could not search, is missing).
+            ("POST /graphql", 200, r#"{"data":{"viewer":{"login":"michan"},"mine":{"nodes":[{"number":23,"title":"Tauri-app","url":"https://github.com/IAMichan/nook/pull/23","isDraft":false,"updatedAt":"2026-10-18T12:00:00Z","state":"OPEN","author":{"login":"michan"},"repository":{"nameWithOwner":"IAMichan/nook"},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}}]},"mineClosed":{"nodes":[{"number":20,"title":"Oud","isDraft":false,"updatedAt":"2026-10-10T12:00:00Z","state":"MERGED","author":{"login":"michan"},"repository":{"nameWithOwner":"IAMichan/nook"},"commits":{"nodes":[]}}]},"reviews":{"nodes":[]},"w0":{"nodes":[{"number":5,"title":"Web","isDraft":false,"updatedAt":"2026-10-18T12:00:00Z","state":"OPEN","author":{"login":"ada"},"repository":{"nameWithOwner":"acme/web"},"commits":{"nodes":[]}}]},"w0Closed":{"nodes":[]}}}"#.into()),
         ])
         .await
     }
@@ -1343,10 +1255,43 @@ mod tests {
             .unwrap_err();
         assert!(unknown.message.starts_with("There is no GitHub account \"Privé\""));
 
-        // De lijst met pull requests voor alle accounts.
-        let list = github.pull_request_list().await;
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0].mine[0].ci, Ci::Failing);
+        // The pull request list for all accounts, with a watched organization; GitHub could not search "typo".
+        let watching = vec!["acme".to_string(), "typo".to_string()];
+        let list = github.pull_request_list(&watching).await;
+        assert!(list.available);
+        assert_eq!(list.accounts.len(), 2);
+        let first = &list.accounts[0];
+        assert_eq!((first.login.as_str(), first.mine[0].ci, first.mine[1].state), ("michan", Ci::Failing, pulls::PullState::Merged));
+        assert_eq!(first.watched.iter().map(|i| i.id()).collect::<Vec<_>>(), vec!["acme/web#5"]);
+        assert_eq!(first.unreadable, vec!["typo"]);
+        // Both accounts see the same watched pull request: it shows once, under the first.
+        assert!(list.accounts[1].watched.is_empty());
+        let watched_request = server.requests().into_iter().find(|r| r.body.contains("NookWatchedPullRequests")).unwrap();
+        assert!(watched_request.body.contains("org:acme"), "{}", watched_request.body);
+
+        // One pull request in full, with the token of the account it was listed under.
+        assert_eq!(github.token_for(Some(&work.id)), Some((work.id.clone(), "ghp_werk".to_string())));
+        assert_eq!(github.token_for(Some("github.gone")).map(|t| t.0), Some(ID.to_string()));
+        let detail = pulls::load_detail(&env, "ghp_werk", "IAMichan/nook", 23).await.unwrap();
+        assert_eq!((detail.head_sha.as_str(), detail.check_summary, detail.merge_note.as_deref()), ("abc", Ci::Failing, Some("unstable")));
+        assert_eq!(detail.files[0].patch.as_deref(), Some("+fn main() {}"));
+        assert_eq!(detail.body, "Nieuwe app");
+        assert!(server.requests().iter().any(|r| r.path.starts_with("/repos/IAMichan/nook/pulls/23/files?per_page=100&page=1")
+            && r.header("authorization") == Some("Bearer ghp_werk")));
+
+        // Merging from the view sends the head it showed, so GitHub refuses when someone pushed since.
+        let merged = github
+            .execute(
+                "github_merge_pr",
+                &json!({"repo": "IAMichan/nook", "number": 23, "method": "merge", "sha": "abc", "account": work.id}),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(merged, "Samengevoegd (merge): IAMichan/nook#23");
+        let put = server.requests().into_iter().rev().find(|r| r.method == "PUT").unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&put.body).unwrap(), json!({"merge_method": "merge", "sha": "abc"}));
+        assert_eq!(put.header("authorization"), Some("Bearer ghp_werk"));
 
         // Koppel met GitHub: de code komt, het wachten gaat door tot GitHub ja zegt.
         let code = request_code(&env, "client").await.unwrap();
@@ -1354,18 +1299,6 @@ mod tests {
         assert_eq!(poll(&env, "client", &code.device_code).await.unwrap(), Poll::Pending);
         std::env::remove_var("NOOK_GITHUB_API_URL");
         std::env::remove_var("NOOK_GITHUB_LOGIN_URL");
-    }
-
-    #[test]
-    fn graphql_rows_and_errors() {
-        assert_eq!(rollup(Some("SUCCESS")), Ci::Passing);
-        assert_eq!(rollup(Some("ERROR")), Ci::Failing);
-        assert_eq!(rollup(Some("EXPECTED")), Ci::Pending);
-        assert_eq!(rollup(None), Ci::Unknown);
-        assert_eq!(parse_graphql(&json!({"errors": [{"message": "Bad credentials"}]})).unwrap_err().message, "GitHub: Bad credentials");
-        let body = graphql_body();
-        assert!(body["query"].as_str().unwrap().contains("statusCheckRollup"));
-        assert!(body["variables"]["reviews"].as_str().unwrap().contains("review-requested:@me"));
     }
 
     #[test]

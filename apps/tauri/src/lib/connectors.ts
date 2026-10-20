@@ -214,8 +214,11 @@ export interface PullRequestItem {
   draft: boolean;
   updated: string | null;
   author: string;
-  ci: "unknown" | "pending" | "passing" | "failing";
+  ci: Ci;
+  state: "open" | "closed" | "merged";
 }
+
+export type Ci = "unknown" | "pending" | "passing" | "failing";
 
 export interface AccountPullRequests {
   id: string;
@@ -225,6 +228,16 @@ export interface AccountPullRequests {
   reviews: PullRequestItem[];
   error: string | null;
   errorKind: ErrorKind | null;
+  /// The other pull requests in the watched organizations and repositories.
+  watched: PullRequestItem[];
+  /// Watched entries this account could not search.
+  unreadable: string[];
+}
+
+export interface PullRequestList {
+  /// Whether GitHub is connected with at least one account.
+  available: boolean;
+  accounts: AccountPullRequests[];
 }
 
 export const connectorsApi = {
@@ -240,7 +253,7 @@ export const connectorsApi = {
   setAccountToken: (id: string, token: string) => invoke<ConnectorInfo | null>("account_token", { id, token }),
   githubCli: (account: string) => invoke<ConnectorInfo | null>("github_cli", { account }),
   githubDeviceStart: (account: string) => invoke<DeviceCode>("github_device_start", { account }),
-  githubPullRequests: () => invoke<AccountPullRequests[]>("github_pull_requests"),
+  githubPullRequests: () => invoke<PullRequestList>("github_pull_requests"),
 
   mcpPaste: (text: string) => invoke<Pasted>("mcp_paste", { text }),
   mcpAdd: (name: string, target: string, remote: boolean, secrets: string) => invoke<string>("mcp_add", { name, target, remote, secrets }),

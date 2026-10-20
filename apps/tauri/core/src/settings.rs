@@ -86,6 +86,9 @@ pub struct Settings {
     pub demo_data: bool,
     /// Sneltoetsen, als Tauri-accelerators ("Alt+Space").
     pub shortcuts: BTreeMap<String, String>,
+    /// GitHub organizations ("acme") and repositories ("acme/web") whose pull requests show under Agents › Pull
+    /// requests as well (Settings › Accounts & connections). See `connectors::pulls::add_watched`.
+    pub watched_pull_requests: Vec<String>,
 }
 
 impl Default for Settings {
@@ -125,6 +128,7 @@ impl Default for Settings {
             onboarding_done: false,
             demo_data: false,
             shortcuts,
+            watched_pull_requests: vec![],
         }
     }
 }

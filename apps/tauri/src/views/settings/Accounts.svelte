@@ -10,6 +10,7 @@
   import ServiceSheet from "../connectors/ServiceSheet.svelte";
   import McpServers from "../connectors/McpServers.svelte";
   import WhatsApp from "../connectors/WhatsApp.svelte";
+  import WatchedPulls from "../connectors/WatchedPulls.svelte";
 
   let overview = $state<Overview | null>(null);
   let sheet = $state<ServiceView | null>(null);
@@ -115,6 +116,9 @@
   {:else}
     <p class="faint">Nog niets gekoppeld. Koppel GitHub, je agenda via een ICS-adres, Stripe of een andere dienst hieronder. Dan kan Nook vragen beantwoorden met alles wat jij weet.</p>
   {/if}
+
+  <!-- Right below your connected services, once a GitHub account is connected (as on the Mac). -->
+  {#if byId.get("github")?.configured}<WatchedPulls />{/if}
 
   <input class="search" placeholder="Zoek een koppeling of wat hij kan" bind:value={query} />
 
