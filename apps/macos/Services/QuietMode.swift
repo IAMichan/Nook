@@ -102,15 +102,16 @@ enum QuietPolicy {
     /// A sharing bar is small (in points); a full browser window titled "File sharing tips" is not one.
     static let barMaxHeight: Double = 160
 
-    /// Does any of these windows say your screen is being shared or recorded?
-    static func isSharing(_ windows: [Window]) -> Bool {
-        windows.contains(where: isSharingWindow)
+    /// Does any of these windows say your screen is being shared or recorded? With `countSystemCapture` off, macOS' own
+    /// screenshot tool does not count, so Nook shows up in your screenshots.
+    static func isSharing(_ windows: [Window], countSystemCapture: Bool = true) -> Bool {
+        windows.contains { isSharingWindow($0, countSystemCapture: countSystemCapture) }
     }
 
-    static func isSharingWindow(_ window: Window) -> Bool {
+    static func isSharingWindow(_ window: Window, countSystemCapture: Bool = true) -> Bool {
         let owner = (window.owner + " " + (window.bundleID ?? "")).lowercased()
         let name = window.name.lowercased()
-        if systemRecorders.contains(where: { owner.contains($0) }) { return true }
+        if systemRecorders.contains(where: { owner.contains($0) }) { return countSystemCapture }
         // A sharing bar is small: a Slack window on the channel "#file-sharing" is not one.
         guard !name.isEmpty, window.height <= barMaxHeight else { return false }
         if browsers.contains(where: { owner.contains($0) }) {

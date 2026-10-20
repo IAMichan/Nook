@@ -8,7 +8,8 @@ import CoreGraphics
 @MainActor
 enum QuietWatch {
     /// What is going on right now.
-    static func situation(events: [CalEvent], useCalendar: Bool, recording: Bool, now: Date = Date()) -> QuietSituation {
+    static func situation(events: [CalEvent], useCalendar: Bool, recording: Bool, countScreenshots: Bool = true,
+                          now: Date = Date()) -> QuietSituation {
         let windows = onScreenWindows()
         var meeting = QuietPolicy.MeetingSignals(now: now)
         meeting.events = events.map { QuietPolicy.Event(start: $0.start, end: $0.end) }
@@ -16,7 +17,7 @@ enum QuietWatch {
         meeting.microphoneApps = microphoneApps()
         meeting.windowNames = windows.map(\.name).filter { !$0.isEmpty }
         meeting.recording = recording
-        return QuietSituation(sharing: QuietPolicy.isSharing(windows), meeting: QuietPolicy.isMeeting(meeting))
+        return QuietSituation(sharing: QuietPolicy.isSharing(windows, countSystemCapture: countScreenshots), meeting: QuietPolicy.isMeeting(meeting))
     }
 
     /// Every window on screen except Nook's own.
