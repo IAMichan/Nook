@@ -270,21 +270,20 @@ struct TerminalsView: View {
     }
 }
 
-/// The terminals of one agent session, in its folder (or worktree): tabs when there are several, another one with +.
+/// The terminals of one agent session, in its folder (or worktree). With one terminal it is just the terminal: the
+/// panel header above it holds + and the scripts (`SessionTerminalActions`). Tabs only show up once there are several.
 /// Opening it the first time starts a terminal there, so it is ready to type in.
 struct SessionTerminalsView: View {
     let directory: String
     @ObservedObject private var store = TerminalStore.shared
-    /// The project's scripts (nook.json), one click each.
-    @State private var scripts: [ProjectScript] = []
 
     var body: some View {
         let mine = store.sessions(in: directory)
         let shown = mine.first { $0.id == store.selected } ?? mine.last
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
+            if mine.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         ForEach(mine) { session in
                             TerminalTab(session: session, selected: shown?.id == session.id) {
                                 store.selected = session.id
@@ -293,34 +292,11 @@ struct SessionTerminalsView: View {
                             }
                         }
                     }
+                    .padding(.horizontal, 8)
                 }
-                if !scripts.isEmpty {
-                    Menu {
-                        ForEach(scripts) { script in
-                            Button(script.name) { run(script) }
-                                .help(script.command)
-                        }
-                    } label: {
-                        Image(systemName: "play").font(.system(size: 11, weight: .semibold))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help(tr("workbench.scripts"))
-                    .accessibilityLabel(tr("workbench.scripts"))
-                }
-                Button {
-                    store.open(in: directory)
-                } label: {
-                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.borderless)
-                .help(tr("workbench.terminal.new"))
-                .accessibilityLabel(tr("workbench.terminal.new"))
+                .padding(.vertical, 4)
+                Divider()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            Divider()
             if let shown {
                 TerminalHost(session: shown)
                     .id(shown.id)
@@ -337,10 +313,54 @@ struct SessionTerminalsView: View {
         .onAppear {
             if store.sessions(in: directory).isEmpty { store.open(in: directory) }
         }
+    }
+}
+
+/// The buttons for a session's terminals, in the panel header: the project's scripts (nook.json), one click
+/// each, and + for another terminal in the session's folder.
+struct SessionTerminalActions: View {
+    let directory: String
+    @ObservedObject private var store = TerminalStore.shared
+    @State private var scripts: [ProjectScript] = []
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if !scripts.isEmpty {
+                Menu {
+                    ForEach(scripts) { script in
+                        Button(script.name) { run(script) }
+                            .help(script.command)
+                    }
+                } label: {
+                    icon("play")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(tr("workbench.scripts"))
+                .accessibilityLabel(tr("workbench.scripts"))
+            }
+            Button {
+                store.open(in: directory)
+            } label: {
+                icon("plus.rectangle")
+            }
+            .buttonStyle(.plain)
+            .help(tr("workbench.terminal.new"))
+            .accessibilityLabel(tr("workbench.terminal.new"))
+        }
         .task(id: directory) {
             let folder = directory
             scripts = await Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
         }
+    }
+
+    private func icon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
     }
 
     /// Runs a script in its own terminal tab; a script that serves a page opens it in Nook's browser once it had a moment.
@@ -359,30 +379,42 @@ private struct TerminalTab: View {
     let selected: Bool
     let select: () -> Void
     let close: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(session.running ? NookTheme.mint : (session.exitCode == 0 ? NookTheme.textTertiary : NookTheme.coral))
-                .frame(width: 6, height: 6)
+                .frame(width: 5, height: 5)
             if let owner = session.owner {
                 // Started by an agent: its mark, so you can tell its processes from your own shells.
-                AgentMark(agent: owner.agent, account: nil, size: 12, dimmed: !session.running, ring: .clear)
+                AgentMark(agent: owner.agent, account: nil, size: 11, dimmed: !session.running, ring: .clear)
                     .help(tr("bridge.terminalBy", owner.agent))
                     .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
             }
-            Text(session.title).lineLimit(1).font(.callout)
+            Text(session.title)
+                .lineLimit(1)
+                .font(NookTheme.font(11.5, selected ? .medium : .regular))
+                .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
             if !session.running, let code = session.exitCode, code != 0 {
                 Text(tr("workbench.terminal.exit", code)).font(.caption2).foregroundStyle(NookTheme.coral)
             }
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                .buttonStyle(.borderless)
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .buttonStyle(.borderless)
+            .opacity(selected || hovering ? 1 : 0)
+            .help(tr("workbench.terminal.close"))
+            .accessibilityLabel(tr("workbench.terminal.close"))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.white.opacity(0.12) : Color.clear))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.white.opacity(0.10) : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
         .help(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
     }
 }
