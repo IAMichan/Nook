@@ -58,6 +58,8 @@ extension SettingsView {
                 Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
             }
 
+            WardrobeSettingsSection()
+
             Section {
                 HStack(spacing: 10) {
                     ForEach([0xF4F3F7, 0x8B7BFF, 0x5AA9FF, 0x46E0A6, 0xFFB84D, 0xFF6B6B, 0xFF7EB6] as [UInt32], id: \.self) { hex in
@@ -89,8 +91,10 @@ extension SettingsView {
                     Button(tr("settings.appearance.reset")) {
                         settings.nookLook = .classic
                         settings.accentHex = NookTheme.defaultAccentHex
+                        settings.nookWardrobe = .standard
                     }
-                    .disabled(settings.nookLook == .classic && settings.accentHex == NookTheme.defaultAccentHex)
+                    .disabled(settings.nookLook == .classic && settings.accentHex == NookTheme.defaultAccentHex
+                              && settings.nookWardrobe == .standard)
                 }
             }
             .listRowBackground(Color.clear)
@@ -102,11 +106,13 @@ extension SettingsView {
         VStack(spacing: 14) {
             NookOrb(mood: lookPreviewMood, size: 88, glow: settings.nookLook.glow, look: settings.nookLook)
                 .frame(width: 150, height: 130)
-            HStack(spacing: 6) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 6)], spacing: 6) {
                 ForEach(Self.previewMoods, id: \.key) { item in
                     let selected = lookPreviewMood == item.mood
                     Button { lookPreviewMood = item.mood } label: {
                         Text(tr(item.key))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
                             .font(.callout.weight(selected ? .semibold : .regular))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 4)
@@ -121,6 +127,7 @@ extension SettingsView {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
+        .padding(.horizontal, 14)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NookTheme.graphite))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NookTheme.line2, lineWidth: 0.5))
         .accessibilityElement(children: .contain)
@@ -132,7 +139,16 @@ extension SettingsView {
         ("settings.appearance.mood.think", .think),
         ("settings.appearance.mood.waiting", .waiting),
         ("settings.appearance.mood.done", .done),
-        ("settings.appearance.mood.worry", .worry)
+        ("settings.appearance.mood.worry", .worry),
+        ("nook.mood.proud", .proud),
+        ("nook.mood.curious", .curious),
+        ("nook.mood.cozy", .cozy),
+        ("nook.mood.focus", .focus),
+        ("nook.mood.surprised", .surprised),
+        ("nook.mood.caring", .caring),
+        ("nook.mood.sleepy", .sleepy),
+        ("nook.mood.celebrate", .celebrate),
+        ("nook.mood.breathe", .breathe)
     ]
 
     /// One style as a card: a still Nook in that style, its name, and a ring when chosen.

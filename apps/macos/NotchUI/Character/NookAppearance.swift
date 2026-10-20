@@ -7,6 +7,8 @@ final class NookAppearance: ObservableObject {
     static let shared = NookAppearance()
 
     @Published var look: NookLook = .classic
+    /// What Nook wears right now, worked out from the wardrobe in Settings and the moment (`AppModel+Buddy`).
+    @Published var outfit: [NookAccessory] = []
 
     private init() {}
 }

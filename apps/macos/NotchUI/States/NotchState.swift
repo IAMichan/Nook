@@ -54,6 +54,7 @@ enum NotchState: Equatable {
     case done(String)         // recent action, with Undo option
     case card(NookCard)       // a prompt or suggestion
     case nudge(String, NookCard)   // proactive suggestion: short sentence by the notch, hover for full card
+    case moment(NookMoment)   // a friendly moment Nook shares by himself: good morning, a break, a celebration
     case panel(PanelTab)      // expanded with tabs
 }
 
@@ -77,6 +78,7 @@ extension NotchState {
         case .done: return "done"
         case .card: return "card"
         case .nudge: return "nudge"
+        case .moment: return "moment"
         case .panel: return "panel"
         }
     }

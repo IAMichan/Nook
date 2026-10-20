@@ -297,6 +297,23 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// What Nook wears and whether he may dress himself (Settings › Appearance › Wardrobe).
+    @Published var nookWardrobe: NookWardrobe {
+        didSet { UserDefaults.standard.set(nookWardrobe.stored, forKey: "nookWardrobe") }
+    }
+    /// Nook shares small moments on his own: good morning, welcome back, a break (Settings › Assistant › Buddy).
+    @Published var buddyMoments: Bool {
+        didSet { UserDefaults.standard.set(buddyMoments, forKey: "buddyMoments") }
+    }
+    /// How playful his words are in those moments.
+    @Published var buddyTone: BuddyTone {
+        didSet { UserDefaults.standard.set(buddyTone.rawValue, forKey: "buddyTone") }
+    }
+    /// Your birthday as "MM-dd", or empty: Nook wears a party hat and congratulates you.
+    @Published var birthday: String {
+        didSet { UserDefaults.standard.set(birthday, forKey: "birthday") }
+    }
+
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
     }
@@ -505,6 +522,10 @@ final class AppSettings: ObservableObject {
         let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
         nookLook = storedLook
         NookAppearance.shared.look = storedLook
+        nookWardrobe = NookWardrobe(stored: defaults.string(forKey: "nookWardrobe"))
+        buddyMoments = defaults.object(forKey: "buddyMoments") as? Bool ?? true
+        buddyTone = BuddyTone(rawValue: defaults.string(forKey: "buddyTone") ?? "") ?? .warm
+        birthday = defaults.string(forKey: "birthday") ?? ""
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
