@@ -174,4 +174,13 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertTrue(sheet.contains("now 09:30"), sheet)
         XCTAssertTrue(sheet.contains("2026-10-16T15:00:00+02:00"), sheet)
     }
+
+    /// The prompt behind a WhatsApp card's "Let Nook answer" asks for a message to send, not a summary of chats.
+    func testWhatsAppCardPromptWritesAChatMessage() {
+        for prompt in ["Schrijf een kort antwoord aan Opa Henk op WhatsApp dat ik kan versturen.",
+                       "Write a short reply to Opa Henk on WhatsApp that I can send.",
+                       "Schreib eine kurze Antwort an Opa Henk auf WhatsApp, die ich senden kann."] {
+            XCTAssertEqual(ChatIntent.detect(prompt).primaryAction, "whatsapp_send", prompt)
+        }
+    }
 }
