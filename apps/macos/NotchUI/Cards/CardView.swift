@@ -13,6 +13,8 @@ struct CardView: View {
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
+    /// A chat bubble's photo shown big over the card, until it is clicked or Escape is pressed.
+    @State private var zoomed: ChatBubble?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -71,7 +73,20 @@ struct CardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onExitCommand { onAction(card.escape ?? card.primary) }
+        .overlay {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+                PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
+                          onClose: { withAnimation(.easeOut(duration: 0.15)) { self.zoomed = nil } },
+                          onOpen: { self.zoomed = nil; onOpen(zoomed) })
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: card.id) { _, _ in zoomed = nil }
+        .onExitCommand {
+            // Escape first shrinks an enlarged photo back; only then does it close the card.
+            if zoomed != nil { withAnimation(.easeOut(duration: 0.15)) { zoomed = nil }; return }
+            onAction(card.escape ?? card.primary)
+        }
     }
 
     private func buttonRow(compact: Bool) -> some View {
@@ -197,7 +212,9 @@ struct CardView: View {
         case .facts(let facts):
             FactsDetail(facts: facts)
         case .chat(let bubbles):
-            ChatDetail(bubbles: bubbles, onOpen: onOpen)
+            ChatDetail(bubbles: bubbles, onOpen: onOpen) { bubble in
+                withAnimation(.easeOut(duration: 0.15)) { zoomed = bubble }
+            }
         }
     }
 }
@@ -233,6 +250,7 @@ private struct CardAppIcon: View {
 private struct ChatDetail: View {
     let bubbles: [ChatBubble]
     let onOpen: (ChatBubble) -> Void
+    let onZoom: (ChatBubble) -> Void
 
     var body: some View {
         ViewThatFits(in: .vertical) {
@@ -252,7 +270,8 @@ private struct ChatDetail: View {
     private var stack: some View {
         VStack(spacing: 5) {
             ForEach(bubbles) { bubble in
-                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id) { onOpen(bubble) }
+                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id,
+                               onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) })
                     .id(bubble.id)
             }
         }
@@ -264,6 +283,7 @@ private struct ChatBubbleView: View {
     let bubble: ChatBubble
     let newest: Bool
     let onOpen: () -> Void
+    let onZoom: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -278,7 +298,7 @@ private struct ChatBubbleView: View {
                 if let attachment = bubble.attachment {
                     switch bubble.media {
                     case .photo where bubble.image != nil:
-                        PhotoButton(image: bubble.image!, name: attachment, action: onOpen)
+                        PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
                     case .video(let url):
                         VideoTile(url: url, poster: bubble.image, name: attachment)
                     default:
@@ -415,7 +435,7 @@ private struct InlinePlayer: NSViewRepresentable {
     }
 }
 
-/// A photo in a chat bubble, as it came: a click opens it in full.
+/// A photo in a chat bubble, as it came: a click enlarges it in the card.
 private struct PhotoButton: View {
     static let maxWidth: CGFloat = 240
     static let maxHeight: CGFloat = 180
@@ -437,8 +457,65 @@ private struct PhotoButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tr("card.attachment.view"))
-        .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
+        .help(tr("card.video.enlarge"))
+        .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
+    }
+}
+
+/// A chat bubble's photo enlarged over the whole card, inside Nook: the bubble's picture at once, then the photo itself
+/// sharp from the file on this Mac. A click anywhere (or Escape) shrinks it back; the open button shows it in Quick Look.
+private struct PhotoZoom: View {
+    let url: URL
+    let preview: NSImage
+    let name: String
+    let onClose: () -> Void
+    let onOpen: () -> Void
+    @State private var sharp: NSImage?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: onClose) {
+                ZStack {
+                    Color.black.opacity(0.94)
+                    Image(nsImage: sharp ?? preview)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("button.close"))
+            .accessibilityLabel("\(tr("button.close")): \(name)")
+
+            HStack(spacing: 6) {
+                zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
+                zoomButton("xmark", label: tr("button.close"), action: onClose)
+            }
+            .padding(12)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .task(id: url) {
+            let url = self.url
+            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+            sharp = data.flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
+        }
+    }
+
+    private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 

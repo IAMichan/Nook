@@ -70,7 +70,8 @@ struct ChatBubble: Equatable, Identifiable {
 
 enum BubbleMedia: Equatable {
     case file
-    case photo
+    /// The photo saved on this Mac, enlarged in the card with a click.
+    case photo(URL)
     /// The video saved on this Mac, played in the bubble.
     case video(URL)
 }
