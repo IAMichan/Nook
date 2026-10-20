@@ -180,6 +180,10 @@ final class NotchViewModel: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "openOnHover") }
     }
 
+    /// Set when a click on another screen closed the panel: Nook follows the pointer there, but must not open again
+    /// just because the pointer happens to rest on that screen's notch. Cleared once the pointer is off the notch.
+    var holdsHoverOpen = false
+
     private var doneTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
     private var autoCloseTask: Task<Void, Never>?
@@ -502,7 +506,7 @@ final class NotchViewModel: ObservableObject {
             }
             return
         }
-        guard openOnHover, inside, state.isResting else { return }
+        guard openOnHover, inside, state.isResting, !holdsHoverOpen else { return }
         // If an agent is running, hover opens a little faster.
         let working = agentsActive
         hoverTask = Task { [weak self] in
