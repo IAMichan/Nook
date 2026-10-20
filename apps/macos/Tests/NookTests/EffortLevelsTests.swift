@@ -4,11 +4,12 @@ final class EffortLevelsTests: XCTestCase {
     func testLevels() {
         XCTAssertEqual(EffortLevels.levels(for: .codex, model: nil), ["low", "medium", "high"])
         XCTAssertEqual(EffortLevels.levels(for: .codex, model: "x", advertised: ["Minimal", "low", "low", "xhigh"]), ["minimal", "low", "xhigh"])
-        XCTAssertEqual(EffortLevels.levels(for: .claude, model: nil), [])
+        XCTAssertEqual(EffortLevels.levels(for: .claude, model: nil), ["low", "medium", "high"])
         XCTAssertEqual(EffortLevels.levels(for: .gemini, model: nil), [])
         XCTAssertTrue(EffortLevels.isOffered("HIGH", for: .codex, model: nil))
         XCTAssertFalse(EffortLevels.isOffered("xhigh", for: .codex, model: nil))
-        XCTAssertFalse(EffortLevels.isOffered("high", for: .claude, model: nil))
+        XCTAssertTrue(EffortLevels.isOffered("high", for: .claude, model: nil))
+        XCTAssertFalse(EffortLevels.isOffered("max", for: .claude, model: nil))
         XCTAssertEqual(EffortLevels.label(nil), "effort.level.default")
         XCTAssertEqual(EffortLevels.label("high"), "effort.level.high")
     }
