@@ -46,4 +46,13 @@ final class NotchResizeTests: XCTestCase {
         NotchResize.save(CGSize(width: 120, height: -40), defaults)
         XCTAssertEqual(NotchResize.load(defaults), CGSize(width: 120, height: 0))
     }
+
+    func testAConversationCardKeepsASizeOfItsOwn() {
+        let defaults = UserDefaults(suiteName: "NotchResizeTests.card")!
+        defaults.removePersistentDomain(forName: "NotchResizeTests.card")
+        NotchResize.save(CGSize(width: 80, height: 20), defaults)
+        NotchResize.save(CGSize(width: 200, height: 160), defaults, key: NotchResize.cardDefaultsKey)
+        XCTAssertEqual(NotchResize.load(defaults), CGSize(width: 80, height: 20))
+        XCTAssertEqual(NotchResize.load(defaults, key: NotchResize.cardDefaultsKey), CGSize(width: 200, height: 160))
+    }
 }

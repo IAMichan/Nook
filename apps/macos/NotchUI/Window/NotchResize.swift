@@ -21,6 +21,8 @@ enum NotchResize {
     }
 
     static let defaultsKey = "notch.panelExtra"
+    /// A card with a conversation (WhatsApp) keeps a size of its own, apart from the panel's.
+    static let cardDefaultsKey = "notch.cardExtra"
 
     /// `base` with `extra` added, kept between `base` itself and `maximum` (the room the panel window and the screen give).
     /// A tab that starts larger than the maximum keeps that edge of its own size.
@@ -46,13 +48,13 @@ enum NotchResize {
     }
 
     /// Never below zero: a size saved back when the notch could be made smaller than a tab's own size counts as that size.
-    static func load(_ defaults: UserDefaults = .standard) -> CGSize {
-        CGSize(width: max(0, defaults.double(forKey: defaultsKey + ".width")),
-               height: max(0, defaults.double(forKey: defaultsKey + ".height")))
+    static func load(_ defaults: UserDefaults = .standard, key: String = defaultsKey) -> CGSize {
+        CGSize(width: max(0, defaults.double(forKey: key + ".width")),
+               height: max(0, defaults.double(forKey: key + ".height")))
     }
 
-    static func save(_ extra: CGSize, _ defaults: UserDefaults = .standard) {
-        defaults.set(Double(extra.width), forKey: defaultsKey + ".width")
-        defaults.set(Double(extra.height), forKey: defaultsKey + ".height")
+    static func save(_ extra: CGSize, _ defaults: UserDefaults = .standard, key: String = defaultsKey) {
+        defaults.set(Double(extra.width), forKey: key + ".width")
+        defaults.set(Double(extra.height), forKey: key + ".height")
     }
 }

@@ -142,3 +142,11 @@ struct NookCard: Equatable, Identifiable {
     /// Text put back into the field, e.g. a reply that could not be sent, so nothing typed is lost.
     var draft: String? = nil
 }
+
+extension NookCard {
+    /// A card with a conversation can be dragged larger, like the open panel, to read more of it at once.
+    var resizable: Bool {
+        if case .chat = detail { return true }
+        return false
+    }
+}
