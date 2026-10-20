@@ -15,6 +15,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultModels: [String: String] {
         didSet { defaults.set(defaultModels, forKey: "ws.defaultModels") }
     }
+    /// Reasoning effort per agent for new sessions (absent = agent default).
+    @Published var defaultEfforts: [String: String] {
+        didSet { defaults.set(defaultEfforts, forKey: "ws.defaultEfforts") }
+    }
     /// The account last chosen per agent, so a new session starts with it again.
     @Published var defaultProfiles: [String: String] {
         didSet { defaults.set(defaultProfiles, forKey: "ws.defaultProfiles") }
@@ -98,6 +102,7 @@ final class WorkspaceSettings: ObservableObject {
         defaultProvider = RunProvider(rawValue: defaults.string(forKey: "ws.defaultProvider") ?? "") ?? .claude
         defaultModels = (defaults.dictionary(forKey: "ws.defaultModels") as? [String: String]) ?? [:]
         defaultProfiles = (defaults.dictionary(forKey: "ws.defaultProfiles") as? [String: String]) ?? [:]
+        defaultEfforts = (defaults.dictionary(forKey: "ws.defaultEfforts") as? [String: String]) ?? [:]
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
@@ -138,6 +143,13 @@ final class WorkspaceSettings: ObservableObject {
     func setModel(_ model: String, for provider: RunProvider) { defaultModels[provider.rawValue] = model }
 
     func profile(for provider: RunProvider) -> String? { defaultProfiles[provider.rawValue] }
+
+    /// The effort last chosen for this agent, while the agent still offers it.
+    func effort(for provider: RunProvider) -> String? {
+        defaultEfforts[provider.rawValue].flatMap { EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
+    }
+
+    func setEffort(_ effort: String?, for provider: RunProvider) { defaultEfforts[provider.rawValue] = effort }
 
     func setProfile(_ profileID: String, for provider: RunProvider) { defaultProfiles[provider.rawValue] = profileID }
 

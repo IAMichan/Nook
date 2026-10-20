@@ -8,7 +8,7 @@ extension WorkspaceManager {
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
-        [run.model, run.mode.rawValue, run.permission.rawValue, run.instructions, bridge(for: run.id) == nil ? "" : "bridge"]
+        [run.model, run.mode.rawValue, run.permission.rawValue, run.instructions, bridge(for: run.id) == nil ? "" : "bridge", run.effort ?? ""]
             .joined(separator: "|")
     }
 
@@ -46,7 +46,9 @@ extension WorkspaceManager {
         if old.model != new.model {
             process.send(ClaudeStreamParser.setModelRequest(id: "nook-model-" + UUID().uuidString.prefix(8), model: new.model))
         }
-        if oldMode != newMode || old.model != new.model || old.instructions != new.instructions { claudeChangedDuringTurn.insert(id) }
+        if oldMode != newMode || old.model != new.model || old.instructions != new.instructions || old.effort != new.effort {
+            claudeChangedDuringTurn.insert(id)
+        }
     }
 
     /// Sends the next message to the waiting process. False when there is none, or it was started with other settings.

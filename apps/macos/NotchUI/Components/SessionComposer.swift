@@ -499,7 +499,7 @@ struct ComposerIcon: View {
 /// A thin line between two choices in the composer.
 struct ComposerDivider: View {
     var body: some View {
-        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 14)
+        Rectangle().fill(Color(hex: 0x3A3A44)).frame(width: 1, height: 16).padding(.horizontal, 3)
     }
 }
 
