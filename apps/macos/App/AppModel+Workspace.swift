@@ -39,6 +39,7 @@ final class WorkspaceWindowController {
     private var window: NSWindow?
 
     var isKey: Bool { window?.isKeyWindow ?? false }
+    var isVisible: Bool { window?.isVisible ?? false }
 
     func show(app: AppModel) {
         if window == nil {
@@ -57,10 +58,12 @@ final class WorkspaceWindowController {
             window.appearance = NSAppearance(named: .darkAqua)
             window.title = tr("ws.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            // The sidebar runs up under the traffic lights, as in Finder or Mail; the title is in the Dock and ⌘Tab.
+            // The panel runs up under the traffic lights, as the open notch runs up under the camera; the title is in the
+            // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.backgroundColor = NSColor(red: 0x0B / 255, green: 0x0B / 255, blue: 0x0D / 255, alpha: 1)
+            // Black, as the notch.
+            window.backgroundColor = .black
             window.setContentSize(NSSize(width: 1240, height: 800))
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
@@ -170,9 +173,17 @@ extension AppModel {
         viewModel.show(.panel(.agents))
     }
 
-    /// The main window: the notch's tabs with more room, opened only on request.
-    func openWindow() {
+    /// The main window: the notch's tabs with more room, opened only on request. `continuing`: the tab you were on in the
+    /// notch, which the window opens on.
+    func openWindow(continuing tab: PanelTab? = nil) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
+        if let tab {
+            viewModel.windowSheet = nil
+            viewModel.windowTab = tab == .nook ? .chat : tab
+        } else if !WorkspaceWindowController.shared.isVisible {
+            // Already open, it stays where you are.
+            viewModel.prepareWindow()
+        }
         WorkspaceWindowController.shared.show(app: self)
     }
 
