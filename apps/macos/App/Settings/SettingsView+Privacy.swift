@@ -27,12 +27,8 @@ extension SettingsView {
                 promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
                 promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
                 promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
-                Toggle(isOn: $settings.onlineLyrics) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tr("settings.privacy.onlineLyrics"))
-                        Text(tr("settings.privacy.onlineLyricsDetail")).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
+                              isOn: $settings.onlineLyrics)
                 LabeledContent(tr("settings.privacy.screenText")) {
                     Button(tr("settings.privacy.forgetScreenText")) {
                         app.screenContext.clear()
@@ -49,10 +45,7 @@ extension SettingsView {
                 .font(.system(size: 14))
                 .foregroundStyle(NookTheme.iris)
                 .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-            }
+            SettingLabel(title, detail: detail)
         }
     }
 

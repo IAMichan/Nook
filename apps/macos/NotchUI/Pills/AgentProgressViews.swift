@@ -148,8 +148,7 @@ struct TaskChecklistCard: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 12, style: .continuous)
         .animation(.easeInOut(duration: 0.2), value: steps)
     }
 }

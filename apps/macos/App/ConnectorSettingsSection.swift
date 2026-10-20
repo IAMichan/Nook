@@ -481,15 +481,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     Button(tr("connector.retry")) { refreshNow() }
                 }
             }
-            Toggle(isOn: Binding(get: { isOn }, set: { setOn($0) })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("settings2.service.useToggle"))
-                    Text(tr("settings2.service.useToggleDetail"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
+            SettingToggle(tr("settings2.service.useToggle"), detail: tr("settings2.service.useToggleDetail"),
+                          isOn: Binding(get: { isOn }, set: { setOn($0) }))
+                .toggleStyle(.switch)
         }
 
         Divider()

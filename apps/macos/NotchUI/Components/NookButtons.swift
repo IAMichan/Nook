@@ -23,6 +23,29 @@ struct NookPrimaryButton: View {
     }
 }
 
+/// Compact white button for use in chat.
+struct SmallPrimaryButton: View {
+    let title: String
+    var systemName: String? = nil
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let systemName { Image(systemName: systemName).font(.system(size: 11, weight: .semibold)) }
+                Text(title).font(NookTheme.font(13, .semibold))
+            }
+            .foregroundStyle(NookTheme.ink)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
 /// Subtle secondary button alongside the primary button.
 struct NookGhostButton: View {
     let title: String
@@ -70,6 +93,35 @@ struct NookIconButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .accessibilityLabel(label)
+    }
+}
+
+/// A small borderless symbol button for a panel header or a message's actions (copy, retry, close). The label is the
+/// tooltip and what VoiceOver reads.
+struct ToolbarIconButton: View {
+    let symbol: String
+    let label: String
+    var height: CGFloat = 24
+    let action: () -> Void
+
+    init(_ symbol: String, _ label: String, height: CGFloat = 24, _ action: @escaping () -> Void) {
+        self.symbol = symbol
+        self.label = label
+        self.height = height
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 24, height: height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
         .accessibilityLabel(label)
     }
 }

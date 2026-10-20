@@ -46,10 +46,10 @@ struct SessionOutputsPanel: View {
                 Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
             }
             Spacer(minLength: 4)
-            iconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
+            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
                 withAnimation(.easeInOut(duration: 0.2)) { wide.toggle() }
             }
-            iconButton("xmark", tr("ws.outputs.close"), close)
+            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
         .frame(height: 30)
     }
@@ -83,19 +83,6 @@ struct SessionOutputsPanel: View {
             }
         }
         .frame(maxHeight: min(CGFloat(outputs.count) * 28, 148))
-    }
-
-    private func iconButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
 
@@ -188,8 +175,7 @@ private struct OutputViewer: View {
             } else {
                 Spacer(minLength: 6)
                 SmallGhostButton(title: copied ? tr("ws.outputs.copied") : tr("ws.plan.copy")) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(Self.text(output.kind), forType: .string)
+                    Pasteboard.copy(Self.text(output.kind))
                     copied = true
                     Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
                 }
@@ -242,10 +228,10 @@ struct FilePreviewPanel: View {
                 .truncationMode(.middle)
                 .help(AgentPathFormat.tilde(path))
             Spacer(minLength: 4)
-            iconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
+            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
                 withAnimation(.easeInOut(duration: 0.2)) { wide.toggle() }
             }
-            iconButton("xmark", tr("ws.outputs.close"), close)
+            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
         .frame(height: 30)
     }
@@ -281,19 +267,6 @@ struct FilePreviewPanel: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-    }
-
-    private func iconButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
 

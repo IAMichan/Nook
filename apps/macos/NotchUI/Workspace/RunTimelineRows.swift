@@ -226,8 +226,7 @@ struct CodeBlock: View {
                 Text(title).font(NookTheme.font(10.5, .semibold)).foregroundStyle(WS.tertiary)
                 Spacer()
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                    Pasteboard.copy(text)
                 } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10))
                 }
@@ -245,8 +244,7 @@ struct CodeBlock: View {
             .frame(maxHeight: 260)
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(WS.code))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(WS.border, lineWidth: 1))
+        .cardBackground(WS.code, stroke: WS.border, radius: 8)
     }
 }
 
@@ -273,8 +271,7 @@ struct ApprovalRow: View {
         }
         .padding(10)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.03)))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: 9)
         .onTapGesture { toggle() }
     }
 

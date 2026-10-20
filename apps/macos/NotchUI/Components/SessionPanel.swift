@@ -141,7 +141,7 @@ struct SessionPanel: View {
                  iconWidth: 34,
                  menu: AnyView(Group {
                      Button(tr("button.openTerminalHere")) { done { app.openTerminal(in: directory) } }
-                     Button(tr("agents.panel.copyPath")) { copy(directory) }
+                     Button(tr("agents.panel.copyPath")) { Pasteboard.copy(directory) }
                  }))
     }
 
@@ -277,7 +277,7 @@ struct SessionPanel: View {
                             .disabled(agentWorking || model.working || model.branches.count < 2)
                             if let branch {
                                 Divider()
-                                Button(tr("agents.panel.copyBranch")) { copy(branch) }
+                                Button(tr("agents.panel.copyBranch")) { Pasteboard.copy(branch) }
                             }
                             if agentWorking {
                                 Divider()
@@ -416,11 +416,6 @@ struct SessionPanel: View {
 
     private func symbol(_ name: String) -> AnyView {
         AnyView(Image(systemName: name).font(.system(size: 12, weight: .medium)).foregroundStyle(NookTheme.textSecondary))
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// Closes the panel, then does what was asked (a notch task or another app takes over from here).

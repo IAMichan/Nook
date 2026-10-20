@@ -216,6 +216,7 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 | System-wide autocomplete | [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md) |
 | iPhone companion & protocol | [`docs/COMPANION.md`](docs/COMPANION.md) |
 | Monorepo structure | [`docs/MONOREPO.md`](docs/MONOREPO.md) |
+| Shared macOS UI components | [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) |
 | Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
 | Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |
 | Third-party attributions | [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) |

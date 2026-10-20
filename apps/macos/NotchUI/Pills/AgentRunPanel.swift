@@ -296,8 +296,7 @@ struct AgentRunPanel: View {
             }
             // Kept local: copy it, or save it where you want.
             Button(tr("ws.export.copy")) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(SessionExport.markdown(run, events: workspace.timeline(runID)), forType: .string)
+                Pasteboard.copy(SessionExport.markdown(run, events: workspace.timeline(runID)))
             }
             Button(tr("ws.export.save")) { saveMarkdown(run) }
             // Terminal context: the last lines of this session's terminal go with your message.

@@ -108,31 +108,6 @@ struct StatusBadge: View {
     }
 }
 
-/// Compact tinted badge: agent, model, account.
-struct Chip: View {
-    let text: String
-    var color: Color = WS.secondary
-    var systemImage: String?
-    /// Shows this agent's logo in front of the text.
-    var agent: AgentKind?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if let agent {
-                AgentLogo(agent, size: 12)
-            } else if let systemImage {
-                Image(systemName: systemImage).font(.system(size: 9.5, weight: .semibold))
-            }
-            Text(text).lineLimit(1)
-        }
-        .font(NookTheme.font(11.5, .medium))
-        .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .frame(height: 20)
-        .background(RoundedRectangle(cornerRadius: 5).fill(WS.subtle))
-    }
-}
-
 /// Section header for sidebar or inspector.
 struct WSSectionTitle: View {
     let title: String
@@ -361,7 +336,6 @@ struct ElapsedText: View {
         }
     }
 }
-
 
 extension WorkspaceRun {
     /// The models offered for the next turn: the agent's suggestions plus the one this session already uses.

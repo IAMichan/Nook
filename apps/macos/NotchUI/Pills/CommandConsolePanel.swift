@@ -43,8 +43,7 @@ struct CommandConsolePanel: View {
                     .padding(10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.notch))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+                .cardBackground(NookTheme.notch, stroke: NookTheme.line2, radius: 10, style: .continuous)
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.output?.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.id) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
@@ -59,13 +58,12 @@ struct CommandConsolePanel: View {
             Text(tr("ws.console.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
             status
             Spacer(minLength: 4)
-            iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString("$ " + command + (output.isEmpty ? "" : "\n" + output), forType: .string)
+            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
+                Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
             }
-            iconButton("xmark", tr("ws.console.close"), close)
+            ToolbarIconButton("xmark", tr("ws.console.close"), close)
         }
         .frame(height: 30)
     }
@@ -89,19 +87,6 @@ struct CommandConsolePanel: View {
                 .font(NookTheme.font(11.5))
                 .foregroundStyle(NookTheme.mint)
         }
-    }
-
-    private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
     }
 }
 
