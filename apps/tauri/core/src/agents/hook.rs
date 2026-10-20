@@ -112,7 +112,9 @@ pub fn valid_agent_name(name: &str) -> bool {
 }
 
 /// De berichten voor Nook (meestal één; twee bij `nook_show_step`), en de definitieve agent en stand.
-pub fn messages(args: &HookArgs, payload: &str, env: &dyn Fn(&str) -> Option<String>) -> (Vec<String>, String, Mode) {
+/// `lineage`: this hook's process and the ones it was started from, nearest first, so Nook can tell which agent
+/// process the session runs in (see `liveness`); empty when unknown.
+pub fn messages(args: &HookArgs, payload: &str, env: &dyn Fn(&str) -> Option<String>, lineage: &[u32]) -> (Vec<String>, String, Mode) {
     let mut event: Value = serde_json::from_str(payload).ok().filter(Value::is_object).unwrap_or(json!({}));
     let mut agent = args.agent.clone();
     let mut mode = args.mode;
@@ -152,7 +154,11 @@ pub fn messages(args: &HookArgs, payload: &str, env: &dyn Fn(&str) -> Option<Str
             if let Some(o) = e.as_object_mut() {
                 o.remove("nook_show_step");
             }
-            json!({"agent": agent, "mode": mode.id(), "env": environment, "event": e}).to_string() + "\n"
+            let mut message = json!({"agent": agent, "mode": mode.id(), "env": environment, "event": e});
+            if !lineage.is_empty() {
+                message["lineage"] = json!(lineage);
+            }
+            message.to_string() + "\n"
         })
         .collect();
     (lines, agent, mode)
@@ -305,13 +311,14 @@ mod tests {
     #[test]
     fn nook_agent_field_counts_without_flag() {
         let (lines, agent, _) =
-            messages(&args(&[]), r#"{"hook_event_name":"UserPromptSubmit","nook_agent":"demo","prompt":"hallo"}"#, &no_env);
+            messages(&args(&[]), r#"{"hook_event_name":"UserPromptSubmit","nook_agent":"demo","prompt":"hallo"}"#, &no_env, &[]);
         assert_eq!(agent, "demo");
         let v: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(v["agent"], "demo");
-        let (_, agent, _) = messages(&args(&["--agent", "codex"]), r#"{"nook_agent":"demo"}"#, &no_env);
+        let (lines, agent, _) = messages(&args(&["--agent", "codex"]), r#"{"nook_agent":"demo"}"#, &no_env, &[7, 3]);
+        assert!(lines[0].contains(r#""lineage":[7,3]"#));
         assert_eq!(agent, "codex", "--agent wint");
-        let (_, agent, _) = messages(&args(&[]), r#"{"nook_agent":"Ongeldig!"}"#, &no_env);
+        let (_, agent, _) = messages(&args(&[]), r#"{"nook_agent":"Ongeldig!"}"#, &no_env, &[]);
         assert_eq!(agent, "claude-code");
     }
 
@@ -332,12 +339,13 @@ mod tests {
 
     #[test]
     fn show_step_becomes_two_events_and_permission_mode() {
-        let (lines, _, _) = messages(&args(&["--agent", "amp"]), r#"{"hook_event_name":"PostToolUse","nook_show_step":true}"#, &no_env);
+        let (lines, _, _) =
+            messages(&args(&["--agent", "amp"]), r#"{"hook_event_name":"PostToolUse","nook_show_step":true}"#, &no_env, &[]);
         assert_eq!(lines.len(), 2);
         let first: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(first["event"]["hook_event_name"], "PreToolUse");
         assert!(first["event"].get("nook_show_step").is_none());
-        let (_, _, mode) = messages(&args(&[]), r#"{"hook_event_name":"PermissionRequest"}"#, &no_env);
+        let (_, _, mode) = messages(&args(&[]), r#"{"hook_event_name":"PermissionRequest"}"#, &no_env, &[]);
         assert_eq!(mode, Mode::Permission);
     }
 

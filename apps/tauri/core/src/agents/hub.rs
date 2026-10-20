@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::line_diff::{self, DiffLine};
+use super::liveness;
+use super::mcp_name::{self, McpToolName};
 use super::models::*;
 use super::risk::{self, CommandAssessment, RiskLevel};
 use super::scanner::DetectedAgent;
@@ -94,6 +96,12 @@ struct Record {
     transcript_path: String,
     last_prompt: String,
     started: DateTime<Utc>,
+    /// The processes the latest hook came from, nearest first (see `hook::messages`).
+    #[serde(default)]
+    lineage: Vec<u32>,
+    /// The agent process among them, once the process scan has seen it.
+    #[serde(default)]
+    pid: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -132,6 +140,8 @@ struct State {
     plan_usage: Option<PlanUsage>,
     profile_plan_usage: BTreeMap<String, PlanUsage>,
     unconfirmed: HashSet<String>,
+    /// Scans in a row each busy session's process was missing from the process list.
+    missing_scans: HashMap<String, usize>,
     dirty: bool,
 }
 
@@ -327,6 +337,8 @@ impl AgentHub {
                 transcript_path: String::new(),
                 last_prompt: String::new(),
                 started: now,
+                lineage: vec![],
+                pid: None,
             });
             if !cwd.is_empty() {
                 record.cwd = cwd.clone();
@@ -337,6 +349,17 @@ impl AgentHub {
             }
             record.home = self.account_home(&env, &agent_id);
             record.updated = now;
+            // Which process this session runs in; the same session resumed in a new process starts over.
+            let lineage: Vec<u32> = object
+                .get("lineage")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_u64).filter_map(|p| u32::try_from(p).ok()).collect())
+                .unwrap_or_default();
+            let same_process = record.pid.is_some_and(|pid| lineage.contains(&pid));
+            if !lineage.is_empty() && !same_process {
+                record.pid = liveness::agent_process(&name, &lineage, &s.processes);
+                record.lineage = lineage;
+            }
             if let Some(id) = text(&event, "session_id") {
                 record.session_id = id.into();
             }
@@ -488,19 +511,22 @@ impl AgentHub {
                 }
                 "PostToolUse" => {
                     complete(&mut record, StepMark::Done);
+                    resume(&mut record, Self::is_asking(&s, &key));
                     if let Some((_, added, removed)) = edit_diff(&tool, &input) {
                         record.lines_added += added;
                         record.lines_removed += removed;
                         self.recap.note(|r, now| r.edit(added as u32, removed as u32, now));
                     }
                 }
-                "PostToolUseFailure" => complete(&mut record, StepMark::Failed),
+                "PostToolUseFailure" => {
+                    complete(&mut record, StepMark::Failed);
+                    resume(&mut record, Self::is_asking(&s, &key));
+                }
                 "Notification" => {
                     let message = text(&event, "message").unwrap_or("wacht op je").to_string();
                     record.last_message = message.clone();
                     // Staat de vraag al als kaart in de balk, dan geen tweede melding.
-                    let asking = s.pending_approvals.values().any(|p| p.request.session_key == key)
-                        || s.pending_questions.values().any(|p| p.request.session_key == key);
+                    let asking = Self::is_asking(&s, &key);
                     // "Claude is waiting for your input" is de rustmelding na een beurt, geen vraag aan jou.
                     let idle = message.to_lowercase().contains("waiting for your input");
                     if idle && !asking {
@@ -562,6 +588,12 @@ impl AgentHub {
         }
         self.emit(events);
         Wait::Done
+    }
+
+    /// Is a card in the bar still asking you something for this session (an approval or a question)?
+    fn is_asking(s: &State, key: &str) -> bool {
+        s.pending_approvals.values().any(|p| p.request.session_key == key)
+            || s.pending_questions.values().any(|p| p.request.session_key == key)
     }
 
     fn emit(&self, events: Vec<HubEvent>) {
@@ -812,6 +844,12 @@ impl AgentHub {
         let changed = {
             let mut s = self.lock();
             s.processes = found.clone();
+            // Sessions whose agent process was not known yet when their hook came.
+            for record in s.records.values_mut() {
+                if record.pid.is_none() && !record.lineage.is_empty() {
+                    record.pid = liveness::agent_process(&record.agent, &record.lineage, &found);
+                }
+            }
             let mut dropped = self.drop_ended_restored(&mut s, &found);
             // Een sessie met hooks dekt één proces van zijn agent en map, niet allemaal.
             let mut covered: HashMap<String, usize> = HashMap::new();
@@ -884,9 +922,73 @@ impl AgentHub {
             }
             dropped
         };
-        if changed {
+        let settled = self.settle_stale();
+        if changed || settled {
             self.emit(vec![HubEvent::Changed]);
         }
+    }
+
+    /// Settles sessions that still read as busy while their turn has ended or their agent has quit, when the hook that
+    /// should have said so never came (see `liveness`). Reads transcripts outside the lock. True when one changed.
+    fn settle_stale(&self) -> bool {
+        let scannable: HashSet<&str> = super::scanner::AGENT_NAMES.iter().copied().collect();
+        // (key, last event, status) of each busy session, and the transcripts of those that run.
+        let (busy, paths) = {
+            let mut s = self.lock();
+            let busy: Vec<(String, DateTime<Utc>, AgentStatus)> = s
+                .records
+                .iter()
+                .filter(|(_, r)| matches!(r.status, AgentStatus::Running | AgentStatus::Waiting))
+                .map(|(k, r)| (k.clone(), r.updated, r.status))
+                .collect();
+            let keys: HashSet<&String> = busy.iter().map(|(k, _, _)| k).collect();
+            s.missing_scans.retain(|k, _| keys.contains(k));
+            if busy.is_empty() {
+                return false;
+            }
+            let mut paths = vec![];
+            for (key, _, _) in &busy {
+                let Some(record) = s.records.get(key) else { continue };
+                let gone = scannable.contains(record.agent.as_str())
+                    && !liveness::is_running(&record.agent, &record.cwd, record.pid, &s.processes);
+                if record.status == AgentStatus::Running {
+                    paths.push((key.clone(), record.transcript_path.clone()));
+                }
+                let count = if gone { s.missing_scans.get(key).copied().unwrap_or(0) + 1 } else { 0 };
+                s.missing_scans.insert(key.clone(), count);
+            }
+            (busy, paths)
+        };
+        let turns: HashMap<String, (liveness::Turn, Option<DateTime<Utc>>)> =
+            paths.into_iter().filter_map(|(key, path)| liveness::read_turn(&path).map(|t| (key, t))).collect();
+
+        let now = Utc::now();
+        let mut s = self.lock();
+        let mut changed = false;
+        for (key, updated, status) in busy {
+            // A hook event while the transcript was read wins.
+            let Some(record) = s.records.get(&key) else { continue };
+            if record.updated != updated || record.status != status || Self::is_asking(&s, &key) {
+                continue;
+            }
+            let (turn, modified) = turns.get(&key).copied().unwrap_or((liveness::Turn::Unknown, None));
+            let missing = s.missing_scans.get(&key).copied().unwrap_or(0);
+            let Some(verdict) = liveness::verdict(status == AgentStatus::Running, updated, turn, modified, missing, now) else {
+                continue;
+            };
+            let Some(record) = s.records.get_mut(&key) else { continue };
+            record.status = AgentStatus::Done;
+            complete(record, StepMark::Done);
+            push(record, StepMark::Done, if verdict == liveness::Verdict::ProcessGone { "sessie gesloten" } else { "klaar" });
+            s.missing_scans.remove(&key);
+            changed = true;
+            log::info!("Vastgelopen sessie afgerond: {key} ({verdict:?})");
+        }
+        if changed {
+            s.dirty = true;
+            Self::rebuild(&mut s);
+        }
+        changed
     }
 
     /// Een teruggezette sessie waarvan de agent stopte terwijl Nook dicht was, valt weg zodra de proceslijst dat laat
@@ -1103,6 +1205,14 @@ fn replace_last(record: &mut Record, mark: StepMark, text: impl Into<String>) {
     }
 }
 
+/// A tool finished while the session read as waiting: you answered its prompt in the terminal, so it works again.
+/// Without this it stayed amber ("waits for you") until the next tool started or the turn ended.
+fn resume(record: &mut Record, asking: bool) {
+    if record.status == AgentStatus::Waiting && !asking {
+        record.status = AgentStatus::Running;
+    }
+}
+
 /// Sluit de laatste stap af die liep (of op de gebruiker wachtte).
 fn complete(record: &mut Record, mark: StepMark) {
     if let Some(last) = record.steps.last_mut() {
@@ -1268,6 +1378,11 @@ pub fn edit_diff(tool: &str, input: &Value) -> Option<(Vec<DiffLine>, usize, usi
 }
 
 pub fn approval_summary(tool: &str, input: &Value) -> String {
+    // An MCP tool shows every argument it gets: the title names the tool and its server.
+    if let Some(mcp) = McpToolName::parse(tool) {
+        let arguments = mcp_name::arguments(input);
+        return if arguments.is_empty() { mcp.label() } else { arguments };
+    }
     if let Some(command) = command_text(input) {
         return command;
     }
@@ -1279,9 +1394,6 @@ pub fn approval_summary(tool: &str, input: &Value) -> String {
     }
     if let Some(query) = text(input, "query") {
         return format!("zoekt: {query}");
-    }
-    if tool.starts_with("mcp__") {
-        return tool.split("__").skip(1).collect::<Vec<_>>().join(" › ");
     }
     if let Some(obj) = input.as_object().filter(|o| !o.is_empty()) {
         let sorted: BTreeMap<_, _> = obj.iter().collect();
@@ -1300,6 +1412,9 @@ fn host_of(url: &str) -> String {
     url.split("://").nth(1).unwrap_or("").split(['/', '?', '#']).next().unwrap_or("").to_string()
 }
 
+/// The note on an approval for a tool of an MCP server.
+pub const MCP_NOTE: &str = "Voert een tool uit van een gekoppelde MCP-server";
+
 pub fn assess(tool: &str, input: &Value, edit: Option<&(Vec<DiffLine>, usize, usize)>) -> CommandAssessment {
     if let Some(command) = command_text(input) {
         let a = risk::assess(&command);
@@ -1317,12 +1432,15 @@ pub fn assess(tool: &str, input: &Value, edit: Option<&(Vec<DiffLine>, usize, us
         return CommandAssessment::review(format!("Haalt op van {}", if host.is_empty() { "het internet".into() } else { host }));
     }
     if tool.starts_with("mcp__") {
-        return CommandAssessment::review("Gebruikt een externe koppeling (MCP)");
+        return CommandAssessment::review(MCP_NOTE);
     }
     CommandAssessment::review("Kijk het even na")
 }
 
 pub fn describe(tool: &str, input: &Value) -> String {
+    if let Some(mcp) = McpToolName::parse(tool) {
+        return mcp.label();
+    }
     if let Some(command) = command_text(input) {
         return format!("Bash: {}", shorten(&command, 55));
     }
@@ -1336,7 +1454,6 @@ pub fn describe(tool: &str, input: &Value) -> String {
         "WebSearch" | "google_web_search" => format!("Zoekt online: {}", shorten(text(input, "query").unwrap_or(""), 40)),
         "Task" | "Agent" => format!("Hulpagent: {}", shorten(text(input, "description").unwrap_or(""), 40)),
         "TodoWrite" => "Werkt de takenlijst bij".into(),
-        t if t.starts_with("mcp__") => format!("Koppeling: {}", t.split("__").skip(1).collect::<Vec<_>>().join(" › ")),
         "" => "bezig".into(),
         t => t.into(),
     }
@@ -1527,6 +1644,47 @@ mod tests {
     }
 
     #[test]
+    fn a_finished_tool_puts_a_waiting_session_back_to_work() {
+        let (hub, _) = hub();
+        let event = |name: &str| msg("claude-code", "event", json!({"hook_event_name": name, "session_id": "w", "tool_name": "Bash"}));
+        hub.handle(
+            &msg(
+                "claude-code",
+                "event",
+                json!({"hook_event_name": "Notification", "session_id": "w", "message": "Claude needs your permission"}),
+            ),
+            Responder::none(),
+        );
+        assert_eq!(hub.sessions()[0].status, AgentStatus::Waiting);
+        hub.handle(&event("PostToolUse"), Responder::none());
+        assert_eq!(hub.sessions()[0].status, AgentStatus::Running, "answered in the terminal");
+    }
+
+    #[test]
+    fn a_closed_session_settles_even_with_another_session_in_its_folder() {
+        let (hub, _) = hub();
+        let start = |sid: &str, lineage: Vec<u32>| {
+            serde_json::to_vec(&json!({"agent": "claude-code", "mode": "event", "env": {}, "lineage": lineage,
+                "event": {"hook_event_name": "UserPromptSubmit", "session_id": sid, "cwd": "/site", "prompt": "go"}}))
+            .unwrap()
+        };
+        let p = |pid| DetectedAgent { pid, name: "Claude Code".into(), cwd: "/site".into(), home: String::new() };
+        hub.apply_scan(vec![p(50), p(60)], |_, _| true);
+        hub.handle(&start("a", vec![90, 80, 50, 10]), Responder::none());
+        hub.handle(&start("b", vec![91, 60]), Responder::none());
+        assert_eq!(hub.lock().records["claude-code:a"].pid, Some(50));
+        // Session a's process quits; b keeps running in the same folder.
+        for record in hub.lock().records.values_mut() {
+            record.updated = Utc::now() - chrono::Duration::seconds(120);
+        }
+        hub.apply_scan(vec![p(60)], |_, _| true);
+        hub.apply_scan(vec![p(60)], |_, _| true);
+        let status = |key: &str| hub.lock().records[key].status;
+        assert_eq!(status("claude-code:a"), AgentStatus::Done);
+        assert_eq!(status("claude-code:b"), AgentStatus::Running);
+    }
+
+    #[test]
     fn scan_covers_one_process_per_hooked_session() {
         let (hub, _) = hub();
         hub.handle(
@@ -1574,6 +1732,8 @@ mod tests {
         let (lines, a, r) = edit_diff("Edit", &json!({"old_string": "a\nb", "new_string": "a\nc"})).unwrap();
         assert_eq!((a, r), (1, 1));
         assert!(!lines.is_empty());
-        assert_eq!(approval_summary("mcp__github__create_issue", &json!({})), "github › create_issue");
+        assert_eq!(approval_summary("mcp__github__create_issue", &json!({})), "Github › Create issue");
+        assert_eq!(approval_summary("mcp__files__move_file", &json!({"source": "a", "target": "b"})), "Source: a\nTarget: b");
+        assert_eq!(describe("mcp__files__move_file", &json!({})), "Files › Move file");
     }
 }

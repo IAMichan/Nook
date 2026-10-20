@@ -67,6 +67,9 @@ pub struct Settings {
     pub accent_hex: u32,
     pub hide_when_idle: bool,
     pub panel_large: bool,
+    /// How large the bar's notification is when an agent (terminal or Workspace) finishes, fails or waits on you:
+    /// "detailed" (a card with the summary and what changed) or "compact" (one slim line in the bar).
+    pub agent_notice: String,
     pub sounds: bool,
     pub speak_answers: bool,
     pub wake_word: bool,
@@ -107,6 +110,7 @@ impl Default for Settings {
             accent_hex: 0xF4_F3_F7,
             hide_when_idle: false,
             panel_large: false,
+            agent_notice: "detailed".into(),
             sounds: true,
             speak_answers: false,
             wake_word: false,

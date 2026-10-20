@@ -1,13 +1,14 @@
 <script lang="ts">
   // Een sessie starten (`NewSessionComposer` op de Mac): één vraag, één veld en een paar rustige keuzes eronder.
-  // "Wat zullen we bouwen in nook?" — typ de opdracht, druk op Enter. Agent en account, model, modus, rechten, waar hij
+  // "Wat zullen we bouwen in nook?" — typ de opdracht, druk op Enter. Agent en account, model, modus, rechten, denkniveau, waar hij
   // werkt (deze map of een nieuwe worktree) en de branch waar hij van start staan al op je laatste keuzes. Titel,
   // branchnaam en de plek van de worktree volgen vanzelf.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { agentApi, type AgentProfile } from "../../../lib/agents";
   import { agents } from "../../../lib/agents.svelte";
   import {
-    isActive, permissionHelp, permissionLabels, projectName, workspaceApi, type NewRunConfig, type PermissionPolicy, type ProjectInfo, type RunProvider,
+    effortLabels, effortLevels, isActive, permissionHelp, permissionLabels, projectName, workspaceApi, type NewRunConfig, type PermissionPolicy, type ProjectInfo,
+    type RunProvider,
   } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
 
@@ -26,7 +27,7 @@
   let showClone = $state(false);
   let cloneUrl = $state("");
   let cloning = $state(false);
-  let menu = $state<"" | "project" | "agent" | "permission" | "where" | "branch">("");
+  let menu = $state<"" | "project" | "agent" | "permission" | "effort" | "where" | "branch">("");
   let branchQuery = $state("");
   let textarea = $state<HTMLTextAreaElement>();
   let prepared = false;
@@ -38,6 +39,7 @@
   const policies = $derived<PermissionPolicy[]>(provider?.capabilities.policies ?? ["acceptEdits"]);
   const profilesFor = (p: RunProvider) => profiles.filter((x) => x.kind === p);
   const profile = $derived(profiles.find((p) => p.id === config.profileId));
+  const levels = $derived(effortLevels(config.provider));
 
   const recent = $derived.by(() => {
     const seen = new Set<string>();
@@ -87,6 +89,7 @@
     const p = list.includes(settings!.defaultProvider) ? settings!.defaultProvider : (list[0] ?? settings!.defaultProvider);
     choose(p, null);
     config.model = settings!.defaultModels[p] ?? "";
+    config.effort = rememberedEffort(p);
     config.mode = settings!.defaultMode;
     config.isolation = settings!.defaultIsolation;
     config.worktreeRoot = settings!.worktreeRoot;
@@ -99,6 +102,7 @@
     if (config.provider !== p) {
       config.provider = p;
       config.model = settings?.defaultModels[p] ?? "";
+      config.effort = rememberedEffort(p);
     }
     const caps = workspace.provider(p)?.capabilities.policies ?? ["acceptEdits"];
     if (!caps.includes(config.permission)) {
@@ -106,7 +110,37 @@
       config.permission = caps.includes(preferred) ? preferred : "acceptEdits";
     }
     const own = profilesFor(p);
-    config.profileId = account ?? (own.find((x) => x.preferred) ?? own[0])?.id ?? p;
+    // The account you last chose for this agent while it is still there, else its preferred or first one.
+    const saved = settings?.defaultProfiles?.[p];
+    const remembered = saved && own.some((x) => x.id === saved) ? saved : null;
+    config.profileId = account ?? remembered ?? (own.find((x) => x.preferred) ?? own[0])?.id ?? p;
+  }
+
+  /// The effort last chosen for this agent, while the agent still offers it.
+  function rememberedEffort(p: RunProvider): string | null {
+    const saved = settings?.defaultEfforts?.[p];
+    return saved && effortLevels(p).includes(saved) ? saved : null;
+  }
+
+  /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
+  function remember() {
+    if (!settings) return;
+    const p = config.provider;
+    const efforts = { ...(settings.defaultEfforts ?? {}) };
+    if (config.effort) efforts[p] = config.effort;
+    else delete efforts[p];
+    workspaceApi
+      .saveSettings({
+        ...$state.snapshot(settings),
+        defaultProvider: p,
+        defaultModels: { ...settings.defaultModels, [p]: config.model },
+        defaultProfiles: { ...(settings.defaultProfiles ?? {}), [p]: config.profileId },
+        defaultEfforts: efforts,
+        defaultMode: config.mode,
+        defaultPermission: config.permission,
+        defaultIsolation: config.isolation,
+      })
+      .catch(() => {});
   }
 
   async function select(path: string) {
@@ -235,18 +269,18 @@
               <div class="mhead">{p.name}{#if !p.executable} · niet gevonden{/if}</div>
               {#each profilesFor(p.provider).length ? profilesFor(p.provider) : [{ id: p.provider, label: "", title: p.name } as AgentProfile] as acc (acc.id)}
                 <button class:chosen={config.provider === p.provider && config.profileId === acc.id} disabled={!p.executable}
-                  onclick={() => { choose(p.provider, acc.id); menu = ""; }}>{acc.label || "Standaardaccount"}</button>
+                  onclick={() => { choose(p.provider, acc.id); menu = ""; remember(); }}>{acc.label || "Standaardaccount"}</button>
               {/each}
             {/each}
             <hr />
             <div class="mhead">Model</div>
-            <input bind:value={config.model} placeholder="standaard" />
+            <input bind:value={config.model} placeholder="standaard" onchange={remember} />
           </div>
         {/if}
       </span>
       <span class="sep"></span>
       <button class="pill" title={config.mode === "plan" ? "Alleen lezen en een plan maken; er wordt niets aangepast." : "De agent mag werken in de map, binnen de rechten hieronder."}
-        onclick={() => (config.mode = config.mode === "plan" ? "agent" : "plan")}>{config.mode === "plan" ? "Plan" : "Agent"}</button>
+        onclick={() => { config.mode = config.mode === "plan" ? "agent" : "plan"; remember(); }}>{config.mode === "plan" ? "Plan" : "Agent"}</button>
       <span class="sep"></span>
       <span class="pop">
         <button class="pill" class:hot={config.permission === "bypass" && config.mode !== "plan"} disabled={config.mode === "plan"}
@@ -258,13 +292,30 @@
           <div class="menu wide" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
             <div class="mhead">Toegang</div>
             {#each policies as p (p)}
-              <button class="opt" class:chosen={config.permission === p} onclick={() => { config.permission = p; menu = ""; }}>
+              <button class="opt" class:chosen={config.permission === p} onclick={() => { config.permission = p; menu = ""; remember(); }}>
                 <span class:hot={p === "bypass"}>{permissionLabels[p]}</span><span class="faint small">{permissionHelp(p, config.provider)}</span>
               </button>
             {/each}
           </div>
         {/if}
       </span>
+      {#if levels.length}
+        <span class="sep"></span>
+        <span class="pop">
+          <button class="pill" title="Hoe diep de agent nadenkt, vanaf de volgende beurt" onclick={(e) => { stop(e); menu = menu === "effort" ? "" : "effort"; }}>
+            {effortLabels[config.effort ?? ""] ?? config.effort}
+          </button>
+          {#if menu === "effort"}
+            <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
+              <div class="mhead">Denkniveau</div>
+              <button class:chosen={!config.effort} onclick={() => { config.effort = null; menu = ""; remember(); }}>{effortLabels[""]}</button>
+              {#each levels as l (l)}
+                <button class:chosen={config.effort === l} onclick={() => { config.effort = l; menu = ""; remember(); }}>{effortLabels[l] ?? l}</button>
+              {/each}
+            </div>
+          {/if}
+        </span>
+      {/if}
       <span class="spacer"></span>
       <button class="primary" disabled={!!blockingReason || starting} title={blockingReason ?? "Start sessie"} onclick={start}>{starting ? (config.isolation === "worktree" ? "Worktree maken en agent starten…" : "Agent starten…") : "Start sessie"}</button>
     </div>
@@ -277,10 +328,10 @@
       {#if menu === "where"}
         <div class="menu wide" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
           <div class="mhead">Waar de agent werkt</div>
-          <button class="opt" class:chosen={config.isolation === "folder"} onclick={() => { config.isolation = "folder"; menu = ""; }}>
+          <button class="opt" class:chosen={config.isolation === "folder"} onclick={() => { config.isolation = "folder"; menu = ""; remember(); }}>
             <span>Huidige map</span><span class="faint small">In de map zelf, op de branch die er nu staat.</span>
           </button>
-          <button class="opt" class:chosen={config.isolation === "worktree"} disabled={!worktreeAllowed} onclick={() => { config.isolation = "worktree"; menu = ""; }}>
+          <button class="opt" class:chosen={config.isolation === "worktree"} disabled={!worktreeAllowed} onclick={() => { config.isolation = "worktree"; menu = ""; remember(); }}>
             <span>Nieuwe worktree</span><span class="faint small">{worktreeAllowed ? "De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn." : worktreeBlocked}</span>
           </button>
         </div>
@@ -343,7 +394,7 @@
   .pill:hover:not(:disabled) { background: var(--smoke); color: var(--paper); }
   .pill.static:hover { background: none; color: var(--text2); }
   .hot { color: #ff9b9b; }
-  .sep { width: 1px; height: 14px; background: var(--line2); }
+  .sep { width: 1px; height: 16px; background: #3a3a44; margin: 0 3px; }
   .spacer { flex: 1; }
   .pop { position: relative; display: inline-block; }
   .menu { position: absolute; top: 30px; left: 0; z-index: 20; background: var(--graphite); border: 1px solid var(--line2); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 220px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); font-size: 12.5px; font-weight: 400; text-align: left; }

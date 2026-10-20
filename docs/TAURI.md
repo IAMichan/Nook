@@ -69,9 +69,13 @@ al is.
 | Onderdeel (Mac) | Tauri | Waar |
 |---|---|---|
 | Hub via hooks (Claude Code, Codex, Gemini CLI, Cursor, …) | ✓ | `core/src/agents/`, `nook --hook` / `~/.nook/nook-hook` |
+| Vastgelopen sessies afronden (`SessionLiveness`: transcript, het eigen proces van de sessie via de hook) | ◐ (met tests; niet met een echte `claude`) | `core/src/agents/liveness.rs` |
+| Meldingen van agents: uitgebreid of compact (Instellingen › Stem en geluid › Meldingen), Oké met aftelring | ◐ (gecompileerd; niet in de app getest) | `views/Bar.svelte`, `views/agents/AgentAlerts.svelte` |
+| Leesbare MCP-toolnamen (`McpToolName`) in goedkeuringen, tijdlijn en MCP-koppelingen | ✓ | `core/src/agents/mcp_name.rs` |
 | Koppelen met diff en backup (`AgentConfigInstaller`) | ✓ | `core/src/agents/` |
-| Goedkeuren in de balk, meerkeuzevragen | ✓ | `views/agents/` |
-| Agents-tab, nieuwe sessie, tijdlijn | ✓ | `views/agents/` |
+| Goedkeuren in de balk, meerkeuzevragen (een open paneel blijft staan en vraagt in een smalle balk) | ✓ | `views/agents/` |
+| Agents-tab, nieuwe sessie (met denkniveau; keuzes onthouden zodra je ze maakt), tijdlijn | ✓ | `views/agents/` |
+| Diff met regelnummers en gemarkeerde woorden (`UnifiedDiff`) | ✓ | `lib/workspace/unifiedDiff.ts`, `views/agents/UnifiedDiffView.svelte` |
 | Werkruimte-sessies: Claude Code, Codex `exec`, Gemini CLI, wachtrij, hervatten | ✓ (met een nep-`claude` getest) | `core/src/workspace/manager.rs` |
 | Codex app-server, ACP-agents, Antigravity | ○ | |
 | Delegeren, overdragen, geplande taken, webhooks, automatische titels | ○ | |

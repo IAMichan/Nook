@@ -143,10 +143,10 @@ fn on_hub_event(app: &AppHandle, event: HubEvent) {
     }
 }
 
-/// Een wachtende agent opent de balk op de tab Agents.
+/// Een wachtende agent opent de balk op de tab Agents; an open panel stays on its tab and asks in its compact bar.
 pub fn open_bar(app: &AppHandle) {
     #[cfg(desktop)]
-    crate::platform::desktop::open_bar(app, "agents");
+    crate::platform::desktop::open_bar(app, "agents-request");
     #[cfg(not(desktop))]
     let _ = app;
 }

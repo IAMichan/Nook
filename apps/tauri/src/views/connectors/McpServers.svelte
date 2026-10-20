@@ -121,7 +121,7 @@
           {#if s.config.secretNames.length}<div class="faint small">Sleutels in de kluis: {s.config.secretNames.join(", ")}</div>{/if}
           <div class="faint small">Beschikbare tools ({(Array.isArray(tested[s.config.id]) ? (tested[s.config.id] as McpTool[]) : s.tools).length})</div>
           {#each Array.isArray(tested[s.config.id]) ? (tested[s.config.id] as McpTool[]) : s.tools as t (t.name)}
-            <div class="tool"><span class="tag" class:act={!t.readOnly}>{t.readOnly ? "Lezen" : "Actie (met toestemming)"}</span> <strong>{t.name}</strong> <span class="faint">{t.description}</span></div>
+            <div class="tool"><span class="tag" class:act={!t.readOnly}>{t.readOnly ? "Lezen" : "Actie (met toestemming)"}</span> <strong title={t.name}>{t.title || t.name}</strong> <span class="faint">{t.description}</span></div>
           {:else}
             <p class="faint small">Nog geen tools gevonden of de server start nog op.</p>
           {/each}

@@ -228,12 +228,13 @@ pub fn clear_audit(state: State<'_, AppState>) {
 
 // Vensters
 
+/// Opens or closes the bar; `notice` keeps it closed but wide enough for a compact agent notice.
 #[tauri::command]
-pub fn bar_expand(app: AppHandle, expanded: bool) {
+pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>) {
     #[cfg(desktop)]
-    crate::platform::desktop::place_bar(&app, expanded);
+    crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false));
     #[cfg(not(desktop))]
-    let _ = (app, expanded);
+    let _ = (app, expanded, notice);
 }
 
 #[tauri::command]

@@ -321,7 +321,7 @@ impl Connector for McpConnector {
                     .map(|t| {
                         ConnectorItem::new(
                             &t.name,
-                            &t.name,
+                            &t.title,
                             short(&t.description, 80),
                             if t.read_only { Tone::Neutral } else { Tone::Attention },
                             None,
@@ -379,12 +379,18 @@ impl Connector for McpConnector {
         let detail: Vec<String> = pairs
             .iter()
             .take(2)
-            .map(|(k, v)| format!("{k}: {}", short(&v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()), 30)))
+            .map(|(k, v)| {
+                format!(
+                    "{}: {}",
+                    crate::agents::mcp_name::readable(k),
+                    short(&v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()), 30)
+                )
+            })
             .collect();
         Some(format!(
             "{}: {}{}",
             self.config.name,
-            found.name,
+            found.title,
             if detail.is_empty() { String::new() } else { format!(" · {}", detail.join(", ")) }
         ))
     }

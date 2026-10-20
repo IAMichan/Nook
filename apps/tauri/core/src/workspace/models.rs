@@ -697,6 +697,11 @@ pub mod tool_summary {
                 None => label,
             };
         }
+        // Another MCP tool: "Bestanden mappen › Move file · Source: a.txt, Destination: b.txt".
+        if let Some(mcp) = crate::agents::mcp_name::McpToolName::parse(tool) {
+            let detail = crate::agents::mcp_name::argument_lines(input).into_iter().take(2).collect::<Vec<_>>().join(", ");
+            return if detail.is_empty() { mcp.label() } else { format!("{} · {}", mcp.label(), one_line(&detail, 100)) };
+        }
         if let Some(command) = command(input) {
             return format!("{tool} · {}", one_line(&command, 120));
         }
@@ -925,6 +930,10 @@ pub(crate) mod tests {
     fn tool_summaries() {
         assert_eq!(tool_summary::describe("Bash", &json!({"command": "npm test\n--watch"})), "Bash · npm test --watch");
         assert_eq!(tool_summary::describe("Edit", &json!({"file_path": "/a/b/Login.swift"})), "Edit · Login.swift");
+        assert_eq!(
+            tool_summary::describe("mcp__bestanden-mappen__move_file", &json!({"source": "/a.txt", "destination": "/b.txt"})),
+            "Bestanden mappen › Move file · Destination: /b.txt, Source: /a.txt"
+        );
         assert_eq!(tool_summary::command(&json!({"command": ["bash", "-lc", "ls -la"]})).as_deref(), Some("ls -la"));
         assert_eq!(tool_summary::file_changes("Write", &json!({"file_path": "/x/y.txt"}))[0].1, "written");
         assert!(tool_summary::file_changes("Read", &json!({"file_path": "/x/y.txt"})).is_empty());

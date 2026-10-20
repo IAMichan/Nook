@@ -216,6 +216,8 @@ fn capitalize(text: &str) -> String {
 #[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
+    /// The name people read: the server's own title, or the name in words ("move_file" is "Move file").
+    pub title: String,
     pub description: String,
     pub input_schema: Value,
     /// De server zegt dat deze tool alleen leest. Al het andere is een actie die goedkeuring vraagt.
@@ -237,7 +239,15 @@ impl McpTool {
         }
         let hints = object.get("annotations").cloned().unwrap_or(Value::Null);
         let read_only = hints.get("readOnlyHint") == Some(&json!(true)) && hints.get("destructiveHint") != Some(&json!(true));
-        Some(Self { name, description, input_schema: schema, read_only })
+        let title = object
+            .get("title")
+            .or_else(|| hints.get("title"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| crate::brain::text::neutralize(&t.chars().take(80).collect::<String>()))
+            .unwrap_or_else(|| crate::agents::mcp_name::readable(&name));
+        Some(Self { name, title, description, input_schema: schema, read_only })
     }
 
     /// De naam die Nook deze tool geeft: uniek per server en geldig bij elke dienst (`[a-z0-9_]`, ≤ 64).
@@ -431,6 +441,9 @@ mod tests {
         let tool = McpTool::parse(&json!({"name": "x", "description": long})).unwrap();
         assert!(!tool.description.contains("<system>"));
         assert!(tool.description.chars().count() <= 400);
+        assert_eq!(McpTool::parse(&json!({"name": "move_file"})).unwrap().title, "Move file");
+        assert_eq!(McpTool::parse(&json!({"name": "x", "title": " Move a file "})).unwrap().title, "Move a file");
+        assert_eq!(McpTool::parse(&json!({"name": "x", "annotations": {"title": "Zoek"}})).unwrap().title, "Zoek");
     }
 
     #[tokio::test]

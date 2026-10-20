@@ -30,6 +30,8 @@ export interface Settings {
   accentHex: number;
   hideWhenIdle: boolean;
   panelLarge: boolean;
+  /// How large an agent notice is in the bar: a card ("detailed") or one line in the bar ("compact").
+  agentNotice: "detailed" | "compact";
   sounds: boolean;
   speakAnswers: boolean;
   wakeWord: boolean;

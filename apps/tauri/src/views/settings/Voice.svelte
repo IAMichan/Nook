@@ -181,6 +181,20 @@
   </div>
 {/if}
 
+{#if caps?.desktop}
+  <h3>Meldingen</h3>
+  <div class="group">
+    <label class="row">
+      <span>Grootte van meldingen<br /><small class="faint">Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk.</small></span>
+      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" })}>
+        <option value="detailed">Uitgebreid</option>
+        <option value="compact">Compact</option>
+      </select>
+    </label>
+    <p class="faint note">Met Oké verdwijnt een melding meteen. Anders gaat hij na een paar seconden vanzelf weg, behalve zolang je pointer op de balk staat.</p>
+  </div>
+{/if}
+
 <h3>Geluiden</h3>
 <div class="group">
   <label class="row"><span>Geluid als Nook of een agent op je wacht of klaar is</span><input type="checkbox" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>

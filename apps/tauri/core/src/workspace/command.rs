@@ -96,6 +96,10 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
             if !input.model.is_empty() {
                 args.extend(["--model".into(), input.model.clone()]);
             }
+            // Claude Code's reasoning effort; without it the agent keeps its own default.
+            if let Some(effort) = input.effort.as_ref().filter(|e| !e.is_empty()) {
+                args.extend(["--effort".into(), effort.clone()]);
+            }
             if let Some(r) = &resume {
                 args.extend(["--resume".into(), r.clone()]);
                 if input.fork_session {
@@ -319,6 +323,10 @@ mod tests {
         assert_eq!(claude_permission_mode(ExecutionMode::Agent, PermissionPolicy::Ask), "default");
         assert_eq!(claude_permission_mode(ExecutionMode::Agent, PermissionPolicy::Bypass), "bypassPermissions");
         assert_eq!(value("--model", &spec(&input(RunProvider::Claude, "", None, "")).arguments), None);
+        assert_eq!(value("--effort", &spec(&input(RunProvider::Claude, "", None, "")).arguments), None);
+        let mut high = input(RunProvider::Claude, "", None, "");
+        high.effort = Some("high".into());
+        assert_eq!(value("--effort", &spec(&high).arguments), Some("high"));
     }
 
     #[test]

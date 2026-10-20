@@ -3,6 +3,7 @@
   // uitkomst, gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels en het einde van een beurt.
   import { renderMarkdown } from "../../../lib/markdown";
   import type { RunEvent } from "../../../lib/workspace/api";
+  import { toolLabel } from "../../../lib/workspace/timeline";
 
   let {
     event,
@@ -92,7 +93,7 @@
   {:else if event.kind === "approval"}
     <button class="approval" onclick={toggle}>
       <span class="hand {event.state}">✋</span>
-      <span>{event.tool ?? "tool"} vraagt toestemming</span>
+      <span>{event.tool ? toolLabel(event.tool) : "tool"} vraagt toestemming</span>
       <span class="mono faint label">{event.text}</span>
       <span class="st {event.state}">{approvalState[event.state ?? "pending"] ?? ""}</span>
     </button>

@@ -14,6 +14,10 @@ pub struct WorkspaceSettings {
     pub default_provider: RunProvider,
     /// Voorgesteld model per agent (leeg: de standaard van de agent).
     pub default_models: BTreeMap<String, String>,
+    /// Reasoning effort per agent for new sessions (absent: the agent's own default).
+    pub default_efforts: BTreeMap<String, String>,
+    /// The account last chosen per agent, so a new session starts with it again.
+    pub default_profiles: BTreeMap<String, String>,
     pub default_mode: ExecutionMode,
     pub default_isolation: IsolationMode,
     pub default_permission: PermissionPolicy,
@@ -39,6 +43,8 @@ impl Default for WorkspaceSettings {
         Self {
             default_provider: RunProvider::Claude,
             default_models: BTreeMap::new(),
+            default_efforts: BTreeMap::new(),
+            default_profiles: BTreeMap::new(),
             default_mode: ExecutionMode::Agent,
             default_isolation: IsolationMode::Worktree,
             default_permission: PermissionPolicy::AcceptEdits,
@@ -130,6 +136,7 @@ mod tests {
         assert!(!s.recent_projects.contains(&"/p3".to_string()));
         let back: WorkspaceSettings = serde_json::from_str(r#"{"showCost":false,"unknown":1}"#).unwrap();
         assert!(!back.show_cost);
+        assert!(back.default_efforts.is_empty() && back.default_profiles.is_empty(), "old files still load");
         assert!(back.worktree_root().ends_with("worktrees"));
     }
 }

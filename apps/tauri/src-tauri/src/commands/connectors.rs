@@ -171,13 +171,18 @@ fn mcp_views(c: &Connectors) -> Vec<McpView> {
 fn mcp_tools_of(c: &Connectors, id: &str) -> Option<Vec<McpTool>> {
     let config = mcp_store::servers(&c.env.store).into_iter().find(|s| s.id == id)?;
     let connector = c.hub.get(&config.source_id())?;
+    // Nook's tool names carry the server ("mcp_files_move_file") and the descriptions a "[Server] " prefix for the
+    // model; the settings already name the server.
+    let prefix = McpTool::nook_name(&config.id, "");
+    let label = format!("[{}] ", config.name);
     Some(
         connector
             .tools(&nook_core::connectors::hub::Scope::default())
             .into_iter()
             .map(|t| McpTool {
                 name: t.name.clone(),
-                description: t.description.clone(),
+                title: nook_core::agents::mcp_name::readable(t.name.strip_prefix(&prefix).unwrap_or(&t.name)),
+                description: t.description.strip_prefix(&label).unwrap_or(&t.description).to_string(),
                 input_schema: t.schema.clone(),
                 read_only: t.kind == nook_core::brain::ToolKind::Read,
             })

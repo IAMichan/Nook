@@ -6,6 +6,7 @@
   import { agents } from "../../../lib/agents.svelte";
   import { isActive, workspaceApi, type FileChange, type GitView, type QuickView, type TreeRow, type WorkspaceRun } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
+  import UnifiedDiffView from "../UnifiedDiffView.svelte";
 
   let { run, file = null, onclose }: { run: WorkspaceRun; file?: string | null; onclose: () => void } = $props();
 
@@ -183,15 +184,6 @@
     });
     load(false);
   }
-
-  function lineClass(line: string): string {
-    if (line.startsWith("+++") || line.startsWith("---")) return "meta";
-    if (line.startsWith("@@")) return "hunk";
-    if (line.startsWith("+")) return "add";
-    if (line.startsWith("-")) return "rem";
-    if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";
-    return "";
-  }
 </script>
 
 <div class="changes">
@@ -281,7 +273,7 @@
       {:else if !diff.trim()}
         <p class="faint small">Geen verschil</p>
       {:else}
-        <pre>{#each diff.split("\n") as line, i (i)}<span class={lineClass(line)}>{line}{"\n"}</span>{/each}</pre>
+        <UnifiedDiffView {diff} />
       {/if}
     </div>
   </div>
@@ -315,9 +307,4 @@
   .add { color: var(--mint); }
   .rem { color: var(--coral); }
   .diff { overflow: auto; min-height: 0; }
-  .diff pre { margin: 0; font-family: var(--mono); font-size: 11.5px; user-select: text; }
-  .diff pre .add { color: var(--mint); background: rgba(70, 224, 166, 0.06); }
-  .diff pre .rem { color: var(--coral); background: rgba(255, 107, 107, 0.06); }
-  .diff pre .hunk { color: var(--text3); }
-  .diff pre .meta { color: var(--text3); font-weight: 600; }
 </style>

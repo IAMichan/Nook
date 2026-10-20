@@ -2,8 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { EventKind, EventState, RunEvent } from "./api";
 import {
   blocks, categoryOf, containers, countLabel, duration, firstFailure, group, headline, live, nextMatch, parts, planFileName,
-  planPreview, planTitle, previousMatch, search, sentence, tally,
+  planPreview, planTitle, previousMatch, readableName, search, sentence, tally, toolLabel,
 } from "./timeline";
+
+describe("tool names", () => {
+  it("read MCP tools as words", () => {
+    expect(toolLabel("mcp__bestanden-mappen__move_file")).toBe("Move file");
+    expect(toolLabel("mcp__claude_ai_Google_Drive__searchFiles")).toBe("Search files");
+    expect(toolLabel("Bash")).toBe("Bash");
+    expect(toolLabel("mcp__server")).toBe("mcp__server");
+    expect(readableName("get_URL")).toBe("Get URL");
+    expect(readableName("Google_Drive")).toBe("Google Drive");
+    expect(readableName("Move file")).toBe("Move file");
+  });
+});
 
 let n = 0;
 const start = Date.parse("2026-01-01T00:00:00Z");

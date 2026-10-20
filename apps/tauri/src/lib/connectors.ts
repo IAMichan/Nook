@@ -90,6 +90,8 @@ export interface McpServerConfig {
 
 export interface McpTool {
   name: string;
+  /// The name people read: the server's own title, or the name in words.
+  title: string;
   description: string;
   inputSchema: unknown;
   readOnly: boolean;

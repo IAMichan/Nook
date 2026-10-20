@@ -8,6 +8,8 @@ pub mod hub;
 pub mod installer;
 pub mod ipc;
 pub mod line_diff;
+pub mod liveness;
+pub mod mcp_name;
 pub mod models;
 pub mod plugins;
 pub mod profiles;

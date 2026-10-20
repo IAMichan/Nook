@@ -28,6 +28,47 @@ export function categoryOf(tool: string): ToolCategory {
   }
 }
 
+/// An identifier as words (McpToolName.readable on the Mac): "move_file" and "moveFile" read as "Move file"; acronyms
+/// and words written with a capital after a separator keep their case ("get_URL" is "Get URL").
+export function readableName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.includes(" ")) return trimmed;
+  const words: { text: string; hump: boolean }[] = [];
+  let current = "";
+  let hump = false;
+  for (const c of trimmed) {
+    if ("_-./:".includes(c)) {
+      if (current) words.push({ text: current, hump });
+      current = "";
+      hump = false;
+    } else if (c !== c.toLowerCase() && current && /[\p{Ll}\p{N}]/u.test(current[current.length - 1])) {
+      words.push({ text: current, hump });
+      current = c;
+      hump = true;
+    } else {
+      current += c;
+    }
+  }
+  if (current) words.push({ text: current, hump });
+  if (!words.length) return trimmed;
+  return words
+    .map(({ text, hump }, i) => {
+      if (text.length > 1 && text === text.toUpperCase() && /\p{L}/u.test(text)) return text;
+      if (i === 0) return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+      if (!hump && text.charAt(0) !== text.charAt(0).toLowerCase()) return text;
+      return text.toLowerCase();
+    })
+    .join(" ");
+}
+
+/// A tool by the name people read: an MCP tool (`mcp__server__move_file`) is "Move file"; any other stays as it is.
+export function toolLabel(tool: string): string {
+  if (!tool.startsWith("mcp__")) return tool;
+  const parts = tool.slice(5).split("__");
+  const name = parts[parts.length - 1];
+  return parts.length >= 2 && name && parts.slice(0, -1).join("__") ? readableName(name) : tool;
+}
+
 /// Het bestandspad in de JSON-invoer van een tool, als die er een heeft.
 export function pathOf(json: string | undefined): string | null {
   if (!json) return null;
