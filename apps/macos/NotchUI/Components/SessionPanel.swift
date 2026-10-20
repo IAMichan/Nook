@@ -329,7 +329,7 @@ struct SessionPanel: View {
                                 .disabled(active || progress != nil || !behind)
                             if let link = workspace.openPullRequests[runID] {
                                 Divider()
-                                Button(tr("ws.quick.viewPR")) { done { NSWorkspace.shared.open(link) } }
+                                Button(tr("ws.quick.viewPR")) { done { BrowserStore.show(link) } }
                             }
                         }))
     }
@@ -354,10 +354,8 @@ struct SessionPanel: View {
         progress = tr(action.labelKey)
         Task {
             do {
-                if let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 }),
-                   link.host == "github.com", link.path.contains("/pull/") {
-                    NSWorkspace.shared.open(link)
-                }
+                // A pull request it made stays put: "View PR" in the menu opens it in Nook's browser when you want it.
+                _ = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
             } catch let failure {
                 error = failure.localizedDescription
             }

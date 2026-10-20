@@ -245,7 +245,9 @@ struct PullRequestSheet: View {
             }
             if let error { Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft) }
             if let created {
-                Link(tr("ws.pr.created"), destination: created).font(NookTheme.font(12.5, .semibold))
+                Button(tr("ws.pr.created")) { BrowserStore.show(created) }
+                    .buttonStyle(.link)
+                    .font(NookTheme.font(12.5, .semibold))
             }
             HStack {
                 Spacer()

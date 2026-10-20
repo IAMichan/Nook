@@ -126,6 +126,13 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         webView.load(URLRequest(url: url))
     }
 
+    /// Shows a page you asked for (a pull request Nook made, say) in Nook's own browser: the small window beside where you
+    /// are, unless a browser page is already in view.
+    static func show(_ url: URL) {
+        shared.open(url)
+        BrowserPopup.shared.show()
+    }
+
     /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
     func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
         openedBy = agent
