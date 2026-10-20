@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// The pull requests of your GitHub accounts: the ones you wrote, the ones waiting for your review, and the others in the
-/// organizations and repositories you watch (Settings › Agents). Open ones by
+/// organizations and repositories you watch (Settings › Apps & accounts). Open ones by
 /// default; the Filters dropdown (see PullRequestFilterMenu) also shows closed and merged ones. A click opens the pull
 /// request in Nook (see PullRequestDetailView), where it can be read in full and merged.
 struct PullRequestsPanel: View {
@@ -42,7 +42,7 @@ struct PullRequestsPanel: View {
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
                 if store.loading { ProgressView().controlSize(.small) }
-                NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .agents) }
+                NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .connections) }
                 NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
             .frame(height: 30)
