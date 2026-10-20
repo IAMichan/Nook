@@ -341,6 +341,12 @@ final class NotchViewModel: ObservableObject {
         handler(labels)
     }
 
+    /// Is this card the one on screen now?
+    func isShowing(card id: String) -> Bool {
+        if case .card(let current) = state { return current.id == id }
+        return false
+    }
+
     /// Is this card currently visible or queued?
     func hasCard(id: String) -> Bool {
         if case .card(let current) = state, current.id == id { return true }

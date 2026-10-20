@@ -53,7 +53,8 @@ enum EmbeddedAppCommand: Equatable, Sendable {
     /// The way asked for after the name, if any ("@open whatsapp web").
     case open(EmbeddedApp, EmbeddedAppMode?)
     case close
-    /// "@open chat Jan", "@open whatsapp Jan": one WhatsApp chat by its name, opened in WhatsApp next to the chat.
+    /// "@open chat Jan", "@open whatsapp Jan": one WhatsApp chat by its name, shown as its card in the notch (with a
+    /// linked phone), else opened in WhatsApp next to the chat.
     case chat(String)
     /// "@open something" that is no known app and no web address.
     case unknown(String)
