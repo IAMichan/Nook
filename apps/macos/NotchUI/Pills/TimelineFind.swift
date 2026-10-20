@@ -56,8 +56,7 @@ struct TimelineFindBar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.smoke))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: 10, style: .continuous)
         .onAppear { focused = true }
         .onKeyPress(.escape) { close(); return .handled }
     }

@@ -141,8 +141,7 @@ struct CompanionSettingsRows: View {
                 Text(tr("companion.pairSteps")).font(.callout).fixedSize(horizontal: false, vertical: true)
                 Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
                     if let url = link.url {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        Pasteboard.copy(url.absoluteString)
                         copied = true
                     }
                 }

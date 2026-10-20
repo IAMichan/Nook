@@ -39,8 +39,7 @@ struct UsageLimitBanner: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 10, style: .continuous)
         }
     }
 

@@ -322,7 +322,7 @@ struct PullRequestDetailView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: 0x111113)))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.rowHover))
     }
 
     private func eventLabel(_ kind: PullRequestEvent.Kind) -> (String, Color) {
@@ -465,7 +465,7 @@ struct PullRequestDetailView: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: 0x111113)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.rowHover))
     }
 
     /// The confirmation, inside the bar: a system dialog is a window of its own, and on the notch panel its buttons do not
@@ -586,7 +586,7 @@ struct PullRequestDetailView: View {
         content()
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: 0x111113)))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.rowHover))
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -610,7 +610,7 @@ private struct HoverRow<Content: View>: View {
             content()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? Color(hex: 0x111113) : Color.clear))
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

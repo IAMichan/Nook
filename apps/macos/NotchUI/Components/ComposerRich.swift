@@ -267,8 +267,7 @@ struct ComposerSuggestionList: View {
             }
         }
         .padding(5)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(SessionComposer<EmptyView>.surface))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: 14, style: .continuous)
         .accessibilityElement(children: .contain)
     }
 }

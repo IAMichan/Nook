@@ -127,8 +127,7 @@ struct PanelApprovalBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, lineWidth: 1))
+            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
         }

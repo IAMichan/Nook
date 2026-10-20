@@ -74,8 +74,7 @@ struct MailDraftView: View {
                     SmallGhostButton(title: tr("button.openInMail")) { onOpen(edited) }
                 }
                 SmallGhostButton(title: copied ? tr("button.copied") : tr("button.copy")) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(subject.isEmpty ? body_ : "\(subject)\n\n\(body_)", forType: .string)
+                    Pasteboard.copy(subject.isEmpty ? body_ : "\(subject)\n\n\(body_)")
                     copied = true
                 }
                 Spacer()
@@ -92,8 +91,7 @@ struct MailDraftView: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 14)
     }
 
     @ViewBuilder
@@ -124,27 +122,3 @@ struct MailDraftView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2).frame(height: 1) }
     }
 }
-
-/// Compact white button for use in chat.
-struct SmallPrimaryButton: View {
-    let title: String
-    var systemName: String? = nil
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if let systemName { Image(systemName: systemName).font(.system(size: 11, weight: .semibold)) }
-                Text(title).font(NookTheme.font(13, .semibold))
-            }
-            .foregroundStyle(NookTheme.ink)
-            .padding(.horizontal, 14)
-            .frame(height: 30)
-            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-

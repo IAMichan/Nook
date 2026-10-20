@@ -317,8 +317,7 @@ struct PlanCard: View {
                 Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
                 Spacer(minLength: 0)
                 iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                    Pasteboard.copy(text)
                     copied = true
                     Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
                 }
@@ -345,8 +344,7 @@ struct PlanCard: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.iris.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.25), lineWidth: 1))
+        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.25), radius: 12, style: .continuous)
     }
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {

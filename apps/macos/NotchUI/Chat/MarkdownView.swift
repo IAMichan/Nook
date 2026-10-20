@@ -235,8 +235,7 @@ private struct CalloutBlock: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(callout.kind.color.opacity(0.09)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(callout.kind.color.opacity(0.25), lineWidth: 1))
+        .cardBackground(callout.kind.color.opacity(0.09), stroke: callout.kind.color.opacity(0.25), radius: 10)
     }
 }
 
@@ -268,8 +267,7 @@ private struct MarkdownCodeBlock: View {
                     .padding(.trailing, 8)
                 }
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
+                    Pasteboard.copy(code)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 } label: {
@@ -298,8 +296,7 @@ private struct MarkdownCodeBlock: View {
                 }
             }
         }
-        .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 10)
     }
 }
 
@@ -333,8 +330,7 @@ struct ChoiceList: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2, lineWidth: 1))
+                    .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
                     .contentShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
@@ -393,8 +389,7 @@ private struct TableBlock: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 2)
         }
-        .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 10)
     }
 
     private var headerRow: some View {

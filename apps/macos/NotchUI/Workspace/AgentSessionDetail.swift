@@ -220,8 +220,7 @@ struct AgentSessionDetail: View {
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 12)
     }
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
@@ -449,8 +448,7 @@ struct AgentSessionDetail: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.22), lineWidth: 1))
+        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 12)
     }
 
     private func answer(_ request: AgentQuestionRequest, index: Int, labels: [String]) {

@@ -29,10 +29,7 @@ extension SettingsView {
                 LabeledContent {
                     Button(tr("button.view")) { app.showWeekRecap() }
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tr("settings.agents.weekRecap"))
-                        Text(tr("settings.agents.weekRecapDetail")).font(.caption).foregroundStyle(.secondary)
-                    }
+                    SettingLabel(tr("settings.agents.weekRecap"), detail: tr("settings.agents.weekRecapDetail"))
                 }
             }
             Section {

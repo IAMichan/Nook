@@ -153,14 +153,28 @@ struct SettingToggle: View {
     }
 
     var body: some View {
-        Toggle(isOn: $isOn) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        Toggle(isOn: $isOn) { SettingLabel(title, detail: detail) }
+    }
+}
+
+/// A setting's title with a short caption under it: the label of `SettingToggle`, and of rows that hold a button or a
+/// picker instead of a switch.
+struct SettingLabel: View {
+    let title: String
+    let detail: String
+
+    init(_ title: String, detail: String) {
+        self.title = title
+        self.detail = detail
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

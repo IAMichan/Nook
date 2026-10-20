@@ -53,6 +53,16 @@ enum NookTheme {
     static let mintSoft = Color(hex: 0x5FE3B0)
     static let music = Color(hex: 0xFF8A5B)
 
+    // List rows and cards: at rest, under the pointer, and selected.
+    static let rowRest = Color(hex: 0x09090A)
+    static let rowHover = Color(hex: 0x111113)
+    static let rowSelected = Color(hex: 0x17171A)
+
+    /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
+    static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
+        selected ? rowSelected : (hovering ? rowHover : rest)
+    }
+
     // Typography: SF Pro for text, SF Mono for code and paths.
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight)

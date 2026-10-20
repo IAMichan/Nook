@@ -66,8 +66,7 @@ struct PlanReview: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 14)
     }
 
     // MARK: Single step

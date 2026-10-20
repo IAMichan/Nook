@@ -85,8 +85,7 @@ struct AgentCommandPalette: View {
             }
         }
         .frame(width: 480)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NookTheme.graphite))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: 14, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in index = 0 }
