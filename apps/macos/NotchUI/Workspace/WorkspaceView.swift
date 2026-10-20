@@ -67,8 +67,9 @@ struct WorkspaceView: View {
 }
 
 private enum WindowLayout {
-    /// The room between the title bar and the header row: enough for Nook, who stands a little taller than the row.
-    static let belowTitleBar: CGFloat = 8
+    /// The room between the title bar and the header row: enough for Nook and his task ring, who stand taller than the
+    /// row, to stay clear of the traffic lights.
+    static let belowTitleBar: CGFloat = 16
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".
