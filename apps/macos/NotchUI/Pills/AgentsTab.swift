@@ -14,6 +14,8 @@ struct AgentsTab: View {
     /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
     @State private var totalWidth: Double = 0
+    /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
+    @State private var newDirectory = ""
 
     private enum Selection {
         case live(AgentSession)
@@ -82,7 +84,11 @@ struct AgentsTab: View {
                     if app.demoMode {
                         nothingRunning
                     } else {
-                        NewSessionComposer { id in viewModel.selectedAgentID = "run:" + id.uuidString }
+                        SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
+                            NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
+                                viewModel.selectedAgentID = "run:" + id.uuidString
+                            }
+                        }
                     }
                 }
             }
