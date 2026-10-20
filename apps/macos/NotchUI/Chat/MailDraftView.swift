@@ -38,7 +38,7 @@ struct MailDraftView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "envelope")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(tr("chat.mail.concept"))
                     .font(NookTheme.font(12, .semibold))

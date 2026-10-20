@@ -37,7 +37,7 @@ struct WhatsAppLinkSection: View {
                             .interpolation(.none)
                             .frame(width: 180, height: 180)
                             .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control))
                         Text(tr("whatsapp.settings.scan"))
                             .font(.callout)
                             .foregroundStyle(.secondary)

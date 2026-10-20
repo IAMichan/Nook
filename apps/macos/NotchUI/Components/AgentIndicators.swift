@@ -53,11 +53,11 @@ struct ShimmerText: View {
                 .foregroundStyle(
                     LinearGradient(
                         stops: [
-                            .init(color: Color(hex: 0x8A8896), location: 0),
-                            .init(color: Color(hex: 0x8A8896), location: max(0, phase - 0.15)),
+                            .init(color: NookTheme.textMuted, location: 0),
+                            .init(color: NookTheme.textMuted, location: max(0, phase - 0.15)),
                             .init(color: NookTheme.paper, location: phase),
-                            .init(color: Color(hex: 0x8A8896), location: min(1, phase + 0.15)),
-                            .init(color: Color(hex: 0x8A8896), location: 1)
+                            .init(color: NookTheme.textMuted, location: min(1, phase + 0.15)),
+                            .init(color: NookTheme.textMuted, location: 1)
                         ],
                         startPoint: .leading,
                         endPoint: .trailing

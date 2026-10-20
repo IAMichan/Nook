@@ -76,10 +76,10 @@ struct TimelineSummaryRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 10.5, weight: .semibold)).frame(width: 14)
+                Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 14)
                 Text(text).lineLimit(1)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8.5, weight: .bold))
+                    .font(NookTheme.font(8.5, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .opacity(hovering || open ? 0.9 : 0.5)
                 if let lines { EditLinesLabel(lines: lines) }
@@ -154,7 +154,7 @@ struct LiveActivityRow: View {
                 HStack(spacing: 6) {
                     if !waiting {
                         Image(systemName: AgentActivityText.symbol(activity))
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(NookTheme.font(10.5, .medium))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     Group {
@@ -176,7 +176,7 @@ struct LiveActivityRow: View {
                     }
                     if openConsole != nil, !waiting {
                         Image(systemName: "sidebar.left")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(NookTheme.font(10, .medium))
                             .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
                             .opacity(hovering ? 1 : 0.6)
                     }
@@ -212,7 +212,7 @@ struct QueuedMessagesStrip: View {
             Button { withAnimation(.easeInOut(duration: 0.15)) { collapsed.toggle() } } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                     Text(tr("compose.queue.title", queue.count))
                         .font(NookTheme.font(11.5, .semibold))
@@ -242,7 +242,7 @@ struct QueuedMessagesStrip: View {
     private func row(_ message: QueuedMessage, index: Int) -> some View {
         let isEditing = editing == message.id
         return HStack(spacing: 8) {
-            Image(systemName: isEditing ? "pencil" : "clock").font(.system(size: 10, weight: .semibold))
+            Image(systemName: isEditing ? "pencil" : "clock").font(NookTheme.font(10, .semibold))
             Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120)).lineLimit(1)
             Spacer(minLength: 6)
             if let move, queue.count > 1 {
@@ -257,12 +257,12 @@ struct QueuedMessagesStrip: View {
         .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isEditing ? NookTheme.smoke : NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(isEditing ? NookTheme.smoke : NookTheme.field))
     }
 
     private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 9.5, weight: .bold)).frame(width: 18, height: 18).contentShape(Rectangle())
+            Image(systemName: symbol).font(NookTheme.font(9.5, .bold)).frame(width: 18, height: 18).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.35)
@@ -313,7 +313,7 @@ struct PlanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "list.bullet.clipboard").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "list.bullet.clipboard").font(NookTheme.font(11, .semibold))
                 Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
                 Spacer(minLength: 0)
                 iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
@@ -349,7 +349,7 @@ struct PlanCard: View {
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: symbol).font(NookTheme.font(11, .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)

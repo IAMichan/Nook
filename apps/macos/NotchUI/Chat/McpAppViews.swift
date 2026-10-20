@@ -41,7 +41,7 @@ struct McpAppBlock: View {
                 Group {
                     if session.mode == .fullscreen {
                         HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
+                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.font(11))
                             Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.font(11.5))
                             Button(tr("ws.mcpApp.exitFullscreen")) { session.exitFullscreen() }.controlSize(.small)
                         }
@@ -53,10 +53,10 @@ struct McpAppBlock: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: session.height)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
                 .overlay {
                     if session.reference.prefersBorder != false {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(NookTheme.line2, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).stroke(NookTheme.line2, lineWidth: 1)
                     }
                 }
             }
@@ -70,7 +70,7 @@ struct McpAppBlock: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "square.on.square.dashed").font(.system(size: 10, weight: .semibold))
+            Image(systemName: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
             Text(session.reference.server.map { "\($0) · \(session.reference.tool)" } ?? tr("ws.mcpApp.title"))
                 .font(NookTheme.font(11, .medium))
             Text(resource.uri).font(NookTheme.mono(10.5)).lineLimit(1).truncationMode(.middle)
@@ -78,7 +78,7 @@ struct McpAppBlock: View {
             Spacer(minLength: 4)
             if session.html != nil, !session.closed, !session.left, session.mode == .inline {
                 Button { session.enterFullscreen() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 10))
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.font(10))
                 }
                 .buttonStyle(.plain)
                 .help(tr("ws.mcpApp.fullscreen"))
@@ -465,7 +465,7 @@ final class McpAppWindow: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovable = false
-        window.backgroundColor = NSColor(red: 0.06, green: 0.06, blue: 0.075, alpha: 1)
+        window.backgroundColor = NSColor(NookTheme.field)
         for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { window.standardWindowButton(button)?.isHidden = true }
         window.delegate = self
         window.contentView = NSHostingView(rootView: McpAppFullscreenView(session: session))

@@ -53,6 +53,23 @@ enum NookTheme {
     static let mintSoft = Color(hex: 0x5FE3B0)
     static let music = Color(hex: 0xFF8A5B)
 
+    /// The canvas behind every window: the Workspace, Settings, and the Today window share it.
+    static let canvas = Color(hex: 0x0B0B0D)
+    /// A sunken well inside a card: code, logs, and the composer tray.
+    static let well = Color(hex: 0x0A0A0D)
+    /// A lifted surface: sidebars, menus, the composer.
+    static let surface = Color(hex: 0x121214)
+    /// The faintest divider between regions of a panel.
+    static let hairline = Color(hex: 0x19191B)
+    /// The stroke of a text field or tray at rest.
+    static let fieldStroke = Color(hex: 0x222226)
+    /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
+    static let textStrong = Color(hex: 0xD9D7E0)
+    /// Muted text that shimmers or sits in a disabled control.
+    static let textMuted = Color(hex: 0x8A8896)
+    /// Links, renamed files, and diff hunk headers.
+    static let blue = Color(hex: 0x8AB4F8)
+
     // List rows and cards: at rest, under the pointer, and selected.
     static let rowRest = Color(hex: 0x09090A)
     static let rowHover = Color(hex: 0x111113)
@@ -63,6 +80,51 @@ enum NookTheme {
         selected ? rowSelected : (hovering ? rowHover : rest)
     }
 
+    /// Corner radii. Pick the token that names the element, not the number: a chip inside a card is always rounder
+    /// than a hairline and flatter than the card.
+    enum Radius {
+        /// Tags, keycaps, and inline code.
+        static let chip: CGFloat = 6
+        /// Buttons, text fields, and toolbar items.
+        static let control: CGFloat = 8
+        /// Cards, rows, and notices.
+        static let card: CGFloat = 10
+        /// Panels, popovers, and menus.
+        static let panel: CGFloat = 12
+        /// Sheets and the composer tray.
+        static let sheet: CGFloat = 14
+        /// Pills and the notch's own corners.
+        static let pill: CGFloat = 20
+    }
+
+    /// Spacing on a 4 pt grid. Use these for padding and stack spacing so the panels line up.
+    enum Spacing {
+        static let xxs: CGFloat = 2
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 12
+        static let xl: CGFloat = 16
+        static let xxl: CGFloat = 24
+    }
+
+    /// The type scale: five sizes, each with its weight, so two panels never show the same kind of text at
+    /// different sizes. Use `font(_:_:)` only for the odd size that these do not cover (a numeral, an icon).
+    enum TextStyle {
+        /// Captions, timestamps, and section titles in uppercase.
+        static var caption: Font { NookTheme.font(10.5, .medium) }
+        /// Secondary labels, badges, and metadata.
+        static var label: Font { NookTheme.font(11.5, .medium) }
+        /// Body text in rows, cards, and chat.
+        static var body: Font { NookTheme.font(13) }
+        /// A row title or a button.
+        static var strong: Font { NookTheme.font(13, .semibold) }
+        /// The title of a panel or a card.
+        static var title: Font { NookTheme.font(15, .semibold) }
+        /// Inline code and paths at body size.
+        static var code: Font { NookTheme.mono(12) }
+    }
+
     // Typography: SF Pro for text, SF Mono for code and paths.
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight)
@@ -70,6 +132,11 @@ enum NookTheme {
 
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
+    }
+
+    /// SF Rounded: only for a numeral in a badge or a step counter, never for running text.
+    static func rounded(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .rounded)
     }
 
     // Animation. Opening has a subtle overshoot; closing is smooth without bounce.

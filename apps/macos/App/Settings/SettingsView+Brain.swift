@@ -411,7 +411,7 @@ private struct ModelLogo: View {
             if let logo = BrandLogo.forName(name) {
                 BrandMark(logo: logo, size: 18)
             } else {
-                Image(systemName: "cpu").font(.system(size: 14)).foregroundStyle(.secondary)
+                Image(systemName: "cpu").font(NookTheme.font(14)).foregroundStyle(.secondary)
             }
         }
         .frame(width: 22)

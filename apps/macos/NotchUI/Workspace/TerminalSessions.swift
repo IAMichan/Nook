@@ -301,7 +301,7 @@ struct SessionTerminalsView: View {
                                 .help(script.command)
                         }
                     } label: {
-                        Image(systemName: "play").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "play").font(NookTheme.font(11, .semibold))
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
@@ -312,7 +312,7 @@ struct SessionTerminalsView: View {
                 Button {
                     store.open(in: directory)
                 } label: {
-                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "plus").font(NookTheme.font(11, .semibold))
                 }
                 .buttonStyle(.borderless)
                 .help(tr("workbench.terminal.new"))
@@ -375,12 +375,12 @@ private struct TerminalTab: View {
             if !session.running, let code = session.exitCode, code != 0 {
                 Text(tr("workbench.terminal.exit", code)).font(.caption2).foregroundStyle(NookTheme.coral)
             }
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+            Button(action: close) { Image(systemName: "xmark").font(NookTheme.font(9, .bold)) }
                 .buttonStyle(.borderless)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.white.opacity(0.12) : Color.clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? Color.white.opacity(0.12) : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .help(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)

@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Preset template for popular MCP servers so users can add them in one click.
 struct MCPPreset: Identifiable {
+    /// The tint of a server without a preset: the MCP mark's teal.
+    static let genericTint = Color(hex: 0x1FA2C6)
     let id: String
     let name: String
     let detail: String
@@ -135,8 +137,8 @@ struct MCPSettingsSection: View {
                             )
                         } accessory: {
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Color(hex: 0x1FA2C6))
+                                .font(NookTheme.font(20))
+                                .foregroundStyle(MCPPreset.genericTint)
                         } action: {
                             selectedPreset = preset
                             adding = true
@@ -158,8 +160,8 @@ struct MCPSettingsSection: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "plus.app.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Color(hex: 0x1FA2C6))
+                            .font(NookTheme.font(24))
+                            .foregroundStyle(MCPPreset.genericTint)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tr("mcp.custom.button"))
                                 .font(.callout.weight(.semibold))
@@ -217,7 +219,7 @@ private struct MCPServerCardRow: View {
                     ServiceTile(
                         domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
                         fallback: "puzzlepiece.extension.fill",
-                        tint: Color(hex: 0x1FA2C6),
+                        tint: MCPPreset.genericTint,
                         size: 32,
                         source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
                     )
@@ -278,7 +280,7 @@ private struct MCPServerCardRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 16))
+                    .font(NookTheme.font(16))
                     .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
@@ -325,7 +327,7 @@ private struct MCPServerDetailSheet: View {
             ServiceTile(
                 domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
                 fallback: "puzzlepiece.extension.fill",
-                tint: Color(hex: 0x1FA2C6),
+                tint: MCPPreset.genericTint,
                 size: 48,
                 source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
             )
@@ -333,10 +335,10 @@ private struct MCPServerDetailSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text(tr("mcp.details.commandTitle")).font(.headline)
                 Text(rawTransportString)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(NookTheme.mono(12))
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color(nsColor: .textBackgroundColor)))
                     .textSelection(.enabled)
 
                 if let connector {
@@ -352,13 +354,13 @@ private struct MCPServerDetailSheet: View {
                             ForEach(connector.tools, id: \.name) { tool in
                                 HStack(alignment: .top, spacing: 10) {
                                     Image(systemName: tool.kind == .read ? "eye.fill" : "bolt.fill")
-                                        .font(.system(size: 12))
+                                        .font(NookTheme.font(12))
                                         .foregroundStyle(tool.kind == .read ? NookTheme.mint : NookTheme.amber)
                                         .padding(.top, 2)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(tool.name)
-                                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                            .font(NookTheme.mono(13, .semibold))
                                         Text(tool.description)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
@@ -373,7 +375,7 @@ private struct MCPServerDetailSheet: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.03)))
                             }
                         }
                     }
@@ -428,7 +430,7 @@ private struct AddMCPServerWizardSheet: View {
             ServiceTile(
                 domain: preset?.iconDomain,
                 fallback: preset?.fallbackIcon ?? "puzzlepiece.extension.fill",
-                tint: preset?.tint ?? Color(hex: 0x1FA2C6),
+                tint: preset?.tint ?? MCPPreset.genericTint,
                 size: 48,
                 source: preset?.appSource
             )
@@ -453,7 +455,7 @@ private struct AddMCPServerWizardSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
                 }
 
                 // Step 1: Name
@@ -517,7 +519,7 @@ private struct AddMCPServerWizardSheet: View {
                             TextEditor(text: $rawSecrets)
                                 .font(.system(.caption, design: .monospaced))
                                 .frame(height: 70)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(Color.secondary.opacity(0.3)))
                             Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

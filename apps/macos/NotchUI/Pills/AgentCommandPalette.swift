@@ -96,7 +96,7 @@ struct AgentCommandPalette: View {
 
     private func row(_ entry: Entry, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: entry.symbol).font(.system(size: 12, weight: .medium)).frame(width: 18)
+            Image(systemName: entry.symbol).font(NookTheme.font(12, .medium)).frame(width: 18)
                 .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
             Text(entry.title).font(NookTheme.font(13.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
             if !entry.detail.isEmpty {
@@ -106,7 +106,7 @@ struct AgentCommandPalette: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? NookTheme.smoke : .clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
         .contentShape(Rectangle())
     }
 

@@ -97,7 +97,7 @@ struct DropdownRow: View {
                     BrandMark(logo: brand, size: 14)
                 } else if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(NookTheme.font(11.5, .medium))
                         .foregroundStyle(tint ?? NookTheme.textSecondary)
                         .frame(width: 15)
                         .padding(.top, detail == nil ? 0 : 1)
@@ -123,7 +123,7 @@ struct DropdownRow: View {
             .padding(.vertical, detail == nil ? 5 : 6)
             .frame(minHeight: 28)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? DropdownStyle.chosen : (hovering && disabledReason == nil ? DropdownStyle.hover : .clear)))
             .contentShape(Rectangle())
         }
@@ -142,7 +142,7 @@ struct DropdownSearch: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "magnifyingglass").font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(NookTheme.font(12.5))
@@ -224,7 +224,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
         } label: {
             icon(place)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(place == current ? DropdownStyle.chosen : .clear))
                 .overlay(alignment: .bottomTrailing) {
                     if place == chosen && place != current {

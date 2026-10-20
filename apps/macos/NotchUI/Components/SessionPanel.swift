@@ -49,7 +49,7 @@ struct OpenInTarget: Identifiable, Hashable {
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
         } else {
-            Image(systemName: "terminal").font(.system(size: 12, weight: .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(systemName: "terminal").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
         }
     }
 }
@@ -135,7 +135,7 @@ struct SessionPanel: View {
         PanelRow(icon: AnyView(HStack(spacing: 2) {
             Image(systemName: "laptopcomputer")
             Image(systemName: "folder")
-        }.font(.system(size: 11, weight: .medium)).foregroundStyle(NookTheme.textSecondary).fixedSize()),
+        }.font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary).fixedSize()),
                  title: machine.isEmpty ? "Mac" : machine,
                  detail: AgentPathFormat.tilde(directory),
                  iconWidth: 34,
@@ -415,7 +415,7 @@ struct SessionPanel: View {
     // MARK: Helpers
 
     private func symbol(_ name: String) -> AnyView {
-        AnyView(Image(systemName: name).font(.system(size: 12, weight: .medium)).foregroundStyle(NookTheme.textSecondary))
+        AnyView(Image(systemName: name).font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary))
     }
 
     /// Closes the panel, then does what was asked (a notch task or another app takes over from here).
@@ -471,7 +471,7 @@ private struct PanelRow: View {
                 content.opacity(enabled ? 1 : 0.55)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
         .onHover { hovering = $0 }
         .help(disabledReason ?? help ?? "")
     }
@@ -505,7 +505,7 @@ private struct PanelRow: View {
 
     private var chevron: some View {
         Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .semibold))
+            .font(NookTheme.font(10, .semibold))
             .foregroundStyle(NookTheme.textSecondary)
     }
 }

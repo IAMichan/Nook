@@ -124,7 +124,7 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .background(Color(hex: 0x0B0B0E))
+            .background(NookTheme.canvas)
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")
         }
         .tint(NookTheme.iris)

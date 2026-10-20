@@ -125,7 +125,7 @@ struct PanelView: View {
     private var talkButton: some View {
         Button { viewModel.startListening() } label: {
             HStack(spacing: 6) {
-                Image(systemName: "mic").font(.system(size: 12, weight: .semibold))
+                Image(systemName: "mic").font(NookTheme.font(12, .semibold))
                 Text(tr("button.talkShort")).font(NookTheme.font(12.5, .medium))
             }
             .foregroundStyle(NookTheme.paper)
@@ -228,7 +228,7 @@ struct PanelApprovalBar: View {
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "questionmark.bubble.fill")
-                .font(.system(size: 13))
+                .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.amber)
             VStack(alignment: .leading, spacing: 1) {
                 Text(request.items.first?.question ?? "")
@@ -319,7 +319,7 @@ struct NotchSheetView: View {
             HStack(spacing: 10) {
                 Button(action: close) {
                     HStack(spacing: 5) {
-                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "chevron.left").font(NookTheme.font(11, .semibold))
                         Text(tr("notch.back")).font(NookTheme.font(13, .medium))
                     }
                     .foregroundStyle(NookTheme.textSecondary)

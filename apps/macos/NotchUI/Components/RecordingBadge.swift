@@ -39,19 +39,19 @@ private struct RecordingBadgeView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             HStack(spacing: 8) {
                 Circle()
-                    .fill(Color(red: 1, green: 0.35, blue: 0.32))
+                    .fill(NookTheme.coral)
                     .frame(width: 9, height: 9)
                     .opacity(0.55 + 0.45 * Double(min(1, notes.level * 12)))
                 Text(elapsed(at: context.date))
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .font(NookTheme.font(12, .semibold).monospacedDigit())
                     .foregroundStyle(.white)
                 Text(tr("notes.badge.recording"))
-                    .font(.system(size: 12))
+                    .font(NookTheme.font(12))
                     .foregroundStyle(.white.opacity(0.7))
                 Spacer(minLength: 4)
                 Button(tr("notes.badge.stop")) { notes.stop() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)

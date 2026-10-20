@@ -210,7 +210,7 @@ struct PullRequestDetailView: View {
                 Text(check.detail).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 Spacer(minLength: 4)
                 if check.url != nil {
-                    Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
                 }
             }
             .padding(.vertical, 3)
@@ -223,10 +223,10 @@ struct PullRequestDetailView: View {
     @ViewBuilder
     private func checkGlyph(_ outcome: PullRequestCheck.Outcome) -> some View {
         switch outcome {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(NookTheme.coral)
+        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
+        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
         case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
-        case .skipped: Image(systemName: "minus.circle").font(.system(size: 12)).foregroundStyle(NookTheme.textTertiary)
+        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
         }
     }
 
@@ -239,7 +239,7 @@ struct PullRequestDetailView: View {
                 if let url = detail.url?.appendingPathComponent("commits/" + sha) { NSWorkspace.shared.open(url) }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "smallcircle.filled.circle").font(.system(size: 11)).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
+                    Image(systemName: "smallcircle.filled.circle").font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
                     Text(String(sha.prefix(7))).font(NookTheme.mono(11.5)).foregroundStyle(NookTheme.textSecondary)
                     Text(event.body).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.paper).lineLimit(1)
                     Spacer(minLength: 4)
@@ -264,7 +264,7 @@ struct PullRequestDetailView: View {
 
     private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?, now: Date) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(color).frame(width: 16)
+            Image(systemName: symbol).font(NookTheme.font(11)).foregroundStyle(color).frame(width: 16)
             (Text("@" + author + " ").font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
                 + Text(sentence).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary))
                 .lineLimit(2)
@@ -310,7 +310,7 @@ struct PullRequestDetailView: View {
                 }
                 if let url = event.url {
                     Button { NSWorkspace.shared.open(url) } label: {
-                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+                        Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
                     }
                     .buttonStyle(.plain)
                     .help(tr("agents.pulls.open"))
@@ -322,7 +322,7 @@ struct PullRequestDetailView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.rowHover))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.rowHover))
     }
 
     private func eventLabel(_ kind: PullRequestEvent.Kind) -> (String, Color) {
@@ -436,7 +436,7 @@ struct PullRequestDetailView: View {
             }
             if let patch = file.patch, !patch.isEmpty {
                 DiffText(text: patch)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                     .id(file.path)
             } else {
                 WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("agents.pr.files.noDiff"), message: tr("agents.pr.files.noDiffDetail"))
@@ -465,7 +465,7 @@ struct PullRequestDetailView: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.rowHover))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
     }
 
     /// The confirmation, inside the bar: a system dialog is a window of its own, and on the notch panel its buttons do not
@@ -473,7 +473,7 @@ struct PullRequestDetailView: View {
     private func confirmation(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.merge")
-                .font(.system(size: 13))
+                .font(NookTheme.font(13))
                 .foregroundStyle(NookTheme.amber)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
@@ -496,7 +496,7 @@ struct PullRequestDetailView: View {
     private func mergeRow(_ detail: PullRequestDetail, note: String?, ready: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(.system(size: 13))
+                .font(NookTheme.font(13))
                 .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
             Text(tr(note ?? "agents.pr.note.ready"))
                 .font(NookTheme.font(12))
@@ -586,7 +586,7 @@ struct PullRequestDetailView: View {
         content()
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.rowHover))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.rowHover))
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -610,7 +610,7 @@ private struct HoverRow<Content: View>: View {
             content()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

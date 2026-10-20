@@ -87,7 +87,7 @@ struct ScheduledTasksView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
     }
 
     private func run(_ task: ScheduledTask) {
@@ -310,7 +310,7 @@ private struct ScheduledTaskEditor: View {
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 90)
                             .padding(6)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     }
                     field(tr("sched.field.project")) {
                         HStack(spacing: 8) {
@@ -535,6 +535,6 @@ private struct FieldBox: ViewModifier {
             .foregroundStyle(NookTheme.paper)
             .padding(.horizontal, 10)
             .frame(minHeight: 30)
-            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
     }
 }

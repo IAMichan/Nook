@@ -185,7 +185,7 @@ private struct MusicPlayerView: View {
             }
             if info.app == "Spotify", !expanded, section != .recent {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 12))
+                    .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
                     .help(tr("music.spotifyNote"))
                     .accessibilityLabel(tr("music.spotifyNote"))

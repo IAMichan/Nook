@@ -61,7 +61,7 @@ private struct FooterIcon<Glyph: View>: View {
             glyph()
                 .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
                 .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -160,7 +160,7 @@ private struct ToolGlyph: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 13, weight: .regular))
+            .font(NookTheme.font(13))
             .frame(width: 16, height: 16)
     }
 }

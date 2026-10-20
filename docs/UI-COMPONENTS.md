@@ -8,15 +8,51 @@ copying it again.
 
 | Token / helper | Use |
 | --- | --- |
-| `NookTheme.paper`, `ink`, `textSecondary`, `textTertiary` | Text colors |
-| `NookTheme.field`, `smoke`, `graphite`, `line`, `line2` | Surfaces and hairlines |
+| `NookTheme.paper`, `textStrong`, `textSecondary`, `textTertiary`, `textMuted`, `ink` | Text colors, from brightest to most muted |
+| `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or menu, a text field, a sunken code well, and the two card fills |
+| `NookTheme.line`, `line2`, `hairline`, `fieldStroke` | Hairlines and strokes |
+| `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
-| `NookTheme.font(_:_:)`, `mono(_:_:)` | Typography |
+| `NookTheme.TextStyle.caption`, `label`, `body`, `strong`, `title`, `code` | The type scale: the same kind of text is the same size everywhere |
+| `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
+| `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
+| `NookTheme.Spacing.xxs … xxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24 |
 | `NookTheme.open`, `close`, `swap`, `hover` | Animations |
 | `.hoverLift(_:scale:)` | The shared hover lift of buttons and chips |
 
-Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.swift`.
+Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.swift`, which is built from these
+tokens (`WS.background` is `NookTheme.canvas`, `WS.sidebar` is `NookTheme.surface`).
+
+## Keeping it one design
+
+Nook has one visual language, and the repository guards it in three places:
+
+1. **`UIConsistencyTests`** (`apps/macos/Tests/NookTests/UIConsistencyTests.swift`) reads every source under `NotchUI`
+   and `App` and fails when a view uses `Font.system(size:)` inline, a literal `Color(hex:)` / `Color(red:)` /
+   `NSColor(white:)`, or a corner radius written as a number from the scale. It runs with the Xcode tests and with
+   `./scripts/core-tests.sh`.
+2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
+   `.github/workflows/build.yml` runs it on every pull request.
+3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
+
+When a file genuinely draws its own colors (a brand mark, a chart palette, Nook's face), add it to the allow-list in
+both `UIConsistencyTests.ownColors` and `OWN_COLORS` in `scripts/ui-lint.sh`, with the reason in a comment; never
+loosen the rule itself.
+
+The checklist for a new or changed view:
+
+- Text: a `NookTheme.TextStyle`, or `NookTheme.font` / `mono` / `rounded` for the odd size. Color from the text ramp
+  (`paper` › `textStrong` › `textSecondary` › `textTertiary` › `textMuted`).
+- Surfaces: `canvas` under a window, `surface` for what lifts off it, `field` for input, `well` for code and logs,
+  `rowFill(selected:hovering:)` for rows. Strokes are `line`, `line2`, `hairline`, or `fieldStroke`.
+- State color means one thing everywhere: `iris` is Nook, `mint` is done or listening, `amber` waits on you,
+  `coral` is an error, `violet` is merged.
+- Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
+  `NookTheme.open` / `close` / `swap` / `hover`.
+- One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
+  configuration. A new task opens inside the panel, not in a new window with its own layout.
+- Every string through `tr("key")` in all five languages, and a `.help` or accessibility label on a symbol-only control.
 
 ## Components — `apps/macos/NotchUI/Components`
 

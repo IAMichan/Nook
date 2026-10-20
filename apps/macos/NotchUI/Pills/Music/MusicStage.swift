@@ -118,7 +118,7 @@ private struct LyricRow: View {
                 .frame(maxWidth: 520)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(hovering && state != .current ? 0.04 : 0)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.white.opacity(hovering && state != .current ? 0.04 : 0)))
                 .scaleEffect(state == .current ? 1.24 : 1)
                 .padding(.vertical, state == .current ? 5 : 0)
                 .contentShape(Rectangle())
@@ -274,7 +274,7 @@ private struct MusicShelf: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 if let noteSymbol {
-                    Image(systemName: noteSymbol).font(.system(size: 10.5, weight: .semibold))
+                    Image(systemName: noteSymbol).font(NookTheme.font(10.5, .semibold))
                 }
                 Text(note).lineLimit(1).truncationMode(.tail)
             }
@@ -304,7 +304,7 @@ private struct MusicCoverCard: View {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay {
-                        MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: 12)
+                        MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: NookTheme.Radius.panel)
                     }
                     .overlay(alignment: .topLeading) {
                         if let number = item.number {
@@ -318,9 +318,9 @@ private struct MusicCoverCard: View {
                     }
                     .overlay {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black.opacity(0.35))
+                            RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(Color.black.opacity(0.35))
                             Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(NookTheme.font(14, .bold))
                                 .foregroundStyle(NookTheme.ink)
                                 .frame(width: 38, height: 38)
                                 .background(Circle().fill(NookTheme.paper))
@@ -367,7 +367,7 @@ struct MusicPlaceholder<Actions: View>: View {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(NookTheme.font(22, .medium))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             Text(title)

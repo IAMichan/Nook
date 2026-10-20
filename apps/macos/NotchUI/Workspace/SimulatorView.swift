@@ -43,7 +43,7 @@ struct SimulatorSnapshotView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if devices.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "iphone").font(.system(size: 28)).foregroundStyle(NookTheme.textTertiary)
+                        Image(systemName: "iphone").font(NookTheme.font(28)).foregroundStyle(NookTheme.textTertiary)
                         Text(looked ? tr("sim.none") : tr("sim.looking"))
                             .font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
                     }

@@ -33,7 +33,7 @@ struct SmallPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let systemName { Image(systemName: systemName).font(.system(size: 11, weight: .semibold)) }
+                if let systemName { Image(systemName: systemName).font(NookTheme.font(11, .semibold)) }
                 Text(title).font(NookTheme.font(13, .semibold))
             }
             .foregroundStyle(NookTheme.ink)
@@ -83,7 +83,7 @@ struct NookIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .font(NookTheme.font(size * 0.42, .semibold))
                 .foregroundStyle(filled ? NookTheme.ink : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
                 .background(
@@ -115,7 +115,7 @@ struct ToolbarIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: height)
                 .contentShape(Rectangle())

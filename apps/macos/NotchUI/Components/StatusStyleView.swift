@@ -44,7 +44,7 @@ struct AgentStatusBadge: View {
                 if AgentStatusStyle.pulses(state) {
                     SteppedPulseDot(color: tint, size: 6)
                 } else {
-                    Image(systemName: state.symbol).font(.system(size: 9.5, weight: .semibold))
+                    Image(systemName: state.symbol).font(NookTheme.font(9.5, .semibold))
                 }
             }
             .foregroundStyle(tint)

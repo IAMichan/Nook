@@ -28,23 +28,23 @@ private struct SuggestionCard: View {
                 HomeLogo(logo: suggestion.logo, tint: NookTheme.textSecondary, size: 26)
                 Text(suggestion.text)
                     .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(hovering ? NookTheme.paper : Color(hex: 0xD9D7E0))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                 .stroke(hovering ? NookTheme.line2 : NookTheme.line2.opacity(0.6), lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -70,7 +70,7 @@ private struct HomeLogo: View {
                 SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? "circle.grid.2x2", tint: tint, size: size * 0.62, source: id)
             case .symbol(let name):
                 Image(systemName: name)
-                    .font(.system(size: size * 0.42, weight: .medium))
+                    .font(NookTheme.font(size * 0.42, .medium))
                     .foregroundStyle(tint)
             case nil:
                 Circle().fill(tint).frame(width: 8, height: 8)
@@ -131,7 +131,7 @@ struct TodayRow: View {
                         Text(item.action)
                             .font(NookTheme.font(12, .medium))
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(NookTheme.font(9.5, .semibold))
                     }
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                     .padding(.horizontal, 10)

@@ -97,7 +97,7 @@ struct RunInspector: View {
                 HStack {
                     WSSectionTitle(title: tr("ws.inspector.changes"), trailing: files.isEmpty ? nil : "\(files.count)")
                     Button { workspace.refreshGit(runID) } label: {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 10))
+                        Image(systemName: "arrow.clockwise").font(NookTheme.font(10))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(WS.tertiary)

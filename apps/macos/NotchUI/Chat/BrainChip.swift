@@ -77,7 +77,7 @@ private struct BrainPicker: View {
         switch place {
         case .mac:
             Image(systemName: "laptopcomputer")
-                .font(.system(size: 13, weight: .medium))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(NookTheme.paper)
         case .external(let provider):
             BrandMark(logo: BrandLogo.forProvider(provider), size: 17)
@@ -90,7 +90,7 @@ private struct BrainPicker: View {
             app.openSettings(section: .brain)
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
+                .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())

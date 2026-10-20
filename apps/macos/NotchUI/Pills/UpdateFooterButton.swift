@@ -85,7 +85,7 @@ struct UpdateFooterButton: View {
             if look.busy {
                 ProgressView().controlSize(.mini).tint(look.tint)
             } else if let symbol = look.symbol {
-                Image(systemName: symbol).font(.system(size: 11.5, weight: .semibold))
+                Image(systemName: symbol).font(NookTheme.font(11.5, .semibold))
             }
             if showLabel {
                 Text(look.label).font(NookTheme.font(12, .semibold)).lineLimit(1).fixedSize()

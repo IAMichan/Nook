@@ -73,7 +73,7 @@ struct OnboardingView: View {
                     }
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
             } else {
                 ProgressView()
             }
@@ -127,7 +127,7 @@ struct OnboardingView: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
     }
 
     // MARK: 3 · Connections

@@ -287,7 +287,7 @@ struct AgentsUsagePanel: View {
                     HStack(spacing: 5) {
                         Text(isExpanded ? tr("agents.usage.fewerModels") : tr("agents.usage.moreModels", hidden))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(NookTheme.font(9, .semibold))
                             .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
                     .font(NookTheme.font(11.5, .medium))

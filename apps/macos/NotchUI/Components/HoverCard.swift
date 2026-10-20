@@ -32,7 +32,7 @@ struct HoverCardRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(NookTheme.font(11, .medium))
                 .frame(width: 16)
             Text(text)
                 .lineLimit(1)

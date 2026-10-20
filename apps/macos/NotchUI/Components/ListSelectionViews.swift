@@ -12,10 +12,10 @@ struct SelectionModeButton: View {
     var body: some View {
         Button(action: toggle) {
             Image(systemName: active ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(.system(size: 13, weight: .medium))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 30, height: 30)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(active ? NookTheme.smoke : NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(active ? NookTheme.smoke : NookTheme.field))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -35,7 +35,7 @@ struct SelectableRow: ViewModifier {
             if active {
                 Button(action: toggle) {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
+                        .font(NookTheme.font(14))
                         .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
                         .frame(width: 22, height: 30)
                         .contentShape(Rectangle())
@@ -45,7 +45,7 @@ struct SelectableRow: ViewModifier {
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
             content
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                     .stroke(NookTheme.iris.opacity(selected ? 0.55 : 0), lineWidth: 1))
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -102,7 +102,7 @@ struct SelectionBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.smoke))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .onChange(of: count) { _, _ in confirming = nil }
     }
@@ -136,10 +136,10 @@ struct SelectionBar: View {
         let asking = confirming == action.id
         return Button { run(action) } label: {
             Image(systemName: action.symbol)
-                .font(.system(size: 12, weight: .medium))
+                .font(NookTheme.font(12, .medium))
                 .foregroundStyle(asking ? NookTheme.paper : (action.destructive ? NookTheme.coral : NookTheme.paper))
                 .frame(width: 30, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(asking ? NookTheme.coral.opacity(0.8) : NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(asking ? NookTheme.coral.opacity(0.8) : NookTheme.field))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -66,7 +66,7 @@ struct PullRequestFilterMenu: View {
 
     private var trigger: some View {
         HStack(spacing: 5) {
-            Image(systemName: "line.3.horizontal.decrease").font(.system(size: 11, weight: .semibold))
+            Image(systemName: "line.3.horizontal.decrease").font(NookTheme.font(11, .semibold))
             Text(tr("agents.pulls.filters")).font(NookTheme.font(12.5, .medium))
             if filter.activeCount > 0 {
                 Text("\(filter.activeCount)")
@@ -88,7 +88,7 @@ struct PullRequestFilterMenu: View {
         Button { kind = row } label: {
             HStack(spacing: 8) {
                 Image(systemName: row.symbol)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(NookTheme.font(11.5, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 15)
                 Text(row.title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
@@ -97,11 +97,11 @@ struct PullRequestFilterMenu: View {
                     .font(NookTheme.font(11))
                     .foregroundStyle(isDefault(row) ? NookTheme.textTertiary : NookTheme.paper)
                     .lineLimit(1)
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+                Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(row == kind ? DropdownStyle.chosen : .clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(row == kind ? DropdownStyle.chosen : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -212,18 +212,18 @@ private struct FilterChoiceRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(NookTheme.font(11.5, .medium))
                     .foregroundStyle(tint ?? NookTheme.textSecondary)
                     .frame(width: 15)
                 Text(title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 6)
                 if chosen {
-                    Image(systemName: "checkmark").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(NookTheme.paper)
+                    Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
                 }
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))
             .contentShape(Rectangle())
         }

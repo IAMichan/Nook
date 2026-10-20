@@ -88,7 +88,7 @@ struct PullRequestsPanel: View {
     private var filterBar: some View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+                Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
                 TextField(tr("agents.pulls.search"), text: $filter.query)
                     .textFieldStyle(.plain)
                     .font(NookTheme.font(12.5))
@@ -96,7 +96,7 @@ struct PullRequestsPanel: View {
                     .focused($searching)
                     .onExitCommand { filter.query = ""; searching = false }
                 if !filter.query.isEmpty {
-                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
                         .buttonStyle(.plain)
                         .accessibilityLabel(tr("button.clear"))
                 }
@@ -104,7 +104,7 @@ struct PullRequestsPanel: View {
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.horizontal, 10)
             .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
             .background {
                 // ⌘F jumps to the search field.
                 Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
@@ -133,7 +133,7 @@ struct PullRequestsPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             if showName {
                 HStack(spacing: 6) {
-                    Image(systemName: "person.crop.circle").font(.system(size: 12))
+                    Image(systemName: "person.crop.circle").font(NookTheme.font(12))
                     Text(account.name).font(NookTheme.font(12.5, .semibold))
                     if !account.login.isEmpty { Text("@" + account.login).font(NookTheme.font(12)) }
                 }
@@ -185,7 +185,7 @@ struct PullRequestsPanel: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
     }
 
     private func group(title: String, items: [PullRequestItem], account: String, showAuthor: Bool) -> some View {
@@ -232,13 +232,13 @@ private struct PullRequestRow: View {
                         .foregroundStyle(NookTheme.textTertiary)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -255,10 +255,10 @@ private struct PullRequestRow: View {
     private var ci: some View {
         switch item.state {
         case .merged:
-            Image(systemName: "arrow.triangle.merge").font(.system(size: 12, weight: .medium)).foregroundStyle(NookTheme.violet)
+            Image(systemName: "arrow.triangle.merge").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.violet)
                 .help(tr("agents.pulls.state.merged"))
         case .closed:
-            Image(systemName: "xmark.circle").font(.system(size: 13)).foregroundStyle(NookTheme.coralSoft)
+            Image(systemName: "xmark.circle").font(NookTheme.font(13)).foregroundStyle(NookTheme.coralSoft)
                 .help(tr("agents.pulls.state.closed"))
         case .open:
             ciMark
@@ -268,8 +268,8 @@ private struct PullRequestRow: View {
     @ViewBuilder
     private var ciMark: some View {
         switch item.ci {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(NookTheme.coral)
+        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(13)).foregroundStyle(NookTheme.mint)
+        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(13)).foregroundStyle(NookTheme.coral)
         case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
         case .unknown: Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }
