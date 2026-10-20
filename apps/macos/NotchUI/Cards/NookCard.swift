@@ -72,6 +72,25 @@ struct ChatBubble: Equatable, Identifiable {
     var ticks: BubbleTicks? = nil
 }
 
+extension ChatBubble {
+    /// A conversation as plain text for the pasteboard, one message per line: "[12:04] Anna: See you at eight".
+    /// `contact` names the other side of a private chat, where the bubbles carry no sender.
+    static func transcript(_ bubbles: [ChatBubble], contact: String) -> String {
+        bubbles.map { $0.line(contact: contact) }.joined(separator: "\n")
+    }
+
+    /// The message's own text, or the file's name when it came without one.
+    var copyText: String {
+        text.isEmpty ? (attachment ?? "") : text
+    }
+
+    private func line(contact: String) -> String {
+        let name = fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender)
+        let stamp = time.isEmpty ? "" : "[\(time)] "
+        return name.isEmpty ? stamp + copyText : "\(stamp)\(name): \(copyText)"
+    }
+}
+
 /// How far your own message got, as WhatsApp shows it.
 enum BubbleTicks: Equatable {
     /// Still on its way to the server: a clock.

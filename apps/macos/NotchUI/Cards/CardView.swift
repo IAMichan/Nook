@@ -243,7 +243,7 @@ struct CardView: View {
         case .facts(let facts):
             FactsDetail(facts: facts)
         case .chat(let bubbles):
-            ChatDetail(bubbles: bubbles, onOpen: onOpen) { bubble in
+            ChatDetail(bubbles: bubbles, contact: card.title, onOpen: onOpen) { bubble in
                 withAnimation(.easeOut(duration: 0.15)) { zoomed = bubble }
             }
         }
@@ -278,8 +278,11 @@ private struct CardAppIcon: View {
 
 /// A conversation as bubbles, oldest at the top: theirs on the left, yours on the right.
 /// More than fits scrolls back through the history, starting at the newest message.
+/// Each message's text can be selected; right-click a bubble to copy the message or the whole chat.
 private struct ChatDetail: View {
     let bubbles: [ChatBubble]
+    /// Who the chat is with, for the copied chat's lines in a private chat.
+    let contact: String
     let onOpen: (ChatBubble) -> Void
     let onZoom: (ChatBubble) -> Void
 
@@ -303,6 +306,12 @@ private struct ChatDetail: View {
             ForEach(bubbles) { bubble in
                 ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id,
                                onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) })
+                    .contextMenu {
+                        if !bubble.copyText.isEmpty {
+                            Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
+                        }
+                        Button(tr("whatsapp.copy.chat")) { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) }
+                    }
                     .id(bubble.id)
             }
         }
