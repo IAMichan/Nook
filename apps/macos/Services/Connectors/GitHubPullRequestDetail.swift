@@ -93,7 +93,8 @@ enum GitHubPullRequestDetail {
     }
 
     /// Merges exactly the head the view showed (`sha`): when someone pushed since, GitHub refuses instead of merging
-    /// commits you have not seen. Returns the merge commit's sha.
+    /// commits you have not seen. Returns the merge commit's sha. On the patient session: GitHub can take longer than
+    /// the usual timeout to merge a large pull request, and a timeout would report a merge that still went through.
     static func merge(repo: String, number: Int, method: PullRequestMergeMethod, sha: String, token: String) async throws -> String {
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/pulls/\(number)/merge") else {
             throw NookError("Invalid GitHub address.")
@@ -104,7 +105,7 @@ enum GitHubPullRequestDetail {
         for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await ConnectorHTTP.session.data(for: request)
+        let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status), (object["merged"] as? Bool) != false else {

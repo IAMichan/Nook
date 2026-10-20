@@ -105,7 +105,7 @@ enum ConnectorToggle {
 /// Helper for JSON APIs of integrations: centralized timeouts and error messages.
 enum ConnectorHTTP {
     static let session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = uncached()
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 20
         configuration.httpMaximumConnectionsPerHost = 4
@@ -115,12 +115,21 @@ enum ConnectorHTTP {
 
     /// For requests GitHub can take a while to answer (a search over many pull requests with their checks).
     static let patientSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = uncached()
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 45
         configuration.waitsForConnectivity = false
         return URLSession(configuration: configuration)
     }()
+
+    /// Ephemeral still keeps an in-memory cache, and GitHub marks its answers `max-age=60`: a pull request merged a
+    /// moment ago then read back as open for up to a minute. Every refresh here wants what the service says now.
+    private static func uncached() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
+    }
 
     /// Fetches JSON. `headers` typically includes Authorization header.
     static func json(_ url: URL, headers: [String: String] = [:], method: String = "GET", body: Data? = nil) async throws -> Any {
