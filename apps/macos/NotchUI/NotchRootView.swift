@@ -509,10 +509,18 @@ struct PanelOrb: View {
     }
 }
 
-extension PanelOrb {
+extension NotchRootView {
+    /// The closed notch's ring: only what is running or waiting for you. What finished or failed waits in the open panel.
+    fileprivate var busyRingItems: [TaskRingItem] {
+        TaskRingItem.all(app: app).filter { $0.state == .running || $0.state == .waiting }
+    }
+}
+
+extension TaskRingItem {
     /// What Nook's ring shows: every agent session that runs, waits or failed (and recently finished), and every Nook
     /// that works, waits for you or has news.
-    fileprivate var ringItems: [TaskRingItem] {
+    @MainActor
+    fileprivate static func all(app: AppModel) -> [TaskRingItem] {
         var items: [TaskRingItem] = []
         let recent = Date().addingTimeInterval(-20 * 60)
         for session in app.agentSessions where !session.isDetected {
@@ -549,11 +557,10 @@ extension PanelOrb {
         }
         return Array(items.prefix(8))
     }
+}
 
-    /// The closed notch's ring: only what is running or waiting for you. What finished or failed waits in the open panel.
-    fileprivate var busyRingItems: [TaskRingItem] {
-        ringItems.filter { $0.state == .running || $0.state == .waiting }
-    }
+extension PanelOrb {
+    fileprivate var ringItems: [TaskRingItem] { TaskRingItem.all(app: app) }
 
     /// A piece of the ring was clicked: go to that agent or that Nook.
     fileprivate func openRingItem(_ item: TaskRingItem) {
