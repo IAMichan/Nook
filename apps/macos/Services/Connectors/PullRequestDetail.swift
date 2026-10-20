@@ -153,7 +153,7 @@ enum PullRequestDetailParser {
             : (pull["draft"] as? Bool) == true ? .draft : .open
         var detail = PullRequestDetail(
             repo: repo, number: number, title: (pull["title"] as? String) ?? "Untitled",
-            body: ((pull["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            body: GitHubMarkdown.markdown((pull["body"] as? String) ?? ""),
             url: (pull["html_url"] as? String).flatMap(URL.init(string:)), author: login(pull["user"]), state: state,
             baseBranch: (base["ref"] as? String) ?? "", headBranch: (head["ref"] as? String) ?? "",
             headSHA: (head["sha"] as? String) ?? "", additions: int(pull["additions"]) ?? 0, deletions: int(pull["deletions"]) ?? 0,
@@ -236,7 +236,7 @@ enum PullRequestDetailParser {
         }
         for review in reviews {
             let state = ((review["state"] as? String) ?? "").uppercased()
-            let body = ((review["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let body = GitHubMarkdown.markdown((review["body"] as? String) ?? "")
             guard state != "PENDING", !(state == "COMMENTED" && body.isEmpty) else { continue }
             result.append(PullRequestEvent(id: "review-\(int(review["id"]) ?? result.count)", kind: .review(state),
                                            author: login(review["user"]), body: body, date: date(review["submitted_at"]),
@@ -244,7 +244,7 @@ enum PullRequestDetailParser {
         }
         for comment in comments {
             result.append(PullRequestEvent(id: "comment-\(int(comment["id"]) ?? result.count)", kind: .comment,
-                                           author: login(comment["user"]), body: (comment["body"] as? String) ?? "",
+                                           author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
                                            date: date(comment["created_at"]),
                                            url: (comment["html_url"] as? String).flatMap(URL.init(string:))))
         }
@@ -252,7 +252,7 @@ enum PullRequestDetailParser {
             result.append(PullRequestEvent(id: "line-\(int(comment["id"]) ?? result.count)",
                                            kind: .lineComment(path: (comment["path"] as? String) ?? "",
                                                               line: int(comment["line"]) ?? int(comment["original_line"])),
-                                           author: login(comment["user"]), body: (comment["body"] as? String) ?? "",
+                                           author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
                                            date: date(comment["created_at"]),
                                            url: (comment["html_url"] as? String).flatMap(URL.init(string:))))
         }

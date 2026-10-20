@@ -200,6 +200,7 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestFilter.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
