@@ -186,62 +186,191 @@ struct WSEmptyState: View {
     }
 }
 
-/// Syntax-colored diff view. Performant for large diffs using LazyVStack.
+/// A unified diff as a code review shows it: line numbers of the old and new file in a gutter, hunks as separators,
+/// added and removed lines tinted, and the changed words of an edited line highlighted. Long lines wrap.
 struct DiffText: View {
-    let text: String
     /// Review comments on this file: shown under their line. With `onComment`, hovering a line
     /// offers a comment button.
     var comments: [ReviewComment] = []
     var onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil
     var onRemoveComment: ((UUID) -> Void)? = nil
+    private let rows: [UnifiedDiff.Row]
+    /// Width of one line-number column, from the largest number in the diff.
+    private let numberWidth: CGFloat
     @State private var hovered: Int?
     @State private var editing: Int?
     @State private var commentDraft = ""
 
+    init(text: String, comments: [ReviewComment] = [],
+         onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
+         onRemoveComment: ((UUID) -> Void)? = nil) {
+        self.comments = comments
+        self.onComment = onComment
+        self.onRemoveComment = onRemoveComment
+        rows = UnifiedDiff.rows(text)
+        let largest = rows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
+        numberWidth = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
+    }
+
+    private static let codeColor = Color(hex: 0xD9D7E0)
+    private static let hunkColor = Color(hex: 0x8AB4F8)
+    private var gutterWidth: CGFloat { numberWidth * 2 + markerWidth }
+    private let markerWidth: CGFloat = 16
+
     var body: some View {
-        let lines = text.components(separatedBy: "\n")
-        let numbers = ReviewComments.newLineNumbers(lines)
-        ScrollView([.vertical, .horizontal]) {
+        ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(lines.indices, id: \.self) { index in
-                    let line = lines[index]
-                    let commentable = onComment != nil && (line.hasPrefix("+") || line.hasPrefix("-") || line.hasPrefix(" "))
-                        && !line.hasPrefix("+++") && !line.hasPrefix("---")
-                    HStack(spacing: 0) {
-                        Text(line.isEmpty ? " " : line)
-                            .font(NookTheme.mono(11.5))
-                            .foregroundStyle(color(line))
-                            .padding(.horizontal, 10)
-                        Spacer(minLength: 0)
-                        if commentable && hovered == index && editing != index {
-                            Button {
-                                commentDraft = ""
-                                editing = index
-                            } label: {
-                                Image(systemName: "text.bubble")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(NookTheme.paper)
-                                    .padding(.horizontal, 6)
-                            }
-                            .buttonStyle(.plain)
-                            .help(tr("ws.review.add"))
+                ForEach(rows.indices, id: \.self) { index in
+                    let row = rows[index]
+                    switch row.kind {
+                    case .file: fileRow(row, first: index == 0)
+                    case .hunk: hunkRow(row)
+                    case .note: noteRow(row)
+                    case .context, .add, .remove:
+                        lineRow(row, index: index)
+                        ForEach(comments.filter { $0.code == row.raw && $0.line == row.new }) { comment in
+                            commentRow(comment)
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(background(line))
-                    .onHover { inside in if inside { hovered = index } else if hovered == index { hovered = nil } }
-                    ForEach(comments.filter { $0.code == line && $0.line == numbers[index] }) { comment in
-                        commentRow(comment)
-                    }
-                    if editing == index {
-                        editor(line: numbers[index], code: line)
+                        if editing == index {
+                            editor(line: row.new, code: row.raw)
+                        }
                     }
                 }
             }
-            .padding(.vertical, 8)
-            .textSelection(.enabled)
+            .padding(.bottom, 8)
         }
         .background(WS.code)
+    }
+
+    private func lineRow(_ row: UnifiedDiff.Row, index: Int) -> some View {
+        let tint = accent(row.kind)
+        return HStack(alignment: .top, spacing: 0) {
+            number(row.old)
+            number(row.new)
+            Text(verbatim: row.kind == .add ? "+" : row.kind == .remove ? "−" : "")
+                .font(NookTheme.mono(11.5, .semibold))
+                .foregroundStyle(tint ?? .clear)
+                .frame(width: markerWidth, alignment: .center)
+            Text(code(row))
+                .font(NookTheme.mono(11.5))
+                .foregroundStyle(row.kind == .context ? Self.codeColor.opacity(0.82) : Self.codeColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 28)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 1.5)
+        .background(alignment: .leading) {
+            HStack(spacing: 0) {
+                (tint?.opacity(0.16) ?? WS.subtle.opacity(0.5)).frame(width: numberWidth * 2)
+                (tint?.opacity(0.08) ?? .clear)
+            }
+        }
+        .background(hovered == index && onComment != nil ? WS.hover : .clear)
+        .overlay(alignment: .topTrailing) {
+            if onComment != nil, hovered == index, editing != index {
+                Button {
+                    commentDraft = ""
+                    editing = index
+                } label: {
+                    Image(systemName: "plus.bubble.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.review.add"))
+            }
+        }
+        .onHover { inside in if inside { hovered = index } else if hovered == index { hovered = nil } }
+    }
+
+    private func number(_ value: Int?) -> some View {
+        Text(value.map(String.init) ?? "")
+            .font(NookTheme.mono(10.5))
+            .foregroundStyle(WS.tertiary)
+            .padding(.trailing, 7)
+            .frame(width: numberWidth, alignment: .trailing)
+            .padding(.top, 1)
+    }
+
+    /// The line's code, with the changed part of an edited line on a stronger tint.
+    private func code(_ row: UnifiedDiff.Row) -> AttributedString {
+        let text = row.text.isEmpty ? " " : row.text
+        guard let changed = row.changed, let tint = accent(row.kind) else { return AttributedString(text) }
+        let units = text.utf16
+        guard changed.upperBound <= units.count,
+              let head = String(units.prefix(changed.lowerBound)),
+              let middle = String(units.dropFirst(changed.lowerBound).prefix(changed.count)),
+              let tail = String(units.dropFirst(changed.upperBound)) else { return AttributedString(text) }
+        var highlight = AttributedString(middle)
+        highlight.backgroundColor = tint.opacity(0.32)
+        return AttributedString(head) + highlight + AttributedString(tail)
+    }
+
+    private func accent(_ kind: UnifiedDiff.Kind) -> Color? {
+        switch kind {
+        case .add: return NookTheme.mint
+        case .remove: return NookTheme.coral
+        default: return nil
+        }
+    }
+
+    private func hunkRow(_ row: UnifiedDiff.Row) -> some View {
+        HStack(spacing: 0) {
+            Image(systemName: "arrow.up.and.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Self.hunkColor.opacity(0.8))
+                .frame(width: numberWidth * 2)
+            Text(UnifiedDiff.hunkLabel(row.raw))
+                .font(NookTheme.mono(10.5))
+                .foregroundStyle(Self.hunkColor)
+                .padding(.leading, markerWidth)
+            if !row.text.isEmpty {
+                Text(row.text)
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(WS.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, 8)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 5)
+        .background(Self.hunkColor.opacity(0.07))
+        .overlay(alignment: .top) { Rectangle().fill(WS.border).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(WS.border).frame(height: 1) }
+        .padding(.top, 6)
+    }
+
+    private func fileRow(_ row: UnifiedDiff.Row, first: Bool) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(WS.secondary)
+            Text(row.text)
+                .font(NookTheme.mono(11.5, .semibold))
+                .foregroundStyle(WS.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(WS.raised)
+        .overlay(alignment: .bottom) { Rectangle().fill(WS.border).frame(height: 1) }
+        .padding(.top, first ? 0 : 14)
+    }
+
+    private func noteRow(_ row: UnifiedDiff.Row) -> some View {
+        Text(row.text)
+            .font(NookTheme.mono(10.5))
+            .italic()
+            .foregroundStyle(WS.tertiary)
+            .padding(.leading, gutterWidth)
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func commentRow(_ comment: ReviewComment) -> some View {
@@ -262,9 +391,10 @@ struct DiffText: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.amber.opacity(0.08)))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
         .frame(maxWidth: 520, alignment: .leading)
+        .padding(.leading, gutterWidth)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
     }
 
     private func editor(line: Int?, code: String) -> some View {
@@ -282,9 +412,10 @@ struct DiffText: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
         .frame(maxWidth: 520, alignment: .leading)
+        .padding(.leading, gutterWidth)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
     }
 
     private func save(line: Int?, code: String) {
@@ -293,21 +424,6 @@ struct DiffText: View {
         onComment?(line, code, clean)
         commentDraft = ""
         editing = nil
-    }
-
-    private func color(_ line: String) -> Color {
-        if line.hasPrefix("+++") || line.hasPrefix("---") { return WS.secondary }
-        if line.hasPrefix("+") { return NookTheme.mintSoft }
-        if line.hasPrefix("-") { return NookTheme.coralSoft }
-        if line.hasPrefix("@@") { return Color(hex: 0x8AB4F8) }
-        if line.hasPrefix("diff ") || line.hasPrefix("index ") { return WS.tertiary }
-        return Color(hex: 0xC9C7D2)
-    }
-
-    private func background(_ line: String) -> Color {
-        if line.hasPrefix("+"), !line.hasPrefix("+++") { return NookTheme.mint.opacity(0.07) }
-        if line.hasPrefix("-"), !line.hasPrefix("---") { return NookTheme.coral.opacity(0.07) }
-        return .clear
     }
 }
 
