@@ -50,12 +50,20 @@ enum WhatsAppSettings {
     }
     static var filters: WAFilters {
         get {
-            WAFilters(muteGroups: defaults.object(forKey: "whatsappMuteGroups") as? Bool ?? true,
-                      ignored: Set(defaults.stringArray(forKey: "whatsappIgnored") ?? []))
+            let modes = (defaults.dictionary(forKey: "whatsappChatModes") as? [String: String] ?? [:])
+                .compactMapValues(WAChatMode.init(rawValue:))
+            return WAFilters(muteGroups: defaults.object(forKey: "whatsappMuteGroups") as? Bool ?? true,
+                             muteStatus: defaults.object(forKey: "whatsappMuteStatus") as? Bool ?? true,
+                             muteChannels: defaults.object(forKey: "whatsappMuteChannels") as? Bool ?? true,
+                             ignored: Set(defaults.stringArray(forKey: "whatsappIgnored") ?? []),
+                             modes: modes)
         }
         set {
             defaults.set(newValue.muteGroups, forKey: "whatsappMuteGroups")
+            defaults.set(newValue.muteStatus, forKey: "whatsappMuteStatus")
+            defaults.set(newValue.muteChannels, forKey: "whatsappMuteChannels")
             defaults.set(Array(newValue.ignored).sorted(), forKey: "whatsappIgnored")
+            defaults.set(newValue.modes.mapValues(\.rawValue), forKey: "whatsappChatModes")
         }
     }
 
@@ -676,6 +684,25 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         filters.ignored.insert(key)
         inbox.remove(key)
+    }
+
+    /// Keeps the chat but stops it from reaching you (the card's Mute).
+    func mute(_ chat: String) {
+        filters.setMode(.muted, for: chat)
+    }
+
+    /// Every chat the Settings list can name: the ones with messages, then the gateway's list, newest first.
+    var chatsForSettings: [(jid: String, name: String)] {
+        var seen = Set<String>()
+        var result: [(jid: String, name: String)] = []
+        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
+            result.append((conversation.id, conversation.name))
+        }
+        for chat in knownChats where seen.insert(chat.jid).inserted {
+            let fallback = WAJID.kind(chat.jid) == .status ? tr("whatsapp.kind.status") : WAJID.displayNumber(chat.jid)
+            result.append((chat.jid, chat.name.isEmpty ? fallback : chat.name))
+        }
+        return result
     }
 
     /// One check from Settings' "Test": what the gateway says, in a sentence.

@@ -15,6 +15,8 @@ struct CardView: View {
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
+    /// A chat bubble's photo shown big over the card, until it is clicked or Escape is pressed.
+    @State private var zoomed: ChatBubble?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -78,7 +80,20 @@ struct CardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onExitCommand { onAction(card.escape ?? card.primary) }
+        .overlay {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+                PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
+                          onClose: { withAnimation(.easeOut(duration: 0.15)) { self.zoomed = nil } },
+                          onOpen: { self.zoomed = nil; onOpen(zoomed) })
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: card.id) { _, _ in zoomed = nil }
+        .onExitCommand {
+            // Escape first shrinks an enlarged photo back; only then does it close the card.
+            if zoomed != nil { withAnimation(.easeOut(duration: 0.15)) { zoomed = nil }; return }
+            onAction(card.escape ?? card.primary)
+        }
     }
 
     private func buttonRow(compact: Bool) -> some View {
@@ -168,7 +183,7 @@ struct CardView: View {
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             Button(action: submitReply) {
                 Image(systemName: ready ? "arrow.up.circle.fill" : "return")
-                    .font(.system(size: ready ? 18 : 11, weight: .medium))
+                    .font(NookTheme.font(ready ? 18 : 11, .medium))
                     .foregroundStyle(ready ? NookTheme.mint : NookTheme.textTertiary)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -221,7 +236,9 @@ struct CardView: View {
         case .facts(let facts):
             FactsDetail(facts: facts)
         case .chat(let bubbles):
-            ChatDetail(bubbles: bubbles, onOpen: onOpen)
+            ChatDetail(bubbles: bubbles, onOpen: onOpen) { bubble in
+                withAnimation(.easeOut(duration: 0.15)) { zoomed = bubble }
+            }
         }
     }
 }
@@ -243,7 +260,7 @@ private struct CardAppIcon: View {
                     .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: "app.fill")
-                    .font(.system(size: 13))
+                    .font(NookTheme.font(13))
                     .foregroundStyle(NookTheme.textSecondary)
             }
         }
@@ -257,6 +274,7 @@ private struct CardAppIcon: View {
 private struct ChatDetail: View {
     let bubbles: [ChatBubble]
     let onOpen: (ChatBubble) -> Void
+    let onZoom: (ChatBubble) -> Void
 
     var body: some View {
         ViewThatFits(in: .vertical) {
@@ -276,7 +294,8 @@ private struct ChatDetail: View {
     private var stack: some View {
         VStack(spacing: 5) {
             ForEach(bubbles) { bubble in
-                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id) { onOpen(bubble) }
+                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id,
+                               onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) })
                     .id(bubble.id)
             }
         }
@@ -288,6 +307,7 @@ private struct ChatBubbleView: View {
     let bubble: ChatBubble
     let newest: Bool
     let onOpen: () -> Void
+    let onZoom: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -302,7 +322,7 @@ private struct ChatBubbleView: View {
                 if let attachment = bubble.attachment {
                     switch bubble.media {
                     case .photo where bubble.image != nil:
-                        PhotoButton(image: bubble.image!, name: attachment, action: onOpen)
+                        PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
                     case .video(let url):
                         VideoTile(url: url, poster: bubble.image, name: attachment)
                     default:
@@ -329,7 +349,7 @@ private struct ChatBubbleView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
                     .fill(bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)
             )
             if !bubble.fromMe { Spacer(minLength: 70) }
@@ -368,7 +388,7 @@ private struct VideoTile: View {
                                 .aspectRatio(contentMode: .fit)
                         }
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(NookTheme.font(18, .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
                             .background(Circle().fill(Color.black.opacity(hovering ? 0.65 : 0.5)))
@@ -382,7 +402,7 @@ private struct VideoTile: View {
             if hovering || player == nil {
                 Button { enlarge() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
                         .background(Circle().fill(Color.black.opacity(0.55)))
@@ -395,7 +415,7 @@ private struct VideoTile: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
     }
@@ -439,7 +459,7 @@ private struct InlinePlayer: NSViewRepresentable {
     }
 }
 
-/// A photo in a chat bubble, as it came: a click opens it in full.
+/// A photo in a chat bubble, as it came: a click enlarges it in the card.
 private struct PhotoButton: View {
     static let maxWidth: CGFloat = 240
     static let maxHeight: CGFloat = 180
@@ -455,14 +475,71 @@ private struct PhotoButton: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: Self.maxWidth, maxHeight: Self.maxHeight, alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tr("card.attachment.view"))
-        .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
+        .help(tr("card.video.enlarge"))
+        .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
+    }
+}
+
+/// A chat bubble's photo enlarged over the whole card, inside Nook: the bubble's picture at once, then the photo itself
+/// sharp from the file on this Mac. A click anywhere (or Escape) shrinks it back; the open button shows it in Quick Look.
+private struct PhotoZoom: View {
+    let url: URL
+    let preview: NSImage
+    let name: String
+    let onClose: () -> Void
+    let onOpen: () -> Void
+    @State private var sharp: NSImage?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: onClose) {
+                ZStack {
+                    Color.black.opacity(0.94)
+                    Image(nsImage: sharp ?? preview)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                        .padding(8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("button.close"))
+            .accessibilityLabel("\(tr("button.close")): \(name)")
+
+            HStack(spacing: 6) {
+                zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
+                zoomButton("xmark", label: tr("button.close"), action: onClose)
+            }
+            .padding(12)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+        .task(id: url) {
+            let url = self.url
+            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+            sharp = data.flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
+        }
+    }
+
+    private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 
@@ -484,7 +561,7 @@ private struct AttachmentButton: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 } else {
                     Image(systemName: "doc.fill")
-                        .font(.system(size: 14))
+                        .font(NookTheme.font(14))
                         .foregroundStyle(NookTheme.mint)
                 }
                 Text(name)
@@ -501,7 +578,7 @@ private struct AttachmentButton: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -521,7 +598,7 @@ private struct OfferChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(NookTheme.font(10.5, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(title)
                     .font(NookTheme.font(12.5, .medium))
@@ -558,7 +635,7 @@ private struct EventDetail: View {
                     .foregroundStyle(NookTheme.paper)
             }
             .frame(width: 36, height: 36)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.card).stroke(NookTheme.line2, lineWidth: 1))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(line)
@@ -729,7 +806,7 @@ private struct ChoiceRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
@@ -749,7 +826,7 @@ private struct ChoiceRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
             .hoverLift(hovering, scale: 1.01)
         }
@@ -779,7 +856,7 @@ private struct DiffDetail: View {
             .frame(maxHeight: 150)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
 
             Text(note)
                 .font(NookTheme.font(12.5))

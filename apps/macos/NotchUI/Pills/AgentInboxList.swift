@@ -161,13 +161,13 @@ struct AgentInboxList: View {
 
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
             TextField(tr("inbox.search.placeholder"), text: $store.query)
                 .textFieldStyle(.plain)
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.paper)
             if !store.query.isEmpty {
-                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tr("button.clear"))
             }
@@ -175,7 +175,7 @@ struct AgentInboxList: View {
         .foregroundStyle(NookTheme.textTertiary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
         .padding(.horizontal, 2)
     }
 
@@ -256,7 +256,7 @@ struct AgentInboxList: View {
                 // The docked settled shelf opens upwards: its chevron points up while closed, down while open.
                 let docked = section.kind == .settled
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
+                    .font(NookTheme.font(8.5, .bold))
                     .rotationEffect(.degrees(open ? 0 : (docked ? 180 : -90)))
                     .foregroundStyle(NookTheme.textTertiary)
             }
@@ -500,7 +500,7 @@ struct AgentInboxList: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 32)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.smoke))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
                 .transition(.opacity)
             }
         }

@@ -99,7 +99,7 @@ struct SourcesDisclosure: View {
                                 .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
                         }
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(NookTheme.font(8, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
@@ -122,9 +122,9 @@ struct SourcesDisclosure: View {
                     }
                     .padding(4)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: NookTheme.Radius.panel)
                             .fill(NookTheme.field)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.line2.opacity(0.7), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).stroke(NookTheme.line2.opacity(0.7), lineWidth: 1))
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -181,7 +181,7 @@ struct SourcesDisclosure: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.card)
                 .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
         )
     }
@@ -426,7 +426,7 @@ struct NoticeList: View {
             ForEach(notices, id: \.self) { notice in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 11))
+                        .font(NookTheme.font(11))
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 1)
                     VStack(alignment: .leading, spacing: 6) {
@@ -447,9 +447,9 @@ struct NoticeList: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.panel)
                 .fill(NookTheme.amber.opacity(0.06))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.amber.opacity(0.18), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).stroke(NookTheme.amber.opacity(0.18), lineWidth: 1))
         )
     }
 }
@@ -483,13 +483,13 @@ private struct ReferenceRow: View {
                 Spacer(minLength: 4)
                 if openable {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(NookTheme.font(9.5, .semibold))
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                 }
             }
             .padding(.vertical, 3)
             .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering && openable ? NookTheme.smoke : Color.clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering && openable ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -714,10 +714,10 @@ struct AttachmentChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: isImage ? "photo" : "paperclip").font(.system(size: 10, weight: .semibold)).foregroundStyle(NookTheme.iris)
+            Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(10, .semibold)).foregroundStyle(NookTheme.iris)
             Text(name).font(NookTheme.font(11.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
             Button(action: remove) {
-                Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).foregroundStyle(NookTheme.textTertiary)
+                Image(systemName: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textTertiary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("button.clear"))

@@ -1,6 +1,5 @@
 import AppKit
 import Carbon.HIToolbox
-import IOKit.ps
 
 /// The key tap's callback. At file level: a C function pointer may not carry the controller's main-actor isolation. The tap
 /// runs on the main run loop, so the controller is entered on the main thread.
@@ -150,7 +149,6 @@ final class AutocompleteController: ObservableObject {
         typoVocabulary = union
         return union
     }
-    private var batteryCheck: (date: Date, onBattery: Bool)?
 
     private var tap: CFMachPort?
     private var tapSource: CFRunLoopSource?
@@ -334,16 +332,8 @@ final class AutocompleteController: ObservableObject {
     private var frontApp: NSRunningApplication? { NSWorkspace.shared.frontmostApplication }
     private var ownAppInFront: Bool { frontApp?.processIdentifier == ProcessInfo.processInfo.processIdentifier }
 
-    private var onBattery: Bool {
-        if let batteryCheck, Date().timeIntervalSince(batteryCheck.date) < 30 { return batteryCheck.onBattery }
-        var value = false
-        if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-           let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() {
-            value = (type as String) == kIOPMBatteryPowerKey
-        }
-        batteryCheck = (Date(), value)
-        return value
-    }
+    /// Read by `EnergyMonitor` for the whole app, so this is a cached value and not a trip to IOKit per keystroke.
+    private var onBattery: Bool { EnergyMonitor.shared.signals.onBattery }
 
     private func isActive(in app: NSRunningApplication?) -> Bool {
         guard let app, !ownAppInFront, !IsSecureEventInputEnabled(), activeModel != nil else { return false }

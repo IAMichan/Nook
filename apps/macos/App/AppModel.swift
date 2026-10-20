@@ -288,6 +288,10 @@ final class AppModel: ObservableObject {
         Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // Away from the Mac or saving power, the scan of every agent's session files (seconds of disk work) can
+                // wait; opening the panel or Settings still refreshes right away.
+                guard Date().timeIntervalSince(self.lastHistoryRefresh) >= 30 * EnergyMonitor.shared.plan.slowdown - 5 else { return }
+                self.lastHistoryRefresh = Date()
                 self.adoptAccounts()
                 self.history.refresh()
             }
@@ -414,6 +418,9 @@ final class AppModel: ObservableObject {
         antigravityUsage.start()
         claudeUsage.start()
 
+        // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › General › Energy.
+        EnergyMonitor.shared.start(settings: settings)
+
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
         settings.$liveScreen
@@ -469,4 +476,11 @@ final class AppModel: ObservableObject {
     @Published var quiet = QuietState.normal
     /// Nook's windows put away while it hides for a share or meeting, to bring back afterwards.
     var quietHiddenWindows: [NSWindow] = []
+    /// How many views show what Nook notices about meetings and sharing right now (Settings › Notifications): while one is
+    /// open the situation is read even when you chose to change nothing for it.
+    var quietViewers = 0
+    /// When the meeting and sharing situation was last read.
+    var lastQuietTick: Date = .distantPast
+    /// When the agent history was last refreshed by the timer.
+    var lastHistoryRefresh: Date = .distantPast
 }

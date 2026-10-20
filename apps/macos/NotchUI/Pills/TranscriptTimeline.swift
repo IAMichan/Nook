@@ -211,7 +211,7 @@ struct TranscriptConversation: View {
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
                     .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     .padding(.leading, 26)
                     .padding(.bottom, 4)
             }
@@ -307,7 +307,7 @@ struct TranscriptUserBubble: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.smoke))
                 }
             }
             HStack(spacing: 8) {
@@ -399,7 +399,7 @@ struct TranscriptCopyButton: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(NookTheme.font(10.5, .semibold))
                 .foregroundStyle(copied ? NookTheme.mint : NookTheme.textTertiary)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
@@ -435,7 +435,7 @@ struct TranscriptWorkLine: View {
     var body: some View {
         let content = HStack(spacing: 6) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(NookTheme.font(11.5, .medium))
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
                 .frame(width: 20)
             if live {
@@ -450,13 +450,13 @@ struct TranscriptWorkLine: View {
             }
             if let open {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(NookTheme.font(9, .bold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
             if let reveals {
                 Image(systemName: "sidebar.right")
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(NookTheme.font(9.5, .medium))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(reveals || hovering ? 1 : 0)
             }
@@ -493,7 +493,7 @@ struct TranscriptFoldLine: View {
             HStack(spacing: 6) {
                 Text(text)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(NookTheme.font(9, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)

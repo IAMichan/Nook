@@ -11,7 +11,7 @@ struct NookPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 12, weight: .bold)) }
+                if let symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
                 Text(title).font(NookTheme.font(14, .semibold))
             }
             .foregroundStyle(NookTheme.ink)
@@ -37,7 +37,7 @@ struct SmallPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let systemName { Image(systemName: systemName).font(.system(size: 11, weight: .semibold)) }
+                if let systemName { Image(systemName: systemName).font(NookTheme.font(11, .semibold)) }
                 Text(title).font(NookTheme.font(13, .semibold))
             }
             .foregroundStyle(NookTheme.ink)
@@ -64,7 +64,7 @@ struct NookGhostButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol).font(.system(size: compact ? 11 : 12, weight: .semibold)) }
+                if let symbol { Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
                 Text(title).font(NookTheme.font(compact ? 13 : 14, .semibold))
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -186,7 +186,7 @@ private struct NookActionBarItem: View {
         Button(action: tap) {
             HStack(spacing: 6) {
                 if let symbol = action.symbol {
-                    Image(systemName: symbol).font(.system(size: compact ? 11 : 12, weight: .semibold))
+                    Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold))
                 }
                 Text(action.label).font(NookTheme.font(compact ? 13 : 13.5, .semibold))
             }
@@ -216,7 +216,7 @@ struct NookIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size * 0.42, weight: .semibold))
+                .font(NookTheme.font(size * 0.42, .semibold))
                 .foregroundStyle(filled ? NookTheme.ink : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
                 .background(
@@ -248,7 +248,7 @@ struct ToolbarIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: height)
                 .contentShape(Rectangle())

@@ -11,8 +11,7 @@ extension SettingsView {
                 SettingToggle(tr("settings.assistant.trackAllScreens"), detail: tr("settings.assistant.trackAllScreensDetail"), isOn: $settings.liveScreen)
                 SettingToggle(tr("settings.assistant.useScreensEveryQuestion"), detail: tr("settings.assistant.useScreensEveryQuestionDetail"), isOn: $settings.screenWithEveryQuestion)
                 LabeledContent(tr("settings.assistant.currentlyOnScreen")) {
-                    Text(app.screenContext.windows.isEmpty ? tr("settings.assistant.nothingRead") : "\(app.screenContext.windows.count) vensters op \(max(1, app.screenContext.displayCount)) \(app.screenContext.displayCount == 1 ? "scherm" : "schermen")")
-                        .foregroundStyle(.secondary)
+                    ScreenStatusText(screenContext: app.screenContext, enabled: settings.liveScreen)
                 }
                 if !permissions.isGranted(.screen) {
                     Button(tr("settings.assistant.managePermissions")) { app.settingsSection = .privacy }
@@ -23,6 +22,19 @@ extension SettingsView {
                 SettingToggle(tr("settings.assistant.webSearch"), detail: tr("settings.assistant.webSearchDetail"), isOn: $settings.webSearch)
                 SettingToggle(tr("settings.assistant.thinkAlongToggle"), detail: tr("settings.assistant.thinkAlongDetail"), isOn: $settings.autoWatch)
                 .disabled(settings.useLocal)
+                // A switch that is greyed out without a word leaves you guessing: say why, and where to change it.
+                if settings.useLocal {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "info.circle").foregroundStyle(.secondary)
+                        Text(tr("settings.assistant.thinkAlongLocal"))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button(tr("settings.section.brain")) { app.settingsSection = .brain }
+                            .buttonStyle(.link)
+                    }
+                }
                 if !app.thinkAlong.mutedApps.isEmpty {
                     LabeledContent(tr("settings.assistant.mutedIn")) {
                         HStack {
@@ -108,6 +120,35 @@ extension SettingsView {
         calendar.locale = Locale(identifier: I18n.shared.currentLanguage.rawValue)
         let names = calendar.standaloneMonthSymbols
         return names.indices.contains(month - 1) ? names[month - 1].capitalized : "\(month)"
+    }
+}
+
+/// What the screen reading does right now: off, paused and why (a hot or busy Mac, Low Power Mode, you are away), or how
+/// many windows it holds, so an empty line never looks like something is broken. Observes the screen reader itself: its
+/// `shown` is published, the app model is not told about it.
+private struct ScreenStatusText: View {
+    @ObservedObject var screenContext: ScreenContext
+    @ObservedObject var energy = EnergyMonitor.shared
+    let enabled: Bool
+
+    var body: some View {
+        Text(text).foregroundStyle(.secondary)
+    }
+
+    private var text: String {
+        guard enabled else { return tr("settings.assistant.screenOff") }
+        // Paused first: the windows read before the pause are still held, and their count would hide that nothing is
+        // being read right now.
+        if !energy.plan.readsScreen, let reason = energy.plan.mainReason {
+            return tr("settings.assistant.screenPaused", tr(reason.textKey))
+        }
+        let shown = screenContext.shown
+        if shown.count > 0 {
+            return shown.displays > 1
+                ? tr("settings.assistant.windowsOnScreens", shown.count, shown.displays)
+                : tr("settings.assistant.windowsOneScreen", shown.count)
+        }
+        return tr("settings.assistant.nothingRead")
     }
 }
 

@@ -57,7 +57,7 @@ struct SimulatorView: View {
             if let button { Button(button, action: action).controlSize(.small) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.paper.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.paper.opacity(0.04)))
     }
 
     // MARK: Live
@@ -127,7 +127,7 @@ struct SimulatorView: View {
     }
 
     private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 12)).frame(width: 26, height: 24) }
+        Button(action: action) { Image(systemName: symbol).font(NookTheme.font(12)).frame(width: 26, height: 24) }
             .buttonStyle(.borderless)
             .help(label)
             .accessibilityLabel(label)
@@ -538,7 +538,7 @@ struct SimulatorActionsPanel: View {
             HStack(alignment: .top) {
                 Text(tr("sim.action.push")).frame(width: 110, alignment: .leading)
                 VStack(alignment: .leading, spacing: 6) {
-                    TextEditor(text: $payload).font(.system(size: 11, design: .monospaced)).frame(height: 54)
+                    TextEditor(text: $payload).font(NookTheme.mono(11)).frame(height: 54)
                     Button(tr("sim.action.send")) { sendPush() }
                 }
             }

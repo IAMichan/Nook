@@ -156,7 +156,7 @@ struct EmbeddedAppPane: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: current.symbol)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                     Text(current.title)
                         .font(NookTheme.font(13, .semibold))
@@ -179,7 +179,7 @@ struct EmbeddedAppPane: View {
                             Button(tr("embedded.forget", current.title), role: .destructive) { Task { await app.closeEmbeddedApp(forget: true) } }
                         } label: {
                             Image(systemName: "ellipsis")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(NookTheme.font(12, .semibold))
                                 .foregroundStyle(NookTheme.textSecondary)
                                 .frame(width: 28, height: 28)
                                 .contentShape(Rectangle())
@@ -206,8 +206,8 @@ struct EmbeddedAppPane: View {
                 }
             }
             .background(NookTheme.field)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
         }
     }
 
@@ -261,7 +261,7 @@ struct EmbeddedSplitHandle: View {
 
     var body: some View {
         ZStack {
-            if divider { Rectangle().fill(Color(hex: 0x19191B)).frame(width: 1) }
+            if divider { Rectangle().fill(NookTheme.hairline).frame(width: 1) }
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 4, height: 36)

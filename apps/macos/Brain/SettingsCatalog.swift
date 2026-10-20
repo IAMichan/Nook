@@ -33,6 +33,8 @@ enum SettingsCatalog {
         Entry(id: "notch_on_all_screens", kind: .toggle, section: "general", about: "A notch on every connected screen."),
         Entry(id: "hide_when_idle", kind: .toggle, section: "general", about: "Hide Nook when there is nothing to show."),
         Entry(id: "open_on_hover", kind: .toggle, section: "general", about: "Open the panel when pointing at the notch."),
+        Entry(id: "energy_mode", kind: .choice(["automatic", "saver", "full"]), section: "general",
+              about: "How much Nook does by himself on battery or a busy Mac: automatic (steps back when needed), saver (always light) or full (never slows down)."),
         Entry(id: "web_search", kind: .toggle, section: "assistant", about: "Search the web when a question needs it."),
         Entry(id: "think_along", kind: .toggle, section: "assistant",
               about: "Proactive suggestions next to the notch while the user works."),
@@ -90,7 +92,12 @@ enum SettingsCatalog {
         "in the notch": "notch", "in de notch": "notch", "in der notch": "notch",
         "minimaal": "minimal", "minimaliste": "minimal", "minimalista": "minimal", "minimalistisch": "minimal",
         "klassiek": "classic", "klassisch": "classic", "classique": "classic", "clásico": "classic", "clasico": "classic",
-        "speels": "playful", "verspielt": "playful", "ludique": "playful", "divertido": "playful", "fun": "playful"
+        "speels": "playful", "verspielt": "playful", "ludique": "playful", "divertido": "playful", "fun": "playful",
+        "auto": "automatic", "automatisch": "automatic", "automatique": "automatic", "automático": "automatic", "automatico": "automatic",
+        "zuinig": "saver", "spaarstand": "saver", "battery saver": "saver", "sparsam": "saver", "économe": "saver", "econome": "saver",
+        "ahorro": "saver", "eco": "saver",
+        "full power": "full", "volle kracht": "full", "volle kraft": "full", "pleine puissance": "full", "máxima potencia": "full",
+        "maxima potencia": "full", "performance": "full"
     ]
 
     /// The arguments of `change_setting`.

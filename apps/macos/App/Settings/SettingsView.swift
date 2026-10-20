@@ -46,8 +46,13 @@ struct SettingsView: View {
     @State var status = ""
     @State var refreshTick = 0
     @State var connectionSearch = ""
+    /// The category chip under the connections search field; nil is All.
+    @State var connectionCategory: ServiceCategory?
+    /// The Add MCP sheet, opened from a preset card or the custom card.
+    @State var mcpAdd: MCPAddRequest?
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
+    @ObservedObject var energy = EnergyMonitor.shared
     @State var installing: String?
     @State var installFraction: Double = 0
     @State var testing = false
@@ -124,7 +129,7 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .background(Color(hex: 0x0B0B0E))
+            .background(NookTheme.canvas)
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")
         }
         .tint(NookTheme.iris)

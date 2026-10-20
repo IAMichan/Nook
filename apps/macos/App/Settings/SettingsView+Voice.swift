@@ -91,6 +91,9 @@ extension SettingsView {
             LabeledContent(tr("quiet.now")) {
                 Text(app.quietStatusText).foregroundStyle(.secondary)
             }
+            // While this line is on screen the situation is read even with "change nothing" for both.
+            .onAppear { app.quietViewers += 1; app.quietTick() }
+            .onDisappear { app.quietViewers = max(0, app.quietViewers - 1) }
         } header: {
             Text(tr("quiet.title"))
         } footer: {

@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Preset template for popular MCP servers so users can add them in one click.
 struct MCPPreset: Identifiable {
+    /// The tint of a server without a preset: the MCP mark's teal.
+    static let genericTint = Color(hex: 0x1FA2C6)
     let id: String
-    let name: String
-    let detail: String
     let iconDomain: String?
     let fallbackIcon: String
     let tint: Color
@@ -14,181 +14,124 @@ struct MCPPreset: Identifiable {
     let envPlaceholders: [String: String]
     let helpURL: URL?
 
+    var name: String { tr("mcp.preset.\(id).name") }
+    var detail: String { tr("mcp.preset.\(id).detail") }
+
     /// A preset that works with something on the Mac shows that app's icon (the filesystem server: Finder).
     var appSource: String? { id == "filesystem" ? "files" : nil }
 
+    /// Where the preset sits in the catalogue's categories.
+    var category: ServiceCategory {
+        switch id {
+        case "filesystem": return .mac
+        case "github", "postgres": return .development
+        default: return .automation
+        }
+    }
+
     // No memory server here: memory is built into Nook (Settings › Memory), without Node or npx.
-    static let all: [MCPPreset] = [
-        MCPPreset(
-            id: "filesystem",
-            name: "Bestanden & mappen",
-            detail: "Laat Nook documenten en mappen op je Mac direct doorzoeken en lezen.",
-            iconDomain: nil,
-            fallbackIcon: "folder.fill",
-            tint: Color(hex: 0x3478F6),
-            defaultCommand: "npx -y @modelcontextprotocol/server-filesystem ~/Desktop ~/Documents ~/Downloads",
-            requiredEnv: [],
-            envLabels: [:],
-            envPlaceholders: [:],
-            helpURL: nil
-        ),
-        MCPPreset(
-            id: "github",
-            name: "GitHub MCP",
-            detail: "Beheer repositories, issues en commits via de officiële MCP-server.",
-            iconDomain: "github.com",
-            fallbackIcon: "chevron.left.forwardslash.chevron.right",
-            tint: .primary,
-            defaultCommand: "npx -y @modelcontextprotocol/server-github",
-            requiredEnv: ["GITHUB_PERSONAL_ACCESS_TOKEN"],
-            envLabels: ["GITHUB_PERSONAL_ACCESS_TOKEN": "GitHub Personal Access Token"],
-            envPlaceholders: ["GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."],
-            helpURL: URL(string: "https://github.com/settings/tokens/new")
-        ),
-        MCPPreset(
-            id: "brave-search",
-            name: "Brave Search",
-            detail: "Laat Nook live op het internet zoeken naar actuele informatie.",
-            iconDomain: "brave.com",
-            fallbackIcon: "magnifyingglass",
-            tint: Color(hex: 0xFF5500),
-            defaultCommand: "npx -y @modelcontextprotocol/server-brave-search",
-            requiredEnv: ["BRAVE_API_KEY"],
-            envLabels: ["BRAVE_API_KEY": "Brave Search API-sleutel"],
-            envPlaceholders: ["BRAVE_API_KEY": "BSA..."],
-            helpURL: URL(string: "https://brave.com/search/api/")
-        ),
-        MCPPreset(
-            id: "puppeteer",
-            name: "Web Browser (Puppeteer)",
-            detail: "Laat Nook webpagina's openen, formulieren bekijken en data extraheren.",
-            iconDomain: "pptr.dev",
-            fallbackIcon: "safari.fill",
-            tint: Color(hex: 0x00D69F),
-            defaultCommand: "npx -y @modelcontextprotocol/server-puppeteer",
-            requiredEnv: [],
-            envLabels: [:],
-            envPlaceholders: [:],
-            helpURL: nil
-        ),
-        MCPPreset(
-            id: "postgres",
-            name: "PostgreSQL Database",
-            detail: "Lees tabellen, schema's en voer queries uit op je database.",
-            iconDomain: "postgresql.org",
-            fallbackIcon: "cylinder.split.1x2.fill",
-            tint: Color(hex: 0x336791),
-            defaultCommand: "npx -y @modelcontextprotocol/server-postgres postgresql://localhost/mydb",
-            requiredEnv: [],
-            envLabels: [:],
-            envPlaceholders: [:],
-            helpURL: nil
-        )
-    ]
+    // Computed, so the texts of the key fields follow the app language.
+    static var all: [MCPPreset] {
+        [
+            MCPPreset(
+                id: "filesystem",
+                iconDomain: nil,
+                fallbackIcon: "folder.fill",
+                tint: Color(hex: 0x3478F6),
+                defaultCommand: "npx -y @modelcontextprotocol/server-filesystem ~/Desktop ~/Documents ~/Downloads",
+                requiredEnv: [],
+                envLabels: [:],
+                envPlaceholders: [:],
+                helpURL: nil
+            ),
+            MCPPreset(
+                id: "github",
+                iconDomain: "github.com",
+                fallbackIcon: "chevron.left.forwardslash.chevron.right",
+                tint: .primary,
+                defaultCommand: "npx -y @modelcontextprotocol/server-github",
+                requiredEnv: ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+                envLabels: ["GITHUB_PERSONAL_ACCESS_TOKEN": "GitHub Personal Access Token"],
+                envPlaceholders: ["GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."],
+                helpURL: URL(string: "https://github.com/settings/tokens/new")
+            ),
+            MCPPreset(
+                id: "brave-search",
+                iconDomain: "brave.com",
+                fallbackIcon: "magnifyingglass",
+                tint: Color(hex: 0xFF5500),
+                defaultCommand: "npx -y @modelcontextprotocol/server-brave-search",
+                requiredEnv: ["BRAVE_API_KEY"],
+                envLabels: ["BRAVE_API_KEY": tr("mcp.preset.brave-search.key")],
+                envPlaceholders: ["BRAVE_API_KEY": "BSA..."],
+                helpURL: URL(string: "https://brave.com/search/api/")
+            ),
+            MCPPreset(
+                id: "puppeteer",
+                iconDomain: "pptr.dev",
+                fallbackIcon: "safari.fill",
+                tint: Color(hex: 0x00D69F),
+                defaultCommand: "npx -y @modelcontextprotocol/server-puppeteer",
+                requiredEnv: [],
+                envLabels: [:],
+                envPlaceholders: [:],
+                helpURL: nil
+            ),
+            MCPPreset(
+                id: "postgres",
+                iconDomain: "postgresql.org",
+                fallbackIcon: "cylinder.split.1x2.fill",
+                tint: Color(hex: 0x336791),
+                defaultCommand: "npx -y @modelcontextprotocol/server-postgres postgresql://localhost/mydb",
+                requiredEnv: [],
+                envLabels: [:],
+                envPlaceholders: [:],
+                helpURL: nil
+            )
+        ]
+    }
 }
 
-/// MCP servers in Settings › MCP:
-/// Crystal-clear overview of installed plugins, one-click presets, and auto-parsing for pasted commands & configs.
-struct MCPSettingsSection: View {
-    @EnvironmentObject private var app: AppModel
-    @ObservedObject private var store = MCPServerStore.shared
-    @State private var adding = false
-    @State private var selectedPreset: MCPPreset?
+/// What the Add MCP sheet opens with: a preset, or nothing for a pasted command.
+struct MCPAddRequest: Identifiable {
+    let preset: MCPPreset?
+    var id: String { preset?.id ?? "custom" }
+}
+
+/// A preset in the catalogue of Settings › Connections: the same card as every other service, with the MCP badge.
+struct MCPPresetCard: View {
+    let preset: MCPPreset
+    var add: (MCPAddRequest) -> Void
 
     var body: some View {
-        Group {
-            Section {
-                IntroCard(
-                    title: tr("mcp.hero.title"),
-                    text: tr("mcp.hero.detail")
-                )
-            }
-            .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
-
-            // Services you signed in to are listed with the other connections; here only the servers you added yourself.
-            let ownServers = store.servers.filter { $0.serviceID == nil }
-            if !ownServers.isEmpty {
-                Section {
-                    ForEach(ownServers) { config in
-                        MCPServerCardRow(config: config)
-                    }
-                } header: {
-                    Text(tr("mcp.installed.title", ownServers.count))
-                } footer: {
-                    Text(tr("mcp.footer"))
-                }
-            }
-
-            Section {
-                GalleryGrid {
-                    ForEach(MCPPreset.all) { preset in
-                        GalleryCard(
-                            title: preset.name,
-                            detail: preset.detail
-                        ) {
-                            ServiceTile(
-                                domain: preset.iconDomain,
-                                fallback: preset.fallbackIcon,
-                                tint: preset.tint,
-                                size: 32,
-                                source: preset.appSource
-                            )
-                        } accessory: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Color(hex: 0x1FA2C6))
-                        } action: {
-                            selectedPreset = preset
-                            adding = true
-                        }
-                    }
-                }
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                .listRowBackground(Color.clear)
-            } header: {
-                Text(tr("mcp.popular.title"))
-            } footer: {
-                Text(tr("mcp.popular.footer"))
-            }
-
-            Section {
-                Button {
-                    selectedPreset = nil
-                    adding = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "plus.app.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Color(hex: 0x1FA2C6))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tr("mcp.custom.button"))
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(tr("mcp.custom.detail"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .sheet(isPresented: $adding) {
-            AddMCPServerWizardSheet(preset: selectedPreset) {
-                adding = false
-                selectedPreset = nil
-            }
+        GalleryCard(title: preset.name, detail: preset.detail) {
+            ServiceTile(domain: preset.iconDomain, fallback: preset.fallbackIcon, tint: preset.tint, size: 34, source: preset.appSource)
+        } accessory: {
+            ConnectMethodBadge(method: .mcp)
+        } action: {
+            add(MCPAddRequest(preset: preset))
         }
     }
 }
 
-/// A clean, beautiful row for an installed MCP server.
-private struct MCPServerCardRow: View {
+/// The last card of the catalogue: your own MCP server from a pasted command, config, or web address.
+struct MCPCustomCard: View {
+    var add: (MCPAddRequest) -> Void
+
+    var body: some View {
+        GalleryCard(title: tr("mcp.custom.button"), detail: tr("mcp.custom.detail")) {
+            ServiceTile(domain: nil, fallback: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, size: 34)
+        } accessory: {
+            ConnectMethodBadge(method: .mcp)
+        } action: {
+            add(MCPAddRequest(preset: nil))
+        }
+    }
+}
+
+/// A server you added yourself, in the shared row shape: icon, name with its state, one line, the switch and a menu.
+/// Clicking the row opens its details.
+struct MCPServerCardRow: View {
     let config: MCPServerConfig
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = MCPServerStore.shared
@@ -197,80 +140,47 @@ private struct MCPServerCardRow: View {
 
     private var connector: MCPConnector? { app.connectors.source(id: config.sourceID) as? MCPConnector }
 
-    private var health: ConnectionHealth {
+    private var status: ServiceStatus {
         guard config.enabled else { return .off }
         guard let connector else { return .notLinked }
         switch connector.status.state {
-        case .ok: return .working
-        case .loading: return .busy
+        case .ok: return .connected
+        case .loading: return .connecting
         case .off: return .off
-        case .error: return .broken
+        case .error: return .unreachable
         }
     }
 
+    private var detail: String {
+        if let connector, connector.toolCount > 0, status == .connected {
+            return tr("mcp.toolsCount", connector.toolCount) + " · " + summaryText
+        }
+        return summaryText
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                showDetails = true
-            } label: {
-                HStack(spacing: 12) {
-                    ServiceTile(
-                        domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
-                        fallback: "puzzlepiece.extension.fill",
-                        tint: Color(hex: 0x1FA2C6),
-                        size: 32,
-                        source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
-                    )
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(config.name)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
-                            if let connector, connector.toolCount > 0 {
-                                Text("\(connector.toolCount) tools")
-                                    .font(.caption2.weight(.medium))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 1.5)
-                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        Text(summaryText)
-                            .font(.caption)
-                            .foregroundStyle(health == .broken ? health.color : Color.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    HealthPill(health: health)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
+        ServiceRowLayout(
+            domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
+            symbol: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, title: config.name, detail: detail,
+            status: status, detailIsError: status == .unreachable,
+            source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
+        ) {
             Toggle("", isOn: Binding(get: { config.enabled }, set: { store.setEnabled(config.id, $0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-
             Menu {
-                Button {
-                    if let connector { app.connectors.refresh(connector) }
-                } label: {
-                    Label(tr("button.refresh"), systemImage: "arrow.clockwise")
-                }
-
                 Button {
                     showDetails = true
                 } label: {
                     Label(tr("mcp.details.view"), systemImage: "info.circle")
                 }
-
+                Button {
+                    if let connector { app.connectors.refresh(connector) }
+                } label: {
+                    Label(tr("button.refresh"), systemImage: "arrow.clockwise")
+                }
                 Divider()
-
                 Button(role: .destructive) {
                     confirmRemove = true
                 } label: {
@@ -278,13 +188,14 @@ private struct MCPServerCardRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 20)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(tr("connect.manage", config.name))
         }
-        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { showDetails = true }
         .confirmationDialog(tr("mcp.removeConfirm", config.name), isPresented: $confirmRemove) {
             Button(tr("mcp.remove"), role: .destructive) { store.remove(config.id) }
         }
@@ -325,7 +236,7 @@ private struct MCPServerDetailSheet: View {
             ServiceTile(
                 domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
                 fallback: "puzzlepiece.extension.fill",
-                tint: Color(hex: 0x1FA2C6),
+                tint: MCPPreset.genericTint,
                 size: 48,
                 source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
             )
@@ -333,10 +244,10 @@ private struct MCPServerDetailSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text(tr("mcp.details.commandTitle")).font(.headline)
                 Text(rawTransportString)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(NookTheme.mono(12))
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color(nsColor: .textBackgroundColor)))
                     .textSelection(.enabled)
 
                 if let connector {
@@ -352,13 +263,13 @@ private struct MCPServerDetailSheet: View {
                             ForEach(connector.tools, id: \.name) { tool in
                                 HStack(alignment: .top, spacing: 10) {
                                     Image(systemName: tool.kind == .read ? "eye.fill" : "bolt.fill")
-                                        .font(.system(size: 12))
+                                        .font(NookTheme.font(12))
                                         .foregroundStyle(tool.kind == .read ? NookTheme.mint : NookTheme.amber)
                                         .padding(.top, 2)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(tool.name)
-                                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                            .font(NookTheme.mono(13, .semibold))
                                         Text(tool.description)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
@@ -373,7 +284,7 @@ private struct MCPServerDetailSheet: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.03)))
                             }
                         }
                     }
@@ -406,7 +317,7 @@ private struct MCPServerDetailSheet: View {
 /// - One-click presets
 /// - Paste full Claude/Cursor config or npx command (auto-detects and auto-fills!)
 /// - Manual mode for advanced power users
-private struct AddMCPServerWizardSheet: View {
+struct AddMCPServerWizardSheet: View {
     let preset: MCPPreset?
     let done: () -> Void
 
@@ -428,7 +339,7 @@ private struct AddMCPServerWizardSheet: View {
             ServiceTile(
                 domain: preset?.iconDomain,
                 fallback: preset?.fallbackIcon ?? "puzzlepiece.extension.fill",
-                tint: preset?.tint ?? Color(hex: 0x1FA2C6),
+                tint: preset?.tint ?? MCPPreset.genericTint,
                 size: 48,
                 source: preset?.appSource
             )
@@ -453,7 +364,7 @@ private struct AddMCPServerWizardSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
                 }
 
                 // Step 1: Name
@@ -517,7 +428,7 @@ private struct AddMCPServerWizardSheet: View {
                             TextEditor(text: $rawSecrets)
                                 .font(.system(.caption, design: .monospaced))
                                 .frame(height: 70)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(Color.secondary.opacity(0.3)))
                             Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

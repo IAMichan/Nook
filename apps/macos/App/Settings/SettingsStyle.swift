@@ -66,7 +66,7 @@ struct SettingsTile: View {
             )
             .overlay(
                 Image(systemName: symbol)
-                    .font(.system(size: size * 0.5, weight: .medium))
+                    .font(NookTheme.font(size * 0.5, .medium))
                     .foregroundStyle(NookTheme.paper.opacity(0.92))
             )
             .frame(width: size, height: size)
@@ -173,9 +173,9 @@ struct SetupStep<Content: View>: View {
             ZStack {
                 Circle().fill(done ? ConnectionHealth.working.color : NookTheme.iris)
                 if done {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
+                    Image(systemName: "checkmark").font(NookTheme.font(11, .bold))
                 } else {
-                    Text("\(number)").font(.system(size: 12, weight: .bold, design: .rounded))
+                    Text("\(number)").font(NookTheme.rounded(12, .bold))
                 }
             }
             .foregroundStyle(done ? NookTheme.ink : NookTheme.onIris)
@@ -222,14 +222,14 @@ struct GalleryCard<Icon: View, Accessory: View>: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                     .fill(Color.primary.opacity(hovering ? 0.07 : 0.035))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                     .strokeBorder(Color.primary.opacity(hovering ? 0.14 : 0.07))
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

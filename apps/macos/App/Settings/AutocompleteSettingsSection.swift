@@ -196,7 +196,7 @@ struct AutocompleteSettingsSection: View {
     private func presentRow(_ file: CompletionModelFile) -> some View {
         let inUse = autocomplete.activeModel?.identity == file.url.path
         return HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green).font(.system(size: 16))
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green).font(NookTheme.font(16))
             SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
             if inUse {
@@ -245,7 +245,7 @@ struct AutocompleteSettingsSection: View {
         return HStack(spacing: 10) {
             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
                 .foregroundStyle(installed ? Color.green : Color.secondary)
-                .font(.system(size: 16))
+                .font(NookTheme.font(16))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(model.name)
@@ -720,12 +720,12 @@ private struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit()
             Text(detail).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
     }
 }
 

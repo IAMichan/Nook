@@ -84,8 +84,8 @@ struct NookChatView: View {
                 } else {
                     BrowserView(onClose: { viewModel.browserBesideChat = false })
                         .background(NookTheme.field)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -93,7 +93,7 @@ struct NookChatView: View {
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .overlay(Text(tr("chat.dropFile")).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper))
                     .allowsHitTesting(false)
@@ -142,8 +142,8 @@ struct NookChatView: View {
                         }
                     }
                     .background(NookTheme.field)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
                 }
 
                 homeSection(tr("home.section.start"))
@@ -218,7 +218,7 @@ struct NookChatView: View {
                         .help(tr("ws.title.renameHelp"))
                 }
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 8)
                 if conversation.busy, let since = conversation.turnStarted {
@@ -257,7 +257,7 @@ struct NookChatView: View {
                 .disabled(conversation.busy)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .semibold))
+                .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())

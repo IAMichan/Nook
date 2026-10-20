@@ -25,13 +25,13 @@ struct EventRow: View {
             Button(action: toggle) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Image(systemName: "brain").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NookTheme.iris)
+                        Image(systemName: "brain").font(NookTheme.font(10.5, .medium)).foregroundStyle(NookTheme.iris)
                         Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
                             .font(NookTheme.font(11.5, .medium))
                             .foregroundStyle(WS.tertiary)
                         if event.text.count > 280 || event.text.split(separator: "\n").count > 4 {
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 8.5, weight: .bold))
+                                .font(NookTheme.font(8.5, .bold))
                                 .foregroundStyle(WS.tertiary)
                                 .rotationEffect(.degrees(expanded ? 90 : 0))
                         }
@@ -61,7 +61,7 @@ struct EventRow: View {
                         .foregroundStyle(NookTheme.iris)
                     Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.text)
                     Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
-                    Image(systemName: "arrow.up.right.square").font(.system(size: 10)).foregroundStyle(WS.tertiary)
+                    Image(systemName: "arrow.up.right.square").font(NookTheme.font(10)).foregroundStyle(WS.tertiary)
                 }
             }
             .buttonStyle(.plain)
@@ -81,7 +81,7 @@ struct EventRow: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.coral.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.coral.opacity(0.08)))
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
@@ -94,7 +94,7 @@ struct EventRow: View {
                     .padding(.top, 4)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.swap").font(.system(size: 10))
+                    Image(systemName: "arrow.triangle.swap").font(NookTheme.font(10))
                     Text(event.text).font(NookTheme.font(11.5)).lineLimit(2)
                     Spacer(minLength: 0)
                     Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
@@ -104,7 +104,7 @@ struct EventRow: View {
 
         case .system:
             HStack(spacing: 6) {
-                Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(.system(size: 10))
+                Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(NookTheme.font(10))
                 Text(event.text)
                     .font(event.tool == "launch" ? NookTheme.mono(11) : NookTheme.font(11.5))
                     .lineLimit(event.tool == "launch" ? 1 : 3)
@@ -144,7 +144,7 @@ struct ToolRow: View {
                     stateIcon
                         .frame(width: 14)
                     Image(systemName: Self.symbol(event.tool ?? ""))
-                        .font(.system(size: 10.5))
+                        .font(NookTheme.font(10.5))
                         .foregroundStyle(WS.tertiary)
                     Text(event.text)
                         .font(NookTheme.mono(11.5))
@@ -156,7 +156,7 @@ struct ToolRow: View {
                     if let check = Verification.check(event) { VerificationChips(checks: [check]) }
                     Spacer(minLength: 0)
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(WS.tertiary)
                 }
                 .contentShape(Rectangle())
@@ -176,7 +176,7 @@ struct ToolRow: View {
                        !steps.isEmpty {
                         TaskListRows(steps: steps)
                             .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     } else if let detail = event.detail, !detail.isEmpty, detail != "{}" {
                         CodeBlock(title: tr("ws.tool.input"), text: detail)
                     }
@@ -196,8 +196,8 @@ struct ToolRow: View {
     private var stateIcon: some View {
         switch event.state {
         case .running: ProgressView().controlSize(.mini)
-        case .failed: Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.coral)
-        default: Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.mint.opacity(0.8))
+        case .failed: Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral)
+        default: Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.mint.opacity(0.8))
         }
     }
 
@@ -228,7 +228,7 @@ struct CodeBlock: View {
                 Button {
                     Pasteboard.copy(text)
                 } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10))
+                    Image(systemName: "doc.on.doc").font(NookTheme.font(10))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(WS.tertiary)
@@ -237,7 +237,7 @@ struct CodeBlock: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
                     .font(NookTheme.mono(11))
-                    .foregroundStyle(failed ? NookTheme.coralSoft : Color(hex: 0xC9C7D2))
+                    .foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.textStrong)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
             }

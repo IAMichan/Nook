@@ -126,7 +126,7 @@ struct NookOrb: View {
         .overlay(alignment: .topTrailing) {
             if p.drowsy {
                 Text(verbatim: "z")
-                    .font(.system(size: max(7, size * 0.32), weight: .bold, design: .rounded))
+                    .font(NookTheme.rounded(max(7, size * 0.32), .bold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .offset(x: size * 0.3, y: -size * 0.18)
             }

@@ -12,7 +12,7 @@ struct UsageLimitBanner: View {
             let auto = run.autoResume == true
             HStack(alignment: .center, spacing: 9) {
                 Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.amber)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tr("ws.limit.title")).font(NookTheme.font(12, .semibold)).foregroundStyle(NookTheme.textSecondary)

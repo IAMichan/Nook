@@ -130,10 +130,10 @@ struct AgentsTab: View {
                     viewModel.selectedAgentID = "new"
                 } label: {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(NookTheme.font(13, .medium))
                         .foregroundStyle(isNew ? NookTheme.paper : NookTheme.textSecondary)
                         .frame(width: 28, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(isNew ? NookTheme.smoke : Color.clear))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(isNew ? NookTheme.smoke : Color.clear))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -490,7 +490,7 @@ struct AgentListRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, slim ? 8 : 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(background))
         .contentShape(Rectangle())
         .opacity(restOpacity)
     }
@@ -501,7 +501,7 @@ struct AgentListRow: View {
                 Text(item.folder)
                     .lineLimit(1)
                     .help(AgentPathFormat.tilde(item.path))
-                if pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary) }
+                if pinned { Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary) }
                 Spacer(minLength: 6)
                 slot.opacity(hovering && actions != nil ? 0 : 1)
             }
@@ -514,7 +514,7 @@ struct AgentListRow: View {
                 .lineLimit(1)
 
             HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10, .medium))
                 Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
                 if let pullRequest { PullRequestPill(badge: pullRequest) }
                 Spacer(minLength: 6)
@@ -575,7 +575,7 @@ struct AgentListRow: View {
 
     private func rowIcon(_ symbol: String, _ label: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 11, weight: .medium))
+            .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())

@@ -17,7 +17,7 @@ struct TasksStrip: View {
                 withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "checklist").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.tasks.title")).foregroundStyle(NookTheme.textTertiary)
                     Text(progress.current)
                         .foregroundStyle(NookTheme.paper.opacity(0.85))
@@ -29,7 +29,7 @@ struct TasksStrip: View {
                         .foregroundStyle(finished ? NookTheme.mint : NookTheme.textSecondary)
                     if steps.count > 1 && steps.count <= 10 { segments }
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 180 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
@@ -44,7 +44,7 @@ struct TasksStrip: View {
                     ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: symbol(step.status))
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(color(step.status))
                                 .frame(width: 12)
                             Text(step.text)
@@ -61,7 +61,7 @@ struct TasksStrip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private var segments: some View {
@@ -112,7 +112,7 @@ struct SubagentBar: View {
                 withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "person.2").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.subagents.title")).foregroundStyle(NookTheme.textTertiary)
                     Text(agents.first(where: \.isRunning)?.title ?? agents.last?.title ?? "")
                         .foregroundStyle(NookTheme.paper.opacity(0.85))
@@ -122,7 +122,7 @@ struct SubagentBar: View {
                         .font(NookTheme.mono(11, .medium))
                         .foregroundStyle(done == agents.count ? NookTheme.mint : NookTheme.textSecondary)
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 180 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
@@ -139,7 +139,7 @@ struct SubagentBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private func row(_ agent: SubagentInfo) -> some View {
@@ -152,7 +152,7 @@ struct SubagentBar: View {
                         ProgressView().controlSize(.mini).frame(width: 12)
                     } else {
                         Image(systemName: agent.state == .failed ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(agent.state == .failed ? NookTheme.coralSoft : NookTheme.mint)
                             .frame(width: 12)
                     }
@@ -194,19 +194,19 @@ struct PullRequestWatchStrip: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "eye").font(.system(size: 10.5, weight: .semibold))
+            Image(systemName: "eye").font(NookTheme.font(10.5, .semibold))
             Text(tr("ws.prwatch.watching")).foregroundStyle(NookTheme.textTertiary)
             Text(summary).lineLimit(1)
             Spacer(minLength: 6)
             if let url = URL(string: watch.url) {
                 Button { NSWorkspace.shared.open(url) } label: {
-                    Image(systemName: "arrow.up.right.square").font(.system(size: 10.5, weight: .semibold))
+                    Image(systemName: "arrow.up.right.square").font(NookTheme.font(10.5, .semibold))
                 }
                 .buttonStyle(.plain)
                 .help(tr("ws.prwatch.open"))
             }
             Button(action: stop) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                Image(systemName: "xmark").font(NookTheme.font(9, .bold))
             }
             .buttonStyle(.plain)
             .help(tr("ws.prwatch.stop"))
@@ -216,7 +216,7 @@ struct PullRequestWatchStrip: View {
         .foregroundStyle(NookTheme.textSecondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private var summary: String {
@@ -276,7 +276,7 @@ struct TurnChangesChip: View {
     var body: some View {
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
-                Image(systemName: "doc.badge.ellipsis").font(.system(size: 10.5, weight: .semibold))
+                Image(systemName: "doc.badge.ellipsis").font(NookTheme.font(10.5, .semibold))
                 Text(tr("ws.turnChanges.count", turn.files.count))
             }
             .font(NookTheme.font(11.5, .medium))
@@ -296,8 +296,8 @@ struct TurnChangesChip: View {
         HStack(spacing: 0) {
             List(turn.files, id: \.self, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { path in
                 VStack(alignment: .leading, spacing: 1) {
-                    Text((path as NSString).lastPathComponent).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text(relative(path)).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    Text((path as NSString).lastPathComponent).font(NookTheme.font(12, .medium)).lineLimit(1)
+                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 }
                 .tag(path)
             }

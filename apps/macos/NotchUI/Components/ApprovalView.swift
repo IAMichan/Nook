@@ -73,6 +73,6 @@ struct ApprovalView: View {
         .padding(8)
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.white.opacity(0.03)))
     }
 }

@@ -26,9 +26,9 @@ struct MusicDock: View {
         .frame(maxWidth: .infinity, maxHeight: expanded ? .infinity : Self.barHeight)
         .frame(height: expanded ? nil : Self.barHeight)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
                 .fill(NookTheme.graphite)
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.04), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).strokeBorder(Color.white.opacity(0.04), lineWidth: 1))
                 .opacity(expanded ? 0 : 1)
         }
         // The position and volume shown here need the player polled every couple of seconds; nothing else does.
@@ -50,7 +50,7 @@ private struct MusicBar: View {
         HStack(spacing: 16) {
             Button(action: onExpand) {
                 HStack(spacing: 11) {
-                    MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: 9)
+                    MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: NookTheme.Radius.card)
                         .frame(width: 50, height: 50)
                         .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
                     VStack(alignment: .leading, spacing: 2) {
@@ -65,7 +65,7 @@ private struct MusicBar: View {
                     }
                 }
                 .padding(4)
-                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(hoveringTrack ? 0.05 : 0)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(Color.white.opacity(hoveringTrack ? 0.05 : 0)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -142,9 +142,9 @@ private struct MusicFullPlayer: View {
     }
 
     private func cover(side: CGFloat) -> some View {
-        MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: 14)
+        MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: NookTheme.Radius.sheet)
             .frame(width: side, height: side)
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
             .shadow(color: .black.opacity(0.55), radius: 26, y: 14)
             .scaleEffect(info.isPlaying ? 1 : 0.95)
             .animation(.spring(duration: 0.45, bounce: 0.15), value: info.isPlaying)
@@ -239,7 +239,7 @@ private struct MusicUpcomingStrip: View {
                 }
                 if showsQueue && info.shuffle {
                     Image(systemName: "shuffle")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.music)
                         .help(tr("music.upNext.shuffleNote"))
                         .accessibilityLabel(tr("music.upNext.shuffleNote"))
@@ -303,12 +303,12 @@ private struct MusicUpcomingChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: 7)
+                MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.control)
                     .frame(width: 38, height: 38)
                     .overlay {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.45))
-                            Image(systemName: "play.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(NookTheme.paper)
+                            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(Color.black.opacity(0.45))
+                            Image(systemName: "play.fill").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.paper)
                         }
                         .opacity(hovering ? 1 : 0)
                     }
@@ -328,7 +328,7 @@ private struct MusicUpcomingChip: View {
                 Spacer(minLength: 0)
             }
             .padding(6)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(hovering ? 0.06 : 0)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(Color.white.opacity(hovering ? 0.06 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -348,12 +348,12 @@ private struct MusicShowAllButton: View {
         Button(action: action) {
             HStack(spacing: 3) {
                 Text(tr("music.showAll")).font(NookTheme.font(11.5, .semibold))
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                Image(systemName: "chevron.right").font(NookTheme.font(9, .bold))
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.paper.opacity(0.6))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(hovering ? 0.07 : 0)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(Color.white.opacity(hovering ? 0.07 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

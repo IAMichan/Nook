@@ -139,7 +139,7 @@ struct SessionComposer<Controls: View>: View {
         self.controls = controls
     }
 
-    static var surface: Color { Color(hex: 0x121214) }
+    static var surface: Color { NookTheme.surface }
 
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
@@ -286,16 +286,16 @@ struct SessionComposer<Controls: View>: View {
         .padding(.top, 13)
         .padding(.bottom, 9)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Self.surface)
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(tint.opacity(0.035)))
+            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(Self.surface)
+                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(tint.opacity(0.035)))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(focused.wrappedValue ? tint.opacity(0.5) : Color(hex: 0x222226), lineWidth: 1)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
+                .stroke(focused.wrappedValue ? tint.opacity(0.5) : NookTheme.fieldStroke, lineWidth: 1)
         )
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .allowsHitTesting(false)
             }
@@ -361,7 +361,7 @@ struct SessionComposer<Controls: View>: View {
                 if sending {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: symbol).font(.system(size: 12, weight: .bold))
+                    Image(systemName: symbol).font(NookTheme.font(12, .bold))
                 }
             }
             .foregroundStyle(active ? NookTheme.onIris : NookTheme.textTertiary)
@@ -437,20 +437,20 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+                Image(systemName: symbol).font(NookTheme.font(11, .medium))
             }
             if !iconOnly {
                 Text(shown).lineLimit(1)
             }
             if showsChevron && density == .full {
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
+                Image(systemName: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
             }
         }
         .font(NookTheme.font(12.5, .medium))
         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
         .padding(.horizontal, 7)
         .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -487,10 +487,10 @@ struct ComposerIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 12, weight: .semibold))
+            .font(NookTheme.font(12, .semibold))
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? NookTheme.smoke : Color.clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
     }
@@ -499,7 +499,7 @@ struct ComposerIcon: View {
 /// A thin line between two choices in the composer.
 struct ComposerDivider: View {
     var body: some View {
-        Rectangle().fill(Color(hex: 0x3A3A44)).frame(width: 1, height: 16).padding(.horizontal, 3)
+        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 16).padding(.horizontal, 3)
     }
 }
 

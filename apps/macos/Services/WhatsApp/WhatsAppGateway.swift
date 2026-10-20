@@ -72,22 +72,80 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var id: String   // the chat JID
     var name: String
     var isGroup: Bool
+    var kind: WAJID.Kind { WAJID.kind(id) }
     /// Newest last, the last `WAInbox.keep` only.
     var messages: [WAMessage] = []
     var unread: Int = 0
     var lastActivity: Date
 }
 
+/// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
+enum WAChatMode: String, CaseIterable, Sendable {
+    /// Follows the rule of its kind (groups, status updates, channels stay quiet; people reach you).
+    case automatic
+    /// Always reaches you, even a group without a mention or a channel.
+    case loud
+    /// Never reaches you; the chat is kept and can be opened.
+    case muted
+}
+
 /// What the user chose in Settings → WhatsApp.
 struct WAFilters: Equatable, Sendable {
     /// Groups stay quiet unless the message mentions you.
     var muteGroups = true
+    /// Status updates (status@broadcast) stay quiet.
+    var muteStatus = true
+    /// Channels (…@newsletter) stay quiet.
+    var muteChannels = true
     /// Chats never shown (JIDs).
     var ignored: Set<String> = []
+    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
+    var modes: [String: WAChatMode] = [:]
+
+    func mode(for chat: String) -> WAChatMode { modes[WAJID.normalized(chat)] ?? .automatic }
+
+    mutating func setMode(_ mode: WAChatMode, for chat: String) {
+        let key = WAJID.normalized(chat)
+        if mode == .automatic { modes[key] = nil } else { modes[key] = mode }
+    }
+
+    /// Whether a chat's kind keeps it quiet, before any per-chat choice.
+    func kindIsQuiet(_ chat: String) -> Bool {
+        switch WAJID.kind(chat) {
+        case .person: return false
+        case .group: return muteGroups
+        case .status: return muteStatus
+        case .channel: return muteChannels
+        }
+    }
+
+    /// Whether a message in this chat stays silent: the per-chat choice first, then the kind's rule. A mention in an
+    /// automatic group still reaches you; a muted chat never does.
+    func isQuiet(_ chat: String, mentionsMe: Bool = false) -> Bool {
+        switch mode(for: chat) {
+        case .loud: return false
+        case .muted: return true
+        case .automatic: return kindIsQuiet(chat) && !(WAJID.kind(chat) == .group && mentionsMe)
+        }
+    }
 }
 
 enum WAJID {
+    /// The kinds of chat WhatsApp has, told apart by the JID's server.
+    enum Kind: String, Sendable { case person, group, status, channel }
+
     static func isGroup(_ jid: String) -> Bool { jid.hasSuffix("@g.us") }
+    /// The status updates of your contacts arrive as one chat, status@broadcast.
+    static func isStatus(_ jid: String) -> Bool { jid.lowercased().hasPrefix("status@") }
+    /// A channel (a one-way broadcast you follow).
+    static func isChannel(_ jid: String) -> Bool { jid.hasSuffix("@newsletter") }
+
+    static func kind(_ jid: String) -> Kind {
+        if isGroup(jid) { return .group }
+        if isStatus(jid) { return .status }
+        if isChannel(jid) { return .channel }
+        return .person
+    }
 
     /// "33612345678@s.whatsapp.net" → "+33 6 12 34 56 78"-ish: the digits with a plus.
     static func displayNumber(_ jid: String) -> String {
@@ -155,10 +213,11 @@ struct WAInbox: Equatable, Sendable {
             for id in dropped { seenIds.remove(id) }
         }
 
-        let isGroup = WAJID.isGroup(chat)
-        let number = WAJID.displayNumber(chat)
+        let kind = WAJID.kind(chat)
+        let isGroup = kind == .group
+        let number = kind == .status ? tr("whatsapp.kind.status") : WAJID.displayNumber(chat)
         // In a private chat the other person names it: never your own name on your own message.
-        let personName = isGroup || message.fromMe ? nil : nonEmpty(message.senderName)
+        let personName = kind != .person || message.fromMe ? nil : nonEmpty(message.senderName)
         var conversation = conversations[chat] ?? WAConversation(
             id: chat, name: name ?? message.chatName ?? personName ?? number,
             isGroup: isGroup, lastActivity: message.date)
@@ -180,15 +239,20 @@ struct WAInbox: Equatable, Sendable {
             outcome = .quiet
         } else {
             conversation.unread += 1
-            outcome = isGroup && filters.muteGroups && !message.mentionsMe ? .quiet : .notify
+            outcome = filters.isQuiet(chat, mentionsMe: message.mentionsMe) ? .quiet : .notify
         }
         conversations[chat] = conversation
         return outcome
     }
 
-    /// The conversations the pill lists: muted groups without unread mentions stay out of it.
+    /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
+    /// stay out of it unless something in them mentions you.
     func visible(filters: WAFilters) -> [WAConversation] {
-        sorted.filter { !filters.ignored.contains($0.id) && (!$0.isGroup || !filters.muteGroups || $0.messages.contains { $0.mentionsMe && !$0.fromMe }) }
+        sorted.filter { conversation in
+            guard !filters.ignored.contains(conversation.id) else { return false }
+            return conversation.messages.contains { !$0.fromMe && !filters.isQuiet(conversation.id, mentionsMe: $0.mentionsMe) }
+                || !filters.isQuiet(conversation.id)
+        }
     }
 
     /// Unread messages in the conversations the pill shows (a muted group's quiet messages

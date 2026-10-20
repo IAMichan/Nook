@@ -52,17 +52,19 @@ extension AppModel {
         guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode, !quiet.silent,
               !settings.privateSources.contains(SourceCatalog.screen),
               ScreenAccess.isUsable, viewModel.state.isResting else { return }
-        // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy. With the
-        // model on this Mac each look is a full run on the GPU, so it looks less often (`ThinkAlong.localLookGap`).
-        guard !SystemLoad.isConstrained else { return }
+        // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy, and less often
+        // on battery (`EnergyPolicy`). With the model on this Mac each look is a full run on the GPU, so it looks less
+        // often too (`ThinkAlong.localLookGap`).
+        let plan = EnergyMonitor.shared.plan
+        guard plan.thinksAlong else { return }
+        let minGap = max(settings.useLocal ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
         let frontApp = NSWorkspace.shared.frontmostApplication
         let bundle = frontApp?.bundleIdentifier ?? ""
         // Window title and contents from live cache; throttled to at most once per 5 minutes without cache.
         let front = screenContext.windows.first { $0.isFront && $0.bundleID == bundle }
         let window = front?.title ?? ""
         let print = front?.fingerprint ?? UInt64(Date().timeIntervalSince1970 / 300)
-        guard thinkAlong.shouldLook(bundleID: bundle, window: window, print: print,
-                                    minGap: settings.useLocal ? ThinkAlong.localLookGap : nil) else { return }
+        guard thinkAlong.shouldLook(bundleID: bundle, window: window, print: print, minGap: minGap > 0 ? minGap : nil) else { return }
         thinkAlong.didLook(bundleID: bundle, window: window, print: print)
 
         autoBusy = true

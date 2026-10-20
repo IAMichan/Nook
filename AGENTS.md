@@ -36,6 +36,8 @@ scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 ## 3. Architecture & Security Invariants
 
 - **Shared UI first:** Reuse the components listed in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) instead of rebuilding them inline; add new shared views to `apps/macos/NotchUI/Components`.
+- **One design, from the theme:** Every view under `apps/macos/NotchUI` and `apps/macos/App` takes its colors, type, corner radii, and spacing from `NookTheme` (`NookTheme.TextStyle`, `font`/`mono`/`rounded`, `Radius`, `Spacing`, and the named colors). No inline `Font.system(size:)`, no literal `Color(hex:)`/`Color(red:)`, no corner radius written as a number. State colors keep their meaning: `iris` = Nook, `mint` = done, `amber` = waiting on you, `coral` = error, `violet` = merged. `UIConsistencyTests` and `scripts/ui-lint.sh` enforce this; a file that draws its own colors (a brand mark, a chart palette) is added to both allow-lists with a reason, never by loosening the rule.
+- **One layout:** The notch, the main window, and sheets all render the same `PanelView`; Settings is the single place for configuration. Change the panel once and every surface follows. Do not add a second window with its own layout, and open tasks inside the panel.
 - **`AppModel` is composition-only:** Put feature logic in dedicated services/types or modular `AppModel+….swift` extensions, never directly inside `AppModel.swift`.
 - **Single Brain Pipeline:** Chat, notch cards, and proactive suggestions (*Think Along*) must all route through `prepareRun`. Do not create separate LLM execution paths.
 - **Self-Describing Connectors:** Register new connectors with `SourceCatalog.register` (source metadata, tools, aliases, intents) instead of hardcoding central switch statements.
@@ -49,6 +51,12 @@ Run the fast Foundation-only core & localization test suite before committing:
 
 ```sh
 ./scripts/core-tests.sh
+```
+
+After touching anything under `apps/macos/NotchUI` or `apps/macos/App`, also run the UI consistency check (no Swift toolchain needed; CI runs it on every pull request):
+
+```sh
+./scripts/ui-lint.sh
 ```
 
 To build and test the full macOS app with Xcode:

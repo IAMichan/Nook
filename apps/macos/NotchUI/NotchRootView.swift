@@ -6,6 +6,8 @@ struct NotchRootView: View {
     @EnvironmentObject private var app: AppModel
     // Redraws the closed notch's ring when you mark a chat as finished.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    /// Nook's idle frame rate follows the energy plan: a little slower on battery.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
         let size = viewModel.size
@@ -104,7 +106,7 @@ struct NotchRootView: View {
         }
         let side = NotchViewModel.floatingOrbSide
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
-                       frameRate: viewModel.pointerInside ? 30 : 12)
+                       frameRate: viewModel.pointerInside ? 30 : energy.plan.idleOrbFrameRate)
             .background {
                 let ring = TaskRingItem.all(app: app)
                 if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side) }
@@ -201,7 +203,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
-                    frameRate: viewModel.pointerInside ? 30 : 12)
+                    frameRate: viewModel.pointerInside ? 30 : energy.plan.idleOrbFrameRate)
                 .background {
                     if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh) }
                 }
@@ -269,7 +271,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: tone.symbol)
-                    .font(.system(size: tone == .waiting ? 13 : 11, weight: .bold))
+                    .font(NookTheme.font(tone == .waiting ? 13 : 11, .bold))
                     .foregroundStyle(tone.color)
                     .frame(width: 16)
                 Text(message)
@@ -317,7 +319,7 @@ struct NotchRootView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: viewModel.doneTone.symbol)
-                    .font(.system(size: viewModel.doneTone == .waiting ? 14 : 12, weight: .bold))
+                    .font(NookTheme.font(viewModel.doneTone == .waiting ? 14 : 12, .bold))
                     .foregroundStyle(viewModel.doneTone.color)
                 Text(message)
                     .font(NookTheme.font(13.5, .medium))
@@ -353,7 +355,7 @@ struct NotchRootView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(line)
                     .font(NookTheme.font(13.5, .medium))
@@ -362,7 +364,7 @@ struct NotchRootView: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, 20)
@@ -418,7 +420,7 @@ struct NotchRootView: View {
                 }
                 Button { viewModel.show(.idle) } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(NookTheme.font(10, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -707,26 +709,26 @@ private struct TrackCover: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "music.note")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.music.opacity(0.6))
                 }
             } else {
                 Image(systemName: "music.note")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.music)
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
         )
     }

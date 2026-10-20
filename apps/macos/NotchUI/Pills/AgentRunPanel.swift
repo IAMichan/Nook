@@ -482,7 +482,7 @@ struct AgentRunPanel: View {
                                     }
                                 }
                                 .padding(.vertical, current == event.id ? 4 : 0)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
                             )
                         }
                         .id(block.id)
@@ -626,7 +626,7 @@ struct AgentRunPanel: View {
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 9).fill(run.status.color.opacity(0.07)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(run.status.color.opacity(0.07)))
     }
 
     @ViewBuilder
@@ -717,7 +717,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.amber.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.amber.opacity(0.08)))
     }
 
     private func eventView(_ event: RunEvent) -> some View {
@@ -771,7 +771,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.coral.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.coral.opacity(0.08)))
     }
 
     // MARK: Composer

@@ -54,7 +54,7 @@ struct CommandConsolePanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "terminal").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "terminal").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.console.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
             status
             Spacer(minLength: 4)
