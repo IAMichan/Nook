@@ -26,6 +26,7 @@ struct NookChatView: View {
     /// Follows the answer while it streams, until you scroll away; the same rules as an agent session.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    @State private var scrollPhase: ScrollPhase = .idle
     @State private var renaming = false
     @State private var titleDraft = ""
     @ObservedObject private var embedded = EmbeddedAppStore.shared
@@ -290,14 +291,26 @@ struct NookChatView: View {
             }
             .defaultScrollAnchor(.bottom)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
-            } action: { _, nowAtEnd in
-                atEnd = nowAtEnd
-                if nowAtEnd { scroll.reachedEnd() }
+            // Moving up while the sizes stay the same can only be you (following only ever moves down), so this also
+            // catches a mouse wheel, and a scroll that starts at the end before it leaves it.
+            .onScrollGeometryChange(for: ThreadScrollGeometry.self) { geometry in
+                ThreadScrollGeometry(offset: geometry.contentOffset.y,
+                                     container: geometry.containerSize.height,
+                                     content: geometry.contentSize.height)
+            } action: { old, new in
+                atEnd = new.atEnd
+                if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container, !new.atEnd {
+                    scroll.userScrolled()
+                } else if new.atEnd {
+                    scroll.reachedEnd()
+                }
             }
             .onScrollPhaseChange { _, phase in
+                scrollPhase = phase
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+            }
+            .onChange(of: atEnd) { _, nowAtEnd in
+                if !nowAtEnd, scrollPhase == .interacting || scrollPhase == .decelerating { scroll.userScrolled() }
             }
             // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
             // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
@@ -411,4 +424,13 @@ struct NookChatView: View {
         app.handleUserText(text, images: attached)
         inputFocused = true
     }
+}
+
+/// Where the chat thread is scrolled, to tell your own scrolling apart from following the end.
+private struct ThreadScrollGeometry: Equatable {
+    var offset: Double
+    var container: Double
+    var content: Double
+
+    var atEnd: Bool { offset + container >= content - 48 }
 }
