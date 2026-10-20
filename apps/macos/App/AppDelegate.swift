@@ -124,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(music)
             status = true
         }
+        if let update = Self.updateItem() {
+            add(to: menu, title: update.title, action: #selector(showUpdate), icon: update.icon)
+            status = true
+        }
         if status { menu.addItem(.separator()) }
 
         // Actions.
@@ -164,6 +168,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         add(to: menu, title: tr("menu.quit"), action: #selector(quit), key: "q")
     }
+
+    /// The update, when there is something to do about it: install it, follow it, or restart to finish it.
+    private static func updateItem() -> (title: String, icon: String)? {
+        let updater = AppUpdater.shared
+        switch updater.phase {
+        case .available: return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
+        case .installing: return (tr("update.menu.installing"), "arrow.triangle.2.circlepath")
+        case .readyToRestart: return (tr("update.menu.restart"), "arrow.clockwise.circle")
+        case .failed: return (tr("update.failed.title"), "exclamationmark.triangle")
+        default: return nil
+        }
+    }
+
+    @objc private func showUpdate() { AppUpdater.shared.showPanel() }
 
     @objc private func toggleAutocomplete() {
         AutocompleteController.shared.togglePauseEverywhere()

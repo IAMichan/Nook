@@ -138,6 +138,8 @@ Press **`⌘R`** in Xcode to build and run. Nook runs as a menu-bar and notch ap
 
 > [!TIP]
 > **After every `git pull`:** Run `./update.sh` from the repository root. Because `Nook.xcodeproj` is generated from [`apps/macos/project.yml`](apps/macos/project.yml) and not tracked in Git, running `./update.sh` pulls the latest changes and regenerates both the macOS and iOS Xcode projects so new Swift files are always in scope.
+>
+> **Or let Nook do it:** when a pull request is merged into `main`, an **Update** button appears in the footer of the Agents tab. One click fetches `main`, regenerates the project, builds it with Xcode and restarts Nook. See [`docs/UPDATES.md`](docs/UPDATES.md).
 
 You can also build and run the unit test suite from the command line:
 

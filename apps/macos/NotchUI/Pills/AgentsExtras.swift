@@ -14,8 +14,9 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Pull requests and usage as quiet icons under the list, and Settings at the far end. It takes the list's width, so
-/// Settings follows the line beside the list when you drag it.
+/// Pull requests and usage as quiet icons under the list, and Settings at the far end, with the update button beside it
+/// when main has something this build lacks. It takes the list's width, so Settings follows the line beside the list
+/// when you drag it.
 struct AgentsFooter: View {
     let selected: String
     let open: (String) -> Void
@@ -28,6 +29,7 @@ struct AgentsFooter: View {
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
             Spacer(minLength: 0)
+            UpdateFooterButton()
             FooterIcon(label: tr("agents.footer.settings"), active: false,
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
         }
