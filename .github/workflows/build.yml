@@ -123,7 +123,7 @@ jobs:
         run: grep -E "error:|failed|XCTAssert" test.log | sort -u | head -100 || true
       - name: Keep the logs of a failed build
         if: failure()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-logs-${{ github.run_attempt }}
           path: |
