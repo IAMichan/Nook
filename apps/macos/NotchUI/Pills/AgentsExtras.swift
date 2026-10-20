@@ -14,10 +14,11 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Pull requests and usage as quiet icons under the list, and Settings at the far end, with the update button beside it
-/// when main has something this build lacks. It takes the list's width, so Settings follows the line beside the list
-/// when you drag it.
-struct AgentsFooter: View {
+/// Pull requests and usage as quiet icons, and Settings at the far end, with the update button beside it when main has
+/// something this build lacks. It shows on every tab: on Agents under the session list, taking the list's width so
+/// Settings follows the line beside the list when you drag it; on the other tabs along the bottom of the panel, where
+/// pull requests and usage open their page on Agents.
+struct PanelFooter: View {
     let selected: String
     let open: (String) -> Void
     let openSettings: () -> Void

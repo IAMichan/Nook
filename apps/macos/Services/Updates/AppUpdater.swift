@@ -4,7 +4,7 @@ import Combine
 
 /// Keeps Nook in step with main. Nook is built from its own git checkout, so an update is a pull request that was merged
 /// since this build: the build wrote its commit into Info.plist (`BuildSource`), and every half hour (and after the Mac
-/// wakes) the updater fetches main and counts what came in. The Agents footer then shows an update button; installing is
+/// wakes) the updater fetches main and counts what came in. The panel footer then shows an update button; installing is
 /// always your click and goes: fetch → fast-forward the checkout → xcodegen → xcodebuild (same configuration and Xcode
 /// as this build) → put the new app where this one runs → restart. Each step is logged to ~/Library/Logs/Nook, and the
 /// install is written to the action log.

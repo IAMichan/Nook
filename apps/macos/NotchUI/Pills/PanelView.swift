@@ -34,6 +34,11 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
                     .padding(.top, headerInset > 0 ? 20 : 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Agents keeps the footer under its session list.
+                if tab != .agents && !app.demoMode {
+                    PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() })
+                        .padding(.top, 8)
+                }
             }
         }
         .animation(NookTheme.swap, value: sheet)
@@ -53,6 +58,12 @@ struct PanelView: View {
         } else {
             viewModel.show(.panel(tab), inNotch: true)
         }
+    }
+
+    /// A footer page (pull requests, usage) from another tab: it opens on Agents.
+    private func openOnAgents(_ page: String) {
+        viewModel.selectedAgentID = page
+        select(.agents)
     }
 
     /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
@@ -80,8 +91,8 @@ struct PanelView: View {
             } else {
                 Spacer()
             }
-            // On Agents the gear sits in the footer under the session list instead.
-            let gear = tab != .agents || app.demoMode
+            // The gear sits in the footer instead, which every tab shows outside demo mode.
+            let gear = app.demoMode
             HStack(spacing: 2) {
                 talkButton
                 if gear || !inWindow {
