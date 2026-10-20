@@ -50,7 +50,7 @@ final class GitHubSignIn: ObservableObject {
         cancel()
         phase = .checkingCLI
         task = Task {
-            switch await Task.detached { Self.cliToken() }.value {
+            switch await Task.detached(operation: { Self.cliToken() }).value {
             case .success(let token): store(token)
             case .failure(let error): phase = .failed(error.message)
             }

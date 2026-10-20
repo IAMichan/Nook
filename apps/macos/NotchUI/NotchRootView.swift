@@ -4,6 +4,8 @@ import SwiftUI
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
+    // Redraws the closed notch's ring when you mark a chat as finished.
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     var body: some View {
         let size = viewModel.size
@@ -88,7 +90,7 @@ struct NotchRootView: View {
 
     // MARK: Floating and idle: just Nook
 
-    /// Nook without a bar, in the same thin ring as the closed notch: what runs, waits for you or is on today.
+    /// Nook without a bar, in the same ring as the closed notch and the open panel.
     private var bareOrb: some View {
         let active = app.activeAgents
         let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
@@ -104,8 +106,8 @@ struct NotchRootView: View {
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
                        frameRate: viewModel.pointerInside ? 30 : 12)
             .background {
-                let ring = closedRingItems
-                if !ring.isEmpty { NookTaskRingCompact(items: ring, orbSize: 28, maxSide: side) }
+                let ring = TaskRingItem.all(app: app)
+                if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side) }
             }
             .frame(width: side, height: side)
             .contentShape(Circle())
@@ -124,7 +126,7 @@ struct NotchRootView: View {
             if !active.isEmpty {
                 // An agent is working: Nook is thinking along inside a thin ring, one piece per session, like in the panel.
                 let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: closedRingItems) {
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -132,7 +134,7 @@ struct NotchRootView: View {
                 .floatingDrag(viewModel)
             } else if app.chat.anyBusy {
                 // A Nook is working on something in the background: visibly thinking along.
-                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: closedRingItems) {
+                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -141,7 +143,7 @@ struct NotchRootView: View {
             } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
             } else {
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, orbInset: 3, ring: closedRingItems) {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, ring: TaskRingItem.all(app: app)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -189,7 +191,6 @@ struct NotchRootView: View {
         mood: NookMood,
         animated: Bool,
         orbSize: CGFloat = 24,
-        orbInset: CGFloat = 0,
         ring: [TaskRingItem] = [],
         @ViewBuilder right: () -> Right
     ) -> some View {
@@ -199,9 +200,8 @@ struct NotchRootView: View {
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
                     frameRate: viewModel.pointerInside ? 30 : 12)
                 .background {
-                    if !ring.isEmpty { NookTaskRingCompact(items: ring, orbSize: orbSize, maxSide: nh) }
+                    if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh) }
                 }
-                .offset(x: orbInset)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()
@@ -474,30 +474,11 @@ struct PanelOrb: View {
     }
 }
 
-extension NotchRootView {
-    /// The closed notch's ring: what is running or waiting for you, with an amber piece for anything else that waits
-    /// (an approval or a session the ring does not list). What finished or failed waits in the open panel. When nothing
-    /// runs or waits, it quietly shows what is on today, one grey piece each, instead of a number.
-    fileprivate var closedRingItems: [TaskRingItem] {
-        var items = TaskRingItem.all(app: app).filter { $0.state == .running || $0.state == .waiting }
-        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
-        let shown = items.filter { $0.state == .waiting }.count
-        for i in 0..<max(0, min(waiting, 8) - shown) {
-            items.append(TaskRingItem(id: "waiting-\(i)", title: AgentStatus.waiting.label, detail: "", state: .waiting, target: .panel))
-        }
-        guard items.isEmpty else { return Array(items.prefix(8)) }
-        // Built from every source and session: only worked out when nothing else fills the ring.
-        return app.todayItems.prefix(8).map {
-            TaskRingItem(id: "today-\($0.id)", title: $0.title, detail: $0.subtitle, state: .today, target: .panel)
-        }
-    }
-}
-
 extension TaskRingItem {
     /// What Nook's ring shows: every agent session that runs, waits or failed (and recently finished), and every Nook
     /// that works, waits for you or has news.
     @MainActor
-    fileprivate static func all(app: AppModel) -> [TaskRingItem] {
+    static func all(app: AppModel) -> [TaskRingItem] {
         var items: [TaskRingItem] = []
         let recent = Date().addingTimeInterval(-20 * 60)
         for session in app.agentSessions where !session.isDetected {
@@ -553,8 +534,6 @@ extension PanelOrb {
             }
         case .nook(let id):
             app.openConversation(id)
-        case .panel:
-            break   // only in the closed notch, which opens the panel itself
         }
     }
 }

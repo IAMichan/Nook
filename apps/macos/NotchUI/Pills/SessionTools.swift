@@ -171,8 +171,8 @@ private struct SessionPanelSlot {
     let tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>
     let closeHelp: String
 
-    static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
-    static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom")
+    @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
+    @MainActor static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom")
 }
 
 /// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
@@ -386,6 +386,7 @@ private struct SessionToolPanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                SessionTerminalActions(directory: directory).id(directory)
             }
             Button(action: close) {
                 Image(systemName: "xmark")

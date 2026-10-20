@@ -364,7 +364,7 @@ struct WorkspaceSettingsSection: View {
 
     /// Registers the bridge with the agent's own configuration, typed in a visible terminal so you see exactly what runs.
     private func link(_ provider: RunProvider) {
-        try? WorkspaceBridgeScript.install()
+        _ = try? WorkspaceBridgeScript.install()
         do {
             guard let command = WorkspaceBridgeScript.linkCommand(for: provider) else { return }
             try app.runVisibly(command,

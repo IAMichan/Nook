@@ -47,6 +47,8 @@ enum AgentCommand {
         var bridge: BridgeLaunch? = nil
         /// Claude Code knows `--thinking-display`: ask for summarized thinking, so newer models show it.
         var thinkingDisplay = false
+        /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
+        var effort: String? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
         var customAgent: CustomAgent? = nil
     }
@@ -70,6 +72,7 @@ enum AgentCommand {
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
+            if let effort = input.effort, !effort.isEmpty { arguments += ["--effort", effort] }
             if let resume = input.resumeSessionID, !resume.isEmpty {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }

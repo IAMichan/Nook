@@ -515,6 +515,8 @@ struct NewRunConfig: Equatable, Sendable {
     var model = ""
     var mode: ExecutionMode = .agent
     var permission: PermissionPolicy = .acceptEdits
+    /// Reasoning effort for the session; nil is the agent's own default.
+    var effort: String? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""

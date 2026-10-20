@@ -104,7 +104,7 @@ struct TranscriptConversation: View {
                 let path = self.path
                 if let load = self.load {
                     // Without an answer the conversation already shown stays.
-                    if let fresh = await Task.detached(priority: .utility) { load() }.value, fresh != messages { messages = fresh }
+                    if let fresh = await Task.detached(priority: .utility, operation: { load() }).value, fresh != messages { messages = fresh }
                 } else if !path.isEmpty {
                     let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
                     if fresh != messages { messages = fresh }

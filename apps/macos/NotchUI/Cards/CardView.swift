@@ -313,13 +313,14 @@ private struct ChatBubbleView: View {
     }
 }
 
-/// A video in a chat bubble: its first frame with a play button, and a click plays it right there, with the system's
-/// controls (pause, scrub, volume, full screen).
+/// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with the
+/// system's controls (pause, scrub, volume). The enlarge button opens it big in a window of its
+/// own that goes full screen, carrying on where the bubble was.
 private struct VideoTile: View {
     let url: URL
     let poster: NSImage?
     let name: String
-    @State private var playing = false
+    @State private var player: AVPlayer?
     @State private var hovering = false
 
     private var size: CGSize {
@@ -329,16 +330,18 @@ private struct VideoTile: View {
     }
 
     var body: some View {
-        Group {
-            if playing {
-                InlinePlayer(url: url)
+        ZStack(alignment: .topTrailing) {
+            if let player {
+                InlinePlayer(player: player)
             } else {
-                Button { playing = true } label: {
+                Button { play() } label: {
                     ZStack {
+                        Color.black
                         if let poster {
-                            Image(nsImage: poster).resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Color.white.opacity(0.06)
+                            Image(nsImage: poster)
+                                .resizable()
+                                .interpolation(.high)
+                                .aspectRatio(contentMode: .fit)
                         }
                         Image(systemName: "play.fill")
                             .font(NookTheme.font(18, .semibold))
@@ -349,30 +352,62 @@ private struct VideoTile: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering = $0 }
                 .help(tr("card.video.play"))
                 .accessibilityLabel("\(tr("card.video.play")): \(name)")
+            }
+            if hovering || player == nil {
+                Button { enlarge() } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(NookTheme.font(11, .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+                .help(tr("card.video.enlarge"))
+                .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
             }
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .onHover { hovering = $0 }
+        .onDisappear { player?.pause() }
+    }
+
+    private func play() {
+        let player = AVPlayer(url: url)
+        self.player = player
+        player.play()
+    }
+
+    /// The video big, from where the bubble was; the bubble stops so it never plays twice.
+    private func enlarge() {
+        let time = player?.currentTime() ?? .zero
+        player?.pause()
+        player = nil
+        VideoWindow.shared.show(url, title: name, at: time, aspect: poster?.size)
     }
 }
 
-/// The system's video player, playing as soon as it shows and stopped when the bubble goes away.
+/// The system's video player in a bubble: the picture whole, never cropped, and stopped when the bubble goes away.
 private struct InlinePlayer: NSViewRepresentable {
-    let url: URL
+    let player: AVPlayer
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.controlsStyle = .inline
-        view.showsFullScreenToggleButton = true
-        view.player = AVPlayer(url: url)
-        view.player?.play()
+        view.videoGravity = .resizeAspect
+        // Full screen happens in the video's own window: the notch cannot go full screen.
+        view.showsFullScreenToggleButton = false
+        view.player = player
         return view
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {}
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        if view.player !== player { view.player = player }
+    }
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
         view.player?.pause()

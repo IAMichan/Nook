@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Starting a session in the notch: one question, one field, and a few quiet choices underneath.
-/// "What should we build in nook?" — type the task, press Return. Agent and account, mode, permissions,
+/// "What should we build in nook?" — type the task, press Return. Agent and account, mode, permissions, effort,
 /// where it works (this folder or a new worktree) and the branch it starts from are small menus, already set to
 /// your last choices. Nothing else to fill in: title, branch name and worktree location are derived.
 struct NewSessionComposer: View {
@@ -159,6 +159,7 @@ struct NewSessionComposer: View {
             modeMenu
             ComposerDivider()
             permissionMenu
+            effortMenu
         }
         .rich(composerModel, composerConfig)
         .images($images)
@@ -230,6 +231,40 @@ struct NewSessionComposer: View {
         }
         .disabled(config.mode == .plan)
         .help(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
+    }
+
+    /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
+    @ViewBuilder
+    private var effortMenu: some View {
+        let levels = EffortLevels.levels(for: config.provider, model: config.model.isEmpty ? nil : config.model)
+        if !levels.isEmpty {
+            ComposerDivider()
+            ComposerDropdown(width: 220) {
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(config.effort)))
+            } content: {
+                DropdownHeader(title: tr("compose.effort"))
+                DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: config.effort == nil) {
+                    config.effort = nil
+                    remember()
+                }
+                ForEach(levels, id: \.self) { level in
+                    DropdownRow(symbol: Self.effortSymbol(level, in: levels), title: tr(EffortLevels.label(level)),
+                                chosen: config.effort == level) {
+                        config.effort = level
+                        remember()
+                    }
+                }
+            }
+            .help(tr("compose.effort.help"))
+        }
+    }
+
+    /// The gauge fills up with the level.
+    private static func effortSymbol(_ level: String, in levels: [String]) -> String {
+        let index = levels.firstIndex(of: level) ?? 0
+        if index == 0 { return "gauge.with.dots.needle.0percent" }
+        if index == levels.count - 1 { return "gauge.with.dots.needle.100percent" }
+        return index * 2 < levels.count ? "gauge.with.dots.needle.33percent" : "gauge.with.dots.needle.67percent"
     }
 
     // MARK: Below the box
@@ -443,6 +478,7 @@ struct NewSessionComposer: View {
         config.model = settings.model(for: provider)
         config.mode = settings.defaultMode
         config.permission = settings.permission(for: provider)
+        config.effort = settings.effort(for: provider)
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
@@ -454,6 +490,7 @@ struct NewSessionComposer: View {
         if config.provider != provider {
             config.provider = provider
             config.model = settings.model(for: provider)
+            config.effort = settings.effort(for: provider)
             if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
         }
         config.profileID = account
@@ -473,6 +510,7 @@ struct NewSessionComposer: View {
         settings.setModel(config.model, for: config.provider)
         settings.defaultMode = config.mode
         settings.defaultPermission = config.permission
+        settings.setEffort(config.effort, for: config.provider)
         settings.defaultIsolation = config.isolation
     }
 

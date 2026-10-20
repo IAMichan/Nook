@@ -357,7 +357,7 @@ private struct ScheduledTaskEditor: View {
         .frame(width: 540, height: 640)
         .background(NookTheme.graphite)
         .preferredColorScheme(.dark)
-        .onChange(of: provider) { _ in
+        .onChange(of: provider) {
             if !provider.capabilities.policies.contains(permission) { permission = .ask }
         }
     }

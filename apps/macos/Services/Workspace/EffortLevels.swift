@@ -4,7 +4,8 @@ import Foundation
 // string); Nook has no live catalogue yet, so `advertised` lets the lead pass what the session reports.
 enum EffortLevels {
     /// Codex: low, medium, high are the safe common set; "minimal" and "xhigh" exist only on some models, so they
-    /// appear only when `advertised` says so. Claude: `[]` until the CLI flag is verified.
+    /// appear only when `advertised` says so. Claude Code takes `--effort` at launch; low, medium and high are the
+    /// levels every model accepts.
     static func levels(for provider: RunProvider, model: String?, advertised: [String]? = nil) -> [String] {
         switch provider {
         case .codex:
@@ -12,6 +13,8 @@ enum EffortLevels {
                 var seen = Set<String>()
                 return advertised.map { $0.lowercased() }.filter { !$0.isEmpty && seen.insert($0).inserted }
             }
+            return ["low", "medium", "high"]
+        case .claude:
             return ["low", "medium", "high"]
         default:
             return []

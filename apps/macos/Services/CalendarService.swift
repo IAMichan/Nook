@@ -1,5 +1,5 @@
 import Foundation
-import EventKit
+@preconcurrency import EventKit
 
 struct CalEvent: Identifiable, Equatable {
     var id: String

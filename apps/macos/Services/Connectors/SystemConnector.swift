@@ -41,7 +41,7 @@ enum MacStatus {
         await Task.detached(priority: .userInitiated) { () -> MacReport in
             var report = MacReport()
             if let first = cpuTicks() {
-                Thread.sleep(forTimeInterval: 0.5)
+                try? await Task.sleep(for: .milliseconds(500))
                 if let second = cpuTicks(), second.total > first.total {
                     report.cpu = Double(second.busy - first.busy) / Double(second.total - first.total) * 100
                 }
