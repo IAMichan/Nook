@@ -181,14 +181,17 @@ struct PanelApprovalBar: View {
                 }
                 .help(approval.command)
                 Spacer(minLength: 6)
-                if let key = sessionKey(approval) {
-                    NookGhostButton(title: tr("button.view")) {
-                        viewModel.selectedAgentID = key
-                        viewModel.show(.panel(.agents))
-                    }
-                }
-                NookGhostButton(title: tr("button.deny")) { decide(approval, .deny) }
-                NookPrimaryButton(title: tr("button.allow")) { decide(approval, .allow) }
+                NookNoticeActions(
+                    primary: NookNoticeAction(tr("button.allow")) { decide(approval, .allow) },
+                    secondary: NookNoticeAction(tr("button.deny")) { decide(approval, .deny) },
+                    extra: sessionKey(approval).map { key in
+                        [NookNoticeAction(tr("button.view")) {
+                            viewModel.selectedAgentID = key
+                            viewModel.show(.panel(.agents))
+                        }]
+                    } ?? []
+                )
+                .fixedSize()
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -212,10 +215,11 @@ struct PanelApprovalBar: View {
                 .help(notice.message)
             Spacer(minLength: 6)
             if let action = notice.action {
-                NookPrimaryButton(title: notice.button) {
+                NookNoticeActions(primary: NookNoticeAction(notice.button) {
                     viewModel.dismissPanelNotice()
                     action()
-                }
+                })
+                .fixedSize()
             }
             NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
         }
@@ -244,11 +248,14 @@ struct PanelApprovalBar: View {
             }
             .help(request.items.first?.question ?? "")
             Spacer(minLength: 6)
-            NookGhostButton(title: tr("approval.inTerminal")) { answerInTerminal(request) }
-            NookPrimaryButton(title: tr("button.view")) {
-                viewModel.selectedAgentID = request.sessionKey
-                viewModel.show(.panel(.agents))
-            }
+            NookNoticeActions(
+                primary: NookNoticeAction(tr("button.view")) {
+                    viewModel.selectedAgentID = request.sessionKey
+                    viewModel.show(.panel(.agents))
+                },
+                secondary: NookNoticeAction(tr("approval.inTerminal")) { answerInTerminal(request) }
+            )
+            .fixedSize()
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)

@@ -27,57 +27,6 @@ struct NookPrimaryButton: View {
     }
 }
 
-/// A card's main action and its secondary one in a single pill: the main half is the white button, the secondary half
-/// sits plain on the pill's dark fill.
-struct NookSplitButton: View {
-    let primary: CardAction
-    let secondary: CardAction
-    var compact: Bool = false
-    let onAction: (CardAction) -> Void
-    @State private var hoveringPrimary = false
-    @State private var hoveringSecondary = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button { onAction(primary) } label: {
-                HStack(spacing: 7) {
-                    if let symbol = primary.symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
-                    Text(primary.label).font(NookTheme.font(14, .semibold))
-                }
-                .foregroundStyle(NookTheme.ink)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, primary.symbol == nil ? 18 : 16)
-                .frame(maxHeight: .infinity)
-                .background(Capsule().fill(hoveringPrimary ? Color.white : NookTheme.paper))
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .onHover { hoveringPrimary = $0 }
-
-            Button { onAction(secondary) } label: {
-                HStack(spacing: 6) {
-                    if let symbol = secondary.symbol { Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
-                    Text(secondary.label).font(NookTheme.font(compact ? 13 : 14, .semibold))
-                }
-                .foregroundStyle(hoveringSecondary ? NookTheme.paper : NookTheme.textSecondary)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.leading, compact ? 10 : 14)
-                .padding(.trailing, compact ? 14 : 18)
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hoveringSecondary = $0 }
-        }
-        .padding(3)
-        .frame(height: 38)
-        .background(Capsule().fill(NookTheme.smoke))
-        .hoverLift(hoveringPrimary || hoveringSecondary)
-    }
-}
-
 /// Compact white button for use in chat.
 struct SmallPrimaryButton: View {
     let title: String
@@ -278,39 +227,6 @@ struct NookIconButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(label)
-    }
-}
-
-/// A round "…" next to the mic that opens a card's less common actions as a menu, each with its symbol.
-struct NookMoreMenu: View {
-    let actions: [CardAction]
-    var size: CGFloat = 34
-    let onAction: (CardAction) -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Menu {
-            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
-                Button { onAction(action) } label: {
-                    if let symbol = action.symbol { Label(action.label, systemImage: symbol) } else { Text(action.label) }
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(NookTheme.font(size * 0.42, .semibold))
-                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: size, height: size)
-                .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
-                .contentShape(Circle())
-                .hoverLift(hovering, scale: 1.06)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .onHover { hovering = $0 }
-        .help(tr("card.more"))
-        .accessibilityLabel(tr("card.more"))
     }
 }
 
