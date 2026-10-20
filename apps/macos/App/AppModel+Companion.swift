@@ -21,6 +21,11 @@ extension AppModel {
 
     func startWhatsApp() {
         WhatsAppLink.shared.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
+        // New ticks redraw the chat's card when it is on screen; they never bring one up by themselves.
+        WhatsAppLink.shared.onReceipt = { [weak self] chat in
+            guard let self, self.viewModel.hasCard(id: Self.whatsAppCardPrefix + chat) else { return }
+            self.presentWhatsApp(chat)
+        }
         WhatsAppLink.shared.start()
     }
 
@@ -50,7 +55,8 @@ extension AppModel {
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
                                     time: time.string(from: message.date),
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
-                                    fromMe: message.fromMe, attachment: file)
+                                    fromMe: message.fromMe, attachment: file,
+                                    ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
                 switch message.media {
@@ -174,6 +180,16 @@ extension AppModel {
     static func photoHeight(_ image: NSImage) -> CGFloat {
         guard image.size.width > 0, image.size.height > 0 else { return 0 }
         return min(180, 240 * image.size.height / image.size.width)
+    }
+
+    static func bubbleTicks(_ receipt: WAReceipt) -> BubbleTicks {
+        switch receipt {
+        case .failed: return .failed
+        case .pending: return .pending
+        case .sent: return .sent
+        case .delivered: return .delivered
+        case .read: return .read
+        }
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {

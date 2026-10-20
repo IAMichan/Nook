@@ -211,7 +211,7 @@ actor GOWAProvider: WhatsAppProvider {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
         let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
-            "webhook_url": url, "webhook_secret": secret, "webhook_events": "message",
+            "webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack",
         ])
         try check(data, code)
     }
@@ -355,7 +355,7 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
-        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent"], "secret": secret]
+        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack"], "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
         let hooks = (try? JSONSerialization.jsonObject(with: list)) as? [[String: Any]] ?? []

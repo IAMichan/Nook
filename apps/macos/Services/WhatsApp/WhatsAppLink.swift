@@ -144,6 +144,8 @@ final class WhatsAppLink: ObservableObject {
 
     /// A new message reached you (not a muted group, not your own): the notch shows it.
     var onMessage: ((_ chat: String) -> Void)?
+    /// Your own messages in a chat got new ticks (delivered, read).
+    var onReceipt: ((_ chat: String) -> Void)?
 
     var isConnected: Bool { link == .connected }
 
@@ -385,8 +387,14 @@ final class WhatsAppLink: ObservableObject {
         guard provider != nil else { return }
         lastWebhook = Date()
         if webhook != .registered { webhook = .registered }
-        guard case .message(let message)? = WAWebhook.parse(kind: kind, body: body, me: me) else { return }
-        ingest([message], announce: true)
+        switch WAWebhook.parse(kind: kind, body: body, me: me) {
+        case .message(let message)?:
+            ingest([message], announce: true)
+        case .receipt(let ids, let chat, let status)?:
+            if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
+        default:
+            break
+        }
     }
 
     private var webhookAlive: Bool {

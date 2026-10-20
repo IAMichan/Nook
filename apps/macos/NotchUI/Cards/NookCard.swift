@@ -68,6 +68,22 @@ struct ChatBubble: Equatable, Identifiable {
     var media: BubbleMedia = .file
     /// A picture of the file: the photo, the video's first frame or the document's first page.
     var image: NSImage? = nil
+    /// Your own message's ticks next to its time; nil shows none (their message, or a status that isn't known).
+    var ticks: BubbleTicks? = nil
+}
+
+/// How far your own message got, as WhatsApp shows it.
+enum BubbleTicks: Equatable {
+    /// Still on its way to the server: a clock.
+    case pending
+    /// On the server: one grey tick.
+    case sent
+    /// On their phone: two grey ticks.
+    case delivered
+    /// Read: two blue ticks.
+    case read
+    /// It could not be sent.
+    case failed
 }
 
 enum BubbleMedia: Equatable {

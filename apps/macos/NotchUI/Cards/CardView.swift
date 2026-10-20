@@ -340,10 +340,13 @@ private struct ChatBubbleView: View {
                     } else {
                         Spacer(minLength: 0)
                     }
-                    Text(bubble.time)
-                        .font(NookTheme.font(10.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize()
+                    HStack(spacing: 3) {
+                        Text(bubble.time)
+                            .font(NookTheme.font(10.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                        if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+                    }
+                    .fixedSize()
                 }
             }
             .padding(.horizontal, 12)
@@ -353,6 +356,56 @@ private struct ChatBubbleView: View {
                     .fill(bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)
             )
             if !bubble.fromMe { Spacer(minLength: 70) }
+        }
+    }
+}
+
+/// Your own message's ticks after its time, as WhatsApp draws them: a clock while it goes out, one grey tick on the
+/// server, two on their phone, two blue ones once read, a red mark when it could not be sent.
+private struct TicksView: View {
+    let ticks: BubbleTicks
+
+    var body: some View {
+        Group {
+            switch ticks {
+            case .pending:
+                Image(systemName: "clock").font(NookTheme.font(9, .semibold))
+            case .sent:
+                check
+            case .delivered, .read:
+                // The second tick overlaps the first, as on the phone.
+                ZStack(alignment: .leading) {
+                    check
+                    check.padding(.leading, 4)
+                }
+            case .failed:
+                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(10, .semibold))
+            }
+        }
+        .foregroundStyle(color)
+        .accessibilityElement()
+        .accessibilityLabel(tr(label))
+    }
+
+    private var check: some View {
+        Image(systemName: "checkmark").font(NookTheme.font(9, .bold))
+    }
+
+    private var color: Color {
+        switch ticks {
+        case .read: return NookTheme.blue
+        case .failed: return NookTheme.coral
+        case .pending, .sent, .delivered: return NookTheme.textTertiary
+        }
+    }
+
+    private var label: String {
+        switch ticks {
+        case .pending: return "whatsapp.ticks.pending"
+        case .sent: return "whatsapp.ticks.sent"
+        case .delivered: return "whatsapp.ticks.delivered"
+        case .read: return "whatsapp.ticks.read"
+        case .failed: return "whatsapp.ticks.failed"
         }
     }
 }
