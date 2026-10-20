@@ -50,6 +50,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     }
     /// One batch for every decode, at most `readChunk` tokens.
     private var batch: llama_batch
+    private var sampler: CompletionSampler
     /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
     /// prompt, to go on from instead of reading the whole prompt again.
     private var checkpoint: (tokens: [llama_token], data: [UInt8])?
@@ -87,6 +88,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         self.context = context
         vocab = llama_model_get_vocab(model)
         vocabSize = Int(llama_vocab_n_tokens(vocab))
+        sampler = CompletionSampler(vocabularySize: vocabSize)
         chat = Self.chatFrame(model)
         batch = llama_batch_init(Int32(Self.readChunk), 0, 1)
     }
@@ -515,14 +517,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
 
     /// The most likely token after the word bonus, with its probability before the bonus (softmax over all tokens).
     private func mostLikely(_ logits: UnsafeMutablePointer<Float>) -> (llama_token, Float) {
-        var best = 0
-        var maximum = logits[0]
-        for index in 1..<vocabSize where logits[index] > maximum {
-            maximum = logits[index]
-            best = index
-        }
-        var sum: Float = 0
-        for index in 0..<vocabSize { sum += exp(logits[index] - maximum) }
+        let (index, maximum, sum) = sampler.maximum(logits)
+        var best = index
         var score = maximum
         for (token, bonus) in bias where Int(token) < vocabSize && logits[Int(token)] + bonus > score {
             score = logits[Int(token)] + bonus
@@ -531,23 +527,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return (llama_token(best), exp(logits[best] - maximum) / sum)
     }
 
-    /// The `count` highest logits without sorting the whole vocabulary (often 150 000+ tokens).
+    /// The `count` highest logits, highest first (see `CompletionSampler.top`).
     private func topTokens(_ logits: UnsafeMutablePointer<Float>, count: Int) -> [llama_token] {
-        var top: [(Int, Float)] = []
-        top.reserveCapacity(count + 1)
-        for index in 0..<vocabSize {
-            let value = logits[index]
-            if top.count < count {
-                top.append((index, value))
-                if top.count == count { top.sort { $0.1 > $1.1 } }
-            } else if value > top[count - 1].1 {
-                var position = count - 1
-                while position > 0, top[position - 1].1 < value { position -= 1 }
-                top.insert((index, value), at: position)
-                top.removeLast()
-            }
-        }
-        if top.count < count { top.sort { $0.1 > $1.1 } }
-        return top.map { llama_token($0.0) }
+        sampler.top(logits, k: count).map { llama_token($0) }
     }
 }

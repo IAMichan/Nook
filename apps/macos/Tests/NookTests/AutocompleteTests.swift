@@ -639,4 +639,33 @@ final class AutocompleteTests: XCTestCase {
         memo.forget()
         XCTAssertNil(memo.recall(before: "Kind", field: "mail"))
     }
+
+    // MARK: Sampling
+
+    func testSamplerMatchesAPlainPassOverTheVocabulary() {
+        var generator = SystemRandomNumberGenerator()
+        for size in [1, 7, 50_000] {
+            var logits = (0..<size).map { _ in Float.random(in: -20...12, using: &generator) }
+            logits[size / 3] = 14
+            var sampler = CompletionSampler(vocabularySize: size)
+            let (index, value, sum) = logits.withUnsafeBufferPointer { sampler.maximum($0.baseAddress!) }
+            XCTAssertEqual(index, size / 3)
+            XCTAssertEqual(value, 14)
+            let plain = logits.reduce(Float(0)) { $0 + exp($1 - 14) }
+            XCTAssertEqual(sum, plain, accuracy: plain * 1e-4)
+
+            let k = min(64, size)
+            let top = logits.withUnsafeBufferPointer { sampler.top($0.baseAddress!, k: k) }
+            let sorted = logits.indices.sorted { logits[$0] > logits[$1] }
+            XCTAssertEqual(top, Array(sorted.prefix(k)))
+        }
+    }
+
+    func testSamplerTopWidensItsMarginForAFlatDistribution() {
+        // Far apart: no 5 within the first margin of the highest.
+        let logits: [Float] = [0, -100, -40, -20, -300, -10, -80]
+        var sampler = CompletionSampler(vocabularySize: logits.count)
+        let top = logits.withUnsafeBufferPointer { sampler.top($0.baseAddress!, k: 5) }
+        XCTAssertEqual(top, [0, 5, 3, 2, 6])
+    }
 }
