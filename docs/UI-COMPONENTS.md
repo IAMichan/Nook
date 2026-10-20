@@ -57,18 +57,25 @@ The checklist for a new or changed view:
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
-- Every string through `tr("key")` in all five languages, and a `.help` or accessibility label on a symbol-only control.
+- Every string through `tr("key")` in all five languages, and a `.help` and accessibility label on a symbol-only control
+  or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
+- A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
+  `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
+  Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
 
 ## Components — `apps/macos/NotchUI/Components`
 
 | Component | File | Use |
 | --- | --- | --- |
-| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards and in chat (optional SF Symbol before the title) |
+| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
-| `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
+| `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
+| `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
+| `ListEmptyNote` | `ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
