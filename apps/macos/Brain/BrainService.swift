@@ -398,11 +398,11 @@ final class BrainService {
             let overlap = words.filter { haystack.contains($0) }.count
             return overlap * 10 + (core.contains(tool.name) ? 5 : 0)
         }
-        let ranked = tools.enumerated().filter { rank[$0.element.name] == nil }.sorted { a, b in
-            let (sa, sb) = (score(a.element), score(b.element))
-            return sa != sb ? sa > sb : a.offset < b.offset
-        }
-        return Array((wanted + ranked.map(\.element)).prefix(limit))
+        // Scored once per tool, not twice per comparison.
+        let ranked = tools.enumerated().filter { rank[$0.element.name] == nil }
+            .map { (offset: $0.offset, tool: $0.element, score: score($0.element)) }
+            .sorted { a, b in a.score != b.score ? a.score > b.score : a.offset < b.offset }
+        return Array((wanted + ranked.map(\.tool)).prefix(limit))
     }
 
     /// The search and read tools Nook itself ran for this question, as named in the context ("Notities (search_notes: 3 results)").
@@ -784,12 +784,15 @@ final class BrainService {
         var message: [String: Any] = [:]
         var blocks: [Int: [String: Any]] = [:]
         var partialJSON: [Int: String] = [:]
+        /// Streamed text and thinking per block, appended in place: boxed in `[String: Any]`, every delta would copy all
+        /// the text so far. Written into `blocks` once the stream ends.
+        var streamed: [Int: (text: String, thinking: String)] = [:]
         var lastEmit = Date.distantPast
 
         func currentText() -> String {
             blocks.keys.sorted().compactMap { index -> String? in
                 guard let block = blocks[index], (block["type"] as? String) == "text" else { return nil }
-                return block["text"] as? String
+                return streamed[index]?.text ?? block["text"] as? String
             }.joined()
         }
 
@@ -813,10 +816,12 @@ final class BrainService {
                 case "content_block_delta":
                     guard let index = event["index"] as? Int, let delta = event["delta"] as? [String: Any],
                           var block = blocks[index] else { continue }
+                    if streamed[index] == nil {
+                        streamed[index] = ((block["text"] as? String) ?? "", (block["thinking"] as? String) ?? "")
+                    }
                     switch delta["type"] as? String {
                     case "text_delta":
-                        block["text"] = ((block["text"] as? String) ?? "") + ((delta["text"] as? String) ?? "")
-                        blocks[index] = block
+                        streamed[index]!.text += (delta["text"] as? String) ?? ""
                         if Date().timeIntervalSince(lastEmit) > 0.05 {
                             lastEmit = Date()
                             onText(currentText())
@@ -824,8 +829,7 @@ final class BrainService {
                     case "input_json_delta":
                         partialJSON[index, default: ""] += (delta["partial_json"] as? String) ?? ""
                     case "thinking_delta":
-                        block["thinking"] = ((block["thinking"] as? String) ?? "") + ((delta["thinking"] as? String) ?? "")
-                        blocks[index] = block
+                        streamed[index]!.thinking += (delta["thinking"] as? String) ?? ""
                     case "signature_delta":
                         block["signature"] = ((block["signature"] as? String) ?? "") + ((delta["signature"] as? String) ?? "")
                         blocks[index] = block
@@ -859,6 +863,12 @@ final class BrainService {
             throw Self.networkError(error)
         }
         onText(currentText())
+        for (index, parts) in streamed {
+            guard var block = blocks[index] else { continue }
+            if !parts.text.isEmpty || block["text"] != nil { block["text"] = parts.text }
+            if !parts.thinking.isEmpty || block["thinking"] != nil { block["thinking"] = parts.thinking }
+            blocks[index] = block
+        }
         message["content"] = blocks.keys.sorted().compactMap { blocks[$0] }
         return message
     }

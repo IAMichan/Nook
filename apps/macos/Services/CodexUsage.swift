@@ -369,7 +369,10 @@ final class CodexUsage: ObservableObject {
         let tailSize: UInt64 = 512 * 1024
         let start = size > tailSize ? size - tailSize : 0
         do { try handle.seek(toOffset: start) } catch { return nil }
-        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else { return nil }
+        // The tail may start in the middle of a multi-byte character: `String(data:encoding:)` would then fail for the
+        // whole tail, and with it fall back to starting `codex app-server` every minute. A cut first line just fails to parse.
+        guard let data = try? handle.readToEnd() else { return nil }
+        let text = String(decoding: data, as: UTF8.self)
 
         for line in text.split(separator: "\n").reversed() where line.contains("\"rate_limits\"") {
             guard let lineData = line.data(using: .utf8),

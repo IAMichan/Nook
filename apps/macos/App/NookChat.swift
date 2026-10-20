@@ -370,8 +370,11 @@ final class NookChat: ObservableObject {
     }
 
     func update(_ id: UUID, _ change: (inout ChatMessage) -> Void) {
-        for index in conversations.indices {
-            if let message = conversations[index].messages.firstIndex(where: { $0.id == id }) {
+        // Runs for every streamed chunk, and the streaming answer is the last message of its conversation: look there
+        // first before searching every message of every conversation.
+        let last = conversations.indices.first { conversations[$0].messages.last?.id == id }
+        for index in last.map({ [$0] }) ?? Array(conversations.indices) {
+            if let message = conversations[index].messages.lastIndex(where: { $0.id == id }) {
                 change(&conversations[index].messages[message])
                 conversations[index].messages[message].revision &+= 1
                 let streaming = conversations[index].messages[message].streaming

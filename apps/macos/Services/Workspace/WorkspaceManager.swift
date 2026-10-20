@@ -1841,7 +1841,13 @@ final class WorkspaceManager: ObservableObject {
         }
         events[id]?.append(event)
         if event.kind != .system || event.tool != "launch" {
-            update(id, save: false) { $0.updatedAt = Date() }
+            // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
+            // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.
+            let boundary = event.kind == .user || event.kind == .result || event.kind == .error || event.kind == .approval
+            let now = Date()
+            if boundary || runs.first(where: { $0.id == id }).map({ now.timeIntervalSince($0.updatedAt) >= 2 }) ?? false {
+                update(id, save: false) { $0.updatedAt = now }
+            }
         }
         scheduleEventSave(id)
     }

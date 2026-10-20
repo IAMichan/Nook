@@ -424,10 +424,18 @@ final class MacAppMirror: ObservableObject {
     /// window right under it and in front. If another app's window is in the way, the real window is raised first.
     func passesThrough(at mouse: NSPoint) -> Bool {
         guard status == .showing, underPane, let pid, let hole, hole.contains(mouse), let main = NSScreen.screens.first else { return false }
-        if Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y)) { return true }
+        // This runs for every mouse move over the picture (60–120 times a second), and reading the whole window list
+        // each time is not free: the answer is kept for a moment, as windows hardly move between two pointer events.
+        if let front = lastFront, front.pid == pid, Date().timeIntervalSince(front.at) < 0.15 { return front.passes }
+        let passes = Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y))
+        lastFront = (pid, passes, Date())
+        if passes { return true }
         raise(activating: false)
         return false
     }
+
+    /// The last answer of `passesThrough`, for the app it was about.
+    private var lastFront: (pid: pid_t, passes: Bool, at: Date)?
 
     /// True when `mouse` (Cocoa coordinates) is over the picture: a click there is in the app, not outside Nook.
     func holds(_ mouse: NSPoint) -> Bool {
