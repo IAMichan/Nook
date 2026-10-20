@@ -61,6 +61,26 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(lowPower.reasons, [.lowPowerMode])
     }
 
+    func testTakingItEasyAlsoSparesTheGPU() {
+        let full = EnergyPolicy.plan(for: EnergySignals(), mode: .automatic)
+        XCTAssertEqual(full.ocrConcurrency, 3)
+        XCTAssertEqual(full.screenWindowLimit, 10)
+        XCTAssertEqual(full.backgroundWindowMaxAge, 30)
+        XCTAssertEqual(full.backgroundCaptureMaxSide, 2400)
+        XCTAssertEqual(full.mirrorFrameRate, 60)
+        XCTAssertEqual(full.idleOrbFrameRate, 12)
+
+        let light = EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic)
+        XCTAssertEqual(light.ocrConcurrency, 1, "one recognition at a time: a hum, not a spike")
+        XCTAssertEqual(light.screenWindowLimit, 4)
+        XCTAssertEqual(light.backgroundWindowMaxAge, 90)
+        XCTAssertEqual(light.backgroundCaptureMaxSide, 1600)
+        XCTAssertEqual(light.mirrorFrameRate, 30)
+        XCTAssertEqual(light.idleOrbFrameRate, 8)
+        // Paused keeps the same light knobs for the work that still runs.
+        XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .automatic).mirrorFrameRate, 30)
+    }
+
     func testEveryReasonHasAText() {
         // The keys exist in the texts (I18nCoverageTests checks the languages); here only that each reason maps to one.
         XCTAssertEqual(Set(EnergyReason.allCases.map(\.textKey)).count, EnergyReason.allCases.count)

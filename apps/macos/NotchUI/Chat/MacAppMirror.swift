@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreMedia
 import CoreVideo
+import Combine
 import ScreenCaptureKit
 import SwiftUI
 
@@ -59,6 +60,9 @@ final class MacAppMirror: ObservableObject {
     private var startTask: Task<Void, Never>?
     private var resizeTask: Task<Void, Never>?
     private var askedControl = false
+    private var energyBag = Set<AnyCancellable>()
+    /// Frames per second the stream was last configured for; the energy plan lowers it on battery.
+    private var frameRate = 60
 
     func open(_ app: EmbeddedApp) {
         if self.app?.id == app.id, status == .showing || status == .starting { return }
@@ -211,6 +215,7 @@ final class MacAppMirror: ObservableObject {
         self.sink = sink
         status = .showing
         track()
+        followEnergyPlan()
         if AXIsProcessTrusted() {
             alignWindow()
         } else {
@@ -225,8 +230,9 @@ final class MacAppMirror: ObservableObject {
         let scale = backingScale
         configuration.width = max(2, Int(shown.width * scale))
         configuration.height = max(2, Int(shown.height * scale))
-        // As smooth as the screen: a new frame whenever the app draws, up to 60 a second.
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        // As smooth as the screen: a new frame whenever the app draws, up to 60 a second; 30 on battery (`EnergyPlan`).
+        frameRate = EnergyMonitor.shared.plan.mirrorFrameRate
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
         configuration.queueDepth = 5
         configuration.showsCursor = false
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
@@ -251,6 +257,22 @@ final class MacAppMirror: ObservableObject {
         }
         stream = nil
         sink = nil
+        energyBag = []
+    }
+
+    /// The frame rate follows the energy plan while the picture shows: the charger comes out, the stream drops to half.
+    private func followEnergyPlan() {
+        energyBag = []
+        EnergyMonitor.shared.$plan
+            .map(\.mirrorFrameRate)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] rate in
+                guard let self, rate != self.frameRate, let stream = self.stream, let displayID = self.displayID else { return }
+                let configuration = self.configuration(for: self.shownFrame, on: CGDisplayBounds(displayID))
+                Task { try? await stream.updateConfiguration(configuration) }
+            }
+            .store(in: &energyBag)
     }
 
     /// The app quit or its window went away while showing.

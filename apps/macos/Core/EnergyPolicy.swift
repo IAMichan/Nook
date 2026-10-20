@@ -82,6 +82,30 @@ struct EnergyPlan: Equatable {
         }
     }
 
+    // MARK: GPU and CPU
+
+    /// How many windows the screen reader's timer runs through Vision at once. Each recognition is a burst on the GPU and
+    /// the Neural Engine; ten at a time is a spike you notice as a stutter and as heat, one after the other is not.
+    var ocrConcurrency: Int { pace == .full ? 3 : 1 }
+
+    /// How many windows the timer keeps text of. Taking it easy, only the frontmost few: the others are captured and read
+    /// again fresh the moment a question asks about them.
+    var screenWindowLimit: Int { pace == .full ? 10 : 4 }
+
+    /// How old a window that is not in front may get before the timer captures it again.
+    var backgroundWindowMaxAge: TimeInterval { pace == .full ? 30 : 90 }
+
+    /// The longest side, in pixels, of a capture of a window that is not in front: it is read with fast recognition anyway,
+    /// and a smaller picture is a smaller readback from the GPU and a shorter recognition.
+    var backgroundCaptureMaxSide: Int { pace == .full ? 2400 : 1600 }
+
+    /// Frames per second of the live picture of a Mac app next to the chat: as smooth as the screen at full speed, half
+    /// of that on battery, where every frame is a GPU copy and a composite.
+    var mirrorFrameRate: Int { pace == .full ? 60 : 30 }
+
+    /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him.
+    var idleOrbFrameRate: Double { pace == .full ? 12 : 8 }
+
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
 
