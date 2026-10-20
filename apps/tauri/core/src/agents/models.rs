@@ -144,6 +144,10 @@ impl ApprovalRequest {
 
 /// "Mag Claude Code dit uitvoeren?"
 pub fn approval_title(agent: &str, tool: &str) -> String {
+    // An MCP tool by its readable name and server: "Claude Code wil “Move file” van Bestanden mappen gebruiken".
+    if let Some(mcp) = super::mcp_name::McpToolName::parse(tool) {
+        return format!("{agent} wil “{}” van {} gebruiken", mcp.tool_label(), mcp.server_label());
+    }
     match tool {
         "Bash" | "shell" | "run_shell_command" | "exec_command" => format!("Mag {agent} dit uitvoeren?"),
         "Edit" | "MultiEdit" | "Write" | "NotebookEdit" | "write_file" | "replace" | "apply_patch" => {
@@ -151,7 +155,6 @@ pub fn approval_title(agent: &str, tool: &str) -> String {
         }
         "WebFetch" | "web_fetch" => format!("Mag {agent} deze pagina ophalen?"),
         "WebSearch" | "google_web_search" => format!("Mag {agent} op het web zoeken?"),
-        t if t.starts_with("mcp__") => format!("Mag {agent} deze koppeling gebruiken?"),
         t => format!("Mag {agent} {t} gebruiken?"),
     }
 }
@@ -385,6 +388,6 @@ mod tests {
     #[test]
     fn approval_titles() {
         assert_eq!(approval_title("Codex", "exec_command"), "Mag Codex dit uitvoeren?");
-        assert_eq!(approval_title("Claude Code", "mcp__github__x"), "Mag Claude Code deze koppeling gebruiken?");
+        assert_eq!(approval_title("Claude Code", "mcp__github__search_issues"), "Claude Code wil “Search issues” van Github gebruiken");
     }
 }

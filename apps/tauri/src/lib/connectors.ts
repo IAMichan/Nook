@@ -90,6 +90,8 @@ export interface McpServerConfig {
 
 export interface McpTool {
   name: string;
+  /// The name people read: the server's own title, or the name in words.
+  title: string;
   description: string;
   inputSchema: unknown;
   readOnly: boolean;
@@ -128,6 +130,15 @@ export interface Overview {
   caps: Caps;
 }
 
+/** What a GitLab host says about a token: whose it is, that it is refused, or nothing (offline, VPN, not GitLab). */
+export type GitLabCheck = { kind: "valid"; username: string } | { kind: "rejected" } | { kind: "unreachable" };
+
+export interface GitLabSaved {
+  host: string;
+  hosts: string[];
+  check: GitLabCheck;
+}
+
 export interface Pasted {
   name: string;
   target: string;
@@ -151,7 +162,10 @@ export interface WhatsAppSettings {
   notify: boolean;
   markReadOnReply: boolean;
   muteGroups: boolean;
+  muteStatus: boolean;
+  muteChannels: boolean;
   ignored: string[];
+  modes: Record<string, WhatsAppChatMode>;
   autoStart: boolean;
   gowaPath: string;
 }
@@ -173,19 +187,32 @@ export interface WhatsAppView {
   desktop: boolean;
 }
 
+export type WhatsAppChatMode = "automatic" | "loud" | "muted";
+export type WhatsAppChatKind = "person" | "group" | "status" | "channel";
+export type WhatsAppReceipt = "failed" | "pending" | "sent" | "delivered" | "read";
+
+/** What a message holds besides text (`kind`), with a document's own name. */
+export interface WhatsAppMedia {
+  kind: "none" | "image" | "video" | "audio" | "voice" | "document" | "sticker" | "location" | "contact" | "other";
+  name?: string | null;
+}
+
 export interface WhatsAppMessage {
   id: string;
   chat: string;
   senderName: string;
   text: string;
+  media: WhatsAppMedia;
   date: string;
   fromMe: boolean;
+  receipt?: WhatsAppReceipt | null;
 }
 
 export interface WhatsAppConversation {
   id: string;
   name: string;
   isGroup: boolean;
+  kind: WhatsAppChatKind;
   messages: WhatsAppMessage[];
   unread: number;
   lastActivity: string;
@@ -196,6 +223,20 @@ export interface WhatsAppArrived {
   name: string;
   preview: string;
   unread: number;
+}
+
+/** One chat for its card in the bar, with the files the card already has (a photo with a small picture). */
+export interface WhatsAppCard {
+  conversation: WhatsAppConversation;
+  previews: Record<string, { image: string | null }>;
+}
+
+export interface WhatsAppSettingsChat {
+  jid: string;
+  name: string;
+  kind: WhatsAppChatKind;
+  mode: WhatsAppChatMode;
+  hidden: boolean;
 }
 
 export interface ChatService {
@@ -212,8 +253,11 @@ export interface PullRequestItem {
   draft: boolean;
   updated: string | null;
   author: string;
-  ci: "unknown" | "pending" | "passing" | "failing";
+  ci: Ci;
+  state: "open" | "closed" | "merged";
 }
+
+export type Ci = "unknown" | "pending" | "passing" | "failing";
 
 export interface AccountPullRequests {
   id: string;
@@ -223,6 +267,16 @@ export interface AccountPullRequests {
   reviews: PullRequestItem[];
   error: string | null;
   errorKind: ErrorKind | null;
+  /// The other pull requests in the watched organizations and repositories.
+  watched: PullRequestItem[];
+  /// Watched entries this account could not search.
+  unreadable: string[];
+}
+
+export interface PullRequestList {
+  /// Whether GitHub is connected with at least one account.
+  available: boolean;
+  accounts: AccountPullRequests[];
 }
 
 export const connectorsApi = {
@@ -238,7 +292,7 @@ export const connectorsApi = {
   setAccountToken: (id: string, token: string) => invoke<ConnectorInfo | null>("account_token", { id, token }),
   githubCli: (account: string) => invoke<ConnectorInfo | null>("github_cli", { account }),
   githubDeviceStart: (account: string) => invoke<DeviceCode>("github_device_start", { account }),
-  githubPullRequests: () => invoke<AccountPullRequests[]>("github_pull_requests"),
+  githubPullRequests: () => invoke<PullRequestList>("github_pull_requests"),
 
   mcpPaste: (text: string) => invoke<Pasted>("mcp_paste", { text }),
   mcpAdd: (name: string, target: string, remote: boolean, secrets: string) => invoke<string>("mcp_add", { name, target, remote, secrets }),
@@ -247,8 +301,10 @@ export const connectorsApi = {
   mcpTest: (id: string) => invoke<McpTool[]>("mcp_test", { id }),
   mcpConnectService: (service: string) => invoke<void>("mcp_connect_service", { service }),
   mcpSignIn: (id: string) => invoke<void>("mcp_sign_in", { id }),
+  repairBySignIn: (service: string) => invoke<void>("connector_repair_sign_in", { service }),
 
-  gitlabSave: (host: string, token: string) => invoke<string[]>("gitlab_save", { host, token }),
+  gitlabSave: (host: string, token: string) => invoke<GitLabSaved>("gitlab_save", { host, token }),
+  gitlabCheck: (host: string) => invoke<GitLabCheck>("gitlab_check", { host }),
   gitlabRemove: (host: string) => invoke<string[]>("gitlab_remove", { host }),
 
   whatsapp: () => invoke<WhatsAppView>("whatsapp_view"),
@@ -260,6 +316,14 @@ export const connectorsApi = {
   whatsappMarkRead: (chat: string) => invoke<void>("whatsapp_mark_read", { chat }),
   whatsappIgnore: (chat: string) => invoke<void>("whatsapp_ignore", { chat }),
   whatsappUnmute: () => invoke<void>("whatsapp_unmute"),
+  whatsappCard: (chat: string) => invoke<WhatsAppCard | null>("whatsapp_card", { chat }),
+  whatsappCardLoad: (chat: string) => invoke<boolean>("whatsapp_card_load", { chat }),
+  whatsappOpenFile: (chat: string, message: string) => invoke<void>("whatsapp_open_file", { chat, message }),
+  whatsappAskNook: (chat: string) => invoke<string>("whatsapp_ask_nook", { chat }),
+  whatsappMute: (chat: string) => invoke<void>("whatsapp_mute", { chat }),
+  whatsappSetMode: (chat: string, mode: WhatsAppChatMode) => invoke<void>("whatsapp_set_mode", { chat, mode }),
+  whatsappUnhide: (chat: string) => invoke<void>("whatsapp_unhide", { chat }),
+  whatsappSettingsChats: () => invoke<WhatsAppSettingsChat[]>("whatsapp_settings_chats"),
 
   chatAccounts: (nookId: string) => invoke<ChatService[]>("chat_accounts", { nookId }),
   setChatAccounts: (nookId: string, excluded: string[]) => invoke<void>("chat_accounts_set", { nookId, excluded }),
@@ -272,6 +336,7 @@ export const connectorEvents = {
   onSignIn: (cb: (e: { service: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> =>
     listen<{ service: string; ok: boolean; message: string }>("connector-signin", (e) => cb(e.payload)),
   onWhatsApp: (cb: (e: WhatsAppArrived) => void): Promise<UnlistenFn> => listen<WhatsAppArrived>("whatsapp-message", (e) => cb(e.payload)),
+  onWhatsAppReceipt: (cb: (chat: string) => void): Promise<UnlistenFn> => listen<string>("whatsapp-receipt", (e) => cb(e.payload)),
 };
 
 /// Hoe een koppeling ervoor staat, in de woorden van de Mac: werkt, bezig, uit, heeft je nodig, kapot, niet gekoppeld.
@@ -282,7 +347,8 @@ export function health(info: ConnectorInfo | undefined): Health {
   if (!info.on) return "off";
   const s = info.status;
   if (s.state.kind === "off" || s.state.kind === "loading") return "busy";
-  if (s.state.kind === "ok") return s.needsAttention ? "needsYou" : "working";
+  // Items that are waiting for you (a review, a failing check) are content, not a broken link: the link works.
+  if (s.state.kind === "ok") return "working";
   return s.errorKind === "auth" || s.errorKind === "config" ? "needsYou" : "broken";
 }
 
@@ -312,4 +378,34 @@ export const categories: { id: string; title: string }[] = [
   { id: "work", title: "Werk en notities" },
   { id: "business", title: "Zakelijk" },
   { id: "automation", title: "Automatisering" },
+  { id: "local", title: "Op dit apparaat" },
 ];
+
+/** How a service gets connected: the one word on every card of the catalogue, so a glance says what a click does. */
+export type ConnectMethod = "signIn" | "key" | "mcp";
+
+export const methodLabel: Record<ConnectMethod, string> = { signIn: "Inloggen", key: "Met sleutel", mcp: "MCP" };
+
+/** Whether a card or row belongs to the chosen category chip (`null` = Alles). */
+export function inCategory(selected: string | null, category: string): boolean {
+  return selected === null || selected === category;
+}
+
+/** Whether a search matches the text of a card or row (case-insensitive, empty matches everything). */
+export function matchesQuery(query: string, text: string): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || text.toLowerCase().includes(q);
+}
+
+/** The words for a GitLab host's state, shared by the row and the sheet. `null` while Nook is still asking GitLab. */
+export function gitlabHealth(check: GitLabCheck | null): Health {
+  if (!check) return "busy";
+  return check.kind === "valid" ? "working" : check.kind === "rejected" ? "needsYou" : "broken";
+}
+
+export function gitlabDetail(host: string, check: GitLabCheck | null): string {
+  if (!check) return `${host} · Merge requests op gitlab.com of je eigen host`;
+  if (check.kind === "valid") return `${host} · @${check.username}`;
+  if (check.kind === "rejected") return "GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.";
+  return `Nook kon ${host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.`;
+}

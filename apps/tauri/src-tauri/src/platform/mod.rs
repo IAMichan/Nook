@@ -21,7 +21,11 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use nook_core::platform::{Capabilities, Dictation, MediaControl, ScreenReader, SpeechOutput, SystemControl, WakeWord};
+use nook_core::platform::{
+    Capabilities, Dictation, FieldSkip, FocusedField, InputEvent, MediaControl, PowerMonitor, QuietWatch, ScreenReader, SpeechOutput,
+    SystemControl, TextInput, WakeWord,
+};
+use nook_core::services::autocomplete::prefs::KeyChord;
 use tauri::AppHandle;
 
 /// De diensten van dit platform, één keer gemaakt bij de start.
@@ -33,6 +37,12 @@ pub struct Platform {
     pub speech: Arc<dyn SpeechOutput>,
     pub dictation: Arc<dyn Dictation>,
     pub wake: Arc<dyn WakeWord>,
+    /// Screen sharing and calls, for the meeting and sharing choices.
+    pub quiet: Arc<dyn QuietWatch>,
+    /// Battery, battery saver and load, for the energy plan.
+    pub power: Arc<dyn PowerMonitor>,
+    /// Autocomplete: keyboard hook, focused field, typing (Windows only).
+    pub text_input: Arc<dyn TextInput>,
 }
 
 #[cfg(target_os = "linux")]
@@ -46,6 +56,9 @@ pub fn services(app: &AppHandle) -> Platform {
             "Spraakherkenning op deze computer zelf kan op Linux met whisper.cpp; kies anders een externe dienst.",
         )),
         wake: Arc::new(Unavailable("\"Hé Nook\" kan op Linux niet: er is geen zuinige spraakherkenning op de computer zelf.")),
+        quiet: Arc::new(linux::LinuxQuiet::new()),
+        power: Arc::new(linux::LinuxPower::new()),
+        text_input: Arc::new(Unavailable("Aanvullen in elke app kan (nog) alleen op Windows.")),
     }
 }
 
@@ -58,6 +71,9 @@ pub fn services(app: &AppHandle) -> Platform {
         speech: Arc::new(windows::WindowsSpeech::new()),
         dictation: Arc::new(windows::WindowsDictation::new()),
         wake: Arc::new(windows::WindowsWake::new()),
+        quiet: Arc::new(windows::WindowsQuiet),
+        power: Arc::new(windows::WindowsPower::new()),
+        text_input: Arc::new(windows::WindowsTextInput::new()),
     }
 }
 
@@ -102,6 +118,32 @@ impl WakeWord for Unavailable {
         Err(self.0.into())
     }
     fn stop(&self) {}
+}
+
+/// Without a platform layer: nothing to watch, so Nook never counts as sharing or in a call.
+impl QuietWatch for Unavailable {}
+
+/// Without power readings the energy plan only follows your choice and whether you are away.
+impl PowerMonitor for Unavailable {}
+impl TextInput for Unavailable {
+    fn available(&self) -> bool {
+        false
+    }
+    fn status(&self) -> String {
+        self.0.into()
+    }
+    fn start(&self, _on_event: Arc<dyn Fn(InputEvent) + Send + Sync>) -> Result<(), String> {
+        Err(self.0.into())
+    }
+    fn stop(&self) {}
+    fn set_keys(&self, _word: Option<KeyChord>, _all: Option<KeyChord>) {}
+    fn arm(&self, _armed: bool) {}
+    fn focused_field(&self) -> Result<FocusedField, FieldSkip> {
+        Err(FieldSkip::NoField)
+    }
+    fn type_text(&self, _text: &str) -> Result<(), String> {
+        Err(self.0.into())
+    }
 }
 
 impl SpeechOutput for Unavailable {
@@ -165,6 +207,13 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
     base.speech_output = platform.speech.available();
     base.local_speech = platform.dictation.available();
     base.wake_word = platform.wake.available();
+    base.share_detection = platform.quiet.available();
+    // Tauri's content protection is `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on Windows; Linux has no such thing.
+    base.capture_exclusion = cfg!(target_os = "windows");
+    base.autocomplete = platform.text_input.available();
+    if !base.autocomplete {
+        notes.insert("autocomplete".into(), platform.text_input.status());
+    }
     #[cfg(desktop)]
     {
         base.media = true;
@@ -202,6 +251,18 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
                 "Een schermdeel kan hier niet: er is geen schermafbeelding (Wayland laat dat apps niet toe).".into(),
             );
         }
+    }
+    if base.desktop && !base.share_detection {
+        notes.insert(
+            "shareDetection".into(),
+            "Nook ziet hier niet wanneer je je scherm deelt: zonder X11 (Wayland) zijn de vensters van andere apps onzichtbaar. Een gesprek dat de Notetaker opneemt of een afspraak in je agenda telt wel.".into(),
+        );
+    }
+    if base.desktop && !base.capture_exclusion {
+        notes.insert(
+            "captureExclusion".into(),
+            "Op Linux kan Nook zich niet uit een gedeeld scherm of schermafbeelding halen; ‘Verbergen voor kijkers’ houdt hem hier alleen stil.".into(),
+        );
     }
     if !base.wake_word {
         notes.insert("wakeWord".into(), "\"Hé Nook\" kan alleen waar de spraakherkenning op de computer zelf draait (Windows).".into());

@@ -15,22 +15,36 @@
   import { attachments } from "../lib/attachments.svelte";
   import { play } from "../lib/sounds";
   import { agents } from "../lib/agents.svelte";
+  import { quiet } from "../lib/quiet.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import AgentDots from "./agents/AgentDots.svelte";
+  import NoticeMark from "../components/NoticeMark.svelte";
+  import NoticeOk from "../components/NoticeOk.svelte";
+  import { compactNotice, Countdown, noticeTone } from "../lib/notice";
+  import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
+  import { whatsapp } from "../lib/whatsapp.svelte";
 
   type Tab = "nook" | "agents" | "workspace" | "music";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
-  let inside = false;
+  let inside = $state(false);
+  // Agent notices: a compact one widens the closed bar (`strip`); a detailed one opens the panel. `noticeLeft` is what
+  // is left of its countdown, for the ring on OK.
+  let strip = $state(false);
+  let openedForNotice = false;
+  let noticeLeft = $state<number | null>(null);
+  const noticeCompact = $derived(nook.settings?.agentNotice === "compact");
 
   const mood = $derived(nook.waiting ? "waiting" : nook.working ? "working" : "idle");
   const floating = $derived(nook.settings?.placement === "floating");
 
   async function open(focus?: string) {
     clearTimeout(closeTimer);
+    const wasExpanded = expanded;
     if (!expanded) {
+      strip = false;
       expanded = true;
       await api.barExpand(true);
       // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
@@ -40,6 +54,11 @@
       tab = "nook";
       pinnedOpen = true;
     } else if (focus === "agents") {
+      tab = "agents";
+      pinnedOpen = true;
+    } else if (focus === "agents-request" && !wasExpanded) {
+      // A permission request or question: a closed bar opens on the agents; an open panel stays as it was and asks in
+      // its compact bar under the tabs.
       tab = "agents";
       pinnedOpen = true;
     }
@@ -102,7 +121,8 @@
 
   function leave() {
     inside = false;
-    if (pinnedOpen || nook.busy || agents.pending) return;
+    // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
+    if (pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
     closeTimer = setTimeout(close, 450);
   }
 
@@ -122,18 +142,75 @@
     agents.sounds = true;
     agents.start();
   });
+  // A notice stays for its countdown with the pointer off the bar (hovering holds it), or until OK, View or Esc.
+  // Detailed opens the panel with a card; compact widens the closed bar into one line.
   $effect(() => {
     const card = agents.attention;
-    if (!card || untrack(() => expanded)) return;
-    untrack(() => open());
-    const timer = setTimeout(() => {
-      if (agents.attention === card && !inside && !pinnedOpen) {
-        agents.attention = null;
-        close();
+    // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, the bar does not pop open.
+    if (!card || untrack(() => quiet.silent)) return;
+    untrack(() => {
+      if (expanded) return;
+      if (noticeCompact) {
+        strip = true;
+        api.barExpand(false, true);
+      } else {
+        openedForNotice = true;
+        open();
       }
-    }, 5200);
-    return () => clearTimeout(timer);
+    });
+    const clock = new Countdown();
+    noticeLeft = 1;
+    let last = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      clock.advance((now - last) / 1000, inside);
+      last = now;
+      noticeLeft = clock.fraction;
+      if (clock.done && agents.attention === card) agents.attention = null;
+    }, 100);
+    return () => {
+      clearInterval(timer);
+      // A newer notice took its place: it carries on from here.
+      if (agents.attention) return;
+      noticeLeft = null;
+      openedForNotice = false;
+      if (strip) {
+        strip = false;
+        if (!expanded) api.barExpand(false);
+      }
+      if (expanded && !inside) leave();
+    };
   });
+
+  function dismissNotice() {
+    agents.attention = null;
+  }
+
+  function viewNotice(id: string) {
+    agents.attention = null;
+    agents.select(id);
+    select("agents");
+    pinnedOpen = true;
+    open();
+  }
+
+  // WhatsApp: a new message opens the bar with its card, which stays until you answer or close it.
+  $effect(() => {
+    whatsapp.start();
+  });
+  $effect(() => {
+    if (whatsapp.chat && !untrack(() => expanded) && !untrack(() => quiet.silent)) untrack(() => open());
+  });
+
+  // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
+  function escape() {
+    if (whatsapp.enlarged) whatsapp.enlarged = null;
+    else if (whatsapp.chat) whatsapp.dismiss();
+    else {
+      if (agents.attention) dismissNotice();
+      close();
+    }
+  }
 
   $effect(() => {
     attachments.start();
@@ -144,10 +221,22 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && close()} onblur={() => !nook.busy && !agents.pending && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !nook.busy && !agents.pending && !whatsapp.chat && close()} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; open(); }} onmouseleave={leave}>
-  {#if !expanded}
+<div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; if (!strip) open(); }} onmouseleave={leave}>
+  {#if !expanded && strip && agents.attention}
+    {@const card = agents.attention}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="pill strip" onmousedown={drag}>
+      <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
+      <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
+        <button class="ghost" onclick={() => viewNotice(card.id)}>Bekijk</button>
+        <NoticeOk compact left={noticeLeft} onclick={dismissNotice} />
+      </span>
+    </div>
+  {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill" onmousedown={drag}>
       <Orb size={20} {mood} />
@@ -174,7 +263,14 @@
         <button class="ghost icon" title="Open in venster" onclick={() => api.showMain("chat")}>⧉</button>
         <button class="ghost icon" title="Instellingen" onclick={() => api.showMain("settings")}>⚙</button>
       </header>
-      <AgentAlerts requests={shown !== "agents"} onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }} />
+      <AgentAlerts
+        requests={shown !== "agents"}
+        left={noticeLeft}
+        compact={noticeCompact}
+        ondismiss={dismissNotice}
+        onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }}
+      />
+      <WhatsAppCard onnook={(id) => { select("nook"); pinnedOpen = true; nook.select(id); }} />
       <div class="body">
         {#if shown === "nook"}
           <div class="nooktab">
@@ -207,6 +303,11 @@
     cursor: default;
   }
   .floating .pill { border-radius: 999px; cursor: grab; }
+  /* A compact notice in the bar's own row: mark and message on the left, View and the countdown OK on the right. */
+  .pill.strip { justify-content: flex-start; gap: 8px; padding: 0 4px 0 14px; }
+  .strip .message { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stripbuttons { display: flex; align-items: center; gap: 4px; flex: none; }
+  .stripbuttons .ghost { padding: 4px 10px; font-size: 12px; }
   .panel {
     width: 100%;
     height: 100%;

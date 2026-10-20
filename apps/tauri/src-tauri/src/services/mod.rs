@@ -2,10 +2,13 @@
 //! Notetaker, Vandaag en het weekoverzicht. Eigen staat (`Services`), eigen vensters, eigen sneltoetsen; de regels
 //! staan in `nook_core::services`, het platform in `crate::platform`.
 
+pub mod autocomplete;
+pub mod energy;
 pub mod flow;
 pub mod media;
 pub mod notes;
 pub mod part;
+pub mod quiet;
 pub mod screen;
 pub mod speech;
 pub mod think;
@@ -42,6 +45,10 @@ pub struct Services {
     pub flow_state: flow::FlowState,
     pub note_session: notes::NoteSession,
     pub part: Mutex<Option<part::Pending>>,
+    /// The energy plan every background worker follows.
+    pub energy: energy::EnergyState,
+    /// What Nook does in a meeting or while you share your screen.
+    pub quiet: quiet::QuietWatchState,
     started: Instant,
 }
 
@@ -72,6 +79,7 @@ pub fn setup(app: &AppHandle) {
     // De snelle opdrachten in de chat zoeken muziek en systeem als losse diensten.
     app.manage(platform.media.clone());
     app.manage(platform.system.clone());
+    let text_input = platform.text_input.clone();
     app.manage(Services {
         platform,
         prefs: RwLock::new(ServicePrefs::load()),
@@ -86,8 +94,12 @@ pub fn setup(app: &AppHandle) {
         flow_state: Default::default(),
         note_session: Default::default(),
         part: Mutex::new(None),
+        energy: Default::default(),
+        quiet: Default::default(),
         started: Instant::now(),
     });
+    energy::start(app);
+    autocomplete::setup(app, text_input);
     #[cfg(desktop)]
     {
         windows::create(app);
@@ -95,6 +107,7 @@ pub fn setup(app: &AppHandle) {
         think::start(app);
         media::start(app);
         voice::start_wake_word(app);
+        quiet::start(app);
     }
     speech::listen(app);
     // "Hé Nook" volgt de instelling.

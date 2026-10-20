@@ -69,13 +69,24 @@ fn xml_text(xml: &str, paragraph: &str) -> String {
     let mut out = String::new();
     loop {
         match reader.read_event() {
-            Ok(Event::Text(t)) => out.push_str(&t.unescape().map(|c| c.to_string()).unwrap_or_default()),
+            Ok(Event::Text(t)) => out.push_str(&t.xml10_content()),
+            Ok(Event::GeneralRef(r)) => match r.resolve_char_ref() {
+                Ok(Some(c)) => out.push(c),
+                _ => out.push_str(match r.xml10_content().as_ref() {
+                    "amp" => "&",
+                    "lt" => "<",
+                    "gt" => ">",
+                    "quot" => "\"",
+                    "apos" => "'",
+                    _ => "",
+                }),
+            },
             Ok(Event::Empty(e)) => match e.name().as_ref() {
-                b"w:tab" | b"text:tab" => out.push('\t'),
-                b"w:br" | b"text:line-break" => out.push('\n'),
+                "w:tab" | "text:tab" => out.push('\t'),
+                "w:br" | "text:line-break" => out.push('\n'),
                 _ => {}
             },
-            Ok(Event::End(e)) if e.name().as_ref() == paragraph.as_bytes() => out.push('\n'),
+            Ok(Event::End(e)) if e.name().as_ref() == paragraph => out.push('\n'),
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -89,14 +100,18 @@ fn office_xml(bytes: &[u8], path: &str, paragraph: &str) -> Result<String> {
 
 fn slides(bytes: &[u8]) -> Result<String> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|_| NookError::new("Deze presentatie is beschadigd."))?;
-    let mut names: Vec<String> =
-        archive.file_names().filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml")).map(str::to_string).collect();
+    let mut names: Vec<String> = archive
+        .file_names()
+        .flatten()
+        .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
+        .map(|n| n.to_string())
+        .collect();
     names.sort_by_key(|n| n.trim_start_matches("ppt/slides/slide").trim_end_matches(".xml").parse::<u32>().unwrap_or(0));
     let mut out = vec![];
     for (index, name) in names.iter().enumerate() {
         let mut xml = String::new();
-        if let Ok(mut file) = archive.by_name(name) {
-            let _ = file.read_to_string(&mut xml);
+        if let Ok(file) = archive.by_name(name) {
+            let _ = file.take(50 * 1024 * 1024).read_to_string(&mut xml);
         }
         out.push(format!("Dia {}:\n{}", index + 1, xml_text(&xml, "a:p").trim()));
     }
@@ -122,8 +137,8 @@ mod tests {
     #[test]
     fn reads_text_and_docx() {
         assert_eq!(read_text("notities.md", "# Hoi\nTekst".as_bytes()).unwrap(), "# Hoi\nTekst");
-        let xml = r#"<w:document><w:body><w:p><w:r><w:t>Offerte</w:t></w:r><w:r><w:tab/><w:t>keuken &amp; bad</w:t></w:r></w:p><w:p><w:r><w:t>Totaal 8.450</w:t></w:r></w:p></w:body></w:document>"#;
-        assert_eq!(read_text("offerte.docx", &docx(xml)).unwrap(), "Offerte\tkeuken & bad\nTotaal 8.450");
+        let xml = r#"<w:document><w:body><w:p><w:r><w:t>Offerte</w:t></w:r><w:r><w:tab/><w:t>keuken &amp; bad</w:t></w:r></w:p><w:p><w:r><w:t>Totaal 8.450 &#8364; &lt;incl.&gt;</w:t></w:r></w:p></w:body></w:document>"#;
+        assert_eq!(read_text("offerte.docx", &docx(xml)).unwrap(), "Offerte\tkeuken & bad\nTotaal 8.450 € <incl.>");
         assert!(read_text("foto.png", &[0x89, 0x50, 0x4e, 0x47, 0, 0, 0]).is_err());
         assert!(read_text("kapot.docx", b"geen zip").is_err());
         assert!(read_text("leeg.pdf", b"%PDF-1.4 kapot").is_err());

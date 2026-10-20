@@ -1,5 +1,6 @@
 //! De twee lokale WhatsApp-koppelingen waar Nook mee praat. Elk verzoek gaat naar het adres uit de instellingen
-//! (standaard 127.0.0.1) en nergens anders heen: geen foto, geen media, niets van WhatsApps eigen servers.
+//! (standaard 127.0.0.1) en nergens anders heen: niets van WhatsApps eigen servers. A photo or document is only
+//! fetched when the card shows it or the user opens it, and then from the gateway.
 
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 
-use super::{epoch, jid, rfc3339, text_mentions, GatewayKind, Media, Message};
+use super::{epoch, files, jid, rfc3339, text_mentions, GatewayKind, Media, Message, Receipt};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaError {
@@ -35,6 +36,16 @@ pub struct Status {
     pub link: LinkState,
     /// De JID of het nummer van dit account, zodra gekoppeld.
     pub me: Option<String>,
+}
+
+/// A message's file as the gateway hands it over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WaFile {
+    pub data: Vec<u8>,
+    /// The name the gateway gives it, if any.
+    pub name: Option<String>,
+    /// Its MIME type, if the gateway says.
+    pub mime: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +81,39 @@ impl WaHttp {
         body: Option<Value>,
         timeout: u64,
     ) -> WaResult<(Vec<u8>, u16)> {
+        let response = self.send(method, path, query, body, timeout, "application/json").await?;
+        let code = response.status().as_u16();
+        let bytes = response.bytes().await.map_err(|_| WaError::Unreachable)?;
+        Ok((bytes.to_vec(), code))
+    }
+
+    /// A file from the gateway: its bytes, status code and MIME type. Refused past [`files::MAX_BYTES`].
+    async fn download(&self, path: &str) -> WaResult<(Vec<u8>, u16, Option<String>)> {
+        let mut response = self.send("GET", path, &[], None, 60, "*/*").await?;
+        let code = response.status().as_u16();
+        let mime = response.headers().get("content-type").and_then(|v| v.to_str().ok()).map(str::to_string);
+        if response.content_length().is_some_and(|n| n as usize > files::MAX_BYTES) {
+            return Err(WaError::Refused("too large".into()));
+        }
+        let mut data = vec![];
+        while let Some(chunk) = response.chunk().await.map_err(|_| WaError::Unreachable)? {
+            data.extend_from_slice(&chunk);
+            if data.len() > files::MAX_BYTES {
+                return Err(WaError::Refused("too large".into()));
+            }
+        }
+        Ok((data, code, mime))
+    }
+
+    async fn send(
+        &self,
+        method: &str,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<Value>,
+        timeout: u64,
+        accept: &str,
+    ) -> WaResult<reqwest::Response> {
         let mut url = self.base.clone();
         let prefix = url.path().trim_matches('/').to_string();
         url.set_path(&if prefix.is_empty() { path.to_string() } else { format!("/{prefix}{path}") });
@@ -80,17 +124,14 @@ impl WaHttp {
             }
         }
         let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
-        let mut request = self.client.request(method, url).header("Accept", "application/json").timeout(Duration::from_secs(timeout));
+        let mut request = self.client.request(method, url).header("Accept", accept).timeout(Duration::from_secs(timeout));
         for (k, v) in &self.headers {
             request = request.header(k, v);
         }
         if let Some(body) = body {
             request = request.json(&body);
         }
-        let response = request.send().await.map_err(|_| WaError::Unreachable)?;
-        let code = response.status().as_u16();
-        let bytes = response.bytes().await.map_err(|_| WaError::Unreachable)?;
-        Ok((bytes.to_vec(), code))
+        request.send().await.map_err(|_| WaError::Unreachable)
     }
 }
 
@@ -185,6 +226,25 @@ pub mod gowa {
             .collect()
     }
 
+    /// `GET /message/{id}/download` → `results: {filename, file_path, file_url}`: the saved file's path on the gateway
+    /// (from `file_url`, else `file_path` under statics/), to fetch from the gateway itself whatever host the link
+    /// names, and its name.
+    pub fn download(data: &[u8]) -> Option<(String, Option<String>)> {
+        let r = results(data);
+        let name = non_empty(&r["filename"]);
+        if let Some(link) = r["file_url"].as_str().and_then(|l| url::Url::parse(l).ok()) {
+            if link.path().len() > 1 && !link.path().contains("..") {
+                return Some((link.path().to_string(), name));
+            }
+        }
+        let file = r["file_path"].as_str()?;
+        if !file.starts_with("statics/") || file.contains("..") {
+            return None;
+        }
+        let encoded: Vec<String> = file.split('/').map(path_component).collect();
+        Some((format!("/{}", encoded.join("/")), name))
+    }
+
     pub fn stored_media(kind: Option<&str>, filename: Option<String>) -> Media {
         match kind.unwrap_or("") {
             "" => Media::None,
@@ -275,6 +335,9 @@ pub mod openwa {
                 );
                 msg.media = super::super::openwa_media(kind, non_empty(&m["metadata"]["media"]["filename"]));
                 msg.chat_name = non_empty(&m["chatName"]);
+                if msg.from_me {
+                    msg.receipt = m["status"].as_str().and_then(Receipt::from_status);
+                }
                 if jid::is_group(&chat) {
                     msg.mentions_me = text_mentions(&msg.text, me);
                 }
@@ -465,12 +528,12 @@ impl Provider {
                     "PATCH",
                     &format!("/devices/{}/webhook", path_component(&id)),
                     &[],
-                    Some(json!({"webhook_url": url, "webhook_secret": secret, "webhook_events": "message"})),
+                    Some(json!({"webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack"})),
                 )
                 .await?;
             }
             GatewayKind::Openwa => {
-                let body = json!({"url": url, "events": ["message.received", "message.sent"], "secret": secret});
+                let body = json!({"url": url, "events": ["message.received", "message.sent", "message.ack"], "secret": secret});
                 let list = self.call("GET", &format!("/api/sessions/{id}/webhooks"), &[], None).await?;
                 let hooks = parse(&list);
                 match crate::connectors::list(&hooks).iter().find(|h| h["url"] == url).and_then(|h| non_empty(&h["id"])) {
@@ -590,6 +653,38 @@ impl Provider {
         }
     }
 
+    /// The file of one message (a document, photo, video or voice note), only when the card shows it or it is opened.
+    pub async fn media(&self, chat: &str, message: &str) -> WaResult<WaFile> {
+        let id = self.scope_id().await?;
+        match self.kind {
+            GatewayKind::Gowa => {
+                // GOWA saves the file under its own statics/ first and says where; Nook then fetches it from the
+                // configured address, whatever host the link names.
+                let query = [("phone", chat.to_string()), ("device_id", id)];
+                let (data, code) =
+                    self.http.call("GET", &format!("/message/{}/download", path_component(message)), &query, None, 60).await?;
+                self.check(&data, code)?;
+                let (path, name) = gowa::download(&data).ok_or_else(|| WaError::Refused("media".into()))?;
+                let (bytes, code, mime) = self.http.download(&path).await?;
+                if code != 200 {
+                    return Err(WaError::Refused(format!("HTTP {code}")));
+                }
+                Ok(WaFile { data: bytes, name, mime })
+            }
+            GatewayKind::Openwa => {
+                let path = format!("/api/sessions/{id}/messages/{}/{}/media", path_component(&openwa::id(chat)), path_component(message));
+                let (bytes, code, mime) = self.http.download(&path).await?;
+                if code == 401 || code == 403 {
+                    return Err(WaError::Unauthorized);
+                }
+                if code != 200 {
+                    return Err(WaError::Refused(openwa::error_message(&bytes).unwrap_or(format!("HTTP {code}"))));
+                }
+                Ok(WaFile { data: bytes, name: None, mime })
+            }
+        }
+    }
+
     /// De chats op de telefoon, nieuwste eerst: naar wie Nook op naam mag sturen.
     pub async fn chats(&self, limit: usize) -> WaResult<Vec<ChatInfo>> {
         Ok(match self.kind {
@@ -628,6 +723,36 @@ mod tests {
         assert_eq!(messages[0].media, Media::Image);
         let url = url::Url::parse("http://127.0.0.1:3005").unwrap();
         assert_eq!(gowa::launch_arguments(&url), ["rest", "--host=127.0.0.1", "--port=3005", "--auto-download-media=false"]);
+    }
+
+    #[test]
+    fn gowa_download_is_fetched_from_the_gateway_itself() {
+        let answer = br#"{"code":"SUCCESS","results":{"filename":"offerte.pdf","file_path":"statics/media/316/2026-10-20/offerte.pdf","file_url":"http://localhost:3000/statics/media/316/2026-10-20/offerte.pdf"}}"#;
+        assert_eq!(gowa::download(answer), Some(("/statics/media/316/2026-10-20/offerte.pdf".into(), Some("offerte.pdf".into()))));
+        let spaced = gowa::download(br#"{"results":{"file_path":"statics/media/a b.pdf"}}"#);
+        assert_eq!(spaced.map(|d| d.0).as_deref(), Some("/statics/media/a%20b.pdf"));
+        assert_eq!(gowa::download(br#"{"results":{"file_path":"/etc/passwd"}}"#), None);
+        assert_eq!(gowa::download(br#"{"results":{"file_path":"statics/../../etc/passwd"}}"#), None);
+    }
+
+    #[tokio::test]
+    async fn media_comes_from_the_gateway_with_its_type() {
+        let server = TestServer::start(vec![
+            ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in","jid":"31611111111@s.whatsapp.net"}]}"#.into()),
+            ("GET /message/*", 200, r#"{"results":{"filename":"a.pdf","file_path":"statics/media/a.pdf"}}"#.into()),
+            ("GET /statics/*", 200, "%PDF-1.4".into()),
+        ])
+        .await;
+        let provider = Provider::new(GatewayKind::Gowa, &server.url(""), None).unwrap();
+        provider.status().await.unwrap();
+        let file = provider.media("31622222222@s.whatsapp.net", "M1").await.unwrap();
+        assert_eq!(file.data, b"%PDF-1.4");
+        assert_eq!(file.name.as_deref(), Some("a.pdf"));
+        assert_eq!(file.mime.as_deref(), Some("text/plain"));
+        let asked = server.requests();
+        assert!(asked[1].path.starts_with("/message/M1/download?"), "{}", asked[1].path);
+        assert!(asked[1].path.contains("device_id=nook"));
+        assert_eq!(asked[2].path, "/statics/media/a.pdf");
     }
 
     #[test]

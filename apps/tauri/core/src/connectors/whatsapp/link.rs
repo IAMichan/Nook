@@ -4,9 +4,10 @@
 //! stopt of WhatsApp uitgaat. Versturen kan alleen naar chats op de telefoon, hooguit zes per minuut, en alleen na
 //! Uitvoeren of nadat de gebruiker zelf antwoordde.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use base64::Engine;
@@ -18,8 +19,8 @@ use tokio::net::TcpListener;
 
 use super::provider::{ChatInfo, LinkState, Provider, WaError};
 use super::{
-    jid, match_recipient, overview, parse_webhook, verify, HttpRequest, Inbox, Message, Outcome, Parse, RateLimit, WebhookEvent,
-    WhatsAppSettings, CREDENTIAL_ACCOUNT, MAX_LENGTH, SECRET_ACCOUNT, WEBHOOK_PATH,
+    files, jid, match_recipient, overview, parse_webhook, verify, ChatKind, ChatMode, Conversation, HttpRequest, Inbox, Message, Outcome,
+    Parse, RateLimit, WebhookEvent, WhatsAppSettings, CREDENTIAL_ACCOUNT, KEEP, MAX_LENGTH, SECRET_ACCOUNT, WEBHOOK_PATH,
 };
 use crate::brain::LoopTool;
 use crate::connectors::hub::{Connector, Env, Scope};
@@ -58,6 +59,24 @@ pub struct Arrived {
     pub unread: usize,
 }
 
+/// One chat in Settings › WhatsApp › Per chat: its kind, its choice, and whether it is hidden.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsChat {
+    pub jid: String,
+    pub name: String,
+    pub kind: ChatKind,
+    pub mode: ChatMode,
+    pub hidden: bool,
+}
+
+/// How many of a chat's newest photos, videos and documents its card fetches to show.
+pub const PREVIEW_COUNT: usize = 6;
+/// How many fetched files stay at most; the oldest go first, from memory and from disk.
+pub const PREVIEW_LIMIT: usize = 48;
+/// How long a preview that failed waits before it is tried again.
+const PREVIEW_RETRY: Duration = Duration::from_secs(60);
+
 /// Hoe het ervoor staat, voor de instellingen.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,12 +114,20 @@ struct Inner {
     tick: u64,
     refreshing: bool,
     polling: bool,
+    /// Chats whose older messages were fetched for the card: once per chat while linked.
+    history_loaded: HashSet<String>,
+    /// Files the card shows or the user opened, by message id (oldest first in `preview_order`).
+    previews: HashMap<String, PathBuf>,
+    preview_order: VecDeque<String>,
+    previews_loading: HashSet<String>,
+    preview_failed: HashMap<String, Instant>,
 }
 
 /// Een chat die bij een zoekvraag past: id, naam en de berichten die passen.
 type Found = (String, String, Vec<Message>);
 type ArrivedFn = Arc<dyn Fn(Arrived) + Send + Sync>;
 type ChangedFn = Arc<dyn Fn() + Send + Sync>;
+type ReceiptFn = Arc<dyn Fn(String) + Send + Sync>;
 
 pub struct WhatsAppLink {
     env: Arc<Env>,
@@ -111,6 +138,10 @@ pub struct WhatsAppLink {
     desktop: bool,
     on_arrived: Mutex<Option<ArrivedFn>>,
     on_changed: Mutex<Option<ChangedFn>>,
+    on_receipt: Mutex<Option<ReceiptFn>>,
+    /// Where fetched files wait for the app that shows them: a folder of Nook's own in its data directory, emptied
+    /// when Nook starts, when WhatsApp stops and when Nook quits.
+    files_dir: Mutex<PathBuf>,
 }
 
 #[derive(Default)]
@@ -130,7 +161,28 @@ impl WhatsAppLink {
             desktop,
             on_arrived: Mutex::default(),
             on_changed: Mutex::default(),
+            on_receipt: Mutex::default(),
+            files_dir: Mutex::new(crate::paths::support_directory().join("WhatsApp files")),
         })
+    }
+
+    /// Your own messages in a chat got new ticks (delivered, read).
+    pub fn on_receipt(&self, f: impl Fn(String) + Send + Sync + 'static) {
+        *self.on_receipt.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    /// Another folder for fetched files (tests).
+    pub fn set_files_dir(&self, dir: PathBuf) {
+        *self.files_dir.lock().unwrap_or_else(|e| e.into_inner()) = dir;
+    }
+
+    pub fn files_dir(&self) -> PathBuf {
+        self.files_dir.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Removes every fetched file.
+    pub fn clear_files(&self) {
+        let _ = std::fs::remove_dir_all(self.files_dir());
     }
 
     pub fn on_arrived(&self, f: impl Fn(Arrived) + Send + Sync + 'static) {
@@ -199,6 +251,7 @@ impl WhatsAppLink {
 
     /// Eén keer bij de start.
     pub fn start(self: &Arc<Self>) {
+        self.clear_files();
         self.update();
     }
 
@@ -263,11 +316,17 @@ impl WhatsAppLink {
             i.last_webhook = None;
             i.naming.clear();
             i.failures = 0;
+            i.history_loaded.clear();
+            i.previews.clear();
+            i.preview_order.clear();
+            i.previews_loading.clear();
+            i.preview_failed.clear();
             if forget {
                 i.inbox.clear();
                 i.known.clear();
             }
         });
+        self.clear_files();
         if !self.settings().enabled {
             self.stop_gowa();
         }
@@ -548,8 +607,17 @@ impl WhatsAppLink {
             }
             i.me.clone()
         });
-        if let Some(WebhookEvent::Message(message)) = parse_webhook(kind, body, me.as_deref()) {
-            self.ingest(vec![message], true);
+        match parse_webhook(kind, body, me.as_deref()) {
+            Some(WebhookEvent::Message(message)) => self.ingest(vec![message], true),
+            Some(WebhookEvent::Receipt { ids, chat, status }) => {
+                if let Some(changed) = self.with(|i| i.inbox.apply_receipt(status, &ids, &chat)) {
+                    let f = self.on_receipt.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    if let Some(f) = f {
+                        f(changed);
+                    }
+                }
+            }
+            _ => {}
         }
         self.changed();
     }
@@ -796,6 +864,202 @@ impl WhatsAppLink {
         }
         self.changed();
         Ok(name)
+    }
+
+    /// One conversation as the card shows it (also a quiet or hidden one: the card asked for it by id).
+    pub fn conversation(&self, chat: &str) -> Option<Conversation> {
+        self.with(|i| i.inbox.conversations.get(&jid::normalized(chat)).cloned())
+    }
+
+    /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
+    pub async fn load_history(&self, chat: &str) -> bool {
+        let key = jid::normalized(chat);
+        if !self.is_connected() || !self.with(|i| i.history_loaded.insert(key.clone())) {
+            return false;
+        }
+        let count = |me: &Self| me.with(|i| i.inbox.conversations.get(&key).map(|c| c.messages.len()).unwrap_or(0));
+        let before = count(self);
+        let _ = self.messages_of(&key, KEEP).await;
+        count(self) != before
+    }
+
+    /// A file already fetched for the card.
+    pub fn preview(&self, id: &str) -> Option<PathBuf> {
+        self.with(|i| i.previews.get(id).cloned()).filter(|p| p.is_file())
+    }
+
+    /// The message ids of a chat's newest photos, videos and documents (a fixed few, so a redraw never reaches
+    /// further back).
+    pub fn preview_ids(&self, chat: &str) -> Vec<String> {
+        self.with(|i| {
+            let Some(c) = i.inbox.conversations.get(&jid::normalized(chat)) else { return vec![] };
+            let all: Vec<String> = c.messages.iter().filter(|m| m.media.is_previewed()).map(|m| m.id.clone()).collect();
+            all[all.len().saturating_sub(PREVIEW_COUNT)..].to_vec()
+        })
+    }
+
+    /// Fetches the card's newest files that are not here yet. One that failed is tried again after a minute. True when
+    /// at least one came in while the link stayed the same.
+    pub async fn load_previews(&self, chat: &str) -> bool {
+        let gen = self.with(|i| i.generation);
+        let mut loaded = false;
+        for id in self.preview_ids(chat) {
+            let wanted = self.with(|i| {
+                let failed_recently = i.preview_failed.get(&id).is_some_and(|t| t.elapsed() < PREVIEW_RETRY);
+                let wanted = !i.previews.contains_key(&id) && !i.previews_loading.contains(&id) && !failed_recently;
+                if wanted {
+                    i.previews_loading.insert(id.clone());
+                }
+                wanted
+            });
+            if !wanted {
+                continue;
+            }
+            let fetched = self.fetch_file(&id, chat).await;
+            let current = self.with(|i| {
+                i.previews_loading.remove(&id);
+                i.generation == gen
+            });
+            if !current {
+                if let Ok(path) = fetched {
+                    remove_saved(&path);
+                }
+                return false;
+            }
+            match fetched {
+                Ok(path) => {
+                    self.keep_preview(&id, path);
+                    loaded = true;
+                }
+                Err(_) => self.with(|i| {
+                    i.preview_failed.insert(id.clone(), Instant::now());
+                }),
+            }
+        }
+        loaded
+    }
+
+    fn keep_preview(&self, id: &str, path: PathBuf) {
+        let dropped = self.with(|i| {
+            i.preview_failed.remove(id);
+            if i.previews.insert(id.to_string(), path).is_none() {
+                i.preview_order.push_back(id.to_string());
+            }
+            let mut dropped = vec![];
+            while i.preview_order.len() > PREVIEW_LIMIT {
+                if let Some(old) = i.preview_order.pop_front().and_then(|old| i.previews.remove(&old)) {
+                    dropped.push(old);
+                }
+            }
+            dropped
+        });
+        for path in dropped {
+            remove_saved(&path);
+        }
+    }
+
+    /// A message's file on this computer, fetched from the gateway only when the card shows it or the user opens it.
+    pub async fn download(&self, id: &str, chat: &str) -> CResult<PathBuf> {
+        if let Some(saved) = self.preview(id) {
+            return Ok(saved);
+        }
+        let gen = self.with(|i| i.generation);
+        let path = self.fetch_file(id, chat).await?;
+        if self.with(|i| i.generation) != gen {
+            remove_saved(&path);
+            return Err(ConnectorError::new(self.status_line()));
+        }
+        self.keep_preview(id, path.clone());
+        log::info!("WhatsApp: opened a file");
+        Ok(path)
+    }
+
+    /// Fetches one message's file and saves it under its own folder in [`Self::files_dir`].
+    async fn fetch_file(&self, id: &str, chat: &str) -> CResult<PathBuf> {
+        let provider =
+            self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
+        let key = jid::normalized(chat);
+        let media = self
+            .with(|i| i.inbox.conversations.get(&key)?.messages.iter().find(|m| m.id == id).map(|m| m.media.clone()))
+            .filter(|m| m.is_openable())
+            .ok_or_else(|| ConnectorError::new("Dit bericht is niet meer in Nook; open het op je telefoon."))?;
+        let file = provider.media(&key, id).await.map_err(|e| match e {
+            WaError::Refused(why) if why == "too large" => ConnectorError::new("Dit bestand is groter dan 50 MB; open het op je telefoon."),
+            WaError::Refused(_) => ConnectorError::new(FETCH_FAILED),
+            other => ConnectorError::new(wa_text(&other)),
+        })?;
+        if file.data.is_empty() {
+            return Err(ConnectorError::new(FETCH_FAILED));
+        }
+        let name = files::file_name(&media, file.name.as_deref(), file.mime.as_deref());
+        let root = self.files_dir();
+        let folder = root.join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&folder).map_err(|e| ConnectorError::new(e.to_string()))?;
+        crate::paths::restrict(&root, 0o700);
+        let path = folder.join(name);
+        std::fs::write(&path, &file.data).map_err(|e| ConnectorError::new(e.to_string()))?;
+        Ok(path)
+    }
+
+    /// Whether `path` is a file Nook itself fetched into its own folder (and nothing outside it, through a link or
+    /// `..`): the only kind it hands to another app.
+    pub fn owns_file(&self, path: &Path) -> bool {
+        let (Ok(root), Ok(file)) = (self.files_dir().canonicalize(), path.canonicalize()) else { return false };
+        file.starts_with(&root) && file != root && file.is_file()
+    }
+
+    /// Keeps the chat but stops it from reaching you (the card's Dempen).
+    pub fn mute(self: &Arc<Self>, chat: &str) {
+        self.set_mode(chat, ChatMode::Muted);
+    }
+
+    pub fn set_mode(self: &Arc<Self>, chat: &str, mode: ChatMode) {
+        self.env.store.update(|c| c.whatsapp.set_mode(chat, mode));
+        self.changed();
+    }
+
+    /// A hidden chat comes back (one at a time).
+    pub fn unhide(self: &Arc<Self>, chat: &str) {
+        let key = jid::normalized(chat);
+        self.env.store.update(|c| {
+            c.whatsapp.ignored.remove(&key);
+        });
+        self.changed();
+    }
+
+    /// Every chat Settings › WhatsApp can name: the ones with messages, then the gateway's list, newest first; hidden
+    /// chats last.
+    pub fn chats_for_settings(&self) -> Vec<SettingsChat> {
+        let settings = self.settings();
+        let filters = settings.filters();
+        let mut seen = HashSet::new();
+        let mut out = vec![];
+        self.with(|i| {
+            for c in i.inbox.sorted() {
+                if seen.insert(c.id.clone()) {
+                    out.push((c.id.clone(), c.name.clone()));
+                }
+            }
+            for k in &i.known {
+                if seen.insert(k.jid.clone()) {
+                    out.push((k.jid.clone(), if k.name.is_empty() { jid::fallback_name(&k.jid) } else { k.name.clone() }));
+                }
+            }
+        });
+        for hidden in &settings.ignored {
+            if seen.insert(hidden.clone()) {
+                out.push((hidden.clone(), jid::fallback_name(hidden)));
+            }
+        }
+        out.into_iter()
+            .map(|(jid, name)| SettingsChat {
+                kind: jid::kind(&jid),
+                mode: filters.mode(&jid),
+                hidden: settings.ignored.contains(&jid),
+                jid,
+                name,
+            })
+            .collect()
     }
 
     pub fn ignore(self: &Arc<Self>, chat: &str) {
@@ -1102,6 +1366,21 @@ fn wa_text(error: &WaError) -> String {
     }
 }
 
+const FETCH_FAILED: &str =
+    "De WhatsApp-koppeling kon dit bestand niet ophalen. Het is misschien te oud of nog niet gedownload op je telefoon.";
+
+/// Removes a fetched file together with the folder of its own it was saved in.
+fn remove_saved(path: &Path) {
+    match path.parent() {
+        Some(folder) => {
+            let _ = std::fs::remove_dir_all(folder);
+        }
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 fn expand_home(path: &str) -> String {
     let p = path.trim();
     match (p.strip_prefix("~/"), dirs::home_dir()) {
@@ -1218,8 +1497,10 @@ mod tests {
             ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in","jid":"31611111111@s.whatsapp.net"}]}"#.into()),
             ("PATCH /devices/nook/webhook", 200, "{}".into()),
             ("GET /chats", 200, r#"{"results":{"data":[{"jid":"31622222222@s.whatsapp.net","name":"Jan Bakker","last_message_time":"2026-10-18T12:00:00Z"}]}}"#.into()),
-            ("GET /chat/*", 200, r#"{"results":{"data":[{"id":"m1","chat_jid":"31622222222@s.whatsapp.net","sender_jid":"31622222222@s.whatsapp.net","sender_display_name":"Jan","content":"Kom je vanavond?","timestamp":"2026-10-18T12:00:00Z","is_from_me":false}]}}"#.into()),
+            ("GET /chat/*", 200, r#"{"results":{"data":[{"id":"m1","chat_jid":"31622222222@s.whatsapp.net","sender_jid":"31622222222@s.whatsapp.net","sender_display_name":"Jan","content":"Kom je vanavond?","timestamp":"2026-10-18T12:00:00Z","is_from_me":false},{"id":"d1","chat_jid":"31622222222@s.whatsapp.net","sender_jid":"31622222222@s.whatsapp.net","content":"","timestamp":"2026-10-18T12:01:00Z","is_from_me":false,"media_type":"document","filename":"../plan.exe"},{"id":"d2","chat_jid":"31622222222@s.whatsapp.net","sender_jid":"31622222222@s.whatsapp.net","content":"","timestamp":"2026-10-18T12:02:00Z","is_from_me":false,"media_type":"document","filename":"plan.pdf"}]}}"#.into()),
             ("POST /send/message", 200, r#"{"results":{"message_id":"M9"}}"#.into()),
+            ("GET /message/*", 200, r#"{"results":{"file_path":"statics/media/x"}}"#.into()),
+            ("GET /statics/*", 200, "%PDF-1.4".into()),
         ])
         .await;
         let env = Env::new(Arc::new(MemorySecrets::default()), Arc::new(ConnectorStore::in_memory()));
@@ -1229,6 +1510,11 @@ mod tests {
             c.whatsapp.port = 0;
         });
         let link = WhatsAppLink::new(env, false);
+        let files_dir = std::env::temp_dir().join(format!("nook-wa-test-{}", uuid::Uuid::new_v4()));
+        link.set_files_dir(files_dir.clone());
+        let receipts = Arc::new(Mutex::new(vec![]));
+        let seen = receipts.clone();
+        link.on_receipt(move |chat| seen.lock().unwrap().push(chat));
         let arrived = Arc::new(Mutex::new(vec![]));
         let log = arrived.clone();
         link.on_arrived(move |a| log.lock().unwrap().push(a));
@@ -1251,6 +1537,38 @@ mod tests {
         let body = br#"{"event":"message","payload":{"id":"N1","chat_id":"31622222222@s.whatsapp.net","from":"31622222222@s.whatsapp.net","from_name":"Jan","timestamp":"2026-10-18T13:00:00Z","body":"Top!"}}"#;
         link.received(body, super::super::GatewayKind::Gowa);
         assert_eq!(arrived.lock().unwrap().last().map(|a| a.name.clone()).as_deref(), Some("Jan"));
+
+        // Your sent message gets its ticks from the gateway's receipts.
+        let ack = br#"{"event":"message.ack","payload":{"ids":["M9"],"chat_id":"31622222222@s.whatsapp.net","receipt_type":"read"}}"#;
+        link.received(ack, super::super::GatewayKind::Gowa);
+        assert_eq!(receipts.lock().unwrap().as_slice(), ["31622222222@s.whatsapp.net"]);
+        let card = link.conversation("31622222222@s.whatsapp.net").unwrap();
+        assert_eq!(card.messages.iter().find(|m| m.id == "M9").and_then(|m| m.receipt), Some(super::super::Receipt::Read));
+
+        // Files are fetched into Nook's own folder, under a safe name; nothing else counts as Nook's.
+        assert_eq!(link.preview_ids("31622222222@s.whatsapp.net"), ["d1", "d2"]);
+        assert!(link.load_previews("31622222222@s.whatsapp.net").await);
+        let saved = link.download("d2", "31622222222@s.whatsapp.net").await.unwrap();
+        assert!(saved.starts_with(&files_dir) && saved.ends_with("plan.pdf"), "{saved:?}");
+        assert!(link.owns_file(&saved));
+        assert_eq!(std::fs::read(&saved).unwrap(), b"%PDF-1.4");
+        let odd = link.preview("d1").unwrap();
+        assert_eq!(odd.file_name().unwrap(), "-plan.exe");
+        assert!(!super::super::files::may_open("-plan.exe"));
+        assert!(!link.owns_file(std::path::Path::new("/etc/hosts")));
+        assert!(link.download("m1", "31622222222@s.whatsapp.net").await.is_err(), "a text message has no file");
+
+        // Per chat: muted chats stay, hidden ones come back one at a time.
+        link.mute("31622222222@s.whatsapp.net");
+        assert_eq!(link.settings().filters().mode("31622222222@s.whatsapp.net"), super::super::ChatMode::Muted);
+        assert!(link.visible().is_empty());
+        link.ignore("31622222222@s.whatsapp.net");
+        let listed = link.chats_for_settings();
+        assert!(listed.iter().any(|c| c.jid == "31622222222@s.whatsapp.net" && c.hidden));
+        link.unhide("31622222222@s.whatsapp.net");
+        assert!(link.settings().ignored.is_empty());
+
         link.stop(true);
+        assert!(!files_dir.exists(), "fetched files go when WhatsApp stops");
     }
 }

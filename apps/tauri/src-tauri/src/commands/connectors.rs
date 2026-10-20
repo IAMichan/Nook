@@ -6,16 +6,20 @@ use std::collections::{BTreeSet, HashMap};
 
 use nook_core::connectors::accounts::{self, ServiceAccount};
 use nook_core::connectors::cloud::{self, ServiceInfo};
-use nook_core::connectors::github::{self, AccountPullRequests};
+use nook_core::connectors::github;
+use nook_core::connectors::hub::Connector;
 use nook_core::connectors::hub::ConnectorInfo;
 use nook_core::connectors::mcp::{self, connector as mcp_store, McpServerConfig, McpTool, Pasted, Transport};
+use nook_core::connectors::pulls::{self, PullRequestDetail, PullRequestList};
 use nook_core::connectors::whatsapp::{link::LinkView, Conversation, WhatsAppSettings};
+use nook_core::connectors::ConnectorError;
 use nook_core::connectors::{brand, gitlab};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::connectors::Connectors;
+use crate::state::AppState;
 
 type Res<T> = Result<T, String>;
 
@@ -171,13 +175,18 @@ fn mcp_views(c: &Connectors) -> Vec<McpView> {
 fn mcp_tools_of(c: &Connectors, id: &str) -> Option<Vec<McpTool>> {
     let config = mcp_store::servers(&c.env.store).into_iter().find(|s| s.id == id)?;
     let connector = c.hub.get(&config.source_id())?;
+    // Nook's tool names carry the server ("mcp_files_move_file") and the descriptions a "[Server] " prefix for the
+    // model; the settings already name the server.
+    let prefix = McpTool::nook_name(&config.id, "");
+    let label = format!("[{}] ", config.name);
     Some(
         connector
             .tools(&nook_core::connectors::hub::Scope::default())
             .into_iter()
             .map(|t| McpTool {
                 name: t.name.clone(),
-                description: t.description.clone(),
+                title: nook_core::agents::mcp_name::readable(t.name.strip_prefix(&prefix).unwrap_or(&t.name)),
+                description: t.description.strip_prefix(&label).unwrap_or(&t.description).to_string(),
                 input_schema: t.schema.clone(),
                 read_only: t.kind == nook_core::brain::ToolKind::Read,
             })
@@ -342,10 +351,90 @@ pub async fn github_device_start(app: AppHandle, c: State<'_, Connectors>, accou
     Ok(code)
 }
 
-/// De open pull requests van alle GitHub-accounts (voor de lijst bij Agents).
+// Pull requests (Agents › Pull requests)
+
+/// The pull requests of every GitHub account: yours, the ones for your review, and the ones in the watched
+/// organizations and repositories.
 #[tauri::command]
-pub async fn github_pull_requests(c: State<'_, Connectors>) -> Res<Vec<AccountPullRequests>> {
-    Ok(c.github.pull_request_list().await)
+pub async fn github_pull_requests(c: State<'_, Connectors>, state: State<'_, AppState>) -> Res<PullRequestList> {
+    let watching = state.settings().watched_pull_requests;
+    Ok(c.github.pull_request_list(&watching).await)
+}
+
+const NO_GITHUB: &str = "Er is geen GitHub-account met een token gekoppeld. Koppel er een onder Instellingen › Accounts & koppelingen.";
+
+fn pull_target(repo: &str, number: i64) -> Res<()> {
+    if !github::is_repository(repo) || number <= 0 {
+        return Err("Deze pull request bestaat niet.".into());
+    }
+    Ok(())
+}
+
+/// One pull request in full, read with the account it was listed under.
+#[tauri::command]
+pub async fn github_pull_request(c: State<'_, Connectors>, account: Option<String>, repo: String, number: i64) -> Res<PullRequestDetail> {
+    pull_target(&repo, number)?;
+    let (_, token) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    Ok(pulls::load_detail(&c.env, &token, &repo, number).await?)
+}
+
+/// Merges a pull request after the user confirmed it in the view, through the same `github_merge_pr` action a plan
+/// runs, with the account it was listed under and the head the view showed (`sha`). Written to the action log either
+/// way.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn github_merge_pull_request(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    account: Option<String>,
+    repo: String,
+    number: i64,
+    method: String,
+    sha: String,
+) -> Res<String> {
+    pull_target(&repo, number)?;
+    if !pulls::MERGE_METHODS.contains(&method.as_str()) {
+        return Err("Onbekende merge-methode.".into());
+    }
+    let (account, _) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    let input = serde_json::json!({"repo": repo, "number": number, "method": method, "sha": sha, "account": account});
+    let short: String = sha.chars().take(7).collect();
+    let args = format!("{repo}#{number} · {method} · {short} · {account}");
+    let result = c.github.execute("github_merge_pr", &input).await.unwrap_or_else(|| Err(ConnectorError::not_set_up("GitHub")));
+    match result {
+        Ok(text) => {
+            state.store.audit("github_merge_pr", &args, &text);
+            Ok(text)
+        }
+        Err(e) => {
+            state.store.audit("github_merge_pr", &args, &format!("FOUT: {}", e.message));
+            Err(e.message)
+        }
+    }
+}
+
+/// Adds what was typed (one or more organizations or repositories, separated by commas or spaces) to the watch list.
+#[tauri::command]
+pub fn pull_watch_add(app: AppHandle, state: State<'_, AppState>, text: String) -> Res<Vec<String>> {
+    let current = state.settings().watched_pull_requests;
+    let updated = pulls::add_watched(&text, &current);
+    if updated == current {
+        return Err(if current.len() >= pulls::WATCH_LIMIT {
+            format!("Je kunt tot {} organisaties en repositories volgen.", pulls::WATCH_LIMIT)
+        } else {
+            "Typ een organisatie (acme), een repository (acme/web) of een GitHub-link die nog niet in de lijst staat.".into()
+        });
+    }
+    let saved = state.update_settings(|s| s.watched_pull_requests = updated);
+    let _ = app.emit("settings-changed", &saved);
+    Ok(saved.watched_pull_requests)
+}
+
+#[tauri::command]
+pub fn pull_watch_remove(app: AppHandle, state: State<'_, AppState>, entry: String) -> Vec<String> {
+    let saved = state.update_settings(|s| s.watched_pull_requests.retain(|e| *e != entry));
+    let _ = app.emit("settings-changed", &saved);
+    saved.watched_pull_requests
 }
 
 // MCP
@@ -412,18 +501,35 @@ async fn sign_in(app: &AppHandle, c: &Connectors, config: &McpServerConfig) -> R
 /// Een eerste poging die niet lukt, laat niets achter.
 #[tauri::command]
 pub async fn mcp_connect_service(app: AppHandle, c: State<'_, Connectors>, service: String) -> Res<()> {
+    connect_service(&app, &c, &service).await
+}
+
+async fn connect_service(app: &AppHandle, c: &Connectors, service: &str) -> Res<()> {
     let remote = mcp_store::REMOTE_SERVICES.iter().find(|s| s.id == service).ok_or_else(|| format!("Onbekende dienst {service}"))?;
     let existing = mcp_store::servers(&c.env.store).into_iter().find(|s| s.service_id.as_deref() == Some(remote.id));
     let config = match &existing {
         Some(e) => e.clone(),
         None => mcp_store::add(&c.env, remote.name, Transport::Http { url: remote.url.into() }, &[], true, Some(remote.id))?,
     };
-    let result = sign_in(&app, &c, &config).await;
+    let result = sign_in(app, c, &config).await;
     if result.is_err() && existing.is_none() {
         mcp_store::remove(&c.env, &config.id);
         c.sync_mcp();
     }
     result
+}
+
+/// "Herstel" on a key-based service that also has its own sign-in page (Notion, Stripe, Vercel): sign in on that page
+/// instead of asking for a new key. Once signed in, the expired key is removed so the signed-in connection takes over.
+#[tauri::command]
+pub async fn connector_repair_sign_in(app: AppHandle, c: State<'_, Connectors>, service: String) -> Res<()> {
+    let info = cloud::services().into_iter().find(|s| s.id == service).ok_or_else(|| format!("Onbekende dienst {service}"))?;
+    connect_service(&app, &c, &service).await?;
+    for field in info.fields.iter().filter(|f| f.secret) {
+        c.env.secrets.remove(field.account)?;
+    }
+    c.hub.refresh_now(&service).await;
+    Ok(())
 }
 
 /// Opnieuw inloggen bij een server (verlopen inlog).
@@ -435,10 +541,27 @@ pub async fn mcp_sign_in(app: AppHandle, c: State<'_, Connectors>, id: String) -
 
 // GitLab
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLabSaved {
+    host: String,
+    hosts: Vec<String>,
+    check: gitlab::TokenCheck,
+}
+
+/// Checks the token with GitLab first and only then stores it: a token GitLab refuses is never saved, one that cannot
+/// be checked yet (offline, VPN) is.
 #[tauri::command]
-pub async fn gitlab_save(c: State<'_, Connectors>, host: String, token: String) -> Res<Vec<String>> {
-    gitlab::save(&c.env.store, &*c.env.secrets, &host, &token)?;
-    Ok(gitlab::hosts(&c.env.store, &*c.env.secrets))
+pub async fn gitlab_save(c: State<'_, Connectors>, host: String, token: String) -> Res<GitLabSaved> {
+    let (host, check) = gitlab::verify_and_save(&c.env.http, &c.env.store, &*c.env.secrets, &host, &token).await?;
+    Ok(GitLabSaved { host, hosts: gitlab::hosts(&c.env.store, &*c.env.secrets), check })
+}
+
+/// Asks the host whose stored token this is, for the row and the manage sheet.
+#[tauri::command]
+pub async fn gitlab_check(c: State<'_, Connectors>, host: String) -> Res<gitlab::TokenCheck> {
+    let token = gitlab::token(&*c.env.secrets, &host).ok_or("Voor deze host staat geen token in je kluis.")?;
+    Ok(gitlab::check(&c.env.http, &host, &token).await)
 }
 
 #[tauri::command]

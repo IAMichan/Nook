@@ -1,6 +1,7 @@
 // Geluiden van Nook (`NookSound` op de Mac): attention, done, error. Een eigen bestand in <Nook-map>/Sounds wint;
 // anders een kort toontje met WebAudio.
 import { agentApi } from "./agents";
+import { quiet } from "./quiet.svelte";
 
 export type SoundKind = "attention" | "done" | "error";
 
@@ -21,6 +22,8 @@ function tone(ctx: AudioContext, freq: number, start: number, length: number, ga
 }
 
 export async function playSound(kind: SoundKind) {
+  // Silent while you share your screen or sit in a meeting, when you chose so.
+  if (quiet.silent) return;
   try {
     if (!custom.has(kind)) custom.set(kind, await agentApi.sound(kind));
     const file = custom.get(kind);

@@ -5,6 +5,7 @@
   import { api } from "../lib/api";
   import { brainApi, type Recovery } from "../lib/brain";
   import { renderMarkdown } from "../lib/markdown";
+  import { visibleNotices } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
   import type { ChatMessage } from "../lib/types";
   import ChartView from "./ChartView.svelte";
@@ -15,6 +16,7 @@
   let { message, nookId, last = false }: { message: ChatMessage; nookId: string; last?: boolean } = $props();
   const text = $derived(message.streaming ? (nook.streaming[message.id] ?? message.text ?? "") : message.text);
   const html = $derived(message.fromUser ? "" : renderMarkdown(text));
+  const notices = $derived(message.streaming ? [] : visibleNotices(message));
 
   function click(e: MouseEvent) {
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
@@ -51,7 +53,7 @@
     {#if message.attachment}<div class="file">📄 {message.attachment}</div>{/if}
     <div class="bubble">{message.text}</div>
   {:else}
-    <SourcesView {message} live={message.streaming} />
+    <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
     {#if message.streaming && !text}
       <div class="status"><span class="dot working"></span> {message.status || "Even nadenken…"}</div>
     {:else if text}
@@ -73,7 +75,11 @@
         {/each}
       </ol>
     {/if}
-    {#each message.notices ?? [] as notice (notice)}<div class="notice">{notice}</div>{/each}
+    {#if notices.length}
+      <div class="notices">
+        {#each notices as notice (notice)}<div class="notice"><span class="mark">!</span><span>{notice}</span></div>{/each}
+      </div>
+    {/if}
     {#if message.recovery || (message.isError && last)}
       <div class="offers">
         {#if message.recovery}<button onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
@@ -98,9 +104,10 @@
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }
-  .notice { font-size: 12px; color: var(--amber); margin-bottom: 4px; }
   .refs { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--text2); }
-  .notice { font-size: 12px; color: var(--amber); margin-top: 6px; }
+  .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
+  .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
+  .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
   .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
 </style>

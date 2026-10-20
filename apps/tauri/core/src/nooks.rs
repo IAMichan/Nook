@@ -308,7 +308,9 @@ impl Conversation {
         if self.busy {
             return ConversationStatus::Working;
         }
-        let waiting = self.messages.iter().any(|m| {
+        // Only what Nook proposed since your last message: a plan or draft you moved past no longer waits for you.
+        let since = self.messages.iter().rposition(|m| m.from_user).map_or(0, |i| i + 1);
+        let waiting = self.messages[since..].iter().any(|m| {
             (!m.actions.is_empty() && matches!(m.plan_state, None | Some(PlanState::Pending)))
                 || m.mails.iter().any(|d| d.state.is_empty() || d.state == "draft")
         });
@@ -576,6 +578,9 @@ mod tests {
         assert_eq!(c.status(), ConversationStatus::Waiting);
         c.messages[0].plan_state = Some(PlanState::Done("ok".into()));
         assert_eq!(c.status(), ConversationStatus::Idle);
+        c.messages[0].plan_state = None;
+        c.messages.push(ChatMessage::user("laat maar, iets anders"));
+        assert_eq!(c.status(), ConversationStatus::Idle, "a plan you moved past no longer waits");
     }
 
     #[test]

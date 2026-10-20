@@ -37,6 +37,16 @@
   let blush = $state(false);
   let drowsy = $state(false);
   let hovered = $state<string | null>(null);
+  // The hovered piece's name stays a moment after the pointer leaves the ring, so you can move onto it and click it.
+  let unhoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function hover(id: string) {
+    clearTimeout(unhoverTimer);
+    hovered = id;
+  }
+  function unhover() {
+    clearTimeout(unhoverTimer);
+    unhoverTimer = setTimeout(() => (hovered = null), 250);
+  }
   let pokes: number[] = [];
   let restTimer: ReturnType<typeof setTimeout> | undefined;
   let momentTimer: ReturnType<typeof setTimeout> | undefined;
@@ -174,13 +184,18 @@
           class="piece {piece.state}"
           class:hover={hovered === piece.id}
           style="animation-delay:{i * 60}ms"
-          onmouseenter={() => (hovered = piece.id)}
-          onmouseleave={() => (hovered = null)}
+          onmouseenter={() => hover(piece.id)}
+          onmouseleave={unhover}
           onclick={() => onpiece?.(piece.id)}
         />
       {/each}
     </svg>
-    {#if hovered}<span class="label">{ring.find((p) => p.id === hovered)?.label}</span>{/if}
+    {#if hovered}
+      {@const id = hovered}
+      <button class="label" onmouseenter={() => hover(id)} onmouseleave={unhover} onclick={() => { hovered = null; onpiece?.(id); }}>
+        {ring.find((p) => p.id === id)?.label}
+      </button>
+    {/if}
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
@@ -236,6 +251,8 @@
   .cheek.right { right: 16%; }
   .working { animation: breathe 1.6s ease-in-out infinite; }
   .idle:not(.drowsy) { animation: rest 4.5s ease-in-out infinite; }
+  /* Taking it easy (battery, saver, paused): the idle float rests, so the webview stops drawing frames for it. */
+  :global(body.easy) .idle { animation: none; }
   .waiting { box-shadow: 0 0 calc(var(--s) * 0.6) color-mix(in srgb, var(--amber) 55%, transparent); }
   .listen { box-shadow: 0 0 calc(var(--s) * (0.5 + var(--level) * 1.2)) color-mix(in srgb, var(--mint) 60%, transparent); }
   .listen .eye { height: calc(var(--s) * (0.22 + var(--level) * 0.06)); }
@@ -263,5 +280,6 @@
   .piece.done { stroke: var(--mint); }
   .piece.hover { stroke-width: 5; }
   @keyframes draw { from { opacity: 0; } }
-  .label { position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; color: var(--text2); background: var(--notch); padding: 2px 6px; border-radius: 6px; pointer-events: none; }
+  .label { position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; color: var(--text2); background: var(--notch); padding: 2px 6px; border: none; border-radius: 6px; z-index: 5; }
+  .label:hover { color: var(--paper); background: var(--smoke); }
 </style>

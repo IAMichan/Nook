@@ -31,11 +31,11 @@ chrono-tz = "0.10"
 hmac = "0.12"
 rand = "0.8"
 url = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 percent-encoding = "2"
 fancy-regex = "0.14"
 unicode-normalization = "0.1"
-quick-xml = "0.37"
+quick-xml = "0.42"
 pdf-extract = "0.12"
 iana-time-zone = "0.1"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }

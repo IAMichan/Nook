@@ -110,6 +110,44 @@ fn plan_message(text: &str, actions: Vec<PlannedAction>, problems: Vec<Vec<Strin
     message
 }
 
+/// What a card that writes its own prompt pins for that run (the Mac's `ReplyContext`): the WhatsApp card's "Laat Nook
+/// antwoorden" reads only its own chat, may only propose an answer to that chat, and teaches memory nothing.
+#[derive(Debug, Clone, Default)]
+pub struct CardRun {
+    /// Lookups that are the answer's material (tool, input): the run reads exactly these instead of searching, so an
+    /// answer about one chat is never mixed with others.
+    pub focus: Vec<(String, serde_json::Value)>,
+    /// The one WhatsApp chat (its id) a proposed `whatsapp_send` may go to; the only tool the brain is offered.
+    pub only_chat: Option<String>,
+}
+
+tokio::task_local! {
+    static CARD_RUN: CardRun;
+}
+
+/// The card run this task answers for, if any.
+fn card_run() -> Option<CardRun> {
+    CARD_RUN.try_with(Clone::clone).ok()
+}
+
+/// Problems with an action a card run proposed: only an answer to the card's own chat may come out of it.
+pub fn card_problems(app: &AppHandle, run: &CardRun, action: &PlannedAction) -> Vec<String> {
+    let Some(chat) = &run.only_chat else { return vec![] };
+    if action.tool != "whatsapp_send" {
+        return vec!["Vanuit een WhatsApp-kaart stelt Nook alleen een antwoord aan die chat voor.".into()];
+    }
+    let to = action.input["to"].as_str().unwrap_or("");
+    let link = &app.state::<crate::connectors::Connectors>().whatsapp;
+    let wanted = nook_core::connectors::whatsapp::jid::normalized(chat);
+    match link.resolve(to) {
+        Some((target, _)) if target == wanted => vec![],
+        _ => vec![format!(
+            "Dit antwoord gaat niet naar de chat van de kaart ({}). Pas de ontvanger aan of verstuur het niet.",
+            link.conversation(chat).map(|c| c.name).unwrap_or_else(|| chat.clone())
+        )],
+    }
+}
+
 /// Een vraag in deze Nook. Geeft meteen het id van het antwoord terug (of niets bij een snelle opdracht).
 pub fn ask(
     app: &AppHandle,
@@ -117,6 +155,22 @@ pub fn ask(
     raw: &str,
     images: Vec<PromptImage>,
     attachment: Option<Attachment>,
+) -> Result<Option<String>, String> {
+    ask_with(app, nook_id, raw, images, attachment, None)
+}
+
+/// A prompt a card wrote (its button, not the user's words): answered like any question, but within `run`.
+pub fn ask_from_card(app: &AppHandle, nook_id: &str, text: &str, run: CardRun) -> Result<Option<String>, String> {
+    ask_with(app, nook_id, text, vec![], None, Some(run))
+}
+
+fn ask_with(
+    app: &AppHandle,
+    nook_id: &str,
+    raw: &str,
+    images: Vec<PromptImage>,
+    attachment: Option<Attachment>,
+    card: Option<CardRun>,
 ) -> Result<Option<String>, String> {
     let mut text = raw.trim().to_string();
     if text.is_empty() && images.is_empty() && attachment.is_none() {
@@ -134,7 +188,7 @@ pub fn ask(
         return Ok(None);
     }
     // Korte vaste opdrachten doet Nook zelf, meteen.
-    if images.is_empty() && attachment.is_none() {
+    if images.is_empty() && attachment.is_none() && card.is_none() {
         if let Some(intent) = LocalIntent::parse(&text, &|name| tools::find_app(app, name)) {
             if let Some(answer) = quick(app, &intent) {
                 quick_reply(app, nook_id, &text, answer);
@@ -170,12 +224,18 @@ pub fn ask(
         }
         history
     });
+    // A card's answer is about its own chat only: earlier turns of this Nook stay out of it.
+    let history = if card.is_some() { vec![] } else { history };
     updated(app, nook_id);
 
     let task_app = app.clone();
     let (nid, mid) = (nook_id.to_string(), message_id.clone());
     let handle = tauri::async_runtime::spawn(async move {
-        answer_question(&task_app, &nid, &mid, &text, &history, images, attachment, false, None).await;
+        let answer = answer_question(&task_app, &nid, &mid, &text, &history, images, attachment, false, None);
+        match card {
+            Some(run) => CARD_RUN.scope(run, answer).await,
+            None => answer.await,
+        }
     });
     state.running.lock().unwrap_or_else(|e| e.into_inner()).insert(nook_id.to_string(), handle.inner().abort_handle());
     Ok(Some(message_id))
@@ -362,7 +422,14 @@ pub async fn answer_question(
             });
         })))
     };
-    let tools: Vec<LoopTool> = tools::tools(&ctx).into_iter().map(|t| ledgered(t, ledger.clone(), Duration::from_secs(25))).collect();
+    let card = card_run();
+    let mut tools: Vec<LoopTool> = tools::tools(&ctx).into_iter().map(|t| ledgered(t, ledger.clone(), Duration::from_secs(25))).collect();
+    // A card run reads only what it pinned and can only propose the answer it was asked for.
+    let focus: Vec<(String, serde_json::Value)> = card.as_ref().map(|c| c.focus.clone()).unwrap_or_default();
+    let focus_tools: Vec<LoopTool> = tools.iter().filter(|t| focus.iter().any(|(name, _)| *name == t.name)).cloned().collect();
+    if card.as_ref().is_some_and(|c| c.only_chat.is_some()) {
+        tools.retain(|t| t.name == "whatsapp_send");
+    }
     let active = tools::active(&tools);
 
     brain.urls.note(text);
@@ -381,7 +448,12 @@ pub async fn answer_question(
         let names: HashSet<String> = tools.iter().map(|t| t.name.clone()).collect();
         recalled = brain.memory.recall(&recall_text, &names, limit, characters, settings.is_local_brain());
     }
-    let (overview, mut context_titles) = tools::context_titled(&ctx).await;
+    let (mut overview, mut context_titles) = tools::context_titled(&ctx).await;
+    if card.is_some() {
+        // Only the time: what other sources say (other chats among them) stays out of a card's answer.
+        overview = overview.split("\n\n").next().unwrap_or("").to_string();
+        context_titles.clear();
+    }
     if !recalled.is_empty() {
         context_titles.push(sources::title(sources::MEMORY));
     }
@@ -415,7 +487,14 @@ pub async fn answer_question(
     let mut goal = String::new();
     let mut blocked = vec![];
     let mut evidence_text = String::new();
-    if !intent.is_small_talk {
+    for (name, input) in &focus {
+        let Some(tool) = focus_tools.iter().find(|t| t.name == *name) else { continue };
+        if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(8), (tool.run)(input.clone())).await {
+            let limit = if profile.is_small { 4_000 } else { 10_000 };
+            findings.opened.push(output.chars().take(limit).collect());
+        }
+    }
+    if focus.is_empty() && !intent.is_small_talk {
         let available = prepare::available(&tools);
         let unreachable = tools::unreachable(&ctx);
         let plan = if prepare::should_plan(text, &intent) {
@@ -506,6 +585,7 @@ pub async fn answer_question(
         screen: screen.clone(),
         images: images.clone(),
         tools: tools.clone(),
+        own_request: false,
     };
     let result = service::run(&settings, &env, brain_request, Some(&emit)).await;
 
@@ -623,20 +703,8 @@ pub async fn answer_question(
         .take(12)
         .cloned()
         .collect();
-    let mut notices: Vec<String> = ledger
-        .failures()
-        .iter()
-        .filter_map(|s| {
-            if let Outcome::Failed(e) = &s.outcome {
-                Some(format!("{} kon niet worden doorzocht: {e}", s.source_title))
-            } else {
-                None
-            }
-        })
-        .collect();
-    if !notices.is_empty() {
-        notices.push("Dit antwoord is daardoor mogelijk onvolledig.".into());
-    }
+    // Sources that could not be read are shown, with their reason and a retry, in the sources card under the answer.
+    let mut notices: Vec<String> = vec![];
     if !held_back.is_empty() {
         let names: Vec<String> = held_back.iter().map(|id| sources::title(id)).collect();
         notices.push(format!("{} staat op ‘alleen op dit apparaat’ en is niet gebruikt, omdat een externe AI antwoordt. Kies een brein op deze computer om hier iets over te vragen.", names.join(", ")));
@@ -657,7 +725,16 @@ pub async fn answer_question(
         }
         actions.push(copy);
     }
-    let problems: Vec<Vec<String>> = actions.iter().map(|a| action_problems(&all, a, &scope)).collect();
+    let problems: Vec<Vec<String>> = actions
+        .iter()
+        .map(|a| {
+            let mut found = action_problems(&all, a, &scope);
+            if let Some(run) = &card {
+                found.extend(card_problems(app, run, a));
+            }
+            found
+        })
+        .collect();
     let steps = ledger.steps();
     let final_text = body.clone();
     let has_actions = !actions.is_empty();
@@ -774,6 +851,13 @@ fn learn_after_answer(app: &AppHandle, question: &str, history: &[ChatTurn], noo
     let state = app.state::<AppState>();
     let brain = app.state::<BrainState>();
     let settings = state.settings();
+    // A prompt a card wrote ("schrijf een antwoord aan Lisa") says nothing about the user worth keeping, now or later,
+    // and the chat it read never reaches memory.
+    if card_run().is_some() {
+        let user_turns = history.iter().filter(|t| t.from_user).count() + 1;
+        brain.memory.end_reflection(nook_id, user_turns);
+        return;
+    }
     if !settings.learn_from_chats {
         return;
     }
@@ -878,7 +962,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
                 m.streaming = false;
                 m.status.clear();
                 for step in m.retrieval.iter_mut().filter(|s| s.outcome == Outcome::Running) {
-                    step.outcome = Outcome::Failed("gestopt".into());
+                    step.outcome = Outcome::Failed(nook_core::brain::retrieval::INTERRUPTED.into());
                 }
                 if m.text.is_empty() && m.charts.is_empty() && m.mails.is_empty() && m.actions.is_empty() {
                     m.text = "Gestopt.".into();

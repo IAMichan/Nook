@@ -4,6 +4,47 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PlannedAction } from "./types";
 
+export type EnergyPace = "full" | "light" | "paused";
+export type EnergyReason = "displayAsleep" | "hot" | "lowPowerMode" | "busy" | "away" | "battery" | "saver";
+
+export interface EnergyView {
+  plan: { pace: EnergyPace; reasons: EnergyReason[] };
+  status: string;
+}
+
+export interface QuietState {
+  silent: boolean;
+  excludedFromCapture: boolean;
+  hidden: boolean;
+  situation: { sharing: boolean; meeting: boolean };
+}
+
+export interface QuietView {
+  state: QuietState;
+  status: string;
+}
+
+/// The reason in a few words, as the Rust side writes it (`EnergyReason::text`).
+export const energyReasons: Record<EnergyReason, string> = {
+  displayAsleep: "je scherm slaapt",
+  hot: "je computer is warm",
+  lowPowerMode: "energiebesparing staat aan",
+  busy: "je computer is druk bezig",
+  away: "je bent even weg",
+  battery: "je computer draait op de accu",
+  saver: "je koos voor Zuinig",
+};
+
+/// What the screen reading does right now (Settings › Assistant): off, paused and why, the windows it holds, or
+/// nothing. The pause comes before the windows: held windows must not hide that nothing is read right now.
+export function screenLine(enabled: boolean, windows: string[], energy: EnergyView | null): string {
+  if (!enabled) return "Uit";
+  const reason = energy?.plan.reasons[0];
+  if (energy?.plan.pace === "paused" && reason) return `Gepauzeerd: ${energyReasons[reason]}`;
+  if (windows.length) return windows.slice(0, 4).join(" · ");
+  return "niets gelezen";
+}
+
 export interface NowPlaying {
   app: string;
   title: string;
@@ -194,6 +235,9 @@ export const services = {
   asideHide: () => invoke<void>("aside_hide"),
   asideShow: () => invoke<void>("aside_show"),
   screenStatus: () => invoke<ScreenStatus>("screen_status"),
+  energyStatus: () => invoke<EnergyView>("energy_status"),
+  /// `watching`: Settings shows the line, so the situation is read even with "change nothing" for both.
+  quietStatus: (watching: boolean) => invoke<QuietView>("quiet_status", { watching }),
 
   partBegin: () => invoke<void>("screen_part_begin"),
   partImage: () => invoke<string | null>("screen_part_image"),
@@ -212,6 +256,8 @@ export const serviceEvents = {
   onFlow: (cb: (e: VoiceEvent) => void): Promise<UnlistenFn> => listen<VoiceEvent>("flow-state", (e) => cb(e.payload)),
   onNudge: (cb: (n: Nudge | null) => void): Promise<UnlistenFn> => listen<Nudge | null>("nudge", (e) => cb(e.payload)),
   onNoteLive: (cb: (n: NoteLive) => void): Promise<UnlistenFn> => listen<NoteLive>("note-live", (e) => cb(e.payload)),
+  onEnergy: (cb: (v: EnergyView) => void): Promise<UnlistenFn> => listen<EnergyView>("energy-plan", (e) => cb(e.payload)),
+  onQuiet: (cb: (s: QuietState) => void): Promise<UnlistenFn> => listen<QuietState>("quiet-changed", (e) => cb(e.payload)),
   onAttachImage: (cb: (img: { mediaType: string; base64: string }) => void): Promise<UnlistenFn> =>
     listen<{ mediaType: string; base64: string }>("attach-image", (e) => cb(e.payload)),
 };

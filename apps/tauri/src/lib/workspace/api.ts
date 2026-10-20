@@ -98,6 +98,10 @@ export interface ProviderInfo {
 export interface WorkspaceSettings {
   defaultProvider: RunProvider;
   defaultModels: Record<string, string>;
+  /// Reasoning effort per agent for new sessions (absent: the agent's own default).
+  defaultEfforts: Record<string, string>;
+  /// The account last chosen per agent.
+  defaultProfiles: Record<string, string>;
   defaultMode: ExecutionMode;
   defaultIsolation: IsolationMode;
   defaultPermission: PermissionPolicy;
@@ -334,9 +338,10 @@ export const modeHelp: Record<ExecutionMode, string> = {
   plan: "Alleen lezen en een plan maken; er wordt niets aangepast.",
 };
 
-/// Redeneerniveaus (EffortLevels op de Mac): alleen Codex kent ze op de opdrachtregel.
+/// Redeneerniveaus (EffortLevels op de Mac): Codex via `model_reasoning_effort`, Claude Code via `--effort`; low,
+/// medium and high are the levels every model accepts.
 export function effortLevels(provider: RunProvider): string[] {
-  return provider === "codex" ? ["low", "medium", "high"] : [];
+  return provider === "codex" || provider === "claude" ? ["low", "medium", "high"] : [];
 }
 
 export const effortLabels: Record<string, string> = {

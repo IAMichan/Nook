@@ -226,7 +226,7 @@ mod windows {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, &mut pid);
         if let Some(name) = image_name(pid) {
-            if search.names.iter().any(|n| *n == name) {
+            if search.names.contains(&name) {
                 search.found = hwnd;
                 return 0;
             }

@@ -10,6 +10,8 @@ pub const BAR: &str = "bar";
 
 /// Maten van de balk: dicht (een pil met Nook en een stipje per agent) en open (het paneel met tabs).
 pub const COLLAPSED: (f64, f64) = (240.0, 38.0);
+/// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
+pub const NOTICE: (f64, f64) = (560.0, 38.0);
 pub const EXPANDED: (f64, f64) = (760.0, 540.0);
 pub const EXPANDED_LARGE: (f64, f64) = (960.0, 680.0);
 
@@ -41,9 +43,16 @@ fn create_bar(app: &AppHandle) -> tauri::Result<()> {
 
 /// Bovenaan in het midden van het gekozen scherm, of op de plek waar de gebruiker hem neerzette (zwevend).
 pub fn place_bar(app: &AppHandle, expanded: bool) {
+    place_bar_sized(app, expanded, false);
+}
+
+/// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
+pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
     let Some(window) = app.get_webview_window(BAR) else { return };
     let settings = app.state::<AppState>().settings();
-    let (w, h) = if !expanded {
+    let (w, h) = if !expanded && notice {
+        NOTICE
+    } else if !expanded {
         COLLAPSED
     } else if settings.panel_large {
         EXPANDED_LARGE
@@ -100,6 +109,10 @@ pub fn show_main(app: &AppHandle, route: &str) {
 
 /// Opent de balk en zet de cursor in het invoerveld.
 pub fn open_bar(app: &AppHandle, focus: &str) {
+    // While Nook hides for a share or meeting, agent prompts wait in the bar; a shortcut or the tray still opens it.
+    if focus == "agents" && crate::services::quiet::holds_cards(app) {
+        return;
+    }
     if let Some(bar) = app.get_webview_window(BAR) {
         place_bar(app, true);
         let _ = bar.show();

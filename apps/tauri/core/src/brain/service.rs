@@ -35,6 +35,9 @@ pub struct BrainRequest {
     pub screen: Option<(String, String)>,
     pub images: Vec<PromptImage>,
     pub tools: Vec<LoopTool>,
+    /// A request Nook wrote itself (looking at the screen, thinking along): answer in the app's language, not in the
+    /// language of this request text.
+    pub own_request: bool,
 }
 
 /// Alleen verzoeken die iets willen dóén krijgen tools; een groet heeft ze niet nodig en zonder tools is de prompt
@@ -486,6 +489,9 @@ async fn execute(
 /// Bouwt het gesprek voor het gekozen brein en draait de tool-loop.
 pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_text: OnText<'_>) -> Result<BrainPlan> {
     let started = std::time::Instant::now();
+    // A request Nook wrote itself is often in English: its language says nothing about the language to answer in.
+    let own_settings = request.own_request.then(|| settings.for_own_request());
+    let settings = own_settings.as_ref().unwrap_or(settings);
     let profile = profile_for(settings, env.memory_gb);
     let small = profile.is_small;
     let all = &request.tools;

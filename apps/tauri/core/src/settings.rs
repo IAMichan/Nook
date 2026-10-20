@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths;
 use crate::provider::AIProvider;
+use crate::services::autocomplete::AutocompleteSettings;
+use crate::services::energy::EnergyMode;
+use crate::services::quiet::QuietBehavior;
 
 /// Waar het denken gebeurt. Op Windows, Linux en Android is er (nog) geen ingebouwd MLX-model:
 /// lokaal betekent Ollama of LM Studio.
@@ -67,6 +70,9 @@ pub struct Settings {
     pub accent_hex: u32,
     pub hide_when_idle: bool,
     pub panel_large: bool,
+    /// How large the bar's notification is when an agent (terminal or Workspace) finishes, fails or waits on you:
+    /// "detailed" (a card with the summary and what changed) or "compact" (one slim line in the bar).
+    pub agent_notice: String,
     pub sounds: bool,
     pub speak_answers: bool,
     pub wake_word: bool,
@@ -83,6 +89,23 @@ pub struct Settings {
     pub demo_data: bool,
     /// Sneltoetsen, als Tauri-accelerators ("Alt+Space").
     pub shortcuts: BTreeMap<String, String>,
+    /// GitHub organizations ("acme") and repositories ("acme/web") whose pull requests show under Agents › Pull
+    /// requests as well (Settings › Accounts & connections). See `connectors::pulls::add_watched`.
+    pub watched_pull_requests: Vec<String>,
+    /// What Nook does while you share your screen (Settings › Voice and sound › Meetings and screen sharing).
+    pub quiet_while_sharing: QuietBehavior,
+    /// What Nook does during a meeting; "hide from viewers" counts as quiet here.
+    pub quiet_in_meetings: QuietBehavior,
+    /// An event going on in your calendar counts as a meeting.
+    pub quiet_use_calendar: bool,
+    /// Nook's windows are always left out of screen sharing, screenshots and recordings (Windows).
+    pub hide_from_captures: bool,
+    /// The system's screenshot tool does not count as sharing your screen, so Nook appears in your screenshots.
+    pub show_in_screenshots: bool,
+    /// How much Nook does by himself on battery or a busy computer (Settings › General › Energy).
+    pub energy_mode: EnergyMode,
+    /// Autocomplete Anywhere (Settings › Autocomplete). Off by default.
+    pub autocomplete: AutocompleteSettings,
 }
 
 impl Default for Settings {
@@ -107,6 +130,7 @@ impl Default for Settings {
             accent_hex: 0xF4_F3_F7,
             hide_when_idle: false,
             panel_large: false,
+            agent_notice: "detailed".into(),
             sounds: true,
             speak_answers: false,
             wake_word: false,
@@ -121,6 +145,14 @@ impl Default for Settings {
             onboarding_done: false,
             demo_data: false,
             shortcuts,
+            watched_pull_requests: vec![],
+            quiet_while_sharing: QuietBehavior::HideFromShare,
+            quiet_in_meetings: QuietBehavior::Quiet,
+            quiet_use_calendar: true,
+            hide_from_captures: false,
+            show_in_screenshots: false,
+            energy_mode: EnergyMode::Automatic,
+            autocomplete: AutocompleteSettings::default(),
         }
     }
 }
@@ -193,6 +225,23 @@ impl Settings {
         let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("Nederlands");
         format!("Always respond in {name}, even if the data or tools are in a different language.")
     }
+
+    /// The language code for a request Nook writes itself (looking at the screen, thinking along). Its text is Nook's
+    /// own, not the user's, so with "auto" the language comes from the app language instead of from that text.
+    pub fn own_language(&self) -> &str {
+        let code = if self.language == "auto" { self.app_language.as_str() } else { self.language.as_str() };
+        if ANSWER_LANGUAGES.iter().any(|(c, _)| *c == code && *c != "auto") {
+            code
+        } else {
+            "nl"
+        }
+    }
+
+    /// These settings for a request Nook wrote itself: the answer language is fixed to `own_language`, so the prompt
+    /// never asks to answer in the language of Nook's own (often English) request text.
+    pub fn for_own_request(&self) -> Settings {
+        Settings { language: self.own_language().to_string(), ..self.clone() }
+    }
 }
 
 /// Een simpele taalherkenning op veelvoorkomende woorden (op de Mac doet NaturalLanguage dit).
@@ -232,6 +281,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn own_requests_answer_in_the_app_language() {
+        let mut s = Settings { language: "auto".into(), app_language: "nl".into(), ..Default::default() };
+        // Nook's own English request text says nothing about the language to answer in.
+        assert_eq!(s.own_language(), "nl");
+        assert!(s.for_own_request().language_instruction("This is what the user currently has on screen.").contains("Nederlands"));
+        s.app_language = "de".into();
+        assert_eq!(s.own_language(), "de");
+        s.language = "fr".into();
+        assert_eq!(s.own_language(), "fr");
+        s.language = "auto".into();
+        s.app_language = "xx".into();
+        assert_eq!(s.own_language(), "nl");
+    }
+
+    #[test]
     fn defaults_are_local_first() {
         let s = Settings::default();
         assert!(s.is_local_brain());
@@ -244,6 +308,21 @@ mod tests {
         assert_eq!(s.provider, AIProvider::Claude);
         assert!(s.use_memory);
         assert!(!s.is_local_brain());
+        // Files from before autocomplete existed: off, local only.
+        assert!(!s.autocomplete.enabled);
+        assert_eq!(s.autocomplete.engine, crate::services::autocomplete::prefs::EngineChoice::Local);
+    }
+
+    #[test]
+    fn old_settings_files_get_the_quiet_and_energy_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert_eq!(s.quiet_while_sharing, QuietBehavior::HideFromShare);
+        assert_eq!(s.quiet_in_meetings, QuietBehavior::Quiet);
+        assert!(s.quiet_use_calendar && !s.hide_from_captures && !s.show_in_screenshots);
+        assert_eq!(s.energy_mode, EnergyMode::Automatic);
+        let s: Settings = serde_json::from_str(r#"{"quietWhileSharing":"hide","energyMode":"saver"}"#).unwrap();
+        assert_eq!(s.quiet_while_sharing, QuietBehavior::Hide);
+        assert_eq!(s.energy_mode, EnergyMode::Saver);
     }
 
     #[test]

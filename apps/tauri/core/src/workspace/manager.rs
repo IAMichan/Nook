@@ -308,6 +308,10 @@ impl Manager {
         let assessment = command.as_deref().map(risk::assess).unwrap_or_else(|| risk::CommandAssessment::review("Lees het even na"));
         let edit = crate::agents::hub::edit_diff(&p.tool, &p.input);
         let danger = assessment.level == RiskLevel::Danger;
+        // An MCP tool by its readable name and server (in the title), with every argument it gets.
+        let mcp = crate::agents::mcp_name::McpToolName::parse(&p.tool);
+        let arguments = if mcp.is_some() { crate::agents::mcp_name::arguments(&p.input) } else { String::new() };
+        let note = if mcp.is_some() && !danger { crate::agents::hub::MCP_NOTE.to_string() } else { assessment.note.clone() };
         AgentApproval {
             id: format!("run-{}", p.id),
             origin: ApprovalOrigin::Run { run_id: run.id.to_string(), request_id: p.id.clone() },
@@ -315,9 +319,9 @@ impl Manager {
             project: run.title.clone(),
             tool: p.tool.clone(),
             title: if danger { assessment.title.clone() } else { approval_title(run.provider.display_name(), &p.tool) },
-            command: command.unwrap_or_else(|| p.summary.clone()),
+            command: if arguments.is_empty() { command.unwrap_or_else(|| p.summary.clone()) } else { arguments },
             diff: edit.map(|e| e.0).unwrap_or_default(),
-            note: assessment.note,
+            note,
             danger,
             can_always: p.can_always(),
             can_terminal: false,

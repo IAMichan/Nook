@@ -1,6 +1,6 @@
 //! De koppelingen in de app: één hub met alle bronnen (GitHub, Stripe, agenda's, MCP-servers, WhatsApp, …), op de
 //! achtergrond ververst. De interface hoort het via het event `connectors-changed`; een nieuw WhatsApp-bericht komt
-//! als `whatsapp-message`.
+//! als `whatsapp-message`, nieuwe vinkjes als `whatsapp-receipt`.
 
 use std::sync::{Arc, OnceLock};
 
@@ -68,6 +68,10 @@ pub fn setup(app: &AppHandle) {
     whatsapp.on_arrived(move |arrived| {
         let _ = handle.emit("whatsapp-message", &arrived);
     });
+    let handle = app.clone();
+    whatsapp.on_receipt(move |chat| {
+        let _ = handle.emit("whatsapp-receipt", &chat);
+    });
 
     app.manage(Connectors { env: env.clone(), hub: hub.clone(), github, whatsapp: whatsapp.clone() });
     // Verversen en luisteren draaien op de runtime van Tauri.
@@ -82,5 +86,7 @@ pub fn setup(app: &AppHandle) {
 pub fn shutdown(app: &AppHandle) {
     if let Some(c) = app.try_state::<Connectors>() {
         c.whatsapp.stop_gowa();
+        // Files fetched for the WhatsApp card never outlive Nook.
+        c.whatsapp.clear_files();
     }
 }

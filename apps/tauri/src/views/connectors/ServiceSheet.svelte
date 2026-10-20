@@ -170,8 +170,12 @@
           <input type="checkbox" checked={current?.on ?? true} onchange={(e) => setOn(e.currentTarget.checked)} />
         </label>
         <h4>Sleutels & beveiliging</h4>
-        {#if replacing || service.fields.some((f) => !f.secret)}
-          {#if isGithub}{@render githubButtons("github")}{/if}
+        {#if replacing && isGithub}
+          <!-- GitHub repairs by signing in again; a token stays available, tucked away. -->
+          {@render githubButtons("github")}
+          <button class="link" onclick={() => (showToken = !showToken)}>{showToken ? "▾" : "▸"} Liever handmatig een token invullen?</button>
+          {#if showToken}{@render fields()}{/if}
+        {:else if replacing || service.fields.some((f) => !f.secret)}
           {@render fields()}
         {:else}
           <div class="line">

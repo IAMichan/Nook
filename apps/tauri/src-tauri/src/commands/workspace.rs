@@ -129,6 +129,11 @@ pub async fn workspace_start(state: State<'_, WorkspaceState>, mut config: NewRu
     s.remember_project(&chosen.project_path);
     s.default_provider = chosen.provider;
     s.default_models.insert(chosen.provider.id().into(), chosen.model.clone());
+    s.default_profiles.insert(chosen.provider.id().into(), chosen.profile_id.clone());
+    match chosen.effort.as_ref().filter(|e| !e.is_empty()) {
+        Some(e) => s.default_efforts.insert(chosen.provider.id().into(), e.clone()),
+        None => s.default_efforts.remove(chosen.provider.id()),
+    };
     s.default_mode = chosen.mode;
     s.default_isolation = chosen.isolation;
     s.default_permission = chosen.permission;

@@ -9,7 +9,7 @@
 pub mod link;
 pub mod provider;
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
@@ -71,7 +71,13 @@ pub struct WhatsAppSettings {
     /// Leesbevestiging bij antwoorden of "Gelezen"; nooit alleen bij ontvangst.
     pub mark_read_on_reply: bool,
     pub mute_groups: bool,
+    /// Status updates (status@broadcast) stay quiet.
+    pub mute_status: bool,
+    /// Channels (…@newsletter) stay quiet.
+    pub mute_channels: bool,
     pub ignored: BTreeSet<String>,
+    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
+    pub modes: BTreeMap<String, ChatMode>,
     /// "GOWA automatisch starten" (alleen op de desktop).
     pub auto_start: bool,
     pub gowa_path: String,
@@ -87,7 +93,10 @@ impl Default for WhatsAppSettings {
             notify: true,
             mark_read_on_reply: true,
             mute_groups: true,
+            mute_status: true,
+            mute_channels: true,
             ignored: BTreeSet::new(),
+            modes: BTreeMap::new(),
             auto_start: false,
             gowa_path: String::new(),
         }
@@ -113,11 +122,86 @@ impl WhatsAppSettings {
     }
 
     pub fn filters(&self) -> Filters {
-        Filters { mute_groups: self.mute_groups, ignored: self.ignored.iter().cloned().collect() }
+        Filters {
+            mute_groups: self.mute_groups,
+            mute_status: self.mute_status,
+            mute_channels: self.mute_channels,
+            ignored: self.ignored.iter().cloned().collect(),
+            modes: self.modes.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        }
+    }
+
+    /// Sets one chat's choice; automatic removes the entry.
+    pub fn set_mode(&mut self, chat: &str, mode: ChatMode) {
+        let key = jid::normalized(chat);
+        if mode == ChatMode::Automatic {
+            self.modes.remove(&key);
+        } else {
+            self.modes.insert(key, mode);
+        }
     }
 }
 
-/// Wat een bericht naast tekst heeft: alleen een label wordt getoond, de media zelf wordt nooit opgehaald.
+/// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatMode {
+    /// Follows the rule of its kind (groups, status updates and channels stay quiet; people reach you).
+    #[default]
+    Automatic,
+    /// Always reaches you, even a group without a mention or a channel.
+    Loud,
+    /// Never reaches you; the chat is kept and can still be read.
+    Muted,
+}
+
+/// The kinds of chat WhatsApp has, told apart by the JID's server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatKind {
+    Person,
+    Group,
+    Status,
+    Channel,
+}
+
+/// How far your own message got, as WhatsApp's ticks show it: one grey tick when the server has it, two when it
+/// reached the phone, two blue ones once it was read. Ordered, so ticks only move forward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Receipt {
+    Failed,
+    Pending,
+    Sent,
+    Delivered,
+    Read,
+}
+
+impl Receipt {
+    /// A gateway's status word: OpenWA's `pending|sent|delivered|read|played|failed`, GOWA's `delivered|read|played`.
+    pub fn from_status(status: &str) -> Option<Self> {
+        Some(match status.to_lowercase().as_str() {
+            "pending" => Self::Pending,
+            "sent" | "server" => Self::Sent,
+            "delivered" | "delivery" => Self::Delivered,
+            "read" | "played" => Self::Read,
+            "failed" | "error" => Self::Failed,
+            _ => return None,
+        })
+    }
+
+    /// Ticks only move forward; a failure always shows.
+    pub fn advanced(self, new: Receipt) -> Receipt {
+        if new == Receipt::Failed || new > self {
+            new
+        } else {
+            self
+        }
+    }
+}
+
+/// What a message holds besides text: a label is shown, and the file itself is only fetched when the card shows it or
+/// the user opens it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Media {
@@ -136,6 +220,18 @@ pub enum Media {
     Other,
 }
 
+impl Media {
+    /// A file Nook can fetch from the gateway and open on this computer.
+    pub fn is_openable(&self) -> bool {
+        matches!(self, Self::Image | Self::Video | Self::Audio | Self::Voice | Self::Document { .. })
+    }
+
+    /// A file the card fetches by itself to show: a photo, a video or a document (a voice note stays a button).
+    pub fn is_previewed(&self) -> bool {
+        matches!(self, Self::Image | Self::Video | Self::Document { .. })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -150,6 +246,9 @@ pub struct Message {
     pub from_me: bool,
     pub mentions_me: bool,
     pub chat_name: Option<String>,
+    /// Your own message's ticks; `None` when unknown (someone else's message, or history without a status).
+    #[serde(default)]
+    pub receipt: Option<Receipt>,
 }
 
 impl Message {
@@ -165,6 +264,7 @@ impl Message {
             from_me,
             mentions_me: false,
             chat_name: None,
+            receipt: None,
         }
     }
 }
@@ -175,6 +275,7 @@ pub struct Conversation {
     pub id: String,
     pub name: String,
     pub is_group: bool,
+    pub kind: ChatKind,
     /// Nieuwste laatst, alleen de laatste [`KEEP`].
     pub messages: Vec<Message>,
     pub unread: usize,
@@ -185,12 +286,78 @@ pub struct Conversation {
 pub struct Filters {
     /// Groepen blijven stil tenzij het bericht jou noemt.
     pub mute_groups: bool,
+    pub mute_status: bool,
+    pub mute_channels: bool,
     pub ignored: HashSet<String>,
+    /// Per chat (normalized JID); absent means automatic.
+    pub modes: HashMap<String, ChatMode>,
+}
+
+impl Filters {
+    pub fn mode(&self, chat: &str) -> ChatMode {
+        self.modes.get(&jid::normalized(chat)).copied().unwrap_or_default()
+    }
+
+    /// Whether a chat's kind keeps it quiet, before any per-chat choice.
+    pub fn kind_is_quiet(&self, kind: ChatKind) -> bool {
+        match kind {
+            ChatKind::Person => false,
+            ChatKind::Group => self.mute_groups,
+            ChatKind::Status => self.mute_status,
+            ChatKind::Channel => self.mute_channels,
+        }
+    }
+
+    /// Whether a message in this chat stays silent: the per-chat choice first, then the kind's rule. A mention in an
+    /// automatic group still reaches you; a muted chat never does.
+    pub fn is_quiet(&self, chat: &str, mentions_me: bool) -> bool {
+        match self.mode(chat) {
+            ChatMode::Loud => false,
+            ChatMode::Muted => true,
+            ChatMode::Automatic => {
+                let kind = jid::kind(chat);
+                self.kind_is_quiet(kind) && !(kind == ChatKind::Group && mentions_me)
+            }
+        }
+    }
 }
 
 pub mod jid {
+    use super::ChatKind;
+
     pub fn is_group(jid: &str) -> bool {
         jid.ends_with("@g.us")
+    }
+
+    /// The status updates of your contacts arrive as one chat, status@broadcast.
+    pub fn is_status(jid: &str) -> bool {
+        jid.to_lowercase().starts_with("status@")
+    }
+
+    /// A channel: a one-way broadcast you follow.
+    pub fn is_channel(jid: &str) -> bool {
+        jid.ends_with("@newsletter")
+    }
+
+    pub fn kind(jid: &str) -> ChatKind {
+        if is_group(jid) {
+            ChatKind::Group
+        } else if is_status(jid) {
+            ChatKind::Status
+        } else if is_channel(jid) {
+            ChatKind::Channel
+        } else {
+            ChatKind::Person
+        }
+    }
+
+    /// A readable name for a chat without one: "Statusupdates", else the number.
+    pub fn fallback_name(jid: &str) -> String {
+        if is_status(jid) {
+            "Statusupdates".into()
+        } else {
+            display_number(jid)
+        }
     }
 
     /// "33612345678@s.whatsapp.net" → "+33612345678".
@@ -231,7 +398,8 @@ pub fn text_mentions(text: &str, me: Option<&str>) -> bool {
     digits.len() >= 6 && text.contains(&format!("@{digits}"))
 }
 
-pub const KEEP: usize = 20;
+/// Messages kept per chat (in memory only): enough for the card to scroll back a while.
+pub const KEEP: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -247,6 +415,8 @@ pub struct Inbox {
     pub conversations: HashMap<String, Conversation>,
     seen: HashSet<String>,
     order: VecDeque<String>,
+    /// Receipts that came before their message (the webhook can beat the answer to the send itself).
+    early_receipts: HashMap<String, Receipt>,
 }
 
 impl Inbox {
@@ -280,15 +450,17 @@ impl Inbox {
                 }
             }
         }
-        let is_group = jid::is_group(&chat);
-        let number = jid::display_number(&chat);
+        let kind = jid::kind(&chat);
+        let is_group = kind == ChatKind::Group;
+        let number = jid::fallback_name(&chat);
         // In een privégesprek noemt de ander het: nooit je eigen naam op je eigen bericht.
-        let person = (!is_group && !message.from_me && !message.sender_name.is_empty()).then(|| message.sender_name.clone());
+        let person = (kind == ChatKind::Person && !message.from_me && !message.sender_name.is_empty()).then(|| message.sender_name.clone());
         let given = name.map(str::to_string).or_else(|| message.chat_name.clone()).filter(|n| !n.is_empty());
         let conversation = self.conversations.entry(chat.clone()).or_insert_with(|| Conversation {
             id: chat.clone(),
             name: given.clone().or_else(|| person.clone()).unwrap_or_else(|| number.clone()),
             is_group,
+            kind,
             messages: vec![],
             unread: 0,
             last_activity: message.date,
@@ -304,7 +476,16 @@ impl Inbox {
         let mentions = message.mentions_me;
         let date = message.date;
         let mut msg = message;
-        msg.chat = chat;
+        msg.chat = chat.clone();
+        if msg.from_me {
+            // Your own message that just went out has reached WhatsApp's server: one tick.
+            if msg.receipt.is_none() && !history {
+                msg.receipt = Some(Receipt::Sent);
+            }
+            if let Some(early) = self.early_receipts.remove(&msg.id) {
+                msg.receipt = Some(msg.receipt.unwrap_or(Receipt::Sent).advanced(early));
+            }
+        }
         conversation.messages.push(msg);
         conversation.messages.sort_by_key(|m| m.date);
         if conversation.messages.len() > KEEP {
@@ -320,7 +501,7 @@ impl Inbox {
             Outcome::Quiet
         } else {
             conversation.unread += 1;
-            if is_group && filters.mute_groups && !mentions {
+            if filters.is_quiet(&chat, mentions) {
                 Outcome::Quiet
             } else {
                 Outcome::Notify
@@ -328,13 +509,57 @@ impl Inbox {
         }
     }
 
-    /// De gesprekken die de interface toont: stille groepen zonder vermelding blijven eruit.
+    /// A delivery or read receipt for your own messages: their ticks move forward, never back. Returns the chat whose
+    /// ticks changed, `None` when none did (a receipt for an incoming message, or for one Nook doesn't keep).
+    pub fn apply_receipt(&mut self, status: Receipt, ids: &[String], chat: &str) -> Option<String> {
+        let key = jid::normalized(chat);
+        // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
+        let keys: Vec<String> =
+            if self.conversations.contains_key(&key) { vec![key] } else { self.conversations.keys().cloned().collect() };
+        let mut pending: HashSet<&String> = ids.iter().collect();
+        let mut changed = None;
+        for chat_key in keys {
+            let Some(conversation) = self.conversations.get_mut(&chat_key) else { continue };
+            let mut touched = false;
+            for message in conversation.messages.iter_mut() {
+                if !pending.remove(&message.id) {
+                    continue;
+                }
+                if !message.from_me {
+                    continue;
+                }
+                let new = Some(message.receipt.unwrap_or(Receipt::Sent).advanced(status));
+                if new != message.receipt {
+                    message.receipt = new;
+                    touched = true;
+                }
+            }
+            if touched {
+                changed = Some(chat_key);
+            }
+            if pending.is_empty() {
+                break;
+            }
+        }
+        // Not here yet: kept a little while for the message itself (only ids never seen; a few hundred at most).
+        for id in pending.into_iter().filter(|id| !self.seen.contains(*id)) {
+            let kept = self.early_receipts.get(id).copied().unwrap_or(status).advanced(status);
+            self.early_receipts.insert(id.clone(), kept);
+        }
+        if self.early_receipts.len() > 500 {
+            self.early_receipts.clear();
+        }
+        changed
+    }
+
+    /// The conversations the interface lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
+    /// stay out unless something in them reached you.
     pub fn visible(&self, filters: &Filters) -> Vec<&Conversation> {
         self.sorted()
             .into_iter()
             .filter(|c| {
                 !filters.ignored.contains(&c.id)
-                    && (!c.is_group || !filters.mute_groups || c.messages.iter().any(|m| m.mentions_me && !m.from_me))
+                    && (!filters.is_quiet(&c.id, false) || c.messages.iter().any(|m| !m.from_me && !filters.is_quiet(&c.id, m.mentions_me)))
             })
             .collect()
     }
@@ -475,7 +700,13 @@ pub fn verify(kind: GatewayKind, headers: &HashMap<String, String>, body: &[u8],
 #[derive(Debug, Clone, PartialEq)]
 pub enum WebhookEvent {
     Message(Message),
-    /// Een geldige levering waar Nook niets mee hoeft (leesbevestigingen, reacties, een test).
+    /// Your own messages reached the phone or were read: their ticks move.
+    Receipt {
+        ids: Vec<String>,
+        chat: String,
+        status: Receipt,
+    },
+    /// Een geldige levering waar Nook niets mee hoeft (reacties, een test).
     Ignored,
 }
 
@@ -505,7 +736,36 @@ pub fn parse_webhook(kind: GatewayKind, body: &[u8], me: Option<&str>) -> Option
     })
 }
 
+/// `{"event":"message.ack","payload":{ids, chat_id, receipt_type: "delivered"|"read"|"played"|…}}`. A group sends one
+/// per member, while WhatsApp's own ticks wait for every member: a group keeps its one tick. The `-self` receipts are
+/// your own phone reading incoming messages, which have no ticks.
+fn parse_gowa_receipt(json: &Value) -> WebhookEvent {
+    let p = &json["payload"];
+    let Some(chat) = non_empty(&p["chat_id"]).filter(|c| !jid::is_group(c)) else { return WebhookEvent::Ignored };
+    let ids: Vec<String> = crate::connectors::list(&p["ids"]).iter().filter_map(non_empty).collect();
+    let Some(kind) = p["receipt_type"].as_str().filter(|t| !t.ends_with("-self")) else { return WebhookEvent::Ignored };
+    match Receipt::from_status(kind) {
+        Some(status) if status >= Receipt::Delivered && !ids.is_empty() => WebhookEvent::Receipt { ids, chat, status },
+        _ => WebhookEvent::Ignored,
+    }
+}
+
+/// `{"event":"message.ack"|"message.failed","data":{id, messageId, status, chatId?}}`. OpenWA only moves a group
+/// message past one tick when WhatsApp itself does.
+fn parse_openwa_receipt(json: &Value) -> WebhookEvent {
+    let d = &json["data"];
+    let (Some(id), Some(status)) =
+        (non_empty(&d["messageId"]).or_else(|| non_empty(&d["id"])), d["status"].as_str().and_then(Receipt::from_status))
+    else {
+        return WebhookEvent::Ignored;
+    };
+    WebhookEvent::Receipt { ids: vec![id], chat: d["chatId"].as_str().unwrap_or("").to_string(), status }
+}
+
 fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
+    if json["event"] == "message.ack" {
+        return parse_gowa_receipt(json);
+    }
     let p = &json["payload"];
     let (Some("message"), Some(id), Some(chat)) = (json["event"].as_str(), non_empty(&p["id"]), non_empty(&p["chat_id"])) else {
         return WebhookEvent::Ignored;
@@ -554,6 +814,9 @@ pub fn gowa_media(p: &Value) -> Media {
 fn parse_openwa(json: &Value, me: Option<&str>) -> WebhookEvent {
     let event = json["event"].as_str().unwrap_or("");
     let d = &json["data"];
+    if event == "message.ack" || event == "message.failed" {
+        return parse_openwa_receipt(json);
+    }
     if event != "message.received" && event != "message.sent" {
         return WebhookEvent::Ignored;
     }
@@ -596,6 +859,96 @@ pub fn openwa_media(kind: &str, filename: Option<String>) -> Media {
         "location" => Media::Location,
         "contact" => Media::Contact,
         _ => Media::Other,
+    }
+}
+
+/// Files fetched from the gateway: their names on disk, and which kinds Nook will hand to another app.
+pub mod files {
+    use super::Media;
+
+    /// Larger files are refused: the same cap both gateways use by default.
+    pub const MAX_BYTES: usize = 50 * 1024 * 1024;
+
+    /// Extensions Nook opens with the app the system uses for them: documents, pictures, video and sound. Anything
+    /// else (a program, a script, a shortcut) is never opened, whatever a message calls itself.
+    const OPENABLE: &[&str] = &[
+        "pdf", "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "mp4", "m4v", "mov", "webm", "3gp", "mkv", "avi", "ogg", "oga",
+        "opus", "mp3", "m4a", "aac", "wav", "amr", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "txt", "csv",
+        "epub",
+    ];
+
+    pub fn extension(name: &str) -> Option<String> {
+        let (stem, ext) = name.rsplit_once('.')?;
+        (!stem.is_empty() && !ext.is_empty() && ext.len() <= 8).then(|| ext.to_lowercase())
+    }
+
+    /// Whether a file of this name may be opened with the system's default app.
+    pub fn may_open(name: &str) -> bool {
+        extension(name).is_some_and(|e| OPENABLE.contains(&e.as_str()))
+    }
+
+    /// The usual extension for a MIME type the gateway names, for the kinds Nook opens.
+    pub fn extension_for(mime: &str) -> Option<&'static str> {
+        let base = mime.split(';').next().unwrap_or("").trim().to_lowercase();
+        Some(match base.as_str() {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/heic" => "heic",
+            "video/mp4" => "mp4",
+            "video/quicktime" => "mov",
+            "video/webm" => "webm",
+            "video/3gpp" => "3gp",
+            "audio/ogg" | "audio/ogg; codecs=opus" => "ogg",
+            "audio/opus" => "opus",
+            "audio/mpeg" => "mp3",
+            "audio/mp4" | "audio/m4a" | "audio/x-m4a" => "m4a",
+            "audio/aac" => "aac",
+            "audio/amr" => "amr",
+            "audio/wav" | "audio/x-wav" => "wav",
+            "application/pdf" => "pdf",
+            "text/plain" => "txt",
+            "text/csv" => "csv",
+            _ => return None,
+        })
+    }
+
+    /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the
+    /// system recognizes. Never a path: separators, reserved characters and leading dots go.
+    pub fn file_name(media: &Media, given: Option<&str>, mime: Option<&str>) -> String {
+        let fallback = match media {
+            Media::Image => "photo",
+            Media::Video => "video",
+            Media::Audio | Media::Voice => "voice message",
+            Media::Document { .. } => "document",
+            _ => "attachment",
+        };
+        let own = match media {
+            Media::Document { name } => name.as_deref().or(given),
+            _ => given,
+        };
+        let cleaned: String = own
+            .unwrap_or(fallback)
+            .chars()
+            .map(|c| if matches!(c, '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*') || c.is_control() { '-' } else { c })
+            .collect();
+        let mut name = cleaned.trim_matches(|c: char| c.is_whitespace() || c == '.').to_string();
+        if name.is_empty() {
+            name = fallback.into();
+        }
+        // Windows keeps a few names for devices.
+        let stem = name.split('.').next().unwrap_or("").to_uppercase();
+        if ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2", "LPT3"].contains(&stem.as_str()) {
+            name = format!("_{name}");
+        }
+        if extension(&name).is_none() {
+            if let Some(ext) = mime.and_then(extension_for) {
+                name = format!("{name}.{ext}");
+            }
+        }
+        let count = name.chars().count();
+        name.chars().skip(count.saturating_sub(120)).collect()
     }
 }
 
@@ -799,11 +1152,129 @@ mod tests {
         let f = Filters::default();
         assert_eq!(inbox.add(msg("h1", "1@s.whatsapp.net", 0, false, false), &f, None, true), Outcome::Quiet);
         assert_eq!(inbox.conversations["1@s.whatsapp.net"].unread, 0);
-        for i in 0..30 {
+        for i in 0..60 {
             inbox.add(msg(&format!("m{i}"), "1@s.whatsapp.net", i + 1, false, false), &f, None, false);
         }
         assert_eq!(inbox.conversations["1@s.whatsapp.net"].messages.len(), KEEP);
-        assert_eq!(inbox.conversations["1@s.whatsapp.net"].messages.last().unwrap().id, "m29");
+        assert_eq!(inbox.conversations["1@s.whatsapp.net"].messages.last().unwrap().id, "m59");
+    }
+
+    #[test]
+    fn each_kind_of_chat_has_its_own_rule_and_each_chat_its_own_choice() {
+        assert_eq!(jid::kind("31600000001@s.whatsapp.net"), ChatKind::Person);
+        assert_eq!(jid::kind("120363000000000001@g.us"), ChatKind::Group);
+        assert_eq!(jid::kind("status@broadcast"), ChatKind::Status);
+        assert_eq!(jid::kind("120363000000000002@newsletter"), ChatKind::Channel);
+        let settings = WhatsAppSettings::default();
+        let f = settings.filters();
+        assert!(!f.is_quiet("31600000001@s.whatsapp.net", false));
+        assert!(f.is_quiet("120363000000000001@g.us", false));
+        assert!(!f.is_quiet("120363000000000001@g.us", true), "a mention in a group still reaches you");
+        assert!(f.is_quiet("status@broadcast", false));
+        assert!(f.is_quiet("1@newsletter", true));
+
+        let mut settings = WhatsAppSettings::default();
+        settings.set_mode("120363000000000001@g.us", ChatMode::Loud);
+        settings.set_mode("31600000001:4@c.us", ChatMode::Muted);
+        let f = settings.filters();
+        assert!(!f.is_quiet("120363000000000001@g.us", false));
+        assert!(f.is_quiet("31600000001@s.whatsapp.net", false));
+        assert_eq!(f.mode("31600000001@s.whatsapp.net"), ChatMode::Muted);
+        settings.set_mode("31600000001@s.whatsapp.net", ChatMode::Automatic);
+        assert!(!settings.modes.contains_key("31600000001@s.whatsapp.net"));
+
+        let mut inbox = Inbox::default();
+        let mut status = msg("s1", "status@broadcast", 0, false, false);
+        status.sender_name = "Piet".into();
+        assert_eq!(inbox.add(status, &f, None, false), Outcome::Quiet);
+        assert_eq!(inbox.conversations["status@broadcast"].name, "Statusupdates");
+        assert_eq!(inbox.conversations["status@broadcast"].kind, ChatKind::Status);
+        assert!(inbox.visible(&f).is_empty());
+        assert_eq!(inbox.add(msg("g1", "120363000000000001@g.us", 1, false, false), &f, None, false), Outcome::Notify);
+        assert_eq!(inbox.add(msg("p1", "31600000001@s.whatsapp.net", 2, false, false), &f, None, false), Outcome::Quiet);
+        let shown: Vec<&str> = inbox.visible(&f).iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(shown, vec!["120363000000000001@g.us"]);
+        // Old settings files without the new fields still load.
+        let old: WhatsAppSettings = serde_json::from_str(r#"{"enabled":true,"muteGroups":false}"#).unwrap();
+        assert!(old.mute_status && old.mute_channels && old.modes.is_empty() && !old.mute_groups);
+    }
+
+    #[test]
+    fn receipts_move_your_ticks_forward_only() {
+        let mut inbox = Inbox::default();
+        let f = Filters::default();
+        let chat = "31600000001@s.whatsapp.net";
+        inbox.add(msg("in", chat, 0, false, false), &f, None, false);
+        inbox.add(msg("out", chat, 5, true, false), &f, None, false);
+        let ticks = |inbox: &Inbox, id: &str| inbox.conversations[chat].messages.iter().find(|m| m.id == id).and_then(|m| m.receipt);
+        assert_eq!(ticks(&inbox, "out"), Some(Receipt::Sent));
+        assert_eq!(ticks(&inbox, "in"), None);
+        let ids = |id: &str| vec![id.to_string()];
+        assert_eq!(inbox.apply_receipt(Receipt::Delivered, &ids("out"), "31600000001@c.us").as_deref(), Some(chat));
+        assert_eq!(ticks(&inbox, "out"), Some(Receipt::Delivered));
+        assert_eq!(inbox.apply_receipt(Receipt::Read, &ids("out"), chat).as_deref(), Some(chat));
+        assert_eq!(inbox.apply_receipt(Receipt::Delivered, &ids("out"), chat), None, "never back");
+        assert_eq!(ticks(&inbox, "out"), Some(Receipt::Read));
+        assert_eq!(inbox.apply_receipt(Receipt::Read, &ids("in"), chat), None, "their messages have no ticks");
+        assert_eq!(ticks(&inbox, "in"), None);
+        inbox.add(msg("out2", chat, 6, true, false), &f, None, false);
+        assert_eq!(inbox.apply_receipt(Receipt::Delivered, &ids("out2"), "").as_deref(), Some(chat), "found by id");
+        // A receipt that beats its own message is kept for it.
+        assert_eq!(inbox.apply_receipt(Receipt::Delivered, &ids("early"), chat), None);
+        inbox.add(msg("early", chat, 7, true, false), &f, None, false);
+        assert_eq!(ticks(&inbox, "early"), Some(Receipt::Delivered));
+        // History without a status shows no ticks.
+        inbox.add(msg("old", chat, 1, true, false), &f, None, true);
+        assert_eq!(ticks(&inbox, "old"), None);
+        assert_eq!(Receipt::Read.advanced(Receipt::Failed), Receipt::Failed);
+        assert_eq!(Receipt::from_status("retry"), None);
+    }
+
+    #[test]
+    fn gateway_receipts() {
+        let gowa = br#"{"event":"message.ack","device_id":"31699999999@s.whatsapp.net","payload":{"ids":["A1","A2"],"chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","receipt_type":"read"}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, gowa, None),
+            Some(WebhookEvent::Receipt {
+                ids: vec!["A1".into(), "A2".into()],
+                chat: "31600000001@s.whatsapp.net".into(),
+                status: Receipt::Read
+            })
+        );
+        let own = br#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"31600000001@s.whatsapp.net","receipt_type":"read-self"}}"#;
+        assert_eq!(parse_webhook(GatewayKind::Gowa, own, None), Some(WebhookEvent::Ignored));
+        let group = br#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"delivered"}}"#;
+        assert_eq!(parse_webhook(GatewayKind::Gowa, group, None), Some(WebhookEvent::Ignored));
+        let openwa = br#"{"event":"message.ack","sessionId":"s","data":{"id":"uuid-1","messageId":"B1","status":"delivered","ack":2,"chatId":"31600000001@c.us"}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Openwa, openwa, None),
+            Some(WebhookEvent::Receipt { ids: vec!["B1".into()], chat: "31600000001@c.us".into(), status: Receipt::Delivered })
+        );
+        let failed = br#"{"event":"message.failed","data":{"messageId":"B2","status":"failed","ack":-1}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Openwa, failed, None),
+            Some(WebhookEvent::Receipt { ids: vec!["B2".into()], chat: String::new(), status: Receipt::Failed })
+        );
+    }
+
+    #[test]
+    fn fetched_files_get_a_safe_name_and_only_safe_kinds_open() {
+        let doc = |n: &str| Media::Document { name: Some(n.into()) };
+        assert_eq!(files::file_name(&doc("Guard-meting (1).pdf"), None, None), "Guard-meting (1).pdf");
+        assert_eq!(files::file_name(&doc("../../evil/x.pdf"), None, None), "-..-evil-x.pdf");
+        assert_eq!(files::file_name(&doc("..\\x:y.pdf"), None, None), "-x-y.pdf");
+        assert_eq!(files::file_name(&Media::Image, None, Some("image/jpeg")), "photo.jpg");
+        assert_eq!(files::file_name(&Media::Voice, None, Some("audio/ogg; codecs=opus")), "voice message.ogg");
+        assert_eq!(files::file_name(&doc("con.txt"), None, None), "_con.txt");
+        assert_eq!(files::file_name(&doc("   ...  "), None, None), "document");
+        assert!(files::file_name(&doc(&format!("{}.pdf", "a".repeat(300))), None, None).chars().count() <= 120);
+        assert!(files::may_open("offerte.PDF"));
+        assert!(files::may_open("photo.jpg"));
+        for bad in ["setup.exe", "run.bat", "x.lnk", "a.desktop", "b.sh", "c.ps1", "pdf", "noext", "x.pdf.exe"] {
+            assert!(!files::may_open(bad), "{bad}");
+        }
+        assert!(Media::Voice.is_openable() && !Media::Voice.is_previewed());
+        assert!(!Media::Location.is_openable());
     }
 
     #[test]

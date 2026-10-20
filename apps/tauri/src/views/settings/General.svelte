@@ -1,12 +1,29 @@
 <script lang="ts">
-  // Algemeen: taal, plek van de balk, kleur, sneltoetsen.
+  // Algemeen: taal, plek van de balk, kleur, energie, sneltoetsen.
   import { nook, accentCss } from "../../lib/state.svelte";
+  import { services, serviceEvents, type EnergyView } from "../../lib/services";
+  import type { EnergyMode } from "../../lib/types";
 
   const s = $derived(nook.settings!);
   const accents = [0xf4f3f7, 0x8b7bff, 0x46e0a6, 0xffb84d, 0xff8a5b, 0x5ab8ff, 0xff6bb5];
   const shortcutNames: Record<string, string> = {
     chat: "Chatten", talk: "Praten", window: "Hoofdvenster", lookAlong: "Meekijken",
   };
+
+  // Energy: one choice, what it means, and what Nook does right now.
+  const energyModes: { id: EnergyMode; title: string; detail: string }[] = [
+    { id: "automatic", title: "Automatisch", detail: "Nook doet een stap terug op de accu, als je computer warm of druk bezig is, en als je weg bent." },
+    { id: "saver", title: "Zuinig", detail: "Altijd licht: het scherm wordt minder vaak gelezen en suggesties komen minder vaak. Fijn op een laptop die lang op de accu moet." },
+    { id: "full", title: "Volle kracht", detail: "Nooit rustiger voor de accu of een drukke computer. Een warme computer krijgt nog wel even rust." },
+  ];
+  let energy = $state<EnergyView | null>(null);
+  $effect(() => {
+    services.energyStatus().then((v) => (energy = v)).catch(() => {});
+    const un = serviceEvents.onEnergy((v) => (energy = v));
+    return () => {
+      un.then((f) => f());
+    };
+  });
 </script>
 
 <h2>Algemeen</h2>
@@ -37,6 +54,23 @@
     </div>
   </div>
 </div>
+{#if nook.info?.capabilities.desktop}
+  <h3>Energie</h3>
+  <div class="group">
+    <label class="row">
+      <span>Werk op de achtergrond<br /><small class="faint">Scherm lezen, meedenken en meetings herkennen terwijl jij werkt. Wat je zelf vraagt gaat altijd op volle snelheid.</small></span>
+      <select value={s.energyMode} onchange={(e) => nook.saveSettings({ energyMode: e.currentTarget.value as EnergyMode })}>
+        {#each energyModes as mode (mode.id)}<option value={mode.id}>{mode.title}</option>{/each}
+      </select>
+    </label>
+    <p class="faint note">{energyModes.find((m) => m.id === s.energyMode)?.detail}</p>
+    <div class="row">
+      <span>Nu</span>
+      <span class="faint" class:light={energy && energy.plan.pace !== "full"}>{energy?.status ?? "Volle snelheid"}</span>
+    </div>
+    <p class="faint note">Nook werkt op de achtergrond zodat een antwoord direct klaar is: hij leest de tekst op je scherm, denkt mee en kijkt of je in een meeting zit. Dat kost een beetje stroom. Als Nook een stap terugdoet, leest een vraag het scherm alsnog meteen.</p>
+  </div>
+{/if}
 {#if nook.info?.capabilities.globalShortcuts}
   <h3>Sneltoetsen</h3>
   <div class="group">
@@ -50,3 +84,8 @@
   </div>
 {/if}
       
+
+<style>
+  small { font-size: 11px; line-height: 1.35; display: inline-block; max-width: 460px; }
+  .light { color: var(--amber); }
+</style>

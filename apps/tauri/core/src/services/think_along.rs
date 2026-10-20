@@ -29,12 +29,19 @@ pub struct ThinkAlong {
     looked: HashMap<String, (f64, u64)>,
     offered: Vec<(f64, String)>,
     declines: u32,
+    /// At least this long between two looks, on top of the usual gap: the energy plan's `think_along_gap`.
+    extra_gap: f64,
 }
 
 impl ThinkAlong {
     /// Hoe lang Nook wacht na een aanbod: langer na elke nee, tot hooguit een half uur.
     pub fn offer_gap(&self) -> f64 {
         (BASE_OFFER_GAP * 2f64.powi(self.declines.min(4) as i32)).min(1800.0)
+    }
+
+    /// The energy plan's minimum gap between two looks (0 at full speed).
+    pub fn set_extra_gap(&mut self, gap: f64) {
+        self.extra_gap = gap;
     }
 
     /// Moet Nook nu kijken? `app` en `window` beschrijven het voorste venster, `print` de vingerafdruk van de inhoud,
@@ -53,7 +60,10 @@ impl ThinkAlong {
             return false;
         }
         let since = |t: Option<f64>| t.map(|t| now - t).unwrap_or(f64::INFINITY);
-        if now - self.focus_since < SETTLE || since(self.last_look) < MIN_LOOK_GAP || since(self.last_offer) < self.offer_gap() {
+        if now - self.focus_since < SETTLE
+            || since(self.last_look) < MIN_LOOK_GAP.max(self.extra_gap)
+            || since(self.last_offer) < self.offer_gap()
+        {
             return false;
         }
         if let Some((date, previous)) = self.looked.get(&key) {
@@ -200,6 +210,18 @@ mod tests {
             think.declined();
         }
         assert_eq!(think.offer_gap(), 1800.0, "hooguit een half uur");
+    }
+
+    #[test]
+    fn the_energy_plan_stretches_the_gap_between_looks() {
+        let mut think = ThinkAlong::default();
+        let muted = BTreeMap::new();
+        think.should_look("Kladblok", "plan.txt", 1, 0.0, &muted, 0.0);
+        assert!(think.should_look("Kladblok", "plan.txt", 1, 0.0, &muted, 30.0));
+        think.did_look("Kladblok", "plan.txt", 1, 30.0);
+        think.set_extra_gap(600.0);
+        assert!(!think.should_look("Kladblok", "plan.txt", 2, 0.0, &muted, 300.0), "light: at most every ten minutes");
+        assert!(think.should_look("Kladblok", "plan.txt", 2, 0.0, &muted, 700.0));
     }
 
     #[test]

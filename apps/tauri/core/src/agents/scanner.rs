@@ -174,6 +174,24 @@ pub fn scan() -> Vec<DetectedAgent> {
     found
 }
 
+/// `pid` and the processes it was started from, nearest first, at most `limit`: the hook, the shell that ran it, the
+/// agent, its terminal. The hook reads it about itself, since it and its shell are gone a moment later.
+pub fn lineage(pid: u32, limit: usize) -> Vec<u32> {
+    let mut system = System::new();
+    let mut chain = Vec::new();
+    let mut next = Some(pid);
+    while let Some(current) = next {
+        if current <= 1 || chain.len() >= limit || chain.contains(&current) {
+            break;
+        }
+        chain.push(current);
+        let target = Pid::from_u32(current);
+        system.refresh_processes_specifics(ProcessesToUpdate::Some(&[target]), true, ProcessRefreshKind::nothing());
+        next = system.process(target).and_then(|p| p.parent()).map(|p| p.as_u32());
+    }
+    chain
+}
+
 /// Beëindigt een proces netjes (zodat de agent zijn gesprek bewaart), na een paar seconden geforceerd.
 pub fn terminate(pid: u32) -> bool {
     if pid <= 1 || pid == std::process::id() {
@@ -239,6 +257,14 @@ mod tests {
         assert!(!is_nook_owned(&env));
         env.insert("NOOK_RUN_ID".to_string(), "x".to_string());
         assert!(is_nook_owned(&env));
+    }
+
+    #[test]
+    fn lineage_starts_with_the_process_itself() {
+        let chain = lineage(std::process::id(), 6);
+        assert_eq!(chain.first(), Some(&std::process::id()));
+        assert!(chain.len() <= 6);
+        assert!(lineage(1, 6).is_empty());
     }
 
     #[test]

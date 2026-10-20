@@ -29,6 +29,7 @@ async fn ask_brain(app: &AppHandle, request: &str, snapshot: &ScreenSnapshot) ->
         screen: Some((format!("{} — {}", snapshot.app_name, snapshot.window_title), snapshot.text.clone())),
         images: vec![],
         tools: tools::tools(&ctx),
+        own_request: true,
     };
     let plan = service::run(&settings, &env, brain_request, None).await.map_err(|e| e.0)?;
     let (mut body, offers) = service::split_offers(&plan.text);
@@ -121,6 +122,13 @@ pub fn start(app: &AppHandle) {
             if !services.platform.screen.available() || super::voice::is_listening(&app) {
                 continue;
             }
+            // Not while you share your screen or sit in a meeting and chose quiet for it, and never while the energy plan
+            // pauses optional work; on battery at most every ten minutes.
+            let plan = super::energy::plan(&app);
+            if super::quiet::silent(&app) || !plan.thinks_along() {
+                continue;
+            }
+            services.think.lock().unwrap_or_else(|e| e.into_inner()).set_extra_gap(plan.think_along_gap());
             // Een aanbod dat nog naast de balk staat: niet nog een.
             if services
                 .nudge
@@ -151,12 +159,32 @@ pub fn start(app: &AppHandle) {
 }
 
 async fn run(app: &AppHandle, app_id: &str, app_name: &str, window: &str) {
+    // A look every few minutes would otherwise keep a local model's gigabytes in memory most of the time: when this
+    // run had to load it, it gives it back right after.
+    let settings = app.state::<AppState>().settings();
+    let local_model = (settings.provider == nook_core::provider::AIProvider::Ollama && !settings.active_model().is_empty())
+        .then(|| (nook_core::brain::conversations::ollama_base_url(), settings.active_model()));
+    let was_loaded = match &local_model {
+        Some((base, model)) => nook_core::brain::conversations::ollama_is_loaded(base, model).await.unwrap_or(true),
+        None => true,
+    };
+    look_and_offer(app, app_id, app_name, window).await;
+    if let (false, Some((base, model))) = (was_loaded, &local_model) {
+        nook_core::brain::conversations::ollama_unload(base, model).await;
+    }
+}
+
+async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &str) {
     let snap_app = app.clone();
     let Ok(Ok(snapshot)) = tauri::async_runtime::spawn_blocking(move || super::screen::snapshot(&snap_app, false)).await else { return };
     let services = app.state::<Services>();
     let earlier = services.think.lock().unwrap_or_else(|e| e.into_inner()).recent_offers(services.now());
     let request = think_along::request(app_name, window, &earlier);
     let Ok(Some((body, offers, plan))) = ask_brain(app, &request, &snapshot).await else { return };
+    // Thinking along started before a share or meeting began: the offer is not shown now.
+    if super::quiet::silent(app) {
+        return;
+    }
     let fallback = plan.actions.first().map(|a| format!("Zal ik dit doen? {}", tools::summarize(&a.tool, &a.input)));
     let line = think_along::nudge_line(&body, fallback.as_deref());
     if line.is_empty() || services.think.lock().unwrap_or_else(|e| e.into_inner()).already_offered(&line, services.now()) {

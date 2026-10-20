@@ -307,7 +307,7 @@
   .pill:hover:not(:disabled) { background: var(--smoke); color: var(--paper); }
   .hot { color: #ff9b9b; }
   .adot { width: 7px; height: 7px; border-radius: 50%; background: var(--paper); display: inline-block; }
-  .sep { width: 1px; height: 14px; background: var(--line2); }
+  .sep { width: 1px; height: 16px; background: #3a3a44; margin: 0 3px; }
   .spacer { flex: 1; }
   .pop { position: relative; }
   .menu { position: absolute; bottom: 30px; left: 0; z-index: 20; background: var(--graphite); border: 1px solid var(--line2); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 180px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }

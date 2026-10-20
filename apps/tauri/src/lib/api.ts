@@ -35,7 +35,7 @@ export const api = {
   auditEntries: (query = "") => invoke<AuditEntry[]>("audit_entries", { query }),
   clearAudit: () => invoke<void>("clear_audit"),
 
-  barExpand: (expanded: boolean) => invoke<void>("bar_expand", { expanded }),
+  barExpand: (expanded: boolean, notice = false) => invoke<void>("bar_expand", { expanded, notice }),
   barMoved: () => invoke<void>("bar_moved"),
   showMain: (route: string) => invoke<void>("show_main", { route }),
   takeRoute: () => invoke<string | null>("take_route"),

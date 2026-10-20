@@ -12,6 +12,8 @@
   import Worktrees from "../workspace/Worktrees.svelte";
   import LiveDetail from "./LiveDetail.svelte";
   import PastDetail from "./PastDetail.svelte";
+  import PullGlyph from "./pulls/PullGlyph.svelte";
+  import PullRequests from "./pulls/PullRequests.svelte";
   import NewSession from "./run/NewSession.svelte";
   import RunPanel from "./run/RunPanel.svelte";
   import { ago, folderName } from "./time";
@@ -126,7 +128,7 @@
   );
   const earlier = $derived(past.filter((p) => !query.trim() || `${p.title} ${p.cwd} ${agentNames[p.agent]}`.toLowerCase().includes(query.trim().toLowerCase())));
 
-  const pages = ["usage", "terminals", "browser", "worktrees"] as const;
+  const pages = ["pulls", "usage", "terminals", "browser", "worktrees"] as const;
   type Page = (typeof pages)[number];
 
   /// Wat rechts staat. Zonder keuze (of als die weg is): wat op je wacht of werkt, anders de plek om te starten.
@@ -230,6 +232,7 @@
       {/if}
     </div>
     <div class="footer">
+      <button class="glyph" class:on={selected.kind === "page" && selected.page === "pulls"} title="Pull requests" aria-label="Pull requests" onclick={() => agents.select("pulls")}><PullGlyph size={13} /></button>
       <button class:on={selected.kind === "page" && selected.page === "usage"} title="Gebruik" onclick={() => agents.select("usage")}>Gebruik</button>
       <span class="vsep"></span>
       <button class:on={selected.kind === "page" && selected.page === "terminals"} title="Alle terminals" onclick={() => agents.select("terminals")}>›_</button>
@@ -246,7 +249,8 @@
     {:else if selected.kind === "past"}
       {#key selected.past.sessionId}<PastDetail session={selected.past as PastSession} oncontinue={continuePast} />{/key}
     {:else if selected.kind === "page"}
-      {#if selected.page === "usage"}<UsagePage />
+      {#if selected.page === "pulls"}<PullRequests />
+      {:else if selected.page === "usage"}<UsagePage />
       {:else if selected.page === "terminals"}<Terminals />
       {:else if selected.page === "browser"}<Browser />
       {:else}<Worktrees />{/if}
@@ -287,6 +291,7 @@
   .footer { display: flex; gap: 4px; align-items: center; padding-top: 4px; }
   .footer button { background: none; border: none; height: 30px; padding: 0 9px; border-radius: 8px; color: var(--text3); font-size: 12px; }
   .footer button:hover, .footer button.on { color: var(--paper); background: #17171a; }
+  .footer button.glyph { display: grid; place-items: center; }
   .vsep { width: 1px; height: 16px; background: var(--line2); margin: 0 4px; }
   .main { min-width: 0; min-height: 0; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; }
   .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }

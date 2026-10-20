@@ -324,6 +324,21 @@ pub fn screen_status(app: AppHandle, services: State<'_, Services>) -> ScreenSta
     }
 }
 
+// Energy, meetings and screen sharing
+
+/// The energy plan and the status line for Settings › General › Energy.
+#[tauri::command]
+pub fn energy_status(app: AppHandle) -> services::energy::EnergyView {
+    services::energy::view(&app)
+}
+
+/// What Nook notices about meetings and screen sharing right now. `watching`: Settings shows the line, so the situation
+/// is read even when both choices are "change nothing".
+#[tauri::command]
+pub async fn quiet_status(app: AppHandle, watching: bool) -> Res<services::quiet::QuietView> {
+    blocking(move || services::quiet::view(&app, watching)).await
+}
+
 // Schermdeel
 
 #[tauri::command]

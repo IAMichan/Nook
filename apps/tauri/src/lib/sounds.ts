@@ -1,6 +1,7 @@
 // Korte geluiden: attention (een agent of Nook wacht op je), done (klaar) en error. Een eigen geluid in de map
 // Geluiden gaat voor; anders een zacht ingebouwd toontje (zoals Ping, Glass en Basso op de Mac).
 import { services } from "./services";
+import { quiet } from "./quiet.svelte";
 
 export type SoundName = "attention" | "done" | "error";
 
@@ -33,7 +34,8 @@ function synth(name: SoundName) {
 }
 
 export async function play(name: SoundName, enabled = true) {
-  if (!enabled) return;
+  // Silent while you share your screen or sit in a meeting, when you chose so.
+  if (!enabled || quiet.silent) return;
   if (!custom.has(name)) custom.set(name, await services.soundFile(name).catch(() => null));
   const file = custom.get(name);
   if (file) {
