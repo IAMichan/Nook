@@ -1713,7 +1713,7 @@ final class WorkspaceManager: ObservableObject {
                     rows.append(row)
                 }
             }
-            await MainActor.run { [weak self] in
+            await MainActor.run { [weak self, rows] in
                 self?.worktreeRows = rows
                 self?.worktreesLoading = false
             }

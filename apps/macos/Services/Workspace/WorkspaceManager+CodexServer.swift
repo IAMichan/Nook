@@ -247,7 +247,7 @@ extension WorkspaceManager {
                 onRateLimits?()
             case .mcpApp(let callID, let server, let tool, let arguments, let result, let uri):
                 captureMcpApp(id, client, callID: callID, server: server, tool: tool, arguments: arguments, result: result, resourceUri: uri)
-            case .commandFinished(let callID, let command, let output, let exitCode)
+            case .commandFinished(_, let command, let output, let exitCode)
                 where turns[id] == nil && run(id)?.status.isActive != true:
                 // A command left running in the background finished after the turn: its result goes to Codex as a new
                 // turn, so Codex can act on it.
