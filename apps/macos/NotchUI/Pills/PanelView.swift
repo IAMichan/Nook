@@ -36,7 +36,8 @@ struct PanelView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents keeps the footer under its session list.
                 if tab != .agents && !app.demoMode {
-                    PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() })
+                    PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() },
+                                history: app.history)
                         .padding(.top, 8)
                 }
             }
