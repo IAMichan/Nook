@@ -80,7 +80,7 @@ struct RunQuestionPanel: View {
                 }
             }
             .padding(12)
-            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.25), radius: 12, style: .continuous)
+            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
             // Keys 1–9 pick an option, except while you type your own answer.
             .background { if !ownFocused { digitShortcuts(item) } }
         }

@@ -151,6 +151,8 @@ struct EmbeddedAppPane: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = EmbeddedAppStore.shared
     @State private var asking = false
+    /// The site whose sign-in waits for a yes before Nook forgets it.
+    @State private var forgetting: String?
 
     var body: some View {
         if let current = store.current, current.isMacApp || store.webView != nil {
@@ -177,7 +179,7 @@ struct EmbeddedAppPane: View {
                     // A Mac app keeps its own sign-in; there is nothing of it in Nook to forget.
                     if !current.isMacApp {
                         Menu {
-                            Button(tr("embedded.forget", current.title), role: .destructive) { Task { await app.closeEmbeddedApp(forget: true) } }
+                            Button(tr("embedded.forget", current.title), role: .destructive) { forgetting = current.title }
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(NookTheme.font(12, .semibold))
@@ -186,6 +188,10 @@ struct EmbeddedAppPane: View {
                                 .contentShape(Rectangle())
                         }
                         .composerMenu()
+                        .help(tr("a11y.more"))
+                        .accessibilityLabel(tr("a11y.more"))
+                        .confirmDelete($forgetting, question: { tr("confirm.logout", $0) }, detail: tr("confirm.forgetSite.detail"),
+                                       confirmTitle: tr("accounts.logout")) { _ in Task { await app.closeEmbeddedApp(forget: true) } }
                     }
                     NookIconButton(systemName: "xmark", label: tr("embedded.close"), size: 28) { Task { await app.closeEmbeddedApp() } }
                         .help(tr("embedded.close"))

@@ -263,14 +263,7 @@ struct QueuedMessagesStrip: View {
     }
 
     private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(9.5, .bold)).frame(width: 18, height: 18).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.35)
-        .disabled(!enabled)
-        .help(label)
-        .accessibilityLabel(label)
+        ToolbarIconButton(symbol, label, height: 18, width: 18, enabled: enabled, action)
     }
 }
 
@@ -346,16 +339,11 @@ struct PlanCard: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.25), radius: 12, style: .continuous)
+        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
     }
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(11, .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
+        ToolbarIconButton(symbol, help, height: 20, width: 20, action)
     }
 
     /// "Save as file"; the name comes from the plan's title.

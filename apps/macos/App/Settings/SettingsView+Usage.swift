@@ -45,7 +45,7 @@ extension SettingsView {
         switch state {
         case .notInstalled: return target.detail
         case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
-        case .outdated: return "Connected with an older version: update for permissions and prompts in the notch"
+        case .outdated: return tr("agents.status.outdated")
         case .unreadable(let message): return message
         }
     }
@@ -71,8 +71,8 @@ extension SettingsView {
         do {
             let backup = try AgentConfigInstaller.apply(change)
             let verb = change.install ? tr("button.link") : tr("button.unlink")
-            status = "\(change.target.title): \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
-                + (change.install && change.target != .claudeStatusLine ? " Restart the agent for changes to take effect." : "")
+            status = "\(change.target.title): \(verb)." + (backup.map { " " + tr("agents.write.backup", $0.lastPathComponent) } ?? "")
+                + (change.install && change.target != .claudeStatusLine ? " " + tr("agents.write.restart") : "")
         } catch {
             status = error.localizedDescription
         }

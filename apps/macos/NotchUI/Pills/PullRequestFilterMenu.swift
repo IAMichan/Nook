@@ -81,7 +81,7 @@ struct PullRequestFilterMenu: View {
         .foregroundStyle(filter.activeCount > 0 || hovering ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: 9, style: .continuous)
+        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }

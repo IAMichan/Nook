@@ -125,6 +125,7 @@ struct GitLabSetupSheet: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }
+                        .keyboardShortcut(.cancelAction)
                     Button(tr("settings2.disconnect"), role: .destructive) {
                         GitLabCredentials.remove(host: managing)
                         dismiss()

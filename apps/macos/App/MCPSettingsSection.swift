@@ -294,6 +294,7 @@ private struct MCPServerDetailSheet: View {
         } footer: {
             Spacer()
             Button(tr("button.close"), action: done)
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
@@ -370,7 +371,7 @@ struct AddMCPServerWizardSheet: View {
 
                 // Step 1: Name
                 SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("mcp.name"), text: $name, prompt: Text("bijv. GitHub, Linear of Bestanden"))
+                    TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
                         .textFieldStyle(.roundedBorder)
                 }
 
@@ -405,7 +406,7 @@ struct AddMCPServerWizardSheet: View {
                                     SecureField(
                                         key,
                                         text: binding(for: key),
-                                        prompt: Text(preset.envPlaceholders[key] ?? "Voer sleutel in...")
+                                        prompt: Text(preset.envPlaceholders[key] ?? tr("mcp.wizard.keyPrompt"))
                                     )
                                     .textFieldStyle(.roundedBorder)
                                 }
@@ -448,8 +449,10 @@ struct AddMCPServerWizardSheet: View {
             }
         } footer: {
             Button(tr("button.cancel"), action: done)
+                .keyboardShortcut(.cancelAction)
             Spacer()
             Button(tr("mcp.addButton"), action: add)
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty || !allRequiredEnvFilled)

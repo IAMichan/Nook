@@ -29,6 +29,8 @@ struct NookChatView: View {
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The conversation whose delete waits for a yes.
+    @State private var deleting: Conversation?
     @ObservedObject private var embedded = EmbeddedAppStore.shared
     /// How wide the chat is next to an open app: drag the line between them, double-click it to reset. Remembered.
     @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
@@ -254,7 +256,7 @@ struct NookChatView: View {
             Divider()
             Button(tr("nooks.archive")) { chat.setArchived(true, conversation.id) }
                 .disabled(conversation.busy)
-            Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+            Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
                 .disabled(conversation.busy)
         } label: {
             Image(systemName: "ellipsis")
@@ -266,6 +268,8 @@ struct NookChatView: View {
         .composerMenu()
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
+                       confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
     }
 
     // MARK: Conversation

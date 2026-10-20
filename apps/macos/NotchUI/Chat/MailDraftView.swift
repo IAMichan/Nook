@@ -91,7 +91,7 @@ struct MailDraftView: View {
             }
         }
         .padding(14)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 14)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
     }
 
     @ViewBuilder

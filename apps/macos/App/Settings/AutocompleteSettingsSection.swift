@@ -549,7 +549,7 @@ struct AutocompleteSettingsSection: View {
             ForEach(store.prefs.sites.keys.sorted(), id: \.self) { site in
                 DisclosureGroup {
                     TextField(tr("autocomplete.app.instructions"), text: siteInstructions(site), axis: .vertical).lineLimit(1...4)
-                    Button(tr("autocomplete.apps.removeSite"), role: .destructive) { store.prefs.sites[site] = nil }
+                    ConfirmedButton(tr("autocomplete.apps.removeSite"), question: tr("confirm.remove", site)) { store.prefs.sites[site] = nil }
                 } label: {
                     HStack(spacing: 10) {
                         SiteIcon(domain: site, fallback: "globe", tint: .secondary, size: 18)

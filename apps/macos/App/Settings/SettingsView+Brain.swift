@@ -357,7 +357,7 @@ extension SettingsView {
             settings.useLocal = true
             settings.localModel = id
             recommendations = await app.brainRecommendations()
-            status = "\(local.title(for: id)) is ready and currently active."
+            status = tr("brain.status.ready", local.title(for: id))
             await testConnection()
         } catch {
             testResult = (false, error.localizedDescription)
@@ -371,20 +371,20 @@ extension SettingsView {
                 let saved = settings.saveAPIKey(keyDraft)
                 keyDraft = ""
                 if !saved.looksValid {
-                    testResult = (false, "This does not look like an Anthropic key: it should start with sk-ant-. Testing anyway.")
+                    testResult = (false, tr("brain.key.invalid"))
                 }
-                status = saved.keychainError.map { "Keychain rejected the key (\($0)). It will only work until Nook quits." } ?? "Key saved in Keychain."
+                status = saved.keychainError.map { tr("brain.key.keychainRejected", $0) } ?? tr("brain.key.saved")
             } else {
                 settings.saveAPIKey("")
                 testResult = nil
-                status = "Key removed."
+                status = tr("brain.key.removed")
                 return
             }
         } else {
             let error = settings.saveProviderKey(keyDraft, for: provider)
             let removed = keyDraft.isEmpty
             keyDraft = ""
-            status = error ?? (removed ? "Key removed." : "Key saved in Keychain.")
+            status = error ?? (removed ? tr("brain.key.removed") : tr("brain.key.saved"))
             if removed { return }
         }
         Task { await testConnection() }
@@ -395,7 +395,7 @@ extension SettingsView {
         defer { testing = false }
         do {
             let reply = try await app.brain.test()
-            testResult = (true, "Verbonden met \(settings.activeModelName). Antwoord: “\(reply)”")
+            testResult = (true, tr("brain.test.connected", settings.activeModelName, reply))
         } catch {
             testResult = (false, error.localizedDescription)
         }

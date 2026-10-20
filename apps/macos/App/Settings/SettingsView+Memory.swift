@@ -146,7 +146,7 @@ struct MemorySettingsSection: View {
                 HStack {
                     Text(tr("memory.import.oldServer", oldServer.name)).font(NookTheme.TextStyle.body)
                     Spacer()
-                    Button(tr("memory.import.removeServer")) { servers.remove(oldServer.id) }
+                    Button(tr("memory.import.removeServer"), role: .destructive) { servers.remove(oldServer.id) }
                 }
             }
         } header: {

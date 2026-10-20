@@ -106,13 +106,14 @@ private struct PortfolioExchangeFields: View {
             SecureField(exchange.keyLabel, text: $key)
             SecureField(exchange.secretLabel, text: $secret)
             if exchange.needsPassphrase {
-                SecureField("Passphrase", text: $passphrase)
+                SecureField(tr("portfolio.passphrase"), text: $passphrase)
             }
             HStack {
                 Button(tr("button.save"), action: save)
                     .disabled(!canSave)
                 if portfolio.isConfigured(exchange) {
-                    Button(tr("button.delete"), role: .destructive) {
+                    ConfirmedButton(tr("button.delete"), question: tr("confirm.remove", exchange.name),
+                                    detail: tr("confirm.keychain.detail")) {
                         portfolio.removeExchange(exchange)
                         saveError = nil
                     }

@@ -41,7 +41,7 @@ struct ApprovalView: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 12)
+        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.panel)
     }
 
     @ViewBuilder

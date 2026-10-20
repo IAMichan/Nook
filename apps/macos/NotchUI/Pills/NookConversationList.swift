@@ -14,6 +14,8 @@ struct NookList: View {
     @State private var renaming: UUID?
     @State private var nameDraft = ""
     @State private var selection = ListSelection<UUID>()
+    /// The Nook whose delete waits for a yes: a context menu cannot hold the dialog itself.
+    @State private var deleting: Conversation?
 
     var body: some View {
         let items = chat.list(query: query, showArchived: false)
@@ -24,6 +26,8 @@ struct NookList: View {
         let shown = (pinned + rest + (showArchived ? archived : [])).map(\.id)
         VStack(alignment: .leading, spacing: 8) {
             header
+                .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
+                               confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
             HStack(spacing: 6) {
                 searchField
                 SelectionModeButton(active: selection.isActive) {
@@ -38,10 +42,7 @@ struct NookList: View {
                         // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
                         LazyVStack(alignment: .leading, spacing: 2) {
                             if items.isEmpty && (archived.isEmpty || !showArchived) {
-                                Text(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"))
-                                    .font(NookTheme.font(12.5))
-                                    .foregroundStyle(NookTheme.textTertiary)
-                                    .padding(12)
+                                ListEmptyNote(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                             }
                             if !pinned.isEmpty {
                                 sectionLabel(tr("nooks.section.pinned"))
@@ -215,7 +216,7 @@ struct NookList: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 12)
                     .frame(height: 36)
-                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.5), radius: 12, style: .continuous)
+                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.5), radius: NookTheme.Radius.panel, style: .continuous)
                     .onSubmit {
                         chat.rename(conversation.id, to: nameDraft)
                         renaming = nil
@@ -252,7 +253,7 @@ struct NookList: View {
         }
         .disabled(conversation.busy)
         Divider()
-        Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+        Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
             .disabled(conversation.busy)
     }
 }
@@ -344,17 +345,8 @@ private struct NookRow: View {
     }
 
     private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(NookTheme.font(11, .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-        .help(label)
-        .accessibilityLabel(label)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+            .pointerStyle(.link)
     }
 
     private var statusText: String {

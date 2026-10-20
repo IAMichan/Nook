@@ -77,11 +77,9 @@ struct McpAppBlock: View {
                 .foregroundStyle(NookTheme.textTertiary)
             Spacer(minLength: 4)
             if session.html != nil, !session.closed, !session.left, session.mode == .inline {
-                Button { session.enterFullscreen() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.font(10))
+                ToolbarIconButton("arrow.up.left.and.arrow.down.right", tr("ws.mcpApp.fullscreen"), height: 20, width: 20) {
+                    session.enterFullscreen()
                 }
-                .buttonStyle(.plain)
-                .help(tr("ws.mcpApp.fullscreen"))
             }
         }
         .foregroundStyle(NookTheme.textSecondary)

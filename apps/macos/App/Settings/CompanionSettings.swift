@@ -27,7 +27,8 @@ struct CompanionSettingsRows: View {
                                 .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         }
                         Spacer()
-                        Button(tr("companion.remove")) { store.remove(device.id) }
+                        ConfirmedButton(tr("companion.remove"), question: tr("confirm.remove", device.name),
+                                        detail: tr("confirm.removeDevice.detail")) { store.remove(device.id) }
                     }
                 }
                 if store.devices.isEmpty { Text(tr("companion.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
@@ -97,7 +98,9 @@ struct CompanionSettingsRows: View {
         HStack {
             if store.hasAPNsKey {
                 Label(tr("companion.push.keySaved"), systemImage: "checkmark.seal").foregroundStyle(NookTheme.textSecondary)
-                Button(tr("companion.remove")) { store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false }
+                ConfirmedButton(tr("companion.remove"), question: tr("confirm.removePush"), detail: tr("confirm.removePush.detail")) {
+                    store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false
+                }
             } else {
                 Button(tr("companion.push.importKey")) { importKey() }
             }

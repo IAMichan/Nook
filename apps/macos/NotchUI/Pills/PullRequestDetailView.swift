@@ -186,7 +186,7 @@ struct PullRequestDetailView: View {
                             sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
             }
             if detail.events.isEmpty {
-                Text(tr("agents.pr.conversation.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("agents.pr.conversation.none"))
             } else {
                 ForEach(detail.events) { event in timelineRow(event, detail: detail, now: now) }
             }
@@ -199,7 +199,7 @@ struct PullRequestDetailView: View {
     private func checks(_ detail: PullRequestDetail) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if detail.checks.isEmpty {
-                Text(tr("agents.pr.checks.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
                 ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
@@ -316,11 +316,9 @@ struct PullRequestDetailView: View {
                     Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
                 }
                 if let url = event.url {
-                    Button { NSWorkspace.shared.open(url) } label: {
-                        Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                    ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
+                        NSWorkspace.shared.open(url)
                     }
-                    .buttonStyle(.plain)
-                    .help(tr("agents.pulls.open"))
                 }
             }
             if !event.body.isEmpty {
@@ -353,7 +351,7 @@ struct PullRequestDetailView: View {
     private func commits(_ detail: PullRequestDetail, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if detail.commits.isEmpty {
-                Text(tr("agents.pr.commits.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("agents.pr.commits.none"))
             }
             ForEach(detail.commits) { commit in
                 HoverRow(action: { if let url = detail.url?.appendingPathComponent("commits/" + commit.sha) { NSWorkspace.shared.open(url) } }) {
@@ -381,7 +379,7 @@ struct PullRequestDetailView: View {
     private func files(_ detail: PullRequestDetail) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if detail.files.isEmpty {
-                Text(tr("agents.pr.files.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("agents.pr.files.none"))
             }
             ForEach(detail.files) { file in
                 HoverRow(action: { openFile = file.path }) {

@@ -303,7 +303,7 @@ struct ComposerSuggestionList: View {
             }
         }
         .padding(5)
-        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: 14, style: .continuous)
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .accessibilityElement(children: .contain)
     }
 }

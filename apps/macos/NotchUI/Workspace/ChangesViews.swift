@@ -161,7 +161,7 @@ struct CommitSheet: View {
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .cardBackground(WS.surface, stroke: WS.border, radius: 7)
+                .cardBackground(WS.surface, stroke: WS.border, radius: NookTheme.Radius.chip)
             if let run = workspace.run(runID), message.isEmpty {
                 Button(tr("ws.commit.useTitle")) { message = run.title }
                     .buttonStyle(.link)
@@ -172,9 +172,8 @@ struct CommitSheet: View {
             HStack {
                 Text(tr("ws.commit.note")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                 Spacer()
-                Button(tr("button.cancel")) { close() }.keyboardShortcut(.cancelAction)
-                Button(tr("ws.commit.action", included.count)) { commit() }
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.cancel")) { close() }.keyboardShortcut(.cancelAction)
+                SmallPrimaryButton(title: tr("ws.commit.action", included.count)) { commit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(working || included.isEmpty || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || done != nil)
             }
@@ -251,9 +250,8 @@ struct PullRequestSheet: View {
             }
             HStack {
                 Spacer()
-                Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
-                Button(canCreate ? tr("ws.pr.create") : tr("ws.pr.openPage", repo?.hostName ?? "")) { create() }
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
+                SmallPrimaryButton(title: canCreate ? tr("ws.pr.create") : tr("ws.pr.openPage", repo?.hostName ?? "")) { create() }
                     .disabled(working || repo == nil || branch == nil || base.isEmpty || title.isEmpty || created != nil)
             }
         }

@@ -123,7 +123,7 @@ struct UpdatePanel: View {
             }
         }
         .padding(4)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
     }
 
     // MARK: Installing
@@ -250,7 +250,7 @@ struct UpdatePanel: View {
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 8, style: .continuous)
+                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
                 .textSelection(.enabled)
             }
             HStack(spacing: 8) {
@@ -332,7 +332,7 @@ struct UpdatePanel: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: 8, style: .continuous)
+        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: NookTheme.Radius.control, style: .continuous)
     }
 }
 

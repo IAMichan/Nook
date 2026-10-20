@@ -55,7 +55,7 @@ struct FlowSettingsSection: View {
                                 .help(tr("flow.settings.copy"))
                             }
                         }
-                        Button(tr("flow.settings.clearHistory")) { store.clearHistory() }
+                        ConfirmedButton(tr("flow.settings.clearHistory"), question: tr("confirm.clearFlow")) { store.clearHistory() }
                     }
                 }
             }

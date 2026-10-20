@@ -175,9 +175,7 @@ struct WSEmptyState: View {
                 .frame(maxWidth: 380)
                 .fixedSize(horizontal: false, vertical: true)
             if let action {
-                Button(action.title, action: action.run)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+                NookPrimaryButton(title: action.title, action: action.run)
                     .padding(.top, 4)
             }
         }
@@ -382,11 +380,7 @@ struct DiffText: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
             if let onRemoveComment {
-                Button { onRemoveComment(comment.id) } label: {
-                    Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .help(tr("ws.review.remove"))
+                ToolbarIconButton("xmark", tr("ws.review.remove"), height: 20, width: 20) { onRemoveComment(comment.id) }
             }
         }
         .padding(8)

@@ -43,9 +43,7 @@ struct AgentsUsagePanel: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 22) {
                     if profiles.isEmpty {
-                        Text(tr("agents.noneConnected"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
+                        ListEmptyNote(tr("agents.noneConnected"))
                     }
                     ForEach(groups, id: \.kind) { group in
                         section(group.kind, group.profiles)
@@ -103,7 +101,7 @@ struct AgentsUsagePanel: View {
                 }
             }
             // The same surface the terminals, the browser and the worktrees sit on.
-            .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 12, style: .continuous)
+            .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.panel, style: .continuous)
         }
     }
 
@@ -163,9 +161,7 @@ struct AgentsUsagePanel: View {
                     WeekBars(days: usage.perDay, color: accent)
                 }
             } else {
-                Text(tr("agents.usage.none"))
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("agents.usage.none"))
             }
         }
         .padding(14)

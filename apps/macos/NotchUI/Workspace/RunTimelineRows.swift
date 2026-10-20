@@ -276,7 +276,7 @@ struct CodeBlock: View {
             .clipped()
         }
         .padding(10)
-        .cardBackground(WS.code, stroke: WS.border, radius: 8)
+        .cardBackground(WS.code, stroke: WS.border, radius: NookTheme.Radius.control)
     }
 }
 
@@ -303,7 +303,7 @@ struct ApprovalRow: View {
         }
         .padding(10)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: 9)
+        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: NookTheme.Radius.control)
         .onTapGesture { toggle() }
     }
 

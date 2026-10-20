@@ -200,7 +200,7 @@ private struct ChatErrorCard: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: 14, style: .continuous)
+        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: NookTheme.Radius.sheet, style: .continuous)
     }
 }
 

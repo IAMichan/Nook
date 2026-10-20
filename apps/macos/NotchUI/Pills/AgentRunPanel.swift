@@ -481,9 +481,7 @@ struct AgentRunPanel: View {
             ScrollView(showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
-                        Text(tr("agents.run.empty"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
+                        ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in

@@ -329,6 +329,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }
+                        .keyboardShortcut(.cancelAction)
                     Button(tr("settings2.disconnect"), role: .destructive) { clear() }
                 } else {
                     Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
@@ -739,7 +740,9 @@ struct ExtraAccountsView: View {
                         .onSubmit { save(account) }
                     Button(tr("button.save")) { save(account) }
                         .disabled((drafts[account.id] ?? "").isEmpty)
-                    Button(role: .destructive) { remove(account) } label: { Image(systemName: "trash") }
+                    ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.remove", account.label),
+                                    detail: tr("confirm.keychain.detail")) { remove(account) }
+                        .labelled(tr("button.delete"))
                         .buttonStyle(.borderless)
                 }
             }

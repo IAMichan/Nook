@@ -76,6 +76,7 @@ struct ScheduledTasksView: View {
             Spacer()
             SmallGhostButton(title: tr("sched.new")) { editing = EditorTarget(existing: nil) }
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 28, action: onClose)
+                .keyboardShortcut(.cancelAction)
         }
     }
 
@@ -151,7 +152,7 @@ private struct TaskRow: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.smoke.opacity(0.6), stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.smoke.opacity(0.6), stroke: NookTheme.line2, radius: NookTheme.Radius.card)
     }
 
     private var effectiveStatus: ScheduledRunStatus? { running ? .running : task.lastStatus }
@@ -348,8 +349,9 @@ private struct ScheduledTaskEditor: View {
                     .foregroundStyle(NookTheme.coralSoft)
                 Spacer()
                 NookGhostButton(title: tr("button.cancel"), action: onDone)
+                    .keyboardShortcut(.cancelAction)
                 NookPrimaryButton(title: tr("sched.save"), action: save)
-                    .opacity(problem == nil ? 1 : 0.4)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(problem != nil)
             }
         }

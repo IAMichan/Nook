@@ -195,7 +195,7 @@ struct PanelApprovalBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
+            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.card)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
@@ -225,7 +225,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }
@@ -259,7 +259,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }

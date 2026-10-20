@@ -30,7 +30,7 @@ extension SettingsView {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
                 LabeledContent(tr("settings.privacy.screenText")) {
-                    Button(tr("settings.privacy.forgetScreenText")) {
+                    Button(tr("settings.privacy.forgetScreenText"), role: .destructive) {
                         app.screenContext.clear()
                         status = tr("settings.privacy.screenTextForgotten")
                     }

@@ -215,12 +215,7 @@ struct PullRequestWatchStrip: View {
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
     }
 
     /// "…/pull/12" or "…/-/merge_requests/12".
@@ -307,17 +302,17 @@ struct TurnChangesChip: View {
             Divider()
             Group {
                 if let failure {
-                    Text(failure).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary).padding()
+                    Text(failure).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coralSoft).padding()
                 } else if let text {
                     if text.isEmpty {
-                        Text(tr("ws.turnChanges.none")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary).padding()
+                        ListEmptyNote(tr("ws.turnChanges.none"), padding: NookTheme.Spacing.xl)
                     } else {
                         DiffText(text: text)
                     }
                 } else if chosen != nil {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                 } else {
-                    Text(tr("ws.turnChanges.pick")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                    ListEmptyNote(tr("ws.turnChanges.pick"))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

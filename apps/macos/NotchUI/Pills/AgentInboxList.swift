@@ -155,10 +155,8 @@ struct AgentInboxList: View {
     }
 
     private var emptyState: some View {
-        Text(store.query.isEmpty ? (app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow")) : tr("inbox.noResults"))
-            .font(NookTheme.font(12.5))
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(12)
+        ListEmptyNote(store.query.isEmpty ? (app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow")) : tr("inbox.noResults"),
+                      padding: NookTheme.Spacing.lg)
     }
 
     // MARK: Search

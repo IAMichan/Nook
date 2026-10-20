@@ -35,7 +35,7 @@ struct AuditLogSection: View {
             HStack {
                 Spacer()
                 if !note.isEmpty { Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
-                Button(tr("privacy.log.clear"), role: .destructive) {
+                ConfirmedButton(tr("privacy.log.clear"), question: tr("confirm.clearAudit"), detail: tr("confirm.clearAudit.detail")) {
                     app.store.clearAudit()
                     note = tr("privacy.log.cleared")
                     load()

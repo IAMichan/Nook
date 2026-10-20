@@ -96,13 +96,8 @@ struct RunInspector: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     WSSectionTitle(title: tr("ws.inspector.changes"), trailing: files.isEmpty ? nil : "\(files.count)")
-                    Button { workspace.refreshGit(runID) } label: {
-                        Image(systemName: "arrow.clockwise").font(NookTheme.font(10))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(WS.tertiary)
-                    .help(tr("ws.git.refresh"))
-                    .disabled(snapshot?.loading == true)
+                    ToolbarIconButton("arrow.clockwise", tr("ws.git.refresh"), height: 20, width: 20,
+                                      enabled: snapshot?.loading != true) { workspace.refreshGit(runID) }
                 }
                 if let error = snapshot?.error {
                     Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft)
@@ -154,6 +149,8 @@ struct RunInspector: View {
                         Image(systemName: "ellipsis.circle")
                     }
                     .menuStyle(.borderlessButton)
+                    .help(tr("a11y.more"))
+                    .accessibilityLabel(tr("a11y.more"))
                     .fixedSize()
                 }
                 .controlSize(.small)

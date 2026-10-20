@@ -234,6 +234,7 @@ private struct ManageAccountSheet: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmRemove = false }
+                        .keyboardShortcut(.cancelAction)
                     Button(tr("agents.remove"), role: .destructive) {
                         app.removeAccount(profile)
                         done()
@@ -244,6 +245,7 @@ private struct ManageAccountSheet: View {
             }
             Spacer()
             Button(tr("settings2.done"), action: done)
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
@@ -271,7 +273,7 @@ private struct ManageAccountSheet: View {
             .buttonStyle(.borderedProminent)
 
             if account != nil {
-                Button(tr("accounts.logout")) {
+                ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) {
                     app.logout(profile)
                 }
             }
@@ -316,12 +318,12 @@ private struct ManageAccountSheet: View {
                     .foregroundStyle(NookTheme.mint)
                 Spacer()
                 if profile.kind == .claude {
-                    Button(tr("accounts.removeKey")) {
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
                         app.profiles.setAPIKey("", for: profile)
                         app.history.refresh(minimumInterval: 0)
                     }
                 } else {
-                    Button(tr("accounts.logout")) { app.logout(profile) }
+                    ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) { app.logout(profile) }
                 }
             }
             .padding(10)
@@ -428,6 +430,7 @@ private struct AddAccountSheet: View {
             }
         } footer: {
             Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
             Spacer()
             if saving {
                 ProgressView().controlSize(.small)
@@ -435,6 +438,7 @@ private struct AddAccountSheet: View {
                 Button(method == .cli
                        ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
                        : tr("agents.add")) { add() }
+                    .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(!canAdd)

@@ -36,6 +36,7 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             HStack {
                 Button(tr("onboarding.later")) { onFinish() }
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 if step > 0 { Button(tr("onboarding.back")) { step -= 1 } }
                 Button(step == steps - 1 ? tr("onboarding.done") : tr("onboarding.next")) {

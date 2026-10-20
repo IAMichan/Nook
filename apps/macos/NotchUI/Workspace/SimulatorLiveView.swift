@@ -119,6 +119,8 @@ struct SimulatorView: View {
                     Task { await hub.shutdown(udid) }
                 }
             } label: { Image(systemName: "ellipsis") }
+            .help(tr("a11y.more"))
+            .accessibilityLabel(tr("a11y.more"))
             .menuStyle(.button)
             .buttonStyle(.borderless)
             .menuIndicator(.hidden)
@@ -500,8 +502,8 @@ struct SimulatorActionsPanel: View {
             }
             HStack {
                 Text(tr("sim.action.location")).frame(width: 110, alignment: .leading)
-                TextField("lat", text: $latitude).frame(width: 70)
-                TextField("lon", text: $longitude).frame(width: 70)
+                TextField(tr("sim.latitude"), text: $latitude).frame(width: 70)
+                TextField(tr("sim.longitude"), text: $longitude).frame(width: 70)
                 Button(tr("sim.action.set")) {
                     if let lat = Double(latitude), let lon = Double(longitude), (-90...90).contains(lat), (-180...180).contains(lon) {
                         run(.location(latitude: lat, longitude: lon))

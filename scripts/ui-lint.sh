@@ -49,7 +49,7 @@ for file in "${OWN_COLORS[@]}"; do exclude+=(-e "^$file:"); done
 grep -rnE '\b(NS)?Color\(\s*(hex|red|white|\.sRGB)\b' NotchUI App --include='*.swift' | grep -v "${exclude[@]}" \
   | report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))"
 
-grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)' NotchUI App --include='*.swift' \
+grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|cardBackground\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
   | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)"
 

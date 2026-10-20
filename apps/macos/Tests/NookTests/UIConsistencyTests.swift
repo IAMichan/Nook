@@ -82,7 +82,7 @@ final class UIConsistencyTests: XCTestCase {
 
     /// Corners sit on the radius scale: `NookTheme.Radius.chip … pill`, not a number that happens to look right.
     func testCornerRadiiComeFromTheScale() {
-        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|cardBackground\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20)")
     }
 
