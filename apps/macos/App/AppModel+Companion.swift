@@ -4,8 +4,8 @@ import Combine
 
 /// WhatsApp in the notch: a new message shows as a card with the chat so far (it scrolls back) and a field to answer.
 /// What you type there goes to that chat when you press Return or click the arrow (your own words, your own click);
-/// a photo or document shows in the bubble and in Quick Look with a click, a video plays in the bubble; "Let Nook
-/// answer" hands the chat to Nook, who proposes an answer as a plan you approve.
+/// a photo shows in the bubble and a click enlarges it in the card, a document shows in Quick Look with a click, a
+/// video plays in the bubble; "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan you approve.
 extension AppModel {
     static let whatsAppCardPrefix = "whatsapp-"
     /// How many of a chat's newest photos, videos and documents its card fetches to show.
@@ -53,7 +53,7 @@ extension AppModel {
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
                 switch message.media {
-                case .image: bubble.media = .photo
+                case .image: bubble.media = .photo(preview.file)
                 case .video: bubble.media = .video(preview.file)
                 default: break
                 }
