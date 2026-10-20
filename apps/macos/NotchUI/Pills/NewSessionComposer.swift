@@ -294,6 +294,10 @@ struct NewSessionComposer: View {
     // MARK: Below the box
 
     private var belowBox: some View {
+        ComposerTray(edge: .bottom) { belowBoxRow }
+    }
+
+    private var belowBoxRow: some View {
         HStack(spacing: 6) {
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
@@ -325,20 +329,6 @@ struct NewSessionComposer: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, Self.trayTuck + 4)
-        .padding(.bottom, 4)
-        .background(trayShape.fill(NookTheme.field))
-        .overlay(trayShape.stroke(NookTheme.fieldStroke, lineWidth: 1))
-        .padding(.top, -Self.trayTuck)
-        .padding(.horizontal, 14)
-    }
-
-    /// How far the tray runs on under the box, so it reads as coming out from underneath.
-    private static let trayTuck: CGFloat = 14
-
-    private var trayShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
     }
 
     /// Where the agent works: the folder as it is, or a new worktree.

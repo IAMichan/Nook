@@ -105,3 +105,44 @@ struct PullRequestPill: View {
         return badge.text ?? ""
     }
 }
+
+/// A pull request's state as a tinted capsule: GitHub's mark and the word ("Open", "Merged"), optionally after its
+/// number. The pull request page and the watched pull request above the composer both wear it.
+struct PullRequestStateBadge: View {
+    let glyph: PullRequestBadge.Glyph
+    var number: Int? = nil
+
+    private var tint: Color {
+        switch glyph {
+        case .open: return NookTheme.mint
+        case .draft: return NookTheme.textSecondary
+        case .conflict, .closed: return NookTheme.coral
+        case .merged: return NookTheme.violet
+        case .stack: return NookTheme.amber
+        }
+    }
+
+    private var state: String {
+        switch glyph {
+        case .open, .draft, .merged, .closed: return tr("agents.pr.state." + glyph.rawValue)
+        case .conflict, .stack: return tr("inbox.pr.state." + glyph.rawValue)
+        }
+    }
+
+    private var label: String { number.map { "#\($0) · \(state)" } ?? state }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
+            Text(label).lineLimit(1)
+        }
+        .font(NookTheme.font(11, .semibold).monospacedDigit())
+        .foregroundStyle(tint)
+        .padding(.leading, 5)
+        .padding(.trailing, 7)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(tint.opacity(0.14)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+}

@@ -844,57 +844,75 @@ struct AgentRunPanel: View {
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
                 TasksStrip(steps: tasks)
             }
-            if let watch = run.prWatch {
-                PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
+            // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
+            // same tray a new session shows its folder and branch in under the box.
+            VStack(spacing: 0) {
+                aboveBox(watch: run.prWatch, waiting: workspace.queued[runID] ?? MessageQueue())
+                SessionComposer(
+                    text: $draft,
+                    prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
+                                             : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
+                    canSend: !active,
+                    busy: active,
+                    onStop: { workspace.stop(runID) },
+                    focus: $focused,
+                    onSend: send
+                ) {
+                    actionsMenu(run)
+                    modelMenu(run)
+                    ComposerDivider()
+                    modeMenu(run)
+                    ComposerDivider()
+                    permissionMenu(run)
+                    effortMenu(run)
+                }
+                .rich(composerModel, composerConfig(run))
+                .trailing { composerTrailing(run) }
+                // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
+                .queueing(active ? deliver(preferred) : nil,
+                          alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
+                          label: steers ? tr("compose.steer") : tr("compose.queue"),
+                          symbol: steers ? "arrow.turn.down.right" : "text.append")
+                .images($images)
+                .zIndex(1)
             }
-            if let waiting = workspace.queued[runID], !waiting.isEmpty {
-                QueuedMessagesStrip(
-                    queue: waiting, editing: editingQueued,
-                    remove: { id in
-                        if editingQueued == id { cancelQueuedEdit() }
-                        workspace.removeQueued(runID, message: id)
-                    },
-                    edit: { id in
-                        if editingQueued != nil { cancelQueuedEdit() }
-                        if let text = workspace.beginEditQueued(runID, message: id, currentDraft: draft) {
-                            editingQueued = id
-                            draft = text
-                            focused = true
-                        }
-                    },
-                    move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
-                    sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
-            }
-            SessionComposer(
-                text: $draft,
-                prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
-                                         : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
-                canSend: !active,
-                busy: active,
-                onStop: { workspace.stop(runID) },
-                focus: $focused,
-                onSend: send
-            ) {
-                actionsMenu(run)
-                modelMenu(run)
-                ComposerDivider()
-                modeMenu(run)
-                ComposerDivider()
-                permissionMenu(run)
-                effortMenu(run)
-            }
-            .rich(composerModel, composerConfig(run))
-            .trailing { composerTrailing(run) }
-            // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
-            .queueing(active ? deliver(preferred) : nil,
-                      alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
-                      label: steers ? tr("compose.steer") : tr("compose.queue"),
-                      symbol: steers ? "arrow.turn.down.right" : "text.append")
-            .images($images)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.font(11))
                     .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+    }
+
+    /// The tray above the box, when there is something to show in it.
+    @ViewBuilder
+    private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
+        if watch != nil || !waiting.isEmpty {
+            ComposerTray(edge: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let watch {
+                        PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
+                    }
+                    if watch != nil && !waiting.isEmpty { ComposerTrayDivider() }
+                    if !waiting.isEmpty {
+                        QueuedMessagesStrip(
+                            queue: waiting, editing: editingQueued,
+                            remove: { id in
+                                if editingQueued == id { cancelQueuedEdit() }
+                                workspace.removeQueued(runID, message: id)
+                            },
+                            edit: { id in
+                                if editingQueued != nil { cancelQueuedEdit() }
+                                if let text = workspace.beginEditQueued(runID, message: id, currentDraft: draft) {
+                                    editingQueued = id
+                                    draft = text
+                                    focused = true
+                                }
+                            },
+                            move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
+                            sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
+                    }
+                }
             }
         }
     }
