@@ -165,7 +165,7 @@ final class CompanionServer: ObservableObject {
         send(response, key: key, deviceID: claimed, on: connection)
     }
 
-    private func audit(_ action: String, _ detail: String) {
+    func audit(_ action: String, _ detail: String) {
         app?.store.audit(tool: "companion_" + action, args: detail, result: "ok")
     }
 
@@ -176,10 +176,9 @@ final class CompanionServer: ObservableObject {
         let workspace = app.workspace
         let macName = MachineName.local
         switch request.op {
-        case .hello:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace))
-        case .list:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace))
+        case .hello, .list:
+            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace),
+                                     features: CompanionFeature.all)
         case .register:
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
@@ -233,6 +232,20 @@ final class CompanionServer: ObservableObject {
             workspace.stop(runID)
             audit("stop", run.title)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace))
+        case .options:
+            return await launchOptions(request, app: app)
+        case .start:
+            return await launch(request, app: app)
+        case .timeline:
+            return timeline(request, workspace: workspace)
+        case .chats:
+            return chats(request, app: app)
+        case .chat:
+            return chat(request, app: app)
+        case .ask:
+            return ask(request, app: app)
+        case .chatStop:
+            return stopChat(request, app: app)
         }
     }
 
@@ -244,7 +257,7 @@ final class CompanionServer: ObservableObject {
         return CompanionPolicy.canAllow(tool: pending.tool, commandIsSafe: safe)
     }
 
-    private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
+    func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
         let now = Date()
         let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(25)
         return runs.map { run in

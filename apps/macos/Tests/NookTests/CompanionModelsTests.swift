@@ -109,4 +109,38 @@ final class CompanionModelsTests: XCTestCase {
         let response = CompanionResponse.failure("x", .notAllowedFromPhone)
         XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
     }
+
+    func testLaunchRequestAndNewResponseFieldsCodable() throws {
+        let launch = LaunchRequest(agent: "claude", project: "/Users/me/app", task: "Fix the login", plan: true, worktree: true)
+        let request = CompanionRequest(op: .start, launch: launch)
+        XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
+        var response = CompanionResponse(id: "x", ok: true, features: CompanionFeature.all, created: "s")
+        response.timeline = [TimelineEntry(id: "1", kind: .assistant, text: "Done", detail: nil, date: 1, failed: false)]
+        response.conversations = [ChatDigest(id: "c", title: "Plans", updated: 2, busy: true, waiting: false, preview: "")]
+        response.messages = [ChatLine(id: "m", fromNook: true, text: "Hi", date: 3, streaming: false, status: "", failed: false, onMac: false)]
+        XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
+    }
+
+    func testOldMessagesStillDecode() throws {
+        // A Mac or phone of the first version sends none of the new fields.
+        let request = #"{"id":"a","sent":1,"op":"list"}"#
+        XCTAssertNil(try JSONDecoder().decode(CompanionRequest.self, from: Data(request.utf8)).launch)
+        let response = #"{"id":"a","ok":true,"sessions":[]}"#
+        XCTAssertNil(try JSONDecoder().decode(CompanionResponse.self, from: Data(response.utf8)).features)
+    }
+
+    func testNewestFittingKeepsTheLatestWithinBudget() throws {
+        let lines = (0..<100).map { TimelineEntry(id: "\($0)", kind: .assistant, text: String(repeating: "a", count: 1_000), detail: nil, date: Double($0), failed: false) }
+        let kept = CompanionPolicy.newestFitting(lines, budget: 10_000)
+        XCTAssertFalse(kept.isEmpty)
+        XCTAssertLessThan(kept.count, 100)
+        XCTAssertEqual(kept.last?.id, "99")
+        XCTAssertLessThanOrEqual(try JSONEncoder().encode(kept).count, 10_000 + kept.count + 2)
+        XCTAssertEqual(CompanionPolicy.newestFitting(Array(lines.prefix(3))).count, 3)
+    }
+
+    func testClipCutsLongLines() {
+        XCTAssertEqual(CompanionPolicy.clip("  short \r "), "short")
+        XCTAssertEqual(CompanionPolicy.clip(String(repeating: "a", count: 10), limit: 4), "aaaa…")
+    }
 }

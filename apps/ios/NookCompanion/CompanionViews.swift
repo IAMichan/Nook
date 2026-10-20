@@ -4,24 +4,42 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
-    @State private var path: [String] = []
+    @State private var tab = Tab.sessions
+    @State private var sessionPath: [String] = []
+    @State private var chatPath: [ChatRoute] = []
+
+    enum Tab { case sessions, nook }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                switch client.phase {
-                case .unpaired, .pairing: PairingView()
-                case .connected, .offline: SessionListView()
+        Group {
+            switch client.phase {
+            case .unpaired, .pairing:
+                NavigationStack { PairingView().navigationTitle("Nook") }
+            case .connected, .offline:
+                TabView(selection: $tab) {
+                    NavigationStack(path: $sessionPath) {
+                        SessionListView(path: $sessionPath)
+                            .navigationTitle(client.macName.isEmpty ? "Nook" : client.macName)
+                    }
+                    .tabItem { Label("Sessions", systemImage: "terminal") }
+                    .badge(client.sessions.needingYou)
+                    .tag(Tab.sessions)
+                    NavigationStack(path: $chatPath) {
+                        ChatListView(path: $chatPath)
+                            .navigationTitle("Nook")
+                    }
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                    .tag(Tab.nook)
                 }
             }
-            .navigationTitle(client.macName.isEmpty ? "Nook" : client.macName)
         }
         .tint(Palette.iris)
         .task { client.startPolling() }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
-            path = [id]
+            tab = .sessions
+            sessionPath = [id]
             client.openSession = nil
         }
         .onChange(of: scenePhase) { _, phase in
@@ -135,6 +153,8 @@ struct QRScanner: UIViewControllerRepresentable {
 
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
+    @Binding var path: [String]
+    @State private var composing = false
 
     private var sorted: [SessionDigest] {
         let rank = ["approval": 0, "input": 1, "failed": 2, "limited": 3, "working": 4, "ready": 5, "idle": 6, "finished": 7]
@@ -166,17 +186,27 @@ struct SessionListView: View {
                     }
             }
             if client.sessions.isEmpty, client.phase == .connected {
-                Text("No sessions.").foregroundStyle(.secondary)
+                Group {
+                    if client.can(CompanionFeature.start) { Text("No sessions. Start one with +.") } else { Text("No sessions.") }
+                }
+                .foregroundStyle(.secondary)
             }
         }
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
         .refreshable { await client.refresh() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if client.can(CompanionFeature.start) {
+                    Button { composing = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("New session")
+                }
                 Menu {
                     Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
+        }
+        .sheet(isPresented: $composing) {
+            NewSessionView { id in path.append(id) }
         }
     }
 }
@@ -197,104 +227,5 @@ struct SessionRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-}
-
-struct SessionDetailView: View {
-    @EnvironmentObject private var client: CompanionClient
-    let sessionID: String
-    @State private var message = ""
-    @State private var confirmStop = false
-
-    private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
-
-    var body: some View {
-        if let session {
-            List {
-                Section {
-                    Label(Palette.word(session.attention), systemImage: "circle.fill").foregroundStyle(Palette.color(session.attention))
-                    Text("\(session.agent) · \(session.folder)\(session.branch.map { " · \($0)" } ?? "")").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(session.items) { item in
-                    Section(Self.sectionTitle(for: item)) {
-                        ItemView(session: session, item: item)
-                    }
-                }
-                if !session.excerpt.isEmpty {
-                    Section("Latest reply") { Text(session.excerpt).font(.callout) }
-                }
-                Section("Send a message") {
-                    TextField("Message to the agent", text: $message, axis: .vertical).lineLimit(1...5)
-                    Button("Send") {
-                        let text = message
-                        message = ""
-                        Task { await client.send(session, text: text) }
-                    }
-                    .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if session.attention == "working" || session.attention == "approval" || session.attention == "input" {
-                    Section {
-                        Button("Stop", role: .destructive) { confirmStop = true }
-                    }
-                }
-            }
-            .navigationTitle(session.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .confirmationDialog("Stop this session?", isPresented: $confirmStop, titleVisibility: .visible) {
-                Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
-            }
-        } else {
-            Text("This session is gone.").foregroundStyle(.secondary)
-        }
-    }
-
-    /// The heading above an item: typed, so both texts go through the String Catalog.
-    private static func sectionTitle(for item: SessionDigest.Item) -> LocalizedStringKey {
-        item.kind == .approval ? "Approval" : "Question"
-    }
-}
-
-struct ItemView: View {
-    @EnvironmentObject private var client: CompanionClient
-    let session: SessionDigest
-    let item: SessionDigest.Item
-    @State private var text = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(item.title).font(.body)
-            if !item.detail.isEmpty { Text(item.detail).font(.caption).foregroundStyle(.secondary) }
-            switch item.kind {
-            case .approval:
-                HStack {
-                    Button("Deny", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
-                        .buttonStyle(.bordered)
-                    if item.canAllow {
-                        Button("Allow") { Task { await client.decide(session, item: item, allow: true) } }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-                if !item.canAllow {
-                    Text("This is risky or unknown: it can only be allowed on your Mac.").font(.caption).foregroundStyle(Palette.amber)
-                }
-            case .question:
-                if item.canAllow {
-                    ForEach(item.options, id: \.self) { option in
-                        Button(option) { Task { await client.answer(session, item: item, text: option) } }.buttonStyle(.bordered)
-                    }
-                    HStack {
-                        TextField("Your own answer", text: $text)
-                        Button("Send") {
-                            let answer = text
-                            text = ""
-                            Task { await client.answer(session, item: item, text: answer) }
-                        }
-                        .disabled(text.isEmpty)
-                    }
-                } else {
-                    Text("Several questions at once: answer them on your Mac.").font(.caption).foregroundStyle(Palette.amber)
-                }
-            }
-        }
     }
 }

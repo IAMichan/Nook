@@ -20,6 +20,10 @@ enum CompanionConstants {
     static let freshness: TimeInterval = 60
     static let pairingWindow: TimeInterval = 300
     static let excerptLimit = 600
+    /// One line of a conversation (a session's timeline or a Nook chat) as the phone sees it.
+    static let lineLimit = 4_000
+    /// What the lines of one answer may take together, well under `maxFrame` once sealed and framed.
+    static let linesBudget = 150_000
 }
 
 /// What the Mac shows to pair: where to connect and the key. `nook://pair?h=<host>&p=<port>&k=<base64url key>&n=<name>`.
@@ -76,6 +80,62 @@ enum CompanionOp: String, Codable, Sendable {
     case hello, list, decide, answer, send, stop
     /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
     case register, unregister
+    /// What a new session can start with (`launch` in the answer); `start` starts one (`launch` in the request).
+    case options, start
+    /// The recent conversation of one session (`session`).
+    case timeline
+    /// Nook's own chats: the list, one conversation (`conversation`), a question (`text`; a new conversation when
+    /// `conversation` is nil) and stopping the answer that is being written.
+    case chats, chat, ask, chatStop
+}
+
+/// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
+/// is newer than its Mac never sends a request the Mac cannot read.
+enum CompanionFeature {
+    static let start = "start"
+    static let timeline = "timeline"
+    static let chat = "chat"
+    static let all = [start, timeline, chat]
+}
+
+/// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
+struct LaunchRequest: Codable, Equatable, Sendable {
+    /// `RunProvider` raw value, one of `LaunchOptions.agents`.
+    var agent: String
+    /// One of `LaunchOptions.projects`: the phone can only pick a folder the Mac already worked in.
+    var project: String
+    var task: String
+    var title: String?
+    var plan: Bool
+    var worktree: Bool
+
+    init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false) {
+        self.agent = agent; self.project = project; self.task = task; self.title = title; self.plan = plan; self.worktree = worktree
+    }
+}
+
+/// What the phone may choose from to start a session.
+struct LaunchOptions: Codable, Equatable, Sendable {
+    struct Agent: Codable, Equatable, Identifiable, Sendable {
+        var id: String
+        var name: String
+        var canPlan: Bool
+    }
+
+    struct Project: Codable, Equatable, Identifiable, Sendable {
+        var path: String
+        var name: String
+        /// A Git repository with commits: it can get its own worktree and branch.
+        var canWorktree: Bool
+        var id: String { path }
+    }
+
+    var agents: [Agent]
+    var projects: [Project]
+    var defaultAgent: String?
+    var defaultProject: String?
+    var defaultPlan: Bool
+    var defaultWorktree: Bool
 }
 
 /// One request from the phone. `id` is unique per request; `sent` is the phone's clock (seconds since 1970).
@@ -87,10 +147,14 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     var item: String?
     var text: String?
     var allow: Bool?
+    /// A Nook chat, for `chat`, `ask` and `chatStop`.
+    var conversation: String?
+    var launch: LaunchRequest?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
-         item: String? = nil, text: String? = nil, allow: Bool? = nil) {
+         item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
+        self.conversation = conversation; self.launch = launch
     }
 }
 
@@ -105,6 +169,14 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var macName: String?
     var sessions: [SessionDigest]?
     var message: String?
+    /// `CompanionFeature` values this Mac understands; nil from a Mac that only knows the first version.
+    var features: [String]?
+    var launch: LaunchOptions?
+    var timeline: [TimelineEntry]?
+    var conversations: [ChatDigest]?
+    var messages: [ChatLine]?
+    /// The id of what a request made: the session of `start`, the conversation of `ask`.
+    var created: String?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -135,6 +207,44 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var updated: Double
     var excerpt: String
     var items: [Item]
+}
+
+/// One step of a session's conversation, oldest first.
+struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable { case user, assistant, tool, change, error, notice }
+    var id: String
+    var kind: Kind
+    var text: String
+    /// The tool's name, or the file of a change.
+    var detail: String?
+    var date: Double
+    var failed: Bool
+}
+
+/// One of Nook's own chats in the list.
+struct ChatDigest: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    var updated: Double
+    /// Nook is writing an answer.
+    var busy: Bool
+    /// A plan or a draft waits for you (on the Mac).
+    var waiting: Bool
+    var preview: String
+}
+
+/// One message of a Nook chat.
+struct ChatLine: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var fromNook: Bool
+    var text: String
+    var date: Double
+    var streaming: Bool
+    /// What Nook is doing while the answer has no text yet ("Looking in your calendar…").
+    var status: String
+    var failed: Bool
+    /// The answer carries a plan, a mail draft or a chart: those are handled on the Mac.
+    var onMac: Bool
 }
 
 // MARK: Framing
@@ -196,6 +306,27 @@ enum CompanionPolicy {
         let flat = text.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard flat.count > CompanionConstants.excerptLimit else { return flat }
         return String(flat.prefix(CompanionConstants.excerptLimit)) + "…"
+    }
+
+    /// A line of a conversation, cut at `limit` characters.
+    static func clip(_ text: String, limit: Int = CompanionConstants.lineLimit) -> String {
+        let flat = text.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard flat.count > limit else { return flat }
+        return String(flat.prefix(limit)) + "…"
+    }
+
+    /// The newest items whose JSON together stays within `budget` bytes, oldest first, so one answer always fits in a frame.
+    static func newestFitting<T: Encodable>(_ items: [T], budget: Int = CompanionConstants.linesBudget) -> [T] {
+        let encoder = JSONEncoder()
+        var used = 0
+        var kept: [T] = []
+        for item in items.reversed() {
+            let size = (try? encoder.encode(item).count) ?? budget
+            if used + size > budget { break }
+            used += size
+            kept.append(item)
+        }
+        return kept.reversed()
     }
 
     /// A message from the phone is capped like a draft; control characters other than newline and tab are removed.

@@ -274,6 +274,17 @@ final class NookChat: ObservableObject {
         return conversation.id
     }
 
+    /// A new conversation that does not take over the one on screen: a question asked from the iPhone companion.
+    @discardableResult
+    func startInBackground() -> UUID {
+        conversations.removeAll { $0.isEmpty && !$0.busy && $0.id != activeID }
+        let conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
+        conversations.append(conversation)
+        trim()
+        scheduleSave()
+        return conversation.id
+    }
+
     func select(_ id: UUID) {
         guard let index = index(of: id) else { return }
         conversations[index].unread = false
