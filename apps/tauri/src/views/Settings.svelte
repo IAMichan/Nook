@@ -15,6 +15,7 @@
   import About from "./settings/About.svelte";
   import Companion from "./settings/Companion.svelte";
   import AgentsSettings from "./settings/Agents.svelte";
+  import AutocompleteSettings from "./settings/Autocomplete.svelte";
 
   interface Section {
     id: string;
@@ -31,6 +32,7 @@
     { id: "memory", title: "Geheugen", component: Memory },
     { id: "accounts", title: "Accounts & koppelingen", component: Accounts },
     { id: "voice", title: "Stem en geluid", component: Voice },
+    { id: "autocomplete", title: "Aanvullen", component: AutocompleteSettings, when: () => !!nook.info?.capabilities.desktop },
     { id: "agents", title: "Agents", component: AgentsSettings },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
     { id: "companion", title: "Companion", component: Companion, when: () => !!nook.info?.capabilities.desktop },

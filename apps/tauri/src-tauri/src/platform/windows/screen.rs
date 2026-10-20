@@ -86,7 +86,7 @@ pub(super) fn exe_path(pid: u32) -> Option<String> {
 }
 
 /// De naam uit de versie-informatie van een programma ("Google Chrome"), anders de bestandsnaam.
-fn display_name(path: &str) -> Option<String> {
+pub(super) fn display_name(path: &str) -> Option<String> {
     unsafe {
         let wide = HSTRING::from(path);
         let size = GetFileVersionInfoSizeW(&wide, None);

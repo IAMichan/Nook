@@ -22,8 +22,10 @@ pub mod windows;
 use std::sync::Arc;
 
 use nook_core::platform::{
-    Capabilities, Dictation, MediaControl, PowerMonitor, QuietWatch, ScreenReader, SpeechOutput, SystemControl, WakeWord,
+    Capabilities, Dictation, FieldSkip, FocusedField, InputEvent, MediaControl, PowerMonitor, QuietWatch, ScreenReader, SpeechOutput,
+    SystemControl, TextInput, WakeWord,
 };
+use nook_core::services::autocomplete::prefs::KeyChord;
 use tauri::AppHandle;
 
 /// De diensten van dit platform, één keer gemaakt bij de start.
@@ -39,6 +41,8 @@ pub struct Platform {
     pub quiet: Arc<dyn QuietWatch>,
     /// Battery, battery saver and load, for the energy plan.
     pub power: Arc<dyn PowerMonitor>,
+    /// Autocomplete: keyboard hook, focused field, typing (Windows only).
+    pub text_input: Arc<dyn TextInput>,
 }
 
 #[cfg(target_os = "linux")]
@@ -54,6 +58,7 @@ pub fn services(app: &AppHandle) -> Platform {
         wake: Arc::new(Unavailable("\"Hé Nook\" kan op Linux niet: er is geen zuinige spraakherkenning op de computer zelf.")),
         quiet: Arc::new(linux::LinuxQuiet::new()),
         power: Arc::new(linux::LinuxPower::new()),
+        text_input: Arc::new(Unavailable("Aanvullen in elke app kan (nog) alleen op Windows.")),
     }
 }
 
@@ -68,6 +73,7 @@ pub fn services(app: &AppHandle) -> Platform {
         wake: Arc::new(windows::WindowsWake::new()),
         quiet: Arc::new(windows::WindowsQuiet),
         power: Arc::new(windows::WindowsPower::new()),
+        text_input: Arc::new(windows::WindowsTextInput::new()),
     }
 }
 
@@ -119,6 +125,26 @@ impl QuietWatch for Unavailable {}
 
 /// Without power readings the energy plan only follows your choice and whether you are away.
 impl PowerMonitor for Unavailable {}
+impl TextInput for Unavailable {
+    fn available(&self) -> bool {
+        false
+    }
+    fn status(&self) -> String {
+        self.0.into()
+    }
+    fn start(&self, _on_event: Arc<dyn Fn(InputEvent) + Send + Sync>) -> Result<(), String> {
+        Err(self.0.into())
+    }
+    fn stop(&self) {}
+    fn set_keys(&self, _word: Option<KeyChord>, _all: Option<KeyChord>) {}
+    fn arm(&self, _armed: bool) {}
+    fn focused_field(&self) -> Result<FocusedField, FieldSkip> {
+        Err(FieldSkip::NoField)
+    }
+    fn type_text(&self, _text: &str) -> Result<(), String> {
+        Err(self.0.into())
+    }
+}
 
 impl SpeechOutput for Unavailable {
     fn available(&self) -> bool {
@@ -184,6 +210,10 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
     base.share_detection = platform.quiet.available();
     // Tauri's content protection is `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on Windows; Linux has no such thing.
     base.capture_exclusion = cfg!(target_os = "windows");
+    base.autocomplete = platform.text_input.available();
+    if !base.autocomplete {
+        notes.insert("autocomplete".into(), platform.text_input.status());
+    }
     #[cfg(desktop)]
     {
         base.media = true;

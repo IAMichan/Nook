@@ -66,6 +66,7 @@ al is.
 | Systeem: apps, volume, klembord, bestanden, meldingen | ✓ Linux · ◐ Windows | `platform/*`, `tools/{system,files,clipboard}.rs` |
 | Stem: voorlezen, spraak naar tekst (whisper.cpp of een gekozen dienst) | ◐ (voorlezen getest; opnemen niet, geen microfoon) | `core/src/services/`, `services/voice.rs` |
 | "Hé Nook" | ◐ Windows · — Linux en Android | `platform/windows/speech.rs` |
+| Overal aanvullen (`AutocompleteController`, `CompletionSuggestion`, `CompletionPrivacy`, `CompletionEmoji`, Instellingen › Aanvullen) | ◐ Windows (gecompileerd, niet op een echte pc uitgevoerd; Testen-tab ook op Linux) · — Linux en Android | `core/src/services/autocomplete/`, `src-tauri/src/services/autocomplete.rs`, `platform/windows/autocomplete.rs` |
 | Flow-dicteren | ◐ (logica met tests; niet met een microfoon getest) | `core/src/services/flow.rs` |
 | Notetaker | ◐ (geen sprekerherkenning) | `core/src/services/notes.rs` |
 | Vandaag, weekoverzicht (met agentcijfers per project) | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |

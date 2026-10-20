@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths;
 use crate::provider::AIProvider;
+use crate::services::autocomplete::AutocompleteSettings;
 use crate::services::energy::EnergyMode;
 use crate::services::quiet::QuietBehavior;
 
@@ -103,6 +104,8 @@ pub struct Settings {
     pub show_in_screenshots: bool,
     /// How much Nook does by himself on battery or a busy computer (Settings › General › Energy).
     pub energy_mode: EnergyMode,
+    /// Autocomplete Anywhere (Settings › Autocomplete). Off by default.
+    pub autocomplete: AutocompleteSettings,
 }
 
 impl Default for Settings {
@@ -149,6 +152,7 @@ impl Default for Settings {
             hide_from_captures: false,
             show_in_screenshots: false,
             energy_mode: EnergyMode::Automatic,
+            autocomplete: AutocompleteSettings::default(),
         }
     }
 }
@@ -304,6 +308,9 @@ mod tests {
         assert_eq!(s.provider, AIProvider::Claude);
         assert!(s.use_memory);
         assert!(!s.is_local_brain());
+        // Files from before autocomplete existed: off, local only.
+        assert!(!s.autocomplete.enabled);
+        assert_eq!(s.autocomplete.engine, crate::services::autocomplete::prefs::EngineChoice::Local);
     }
 
     #[test]

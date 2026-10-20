@@ -1,4 +1,5 @@
 // Dezelfde vormen als de Rust-structs in nook-core (serde, camelCase).
+import type { AutocompleteSettings } from "./autocomplete";
 import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, SourceScope } from "./brain";
 
 export type ProviderId =
@@ -54,6 +55,8 @@ export interface Settings {
   hideFromCaptures: boolean;
   showInScreenshots: boolean;
   energyMode: EnergyMode;
+  /// Autocomplete Anywhere (Settings › Aanvullen). Off by default.
+  autocomplete: AutocompleteSettings;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.
@@ -87,6 +90,8 @@ export interface Capabilities {
   shareDetection: boolean;
   /// Leaving Nook's windows out of screen sharing and screenshots (Windows).
   captureExclusion: boolean;
+  /// Autocomplete Anywhere: suggestions while typing in any app (Windows).
+  autocomplete: boolean;
   /// Uitleg per mogelijkheid die er niet (helemaal) is.
   notes: Record<string, string>;
 }
