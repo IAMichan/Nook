@@ -38,6 +38,9 @@ struct NookAccessoryLayer: View {
             }
         }
         .frame(width: size * Self.canvasScale, height: size * Self.canvasScale)
+        // Lays out as large as the orb and draws over its edges: the larger canvas must not grow the orb's stack, or
+        // the orb and its shading, which take the room they are offered, grow with it.
+        .frame(width: size, height: size)
         .allowsHitTesting(false)
     }
 }

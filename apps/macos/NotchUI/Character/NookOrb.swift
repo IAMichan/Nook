@@ -90,9 +90,10 @@ struct NookOrb: View {
             let glowing = glow && style.glow
             Circle()
                 .fill(mood.color)
+                .frame(width: size, height: size)
                 // Without glow the radius is 0 as well: an invisible shadow is still blurred every frame otherwise.
                 .shadow(color: mood.color.opacity(glowing ? p.glowOpacity : 0), radius: glowing ? p.glowRadius : 0)
-            if style.gloss { shading(light: light, shadeCenter: shadeCenter) }
+            if style.gloss { shading(light: light, shadeCenter: shadeCenter).frame(width: size, height: size) }
             eyes(p, turn: turn)
                 .offset(y: -eyeLift)
             if style.cheeks, p.cheeks > 0.01 {
