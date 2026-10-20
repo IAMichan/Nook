@@ -45,6 +45,15 @@ final class AppModel: ObservableObject {
         codex.refreshNow()
         antigravityUsage.refreshNow()
     }
+
+    /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy
+    /// plan takes it easy), so what you look at is current. Ends when the view goes away (its task is cancelled).
+    func watchQuotas() async {
+        while !Task.isCancelled {
+            refreshQuotas()
+            try? await Task.sleep(nanoseconds: UInt64(120 * EnergyMonitor.shared.plan.slowdown * 1_000_000_000))
+        }
+    }
     /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.
     let history = AgentHistory()
     /// Configured accounts per agent (personal, work, etc.) and active defaults.

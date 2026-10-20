@@ -68,6 +68,7 @@ struct AgentsUsagePanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { app.history.refresh() }
+        .task { await app.watchQuotas() }
     }
 
     /// One AI: its logo and name, then all its accounts on one surface, divided by hairlines. With several accounts the

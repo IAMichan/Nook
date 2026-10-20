@@ -225,6 +225,8 @@ extension AppModel {
         recap.turnEnded(session: "run-" + run.id.uuidString)
         // An agent may have pushed or opened a pull request: the list refreshes when you look next.
         PullRequestStore.shared.markStale()
+        // The turn used part of the plan: show the limits as they are now.
+        if run.provider == .claude { claudeUsage.refreshNow() }
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.

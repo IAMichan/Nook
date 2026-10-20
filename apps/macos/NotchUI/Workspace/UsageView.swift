@@ -18,6 +18,7 @@ struct UsageView: View {
                 byModelSection(report)
             }
         }
+        .task { await app.watchQuotas() }
     }
 
     // MARK: - Plan limits

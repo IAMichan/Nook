@@ -9,8 +9,10 @@ import Foundation
 ///
 /// This stays within Anthropic's rules for the subscription login: the unmodified Claude Code binary signs in with the
 /// user's own account, Nook never reads, stores or forwards credentials, and it asks no more often than someone typing
-/// `/usage` now and then: only for signed-in accounts, every ten minutes at most, and not at all while Claude Code itself
-/// reports the numbers (status line, sessions in Nook).
+/// `/usage` now and then: only for signed-in accounts, in the background every ten minutes at most, and not while Claude
+/// Code itself just reported the numbers (status line, sessions in Nook). It reads sooner when the numbers matter: when
+/// you open a usage view (and every two minutes while it stays open, `AppModel.watchQuotas`) and after a Claude turn in
+/// Nook, at most once a minute per account.
 @MainActor
 final class ClaudeUsage {
     private let hub: AgentHub
@@ -23,7 +25,8 @@ final class ClaudeUsage {
 
     /// Per account this often, multiplied by the energy plan's slowdown.
     private static let interval: TimeInterval = 10 * 60
-    /// `refreshNow` asks again at most this often per account: it is called on every rate limit event and while logging in.
+    /// `refreshNow` asks again at most this often per account: it is called when a usage view opens, after a turn, on every
+    /// rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60
 
     init(hub: AgentHub, profiles: @escaping () -> [AgentProfile], executable: @escaping () -> String?) {
