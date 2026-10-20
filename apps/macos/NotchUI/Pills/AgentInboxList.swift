@@ -143,6 +143,10 @@ struct AgentInboxList: View {
             store.undoArchive = { ids in
                 for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.setArchived(uuid, false) } }
             }
+            // Only sessions Nook sees through hooks; the ones it runs itself ("run:…") end their own turns.
+            store.settleBusy = { ids in
+                for id in ids where !id.hasPrefix("run:") { app.hub.settleByUser(id) }
+            }
         }
         .onChange(of: now) { _, current in
             autoSettle(rows: rows, byID: byID, now: current)

@@ -18,6 +18,8 @@ final class InboxStore: ObservableObject {
     /// Undo of what only the workspace can reverse: a snooze, an archive. They get the ids that were recorded.
     var undoSnooze: (([String]) -> Void)?
     var undoArchive: (([String]) -> Void)?
+    /// Settling a session that still reads as busy also ends that turn where the session lives; it gets the ids.
+    var settleBusy: (([String]) -> Void)?
 
     private let defaults: UserDefaults
     private static let key = "agents.inbox.v1"
@@ -89,6 +91,8 @@ final class InboxStore: ObservableObject {
             state.unpin(item.id)
             FinishedSessions.shared.mark(item.finishKey, busy: item.isBusy)
         }
+        let busy = items.filter(\.isBusy).map(\.id)
+        if !busy.isEmpty { settleBusy?(busy) }
         if record { undoLog.record(.settled, ids: keys, now: now) }
         save()
     }
