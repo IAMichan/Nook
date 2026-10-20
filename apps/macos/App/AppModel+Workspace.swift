@@ -243,7 +243,7 @@ extension AppModel {
         let token = "agentstatus-ws-" + UUID().uuidString
         viewModel.register("\(token)#open") { [weak self] in self?.openWorkspace(run: runID) }
         viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
-        let state = failed ? tr("app.agent.failed.state") : tr("app.agent.done.state")
+        let stateLabel = failed ? tr("app.agent.failed.state") : tr("app.agent.done.state")
         let project = (run.projectPath as NSString).lastPathComponent
         let detail = failed ? (run.statusDetail ?? "") : ""
         let title = detail.isEmpty ? run.title : run.title + "\n" + detail
@@ -252,7 +252,7 @@ extension AppModel {
         viewModel.show(.card(NookCard(
             id: token,
             mood: failed ? .worry : .done,
-            context: [run.provider.displayName, project, state].filter { !$0.isEmpty }.joined(separator: " · "),
+            context: [run.provider.displayName, project, stateLabel].filter { !$0.isEmpty }.joined(separator: " · "),
             title: title,
             detail: .none,
             primary: CardAction(label: tr("ws.notice.open"), outcome: .callback("\(token)#open", ""), symbol: "eye"),
