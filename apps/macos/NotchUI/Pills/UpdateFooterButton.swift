@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The update button in the Agents footer. It only shows when there is something to say: a merged pull request this
+/// The update button in the panel footer. It only shows when there is something to say: a merged pull request this
 /// build does not have yet, the install running, a restart that waits for you, a failed install, or, right after the
 /// restart, that the update went in. Clicking it opens `UpdatePanel`; nothing installs without its button.
 struct UpdateFooterButton: View {

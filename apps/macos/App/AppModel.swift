@@ -271,7 +271,7 @@ final class AppModel: ObservableObject {
         workspace.recap = recap
         startWorkspace()
         ScheduledTaskStore.shared.attach(app: self)
-        // Watches main for merged pull requests this build lacks (the update button in the Agents footer).
+        // Watches main for merged pull requests this build lacks (the update button in the panel footer).
         AppUpdater.shared.start()
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)

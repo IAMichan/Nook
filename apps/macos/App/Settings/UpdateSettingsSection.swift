@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Overview › Updates: which build this is, whether main has something newer, checking now, and whether Nook
-/// checks by itself. Installing happens from the button in the Agents footer, which this opens.
+/// checks by itself. Installing happens from the button in the panel footer, which this opens.
 struct UpdateSettingsSection: View {
     @ObservedObject private var updater = AppUpdater.shared
 
