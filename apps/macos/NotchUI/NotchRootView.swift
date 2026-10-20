@@ -88,7 +88,8 @@ struct NotchRootView: View {
 
     // MARK: Floating and idle: just Nook
 
-    /// Nook without a bar. A dot top-right when something is waiting; visibly thinking while work is running.
+    /// Nook without a bar. A dot top-right when something is waiting; visibly thinking, in a thin task ring, while work is
+    /// running.
     private var bareOrb: some View {
         let active = app.activeAgents
         let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
@@ -103,6 +104,10 @@ struct NotchRootView: View {
         let side = NotchViewModel.floatingOrbSide
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
                        frameRate: viewModel.pointerInside ? 30 : 12)
+            .background {
+                let ring = busyRingItems
+                if !ring.isEmpty { NookTaskRingCompact(items: ring, orbSize: 28, maxSide: side) }
+            }
             .frame(width: side, height: side)
             .overlay(alignment: .topTrailing) { bareBadge }
             .contentShape(Circle())
@@ -131,17 +136,17 @@ struct NotchRootView: View {
         case .idle:
             let active = app.activeAgents
             if !active.isEmpty {
-                // An agent is working: Nook is thinking along, one dot per session on the right.
+                // An agent is working: Nook is thinking along inside a thin ring, one piece per session, like in the panel.
                 let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true) {
-                    AgentDots(sessions: active)
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: busyRingItems) {
+                    idleBadge
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
                 .floatingDrag(viewModel)
             } else if app.chat.anyBusy {
                 // A Nook is working on something in the background: visibly thinking along.
-                wings(nh: nh, nw: nw, mood: .think, animated: true) {
+                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: busyRingItems) {
                     idleBadge
                 }
                 .contentShape(Rectangle())
@@ -220,6 +225,7 @@ struct NotchRootView: View {
         animated: Bool,
         orbSize: CGFloat = 24,
         orbInset: CGFloat = 0,
+        ring: [TaskRingItem] = [],
         @ViewBuilder right: () -> Right
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
@@ -227,6 +233,9 @@ struct NotchRootView: View {
             // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
                     frameRate: viewModel.pointerInside ? 30 : 12)
+                .background {
+                    if !ring.isEmpty { NookTaskRingCompact(items: ring, orbSize: orbSize, maxSide: nh) }
+                }
                 .offset(x: orbInset)
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
@@ -541,6 +550,11 @@ extension PanelOrb {
         return Array(items.prefix(8))
     }
 
+    /// The closed notch's ring: only what is running or waiting for you. What finished or failed waits in the open panel.
+    fileprivate var busyRingItems: [TaskRingItem] {
+        ringItems.filter { $0.state == .running || $0.state == .waiting }
+    }
+
     /// A piece of the ring was clicked: go to that agent or that Nook.
     fileprivate func openRingItem(_ item: TaskRingItem) {
         NookPresence.shared.lookAngle = nil
@@ -640,36 +654,6 @@ private struct ResizeGrip: Shape {
         path.move(to: CGPoint(x: x(rect.width), y: rect.midY))
         path.addLine(to: CGPoint(x: x(rect.width / 2), y: rect.maxY))
         return path
-    }
-}
-
-/// One dot per active agent, in the color of its state. If one is waiting for you, it pulses gently.
-private struct AgentDots: View {
-    let sessions: [AgentSession]
-
-    var body: some View {
-        let shown = Array(sessions.prefix(4))
-        let anyWaiting = shown.contains { $0.status == .waiting || $0.approvalID != nil }
-        // A gentle pulse, possibly for hours (an approval left open): ten frames a second are smooth enough.
-        TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !anyWaiting)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let pulse = anyWaiting ? (0.55 + 0.45 * abs(sin(t * 2.4))) : 1.0
-            HStack(spacing: 5) {
-                ForEach(shown) { session in
-                    let waiting = session.status == .waiting || session.approvalID != nil
-                    Circle()
-                        .fill(waiting ? NookTheme.amber : session.status.color)
-                        .frame(width: 8, height: 8)
-                        .opacity(waiting ? pulse : 1)
-                }
-                if sessions.count > shown.count {
-                    Text("+\(sessions.count - shown.count)")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-        }
-        .accessibilityLabel(tr("notch.agentsActive", sessions.count))
     }
 }
 
