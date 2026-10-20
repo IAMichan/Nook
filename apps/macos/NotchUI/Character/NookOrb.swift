@@ -30,15 +30,18 @@ struct NookOrb: View {
 
     @ObservedObject private var presence = NookPresence.shared
     @ObservedObject private var appearance = NookAppearance.shared
+    /// Published only when the plan changes: lets a dozing orb stop drawing while no one can see it.
+    @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var tracker = OrbTracker()
     @State private var moodSince = Date()
 
     var body: some View {
         // A dozing Nook keeps animating on every screen, so all orbs nod off together; its slow breathing and nodding
-        // need only a few frames a second, and it can doze for hours.
+        // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
+        // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
         TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, frameRate) : 1.0 / Self.dozingFrameRate,
-                                paused: !(animated || dozing))) { context in
+                                paused: !(animated || (dozing && energy.plan.pace != .paused)))) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)
