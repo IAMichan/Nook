@@ -259,6 +259,7 @@ extension AppModel {
             secondary: CardAction(label: "", outcome: .dismiss),
             contentHeight: 100 + CGFloat(lines) * 24,
             acknowledge: ok,
+            countdown: Self.agentNoticeSeconds,
             escape: ok
         )))
         dismissAgentCardLater(token)

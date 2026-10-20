@@ -79,33 +79,122 @@ struct NookGhostButton: View {
     }
 }
 
-/// The quiet "OK" that closes a notice at once: a soft smoke capsule with a check, lighter than the primary button so
-/// it never competes with it.
+/// The "OK" that closes a notice at once: the white main button of a notice. With `countdown` set, a ring in it runs
+/// out in that many seconds, as the notice closes by itself; it stands still while `paused` (the pointer is on the notch).
 struct NookAcknowledgeButton: View {
     let title: String
     var compact: Bool = false
+    var countdown: TimeInterval? = nil
+    var paused: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(NookTheme.mint)
-                Text(title).font(NookTheme.font(compact ? 12.5 : 13, .semibold))
+            HStack(spacing: 7) {
+                if let countdown { CountdownRing(duration: countdown, paused: paused, size: compact ? 16 : 18) }
+                Text(title).font(NookTheme.font(compact ? 13 : 14, .semibold))
             }
-            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .foregroundStyle(NookTheme.ink)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, compact ? 10 : 12)
-            .frame(height: 30)
-            .background(
-                Capsule().fill(hovering ? NookTheme.line2 : NookTheme.smoke)
-                    .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
-            )
+            .padding(.leading, countdown == nil ? (compact ? 14 : 18) : (compact ? 7 : 9))
+            .padding(.trailing, compact ? 14 : 18)
+            .frame(height: compact ? 30 : 38)
+            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
             .contentShape(Capsule())
             .hoverLift(hovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// A small ring that empties over `duration` seconds and holds while `paused`. Starts when it appears; give it a new
+/// `.id` to start over.
+struct CountdownRing: View {
+    let duration: TimeInterval
+    var paused: Bool = false
+    var size: CGFloat = 18
+    @State private var start = Date()
+    @State private var heldBefore: TimeInterval = 0
+    @State private var heldSince: Date?
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
+            let held = heldBefore + (heldSince.map { context.date.timeIntervalSince($0) } ?? 0)
+            let left = max(0, 1 - (context.date.timeIntervalSince(start) - held) / max(duration, 0.1))
+            ZStack {
+                Circle().stroke(NookTheme.ink.opacity(0.14), lineWidth: 2.2)
+                Circle()
+                    .trim(from: 0, to: left)
+                    .stroke(NookTheme.ink, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .padding(1.5)
+            .frame(width: size, height: size)
+        }
+        .onAppear { if paused { heldSince = Date() } }
+        .onChange(of: paused) { _, now in
+            if now {
+                heldSince = Date()
+            } else if let since = heldSince {
+                heldBefore += Date().timeIntervalSince(since)
+                heldSince = nil
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// A notice's other actions side by side in one dark bar, split by thin lines: the first reads brightest. Pairs with
+/// `NookAcknowledgeButton` next to it.
+struct NookActionBar: View {
+    let actions: [CardAction]
+    var compact: Bool = false
+    let onAction: (CardAction) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
+                if index > 0 {
+                    Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
+                }
+                NookActionBarItem(action: action, bright: index == 0, compact: compact) { onAction(action) }
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: compact ? 34 : 40)
+        .background(
+            Capsule().fill(NookTheme.graphite)
+                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+        )
+    }
+}
+
+private struct NookActionBarItem: View {
+    let action: CardAction
+    let bright: Bool
+    let compact: Bool
+    let tap: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: tap) {
+            HStack(spacing: 6) {
+                if let symbol = action.symbol {
+                    Image(systemName: symbol).font(.system(size: compact ? 11 : 12, weight: .semibold))
+                }
+                Text(action.label).font(NookTheme.font(compact ? 13 : 13.5, .semibold))
+            }
+            .foregroundStyle(bright || hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, compact ? 10 : 14)
+            .frame(maxWidth: .infinity)
+            .frame(height: compact ? 28 : 32)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

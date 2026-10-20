@@ -192,23 +192,31 @@ extension AppModel {
                                   outcome: .callback("\(token)#terminal", ""), symbol: "terminal"),
             contentHeight: 100 + CGFloat(lines) * 24,
             acknowledge: ok,
+            countdown: Self.agentNoticeSeconds,
             escape: ok
         )
         viewModel.show(.card(card))
         dismissAgentCardLater(token)
     }
 
-    /// Closes an agent notice after about 5 seconds, or once the pointer leaves the notch after that.
+    /// How long an agent notice stays while the pointer is off the notch; the ring on its OK counts down the same time.
+    static let agentNoticeSeconds: TimeInterval = 5.2
+
+    /// Closes an agent notice once it has been shown `agentNoticeSeconds` with the pointer off the notch, like its
+    /// countdown ring. Hovering holds the clock, for at most about 100 seconds in all.
     func dismissAgentCardLater(_ token: String) {
+        let seconds = Self.agentNoticeSeconds
         Task { [weak self] in
-            for _ in 0..<20 {
-                try? await Task.sleep(nanoseconds: 5_200_000_000)
+            let step: TimeInterval = 0.1
+            var left = seconds
+            for _ in 0..<1000 {
+                try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
                 guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
-                if !self.viewModel.pointerInside {
-                    self.viewModel.dismissCard(id: token)
-                    return
-                }
+                if !self.viewModel.pointerInside { left -= step }
+                if left <= 0 { break }
             }
+            guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
+            self.viewModel.dismissCard(id: token)
         }
     }
 

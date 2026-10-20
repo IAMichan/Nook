@@ -23,7 +23,8 @@ Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.s
 | Component | File | Use |
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards and in chat (optional SF Symbol before the title) |
-| `NookAcknowledgeButton` | `NookButtons.swift` | The soft "OK" that closes a notice at once (card `acknowledge`, compact strip) |
+| `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
+| `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |

@@ -173,7 +173,8 @@ struct NotchRootView: View {
                     onVoice: { viewModel.startListening() },
                     onReply: { app.handleCardReply($0, card: card) },
                     onChoose: { viewModel.choose($0, $1) },
-                    onOpen: { app.openCardAttachment($0, card: card) }
+                    onOpen: { app.openCardAttachment($0, card: card) },
+                    paused: viewModel.pointerInside
                 )
             }
         case .panel(let tab):
@@ -281,7 +282,10 @@ struct NotchRootView: View {
                     viewModel.doneButtonPressed()
                 }
                 if viewModel.doneAcknowledge {
-                    NookAcknowledgeButton(title: tr("button.ok"), compact: true) { viewModel.show(.idle) }
+                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds) {
+                        viewModel.show(.idle)
+                    }
+                    .id(viewModel.doneStamp)
                 }
             }
             .padding(.horizontal, 20)

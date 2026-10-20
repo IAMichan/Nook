@@ -107,6 +107,10 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var doneTone: DoneTone = .done
     /// The strip also shows an "OK" that closes it at once, next to its button.
     @Published private(set) var doneAcknowledge = false
+    /// New for every strip, so its countdown starts over.
+    @Published private(set) var doneStamp = UUID()
+    /// How long the confirmation strip stays.
+    static let doneSeconds: TimeInterval = 4.2
 
     /// A task open inside the panel (new session, changes, commit…). Resizes the panel to give it room.
     @Published var sheet: NotchSheet? {
@@ -389,9 +393,10 @@ final class NotchViewModel: ObservableObject {
         doneButtonAction = action
         doneTone = tone
         doneAcknowledge = acknowledge
+        doneStamp = UUID()
         show(.done(message))
         doneTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 4_200_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(Self.doneSeconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.show(.idle)
         }

@@ -116,6 +116,8 @@ struct NookCard: Equatable, Identifiable {
     /// A small "OK" at the end of the button row that closes the card at once, for notices that would otherwise wait
     /// out their timeout.
     var acknowledge: CardAction? = nil
+    /// Seconds until the card closes by itself (while the pointer is off the notch), shown as a ring on `acknowledge`.
+    var countdown: TimeInterval? = nil
     /// Behavior for Esc. Defaults to primary action if nil.
     var escape: CardAction? = nil
     /// A short line above the text field: what is happening with what you typed ("Sending…") or why it did not work.
