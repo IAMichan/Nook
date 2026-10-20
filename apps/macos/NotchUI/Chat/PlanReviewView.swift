@@ -47,6 +47,23 @@ struct PlanReview: View {
         return count == 1 ? tr("chat.plan.reviewOne") : tr("chat.plan.review", count)
     }
 
+    /// Where a failed plan stands, when a step shows the reason itself; nil falls back to the plan's own error.
+    private var failureHeadline: String? {
+        let stopped = message.actions.indices.contains { index in
+            switch state(index) {
+            case .failed, .duplicate: return true
+            default: return false
+            }
+        }
+        guard stopped else { return nil }
+        return succeeded == 0 ? tr("chat.plan.failedNone") : tr("chat.plan.failedSome", succeeded, message.actions.count)
+    }
+
+    /// Everything left to run failed before: the button tries again rather than continuing.
+    private var onlyRetries: Bool {
+        runnable.allSatisfy { if case .failed = state($0) { return true }; return false }
+    }
+
     private var duplicates: Set<Int> {
         Set(message.actions.indices.filter { if case .duplicate = state($0) { return true }; return false })
     }
@@ -157,7 +174,7 @@ struct PlanReview: View {
         case .approved:
             Text(tr("chat.plan.approved")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
         case .failed(let error):
-            Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft).fixedSize(horizontal: false, vertical: true)
+            StepFailure(error: error).padding(.top, 4)
         case .duplicate(let when):
             Text(tr("chat.plan.duplicate", when)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.amber)
         case .notRun:
@@ -248,12 +265,16 @@ struct PlanReview: View {
             case .cancelled:
                 Text(tr("chat.plan.cancelled")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
             case .failed(let error):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(error).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.coralSoft)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    // The step itself already shows why; here only where the plan stands, so the reason is not repeated.
+                    Text(failureHeadline ?? error)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         if !runnable.isEmpty {
-                            SmallPrimaryButton(title: tr("chat.plan.continue"), systemName: "arrow.clockwise") { app.runPlan(message.id) }
+                            SmallPrimaryButton(title: onlyRetries ? tr("chat.retry") : tr("chat.plan.continue"),
+                                               systemName: "arrow.clockwise") { app.runPlan(message.id) }
                                 .disabled(blocked)
                                 .opacity(blocked ? 0.45 : 1)
                         }
@@ -274,5 +295,55 @@ struct PlanReview: View {
         case .neutral: return NookTheme.textSecondary
         case .caution: return NookTheme.amber
         }
+    }
+}
+
+/// Why a step did not go through, as a quiet coral block instead of a wall of red text. A multi-line report (a batch
+/// merge, for one) gets a line per item, each with its own symbol: ✓ went through, – skipped, ✗ refused.
+private struct StepFailure: View {
+    let error: String
+
+    private struct Line: Identifiable {
+        let id: Int
+        let text: String
+        let symbol: String?
+        let color: Color
+    }
+
+    /// The first line plain is the headline; the rest carry their symbol, or none for a plain follow-up line.
+    private var lines: [Line] {
+        error.split(separator: "\n", omittingEmptySubsequences: true).enumerated().map { index, raw in
+            let text = raw.trimmingCharacters(in: .whitespaces)
+            for (prefix, symbol, color) in [("✓ ", "checkmark.circle.fill", NookTheme.mint),
+                                            ("– ", "minus.circle.fill", NookTheme.amber),
+                                            ("✗ ", "xmark.circle.fill", NookTheme.coral)] where text.hasPrefix(prefix) {
+                return Line(id: index, text: String(text.dropFirst(prefix.count)), symbol: symbol, color: color)
+            }
+            if index == 0 { return Line(id: index, text: text, symbol: "exclamationmark.triangle.fill", color: NookTheme.coral) }
+            return Line(id: index, text: text, symbol: nil, color: NookTheme.textSecondary)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            ForEach(lines) { line in
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                    Image(systemName: line.symbol ?? "circle")
+                        .font(NookTheme.font(10.5, .semibold))
+                        .foregroundStyle(line.color)
+                        .frame(width: 14)
+                        .opacity(line.symbol == nil ? 0 : 1)
+                    Text(line.text)
+                        .font(line.id == 0 ? NookTheme.TextStyle.label : NookTheme.font(11.5))
+                        .foregroundStyle(line.id == 0 ? NookTheme.coralSoft : NookTheme.textStrong)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(NookTheme.coral.opacity(0.07), stroke: NookTheme.coral.opacity(0.2), radius: NookTheme.Radius.control)
     }
 }

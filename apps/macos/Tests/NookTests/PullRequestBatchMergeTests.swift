@@ -53,8 +53,13 @@ final class PullRequestBatchMergeTests: XCTestCase {
         XCTAssertEqual(PullRequestBatchMerge.skipReason(detail(state: .closed)), "closed")
         XCTAssertEqual(PullRequestBatchMerge.skipReason(detail(mergeable: false, mergeState: "dirty")), "merge conflicts")
         XCTAssertEqual(PullRequestBatchMerge.skipReason(detail(checks: [.passing, .failing])), "CI failing")
-        XCTAssertEqual(PullRequestBatchMerge.skipReason(detail(checks: [.pending])), "CI still running")
+        XCTAssertNil(PullRequestBatchMerge.skipReason(detail(checks: [.passing, .pending])))
         XCTAssertEqual(PullRequestBatchMerge.skipReason(detail(canPush: false)), "no write access")
+    }
+
+    func testNotesAMergeWhileCIIsStillRunning() {
+        XCTAssertEqual(PullRequestBatchMerge.mergedLabel(.squash, detail(checks: [.passing])), "squash")
+        XCTAssertEqual(PullRequestBatchMerge.mergedLabel(.merge, detail(checks: [.pending])), "merge, CI still running")
     }
 
     func testPicksAMethodTheRepositoryAllows() {

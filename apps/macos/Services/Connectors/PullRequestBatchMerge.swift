@@ -75,6 +75,7 @@ enum PullRequestBatchMerge {
 
     /// Why this pull request is not merged in a batch, or nil when it goes ahead. Only what certainly fails or would merge
     /// something unfinished is held back; branch protection and the like are left to GitHub, which says why it refuses.
+    /// CI that is still running does not hold a merge back: approving the plan is the user's deliberate choice to merge now.
     static func skipReason(_ detail: PullRequestDetail) -> String? {
         switch detail.state {
         case .merged: return "already merged"
@@ -84,11 +85,12 @@ enum PullRequestBatchMerge {
         }
         if detail.canPush == false { return "no write access" }
         if detail.conflicted { return "merge conflicts" }
-        switch detail.checkSummary {
-        case .failing: return "CI failing"
-        case .pending: return "CI still running"
-        default: return nil
-        }
+        return detail.checkSummary == .failing ? "CI failing" : nil
+    }
+
+    /// How the report names a merge: the method, plus a note when CI had not finished yet.
+    static func mergedLabel(_ method: PullRequestMergeMethod, _ detail: PullRequestDetail) -> String {
+        detail.checkSummary == .pending ? "\(method.rawValue), CI still running" : method.rawValue
     }
 
     /// The method to use: the one asked for when the repository allows it, else the repository's first allowed method
