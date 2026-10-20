@@ -592,7 +592,6 @@ final class NotchViewModel: ObservableObject {
     func layoutSize(for state: NotchState) -> CGSize {
         let nw = geometry.notchWidth
         let nh = geometry.notchHeight
-        let chrome = nh + 14 + 22   // spacing below notch and bottom margin
         // Floating and idle: just Nook itself, no bar around it.
         if geometry.isFloating, state.isResting {
             return CGSize(width: Self.floatingOrbSide, height: Self.floatingOrbSide)
@@ -621,11 +620,18 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: max(460, nw + 280), height: nh + 34)
         case .moment:
             return CGSize(width: max(500, nw + 300), height: nh + 40)
+        case .card(let card) where card.resizable:
+            return NotchResize.size(base: cardBase(card), extra: cardExtra, maximum: panelMaximum)
         case .card(let card):
-            return CGSize(width: 600, height: chrome + card.contentHeight)
+            return cardBase(card)
         case .panel(let tab):
             return NotchResize.size(base: panelBase(tab), extra: panelExtra, maximum: panelMaximum)
         }
+    }
+
+    /// The size a card asks for: its content below the notch, with the margins around it.
+    private func cardBase(_ card: NookCard) -> CGSize {
+        CGSize(width: 600, height: geometry.notchHeight + 14 + 22 + card.contentHeight)   // spacing below notch and bottom margin
     }
 
     /// The size a tab of the open panel starts at, before your own resize.
@@ -656,9 +662,20 @@ final class NotchViewModel: ObservableObject {
     /// Your own size for the open panel, on top of what each tab starts at: drag its sides or bottom corners, double-click
     /// one to go back. Remembered.
     private var panelExtra = NotchResize.load()
+    /// The same for a card with a conversation (WhatsApp), on top of the height its messages ask for.
+    private var cardExtra = NotchResize.load(key: NotchResize.cardDefaultsKey)
     private var resizeStart: CGSize?
     /// While you drag an edge the pointer counts as over the notch, also when it runs ahead of the edge for a moment.
     private(set) var resizing = false
+
+    /// The open panel and a card with a conversation show handles to drag them larger.
+    var isResizable: Bool {
+        switch state {
+        case .panel: return true
+        case .card(let card): return card.resizable
+        default: return false
+        }
+    }
 
     /// As large as the panel window and the screen allow.
     private var panelMaximum: CGSize {
@@ -670,13 +687,24 @@ final class NotchViewModel: ObservableObject {
     }
 
     func resize(_ edge: NotchResize.Edge, translation: CGSize) {
-        guard case .panel(let tab) = state else { return }
+        let base: CGSize
+        let card: Bool
+        switch state {
+        case .panel(let tab):
+            base = panelBase(tab)
+            card = false
+        case .card(let shown) where shown.resizable:
+            base = cardBase(shown)
+            card = true
+        default: return
+        }
         resizing = true
         autoCloseTask?.cancel()
-        let start = resizeStart ?? panelExtra
+        let start = resizeStart ?? (card ? cardExtra : panelExtra)
         resizeStart = start
-        panelExtra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
-                                         base: panelBase(tab), maximum: panelMaximum)
+        let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
+                                        base: base, maximum: panelMaximum)
+        if card { cardExtra = extra } else { panelExtra = extra }
         // Follows the pointer: no animation.
         size = layoutSize(for: state)
     }
@@ -685,12 +713,18 @@ final class NotchViewModel: ObservableObject {
         resizing = false
         resizeStart = nil
         NotchResize.save(panelExtra)
+        NotchResize.save(cardExtra, key: NotchResize.cardDefaultsKey)
         scheduleAutoClose()
     }
 
     func resetPanelSize() {
-        panelExtra = .zero
-        NotchResize.save(panelExtra)
+        if case .card = state {
+            cardExtra = .zero
+            NotchResize.save(cardExtra, key: NotchResize.cardDefaultsKey)
+        } else {
+            panelExtra = .zero
+            NotchResize.save(panelExtra)
+        }
         withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
     }
 

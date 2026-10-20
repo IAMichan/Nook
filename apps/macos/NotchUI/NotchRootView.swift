@@ -34,8 +34,8 @@ struct NotchRootView: View {
             .background(shape.fill(NookTheme.notch.opacity(bare ? 0 : 1)))
             .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
             .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
-            // Open, the sides and bottom corners can be dragged to make the notch larger or smaller.
-            .overlay { if case .panel = viewModel.state { NotchResizeHandles(viewModel: viewModel) } }
+            // Open, or showing a conversation, the sides and bottom corners can be dragged to make the notch larger or smaller.
+            .overlay { if viewModel.isResizable { NotchResizeHandles(viewModel: viewModel) } }
             .shadow(color: Color.black.opacity(floating ? (isExpanded ? 0.45 : (bare ? 0 : 0.3)) : 0), radius: isExpanded ? 18 : 8, x: 0, y: isExpanded ? 8 : 3)
             // A subtle expansion when hovering over the notch: indicates responsiveness.
             .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
@@ -598,7 +598,7 @@ extension PanelOrb {
 }
 
 /// Strips along the open notch's sides and bottom, and its bottom corners: drag one to make the notch larger or smaller,
-/// double-click it to go back to the size each tab starts at. The top stays under the camera. A small grip in each bottom
+/// double-click it to go back to the size each tab (or a conversation card) starts at. The top stays under the camera. A small grip in each bottom
 /// corner shows that it can be done, and the edge under the pointer lights up.
 private struct NotchResizeHandles: View {
     @ObservedObject var viewModel: NotchViewModel
