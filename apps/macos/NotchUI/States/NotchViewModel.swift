@@ -451,7 +451,7 @@ final class NotchViewModel: ObservableObject {
     /// Dismisses automatically after a timeout (saved to Today).
     @discardableResult
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
-        guard state.isResting, pending.isEmpty, !silenced else { return false }
+        guard state.isResting, pending.isEmpty, !silenced, !reachingForNotch else { return false }
         show(.nudge(line, card))
         doneTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -465,7 +465,7 @@ final class NotchViewModel: ObservableObject {
     /// or something waiting in line; it goes away by itself.
     @discardableResult
     func offerMoment(_ moment: NookMoment) -> Bool {
-        guard state.isResting, pending.isEmpty, !silenced else { return false }
+        guard state.isResting, pending.isEmpty, !silenced, !reachingForNotch else { return false }
         show(.moment(moment))
         dismissMoment(moment.id, after: moment.seconds)
         return true
@@ -487,6 +487,11 @@ final class NotchViewModel: ObservableObject {
             self.show(.idle)
         }
     }
+
+    /// The pointer is on the notch: you are about to open it. A nudge or moment showing up now would take the place of
+    /// the panel you asked for (hover-to-open only opens while resting) and leave the notch stuck on a strip you never
+    /// meant to open, so Nook keeps it to himself and offers it again on a later look.
+    private var reachingForNotch: Bool { pointerInside }
 
     /// Expands the short summary into the full card.
     func openNudge() {
