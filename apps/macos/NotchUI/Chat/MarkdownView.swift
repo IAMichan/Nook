@@ -356,24 +356,24 @@ private struct TableBlock: View {
 
     /// A column of only numbers is right-aligned, so digits line up.
     private func numeric(_ column: Int) -> Bool {
-        !rows.isEmpty && rows.allSatisfy { column < $0.count && (ChartRescue.number($0[column]) != nil || $0[column].isEmpty || $0[column] == "-" || $0[column] == "–") }
+        !rows.isEmpty && rows.allSatisfy { column < $0.count && (ChartRescue.tableNumber($0[column]) != nil || $0[column].isEmpty || $0[column] == "-" || $0[column] == "–") }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let chart {
-                Picker("", selection: $showChart) {
-                    Label(tr("table.table"), systemImage: "tablecells").tag(false)
-                    Label(tr("table.chart"), systemImage: "chart.bar.xaxis").tag(true)
+                NookTabBar(items: [
+                    .init(value: false, title: tr("table.table"), symbol: "tablecells"),
+                    .init(value: true, title: tr("table.chart"), symbol: "chart.bar.xaxis")
+                ], selected: showChart) { value in
+                    withAnimation(NookTheme.swap) { showChart = value }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 190)
                 if showChart { ChatChartView(chart: chart) } else { grid }
             } else {
                 grid
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Split into small typed parts: as one expression the grid takes the compiler too long to type-check.
