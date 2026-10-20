@@ -275,6 +275,11 @@ extension WorkspaceManager {
     }
 
     private func presentCodexApproval(_ id: UUID, _ request: CodexApprovalRequest) {
+        // Codex keeps the turn's approval policy: rights you raised during the turn are applied here.
+        if let run = run(id), LiveRights.coversCodex(request.kind, permission: run.permission, mode: run.mode) {
+            codexServers[id]?.respond(request.rpcID, CodexRPC.decision(request, allow: true, always: false))
+            return
+        }
         // Allowed for this session before: answer without asking again (a dangerous command is never covered).
         if let run = run(id), sessionApprovals[id]?.isGranted(kind: approvalKind(request), mode: run.permission) == true,
            !(request.kind == .command || request.kind == .legacyCommand) || CommandRisk.assess(request.command).level != .danger {

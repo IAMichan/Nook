@@ -177,4 +177,26 @@ final class TurnSafetyTests: XCTestCase {
         XCTAssertEqual(r.lastCancelReason, .stopped)
         XCTAssertEqual(r.cancelAll(reason: .processExited), [])
     }
+
+    // MARK: LiveRights
+
+    func testClaudeRightsCoverWhatTheNewModeAllows() {
+        XCTAssertTrue(LiveRights.coversClaude(tool: "Bash", permission: .bypass, mode: .agent))
+        XCTAssertTrue(LiveRights.coversClaude(tool: "Edit", permission: .acceptEdits, mode: .agent))
+        XCTAssertFalse(LiveRights.coversClaude(tool: "Bash", permission: .acceptEdits, mode: .agent))
+        XCTAssertFalse(LiveRights.coversClaude(tool: "Edit", permission: .ask, mode: .agent))
+        XCTAssertFalse(LiveRights.coversClaude(tool: "Bash", permission: .bypass, mode: .plan))
+        XCTAssertFalse(LiveRights.coversClaude(tool: "AskUserQuestion", permission: .bypass, mode: .agent))
+        XCTAssertFalse(LiveRights.coversClaude(tool: "ExitPlanMode", permission: .bypass, mode: .agent))
+    }
+
+    func testCodexRightsCoverWhatTheNewModeAllows() {
+        XCTAssertTrue(LiveRights.coversCodex(.command, permission: .bypass, mode: .agent))
+        XCTAssertTrue(LiveRights.coversCodex(.fileChange, permission: .acceptEdits, mode: .agent))
+        XCTAssertTrue(LiveRights.coversCodex(.legacyPatch, permission: .bypass, mode: .agent))
+        XCTAssertFalse(LiveRights.coversCodex(.command, permission: .acceptEdits, mode: .agent))
+        XCTAssertFalse(LiveRights.coversCodex(.fileChange, permission: .ask, mode: .agent))
+        XCTAssertFalse(LiveRights.coversCodex(.command, permission: .bypass, mode: .plan))
+        XCTAssertFalse(LiveRights.coversCodex(.mcpTool, permission: .bypass, mode: .agent))
+    }
 }

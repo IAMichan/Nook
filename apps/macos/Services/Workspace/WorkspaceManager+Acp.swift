@@ -352,7 +352,7 @@ extension WorkspaceManager {
         let always = options.contains { $0.kind == "allow_always" }
         let pending = PendingPermission(id: requestID, runID: id, tool: call.toolName, summary: summary, input: JSONBox(input),
                                         suggestions: always ? JSONBox(["always"]) : nil, eventID: event.id, created: Date())
-        acpRequests[requestID] = (rpcID, options)
+        acpRequests[requestID] = (rpcID, options, call)
         approvals[id, default: []].append(pending)
         update(id) { $0.move(to: .waitingApproval) }
         if let run = run(id) { onApproval?(run, pending) }
