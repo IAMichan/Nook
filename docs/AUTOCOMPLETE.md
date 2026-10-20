@@ -64,6 +64,33 @@ In **Automatic** mode, Nook selects a model in this order:
 2. **A GGUF model downloaded in Settings.** Under **Settings › Autocomplete › General › Download GGUF models**, you can download recommended base models or the Gemma 4 E2B/E4B instruct (chat) models with live progress, or paste any Hugging Face `.gguf` URL.
 3. **Your local Brain model.** Reuses Nook's built-in MLX model (`BrainCompleter`) with KV-cache checkpointing so no extra model download is needed. Whenever the chat brain is actively generating a reply, autocomplete yields automatically.
 
+## Windows (Tauri)
+
+The Windows build (`apps/tauri`) has a first version of Autocomplete Anywhere. It is compiled for Windows in CI but has
+not been run on a real Windows PC yet.
+
+- **Logic:** the platform-free parts are ported to `apps/tauri/core/src/services/autocomplete/` with unit tests:
+  `suggestion` (whole words, no copies, typing through, accept word/all), `prompt` (context per field, sliding window,
+  chat templates with the answer begun, control-token scrub), `privacy`, `prefs` (per-app and per-site rules; terminals,
+  code editors and password managers such as `WindowsTerminal.exe`, `cmd.exe`, `Code.exe`, `1Password.exe`,
+  `KeePass*.exe`, `Bitwarden.exe` are off by default), `stats` (counts only), `session` and `emoji`.
+- **Model:** no llama.cpp. Suggestions come from the local server the brain already uses: Ollama (`/api/generate` with
+  `raw: true`, greedy, a small `num_predict`, `keep_alive`, the same `num_ctx` as the brain, streamed and cancelled by
+  the next key) or LM Studio (`/v1/completions`). When the server returns `logprobs`, the Mac's certainty thresholds
+  apply (`ConfidenceGate`); otherwise only the token limit and the stops end a suggestion. The external brain is used
+  only when chosen in Settings › Autocomplete after a confirmation; the default is local only.
+- **Platform:** a low-level keyboard hook (`WH_KEYBOARD_LL`, plus `WH_MOUSE_LL` for clicks) on its own thread swallows
+  only the accept keys, Escape and the picker's keys while something is on screen. The focused field is read with UI
+  Automation (`TextPattern2.GetCaretRange`, `TextPattern`, `ValuePattern` as a fallback; the Win32 caret when UIA has
+  no rectangle). Password fields, apps with more rights than Nook and the secure desktop are skipped. Accepted text is
+  typed with `SendInput` and `KEYEVENTF_UNICODE`, never through the clipboard. The ghost text and the emoji card are a
+  transparent, click-through, never-activated, topmost window that is excluded from capture.
+- **Emoji picker:** as on the Mac, including the emoji that fit the text (keywords, no model). Clicks on the card are
+  taken in the mouse hook and hit-tested against the card's layout (`PickerLayout`).
+- **Not yet ported:** screen and window text as context, learning from your writing and the word bonus, token
+  healing, writing ahead and the suggestion memo, typo fixes, word alternatives, per-website rules (the browser's
+  address is not read), battery behavior, the menu-bar count and the 30-day chart.
+
 ## Building & Testing
 
 The `LlamaSwift` package ([mattt/llama.swift](https://github.com/mattt/llama.swift), pinned to `2.10549.0` / `llama.cpp` `b10549`) is configured in `apps/macos/project.yml`. Run `xcodegen` in `apps/macos` after pulling changes.
