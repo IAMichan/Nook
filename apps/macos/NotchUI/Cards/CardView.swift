@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 /// The fixed structure of each card: context, one sentence, at most one detail line, and at most two buttons.
 struct CardView: View {
@@ -275,7 +276,14 @@ private struct ChatBubbleView: View {
                         .lineLimit(1)
                 }
                 if let attachment = bubble.attachment {
-                    AttachmentButton(name: attachment, action: onOpen)
+                    switch bubble.media {
+                    case .photo where bubble.image != nil:
+                        PhotoButton(image: bubble.image!, name: attachment, action: onOpen)
+                    case .video(let url):
+                        VideoTile(url: url, poster: bubble.image, name: attachment)
+                    default:
+                        AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
+                    }
                 }
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
                     if !bubble.text.isEmpty {
@@ -305,18 +313,121 @@ private struct ChatBubbleView: View {
     }
 }
 
-/// A file in a chat bubble: its icon and name, and a click opens it.
-private struct AttachmentButton: View {
+/// A video in a chat bubble: its first frame with a play button, and a click plays it right there, with the system's
+/// controls (pause, scrub, volume, full screen).
+private struct VideoTile: View {
+    let url: URL
+    let poster: NSImage?
+    let name: String
+    @State private var playing = false
+    @State private var hovering = false
+
+    private var size: CGSize {
+        guard let poster, poster.size.width > 0, poster.size.height > 0 else { return CGSize(width: 240, height: 135) }
+        let height = min(PhotoButton.maxHeight, PhotoButton.maxWidth * poster.size.height / poster.size.width)
+        return CGSize(width: height * poster.size.width / poster.size.height, height: height)
+    }
+
+    var body: some View {
+        Group {
+            if playing {
+                InlinePlayer(url: url)
+            } else {
+                Button { playing = true } label: {
+                    ZStack {
+                        if let poster {
+                            Image(nsImage: poster).resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            Color.white.opacity(0.06)
+                        }
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(Color.black.opacity(hovering ? 0.65 : 0.5)))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .help(tr("card.video.play"))
+                .accessibilityLabel("\(tr("card.video.play")): \(name)")
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// The system's video player, playing as soon as it shows and stopped when the bubble goes away.
+private struct InlinePlayer: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .inline
+        view.showsFullScreenToggleButton = true
+        view.player = AVPlayer(url: url)
+        view.player?.play()
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {}
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player?.pause()
+        view.player = nil
+    }
+}
+
+/// A photo in a chat bubble, as it came: a click opens it in full.
+private struct PhotoButton: View {
+    static let maxWidth: CGFloat = 240
+    static let maxHeight: CGFloat = 180
+
+    let image: NSImage
     let name: String
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: Self.maxWidth, maxHeight: Self.maxHeight, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .opacity(hovering ? 0.85 : 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("card.attachment.view"))
+        .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
+    }
+}
+
+/// A file in a chat bubble: its first page (else an icon) and its name, and a click shows it.
+private struct AttachmentButton: View {
+    let name: String
+    var preview: NSImage? = nil
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "doc.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(NookTheme.mint)
+                if let preview {
+                    Image(nsImage: preview)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 36, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                } else {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(NookTheme.mint)
+                }
                 Text(name)
                     .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
@@ -325,7 +436,7 @@ private struct AttachmentButton: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 6)
-                Text(tr("card.attachment.open"))
+                Text(tr("card.attachment.view"))
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             }
@@ -336,8 +447,8 @@ private struct AttachmentButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tr("card.attachment.open"))
-        .accessibilityLabel("\(tr("card.attachment.open")): \(name)")
+        .help(tr("card.attachment.view"))
+        .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
     }
 }
 

@@ -4,10 +4,20 @@ import Combine
 
 /// WhatsApp in the notch: a new message shows as a card with the chat so far (it scrolls back) and a field to answer.
 /// What you type there goes to that chat when you press Return or click the arrow (your own words, your own click);
-/// a document or photo opens with a click; "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan
-/// you approve.
+/// a photo or document shows in the bubble and in Quick Look with a click, a video plays in the bubble; "Let Nook
+/// answer" hands the chat to Nook, who proposes an answer as a plan you approve.
 extension AppModel {
     static let whatsAppCardPrefix = "whatsapp-"
+    /// How many of a chat's newest photos, videos and documents its card fetches to show.
+    static let whatsAppPreviewCount = 6
+
+    /// A file the card shows by itself: a photo, a video or a document (a voice note stays a button).
+    static func whatsAppPreviews(_ media: WAMedia) -> Bool {
+        switch media {
+        case .image, .video, .document: return true
+        default: return false
+        }
+    }
 
     func startWhatsApp() {
         WhatsAppLink.shared.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
@@ -29,15 +39,26 @@ extension AppModel {
         }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. A file is a button.
+        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows
+        // as itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
-        let bubbles = conversation.messages.suffix(WAInbox.keep).map { message in
+        let messages = conversation.messages.suffix(WAInbox.keep)
+        let bubbles = messages.map { message in
             let file = Self.whatsAppFileLabel(message.media)
-            return ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
-                              time: time.string(from: message.date),
-                              sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
-                              fromMe: message.fromMe, attachment: file)
+            var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
+                                    time: time.string(from: message.date),
+                                    sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
+                                    fromMe: message.fromMe, attachment: file)
+            if let preview = link.preview(message.id) {
+                bubble.image = preview.image
+                switch message.media {
+                case .image: bubble.media = .photo
+                case .video: bubble.media = .video(preview.file)
+                default: break
+                }
+            }
+            return bubble
         }
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
         let card = NookCard(
@@ -62,6 +83,16 @@ extension AppModel {
         Task { @MainActor [weak self] in
             guard await WhatsAppLink.shared.loadHistory(chat), let self, self.viewModel.hasCard(id: token) else { return }
             self.presentWhatsApp(chat)
+        }
+        // The newest photos, videos and documents (a fixed few, so a redraw never reaches further back), fetched once
+        // each, then shown in their bubbles.
+        let wanted = messages.filter { Self.whatsAppPreviews($0.media) }.suffix(Self.whatsAppPreviewCount)
+            .filter { link.preview($0.id) == nil }.map(\.id)
+        if !wanted.isEmpty {
+            Task { @MainActor [weak self] in
+                guard await link.loadPreviews(wanted, chat: chat), let self, self.viewModel.hasCard(id: token) else { return }
+                self.presentWhatsApp(chat)
+            }
         }
     }
 
@@ -89,8 +120,9 @@ extension AppModel {
         }
     }
 
-    /// A click on a file in a card's chat bubble: for WhatsApp, the file is fetched from the gateway and opens in the
-    /// app the Mac uses for it. The card stays open and says what happens.
+    /// A click on a file in a card's chat bubble: for WhatsApp, the file is fetched from the gateway (unless the card
+    /// already has it) and shows in Quick Look, else in the app the Mac uses for it. The card stays open and says what
+    /// happens.
     func openCardAttachment(_ bubble: ChatBubble, card: NookCard) {
         guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return }
         let chat = String(card.id.dropFirst(Self.whatsAppCardPrefix.count))
@@ -99,7 +131,8 @@ extension AppModel {
             guard let self else { return }
             do {
                 let url = try await WhatsAppLink.shared.download(message: bubble.id, chat: chat)
-                guard NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
+                let shown = FilePreviewWindow.shared.show(url, title: bubble.attachment ?? url.lastPathComponent)
+                guard shown || NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
                 self.editShownCard(card.id) { $0.notice = nil }
             } catch {
                 let shown = self.editShownCard(card.id) { $0.notice = error.localizedDescription }
@@ -124,11 +157,21 @@ extension AppModel {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
             let lines = bubble.text.isEmpty ? 0 : min(5, max(1, (bubble.text.count + 47) / 48))
-            let file: CGFloat = bubble.attachment == nil ? 0 : 40
+            let file: CGFloat
+            switch bubble.media {
+            case .photo, .video: file = (bubble.image.map(Self.photoHeight) ?? 135) + 4
+            case .file: file = bubble.attachment == nil ? 0 : (bubble.image == nil ? 40 : 60)
+            }
             return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
                 + (bubble.sender.isEmpty ? 0 : 16) + 5
         }
         return chrome + min(stack, 260)
+    }
+
+    /// How tall a bubble's photo stands: fitted in 240 × 180.
+    static func photoHeight(_ image: NSImage) -> CGFloat {
+        guard image.size.width > 0, image.size.height > 0 else { return 0 }
+        return min(180, 240 * image.size.height / image.size.width)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
