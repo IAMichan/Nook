@@ -206,6 +206,9 @@ final class WorkspaceManager: ObservableObject {
     /// disk when anything asks for them again (`evictedTimelines`).
     private var timelineUse: [UUID: Date] = [:]
     private var evictedTimelines: Set<UUID> = []
+    /// The last answer of each released timeline, so a summary (the phone's session list) can show it without reading
+    /// the whole timeline back from disk and keeping it in memory again.
+    private var evictedAnswers: [UUID: String] = [:]
     private static let timelineLimit = 16
     private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
@@ -327,6 +330,13 @@ final class WorkspaceManager: ObservableObject {
         return events[id] ?? []
     }
 
+    /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
+    /// does not count as using the timeline (so polling summaries do not keep every timeline in memory).
+    func lastAnswer(_ id: UUID) -> String {
+        if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
+        return evictedAnswers[id] ?? ""
+    }
+
     /// Loads timeline from disk if not yet in memory.
     func loadTimeline(_ id: UUID) {
         timelineUse[id] = Date()
@@ -348,6 +358,7 @@ final class WorkspaceManager: ObservableObject {
         }
         .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
         for id in idle.prefix(events.count - Self.timelineLimit) {
+            evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant })?.text
             events[id] = nil
             timelineUse[id] = nil
             evictedTimelines.insert(id)
@@ -1551,6 +1562,7 @@ final class WorkspaceManager: ObservableObject {
         events[id] = nil
         timelineUse[id] = nil
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil

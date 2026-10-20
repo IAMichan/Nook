@@ -260,7 +260,9 @@ final class CompanionServer: ObservableObject {
                                    detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
                                    options: single ? (first?.options.map(\.label) ?? []) : []))
             }
-            let lastAnswer = workspace.timeline(run.id).last(where: { $0.kind == .assistant })?.text ?? ""
+            // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
+            // also keep them all in memory.
+            let lastAnswer = workspace.lastAnswer(run.id)
             return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
                                  attention: String(describing: workspace.attention(run, unseen: false, now: now)),
                                  folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,

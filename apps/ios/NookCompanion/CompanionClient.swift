@@ -74,9 +74,13 @@ final class CompanionClient: ObservableObject {
         poll?.cancel()
         guard link != nil else { return }
         poll = Task { [weak self] in
+            var delay: UInt64 = 5
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // While the Mac cannot be reached, wait longer each time (10, 20, 40, then 60 s) instead of trying again and
+                // again, which keeps the radio awake; pulling to refresh still tries at once.
+                if case .offline? = self?.phase { delay = min(delay * 2, 60) } else { delay = 5 }
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             }
         }
     }
@@ -133,9 +137,14 @@ final class CompanionClient: ObservableObject {
         do {
             let response = try await request(req, using: link)
             if response.ok {
-                if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
-                if let name = response.macName { macName = name }
-                phase = .connected
+                // Every poll answers, mostly with the same list: assigning it anyway redraws every view each time.
+                // The badge is set on (re)connecting too, so one left from before is corrected.
+                if let list = response.sessions, list != sessions || phase != .connected {
+                    if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
+                    if list != sessions { sessions = list }
+                }
+                if let name = response.macName, name != macName { macName = name }
+                if phase != .connected { phase = .connected }
                 if let message = response.message { notice = message == "queued" ? String(localized: "Queued: the session is still busy.") : nil }
             } else {
                 switch response.error {
