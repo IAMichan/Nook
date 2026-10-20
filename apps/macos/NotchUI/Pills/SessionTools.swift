@@ -386,6 +386,7 @@ private struct SessionToolPanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                SessionTerminalActions(directory: directory).id(directory)
             }
             Button(action: close) {
                 Image(systemName: "xmark")
