@@ -5,6 +5,8 @@
 # (NOOK_LOCAL_SIGNING_IDENTITY), keeping the entitlements and hardened runtime Xcode signed it with.
 # Output goes to local-signing.log next to the app. Never fails the build.
 [ -n "$NOOK_LOCAL_SIGNING_IDENTITY" ] || exit 0
+# A build that is not signed at all (CI passes CODE_SIGNING_ALLOWED=NO) is not re-signed either.
+[ "$CODE_SIGNING_ALLOWED" = "NO" ] && exit 0
 APP="$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME"
 [ -d "$APP" ] || exit 0
 LOG="$TARGET_BUILD_DIR/local-signing.log"
