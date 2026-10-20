@@ -33,14 +33,13 @@ struct RemoteMachinesSection: View {
                     } else {
                         Button(tr("remote.test")) { test(machine) }
                     }
-                    ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.remove", machine.name),
+                    ConfirmedButton(symbol: "trash", title: tr("remote.remove"), question: tr("confirm.remove", machine.name),
                                     detail: tr("confirm.removeMachine.detail")) {
                         RemoteMachines.remove(id: machine.id)
                         machines = RemoteMachines.load()
                     }
-                    .labelled(tr("button.delete"))
+                    .labelled(tr("remote.remove"))
                     .buttonStyle(.borderless)
-                    .help(tr("remote.remove"))
                 }
             }
             Button { adding = true } label: { Label(tr("remote.add"), systemImage: "plus") }
