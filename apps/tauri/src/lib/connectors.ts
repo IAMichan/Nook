@@ -130,6 +130,15 @@ export interface Overview {
   caps: Caps;
 }
 
+/** What a GitLab host says about a token: whose it is, that it is refused, or nothing (offline, VPN, not GitLab). */
+export type GitLabCheck = { kind: "valid"; username: string } | { kind: "rejected" } | { kind: "unreachable" };
+
+export interface GitLabSaved {
+  host: string;
+  hosts: string[];
+  check: GitLabCheck;
+}
+
 export interface Pasted {
   name: string;
   target: string;
@@ -262,8 +271,10 @@ export const connectorsApi = {
   mcpTest: (id: string) => invoke<McpTool[]>("mcp_test", { id }),
   mcpConnectService: (service: string) => invoke<void>("mcp_connect_service", { service }),
   mcpSignIn: (id: string) => invoke<void>("mcp_sign_in", { id }),
+  repairBySignIn: (service: string) => invoke<void>("connector_repair_sign_in", { service }),
 
-  gitlabSave: (host: string, token: string) => invoke<string[]>("gitlab_save", { host, token }),
+  gitlabSave: (host: string, token: string) => invoke<GitLabSaved>("gitlab_save", { host, token }),
+  gitlabCheck: (host: string) => invoke<GitLabCheck>("gitlab_check", { host }),
   gitlabRemove: (host: string) => invoke<string[]>("gitlab_remove", { host }),
 
   whatsapp: () => invoke<WhatsAppView>("whatsapp_view"),
@@ -297,7 +308,8 @@ export function health(info: ConnectorInfo | undefined): Health {
   if (!info.on) return "off";
   const s = info.status;
   if (s.state.kind === "off" || s.state.kind === "loading") return "busy";
-  if (s.state.kind === "ok") return s.needsAttention ? "needsYou" : "working";
+  // Items that are waiting for you (a review, a failing check) are content, not a broken link: the link works.
+  if (s.state.kind === "ok") return "working";
   return s.errorKind === "auth" || s.errorKind === "config" ? "needsYou" : "broken";
 }
 
@@ -327,4 +339,34 @@ export const categories: { id: string; title: string }[] = [
   { id: "work", title: "Werk en notities" },
   { id: "business", title: "Zakelijk" },
   { id: "automation", title: "Automatisering" },
+  { id: "local", title: "Op dit apparaat" },
 ];
+
+/** How a service gets connected: the one word on every card of the catalogue, so a glance says what a click does. */
+export type ConnectMethod = "signIn" | "key" | "mcp";
+
+export const methodLabel: Record<ConnectMethod, string> = { signIn: "Inloggen", key: "Met sleutel", mcp: "MCP" };
+
+/** Whether a card or row belongs to the chosen category chip (`null` = Alles). */
+export function inCategory(selected: string | null, category: string): boolean {
+  return selected === null || selected === category;
+}
+
+/** Whether a search matches the text of a card or row (case-insensitive, empty matches everything). */
+export function matchesQuery(query: string, text: string): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || text.toLowerCase().includes(q);
+}
+
+/** The words for a GitLab host's state, shared by the row and the sheet. `null` while Nook is still asking GitLab. */
+export function gitlabHealth(check: GitLabCheck | null): Health {
+  if (!check) return "busy";
+  return check.kind === "valid" ? "working" : check.kind === "rejected" ? "needsYou" : "broken";
+}
+
+export function gitlabDetail(host: string, check: GitLabCheck | null): string {
+  if (!check) return `${host} · Merge requests op gitlab.com of je eigen host`;
+  if (check.kind === "valid") return `${host} · @${check.username}`;
+  if (check.kind === "rejected") return "GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.";
+  return `Nook kon ${host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.`;
+}

@@ -15,11 +15,13 @@ al is.
 |---|---|---|
 | `AIProvider`, `BrainSelection`, `AppSettings` | ✓ | `core/src/provider.rs`, `core/src/settings.rs` |
 | `ToolRunner` (tool-loop, herstel, cache, JSON in tekst) | ✓ | `core/src/brain/tool_loop.rs` |
-| Anthropic, OpenAI-compatibel, Ollama (streamen, tools, plaatjes) | ✓ | `core/src/brain/conversations.rs` |
+| Anthropic, OpenAI-compatibel, Ollama (streamen, tools, plaatjes; Ollama geeft het geheugen na 90 s terug, meedenken ontlaadt een model dat het zelf laadde) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
 | `BrainService` (prompts, prioriteren, `use_source`, contextbudget) | ✓ | `core/src/brain/service.rs` |
 | `ModelProfile`, `ModelAdvisor`, `ModelDownload` (Ollama installeren met één klik) | ✓ | `core/src/brain/profile.rs`, `model_download.rs` |
 | `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` | ✓ | `core/src/brain/` |
 | `Research`, `Retrieval` (zelf zoeken, genummerde bronnen) | ✓ | `core/src/brain/research.rs`, `retrieval.rs` |
+| Bronnenkaart onder een antwoord (status per bron, niet-gelezen bronnen bovenaan met reden en Probeer opnieuw, fouten in gewone taal) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
+| Chattabellen: tekstkolommen met cijfers in een naam worden geen grafiek (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
 | `ActionGate`, `CommandRisk`, `Undo`, `NetworkGuard`, `LocalQuality` | ✓ | `core/src/brain/` |
 | Geheugen (`Memory`, `NookMemory`, Instellingen › Geheugen) | ✓ (MCP-geheugen importeren ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
 | Web, weer, grafieken, mailconcepten | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
@@ -39,11 +41,12 @@ al is.
 | Systeemagenda's (Apple Agenda) | — | Geen API in deze port |
 | GitHub (lezen; beoordelen, samenvoegen, sluiten als actie) | ✓ | `github.rs` |
 | Pull requests bij Agents: van jou, voor jouw review, gevolgde organisaties en repositories (Instellingen › Accounts & koppelingen), Filters (status, betrokkenheid, auteur, concept, checks), lezen met reviews en reacties (GitHub-HTML als Markdown), mergen na bevestiging in de balk, met actielogboek | ◐ (tegen een nep-API getest, niet tegen GitHub zelf) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |
-| Inloggen met GitHub | ◐ | Token plakken of `gh auth token`; device flow wacht op een client-ID |
+| Inloggen met GitHub | ◐ | Inloggen en Herstel nemen de `gh auth token`-login over (een token blijft onder "Met een token"); device flow wacht op een client-ID; `gh auth login --web` zelf openen ○ |
 | Tweede account per dienst, account per chat | ✓ | `accounts.rs`, `ChatAccounts.svelte` |
-| GitLab, Vercel, Stripe, Notion, Cal.com, n8n, Resend | ✓ | `gitlab.rs`, `cloud.rs` |
+| GitLab, Vercel, Stripe, Notion, Cal.com, n8n, Resend | ✓ (GitLab-token eerst gecontroleerd via `/api/v4/user`) | `gitlab.rs`, `cloud.rs` |
+| Instellingen › Accounts & koppelingen als één catalogus: zoeken, categorieën, rijen voor je koppelingen (ook GitLab en eigen MCP-servers), kaarten met Inloggen / Met sleutel / MCP | ✓ | `views/settings/Accounts.svelte`, `views/connectors/` |
 | Eigen bronnen (web-API's, webhooks) | ✓ | `custom.rs` |
-| Verbinden met OAuth (Notion, Linear, Stripe, Vercel, Sentry) | ◐ (niet tegen de echte diensten getest) · — Android | `oauth.rs` |
+| Verbinden met OAuth (Notion, Linear, Stripe, Vercel, Sentry); Herstel van een verlopen sleutel door in te loggen | ◐ (niet tegen de echte diensten getest) · — Android | `oauth.rs`, `commands/connectors.rs` |
 | MCP-client (stdio, HTTP) | ✓ (stdio alleen desktop) | `core/src/connectors/mcp/` |
 | WhatsApp live (GOWA) | ◐ (gateway zelf starten; installer ○) | `core/src/connectors/whatsapp/` |
 | Portfolio | ○ | |
@@ -55,7 +58,7 @@ al is.
 |---|---|---|
 | Scherm lezen (`ScreenReader`, `ScreenContext`, `AppTextReader`) | ✓ Linux (AT-SPI, X11, tesseract) · ◐ Windows (UI Automation, OCR) · — Android | `core/src/services/screen.rs`, `platform/` |
 | Schermdeel | ✓ (zonder annoteren) | `services/part.rs` |
-| Meekijken, Meedenken | ✓ | `core/src/services/think_along.rs` |
+| Meekijken, Meedenken (antwoord in de taal van de app, niet van Nooks eigen vraag) | ✓ | `core/src/services/think_along.rs` |
 | Muziek (`NowPlayingService`, Muziek-tab) | ✓ MPRIS · ◐ Windows-mediabediening | `platform/linux/mpris.rs`, `platform/windows/media.rs` |
 | Systeem: apps, volume, klembord, bestanden, meldingen | ✓ Linux · ◐ Windows | `platform/*`, `tools/{system,files,clipboard}.rs` |
 | Stem: voorlezen, spraak naar tekst (whisper.cpp of een gekozen dienst) | ◐ (voorlezen getest; opnemen niet, geen microfoon) | `core/src/services/`, `services/voice.rs` |
@@ -81,7 +84,7 @@ al is.
 | Codex app-server, ACP-agents, Antigravity | ○ | |
 | Delegeren, overdragen, geplande taken, webhooks, automatische titels | ○ | |
 | Git: wijzigingen, commit, push, pull request (alle GitHub-accounts, eigenaar eerst), worktrees | ✓ | `core/src/workspace/` |
-| Terminals (portable-pty + xterm.js), browser, dev-servers | ✓ (geen schermafbeelding van de browser) | `src-tauri/src/workspace/` |
+| Terminals (portable-pty + xterm.js), browser (opent http(s)://-adressen zoals http://localhost:3000 direct; alleen http en https), dev-servers | ✓ (geen schermafbeelding van de browser) | `src-tauri/src/workspace/` |
 | Werkruimte voor agents (MCP-brug `nook --mcp`) | ✓ | `src-tauri/src/workspace/` |
 | Gebruik en limieten | ◐ | `views/workspace/` |
 

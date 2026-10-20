@@ -201,6 +201,23 @@ impl Settings {
         let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("Nederlands");
         format!("Always respond in {name}, even if the data or tools are in a different language.")
     }
+
+    /// The language code for a request Nook writes itself (looking at the screen, thinking along). Its text is Nook's
+    /// own, not the user's, so with "auto" the language comes from the app language instead of from that text.
+    pub fn own_language(&self) -> &str {
+        let code = if self.language == "auto" { self.app_language.as_str() } else { self.language.as_str() };
+        if ANSWER_LANGUAGES.iter().any(|(c, _)| *c == code && *c != "auto") {
+            code
+        } else {
+            "nl"
+        }
+    }
+
+    /// These settings for a request Nook wrote itself: the answer language is fixed to `own_language`, so the prompt
+    /// never asks to answer in the language of Nook's own (often English) request text.
+    pub fn for_own_request(&self) -> Settings {
+        Settings { language: self.own_language().to_string(), ..self.clone() }
+    }
 }
 
 /// Een simpele taalherkenning op veelvoorkomende woorden (op de Mac doet NaturalLanguage dit).
@@ -238,6 +255,21 @@ pub fn detect_language(text: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_requests_answer_in_the_app_language() {
+        let mut s = Settings { language: "auto".into(), app_language: "nl".into(), ..Default::default() };
+        // Nook's own English request text says nothing about the language to answer in.
+        assert_eq!(s.own_language(), "nl");
+        assert!(s.for_own_request().language_instruction("This is what the user currently has on screen.").contains("Nederlands"));
+        s.app_language = "de".into();
+        assert_eq!(s.own_language(), "de");
+        s.language = "fr".into();
+        assert_eq!(s.own_language(), "fr");
+        s.language = "auto".into();
+        s.app_language = "xx".into();
+        assert_eq!(s.own_language(), "nl");
+    }
 
     #[test]
     fn defaults_are_local_first() {

@@ -51,6 +51,26 @@ pub enum Outcome {
     Failed(String),
 }
 
+/// The reason shown for a search that was still running when the answer stopped.
+pub const INTERRUPTED: &str = "Het zoeken werd onderbroken voordat het klaar was.";
+
+/// The reason shown when an error said nothing a person can use.
+pub const UNKNOWN_ERROR: &str = "Er ging iets mis bij het lezen.";
+
+/// A failure as a person reads it: no raw cancellation errors or "The operation couldn't be completed". Older stored
+/// answers also had these, so the interface reads them the same way.
+pub fn readable_failure(reason: &str) -> String {
+    let text = reason.trim();
+    let lower = text.to_lowercase();
+    if lower.contains("cancellationerror") || lower == "gestopt" || lower.contains("task was cancelled") || lower.contains("cancelled") {
+        return INTERRUPTED.into();
+    }
+    if text.is_empty() || lower.contains("couldn’t be completed") || lower.contains("couldn't be completed") {
+        return UNKNOWN_ERROR.into();
+    }
+    text.to_string()
+}
+
 /// Eén opzoeking in een bron.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -198,7 +218,7 @@ impl RetrievalLedger {
                 return;
             }
             let mut step = RetrievalStep::new(tool, Some(source.into()), String::new());
-            step.outcome = Outcome::Failed(reason.into());
+            step.outcome = Outcome::Failed(readable_failure(reason));
             state.steps.push(step);
         }
         self.changed();
@@ -244,7 +264,7 @@ impl RetrievalLedger {
                         output
                     }
                     Err(e) => {
-                        self.lock().steps[index].outcome = Outcome::Failed(e.0.clone());
+                        self.lock().steps[index].outcome = Outcome::Failed(readable_failure(&e.0));
                         self.changed();
                         return Err(e);
                     }
@@ -483,6 +503,15 @@ mod tests {
             ledger.run("search_mail", None, &input, Duration::from_secs(5), async { Ok("Geen mail gevonden voor \"zzz\".".to_string()) });
         empty.await.unwrap();
         assert_eq!(ledger.steps().last().unwrap().outcome, Outcome::Empty);
+    }
+
+    #[test]
+    fn failures_read_as_plain_language() {
+        assert_eq!(readable_failure("Swift.CancellationError error 1"), INTERRUPTED);
+        assert_eq!(readable_failure("gestopt"), INTERRUPTED);
+        assert_eq!(readable_failure("The operation couldn’t be completed. (x error 1.)"), UNKNOWN_ERROR);
+        assert_eq!(readable_failure("  "), UNKNOWN_ERROR);
+        assert_eq!(readable_failure("Notion weigerde de sleutel (401)."), "Notion weigerde de sleutel (401).");
     }
 
     #[tokio::test]

@@ -29,6 +29,7 @@ async fn ask_brain(app: &AppHandle, request: &str, snapshot: &ScreenSnapshot) ->
         screen: Some((format!("{} — {}", snapshot.app_name, snapshot.window_title), snapshot.text.clone())),
         images: vec![],
         tools: tools::tools(&ctx),
+        own_request: true,
     };
     let plan = service::run(&settings, &env, brain_request, None).await.map_err(|e| e.0)?;
     let (mut body, offers) = service::split_offers(&plan.text);
@@ -151,6 +152,22 @@ pub fn start(app: &AppHandle) {
 }
 
 async fn run(app: &AppHandle, app_id: &str, app_name: &str, window: &str) {
+    // A look every few minutes would otherwise keep a local model's gigabytes in memory most of the time: when this
+    // run had to load it, it gives it back right after.
+    let settings = app.state::<AppState>().settings();
+    let local_model = (settings.provider == nook_core::provider::AIProvider::Ollama && !settings.active_model().is_empty())
+        .then(|| (nook_core::brain::conversations::ollama_base_url(), settings.active_model()));
+    let was_loaded = match &local_model {
+        Some((base, model)) => nook_core::brain::conversations::ollama_is_loaded(base, model).await.unwrap_or(true),
+        None => true,
+    };
+    look_and_offer(app, app_id, app_name, window).await;
+    if let (false, Some((base, model))) = (was_loaded, &local_model) {
+        nook_core::brain::conversations::ollama_unload(base, model).await;
+    }
+}
+
+async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &str) {
     let snap_app = app.clone();
     let Ok(Ok(snapshot)) = tauri::async_runtime::spawn_blocking(move || super::screen::snapshot(&snap_app, false)).await else { return };
     let services = app.state::<Services>();

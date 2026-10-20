@@ -155,6 +155,16 @@ pub fn number_text(raw: &str) -> Option<f64> {
     Some(if negative { -value } else { value })
 }
 
+/// A table cell that is a number, possibly with a sign, currency or short unit around it ("€ 12,50", "568 commits",
+/// "+3%"). Stricter than `number_text`: a name with digits in it, such as "nook-test-183d" or a commit hash, is not one.
+pub fn table_number(cell: &str) -> Option<f64> {
+    let text = rx!(r"\*\*|__|`").replace_all(cell, "").to_string();
+    if !matches(rx!(r"^\s*[^\p{L}\d]{0,3}\d[\d.,\s]*[\p{L}\p{Sc}%°]*\s*$"), &text) {
+        return None;
+    }
+    number_text(&text)
+}
+
 /// Vraagt de gebruiker om een grafiek?
 pub fn wants_chart(text: &str) -> bool {
     matches(rx!(r"(?i)grafiek|diagram|\bchart|\bplot|visualis|grafisch|staafje|taartje|\bgraph"), text)
@@ -423,7 +433,7 @@ pub fn from_table(header: &[String], rows: &[Vec<String>], title: &str) -> Optio
     let labels: Vec<String> = rows.iter().map(|r| r.first().cloned().unwrap_or_default()).collect();
     let mut series = vec![];
     for (column, name) in header.iter().enumerate().skip(1) {
-        let values: Vec<Option<f64>> = rows.iter().map(|r| r.get(column).and_then(|c| number_text(c))).collect();
+        let values: Vec<Option<f64>> = rows.iter().map(|r| r.get(column).and_then(|c| table_number(c))).collect();
         if values.iter().any(Option::is_none) {
             continue;
         }
@@ -466,6 +476,18 @@ mod tests {
         let flat = ChatChart::parse(&json!({"title": "X", "data": [{"x": "a", "y": 1}]})).unwrap();
         assert_eq!(flat.series[0].name, "X");
         assert!(ChatChart::parse(&json!({"title": "leeg"})).is_none());
+    }
+
+    #[test]
+    fn names_with_digits_are_not_table_numbers() {
+        assert_eq!(table_number("worktrees/nook/nook-test-183d"), None);
+        assert_eq!(table_number("1c58d13"), None);
+        assert_eq!(table_number("568 commits"), Some(568.0));
+        assert_eq!(table_number("€ 12,50"), Some(12.5));
+        assert_eq!(table_number("**+3%**"), Some(3.0));
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert!(from_table(&s(&["Map", "Branch"]), &[s(&["a", "nook/test-183d"]), s(&["b", "nook/test-dd40"])], "").is_none());
+        assert!(from_table(&s(&["Maand", "Omzet"]), &[s(&["jan", "10"]), s(&["feb", "20"])], "").is_some());
     }
 
     #[test]

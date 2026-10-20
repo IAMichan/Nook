@@ -506,6 +506,7 @@ pub async fn answer_question(
         screen: screen.clone(),
         images: images.clone(),
         tools: tools.clone(),
+        own_request: false,
     };
     let result = service::run(&settings, &env, brain_request, Some(&emit)).await;
 
@@ -623,20 +624,8 @@ pub async fn answer_question(
         .take(12)
         .cloned()
         .collect();
-    let mut notices: Vec<String> = ledger
-        .failures()
-        .iter()
-        .filter_map(|s| {
-            if let Outcome::Failed(e) = &s.outcome {
-                Some(format!("{} kon niet worden doorzocht: {e}", s.source_title))
-            } else {
-                None
-            }
-        })
-        .collect();
-    if !notices.is_empty() {
-        notices.push("Dit antwoord is daardoor mogelijk onvolledig.".into());
-    }
+    // Sources that could not be read are shown, with their reason and a retry, in the sources card under the answer.
+    let mut notices: Vec<String> = vec![];
     if !held_back.is_empty() {
         let names: Vec<String> = held_back.iter().map(|id| sources::title(id)).collect();
         notices.push(format!("{} staat op ‘alleen op dit apparaat’ en is niet gebruikt, omdat een externe AI antwoordt. Kies een brein op deze computer om hier iets over te vragen.", names.join(", ")));
@@ -878,7 +867,7 @@ pub fn stop(app: &AppHandle, nook_id: &str) {
                 m.streaming = false;
                 m.status.clear();
                 for step in m.retrieval.iter_mut().filter(|s| s.outcome == Outcome::Running) {
-                    step.outcome = Outcome::Failed("gestopt".into());
+                    step.outcome = Outcome::Failed(nook_core::brain::retrieval::INTERRUPTED.into());
                 }
                 if m.text.is_empty() && m.charts.is_empty() && m.mails.is_empty() && m.actions.is_empty() {
                     m.text = "Gestopt.".into();

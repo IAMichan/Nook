@@ -560,6 +560,44 @@ pub fn ollama_base_url() -> String {
     }
 }
 
+/// How long Ollama keeps the model in memory after a request. The weights take gigabytes of (GPU) memory and loading
+/// them again from the disk cache takes only a second or two, so the model is given back after 90 seconds on every
+/// computer, whatever its memory (`_memory_gb` is kept for callers that still pass it).
+pub fn ollama_keep_alive(_memory_gb: u64) -> &'static str {
+    "90s"
+}
+
+/// Whether Ollama has this model in memory right now (`GET /api/ps`). `None` when Ollama cannot be asked.
+pub async fn ollama_is_loaded(base_url: &str, model: &str) -> Option<bool> {
+    let client = http::client(AIProvider::Ollama);
+    let response = client.get(format!("{base_url}/api/ps")).timeout(std::time::Duration::from_secs(5)).send().await.ok()?;
+    let body: Value = response.json().await.ok()?;
+    Some(ollama_lists_model(&body, model))
+}
+
+/// Whether a `/api/ps` answer lists the model ("llama3.2" matches "llama3.2:latest").
+pub fn ollama_lists_model(body: &Value, model: &str) -> bool {
+    let bare = |name: &str| name.trim().strip_suffix(":latest").unwrap_or(name.trim()).to_string();
+    let wanted = bare(model);
+    body["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|m| [m["name"].as_str(), m["model"].as_str()].into_iter().flatten().any(|name| bare(name) == wanted))
+}
+
+/// Asks Ollama to give the model's memory back right away (`keep_alive: 0`). For background work (thinking along)
+/// that loaded the model only for itself. Failures are ignored: Ollama then unloads it after its own timeout.
+pub async fn ollama_unload(base_url: &str, model: &str) {
+    let client = http::client(AIProvider::Ollama);
+    let _ = client
+        .post(format!("{base_url}/api/generate"))
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&json!({"model": model, "keep_alive": 0}))
+        .send()
+        .await;
+}
+
 impl OllamaConversation {
     pub const BASE_URL: &'static str = "http://localhost:11434";
 
@@ -580,8 +618,7 @@ impl OllamaConversation {
             profile,
             base_url: ollama_base_url(),
             thinking: false,
-            // Met geheugen over blijft het model geladen, zodat een vervolgvraag niet opnieuw op het laden wacht.
-            keep_alive: if memory_gb >= 24 { "30m".into() } else { "5m".into() },
+            keep_alive: ollama_keep_alive(memory_gb).into(),
             client: http::client(AIProvider::Ollama),
         };
         convo.attach(images);
@@ -728,6 +765,23 @@ mod tests {
             socket.write_all(response.as_bytes()).await.unwrap();
         });
         format!("http://{addr}")
+    }
+
+    #[test]
+    fn ollama_gives_memory_back_soon() {
+        assert_eq!(ollama_keep_alive(8), "90s");
+        assert_eq!(ollama_keep_alive(64), "90s");
+        let ps = json!({"models": [{"name": "llama3.2:latest", "model": "llama3.2:latest"}, {"name": "qwen3:8b"}]});
+        assert!(ollama_lists_model(&ps, "llama3.2"));
+        assert!(ollama_lists_model(&ps, "qwen3:8b"));
+        assert!(!ollama_lists_model(&ps, "qwen3:4b"));
+        assert!(!ollama_lists_model(&json!({}), "llama3.2"));
+    }
+
+    #[tokio::test]
+    async fn ollama_reports_a_loaded_model() {
+        let base = serve_once(r#"{"models":[{"name":"gemma3:latest","model":"gemma3:latest"}]}"#, "application/json").await;
+        assert_eq!(ollama_is_loaded(&base, "gemma3").await, Some(true));
     }
 
     #[tokio::test]

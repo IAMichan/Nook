@@ -501,18 +501,35 @@ async fn sign_in(app: &AppHandle, c: &Connectors, config: &McpServerConfig) -> R
 /// Een eerste poging die niet lukt, laat niets achter.
 #[tauri::command]
 pub async fn mcp_connect_service(app: AppHandle, c: State<'_, Connectors>, service: String) -> Res<()> {
+    connect_service(&app, &c, &service).await
+}
+
+async fn connect_service(app: &AppHandle, c: &Connectors, service: &str) -> Res<()> {
     let remote = mcp_store::REMOTE_SERVICES.iter().find(|s| s.id == service).ok_or_else(|| format!("Onbekende dienst {service}"))?;
     let existing = mcp_store::servers(&c.env.store).into_iter().find(|s| s.service_id.as_deref() == Some(remote.id));
     let config = match &existing {
         Some(e) => e.clone(),
         None => mcp_store::add(&c.env, remote.name, Transport::Http { url: remote.url.into() }, &[], true, Some(remote.id))?,
     };
-    let result = sign_in(&app, &c, &config).await;
+    let result = sign_in(app, c, &config).await;
     if result.is_err() && existing.is_none() {
         mcp_store::remove(&c.env, &config.id);
         c.sync_mcp();
     }
     result
+}
+
+/// "Herstel" on a key-based service that also has its own sign-in page (Notion, Stripe, Vercel): sign in on that page
+/// instead of asking for a new key. Once signed in, the expired key is removed so the signed-in connection takes over.
+#[tauri::command]
+pub async fn connector_repair_sign_in(app: AppHandle, c: State<'_, Connectors>, service: String) -> Res<()> {
+    let info = cloud::services().into_iter().find(|s| s.id == service).ok_or_else(|| format!("Onbekende dienst {service}"))?;
+    connect_service(&app, &c, &service).await?;
+    for field in info.fields.iter().filter(|f| f.secret) {
+        c.env.secrets.remove(field.account)?;
+    }
+    c.hub.refresh_now(&service).await;
+    Ok(())
 }
 
 /// Opnieuw inloggen bij een server (verlopen inlog).
@@ -524,10 +541,27 @@ pub async fn mcp_sign_in(app: AppHandle, c: State<'_, Connectors>, id: String) -
 
 // GitLab
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLabSaved {
+    host: String,
+    hosts: Vec<String>,
+    check: gitlab::TokenCheck,
+}
+
+/// Checks the token with GitLab first and only then stores it: a token GitLab refuses is never saved, one that cannot
+/// be checked yet (offline, VPN) is.
 #[tauri::command]
-pub async fn gitlab_save(c: State<'_, Connectors>, host: String, token: String) -> Res<Vec<String>> {
-    gitlab::save(&c.env.store, &*c.env.secrets, &host, &token)?;
-    Ok(gitlab::hosts(&c.env.store, &*c.env.secrets))
+pub async fn gitlab_save(c: State<'_, Connectors>, host: String, token: String) -> Res<GitLabSaved> {
+    let (host, check) = gitlab::verify_and_save(&c.env.http, &c.env.store, &*c.env.secrets, &host, &token).await?;
+    Ok(GitLabSaved { host, hosts: gitlab::hosts(&c.env.store, &*c.env.secrets), check })
+}
+
+/// Asks the host whose stored token this is, for the row and the manage sheet.
+#[tauri::command]
+pub async fn gitlab_check(c: State<'_, Connectors>, host: String) -> Res<gitlab::TokenCheck> {
+    let token = gitlab::token(&*c.env.secrets, &host).ok_or("Voor deze host staat geen token in je kluis.")?;
+    Ok(gitlab::check(&c.env.http, &host, &token).await)
 }
 
 #[tauri::command]

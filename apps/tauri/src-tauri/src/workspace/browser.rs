@@ -83,18 +83,27 @@ pub fn address(input: &str) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    if text.contains('.') && !text.contains(' ') || text.starts_with("http://localhost") || text.starts_with("localhost") {
-        let full = if text.starts_with("http://") || text.starts_with("https://") {
-            text.to_string()
-        } else if text.starts_with("localhost") || text.starts_with("127.0.0.1") {
+    let lower = text.to_lowercase();
+    // An explicit address, such as http://localhost:3000 from a dev server chip: open it as is, when it has a host.
+    if (lower.starts_with("http://") || lower.starts_with("https://")) && !text.contains(' ') {
+        return web_address(text);
+    }
+    if text.contains('.') && !text.contains(' ') || lower.starts_with("localhost") {
+        let full = if lower.starts_with("localhost") || lower.starts_with("127.0.0.1") {
             format!("http://{text}")
         } else {
             format!("https://{text}")
         };
-        let lower = full.to_lowercase();
-        return (lower.starts_with("http://") || lower.starts_with("https://")).then_some(full);
+        return web_address(&full);
     }
     Some(format!("https://duckduckgo.com/?q={}", nook_core::workspace::source_control::encode(text)))
+}
+
+/// The address itself when it parses as http or https with a host; anything else (javascript:, file:) never reaches
+/// the browser.
+fn web_address(full: &str) -> Option<String> {
+    let parsed = url::Url::parse(full).ok()?;
+    (matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some_and(|h| !h.is_empty())).then(|| full.to_string())
 }
 
 impl Browser {
@@ -315,6 +324,12 @@ mod tests {
         assert_eq!(address("example.com").as_deref(), Some("https://example.com"));
         assert_eq!(address("localhost:5173").as_deref(), Some("http://localhost:5173"));
         assert_eq!(address("http://localhost:3000/x").as_deref(), Some("http://localhost:3000/x"));
+        assert_eq!(address("http://localhost:3000").as_deref(), Some("http://localhost:3000"));
+        assert_eq!(address("https://localhost:5173/app").as_deref(), Some("https://localhost:5173/app"));
+        assert_eq!(address("HTTP://devbox:8080").as_deref(), Some("HTTP://devbox:8080"));
+        assert_eq!(address("http://"), None);
+        assert!(address("javascript:alert(1)").is_some_and(|a| a.starts_with("https://duckduckgo.com/?q=")));
+        assert!(address("file:///etc/passwd").is_some_and(|a| a.starts_with("https://duckduckgo.com/?q=")));
         assert_eq!(address("rust borrow checker").as_deref(), Some("https://duckduckgo.com/?q=rust%20borrow%20checker"));
         assert!(address("  ").is_none());
     }
