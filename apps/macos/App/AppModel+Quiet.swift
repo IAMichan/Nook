@@ -27,16 +27,17 @@ extension AppModel {
         settings.quietWhileSharing != .normal || settings.quietInMeetings != .normal || quietViewers > 0
     }
 
-    /// The timer's tick: every two seconds while it matters and you are at the Mac, less often while you are away or the
-    /// Mac saves power. A changed choice still applies right away (`startQuietWatch`).
+    /// The timer's tick: every two seconds while it matters. With only the meeting choice in play it is slower while you are
+    /// away or the Mac saves power; a choice for screen sharing keeps the two seconds, so a share that starts never shows
+    /// Nook to the viewers for longer than that. A changed choice still applies right away (`startQuietWatch`).
     private func quietTimerTick() {
         guard quietWatchNeeded else {
             // Nook was still quiet or hidden for a choice you just changed to "change nothing": one more read puts it back.
             if quiet.silent || quiet.excludedFromCapture || quiet.hidden { quietTick() }
             return
         }
-        let slowdown = EnergyMonitor.shared.plan.slowdown
-        guard Date().timeIntervalSince(lastQuietTick) >= 2 * slowdown - 0.5 else { return }
+        let interval = settings.quietWhileSharing == .normal ? 2 * EnergyMonitor.shared.plan.slowdown : 2
+        guard Date().timeIntervalSince(lastQuietTick) >= interval - 0.5 else { return }
         quietTick()
     }
 

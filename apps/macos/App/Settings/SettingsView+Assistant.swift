@@ -123,8 +123,8 @@ extension SettingsView {
     }
 }
 
-/// What the screen reading does right now: off, how many windows it holds, or paused and why (the battery, a hot or busy
-/// Mac, you are away), so an empty line never looks like something is broken. Observes the screen reader itself: its
+/// What the screen reading does right now: off, paused and why (a hot or busy Mac, Low Power Mode, you are away), or how
+/// many windows it holds, so an empty line never looks like something is broken. Observes the screen reader itself: its
 /// `shown` is published, the app model is not told about it.
 private struct ScreenStatusText: View {
     @ObservedObject var screenContext: ScreenContext
@@ -137,14 +137,16 @@ private struct ScreenStatusText: View {
 
     private var text: String {
         guard enabled else { return tr("settings.assistant.screenOff") }
+        // Paused first: the windows read before the pause are still held, and their count would hide that nothing is
+        // being read right now.
+        if !energy.plan.readsScreen, let reason = energy.plan.mainReason {
+            return tr("settings.assistant.screenPaused", tr(reason.textKey))
+        }
         let shown = screenContext.shown
         if shown.count > 0 {
             return shown.displays > 1
                 ? tr("settings.assistant.windowsOnScreens", shown.count, shown.displays)
                 : tr("settings.assistant.windowsOneScreen", shown.count)
-        }
-        if !energy.plan.readsScreen, let reason = energy.plan.mainReason {
-            return tr("settings.assistant.screenPaused", tr(reason.textKey))
         }
         return tr("settings.assistant.nothingRead")
     }
