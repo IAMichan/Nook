@@ -16,6 +16,8 @@ enum CardOutcome: Equatable {
 struct CardAction: Equatable {
     var label: String
     var outcome: CardOutcome
+    /// An SF Symbol shown before the label (e.g. "terminal"), or nil for text only.
+    var symbol: String? = nil
 }
 
 enum StepTone: Equatable {
@@ -112,6 +114,11 @@ struct NookCard: Equatable, Identifiable {
     var sources: [String] = []
     /// What Nook can do next ("Add to calendar"). Clicking sends the sentence as a new request.
     var offers: [String] = []
+    /// A small "OK" at the end of the button row that closes the card at once, for notices that would otherwise wait
+    /// out their timeout.
+    var acknowledge: CardAction? = nil
+    /// Seconds until the card closes by itself (while the pointer is off the notch), shown as a ring on `acknowledge`.
+    var countdown: TimeInterval? = nil
     /// Behavior for Esc. Defaults to primary action if nil.
     var escape: CardAction? = nil
     /// A short line above the text field: what is happening with what you typed ("Sending…") or why it did not work.

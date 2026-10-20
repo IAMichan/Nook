@@ -28,6 +28,17 @@ extension SettingsView {
     var notificationsSection: some View {
         Group {
             Section {
+                Picker(selection: $settings.agentNotice) {
+                    ForEach(AgentNoticeStyle.allCases) { Text(tr($0.titleKey)).tag($0) }
+                } label: {
+                    SettingLabel(tr("agentNotice.style"), detail: tr("agentNotice.styleDetail"))
+                }
+            } header: {
+                Text(tr("agentNotice.title"))
+            } footer: {
+                Text(tr("agentNotice.footer"))
+            }
+            Section {
                 Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
                 LabeledContent(tr("settings.voice.customSounds")) {
                     Button(tr("button.openFolder")) { NookSound.openFolder() }

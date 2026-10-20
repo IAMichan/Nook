@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for how Nook behaves in meetings and while you share your screen (Settings › Notifications).
+// Texts for Settings › Notifications: agent notifications, and how Nook behaves in meetings and while you share your screen.
 
 let quietTranslations: [AppLanguage: [String: String]] = [
     .nl: [
@@ -23,6 +23,15 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "quiet.behavior.quiet": "Stil: geen meldingen of geluiden",
         "quiet.behavior.hideFromShare": "Verbergen voor kijkers (jij ziet Nook nog)",
         "quiet.behavior.hide": "Helemaal verbergen, ook voor jou",
+        "agentNotice.title": "Meldingen",
+        "agentNotice.footer": "Met Oké verdwijnt een melding meteen. Anders gaat hij na een paar seconden vanzelf weg, behalve zolang je pointer op de notch staat.",
+        "agentNotice.style": "Grootte van meldingen",
+        "agentNotice.styleDetail": "Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in Workspace. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel onder de notch.",
+        "agentNotice.style.detailed": "Uitgebreid",
+        "agentNotice.style.compact": "Compact",
+        "agentNotice.compact.done": "%@ is klaar",
+        "agentNotice.compact.failed": "%@ is gestopt met een fout",
+        "agentNotice.compact.waiting": "%@ wacht op je",
     ],
     .en: [
         "quiet.title": "Meetings and screen sharing",
@@ -44,6 +53,15 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "quiet.behavior.quiet": "Quiet: no notifications or sounds",
         "quiet.behavior.hideFromShare": "Hide from viewers (you still see Nook)",
         "quiet.behavior.hide": "Hide completely, also for you",
+        "agentNotice.title": "Notifications",
+        "agentNotice.footer": "OK closes a notification at once. Otherwise it goes away by itself after a few seconds, except while your pointer is on the notch.",
+        "agentNotice.style": "Notification size",
+        "agentNotice.styleDetail": "For every agent that is done, fails or waits on you, in the terminal or in Workspace. Detailed shows a card with the summary and what changed; compact one slim line under the notch.",
+        "agentNotice.style.detailed": "Detailed",
+        "agentNotice.style.compact": "Compact",
+        "agentNotice.compact.done": "%@ is done",
+        "agentNotice.compact.failed": "%@ stopped with an error",
+        "agentNotice.compact.waiting": "%@ is waiting on you",
     ],
     .de: [
         "quiet.title": "Meetings und Bildschirmfreigabe",
@@ -65,6 +83,15 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "quiet.behavior.quiet": "Ruhig: keine Mitteilungen oder Töne",
         "quiet.behavior.hideFromShare": "Für Zuschauer ausblenden (du siehst Nook noch)",
         "quiet.behavior.hide": "Ganz ausblenden, auch für dich",
+        "agentNotice.title": "Mitteilungen",
+        "agentNotice.footer": "Mit OK verschwindet eine Mitteilung sofort. Sonst geht sie nach ein paar Sekunden von selbst weg, außer solange dein Zeiger auf der Notch ist.",
+        "agentNotice.style": "Größe der Mitteilungen",
+        "agentNotice.styleDetail": "Für jeden Agent, der fertig ist, scheitert oder auf dich wartet, im Terminal oder in Workspace. Ausführlich zeigt eine Karte mit der Zusammenfassung und den Änderungen; kompakt eine schmale Zeile unter der Notch.",
+        "agentNotice.style.detailed": "Ausführlich",
+        "agentNotice.style.compact": "Kompakt",
+        "agentNotice.compact.done": "%@ ist fertig",
+        "agentNotice.compact.failed": "%@ wurde mit einem Fehler beendet",
+        "agentNotice.compact.waiting": "%@ wartet auf dich",
     ],
     .fr: [
         "quiet.title": "Réunions et partage d'écran",
@@ -86,6 +113,15 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "quiet.behavior.quiet": "Discret : ni notifications ni sons",
         "quiet.behavior.hideFromShare": "Masquer aux spectateurs (vous voyez encore Nook)",
         "quiet.behavior.hide": "Masquer complètement, pour vous aussi",
+        "agentNotice.title": "Notifications",
+        "agentNotice.footer": "OK ferme une notification tout de suite. Sinon elle disparaît d’elle-même après quelques secondes, sauf tant que ton pointeur est sur l’encoche.",
+        "agentNotice.style": "Taille des notifications",
+        "agentNotice.styleDetail": "Pour chaque agent qui a fini, échoue ou t’attend, dans le terminal ou dans Workspace. Détaillée montre une carte avec le résumé et les changements ; compacte une seule ligne fine sous l’encoche.",
+        "agentNotice.style.detailed": "Détaillée",
+        "agentNotice.style.compact": "Compacte",
+        "agentNotice.compact.done": "%@ a terminé",
+        "agentNotice.compact.failed": "%@ s’est arrêté sur une erreur",
+        "agentNotice.compact.waiting": "%@ t’attend",
     ],
     .es: [
         "quiet.title": "Reuniones y compartir pantalla",
@@ -107,5 +143,14 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "quiet.behavior.quiet": "Silencio: sin avisos ni sonidos",
         "quiet.behavior.hideFromShare": "Ocultar a quien mira (tú sigues viendo a Nook)",
         "quiet.behavior.hide": "Ocultar del todo, también para ti",
+        "agentNotice.title": "Avisos",
+        "agentNotice.footer": "OK cierra un aviso al instante. Si no, desaparece solo tras unos segundos, salvo mientras el puntero esté sobre el notch.",
+        "agentNotice.style": "Tamaño de los avisos",
+        "agentNotice.styleDetail": "Para cada agente que termina, falla o te espera, en la terminal o en Workspace. Detallado muestra una tarjeta con el resumen y los cambios; compacto una sola línea fina bajo el notch.",
+        "agentNotice.style.detailed": "Detallado",
+        "agentNotice.style.compact": "Compacto",
+        "agentNotice.compact.done": "%@ ha terminado",
+        "agentNotice.compact.failed": "%@ se detuvo con un error",
+        "agentNotice.compact.waiting": "%@ te está esperando",
     ],
 ]

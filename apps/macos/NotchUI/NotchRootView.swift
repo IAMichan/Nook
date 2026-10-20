@@ -161,6 +161,8 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
         case .track(let title, let artist):
             trackStrip(title: title, artist: artist, nh: nh, nw: nw)
+        case .done(let message) where viewModel.doneAcknowledge && viewModel.geometry.hasNotch && !viewModel.geometry.isFloating:
+            inlineDoneStrip(message: message, nh: nh, nw: nw)
         case .done(let message):
             doneStrip(message: message, nh: nh)
         case .nudge(let line, _):
@@ -175,7 +177,8 @@ struct NotchRootView: View {
                     onVoice: { viewModel.startListening() },
                     onReply: { app.handleCardReply($0, card: card) },
                     onChoose: { viewModel.choose($0, $1) },
-                    onOpen: { app.openCardAttachment($0, card: card) }
+                    onOpen: { app.openCardAttachment($0, card: card) },
+                    paused: viewModel.pointerInside
                 )
             }
         case .panel(let tab):
@@ -259,10 +262,54 @@ struct NotchRootView: View {
 
     // MARK: Recent action
 
+    /// A compact agent notice in the notch's own row, like a track: mark and message left of the notch, View and OK right
+    /// of it. The notch keeps its height and only grows wider.
+    private func inlineDoneStrip(message: String, nh: CGFloat, nw: CGFloat) -> some View {
+        let wing = (viewModel.size.width - nw) / 2
+        let button = min(24, nh - 8)
+        let tone = viewModel.doneTone
+        return HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: tone.symbol)
+                    .font(NookTheme.font(tone == .waiting ? 13 : 11, .bold))
+                    .foregroundStyle(tone.color)
+                    .frame(width: 16)
+                Text(message)
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(width: wing, height: nh)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
+                    viewModel.doneButtonPressed()
+                }
+                NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds,
+                                      height: button) {
+                    viewModel.show(.idle)
+                }
+                .id(viewModel.doneStamp)
+            }
+            .padding(.trailing, 10)
+            .frame(width: wing, height: nh)
+        }
+        .frame(height: nh)
+        .floatingDrag(viewModel)
+        .accessibilityElement(children: .contain)
+    }
+
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .done, size: 24, glow: viewModel.geometry.isFloating)
+                NookOrb(mood: viewModel.doneTone.mood, size: 24, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -271,15 +318,23 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
 
             HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(NookTheme.font(12, .bold))
-                    .foregroundStyle(NookTheme.mint)
+                Image(systemName: viewModel.doneTone.symbol)
+                    .font(NookTheme.font(viewModel.doneTone == .waiting ? 14 : 12, .bold))
+                    .foregroundStyle(viewModel.doneTone.color)
                 Text(message)
                     .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                NookGhostButton(title: viewModel.doneButtonTitle) { viewModel.doneButtonPressed() }
+                NookGhostButton(title: viewModel.doneButtonTitle, compact: viewModel.doneAcknowledge) {
+                    viewModel.doneButtonPressed()
+                }
+                if viewModel.doneAcknowledge {
+                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds) {
+                        viewModel.show(.idle)
+                    }
+                    .id(viewModel.doneStamp)
+                }
             }
             .padding(.horizontal, 20)
             .frame(height: 40)

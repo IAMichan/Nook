@@ -10,6 +10,8 @@ struct CardView: View {
     var onChoose: (String, [String]) -> Void = { _, _ in }
     /// A chat bubble's attachment was clicked: the card stays open while the file opens.
     var onOpen: (ChatBubble) -> Void = { _ in }
+    /// The pointer is on the notch: a notice's countdown holds.
+    var paused: Bool = false
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
@@ -68,8 +70,13 @@ struct CardView: View {
 
             // Buttons stay on one line each; when they do not fit side by side, they tighten up instead of wrapping.
             ViewThatFits(in: .horizontal) {
-                buttonRow(compact: false)
-                buttonRow(compact: true)
+                if card.acknowledge != nil {
+                    noticeRow(compact: false)
+                    noticeRow(compact: true)
+                } else {
+                    buttonRow(compact: false)
+                    buttonRow(compact: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,16 +98,33 @@ struct CardView: View {
 
     private func buttonRow(compact: Bool) -> some View {
         HStack(spacing: compact ? 0 : 4) {
-            NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
+            NookPrimaryButton(title: card.primary.label, symbol: card.primary.symbol) { onAction(card.primary) }
                 .padding(.trailing, compact ? 4 : 0)
             if !card.secondary.label.isEmpty {
-                NookGhostButton(title: card.secondary.label, compact: compact) { onAction(card.secondary) }
+                NookGhostButton(title: card.secondary.label, symbol: card.secondary.symbol, compact: compact) {
+                    onAction(card.secondary)
+                }
             }
             ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
-                NookGhostButton(title: action.label, compact: compact) { onAction(action) }
+                NookGhostButton(title: action.label, symbol: action.symbol, compact: compact) { onAction(action) }
             }
             Spacer(minLength: 4)
             NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
+        }
+    }
+
+    /// A notice (a card with an OK): its actions in one bar that takes the room, and OK as the white main button with
+    /// the countdown of the card closing by itself.
+    private func noticeRow(compact: Bool) -> some View {
+        let actions = ([card.primary, card.secondary] + card.extra).filter { !$0.label.isEmpty }
+        return HStack(spacing: compact ? 8 : 10) {
+            NookActionBar(actions: actions, compact: compact, onAction: onAction)
+            if let acknowledge = card.acknowledge {
+                NookAcknowledgeButton(title: acknowledge.label, compact: compact, countdown: card.countdown, paused: paused) {
+                    onAction(acknowledge)
+                }
+                .id(card.id)
+            }
         }
     }
 

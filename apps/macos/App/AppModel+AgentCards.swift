@@ -142,7 +142,6 @@ extension AppModel {
         default: return
         }
 
-        let token = "agentstatus-" + UUID().uuidString
         let mood: NookMood
         let state: String
         let fallback: String
@@ -154,6 +153,18 @@ extension AppModel {
         default:
             mood = .waiting; state = tr("app.agent.waiting.state"); fallback = tr("app.agent.waiting.fallback")
         }
+        // Compact: one line under the notch, with View and OK. The summary waits in the Agents tab.
+        if settings.agentNotice == .compact {
+            let who = tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name)
+            let message = session.project.isEmpty ? who : who + " · " + session.project
+            viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(session.status), acknowledge: true) { [weak self] in
+                self?.viewModel.selectedAgentID = session.id
+                self?.viewModel.show(.panel(.agents))
+            }
+            return
+        }
+
+        let token = "agentstatus-" + UUID().uuidString
         let title = session.summary.isEmpty ? fallback : session.summary
 
         viewModel.register("\(token)#view") { [weak self] in
@@ -161,34 +172,69 @@ extension AppModel {
             self?.viewModel.show(.panel(.agents))
         }
         viewModel.register("\(token)#terminal") { [weak self] in self?.openTerminal(for: session) }
+        // OK: gone at once instead of waiting out the timeout; a queued card comes next.
+        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
 
         var context = "\(session.name) · \(session.project) · \(state)"
         if session.linesAdded + session.linesRemoved > 0 {
             context += " · +\(session.linesAdded) −\(session.linesRemoved)"
         }
         let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
+        let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
         let card = NookCard(
             id: token,
             mood: mood,
             context: context,
             title: title,
             detail: .none,
-            primary: CardAction(label: tr("button.view"), outcome: .callback("\(token)#view", "")),
-            secondary: CardAction(label: tr("app.agent.openApp", TerminalLauncher.name(for: session.hostBundleID)), outcome: .callback("\(token)#terminal", "")),
-            contentHeight: 100 + CGFloat(lines) * 24
+            primary: CardAction(label: tr("button.view"), outcome: .callback("\(token)#view", ""), symbol: "eye"),
+            secondary: CardAction(label: tr("app.agent.openApp", TerminalLauncher.name(for: session.hostBundleID)),
+                                  outcome: .callback("\(token)#terminal", ""), symbol: "terminal"),
+            contentHeight: 100 + CGFloat(lines) * 24,
+            acknowledge: ok,
+            countdown: Self.agentNoticeSeconds,
+            escape: ok
         )
         viewModel.show(.card(card))
+        dismissAgentCardLater(token)
+    }
 
-        // Auto-dismisses after 5 seconds unless hovered.
+    /// How long an agent notice stays while the pointer is off the notch; the ring on its OK counts down the same time.
+    static let agentNoticeSeconds: TimeInterval = 5.2
+
+    /// Closes an agent notice once it has been shown `agentNoticeSeconds` with the pointer off the notch, like its
+    /// countdown ring. Hovering holds the clock, for at most about 100 seconds in all.
+    func dismissAgentCardLater(_ token: String) {
+        let seconds = Self.agentNoticeSeconds
         Task { [weak self] in
-            for _ in 0..<20 {
-                try? await Task.sleep(nanoseconds: 5_200_000_000)
+            let step: TimeInterval = 0.1
+            var left = seconds
+            for _ in 0..<1000 {
+                try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
                 guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
-                if !self.viewModel.pointerInside {
-                    self.viewModel.dismissCard(id: token)
-                    return
-                }
+                if !self.viewModel.pointerInside { left -= step }
+                if left <= 0 { break }
             }
+            guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
+            self.viewModel.dismissCard(id: token)
+        }
+    }
+
+    /// The text key part for a notice: done, failed, or waiting on you.
+    static func noticeKey(_ status: AgentStatus) -> String {
+        switch status {
+        case .done: return "done"
+        case .failed: return "failed"
+        default: return "waiting"
+        }
+    }
+
+    /// The mark on the compact strip: a check, an hourglass, or an exclamation mark.
+    static func doneTone(_ status: AgentStatus) -> DoneTone {
+        switch status {
+        case .done: return .done
+        case .failed: return .failed
+        default: return .waiting
         }
     }
 
