@@ -665,7 +665,7 @@ extension GitHubConnector {
             ),
             ToolSpec(
                 name: "github_merge_prs",
-                description: "Merges several pull requests in one action, for 'merge all my PRs' or 'merge these PRs'. First list the pull requests the user means with github_overview (their open PRs) or github_search (for example \"is:pr is:open repo:owner/name\"), then pass every one of them here; no need to read each with github_pr_details. Right before merging, Nook checks each pull request itself and skips the ones that are a draft, closed, conflicted, or whose CI is failing or still running, and reports why. Choose the method requested by the user; without one, the repository's default (merge when allowed).",
+                description: "Merges several pull requests in one action, for 'merge all my PRs' or 'merge these PRs'. First list the pull requests the user means with github_overview (their open PRs) or github_search (for example \"is:pr is:open repo:owner/name\"), then pass every one of them here; no need to read each with github_pr_details. Right before merging, Nook checks each pull request itself and skips the ones that are a draft, closed, conflicted, or whose CI is failing, and reports why. CI that is still running does not stop a merge: approving the plan is the user's choice to merge now, so the report notes it instead. Choose the method requested by the user; without one, the repository's default (merge when allowed).",
                 schema: [
                     "type": "object",
                     "properties": [
@@ -726,7 +726,7 @@ extension GitHubConnector {
                 }
                 _ = try await GitHubPullRequestDetail.merge(repo: target.repo, number: target.number, method: chosen,
                                                             sha: detail.headSHA, token: token)
-                outcomes.append((target, .merged(chosen.rawValue)))
+                outcomes.append((target, .merged(PullRequestBatchMerge.mergedLabel(chosen, detail))))
             } catch {
                 outcomes.append((target, .failed(error.localizedDescription)))
             }
