@@ -59,6 +59,7 @@ The checklist for a new or changed view:
 | Component | File | Use |
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards and in chat (optional SF Symbol before the title) |
+| `NookSplitButton` | `NookButtons.swift` | A card's primary and secondary action in one pill: white main half, plain secondary half |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |

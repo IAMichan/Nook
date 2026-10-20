@@ -98,12 +98,13 @@ struct CardView: View {
 
     private func buttonRow(compact: Bool) -> some View {
         HStack(spacing: compact ? 0 : 4) {
-            NookPrimaryButton(title: card.primary.label, symbol: card.primary.symbol) { onAction(card.primary) }
-                .padding(.trailing, compact ? 4 : 0)
-            if !card.secondary.label.isEmpty {
-                NookGhostButton(title: card.secondary.label, symbol: card.secondary.symbol, compact: compact) {
-                    onAction(card.secondary)
-                }
+            // The main choice and its "not now" share one pill: the main half white, the other half plain.
+            if card.secondary.label.isEmpty {
+                NookPrimaryButton(title: card.primary.label, symbol: card.primary.symbol) { onAction(card.primary) }
+                    .padding(.trailing, compact ? 4 : 0)
+            } else {
+                NookSplitButton(primary: card.primary, secondary: card.secondary, compact: compact, onAction: onAction)
+                    .padding(.trailing, compact ? 4 : 0)
             }
             ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
                 NookGhostButton(title: action.label, symbol: action.symbol, compact: compact) { onAction(action) }
