@@ -2,7 +2,7 @@ import WebKit
 
 /// whatsapp_send through WhatsApp Web open next to the chat, for when no phone is linked through a gateway: the user
 /// approves the recipient and the exact text in the plan, then Nook opens that chat in the pane, types the text and sends
-/// it (see `WhatsAppWeb` for the script and its checks).
+/// it (see `WhatsAppWeb` for the script and its checks). "@open chat Jan" opens a chat there the same way.
 extension EmbeddedAppStore {
     /// WhatsApp Web is the app beside the chat and has loaded, so a message can go through it.
     var whatsAppWebOpen: Bool {
@@ -28,7 +28,37 @@ extension EmbeddedAppStore {
         case .draft(let found): throw NookError(tr("whatsapp.web.draft", found))
         case .notSent(let found): throw NookError(tr("whatsapp.web.notSent", found))
         case .failed(let step): throw NookError(tr("whatsapp.web.failed", step))
+        case .opened: throw NookError(tr("whatsapp.web.failed", "answer"))
         }
+    }
+
+    /// Opens the chat named `chat` in WhatsApp Web beside the chat ("@open chat Jan"); returns its name as WhatsApp shows
+    /// it. Right after "@open" the page is often still loading or syncing, so it keeps trying for a while.
+    @discardableResult
+    func openWhatsAppChat(_ chat: String) async throws -> String {
+        let name = chat.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw NookError(tr("whatsapp.open.notFound", name)) }
+        let tries = 12
+        for attempt in 1...tries {
+            guard whatsAppWebOpen, let webView else { throw NookError(tr("whatsapp.web.notOpen")) }
+            if webView.isLoading {
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+                continue
+            }
+            // The name goes in as an argument, never into the script's source.
+            let result = try await webView.callAsyncJavaScript(WhatsAppWeb.openScript, arguments: ["name": name],
+                                                               in: nil, contentWorld: .defaultClient)
+            switch WhatsAppWeb.outcome(result) {
+            case .opened(let opened): return opened.isEmpty ? name : opened
+            case .signedOut where attempt < tries: try await Task.sleep(nanoseconds: 1_500_000_000)
+            case .signedOut: throw NookError(tr("whatsapp.open.signedOut", name))
+            case .notFound: throw NookError(tr("whatsapp.open.notFound", name))
+            case .ambiguous(let names): throw NookError(tr("whatsapp.open.ambiguous", name, names.joined(separator: ", ")))
+            case .failed(let step): throw NookError(tr("whatsapp.open.failed", name, step))
+            case .sent, .draft, .notSent: throw NookError(tr("whatsapp.open.failed", name, "answer"))
+            }
+        }
+        throw NookError(tr("whatsapp.open.signedOut", name))
     }
 
     /// Offered only while WhatsApp Web is open beside the chat and no phone is linked (then the gateway's whatsapp_send

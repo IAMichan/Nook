@@ -3,7 +3,8 @@ import Foundation
 // whatsapp_send without a linked phone: when WhatsApp Web is open next to the chat ("@open whatsapp web"), Nook sends
 // the approved message through it, the way the user would: search the chat, open it, type the text, press send. This is
 // the part without WebKit (the script that runs in the page and what its answer means), so it can be tested anywhere;
-// `EmbeddedAppStore.sendWhatsApp` runs it in the web view.
+// `EmbeddedAppStore.sendWhatsApp` runs it in the web view. "@open chat Jan" opens a chat there the same way, without
+// typing anything (`openScript`).
 
 enum WhatsAppWeb {
     /// The longest message Nook types into WhatsApp Web in one go.
@@ -17,6 +18,8 @@ enum WhatsAppWeb {
     enum Outcome: Equatable {
         /// Sent, in the chat with this exact name.
         case sent(String)
+        /// The chat with this exact name is open (`openScript`); nothing was typed.
+        case opened(String)
         /// WhatsApp Web shows its QR code or is still loading: there is no chat list yet.
         case signedOut
         /// No chat has this name.
@@ -37,6 +40,7 @@ enum WhatsAppWeb {
         let chat = (result["chat"] as? String) ?? ""
         switch status {
         case "sent": return .sent(chat)
+        case "opened": return .opened(chat)
         case "signedOut": return .signedOut
         case "notFound": return .notFound
         case "ambiguous": return .ambiguous(((result["candidates"] as? [Any]) ?? []).compactMap { $0 as? String })
@@ -51,7 +55,40 @@ enum WhatsAppWeb {
     /// once the chat's own header shows that name, only into an empty composer, and only when the composer then holds
     /// exactly the approved text. Elements are found by structure and icons, not by labels, so the page's language does
     /// not matter.
-    static let sendScript = #"""
+    static let sendScript = findScript + #"""
+    const composer = await until(() => document.querySelector('#main footer [contenteditable="true"]'), 3000);
+    if (!composer) return { status: 'failed', step: 'composer' };
+    if (squash(plain(composer))) return { status: 'draft', chat: chat.label };
+
+    composer.focus();
+    const lines = text.split('\n');
+    lines.forEach((line, index) => {
+      if (index > 0) key(composer, true);
+      if (line) document.execCommand('insertText', false, line);
+    });
+    await sleep(300);
+    if (squash(plain(composer)) !== squash(text)) {
+      fill(composer, '');
+      return { status: 'failed', step: 'text' };
+    }
+
+    const icon = await until(() => document.querySelector('#main footer [data-icon="send"], #main footer [data-icon="wds-ic-send-filled"], #main footer [data-icon*="send"]'), 2000);
+    const button = icon && (icon.closest('button, [role="button"]') || icon);
+    if (button) press(button); else key(composer, false);
+    const cleared = await until(() => !squash(plain(composer)), 4000);
+    if (!cleared) return { status: 'notSent', chat: chat.label };
+    return { status: 'sent', chat: chat.label };
+    """#
+
+    /// The body of an async function run in the page with `name` (the chat) as argument: opens that chat in WhatsApp
+    /// Web, found the same way as for sending, and changes nothing in it.
+    static let openScript = findScript + #"""
+    return { status: 'opened', chat: chat.label };
+    """#
+
+    /// Finds the chat called `name` in the list and opens it, waiting until its header shows that name. Shared by
+    /// `sendScript` and `openScript`; ends with `chat` (the chat opened) in scope.
+    private static let findScript = #"""
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const norm = value => (value || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
     const squash = value => (value || '').normalize('NFC').replace(/\s+/g, '');
@@ -149,27 +186,6 @@ enum WhatsAppWeb {
       return element && norm(plain(element)).includes(norm(chat.label)) ? element : null;
     }, 5000);
     if (!header) return { status: 'failed', step: 'chat' };
-    const composer = await until(() => document.querySelector('#main footer [contenteditable="true"]'), 3000);
-    if (!composer) return { status: 'failed', step: 'composer' };
-    if (squash(plain(composer))) return { status: 'draft', chat: chat.label };
 
-    composer.focus();
-    const lines = text.split('\n');
-    lines.forEach((line, index) => {
-      if (index > 0) key(composer, true);
-      if (line) document.execCommand('insertText', false, line);
-    });
-    await sleep(300);
-    if (squash(plain(composer)) !== squash(text)) {
-      fill(composer, '');
-      return { status: 'failed', step: 'text' };
-    }
-
-    const icon = await until(() => document.querySelector('#main footer [data-icon="send"], #main footer [data-icon="wds-ic-send-filled"], #main footer [data-icon*="send"]'), 2000);
-    const button = icon && (icon.closest('button, [role="button"]') || icon);
-    if (button) press(button); else key(composer, false);
-    const cleared = await until(() => !squash(plain(composer)), 4000);
-    if (!cleared) return { status: 'notSent', chat: chat.label };
-    return { status: 'sent', chat: chat.label };
     """#
 }

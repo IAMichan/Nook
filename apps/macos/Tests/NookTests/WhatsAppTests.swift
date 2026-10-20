@@ -27,6 +27,18 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.unread, 0)
     }
 
+    /// "@open chat Jan" in the Mac app: a person's chat opens by their number; a group or a hidden id has no such link.
+    func testAppLinkOpensAPersonsChatByNumber() {
+        XCTAssertEqual(WAJID.appLink("31600000001@s.whatsapp.net")?.absoluteString, "whatsapp://send?phone=31600000001")
+        XCTAssertEqual(WAJID.appLink("31600000001:12@s.whatsapp.net")?.absoluteString, "whatsapp://send?phone=31600000001")
+        XCTAssertEqual(WAJID.appLink("31600000001@c.us")?.absoluteString, "whatsapp://send?phone=31600000001")
+        XCTAssertNil(WAJID.appLink("120363001@g.us"))
+        XCTAssertNil(WAJID.appLink("120363001@newsletter"))
+        XCTAssertNil(WAJID.appLink("123456789@lid"))
+        XCTAssertNil(WAJID.appLink("status@broadcast"))
+        XCTAssertNil(WAJID.appLink("jan@s.whatsapp.net"))
+    }
+
     func testStatusUpdatesAndChannelsStayQuietUntilAsked() {
         var inbox = WAInbox()
         XCTAssertEqual(WAJID.kind("status@broadcast"), .status)

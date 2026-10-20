@@ -203,6 +203,15 @@ enum WAJID {
         let server = parts[1] == "c.us" ? "s.whatsapp.net" : parts[1]
         return "\(user)@\(server)"
     }
+
+    /// The link that opens a person's chat in the WhatsApp Mac app: "whatsapp://send?phone=33612345678". Nil for a
+    /// group, a channel or an id that is no phone number, which have no such link.
+    static func appLink(_ jid: String) -> URL? {
+        let parts = normalized(jid).split(separator: "@", maxSplits: 1).map(String.init)
+        guard parts.count == 2, parts[1] == "s.whatsapp.net", !parts[0].isEmpty, parts[0].allSatisfy(\.isASCII),
+              parts[0].allSatisfy(\.isNumber) else { return nil }
+        return URL(string: "whatsapp://send?phone=" + parts[0])
+    }
 }
 
 /// The conversations, grouped by chat: one entry per conversation, never one per message.

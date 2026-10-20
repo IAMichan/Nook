@@ -1,16 +1,12 @@
 import SwiftUI
 
 /// Apps inside Nook: "@open whatsapp" shows WhatsApp Web next to the chat, so you chat in the app itself and with Nook
-/// about it side by side. "@close" puts it away again (it stays signed in).
+/// about it side by side; "@open chat Jan" does the same and opens Jan's chat in it. "@close" puts it away again (it
+/// stays signed in).
 extension AppModel {
     /// Handles "@open …", "@whatsapp", "@open chat Jan" and "@close" from the chat. False when the text is no such command.
     func handleEmbeddedAppCommand(_ text: String) -> Bool {
         guard let command = EmbeddedAppCatalog.command(in: text) else { return false }
-        // A chat shows as its card in the notch, not in the chat.
-        if case .chat(let name) = command {
-            openWhatsAppChat(name, asked: text)
-            return true
-        }
         chat.append(ChatMessage(role: .user, text: text))
         switch command {
         case .open(let app, let mode):
@@ -20,8 +16,8 @@ extension AppModel {
             let title = EmbeddedAppStore.shared.current?.title
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
-        case .chat:
-            break
+        case .chat(let name):
+            openWhatsAppChat(name)
         case .unknown(let name):
             let names = EmbeddedAppCatalog.suggestions(for: name).map { "@open " + $0.title }.joined(separator: ", ")
             chat.append(ChatMessage(role: .nook, text: tr("embedded.unknown", name, names)))
@@ -51,6 +47,40 @@ extension AppModel {
             viewModel.embeddedAppOpen = true
         }
         return (target, way, wanted != nil)
+    }
+
+    /// "@open chat Jan": WhatsApp opens next to the chat, the way you open it ("@open whatsapp"), with Jan's chat in it.
+    /// In WhatsApp Web Nook searches the chat and clicks it; the Mac app opens a person's chat by their number (known
+    /// from a linked phone), and otherwise you pick the chat there yourself. Nothing is typed or marked read.
+    func openWhatsAppChat(_ name: String) {
+        guard let whatsApp = EmbeddedAppCatalog.find("whatsapp") else { return }
+        // A linked phone knows the chat's exact name and number; without one the name goes as typed.
+        let target = WhatsAppLink.shared.resolve(name)
+        let shown = target?.name ?? name
+        let opened = openEmbeddedApp(whatsApp)
+        switch opened.mode {
+        case .web:
+            chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.opening", shown)))
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    _ = try await EmbeddedAppStore.shared.openWhatsAppChat(shown)
+                } catch {
+                    // Closed or switched away in the meantime: there is nothing left to tell.
+                    guard EmbeddedAppStore.shared.current?.id == opened.app.id else { return }
+                    self.chat.append(ChatMessage(role: .nook, text: error.localizedDescription))
+                }
+            }
+        case .mirror, .window:
+            guard let link = target.flatMap({ WAJID.appLink($0.jid) }) else {
+                chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.pick", opened.app.title, shown)))
+                break
+            }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = opened.mode == .window
+            NSWorkspace.shared.open([link], withApplicationAt: opened.app.url, configuration: configuration) { _, _ in }
+            chat.append(ChatMessage(role: .nook, text: tr(opened.mode == .window ? "whatsapp.open.window" : "whatsapp.open.opened", shown)))
+        }
     }
 
     /// Opens the app beside the chat another way, chosen at the top of its pane, and remembers that for next time.
