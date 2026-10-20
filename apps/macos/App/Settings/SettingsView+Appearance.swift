@@ -58,7 +58,7 @@ extension SettingsView {
                 Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
             }
 
-            wardrobeSection
+            WardrobeSettingsSection()
 
             Section {
                 HStack(spacing: 10) {
@@ -150,72 +150,6 @@ extension SettingsView {
         ("nook.mood.celebrate", .celebrate),
         ("nook.mood.breathe", .breathe)
     ]
-
-    // MARK: Wardrobe
-
-    /// What Nook wears: a tile per item with Nook wearing it, one item per place, and whether he may dress himself.
-    private var wardrobeSection: some View {
-        Section {
-            SettingToggle(tr("wardrobe.automatic"), detail: tr("wardrobe.automaticDetail"), isOn: $settings.nookWardrobe.automatic)
-            ForEach(NookAccessorySlot.allCases, id: \.self) { slot in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(tr("wardrobe.slot.\(slot.rawValue)"))
-                        .font(.callout.weight(.semibold))
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
-                        wardrobeTile(nil, slot: slot)
-                        ForEach(NookAccessory.allCases.filter { $0.slot == slot }) { item in
-                            wardrobeTile(item, slot: slot)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-        } header: {
-            Text(tr("wardrobe.title"))
-        } footer: {
-            Text(tr("wardrobe.footer"))
-        }
-    }
-
-    /// One item as a tile: Nook wearing it, its name, a ring when chosen. `nil` is "nothing chosen" for the place:
-    /// then Nook picks himself (with dressing himself on) or wears nothing there.
-    private func wardrobeTile(_ item: NookAccessory?, slot: NookAccessorySlot) -> some View {
-        let selected = settings.nookWardrobe.chosen(in: slot) == item
-        let title = item.map { tr($0.titleKey) } ?? tr(settings.nookWardrobe.automatic ? "wardrobe.item.auto" : "wardrobe.item.none")
-        return Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                if let item { settings.nookWardrobe.wear(item) } else { settings.nookWardrobe.clear(slot) }
-            }
-        } label: {
-            VStack(spacing: 6) {
-                ZStack {
-                    if let item {
-                        // Hats stick out above him, a scarf's tails below: keep the whole item in the tile.
-                        NookOrb(mood: .rest, size: 34, animated: false, glow: false, look: settings.nookLook, outfit: [item])
-                            .offset(y: slot == .head ? 8 : (slot == .neck ? -5 : 0))
-                    } else {
-                        Image(systemName: settings.nookWardrobe.automatic ? "sparkles" : "circle.slash")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(width: 64, height: 58)
-                Text(title)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NookTheme.smoke.opacity(selected ? 0.9 : 0.5)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.primary.opacity(0.1), lineWidth: selected ? 2 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
 
     /// One style as a card: a still Nook in that style, its name, and a ring when chosen.
     private func lookPresetCard(_ id: String, _ look: NookLook) -> some View {

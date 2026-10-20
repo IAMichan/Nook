@@ -3,6 +3,9 @@ import Foundation
 /// Where on Nook an accessory sits. He wears at most one per place.
 enum NookAccessorySlot: String, CaseIterable, Codable {
     case head, eyes, neck
+
+    /// Head first, then eyes, then neck.
+    var order: Int { Self.allCases.firstIndex(of: self) ?? 0 }
 }
 
 /// Something Nook can wear. Drawn by `NookAccessoryLayer`; chosen in Settings › Appearance › Wardrobe, or put on by
