@@ -84,9 +84,11 @@ struct PanelView: View {
         HStack(spacing: 0) {
             NookTabBar(items: tabItems, selected: tab) { select($0) }
             if inWindow {
-                // Empty header space moves the window, as a title bar does.
+                // Empty header space moves the window, as a title bar does. Its height is fixed: a clear color takes all
+                // the height it is offered, and left free it stretched the header to half the window.
                 Color.clear
-                    .frame(minWidth: 8, maxWidth: .infinity, minHeight: Self.headerHeight)
+                    .frame(minWidth: 8, maxWidth: .infinity)
+                    .frame(height: Self.headerHeight)
                     .contentShape(Rectangle())
                     .gesture(WindowDragGesture())
             } else {
