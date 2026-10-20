@@ -145,4 +145,16 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertTrue(env["PATH"]?.hasPrefix("/opt/homebrew/bin:") ?? false)
         XCTAssertTrue(env["PATH"]?.hasSuffix(":/usr/bin:/bin") ?? false)
     }
+
+    func testLaunchedByXcode() {
+        XCTAssertTrue(BuildSource.launchedByXcode(["__XCODE_BUILT_PRODUCTS_DIR_PATHS": "/x/Build/Products/Debug",
+                                                   "HOME": "/Users/me"]))
+        XCTAssertFalse(BuildSource.launchedByXcode(["HOME": "/Users/me", "XCODE_VERSION": "16"]), "opened from Finder")
+    }
+
+    func testProjectPathAndAppleScriptQuoting() {
+        let source = BuildSource(info: ["NookSourceCommit": commit, "NookSourceRoot": "/Users/me/nook/apps/macos"])
+        XCTAssertEqual(source?.projectPath, "/Users/me/nook/apps/macos/Nook.xcodeproj")
+        XCTAssertEqual(AppUpdater.appleScriptString(#"/Users/me/my "nook"\x"#), #""/Users/me/my \"nook\"\\x""#)
+    }
 }

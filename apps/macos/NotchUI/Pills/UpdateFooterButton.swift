@@ -2,8 +2,10 @@ import SwiftUI
 
 /// The update button in the panel footer. It only shows when there is something to say: a merged pull request this
 /// build does not have yet, the install running, a restart that waits for you, a failed install, or, right after the
-/// restart, that the update went in. Clicking it opens `UpdatePanel`; nothing installs without its button.
-struct UpdateFooterButton: View {
+/// restart, that the update went in. Run from Xcode, a build there instead of the restart. With nothing to say it shows
+/// `idle` (the footer's refresh button) in its place. Clicking it opens `UpdatePanel`; nothing installs without its button.
+struct UpdateFooterButton<Idle: View>: View {
+    @ViewBuilder var idle: () -> Idle
     @ObservedObject private var updater = AppUpdater.shared
     @State private var open = false
     @State private var hovering = false
@@ -30,6 +32,9 @@ struct UpdateFooterButton: View {
         case .readyToRestart:
             return Look(id: "restart", symbol: "arrow.clockwise.circle.fill", label: tr("update.button.restart"),
                         tint: NookTheme.mint, help: tr("update.ready.title"))
+        case .readyToBuildInXcode:
+            return Look(id: "xcode", symbol: "hammer.circle.fill", label: tr("update.button.xcode"), tint: NookTheme.mint,
+                        help: tr("update.xcode.title"))
         case .failed:
             return Look(id: "failed", symbol: "exclamationmark.triangle.fill", label: tr("update.button.failed"),
                         tint: NookTheme.coral, help: tr("update.failed.title"))
@@ -58,6 +63,8 @@ struct UpdateFooterButton: View {
                     UpdatePanel { open = false }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            } else {
+                idle().transition(.opacity)
             }
         }
         .animation(NookTheme.swap, value: look?.id)

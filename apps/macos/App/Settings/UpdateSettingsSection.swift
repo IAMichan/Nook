@@ -15,7 +15,7 @@ struct UpdateSettingsSection: View {
                             ProgressView().controlSize(.small)
                         }
                         switch updater.phase {
-                        case .available, .installing, .readyToRestart, .failed:
+                        case .available, .installing, .readyToRestart, .readyToBuildInXcode, .failed:
                             Button(tr("update.settings.open")) { updater.showPanel() }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
@@ -54,6 +54,8 @@ struct UpdateSettingsSection: View {
             return (tr("update.installing.title"), UpdateText.step(step), .todo)
         case .readyToRestart:
             return (tr("update.ready.title"), tr("update.menu.restart"), .warning)
+        case .readyToBuildInXcode:
+            return (tr("update.xcode.title"), tr("update.menu.xcode"), .warning)
         case .failed(let failure):
             return (tr("update.failed.title"), UpdateText.reason(failure.reason, branch: updater.available?.branch ?? "main"), .error)
         case .checking:

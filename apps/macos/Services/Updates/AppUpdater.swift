@@ -6,8 +6,9 @@ import Combine
 /// since this build: the build wrote its commit into Info.plist (`BuildSource`), and every half hour (and after the Mac
 /// wakes) the updater fetches main and counts what came in. The panel footer then shows an update button; installing is
 /// always your click and goes: fetch → fast-forward the checkout → xcodegen → xcodebuild (same configuration and Xcode
-/// as this build) → put the new app where this one runs → restart. Each step is logged to ~/Library/Logs/Nook, and the
-/// install is written to the action log.
+/// as this build) → put the new app where this one runs → restart. Run from Xcode, it stops after xcodegen and lets you
+/// start the new build in Xcode instead, so it runs under the debugger again. Each step is logged to
+/// ~/Library/Logs/Nook, and the install is written to the action log.
 @MainActor
 final class AppUpdater: ObservableObject {
     static let shared = AppUpdater()
@@ -22,6 +23,8 @@ final class AppUpdater: ObservableObject {
         case installing(UpdateStep)
         /// Built and in place; waiting for you to restart because sessions Nook runs are still working.
         case readyToRestart
+        /// Run from Xcode: the checkout is on main and the project generated; Xcode builds and runs the new version.
+        case readyToBuildInXcode
         case failed(UpdateFailure)
     }
 
@@ -64,6 +67,8 @@ final class AppUpdater: ObservableObject {
     }
 
     let source: BuildSource?
+    /// Xcode launched this process: an update ends with a build in Xcode instead of one of its own and a restart.
+    let fromXcode: Bool
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var checking = false
@@ -75,8 +80,10 @@ final class AppUpdater: ObservableObject {
     /// The footer asks for a check when it appears, at most this often.
     private static let staleAfter: TimeInterval = 10 * 60
 
-    init(source: BuildSource? = Bundle.main.infoDictionary.flatMap(BuildSource.init(info:))) {
+    init(source: BuildSource? = Bundle.main.infoDictionary.flatMap(BuildSource.init(info:)),
+         fromXcode: Bool = BuildSource.launchedByXcode(ProcessInfo.processInfo.environment)) {
         self.source = source
+        self.fromXcode = fromXcode
         self.autoCheck = UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true
         if source == nil { phase = .unavailable }
     }
@@ -126,7 +133,7 @@ final class AppUpdater: ObservableObject {
     func check() {
         guard let source, !checking else { return }
         switch phase {
-        case .installing, .readyToRestart, .unavailable: return
+        case .installing, .readyToRestart, .readyToBuildInXcode, .unavailable: return
         default: break
         }
         checking = true
@@ -222,7 +229,7 @@ final class AppUpdater: ObservableObject {
         phase = .installing(.fetch)
         AppModel.shared.store.audit(tool: "app_update", args: "\(source.shortCommit) → \(update.shortTarget)", result: "started")
 
-        let job = Job(source: source, update: update, git: git, allowStash: stash,
+        let job = Job(source: source, update: update, git: git, allowStash: stash, buildInXcode: fromXcode,
                       environment: UpdateEnvironment.make(base: ProcessInfo.processInfo.environment,
                                                           developerDirectory: source.developerDirectory.flatMap {
                                                               FileManager.default.fileExists(atPath: $0) ? $0 : nil
@@ -273,9 +280,11 @@ final class AppUpdater: ObservableObject {
         receipt = nil
     }
 
-    /// Opens the Agents tab with the update panel: from the menu bar and Settings.
+    /// Opens the update panel from the menu bar and Settings: on the tab that is open, every tab has the footer; on
+    /// Agents when the panel is closed.
     func showPanel() {
-        AppModel.shared.viewModel.show(.panel(.agents), inNotch: true)
+        let viewModel = AppModel.shared.viewModel
+        if case .panel = viewModel.state {} else { viewModel.show(.panel(.agents), inNotch: true) }
         panelRequested = true
     }
 
@@ -295,8 +304,10 @@ final class AppUpdater: ObservableObject {
         let receipt = UpdateReceipt(from: source.commit, to: target, changes: update.changes, installedAt: Date())
         if let data = try? JSONEncoder().encode(receipt) { UserDefaults.standard.set(data, forKey: Self.receiptKey) }
         AppModel.shared.store.audit(tool: "app_update", args: "\(source.shortCommit) → \(String(target.prefix(7)))",
-                                    result: "installed \(update.count)")
-        if AppModel.shared.workspace.activeRuns.isEmpty {
+                                    result: fromXcode ? "checkout updated \(update.count)" : "installed \(update.count)")
+        if fromXcode {
+            phase = .readyToBuildInXcode
+        } else if AppModel.shared.workspace.activeRuns.isEmpty {
             restart()
         } else {
             phase = .readyToRestart
@@ -324,6 +335,47 @@ final class AppUpdater: ObservableObject {
         NSApp.terminate(nil)
     }
 
+    /// Opens the project in Xcode and runs it there: Xcode builds the updated checkout, stops this process and starts the
+    /// new one. Without permission to control Xcode the project still opens, and ⌘R does the rest.
+    func buildInXcode() {
+        guard let source, phase == .readyToBuildInXcode else { return }
+        let project = source.projectPath
+        // The Xcode that built this app (…/Xcode.app/Contents/Developer), else the one macOS knows.
+        let xcode = source.developerDirectory
+            .map { URL(fileURLWithPath: $0).deletingLastPathComponent().deletingLastPathComponent() }
+            .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
+        Task.detached(priority: .userInitiated) {
+            let target = xcode.map { "application \(Self.appleScriptString($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
+            let script = """
+            tell \(target)
+                activate
+                set doc to open (POSIX file \(Self.appleScriptString(project)))
+                repeat 120 times
+                    if loaded of doc is true then exit repeat
+                    delay 0.5
+                end repeat
+                run doc
+            end tell
+            """
+            guard SystemControl.appleScriptResult(script, timeout: 90).errorNumber != nil else { return }
+            await MainActor.run {
+                let file = URL(fileURLWithPath: project)
+                if let xcode {
+                    NSWorkspace.shared.open([file], withApplicationAt: xcode, configuration: NSWorkspace.OpenConfiguration())
+                } else {
+                    NSWorkspace.shared.open(file)
+                }
+            }
+        }
+    }
+
+    /// A quoted AppleScript string literal.
+    nonisolated static func appleScriptString(_ text: String) -> String {
+        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
     private func loadReceipt(for source: BuildSource) {
         guard let data = UserDefaults.standard.data(forKey: Self.receiptKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.receiptKey)
@@ -344,6 +396,8 @@ final class AppUpdater: ObservableObject {
         let update: Available
         let git: GitService
         let allowStash: Bool
+        /// Stop once the project is generated: Xcode builds it.
+        let buildInXcode: Bool
         let environment: [String: String]
         let runningApp: String
     }
@@ -398,10 +452,11 @@ final class AppUpdater: ObservableObject {
         let project = job.source.projectDirectory
         guard let xcodegen = locate("xcodegen", environment: job.environment) else { throw InstallError.missingTool("xcodegen") }
         try installation.run(xcodegen, ["generate"], in: project, environment: job.environment, timeout: 600)
+        if job.buildInXcode { return target }
 
         enter(.build)
         let xcodebuild = "/usr/bin/xcodebuild"
-        let common = ["-project", (project as NSString).appendingPathComponent("Nook.xcodeproj"), "-scheme", "Nook",
+        let common = ["-project", job.source.projectPath, "-scheme", "Nook",
                       "-configuration", job.source.configuration, "-destination", "platform=macOS"]
         try installation.run(xcodebuild, common + ["-skipMacroValidation", "-skipPackagePluginValidation", "build"], in: project,
                              environment: job.environment, timeout: 90 * 60) { line in

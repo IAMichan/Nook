@@ -176,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .available: return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
         case .installing: return (tr("update.menu.installing"), "arrow.triangle.2.circlepath")
         case .readyToRestart: return (tr("update.menu.restart"), "arrow.clockwise.circle")
+        case .readyToBuildInXcode: return (tr("update.menu.xcode"), "hammer")
         case .failed: return (tr("update.failed.title"), "exclamationmark.triangle")
         default: return nil
         }

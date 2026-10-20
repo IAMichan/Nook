@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 
 /// What the update button opens: what was merged since this build and the button that installs it, the steps while it
-/// installs, the restart that waits for you, why an install stopped, or what came in with the update you just got.
+/// installs, the restart that waits for you (or, run from Xcode, the build there), why an install stopped, or what came
+/// in with the update you just got.
 struct UpdatePanel: View {
     @ObservedObject private var updater = AppUpdater.shared
     let close: () -> Void
@@ -14,6 +15,7 @@ struct UpdatePanel: View {
             switch updater.phase {
             case .installing(let step): installing(step)
             case .readyToRestart: readyToRestart
+            case .readyToBuildInXcode: readyToBuildInXcode
             case .failed(let failure): failed(failure)
             default:
                 if let update = updater.available {
@@ -59,7 +61,7 @@ struct UpdatePanel: View {
             if updater.runningSessions > 0 {
                 note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
             }
-            Text(tr("update.how"))
+            Text(tr(updater.fromXcode ? "update.how.xcode" : "update.how"))
                 .font(NookTheme.font(11.5))
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -71,7 +73,8 @@ struct UpdatePanel: View {
                     SmallGhostButton(title: tr("update.checkAgain")) { updater.check() }
                 } else {
                     let needsConsent = preflight != .ready && !stashConsent
-                    SmallPrimaryButton(title: tr("update.install"), systemName: "arrow.down.circle") {
+                    SmallPrimaryButton(title: tr(updater.fromXcode ? "update.install.xcode" : "update.install"),
+                                       systemName: "arrow.down.circle") {
                         updater.install(stash: stashConsent)
                     }
                     .disabled(needsConsent)
@@ -129,7 +132,8 @@ struct UpdatePanel: View {
         VStack(alignment: .leading, spacing: 12) {
             header(symbol: nil, tint: NookTheme.iris, title: tr("update.installing.title"), detail: tr("update.keepWorking"))
             VStack(alignment: .leading, spacing: 7) {
-                ForEach(UpdateStep.allCases, id: \.self) { step in
+                // From Xcode the update ends with the project generated; Xcode does the build.
+                ForEach(UpdateStep.allCases.filter { !updater.fromXcode || $0 <= .generate }, id: \.self) { step in
                     stepRow(step, current: current)
                 }
             }
@@ -201,6 +205,25 @@ struct UpdatePanel: View {
                 SmallGhostButton(title: tr("update.later"), action: close)
                 SmallPrimaryButton(title: tr("update.restartNow"), systemName: "arrow.clockwise") { updater.restart() }
                     .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    private var readyToBuildInXcode: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(symbol: "hammer.circle.fill", tint: NookTheme.mint, title: tr("update.xcode.title"),
+                   detail: tr("update.xcode.detail"))
+            if updater.runningSessions > 0 {
+                note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                SmallGhostButton(title: tr("update.later"), action: close)
+                SmallPrimaryButton(title: tr("update.xcode.run"), systemName: "hammer") {
+                    updater.buildInXcode()
+                    close()
+                }
+                .keyboardShortcut(.defaultAction)
             }
         }
     }
