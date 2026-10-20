@@ -352,7 +352,7 @@ struct NotchRootView: View {
     // MARK: Nook's own moments
 
     /// A friendly moment below the notch: Nook in the moment's mood, the line, and at most one button. Clicking the
-    /// line puts it away; the button does what it says.
+    /// line does what the button says (the good morning shows today's events), or puts it away otherwise.
     private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -381,7 +381,10 @@ struct NotchRootView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentShape(Rectangle())
-                .onTapGesture { viewModel.show(.idle) }
+                .onTapGesture {
+                    // Breathing along is only started with the button: a click on the line never surprises you with it.
+                    if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
+                }
                 Spacer(minLength: 8)
                 if moment.action != nil, !moment.actionTitle.isEmpty {
                     NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }

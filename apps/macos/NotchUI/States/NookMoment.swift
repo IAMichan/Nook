@@ -6,8 +6,8 @@ struct NookMoment: Equatable, Identifiable {
     enum Action: Equatable {
         /// Breathe along for a minute: Nook grows and shrinks, the line says when to breathe in and out.
         case breathe
-        /// Open the panel at the Nook tab.
-        case openNook
+        /// Show what is in your calendar for the rest of today.
+        case showToday
         /// Open the panel at the agents.
         case openAgents
     }
