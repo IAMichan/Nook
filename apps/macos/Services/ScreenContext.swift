@@ -56,12 +56,15 @@ final class ScreenContext: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var cache: [CGWindowID: WindowText] = [:]
 
+    /// How many windows a read for a question keeps; the timer's own reads follow the energy plan (`EnergyPlan.screenWindowLimit`).
     private let maxWindows = 10
     private let interval: TimeInterval = 7
-    /// Non-frontmost windows are refreshed at most this frequently.
+    /// Non-frontmost windows are refreshed at most this frequently by a read for a question; the timer follows the plan.
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
     private let failureCooldown: TimeInterval = 60
+    /// When the timer last read the screen: on battery or in saver mode it reads less often than the timer fires.
+    private var lastPeriodic: Date = .distantPast
     /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
     /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
     /// instead of a full capture and OCR every seven seconds; a question still reads it fresh (`snapshot`).
@@ -129,9 +132,14 @@ final class ScreenContext: ObservableObject {
         // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
-        // A hot or busy Mac (a build on every core, Low Power Mode): the timer's read waits. A question still reads the
-        // screen (`snapshot`), and switching apps still reads the new window.
-        guard !SystemLoad.isConstrained else { return }
+        // A hot or busy Mac (a build on every core, Low Power Mode), or you are away: the timer's read waits. On battery or
+        // in saver mode it comes less often. A question still reads the screen (`snapshot`), and switching apps still
+        // reads the new window.
+        let plan = EnergyMonitor.shared.plan
+        guard plan.readsScreen else { return }
+        // The timer fires with a little slack; a tick that lands just short of the stretched interval still counts.
+        guard Date().timeIntervalSince(lastPeriodic) >= interval * plan.slowdown - interval * 0.25 else { return }
+        lastPeriodic = Date()
         await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }
 
@@ -210,6 +218,13 @@ final class ScreenContext: ObservableObject {
         }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let names = Self.displayNames()
+        // The timer's read does what the energy plan allows (fewer windows, older background windows, smaller pictures,
+        // one recognition at a time on battery); a read for a question or an app switch takes everything.
+        let plan = EnergyMonitor.shared.plan
+        let windowLimit = periodic ? min(maxWindows, plan.screenWindowLimit) : maxWindows
+        let backgroundAge = periodic ? max(backgroundMaxAge, plan.backgroundWindowMaxAge) : backgroundMaxAge
+        let backgroundSide = periodic ? plan.backgroundCaptureMaxSide : 2400
+        let concurrency = periodic ? plan.ocrConcurrency : 3
 
         let candidates = content.windows.filter { window in
             guard window.windowLayer == 0, window.isOnScreen, window.frame.width > 200, window.frame.height > 100,
@@ -223,7 +238,7 @@ final class ScreenContext: ObservableObject {
             let bFront = b.owningApplication?.processID == frontPID
             if aFront != bFront { return aFront }
             return a.frame.width * a.frame.height > b.frame.width * b.frame.height
-        }.prefix(maxWindows)
+        }.prefix(windowLimit)
 
         let now = Date()
         var jobs: [(window: SCWindow, isFront: Bool, accurate: Bool)] = []
@@ -241,7 +256,7 @@ final class ScreenContext: ObservableObject {
             } else if frontOnly {
                 due = old == nil
             } else {
-                due = old == nil || titleChanged || age > backgroundMaxAge
+                due = old == nil || titleChanged || age > backgroundAge
             }
             if due {
                 jobs.append((window, isFront, isFront && accurateFront))
@@ -287,27 +302,36 @@ final class ScreenContext: ObservableObject {
             }
             let configuration = SCStreamConfiguration()
             let scale: CGFloat = job.accurate ? 1.5 : 1.0
-            configuration.width = min(Int(job.window.frame.width * scale), 2400)
-            configuration.height = min(Int(job.window.frame.height * scale), 2400)
+            let maxSide = job.isFront ? 2400 : backgroundSide
+            configuration.width = min(Int(job.window.frame.width * scale), maxSide)
+            configuration.height = min(Int(job.window.frame.height * scale), maxSide)
             configuration.showsCursor = false
             guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else { continue }
             lastRead[id] = Date()
             captured.append((job.window, job.isFront, image, print))
         }
 
+        // Recognition in small batches: the front window first, then the others, at most `concurrency` at a time, so a screen
+        // full of changed windows is a steady hum on the GPU instead of one spike.
         var texts: [CGWindowID: String] = [:]
-        await withTaskGroup(of: (CGWindowID, String?).self) { group in
-            for item in captured {
-                guard let image = item.image else { continue }
-                let id = item.window.windowID
-                let fast = !(item.isFront && accurateFront)
-                group.addTask {
-                    let text = try? await ScreenReader.recognize(image, fast: fast)
-                    return (id, text)
+        let toRead = captured.filter { $0.image != nil }
+        var start = 0
+        while start < toRead.count {
+            let batch = toRead[start..<min(start + max(1, concurrency), toRead.count)]
+            start += batch.count
+            await withTaskGroup(of: (CGWindowID, String?).self) { group in
+                for item in batch {
+                    guard let image = item.image else { continue }
+                    let id = item.window.windowID
+                    let fast = !(item.isFront && accurateFront)
+                    group.addTask {
+                        let text = try? await ScreenReader.recognize(image, fast: fast)
+                        return (id, text)
+                    }
                 }
-            }
-            for await (id, text) in group {
-                if let text { texts[id] = text }
+                for await (id, text) in group {
+                    if let text { texts[id] = text }
+                }
             }
         }
 

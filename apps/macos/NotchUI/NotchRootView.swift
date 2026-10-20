@@ -6,6 +6,8 @@ struct NotchRootView: View {
     @EnvironmentObject private var app: AppModel
     // Redraws the closed notch's ring when you mark a chat as finished.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    /// Nook's idle frame rate follows the energy plan: a little slower on battery.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
         let size = viewModel.size
@@ -104,7 +106,7 @@ struct NotchRootView: View {
         }
         let side = NotchViewModel.floatingOrbSide
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
-                       frameRate: viewModel.pointerInside ? 30 : 12)
+                       frameRate: viewModel.pointerInside ? 30 : energy.plan.idleOrbFrameRate)
             .background {
                 let ring = TaskRingItem.all(app: app)
                 if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side) }
@@ -198,7 +200,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
-                    frameRate: viewModel.pointerInside ? 30 : 12)
+                    frameRate: viewModel.pointerInside ? 30 : energy.plan.idleOrbFrameRate)
                 .background {
                     if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh) }
                 }

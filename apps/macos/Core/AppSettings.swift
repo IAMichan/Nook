@@ -387,6 +387,11 @@ final class AppSettings: ObservableObject {
     @Published var screenWithEveryQuestion: Bool {
         didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
     }
+    /// How much Nook does by himself (reading the screen, thinking along, looking for agents) when the Mac is on battery,
+    /// hot or busy (Settings › General › Energy). What you ask for always runs at full speed.
+    @Published var energyMode: EnergyMode {
+        didSet { UserDefaults.standard.set(energyMode.rawValue, forKey: "energyMode") }
+    }
     /// Sources only a brain on this Mac may read ("only on this Mac"). An external brain never gets their context,
     /// tools, earlier answers built from them or screen text.
     @Published var localOnlySources: Set<String> {
@@ -568,6 +573,7 @@ final class AppSettings: ObservableObject {
         onlineLyrics = defaults.object(forKey: "onlineLyrics") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
+        energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")
         checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true

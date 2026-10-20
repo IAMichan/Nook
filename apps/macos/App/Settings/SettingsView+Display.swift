@@ -55,9 +55,50 @@ extension SettingsView {
                     set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
                 ))
             }
+            energySection
             Section(tr("settings.display.advanced")) {
                 Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
             }
+        }
+    }
+
+    // MARK: Energy
+
+    /// How much Nook does by himself on battery, a hot or busy Mac: one choice, what it means, and what he does right now.
+    private var energySection: some View {
+        Section {
+            Picker(selection: $settings.energyMode) {
+                ForEach(EnergyMode.allCases) { mode in
+                    Text(tr(mode.titleKey)).tag(mode)
+                }
+            } label: {
+                SettingLabel(tr("settings.energy.mode"), detail: tr("settings.energy.modeDetail"))
+            }
+            .pickerStyle(.segmented)
+            Text(tr(settings.energyMode.detailKey))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            LabeledContent(tr("settings.energy.now")) {
+                HStack(spacing: 6) {
+                    Image(systemName: energySymbol)
+                        .foregroundStyle(energy.plan.pace == .full ? NookTheme.mint : NookTheme.amber)
+                    Text(energy.statusText).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text(tr("settings.energy.title"))
+        } footer: {
+            Text(tr("settings.energy.footer"))
+        }
+    }
+
+    /// The symbol next to the status line: a bolt at full speed, a leaf while Nook takes it easy, a pause while he waits.
+    private var energySymbol: String {
+        switch energy.plan.pace {
+        case .full: return "bolt.fill"
+        case .light: return "leaf.fill"
+        case .paused: return "pause.circle.fill"
         }
     }
 }
