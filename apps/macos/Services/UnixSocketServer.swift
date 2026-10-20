@@ -6,14 +6,17 @@ import Darwin
 /// Nook learns this via `onPeerClosed`, allowing a card in the notch to be dismissed immediately.
 final class HookConnection: @unchecked Sendable {
     private let fd: Int32
+    /// The process that connected (the hook script) and the ones it was started from, nearest first; empty when unknown.
+    let lineage: [Int32]
     private let lock = NSLock()
     private var finished = false
     private var closedBeforeHandler = false
     private var peerClosedHandler: (() -> Void)?
     private var source: DispatchSourceRead?
 
-    init(fd: Int32) {
+    init(fd: Int32, lineage: [Int32] = []) {
         self.fd = fd
+        self.lineage = lineage
     }
 
     deinit {
@@ -174,6 +177,29 @@ final class UnixSocketServer {
         }
     }
 
+    /// The process on the other end of the socket.
+    private static func peerPID(_ fd: Int32) -> pid_t? {
+        var pid: pid_t = 0
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
+        return pid
+    }
+
+    /// `pid` and its parents, nearest first: the hook script, the shell that ran it, the agent, its terminal. Read
+    /// while the hook still runs, since the script and its shell are gone a moment later.
+    private static func lineage(of pid: pid_t?, limit: Int = 6) -> [Int32] {
+        var chain: [Int32] = []
+        var next = pid
+        while let current = next, current > 1, chain.count < limit, !chain.contains(current) {
+            chain.append(current)
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            guard proc_pidinfo(current, PROC_PIDTBSDINFO, 0, &info, size) == size else { break }
+            next = pid_t(info.pbi_ppid)
+        }
+        return chain
+    }
+
     private func handle(_ fd: Int32) {
         var uid: uid_t = 0
         var gid: gid_t = 0
@@ -201,7 +227,7 @@ final class UnixSocketServer {
             return
         }
 
-        let connection = HookConnection(fd: fd)
+        let connection = HookConnection(fd: fd, lineage: Self.lineage(of: Self.peerPID(fd)))
         connection.start(queue: watchQueue)
         handler(buffer, connection)
     }
