@@ -118,6 +118,10 @@ final class AutocompleteController: ObservableObject {
     private var expected: (old: String, new: String)?
     /// Suggestions made in the field being written in (see `CompletionMemo`).
     private var memo = CompletionMemo()
+    /// The read to do again once the app has taken in a key (see `readAgain`).
+    private var reread: (serial: Int, run: () -> Void)?
+    private var rereadSerial = 0
+    private lazy var fieldObserver = AutocompleteFieldObserver { [weak self] change in self?.fieldChanged(change) }
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
@@ -158,7 +162,8 @@ final class AutocompleteController: ObservableObject {
     private var completer: (any CompletionEngine)?
     private var loading: (identity: String, task: Task<(any CompletionEngine)?, Never>)?
 
-    /// How often to re-read the field while the app takes in a key, and how many times.
+    /// How often to re-read the field while the app takes in a key, and how many times. An app that reports its changes (see
+    /// `AutocompleteFieldObserver`) is read again at once, without waiting for the interval.
     private let settleInterval: TimeInterval = 0.03
     private let settleAttempts = 12
     /// The same after a key whose text was predicted (see `expected`): shorter, since the model is already writing. A read
@@ -277,6 +282,7 @@ final class AutocompleteController: ObservableObject {
         pressure.resume()
         self.pressure = pressure
         if let app = frontApp { readQueue.async { AutocompleteField.wake(app) } }
+        fieldObserver.watch(frontApp?.processIdentifier)
         // What is on the clipboard now was copied before autocomplete started: not recent.
         clipboardSeen = (NSPasteboard.general.changeCount, .distantPast)
         return true
@@ -290,6 +296,7 @@ final class AutocompleteController: ObservableObject {
         if let tap { CFMachPortInvalidate(tap) }
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
         pressure?.cancel()
+        fieldObserver.stop()
         tap = nil
         tapSource = nil
         appObserver = nil
@@ -299,6 +306,7 @@ final class AutocompleteController: ObservableObject {
 
     private func appChanged(_ app: NSRunningApplication?) {
         if let app { readQueue.async { AutocompleteField.wake(app) } }
+        fieldObserver.watch(app?.processIdentifier)
         store.offUntilSwitch = nil
         lastSite = nil
         fieldContext = nil
@@ -711,6 +719,36 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
+    /// Runs `body` (a read of the field) after `interval`, or sooner, as soon as the app reports the field changed (see
+    /// `AutocompleteFieldObserver`). Dropped when the user did something else meanwhile.
+    private func readAgain(after interval: TimeInterval, _ body: @escaping () -> Void) {
+        let token = readToken
+        rereadSerial += 1
+        let serial = rereadSerial
+        reread = (serial, { [weak self] in if token == self?.readToken { body() } })
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
+            MainActor.assumeIsolated { self?.runReread(serial) }
+        }
+    }
+
+    /// - Parameter serial: only that read (its timer ran out); nil for whichever is waiting.
+    private func runReread(_ serial: Int? = nil) {
+        guard let pending = reread, serial == nil || pending.serial == serial else { return }
+        reread = nil
+        pending.run()
+    }
+
+    private func fieldChanged(_ change: AutocompleteFieldObserver.Change) {
+        switch change {
+        case .text:
+            runReread()
+        case .focus:
+            // Another field: its text is not the one read last, and its context can go into the model before the first key.
+            lastRead = nil
+            scheduleWarm(after: 0.05)
+        }
+    }
+
     /// - Parameter eager: asked for with an accept key after the model answered nothing (see `holdAcceptKey`).
     private func refreshProposal(eager: Bool = false, attempt: Int = 0) {
         refreshWork = nil
@@ -722,10 +760,7 @@ final class AutocompleteController: ObservableObject {
             // look again in a moment rather than suggest for text that is about to change.
             if let snapshot, let expected, snapshot.before != expected.new,
                attempt < (snapshot.before == expected.old ? self.expectAttempts : self.unexpectedAttempts) {
-                let token = self.readToken
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.expectInterval) {
-                    MainActor.assumeIsolated { if token == self.readToken { self.refreshProposal(eager: eager, attempt: attempt + 1) } }
-                }
+                self.readAgain(after: self.expectInterval) { self.refreshProposal(eager: eager, attempt: attempt + 1) }
                 return
             }
             if let snapshot { self.propose(for: snapshot, in: app, continuing: eager) }
@@ -933,10 +968,7 @@ final class AutocompleteController: ObservableObject {
             if let snapshot, snapshot.before == anchor {
                 self.propose(for: snapshot, in: app, continuing: true)
             } else if attempt < self.settleAttempts {
-                let token = self.readToken
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.settleInterval) {
-                    MainActor.assumeIsolated { if token == self.readToken { self.followUp(after: anchor, attempt: attempt + 1) } }
-                }
+                self.readAgain(after: self.settleInterval) { self.followUp(after: anchor, attempt: attempt + 1) }
             } else {
                 self.scheduleRefresh()
             }
@@ -1038,10 +1070,7 @@ final class AutocompleteController: ObservableObject {
             if let snapshot, !snapshot.hasSelection, snapshot.before == completion.anchor {
                 self.show(completion.suggestion, for: snapshot, in: app)
             } else if attempt < self.settleAttempts {
-                let token = self.readToken
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.settleInterval) {
-                    MainActor.assumeIsolated { if token == self.readToken { self.settle(attempt: attempt + 1) } }
-                }
+                self.readAgain(after: self.settleInterval) { self.settle(attempt: attempt + 1) }
             } else {
                 // The app did something else with the text (autocorrect, formatting): start over.
                 self.dismiss()
