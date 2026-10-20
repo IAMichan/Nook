@@ -66,6 +66,32 @@ enum GitHubPullRequestDetail {
         return detail
     }
 
+    /// Only what deciding on a merge needs: the pull request, the repository's merge methods and access, and the checks
+    /// of its head. Much lighter than `load`, for merging several pull requests at once.
+    static func loadForMerge(repo: String, number: Int, token: String) async throws -> PullRequestDetail {
+        let auth = headers(token)
+        let base = "https://api.github.com/repos/\(repo)"
+        @Sendable func get(_ path: String) async throws -> Any {
+            guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
+            return try await ConnectorHTTP.json(url, headers: auth)
+        }
+        guard let pull = try await get("/pulls/\(number)") as? [String: Any] else {
+            throw NookError("GitHub returned an unexpected response.")
+        }
+        let repository = (try? await get("")) as? [String: Any]
+        guard var detail = PullRequestDetailParser.detail(pull: pull, repository: repository) else {
+            throw NookError("GitHub returned an unexpected response.")
+        }
+        let sha = detail.headSHA
+        if !sha.isEmpty, detail.state == .open {
+            async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
+            async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
+            detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+                                                           statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
+        }
+        return detail
+    }
+
     /// Merges exactly the head the view showed (`sha`): when someone pushed since, GitHub refuses instead of merging
     /// commits you have not seen. Returns the merge commit's sha.
     static func merge(repo: String, number: Int, method: PullRequestMergeMethod, sha: String, token: String) async throws -> String {

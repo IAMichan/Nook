@@ -638,7 +638,7 @@ extension GitHubConnector {
             ),
             ToolSpec(
                 name: "github_merge_pr",
-                description: "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; default to 'merge'.",
+                description: "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; default to 'merge'. To merge several pull requests at once, use github_merge_prs instead.",
                 schema: GitHubPR.schema([
                     "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to merge."]
                 ]),
@@ -664,6 +664,27 @@ extension GitHubConnector {
                 }
             ),
             ToolSpec(
+                name: "github_merge_prs",
+                description: "Merges several pull requests in one action, for 'merge all my PRs' or 'merge these PRs'. First list the pull requests the user means with github_overview (their open PRs) or github_search (for example \"is:pr is:open repo:owner/name\"), then pass every one of them here; no need to read each with github_pr_details. Right before merging, Nook checks each pull request itself and skips the ones that are a draft, closed, conflicted, or whose CI is failing or still running, and reports why. Choose the method requested by the user; without one, the repository's default (merge when allowed).",
+                schema: [
+                    "type": "object",
+                    "properties": [
+                        "pulls": ["type": "string", "description": "The pull requests, comma-separated, each as owner/name#number, for example \"IAMichan/nook#12, IAMichan/nook#14\"."],
+                        "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Optional."] as [String: Any]
+                    ] as [String: Any],
+                    "required": ["pulls"]
+                ],
+                kind: .action,
+                summarize: { input in
+                    PullRequestBatchMerge.summary(input["pulls"], method: GitHubPR.text(input, "method")?.lowercased() ?? "repository default")
+                },
+                tag: { _ in ("Merge", .caution) },
+                run: { [weak self] input in
+                    guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
+                    return try await self.mergePullRequests(input)
+                }
+            ),
+            ToolSpec(
                 name: "github_close_pr",
                 description: "Closes a pull request without merging. Only use when explicitly requested by the user.",
                 schema: GitHubPR.schema(),
@@ -681,6 +702,40 @@ extension GitHubConnector {
     }
 
     // MARK: Writing
+
+    /// Merges the approved pull requests one by one. Each is read again first and merged at the head that was checked, so
+    /// nothing pushed in between gets merged unseen; what is not ready is skipped and the rest still goes ahead.
+    fileprivate func mergePullRequests(_ input: [String: Any]) async throws -> String {
+        let problems = PullRequestBatchMerge.problems(input["pulls"])
+        guard problems.isEmpty else { throw NookError(problems.joined(separator: " ")) }
+        let requested = GitHubPR.text(input, "method").map { $0.lowercased() }
+        let method = requested.flatMap(PullRequestMergeMethod.init(rawValue:))
+        if requested != nil, method == nil { throw NookError("The method must be merge, squash, or rebase.") }
+        let token = try credentials(input).token
+        var outcomes: [(PullRequestBatchMerge.Target, PullRequestBatchMerge.Outcome)] = []
+        for target in PullRequestBatchMerge.targets(input["pulls"]).targets {
+            do {
+                let detail = try await GitHubPullRequestDetail.loadForMerge(repo: target.repo, number: target.number, token: token)
+                if let reason = PullRequestBatchMerge.skipReason(detail) {
+                    outcomes.append((target, .skipped(reason)))
+                    continue
+                }
+                guard let chosen = PullRequestBatchMerge.method(requested: method, allowed: detail.methods) else {
+                    outcomes.append((target, .skipped("\(requested ?? "merge") not allowed in this repository")))
+                    continue
+                }
+                _ = try await GitHubPullRequestDetail.merge(repo: target.repo, number: target.number, method: chosen,
+                                                            sha: detail.headSHA, token: token)
+                outcomes.append((target, .merged(chosen.rawValue)))
+            } catch {
+                outcomes.append((target, .failed(error.localizedDescription)))
+            }
+        }
+        let report = PullRequestBatchMerge.report(outcomes)
+        // Nothing merged at all: the step failed, with every reason, so the plan does not show it as done.
+        guard outcomes.contains(where: { if case .merged = $0.1 { return true }; return false }) else { throw NookError(report) }
+        return report
+    }
 
     /// Performs a write action on GitHub and forwards GitHub's error message so Nook can explain why an action failed.
     fileprivate func send(_ method: String, _ path: String, body: [String: Any], input: [String: Any]) async throws -> [String: Any] {
