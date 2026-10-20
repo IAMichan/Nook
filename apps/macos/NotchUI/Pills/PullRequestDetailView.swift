@@ -1,20 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook: the description, checks and timeline, the commits, and every changed
-/// file with its diff. The bar at the bottom merges it, after you confirm, with the account it was listed under.
+/// One pull request, read in full inside Nook: the description, the timeline, the commits, the checks, and every
+/// changed file with its diff. The bar at the bottom merges it, after you confirm, with the account it was listed under.
 struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
     let accountID: String
     let item: PullRequestItem
     let onBack: () -> Void
 
-    enum Tab: Hashable { case conversation, commits, files }
+    enum Tab: Hashable { case description, timeline, commits, checks, files }
 
     @State private var detail: PullRequestDetail?
     @State private var loading = false
     @State private var error: String?
-    @State private var tab: Tab = .conversation
+    @State private var tab: Tab = .description
     @State private var openFile: String?
     @AppStorage("agents.pr.mergeMethod") private var methodRaw = PullRequestMergeMethod.merge.rawValue
     @State private var confirmMerge = false
@@ -38,7 +38,7 @@ struct PullRequestDetailView: View {
             if let detail {
                 summary(detail)
                 tabs(detail)
-                // The relative times in the conversation and the commits tick along, once a minute.
+                // The relative times in the timeline and the commits tick along, once a minute.
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     content(detail, now: context.date)
                 }
@@ -148,8 +148,10 @@ struct PullRequestDetailView: View {
     private func tabs(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: 0) {
             NookTabBar<Tab>(items: [
-                .init(value: Tab.conversation, title: tr("agents.pr.tab.conversation")),
+                .init(value: Tab.description, title: tr("agents.pr.tab.description")),
+                .init(value: Tab.timeline, title: tr("agents.pr.tab.timeline", detail.events.count)),
                 .init(value: Tab.commits, title: tr("agents.pr.tab.commits", detail.commits.count)),
+                .init(value: Tab.checks, title: tr("agents.pr.tab.checks", detail.checks.count)),
                 .init(value: Tab.files, title: tr("agents.pr.tab.files", max(detail.changedFiles, detail.files.count))),
             ], selected: tab) { value in
                 withAnimation(NookTheme.swap) { tab = value }
@@ -162,11 +164,17 @@ struct PullRequestDetailView: View {
     @ViewBuilder
     private func content(_ detail: PullRequestDetail, now: Date) -> some View {
         switch tab {
-        case .conversation:
-            ScrollView(showsIndicators: false) { conversation(detail, now: now).frame(maxWidth: .infinity, alignment: .leading) }
+        case .description:
+            ScrollView(showsIndicators: false) { description(detail).frame(maxWidth: .infinity, alignment: .leading) }
+                .frame(maxHeight: .infinity)
+        case .timeline:
+            ScrollView(showsIndicators: false) { timeline(detail, now: now).frame(maxWidth: .infinity, alignment: .leading) }
                 .frame(maxHeight: .infinity)
         case .commits:
             ScrollView(showsIndicators: false) { commits(detail, now: now).frame(maxWidth: .infinity, alignment: .leading) }
+                .frame(maxHeight: .infinity)
+        case .checks:
+            ScrollView(showsIndicators: false) { checks(detail).frame(maxWidth: .infinity, alignment: .leading) }
                 .frame(maxHeight: .infinity)
         case .files:
             if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
@@ -178,34 +186,44 @@ struct PullRequestDetailView: View {
         }
     }
 
-    // MARK: Conversation
+    // MARK: Description
 
-    private func conversation(_ detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            card {
-                if detail.body.isEmpty {
-                    Text(tr("agents.pr.noDescription")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
-                } else {
-                    MarkdownView(text: detail.body, size: 13)
-                }
+    private func description(_ detail: PullRequestDetail) -> some View {
+        card {
+            if detail.body.isEmpty {
+                Text(tr("agents.pr.noDescription")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+            } else {
+                MarkdownView(text: detail.body, size: 13)
             }
-            section(tr("agents.pr.checks")) {
-                if detail.checks.isEmpty {
-                    Text(tr("agents.pr.checks.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
-                } else {
-                    ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
-                }
+        }
+        .padding(.bottom, 8)
+    }
+
+    // MARK: Timeline
+
+    private func timeline(_ detail: PullRequestDetail, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let created = detail.created {
+                activityRow(symbol: "arrow.triangle.pull", color: NookTheme.mint, author: detail.author,
+                            sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
             }
-            section(tr("agents.pr.conversation")) {
-                if let created = detail.created {
-                    activityRow(symbol: "arrow.triangle.pull", color: NookTheme.mint, author: detail.author,
-                                sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
-                }
-                if detail.events.isEmpty {
-                    Text(tr("agents.pr.conversation.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
-                } else {
-                    ForEach(detail.events) { event in timelineRow(event, detail: detail, now: now) }
-                }
+            if detail.events.isEmpty {
+                Text(tr("agents.pr.conversation.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+            } else {
+                ForEach(detail.events) { event in timelineRow(event, detail: detail, now: now) }
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    // MARK: Checks
+
+    private func checks(_ detail: PullRequestDetail) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if detail.checks.isEmpty {
+                Text(tr("agents.pr.checks.none")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+            } else {
+                ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
         }
         .padding(.bottom, 8)
@@ -623,15 +641,6 @@ struct PullRequestDetailView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.rowHover))
-    }
-
-    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(NookTheme.font(11.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-            content()
-        }
     }
 }
 
