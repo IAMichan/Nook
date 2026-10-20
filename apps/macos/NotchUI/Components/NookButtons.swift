@@ -3,20 +3,24 @@ import SwiftUI
 /// Primary white button for a card.
 struct NookPrimaryButton: View {
     let title: String
+    /// An SF Symbol before the title, or nil for text only.
+    var symbol: String? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.ink)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 18)
-                .frame(height: 38)
-                .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
-                .hoverLift(hovering)
+            HStack(spacing: 7) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 12, weight: .bold)) }
+                Text(title).font(NookTheme.font(14, .semibold))
+            }
+            .foregroundStyle(NookTheme.ink)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, symbol == nil ? 18 : 16)
+            .frame(height: 38)
+            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+            .hoverLift(hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -49,6 +53,8 @@ struct SmallPrimaryButton: View {
 /// Subtle secondary button alongside the primary button.
 struct NookGhostButton: View {
     let title: String
+    /// An SF Symbol before the title, or nil for text only.
+    var symbol: String? = nil
     /// Smaller text and padding, for a row with many buttons.
     var compact: Bool = false
     let action: () -> Void
@@ -56,15 +62,50 @@ struct NookGhostButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(NookTheme.font(compact ? 13 : 14, .semibold))
-                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, compact ? 8 : 12)
-                .frame(height: 38)
-                .contentShape(Rectangle())
-                .hoverLift(hovering)
+            HStack(spacing: 6) {
+                if let symbol { Image(systemName: symbol).font(.system(size: compact ? 11 : 12, weight: .semibold)) }
+                Text(title).font(NookTheme.font(compact ? 13 : 14, .semibold))
+            }
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, compact ? 8 : 12)
+            .frame(height: 38)
+            .contentShape(Rectangle())
+            .hoverLift(hovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// The quiet "OK" that closes a notice at once: a soft smoke capsule with a check, lighter than the primary button so
+/// it never competes with it.
+struct NookAcknowledgeButton: View {
+    let title: String
+    var compact: Bool = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(NookTheme.mint)
+                Text(title).font(NookTheme.font(compact ? 12.5 : 13, .semibold))
+            }
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, compact ? 10 : 12)
+            .frame(height: 30)
+            .background(
+                Capsule().fill(hovering ? NookTheme.line2 : NookTheme.smoke)
+                    .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+            )
+            .contentShape(Capsule())
+            .hoverLift(hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

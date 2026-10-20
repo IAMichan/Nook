@@ -36,6 +36,7 @@ enum SettingsSearch {
         ("settings.overview.lookScreen", .shortcuts),
         ("flow.settings.key", .shortcuts),
         ("autocomplete.section.keys", .shortcuts),
+        ("agentNotice.style", .notifications),
         ("settings.voice.agentSound", .notifications),
         ("settings.voice.customSounds", .notifications),
         ("quiet.title", .notifications),

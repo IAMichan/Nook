@@ -133,6 +133,7 @@ extension AppModel {
         case "wake_word": return SettingsCatalog.value(settings.wakeWord)
         case "dictation": return SettingsCatalog.value(FlowStore.shared.enabled)
         case "agent_sounds": return SettingsCatalog.value(settings.sounds)
+        case "agent_notice": return settings.agentNotice.rawValue
         case "use_memory": return SettingsCatalog.value(settings.useMemory)
         case "learn_from_chats": return SettingsCatalog.value(settings.learnFromChats)
         case "online_lyrics": return SettingsCatalog.value(settings.onlineLyrics)
@@ -160,6 +161,7 @@ extension AppModel {
             FlowStore.shared.enabled = on
             FlowDictation.shared.refresh()
         case "agent_sounds": settings.sounds = on
+        case "agent_notice": if let style = AgentNoticeStyle(rawValue: value) { settings.agentNotice = style }
         case "use_memory": settings.useMemory = on
         case "learn_from_chats": settings.learnFromChats = on
         case "online_lyrics": settings.onlineLyrics = on

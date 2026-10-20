@@ -230,9 +230,38 @@ extension AppModel {
         case .idle, .music, .track, .done: break
         default: return
         }
-        let message = run.status == .failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
+        let failed = run.status == .failed
         let runID = run.id
-        viewModel.finish(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
+        guard settings.agentNotice == .detailed else {
+            let message = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
+            viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, acknowledge: true) { [weak self] in
+                self?.openWorkspace(run: runID)
+            }
+            return
+        }
+        // Detailed: a card like a terminal agent's, with the run's provider and project, and OK to close it at once.
+        let token = "agentstatus-ws-" + UUID().uuidString
+        viewModel.register("\(token)#open") { [weak self] in self?.openWorkspace(run: runID) }
+        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
+        let state = failed ? tr("app.agent.failed.state") : tr("app.agent.done.state")
+        let project = (run.projectPath as NSString).lastPathComponent
+        let detail = failed ? (run.statusDetail ?? "") : ""
+        let title = detail.isEmpty ? run.title : run.title + "\n" + detail
+        let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
+        let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
+        viewModel.show(.card(NookCard(
+            id: token,
+            mood: failed ? .worry : .done,
+            context: [run.provider.displayName, project, state].filter { !$0.isEmpty }.joined(separator: " · "),
+            title: title,
+            detail: .none,
+            primary: CardAction(label: tr("ws.notice.open"), outcome: .callback("\(token)#open", ""), symbol: "eye"),
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 100 + CGFloat(lines) * 24,
+            acknowledge: ok,
+            escape: ok
+        )))
+        dismissAgentCardLater(token)
     }
 
     // MARK: - Accounts

@@ -44,6 +44,8 @@ enum SettingsCatalog {
         Entry(id: "wake_word", kind: .toggle, section: "dictation", about: "Listen for \"Hey Nook\"."),
         Entry(id: "dictation", kind: .toggle, section: "dictation", about: "Dictate anywhere by holding a key."),
         Entry(id: "agent_sounds", kind: .toggle, section: "notifications", about: "A sound when an agent waits or is done."),
+        Entry(id: "agent_notice", kind: .choice(["detailed", "compact"]), section: "notifications",
+              about: "The notch card when an agent is done or waits: detailed (its summary and changes) or compact (one line)."),
         Entry(id: "use_memory", kind: .toggle, section: "memory", about: "Use what Nook remembers with every question."),
         Entry(id: "learn_from_chats", kind: .toggle, section: "memory", about: "Let Nook learn from conversations by itself."),
         Entry(id: "online_lyrics", kind: .toggle, section: "privacy", about: "Look up song lyrics online.")

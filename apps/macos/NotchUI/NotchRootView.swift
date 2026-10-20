@@ -260,7 +260,7 @@ struct NotchRootView: View {
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
-                NookOrb(mood: .done, size: 24, glow: viewModel.geometry.isFloating)
+                NookOrb(mood: viewModel.doneTone.mood, size: 24, glow: viewModel.geometry.isFloating)
                     .padding(.leading, 18)
                 Spacer()
             }
@@ -269,15 +269,20 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
 
             HStack(spacing: 10) {
-                Image(systemName: "checkmark")
+                Image(systemName: viewModel.doneTone.symbol)
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(NookTheme.mint)
+                    .foregroundStyle(viewModel.doneTone.color)
                 Text(message)
                     .font(NookTheme.font(13.5, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                NookGhostButton(title: viewModel.doneButtonTitle) { viewModel.doneButtonPressed() }
+                NookGhostButton(title: viewModel.doneButtonTitle, compact: viewModel.doneAcknowledge) {
+                    viewModel.doneButtonPressed()
+                }
+                if viewModel.doneAcknowledge {
+                    NookAcknowledgeButton(title: tr("button.ok"), compact: true) { viewModel.show(.idle) }
+                }
             }
             .padding(.horizontal, 20)
             .frame(height: 40)

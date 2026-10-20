@@ -345,6 +345,11 @@ final class AppSettings: ObservableObject {
     @Published var panelLarge: Bool {
         didSet { UserDefaults.standard.set(panelLarge, forKey: "panelLarge") }
     }
+    /// How large the notch notification is when an agent (terminal or Workspace) finishes, fails or waits on you
+    /// (Settings › Notifications).
+    @Published var agentNotice: AgentNoticeStyle {
+        didSet { UserDefaults.standard.set(agentNotice.rawValue, forKey: "agentNotice") }
+    }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
@@ -560,6 +565,7 @@ final class AppSettings: ObservableObject {
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
+        agentNotice = AgentNoticeStyle(rawValue: defaults.string(forKey: "agentNotice") ?? "") ?? .detailed
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
         provider = AIProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .claude
@@ -603,4 +609,16 @@ final class AppSettings: ObservableObject {
         guard let key = cachedKey, key.count > 12 else { return nil }
         return "\(key.prefix(7))…\(key.suffix(4))"
     }
+}
+
+/// How large Nook's notification is when an agent finishes, fails or waits on you.
+enum AgentNoticeStyle: String, CaseIterable, Identifiable {
+    /// A card with the agent's own summary, project and changed lines, and buttons to view it, open its terminal or OK.
+    case detailed
+    /// One slim line under the notch with the agent and project, and buttons to view it or OK.
+    case compact
+
+    var id: String { rawValue }
+
+    var titleKey: String { "agentNotice.style.\(rawValue)" }
 }

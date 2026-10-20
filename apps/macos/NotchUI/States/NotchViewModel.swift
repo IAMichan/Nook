@@ -103,6 +103,10 @@ final class NotchViewModel: ObservableObject {
     }
     @Published private(set) var doneButtonTitle = tr("button.close")
     private var doneButtonAction: (() -> Void)?
+    /// What the confirmation strip says it is about: done (a check), waiting on you, or failed.
+    @Published private(set) var doneTone: DoneTone = .done
+    /// The strip also shows an "OK" that closes it at once, next to its button.
+    @Published private(set) var doneAcknowledge = false
 
     /// A task open inside the panel (new session, changes, commit…). Resizes the panel to give it room.
     @Published var sheet: NotchSheet? {
@@ -379,9 +383,12 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Displays a brief confirmation and returns to idle after a few seconds.
-    func finish(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {
+    func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, acknowledge: Bool = false,
+                action: (() -> Void)? = nil) {
         doneButtonTitle = button
         doneButtonAction = action
+        doneTone = tone
+        doneAcknowledge = acknowledge
         show(.done(message))
         doneTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 4_200_000_000)
@@ -711,4 +718,33 @@ struct PanelNotice: Identifiable {
     let message: String
     let button: String
     let action: (() -> Void)?
+}
+
+/// The mark before a confirmation strip's message.
+enum DoneTone: Equatable {
+    case done, waiting, failed
+
+    var symbol: String {
+        switch self {
+        case .done: return "checkmark"
+        case .waiting: return "hourglass"
+        case .failed: return "exclamationmark"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .done: return NookTheme.mint
+        case .waiting: return NookTheme.amber
+        case .failed: return NookTheme.coral
+        }
+    }
+
+    var mood: NookMood {
+        switch self {
+        case .done: return .done
+        case .waiting: return .waiting
+        case .failed: return .worry
+        }
+    }
 }

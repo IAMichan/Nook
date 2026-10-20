@@ -76,15 +76,20 @@ struct CardView: View {
 
     private func buttonRow(compact: Bool) -> some View {
         HStack(spacing: compact ? 0 : 4) {
-            NookPrimaryButton(title: card.primary.label) { onAction(card.primary) }
+            NookPrimaryButton(title: card.primary.label, symbol: card.primary.symbol) { onAction(card.primary) }
                 .padding(.trailing, compact ? 4 : 0)
             if !card.secondary.label.isEmpty {
-                NookGhostButton(title: card.secondary.label, compact: compact) { onAction(card.secondary) }
+                NookGhostButton(title: card.secondary.label, symbol: card.secondary.symbol, compact: compact) {
+                    onAction(card.secondary)
+                }
             }
             ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
-                NookGhostButton(title: action.label, compact: compact) { onAction(action) }
+                NookGhostButton(title: action.label, symbol: action.symbol, compact: compact) { onAction(action) }
             }
             Spacer(minLength: 4)
+            if let acknowledge = card.acknowledge {
+                NookAcknowledgeButton(title: acknowledge.label, compact: compact) { onAction(acknowledge) }
+            }
             NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
         }
     }
