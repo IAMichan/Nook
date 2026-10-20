@@ -126,7 +126,7 @@ private struct LyricRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.spring(duration: 0.45, bounce: 0.1), value: state)
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.lyrics.seekHint"))
     }
 
@@ -346,7 +346,7 @@ private struct MusicCoverCard: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.spring(duration: 0.25, bounce: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .help(item.help)
         .accessibilityLabel(item.subtitle.isEmpty ? item.title : "\(item.title), \(item.subtitle)")
         .accessibilityHint(item.help)

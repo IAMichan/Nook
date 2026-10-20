@@ -153,7 +153,7 @@ struct RunQuestionPanel: View {
         if isLast {
             onAnswer(answers)
         } else {
-            withAnimation(.easeInOut(duration: 0.15)) { index += 1 }
+            withAnimation(NookTheme.reveal) { index += 1 }
         }
     }
 }

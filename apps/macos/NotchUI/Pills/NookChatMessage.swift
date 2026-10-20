@@ -111,7 +111,7 @@ struct ChatMessageView: View, Equatable {
                 .padding(.leading, 4)
         }
         .opacity(hovering || copied ? 1 : 0)
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .padding(.top, -4)
     }
 
@@ -180,7 +180,7 @@ private struct ChatErrorCard: View {
                 }
             }
             .padding(.leading, 32)
-            Button { withAnimation(.easeOut(duration: 0.16)) { showDetails.toggle() } } label: {
+            Button { withAnimation(NookTheme.reveal) { showDetails.toggle() } } label: {
                 Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
@@ -271,7 +271,7 @@ private struct OfferChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel("Nook: \(text)")
     }
 }

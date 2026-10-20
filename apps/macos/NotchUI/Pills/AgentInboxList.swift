@@ -105,7 +105,7 @@ struct AgentInboxList: View {
             HStack(spacing: 6) {
                 searchField
                 SelectionModeButton(active: selection.isActive) {
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    withAnimation(NookTheme.reveal) {
                         if selection.isActive { selection.clear() } else { selection.begin() }
                     }
                 }
@@ -241,7 +241,7 @@ struct AgentInboxList: View {
         let count = section.rows.count + section.hiddenCount
         let ghost = ghostLabel(for: section.kind, sections: sections)
         return Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(NookTheme.reveal) {
                 if open { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
             }
         } label: {
@@ -311,7 +311,7 @@ struct AgentInboxList: View {
                 click(item, entry, shown: shown)
             }
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
-                withAnimation(.easeOut(duration: 0.15)) { selection.toggle(item.id) }
+                withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
             .contextMenu { contextMenu(item, entry) }
             .onDrag {
@@ -330,9 +330,9 @@ struct AgentInboxList: View {
             select(item.id)
             if entry.woke { store.dismissWoke(item.id) }
         case .toggle:
-            withAnimation(.easeOut(duration: 0.15)) { selection.toggle(item.id) }
+            withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
         case .extend:
-            withAnimation(.easeOut(duration: 0.15)) { selection.extend(to: item.id, in: shown) }
+            withAnimation(NookTheme.reveal) { selection.extend(to: item.id, in: shown) }
         }
     }
 
@@ -435,7 +435,7 @@ struct AgentInboxList: View {
         return SelectionBar(count: ids.count, allSelected: !shown.isEmpty && ids.count == shown.count,
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
-                            done: { withAnimation(.easeOut(duration: 0.15)) { selection.clear() } })
+                            done: { withAnimation(NookTheme.reveal) { selection.clear() } })
     }
 
     // MARK: Drops

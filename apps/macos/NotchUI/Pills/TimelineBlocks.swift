@@ -92,7 +92,7 @@ struct TimelineSummaryRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: open)
+        .animation(NookTheme.reveal, value: open)
         .accessibilityAddTraits(open ? .isSelected : [])
     }
 }
@@ -209,7 +209,7 @@ struct QueuedMessagesStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { collapsed.toggle() } } label: {
+            Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
@@ -328,7 +328,7 @@ struct PlanCard: View {
             .foregroundStyle(NookTheme.iris)
             MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 12.5)
             if collapsible {
-                Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
+                Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
                     Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.iris)

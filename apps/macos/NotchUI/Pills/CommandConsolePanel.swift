@@ -93,6 +93,7 @@ struct CommandConsolePanel: View {
 /// The block cursor of a shell that still runs.
 private struct BlinkingCursor: View {
     @State private var on = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Rectangle()
@@ -100,6 +101,8 @@ private struct BlinkingCursor: View {
             .frame(width: 7, height: 13)
             .opacity(on ? 1 : 0)
             .onAppear {
+                // With Reduce Motion the cursor stays lit instead of blinking.
+                guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
             }
             .accessibilityHidden(true)

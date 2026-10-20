@@ -150,6 +150,10 @@ enum NookTheme {
     static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
     /// Hover feedback on buttons and chips: quick, with a hint of spring.
     static let hover = Animation.spring(duration: 0.2, bounce: 0.1)
+    /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
+    static let reveal = Animation.easeInOut(duration: 0.18)
+    /// Scrolling a list to a message or a line.
+    static let scroll = Animation.easeOut(duration: 0.2)
     static let spring = open
 }
 

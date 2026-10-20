@@ -28,7 +28,7 @@ struct AutocompletePlaygroundSection: View {
                                 .allowsHitTesting(false)
                         }
                     }
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
                     .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control).strokeBorder(.quaternary))
                 HStack(spacing: 10) {
                     if playground.thinking {

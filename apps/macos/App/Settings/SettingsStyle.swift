@@ -233,7 +233,7 @@ struct GalleryCard<Icon: View, Accessory: View>: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
     }
 }
 

@@ -282,7 +282,7 @@ struct AgentsUsagePanel: View {
             }
             if hidden > 0 {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(NookTheme.reveal) {
                         if isExpanded { expanded.remove(profile.id) } else { expanded.insert(profile.id) }
                     }
                 } label: {

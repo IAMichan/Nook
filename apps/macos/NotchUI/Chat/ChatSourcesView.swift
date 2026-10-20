@@ -84,7 +84,7 @@ struct SourcesDisclosure: View {
             let failed = failedCount
             let running = list.contains { if case .running = $0.status { return true }; return false }
             VStack(alignment: .leading, spacing: 6) {
-                Button { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } } label: {
+                Button { withAnimation(NookTheme.reveal) { expanded.toggle() } } label: {
                     HStack(spacing: 7) {
                         iconStack(list)
                         Text(summary(used: used, failed: failed, running: running))

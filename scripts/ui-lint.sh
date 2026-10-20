@@ -12,6 +12,7 @@
 #      whose sizes do not line up with the scale.
 #   5. State and text colors come from NookTheme (coral, amber, mint, textSecondary …), never the system .red, .orange,
 #      .yellow, .green, .secondary, or .tertiary.
+#   6. Short UI animations use NookTheme.hover / reveal / scroll / swap, never an inline .easeOut(duration: 0.15).
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 cd "$(dirname "$0")/../apps/macos"
@@ -59,5 +60,9 @@ grep -rnE '\.font\(\s*\.(caption2?|footnote|body|headline|subheadline|callout|ti
 grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b' \
   NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)"
+
+grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:' \
+  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
+  | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
 
 exit $status

@@ -64,7 +64,7 @@ struct SessionToolSwitch: View {
             SessionToolIcon(symbol: tool.symbol, active: active, fresh: fresh)
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.18), value: fresh)
+        .animation(NookTheme.reveal, value: fresh)
         .help(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(active ? .isSelected : [])
@@ -236,8 +236,8 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
-        .animation(.easeInOut(duration: 0.2), value: side == .conversation)
-        .animation(.easeInOut(duration: 0.2), value: bottom == .conversation)
+        .animation(NookTheme.reveal, value: side == .conversation)
+        .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: side) { _, next in
             if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
         }
@@ -560,7 +560,7 @@ struct DevServerStrip: View {
                     return servers.sorted { $0.port < $1.port }
                 }.value
                 if found != servers {
-                    withAnimation(.easeOut(duration: 0.15)) { servers = found }
+                    withAnimation(NookTheme.reveal) { servers = found }
                     wait = 3
                 } else {
                     wait = min(wait + 3, 15)

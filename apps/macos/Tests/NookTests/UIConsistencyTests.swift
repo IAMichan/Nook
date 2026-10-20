@@ -103,13 +103,21 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.coral / amber / mint / textSecondary / textTertiary")
     }
 
+    /// Motion feels the same everywhere: a hover, a section that opens, or a scroll to a line uses its `NookTheme` animation
+    /// instead of a duration picked on the spot.
+    func testShortAnimationsComeFromTheTheme() {
+        let inline = #"withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:"#
+        let found = offenders(inline) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.hover / reveal / scroll / swap")
+    }
+
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
     func testThemeDefinesTheScales() {
         guard let theme = Self.sources.first(where: { $0.path == "NotchUI/Theme/NookTheme.swift" })?.text else {
             return XCTFail("NookTheme.swift not found")
         }
         for name in ["enum Radius", "enum Spacing", "enum TextStyle", "static let canvas", "static let well", "static let surface",
-                     "static let hairline", "static let fieldStroke", "static func rounded(", "static var detail", "static var heading"] {
+                     "static let hairline", "static let fieldStroke", "static func rounded(", "static var detail", "static var heading", "static let reveal", "static let scroll"] {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }

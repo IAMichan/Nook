@@ -112,7 +112,7 @@ struct WardrobeSettingsSection: View {
                 .foregroundStyle(NookTheme.textSecondary)
             if chosen {
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { settings.nookWardrobe.clear(item.slot) }
+                    withAnimation(NookTheme.reveal) { settings.nookWardrobe.clear(item.slot) }
                     cheer()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -162,7 +162,7 @@ struct WardrobeSettingsSection: View {
     // MARK: Dressing
 
     private func choose(_ item: NookAccessory?) {
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(NookTheme.reveal) {
             if let item { settings.nookWardrobe.wear(item) } else { settings.nookWardrobe.clear(slot) }
         }
         trying = nil
@@ -182,13 +182,13 @@ struct WardrobeSettingsSection: View {
         if wardrobe.chosen.isEmpty, let hat = NookAccessory.allCases.filter({ $0.slot == .head }).randomElement() {
             wardrobe.wear(hat)
         }
-        withAnimation(.easeOut(duration: 0.2)) { settings.nookWardrobe = wardrobe }
+        withAnimation(NookTheme.reveal) { settings.nookWardrobe = wardrobe }
         NookPresence.shared.celebrate()
         cheer(.celebrate)
     }
 
     private func undress() {
-        withAnimation(.easeOut(duration: 0.2)) { settings.nookWardrobe.chosen = [] }
+        withAnimation(NookTheme.reveal) { settings.nookWardrobe.chosen = [] }
         cheer(.surprised)
     }
 
@@ -262,7 +262,7 @@ private struct WardrobeTile: View {
                 }
             }
             .scaleEffect(hovering ? 1.03 : 1)
-            .animation(.spring(duration: 0.25, bounce: 0.3), value: hovering)
+            .animation(NookTheme.hover, value: hovering)
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)

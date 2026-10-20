@@ -213,7 +213,7 @@ struct PullRequestsPanel: View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
         return VStack(alignment: .leading, spacing: 2) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { toggleRepo(key, open: open) }
+                withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.down")

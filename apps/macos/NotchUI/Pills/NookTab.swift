@@ -287,7 +287,7 @@ struct NookChatView: View {
                 }
                 .padding(.trailing, 4)
                 .padding(.top, 8)
-                .animation(.easeOut(duration: 0.2), value: chat.messages.count)
+                .animation(NookTheme.reveal, value: chat.messages.count)
             }
             .defaultScrollAnchor(.bottom)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
@@ -323,7 +323,7 @@ struct NookChatView: View {
                 if scroll.mode == .free, !atEnd {
                     TimelineToEndPill {
                         scroll.jumpedToEnd()
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
                     .padding(.bottom, 8)
                 }
@@ -341,7 +341,7 @@ struct NookChatView: View {
             // You asked something: it is the newest thing and the answer is followed again.
             .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in
                 scroll.jumpedToEnd()
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: scrollKey) { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }

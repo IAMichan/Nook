@@ -47,7 +47,7 @@ struct SessionOutputsPanel: View {
             }
             Spacer(minLength: 4)
             ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(.easeInOut(duration: 0.2)) { wide.toggle() }
+                withAnimation(NookTheme.reveal) { wide.toggle() }
             }
             ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
@@ -229,7 +229,7 @@ struct FilePreviewPanel: View {
                 .help(AgentPathFormat.tilde(path))
             Spacer(minLength: 4)
             ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(.easeInOut(duration: 0.2)) { wide.toggle() }
+                withAnimation(NookTheme.reveal) { wide.toggle() }
             }
             ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
@@ -412,7 +412,7 @@ struct SessionOutputsButton: View {
     var body: some View {
         let showCount = !open && count > 0
         let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
-        Button { withAnimation(.easeInOut(duration: 0.2)) { toggle() } } label: {
+        Button { withAnimation(NookTheme.reveal) { toggle() } } label: {
             HStack(spacing: 5) {
                 Image(systemName: "tray.full").font(NookTheme.font(11, .medium))
                 if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }

@@ -27,7 +27,7 @@ struct NookList: View {
             HStack(spacing: 6) {
                 searchField
                 SelectionModeButton(active: selection.isActive) {
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    withAnimation(NookTheme.reveal) {
                         if selection.isActive { selection.clear() } else { selection.begin() }
                     }
                 }
@@ -72,7 +72,7 @@ struct NookList: View {
     /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
     private func click(_ conversation: Conversation, shown: [UUID]) {
         let keys = SelectionClick.modifiers()
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(NookTheme.reveal) {
             switch selection.click(command: keys.command, shift: keys.shift) {
             case .open: app.openConversation(conversation.id)
             case .toggle: selection.toggle(conversation.id)
@@ -106,7 +106,7 @@ struct NookList: View {
         return SelectionBar(count: selection.count, allSelected: !shown.isEmpty && Set(shown).isSubset(of: ids),
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
-                            done: { withAnimation(.easeOut(duration: 0.15)) { selection.clear() } })
+                            done: { withAnimation(NookTheme.reveal) { selection.clear() } })
     }
 
     // MARK: Header and search
@@ -178,7 +178,7 @@ struct NookList: View {
                 .frame(maxHeight: 280)
             }
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showArchived.toggle() }
+                withAnimation(NookTheme.reveal) { showArchived.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Text(tr("nooks.section.archived", archived.count))
@@ -228,7 +228,7 @@ struct NookList: View {
                     click(conversation, shown: shown)
                 }
                 .selectable(active: selection.isActive, selected: selection.contains(conversation.id)) {
-                    withAnimation(.easeOut(duration: 0.15)) { selection.toggle(conversation.id) }
+                    withAnimation(NookTheme.reveal) { selection.toggle(conversation.id) }
                 }
                 .contextMenu { contextMenu(conversation) }
             }
@@ -283,7 +283,7 @@ private struct NookRow: View {
         }
         .onHover { hovering = $0 }
         .hoverCard { NookHoverCard(conversation: conversation) }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(conversation.title), \(statusText)")
     }

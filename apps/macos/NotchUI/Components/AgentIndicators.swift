@@ -23,10 +23,11 @@ struct PulseDot: View {
     let color: Color
     let animated: Bool
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            if animated {
+            if animated && !reduceMotion {
                 Circle()
                     .stroke(color.opacity(pulse ? 0 : 0.7), lineWidth: 1.5)
                     .frame(width: 8, height: 8)
@@ -36,7 +37,7 @@ struct PulseDot: View {
         }
         .frame(width: 16, height: 16)
         .onAppear {
-            guard animated else { return }
+            guard animated, !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
         }
     }

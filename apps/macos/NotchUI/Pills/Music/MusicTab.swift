@@ -192,7 +192,7 @@ private struct MusicPlayerView: View {
             }
         }
         .padding(.trailing, 4)
-        .animation(.easeOut(duration: 0.2), value: expanded)
+        .animation(NookTheme.reveal, value: expanded)
     }
 }
 
@@ -223,7 +223,7 @@ private struct MusicSectionPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel(section.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

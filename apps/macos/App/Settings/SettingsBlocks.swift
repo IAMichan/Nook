@@ -29,7 +29,7 @@ struct ConfigPreview: View {
                 .textSelection(.enabled)
                 .padding(8)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(Color(nsColor: .textBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
             HStack {
                 Spacer()
                 Button(tr("button.cancel"), action: onCancel)
@@ -186,13 +186,13 @@ struct Keycap: View {
     var body: some View {
         Text(label)
             .font(NookTheme.rounded(12, .medium))
-            .foregroundStyle(.primary.opacity(0.85))
+            .foregroundStyle(NookTheme.textStrong)
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(Color.primary.opacity(0.14)))
+                    .fill(NookTheme.smoke)
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.line2))
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }

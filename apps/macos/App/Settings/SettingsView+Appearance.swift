@@ -154,7 +154,7 @@ extension SettingsView {
     /// One style as a card: a still Nook in that style, its name, and a ring when chosen.
     private func lookPresetCard(_ id: String, _ look: NookLook) -> some View {
         let selected = settings.nookLook == look
-        return Button { withAnimation(.easeOut(duration: 0.15)) { settings.nookLook = look } } label: {
+        return Button { withAnimation(NookTheme.reveal) { settings.nookLook = look } } label: {
             VStack(spacing: 8) {
                 NookOrb(mood: .rest, size: 44, animated: false, glow: false, look: look)
                     .frame(width: 60, height: 56)

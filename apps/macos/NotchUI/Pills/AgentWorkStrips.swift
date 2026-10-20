@@ -14,7 +14,7 @@ struct TasksStrip: View {
         let finished = progress.done >= progress.total
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
@@ -109,7 +109,7 @@ struct SubagentBar: View {
         let done = agents.filter { !$0.isRunning }.count
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.2").font(NookTheme.font(11, .semibold))

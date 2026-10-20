@@ -247,7 +247,7 @@ private struct MCPServerDetailSheet: View {
                     .font(NookTheme.TextStyle.code)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
                     .textSelection(.enabled)
 
                 if let connector {
