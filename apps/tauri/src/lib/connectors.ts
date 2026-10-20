@@ -162,7 +162,10 @@ export interface WhatsAppSettings {
   notify: boolean;
   markReadOnReply: boolean;
   muteGroups: boolean;
+  muteStatus: boolean;
+  muteChannels: boolean;
   ignored: string[];
+  modes: Record<string, WhatsAppChatMode>;
   autoStart: boolean;
   gowaPath: string;
 }
@@ -184,19 +187,32 @@ export interface WhatsAppView {
   desktop: boolean;
 }
 
+export type WhatsAppChatMode = "automatic" | "loud" | "muted";
+export type WhatsAppChatKind = "person" | "group" | "status" | "channel";
+export type WhatsAppReceipt = "failed" | "pending" | "sent" | "delivered" | "read";
+
+/** What a message holds besides text (`kind`), with a document's own name. */
+export interface WhatsAppMedia {
+  kind: "none" | "image" | "video" | "audio" | "voice" | "document" | "sticker" | "location" | "contact" | "other";
+  name?: string | null;
+}
+
 export interface WhatsAppMessage {
   id: string;
   chat: string;
   senderName: string;
   text: string;
+  media: WhatsAppMedia;
   date: string;
   fromMe: boolean;
+  receipt?: WhatsAppReceipt | null;
 }
 
 export interface WhatsAppConversation {
   id: string;
   name: string;
   isGroup: boolean;
+  kind: WhatsAppChatKind;
   messages: WhatsAppMessage[];
   unread: number;
   lastActivity: string;
@@ -207,6 +223,20 @@ export interface WhatsAppArrived {
   name: string;
   preview: string;
   unread: number;
+}
+
+/** One chat for its card in the bar, with the files the card already has (a photo with a small picture). */
+export interface WhatsAppCard {
+  conversation: WhatsAppConversation;
+  previews: Record<string, { image: string | null }>;
+}
+
+export interface WhatsAppSettingsChat {
+  jid: string;
+  name: string;
+  kind: WhatsAppChatKind;
+  mode: WhatsAppChatMode;
+  hidden: boolean;
 }
 
 export interface ChatService {
@@ -286,6 +316,14 @@ export const connectorsApi = {
   whatsappMarkRead: (chat: string) => invoke<void>("whatsapp_mark_read", { chat }),
   whatsappIgnore: (chat: string) => invoke<void>("whatsapp_ignore", { chat }),
   whatsappUnmute: () => invoke<void>("whatsapp_unmute"),
+  whatsappCard: (chat: string) => invoke<WhatsAppCard | null>("whatsapp_card", { chat }),
+  whatsappCardLoad: (chat: string) => invoke<boolean>("whatsapp_card_load", { chat }),
+  whatsappOpenFile: (chat: string, message: string) => invoke<void>("whatsapp_open_file", { chat, message }),
+  whatsappAskNook: (chat: string) => invoke<string>("whatsapp_ask_nook", { chat }),
+  whatsappMute: (chat: string) => invoke<void>("whatsapp_mute", { chat }),
+  whatsappSetMode: (chat: string, mode: WhatsAppChatMode) => invoke<void>("whatsapp_set_mode", { chat, mode }),
+  whatsappUnhide: (chat: string) => invoke<void>("whatsapp_unhide", { chat }),
+  whatsappSettingsChats: () => invoke<WhatsAppSettingsChat[]>("whatsapp_settings_chats"),
 
   chatAccounts: (nookId: string) => invoke<ChatService[]>("chat_accounts", { nookId }),
   setChatAccounts: (nookId: string, excluded: string[]) => invoke<void>("chat_accounts_set", { nookId, excluded }),
@@ -298,6 +336,7 @@ export const connectorEvents = {
   onSignIn: (cb: (e: { service: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> =>
     listen<{ service: string; ok: boolean; message: string }>("connector-signin", (e) => cb(e.payload)),
   onWhatsApp: (cb: (e: WhatsAppArrived) => void): Promise<UnlistenFn> => listen<WhatsAppArrived>("whatsapp-message", (e) => cb(e.payload)),
+  onWhatsAppReceipt: (cb: (chat: string) => void): Promise<UnlistenFn> => listen<string>("whatsapp-receipt", (e) => cb(e.payload)),
 };
 
 /// Hoe een koppeling ervoor staat, in de woorden van de Mac: werkt, bezig, uit, heeft je nodig, kapot, niet gekoppeld.

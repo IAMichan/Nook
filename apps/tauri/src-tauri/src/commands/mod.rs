@@ -24,6 +24,7 @@ use crate::state::AppState;
 
 pub mod connectors;
 pub mod services;
+pub mod whatsapp;
 
 type Res<T> = Result<T, String>;
 

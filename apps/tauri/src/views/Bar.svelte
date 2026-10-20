@@ -20,6 +20,8 @@
   import NoticeMark from "../components/NoticeMark.svelte";
   import NoticeOk from "../components/NoticeOk.svelte";
   import { compactNotice, Countdown, noticeTone } from "../lib/notice";
+  import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
+  import { whatsapp } from "../lib/whatsapp.svelte";
 
   type Tab = "nook" | "agents" | "workspace" | "music";
   let expanded = $state(false);
@@ -119,7 +121,7 @@
   function leave() {
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
-    if (pinnedOpen || nook.busy || agents.pending || agents.attention) return;
+    if (pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
     closeTimer = setTimeout(close, 450);
   }
 
@@ -190,9 +192,22 @@
     open();
   }
 
+  // WhatsApp: a new message opens the bar with its card, which stays until you answer or close it.
+  $effect(() => {
+    whatsapp.start();
+  });
+  $effect(() => {
+    if (whatsapp.chat && !untrack(() => expanded)) untrack(() => open());
+  });
+
+  // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
   function escape() {
-    if (agents.attention) dismissNotice();
-    close();
+    if (whatsapp.enlarged) whatsapp.enlarged = null;
+    else if (whatsapp.chat) whatsapp.dismiss();
+    else {
+      if (agents.attention) dismissNotice();
+      close();
+    }
   }
 
   $effect(() => {
@@ -204,7 +219,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !nook.busy && !agents.pending && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !nook.busy && !agents.pending && !whatsapp.chat && close()} />
 
 <div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; if (!strip) open(); }} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
@@ -253,6 +268,7 @@
         ondismiss={dismissNotice}
         onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }}
       />
+      <WhatsAppCard onnook={(id) => { select("nook"); pinnedOpen = true; nook.select(id); }} />
       <div class="body">
         {#if shown === "nook"}
           <div class="nooktab">

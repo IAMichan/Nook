@@ -218,7 +218,9 @@ pub async fn run_plan(
         mine
     };
     if settings.learn_from_chats {
-        for (index, action) in message.actions.iter().enumerate().filter(|(i, _)| included.get(*i).copied().unwrap_or(true)) {
+        for (index, action) in
+            message.actions.iter().enumerate().filter(|(i, a)| included.get(*i).copied().unwrap_or(true) && !a.tool.starts_with("whatsapp"))
+        {
             for (key, value) in action.input.as_object().into_iter().flatten() {
                 if let Some((_, old)) = origins.iter().find(|(k, _)| *k == format!("{prefix}{index}#{key}")) {
                     let new = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
@@ -245,7 +247,13 @@ pub async fn run_plan(
 
     // Wat lukte en wat mislukte: lessen voor de volgende keer (Nooks eigen geheugenacties leren hier niets).
     if settings.learn_from_chats {
-        for (action, step) in message.actions.iter().zip(&states).filter(|(a, _)| a.tool != "remember" && a.tool != "forget") {
+        // WhatsApp steps teach nothing: their errors name chats, and nothing from WhatsApp reaches memory.
+        for (action, step) in message
+            .actions
+            .iter()
+            .zip(&states)
+            .filter(|(a, _)| a.tool != "remember" && a.tool != "forget" && !a.tool.starts_with("whatsapp"))
+        {
             match step {
                 StepState::Done(_) | StepState::Verified(_) => brain.memory.observe_outcome(&action.tool, &action.input, None),
                 StepState::Failed(error) => brain.memory.observe_outcome(&action.tool, &action.input, Some(error)),

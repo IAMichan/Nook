@@ -1,7 +1,16 @@
 <script lang="ts">
   // WhatsApp live: via een koppeling op deze computer (GOWA of OpenWA), die WhatsApp ziet als gekoppeld apparaat.
   // Nieuwe berichten komen hier binnen; antwoorden kan meteen, en Nook mag na jouw OK een bericht sturen.
-  import { connectorsApi, connectorEvents, type WhatsAppConversation, type WhatsAppSettings, type WhatsAppView } from "../../lib/connectors";
+  import {
+    connectorsApi,
+    connectorEvents,
+    type WhatsAppChatMode,
+    type WhatsAppConversation,
+    type WhatsAppSettings,
+    type WhatsAppSettingsChat,
+    type WhatsAppView,
+  } from "../../lib/connectors";
+  import { bubbleText, fileLabel, initials, kindLabel, modeLabel, settingsChats, ticks } from "../../lib/whatsapp";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   let view = $state<WhatsAppView | null>(null);
@@ -12,10 +21,29 @@
   let testResult = $state("");
   let replies = $state<Record<string, string>>({});
   let sent = $state("");
+  // Per chat: every chat with its own choice, and the hidden ones that can come back one at a time.
+  let perChat = $state(false);
+  let query = $state("");
+  let all = $state<WhatsAppSettingsChat[]>([]);
+  const listed = $derived(settingsChats(all, query));
+  const modes: WhatsAppChatMode[] = ["automatic", "loud", "muted"];
 
   async function load() {
     view = await connectorsApi.whatsapp();
     chats = view.link.kind === "connected" ? await connectorsApi.whatsappChats() : [];
+    all = view.settings.enabled ? await connectorsApi.whatsappSettingsChats() : [];
+  }
+
+  async function setMode(chat: WhatsAppSettingsChat, mode: WhatsAppChatMode) {
+    await connectorsApi.whatsappSetMode(chat.jid, mode);
+    await load();
+  }
+
+  /** What automatic means for this kind right now. */
+  function rule(chat: WhatsAppSettingsChat): string {
+    const s = view?.settings;
+    const quiet = chat.kind === "group" ? s?.muteGroups : chat.kind === "status" ? s?.muteStatus : chat.kind === "channel" ? s?.muteChannels : false;
+    return `Automatisch betekent voor deze soort nu: ${quiet ? modeLabel.muted : modeLabel.loud}`;
   }
 
   $effect(() => {
@@ -85,11 +113,40 @@
         </div>
       {/if}
       <label class="row"><span>Nieuwe berichten melden<br /><span class="faint small">Met de laatste regels van de chat en een veld om meteen te antwoorden.</span></span><input type="checkbox" checked={view.settings.notify} onchange={(e) => save({ notify: e.currentTarget.checked })} /></label>
-      <label class="row"><span>Groepen stil<br /><span class="faint small">Een groep meldt zich alleen als iemand je noemt.</span></span><input type="checkbox" checked={view.settings.muteGroups} onchange={(e) => save({ muteGroups: e.currentTarget.checked })} /></label>
-      <label class="row"><span>Leesbevestiging bij antwoorden<br /><span class="faint small">Als je antwoordt of op Gelezen klikt, zie je bericht als gelezen op WhatsApp. Nooit alleen omdat het binnenkwam.</span></span><input type="checkbox" checked={view.settings.markReadOnReply} onchange={(e) => save({ markReadOnReply: e.currentTarget.checked })} /></label>
-      {#if view.hiddenChats > 0}
-        <div class="row"><span class="faint">{view.hiddenChats} verborgen chats</span><button onclick={async () => { await connectorsApi.whatsappUnmute(); await load(); }}>Weer tonen</button></div>
+      {#if view.settings.notify}
+        <!-- De regel per soort chat, en daaronder elke chat apart: luider of stiller dan zijn soort. -->
+        <label class="row"><span>Groepen stil<br /><span class="faint small">Een groep meldt zich alleen als iemand je noemt.</span></span><input type="checkbox" checked={view.settings.muteGroups} onchange={(e) => save({ muteGroups: e.currentTarget.checked })} /></label>
+        <label class="row"><span>Statussen stil<br /><span class="faint small">Statusupdates van je contacten melden zich niet.</span></span><input type="checkbox" checked={view.settings.muteStatus} onchange={(e) => save({ muteStatus: e.currentTarget.checked })} /></label>
+        <label class="row"><span>Kanalen stil<br /><span class="faint small">Kanalen die je volgt melden zich niet.</span></span><input type="checkbox" checked={view.settings.muteChannels} onchange={(e) => save({ muteChannels: e.currentTarget.checked })} /></label>
+        <button class="link" onclick={() => (perChat = !perChat)}>{perChat ? "▾" : "▸"} Per chat <span class="faint small">· Kies per persoon, groep, status of kanaal: volgens de regel hierboven, altijd melden, of nooit.</span></button>
+        {#if perChat}
+          {#if all.length === 0}
+            <p class="faint small">Nog geen chats. Zodra er berichten binnenkomen staan ze hier.</p>
+          {:else}
+            <input class="search" placeholder="Zoek een chat" bind:value={query} />
+            {#each listed.shown as chat (chat.jid)}
+              <div class="row chatmode">
+                <span class="inline"><span class="avatar">{initials(chat.name)}</span><span>{chat.name}<br /><span class="faint small">{kindLabel[chat.kind]}</span></span></span>
+                <span class="segmented" title={rule(chat)}>
+                  {#each modes as mode (mode)}
+                    <button class:on={chat.mode === mode} onclick={() => setMode(chat, mode)}>{modeLabel[mode]}</button>
+                  {/each}
+                </span>
+              </div>
+            {/each}
+          {/if}
+          {#if listed.hidden.length}
+            <p class="faint small"><strong>Verborgen chats</strong></p>
+            {#each listed.hidden as chat (chat.jid)}
+              <div class="row">
+                <span class="inline"><span class="avatar">{initials(chat.name)}</span>{chat.name}</span>
+                <button onclick={async () => { await connectorsApi.whatsappUnhide(chat.jid); await load(); }}>Weer tonen</button>
+              </div>
+            {/each}
+          {/if}
+        {/if}
       {/if}
+      <label class="row"><span>Leesbevestiging bij antwoorden<br /><span class="faint small">Als je antwoordt of op Gelezen klikt, zie je bericht als gelezen op WhatsApp. Nooit alleen omdat het binnenkwam.</span></span><input type="checkbox" checked={view.settings.markReadOnReply} onchange={(e) => save({ markReadOnReply: e.currentTarget.checked })} /></label>
       <button class="link" onclick={() => (advanced = !advanced)}>{advanced ? "▾" : "▸"} Geavanceerd</button>
       {#if advanced}
         <div class="row">
@@ -124,7 +181,8 @@
             <button class="ghost small" onclick={() => connectorsApi.whatsappIgnore(chat.id).then(load)}>Niet meer tonen</button>
           </div>
           {#each chat.messages.slice(-3) as m (m.id)}
-            <div class="msg"><span class="faint">{m.fromMe ? "Jij" : m.senderName || chat.name}:</span> {m.text}</div>
+            {@const mark = m.fromMe ? ticks(m.receipt) : null}
+            <div class="msg"><span class="faint">{m.fromMe ? "Jij" : m.senderName || chat.name}:</span> {[fileLabel(m.media), bubbleText(m)].filter(Boolean).join(" · ")}{#if mark}<span class="ticks {mark.tone}" title={mark.title}> {mark.symbol}</span>{/if}</div>
           {/each}
           <div class="inline"><input placeholder="Antwoord {chat.name}…" bind:value={replies[chat.id]} onkeydown={(e) => e.key === "Enter" && reply(chat)} /><button onclick={() => reply(chat)} disabled={!replies[chat.id]?.trim()}>Verstuur</button></div>
         </div>
@@ -132,7 +190,7 @@
     </div>
     {#if sent}<p class="faint small">{sent}</p>{/if}
   {/if}
-  <p class="faint small">WhatsApp heeft geen officiële koppeling voor een eigen account. Nook praat met een koppeling op je eigen computer (GOWA of OpenWA), die WhatsApp ziet als een gekoppeld apparaat, net als WhatsApp Web. Berichten blijven alleen in het geheugen en nooit in een logboek. Nook stuurt alleen naar chats op je telefoon, hoogstens 6 per minuut, en alleen na jouw Enter of Uitvoeren. Dit is niet officieel: gebruik het met verstand.</p>
+  <p class="faint small">WhatsApp heeft geen officiële koppeling voor een eigen account. Nook praat met een koppeling op je eigen computer (GOWA of OpenWA), die WhatsApp ziet als een gekoppeld apparaat, net als WhatsApp Web. Berichten blijven alleen in het geheugen en nooit in een logboek; een foto of bestand dat de kaart toont of dat je opent, staat even in Nooks eigen map en is weg zodra WhatsApp of Nook stopt. Nook stuurt alleen naar chats op je telefoon, hoogstens 6 per minuut, en alleen na jouw Enter of Uitvoeren. Dit is niet officieel: gebruik het met verstand.</p>
 {/if}
 
 <style>
@@ -147,4 +205,12 @@
   .badge { font-size: 10px; background: var(--mint); color: var(--ink); border-radius: 8px; padding: 1px 6px; }
   .spacer { flex: 1; }
   .chat input { flex: 1; }
+  .search { width: 100%; margin: 4px 0; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--smoke); color: var(--text2); font-size: 9px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .chatmode { padding: 4px 0; }
+  .segmented { display: inline-flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; flex: none; }
+  .segmented button { border: none; border-radius: 0; padding: 3px 9px; font-size: 11px; background: transparent; color: var(--text2); }
+  .segmented button.on { background: var(--smoke); color: var(--paper); }
+  .ticks.read { color: #53bdeb; }
+  .ticks.failed { color: var(--coral); }
 </style>
