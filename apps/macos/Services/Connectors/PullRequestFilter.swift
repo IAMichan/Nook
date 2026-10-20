@@ -95,3 +95,42 @@ struct PullRequestFilter: Equatable, Sendable {
         return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.lowercased() < $1.key.lowercased() }.map(\.key)
     }
 }
+
+/// The pull requests of one repository in an account, so the list shows every pull request of a repository together.
+struct PullRequestRepoGroup: Identifiable, Equatable, Sendable {
+    /// Why a pull request is in the list: it waits for your review, you wrote it, or its repository is watched.
+    enum Role: Equatable, Sendable { case review, mine, watched }
+
+    struct Row: Identifiable, Equatable, Sendable {
+        let item: PullRequestItem
+        let role: Role
+        var id: String { item.id }
+    }
+
+    /// "owner/name".
+    let repo: String
+    var rows: [Row]
+    var id: String { repo }
+}
+
+extension AccountPullRequests {
+    /// The account's pull requests by repository. Repositories keep the order they first appear in (the ones waiting
+    /// for your review first, then yours, then watched ones); within one, reviews come first, then yours, then the
+    /// watched ones, each in its list's order. A pull request in more than one list shows once, in the first.
+    var byRepo: [PullRequestRepoGroup] {
+        var groups: [PullRequestRepoGroup] = []
+        var index: [String: Int] = [:]
+        var seen = Set<String>()
+        let tagged = reviews.map { ($0, PullRequestRepoGroup.Role.review) } + mine.map { ($0, .mine) } + watched.map { ($0, .watched) }
+        for (item, role) in tagged where seen.insert(item.id).inserted {
+            let row = PullRequestRepoGroup.Row(item: item, role: role)
+            if let at = index[item.repo] {
+                groups[at].rows.append(row)
+            } else {
+                index[item.repo] = groups.count
+                groups.append(PullRequestRepoGroup(repo: item.repo, rows: [row]))
+            }
+        }
+        return groups
+    }
+}

@@ -171,16 +171,9 @@ struct PullRequestsPanel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if !account.reviews.isEmpty {
-                // Closed and merged ones no longer wait for you: those are the ones you reviewed.
-                group(title: tr(filter.state == .open ? "agents.pulls.reviews" : "agents.pulls.forReview", account.reviews.count),
-                      items: account.reviews, account: account.id, showAuthor: true)
-            }
-            if !account.mine.isEmpty {
-                group(title: tr("agents.pulls.mine", account.mine.count), items: account.mine, account: account.id, showAuthor: false)
-            }
-            if !account.watched.isEmpty {
-                group(title: tr("agents.pulls.watched", account.watched.count), items: account.watched, account: account.id, showAuthor: true)
+            // Every pull request of a repository together, whatever brought it into the list.
+            ForEach(account.byRepo) { repo in
+                repoGroup(repo, account: account.id)
             }
         }
     }
@@ -213,14 +206,17 @@ struct PullRequestsPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
     }
 
-    private func group(title: String, items: [PullRequestItem], account: String, showAuthor: Bool) -> some View {
+    private func repoGroup(_ group: PullRequestRepoGroup, account: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(NookTheme.font(11.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-                .padding(.bottom, 3)
-            ForEach(items) { item in
-                PullRequestRow(item: item, showAuthor: showAuthor) { opened = (account, item) }
+            HStack(spacing: 6) {
+                Image(systemName: "folder").font(NookTheme.font(11))
+                Text(group.repo).font(NookTheme.font(11.5, .semibold)).lineLimit(1).truncationMode(.middle)
+                Text("\(group.rows.count)").font(NookTheme.font(11.5))
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.bottom, 3)
+            ForEach(group.rows) { row in
+                PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
             }
         }
     }
@@ -228,7 +224,7 @@ struct PullRequestsPanel: View {
 
 private struct PullRequestRow: View {
     let item: PullRequestItem
-    let showAuthor: Bool
+    let role: PullRequestRepoGroup.Role
     let onOpen: () -> Void
     @State private var hovering = false
 
@@ -242,9 +238,13 @@ private struct PullRequestRow: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     HStack(spacing: 6) {
-                        Text(item.id)
-                        if showAuthor, !item.author.isEmpty { Text("· @" + item.author) }
+                        // The repository is the group's heading, so the number is enough here.
+                        Text("#\(item.number)")
+                        if role != .mine, !item.author.isEmpty { Text("· @" + item.author) }
                         if item.draft { Text("· " + tr("agents.pulls.draft")) }
+                        if role == .review, item.state == .open {
+                            Text("· " + tr("agents.pulls.scope.reviews")).foregroundStyle(NookTheme.amber)
+                        }
                     }
                     .font(NookTheme.font(11.5))
                     .foregroundStyle(NookTheme.textTertiary)
