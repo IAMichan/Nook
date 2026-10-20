@@ -481,7 +481,7 @@ private struct PhotoZoom: View {
                         .resizable()
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
                         .padding(8)
                 }
                 .contentShape(Rectangle())
@@ -496,7 +496,7 @@ private struct PhotoZoom: View {
             }
             .padding(12)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
         .task(id: url) {
             let url = self.url
             let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
@@ -507,7 +507,7 @@ private struct PhotoZoom: View {
     private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.black.opacity(0.55)))

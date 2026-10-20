@@ -123,7 +123,9 @@ enum EnergyPolicy {
         // A hot Mac gets a break whatever you chose; working on would only keep it hot.
         if signals.hot { paused.append(.hot) }
         // Low Power Mode is you asking macOS to save power: Nook follows, unless you told him to keep going.
-        if signals.lowPowerMode { (mode == .full ? light : paused).append(.lowPowerMode) }
+        if signals.lowPowerMode {
+            if mode == .full { light.append(.lowPowerMode) } else { paused.append(.lowPowerMode) }
+        }
         // Every core is full: Nook never competes with what you are doing, unless you told him not to mind.
         if signals.busy, mode != .full { paused.append(.busy) }
         if signals.away { paused.append(.away) }
