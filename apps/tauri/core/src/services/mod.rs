@@ -3,6 +3,7 @@
 //! ruwe gegevens (vensters, audio, spelers); hier zitten de regels, met tests.
 
 pub mod audio;
+pub mod autocomplete;
 pub mod files;
 pub mod flow;
 pub mod fuzzy;

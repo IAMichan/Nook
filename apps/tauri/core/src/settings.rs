@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths;
 use crate::provider::AIProvider;
+use crate::services::autocomplete::AutocompleteSettings;
 
 /// Waar het denken gebeurt. Op Windows, Linux en Android is er (nog) geen ingebouwd MLX-model:
 /// lokaal betekent Ollama of LM Studio.
@@ -86,6 +87,8 @@ pub struct Settings {
     pub demo_data: bool,
     /// Sneltoetsen, als Tauri-accelerators ("Alt+Space").
     pub shortcuts: BTreeMap<String, String>,
+    /// Autocomplete Anywhere (Settings › Autocomplete). Off by default.
+    pub autocomplete: AutocompleteSettings,
 }
 
 impl Default for Settings {
@@ -125,6 +128,7 @@ impl Default for Settings {
             onboarding_done: false,
             demo_data: false,
             shortcuts,
+            autocomplete: AutocompleteSettings::default(),
         }
     }
 }
@@ -248,6 +252,9 @@ mod tests {
         assert_eq!(s.provider, AIProvider::Claude);
         assert!(s.use_memory);
         assert!(!s.is_local_brain());
+        // Files from before autocomplete existed: off, local only.
+        assert!(!s.autocomplete.enabled);
+        assert_eq!(s.autocomplete.engine, crate::services::autocomplete::prefs::EngineChoice::Local);
     }
 
     #[test]
