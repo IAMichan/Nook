@@ -888,7 +888,8 @@ final class AutocompleteController: ObservableObject {
         let options = completionOptions(before: snapshot.before, continuing: continuing)
         let maxWords = options.maxWords
         let token = readToken
-        let after = midLine ? snapshot.after : ""
+        // Without `midLine` only closing punctuation can follow (see `CompletionPolicy`); the suggestion stops before it.
+        let after = snapshot.after
         let field = fieldKey(for: snapshot, in: app)
         // This text continues a suggestion made a moment ago in this field: show the rest of it at once.
         if let recalled = memo.recall(before: snapshot.before, field: field) {
@@ -1103,7 +1104,9 @@ final class AutocompleteController: ObservableObject {
 
     private func show(_ suggestion: CompletionSuggestion, for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
         let rule = prefs.app(app.bundleIdentifier)
-        if let caret = snapshot.caret, prefs.inlineGhost {
+        // Words or a period after the cursor: grey text drawn over them cannot be read, so the card shows it instead.
+        let lineAfter = snapshot.after.prefix { !$0.isNewline }
+        if let caret = snapshot.caret, prefs.inlineGhost, lineAfter.allSatisfy(\.isWhitespace) {
             let font = GhostOverlay.font(name: snapshot.fontName, size: snapshot.fontSize, caretHeight: caret.height, scale: rule.fontScale)
             let shown = overlay.showGhost(suggestion.remaining, at: caret, font: font, limit: snapshot.fieldFrame.map { $0.maxX - 4 },
                                           verticalOffset: rule.verticalOffset)

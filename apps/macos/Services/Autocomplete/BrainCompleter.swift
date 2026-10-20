@@ -204,10 +204,17 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     private func generate(context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt, options: CompletionOptions, stops: Set<String>,
                           partial: (@Sendable (String) -> Void)?, isCancelled: () -> Bool) -> CompletionResult? {
         guard !isCancelled() else { return nil }
+        // Mid-word, read the prompt without the word and let the model spell it again (see CompletionHealing): a word cut off by
+        // the cursor tokenizes oddly, and the model would rather not go on from it than finish it.
+        let healing = options.heal ? prompt.healed() : (prompt: prompt, pending: "")
         do {
-            guard let (layers, fresh, all) = try prime(context, owner: owner, prompt: prompt, isCancelled: isCancelled), !isCancelled() else { return nil }
+            guard let (layers, fresh, all) = try prime(context, owner: owner, prompt: healing.prompt, isCancelled: isCancelled), !isCancelled() else { return nil }
             let bonus = bias(context.tokenizer, owner: owner)
             let sampler = ConfidenceSampler(bias: bonus.bias, biasArray: bonus.array)
+            if !healing.pending.isEmpty {
+                let tokenizer = context.tokenizer
+                sampler.spell(healing.pending, after: all.last) { token, anchor in self.decode(tokenizer, [token], after: anchor) }
+            }
             let stopIDs = stopIDs(context, stops)
             var kept: [Int] = []
             var truncated = true
@@ -216,16 +223,25 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
             var unfinished = false
             var sure: Float = 1
             var iterator = try TokenIterator(input: LMInput(tokens: MLXArray(fresh)), model: context.model, cache: layers,
-                                             processor: nil, sampler: sampler, prefillStepSize: 512, maxTokens: options.maxTokens)
+                                             processor: nil, sampler: sampler, prefillStepSize: 512,
+                                             maxTokens: options.maxTokens + (healing.pending.isEmpty ? 0 : 6))
             defer { keepBiasArray(sampler.biasArray, owner: owner) }
             var step = 0
+            var started = false
             while let token = iterator.next() {
                 let probability = step < sampler.probabilities.count ? sampler.probabilities[step] : 0
+                let spelling = step < sampler.spelling.count && sampler.spelling[step]
                 step += 1
+                if isCancelled() || sampler.lost { return nil }
+                // What only spells the word already typed is not part of the suggestion.
+                if spelling {
+                    kept.append(token)
+                    continue
+                }
                 sure *= probability
-                if isCancelled() { return nil }
-                if step == 1, probability < options.minFirstProbability || sure < options.minSequenceProbability || stopIDs.contains(token) {
-                    return nil
+                if !started {
+                    if probability < options.minFirstProbability || sure < options.minSequenceProbability || stopIDs.contains(token) { return nil }
+                    started = true
                 }
                 if stopIDs.contains(token) { truncated = false; break }
                 if probability < options.minProbability || sure < options.minSequenceProbability {
@@ -236,6 +252,11 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                 }
                 kept.append(token)
                 text = decode(context.tokenizer, kept, after: all.last)
+                // The word already typed comes first: the suggestion is what follows it.
+                if !healing.pending.isEmpty {
+                    guard text.hasPrefix(healing.pending) else { return nil }
+                    text.removeFirst(healing.pending.count)
+                }
                 if let newline = text.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
                     text = String(text[..<newline])
                     truncated = false
@@ -297,18 +318,35 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
 }
 
 /// Greedy choice with the word bonus, remembering how sure the model was of each token (before the bonus) and, when asked,
-/// the most likely first tokens.
+/// the most likely first tokens. Mid-word it first spells the word already typed (see `spell`).
 private final class ConfidenceSampler: LogitSampler {
     let bias: [Int: Float]
     let wanted: Int
     private(set) var biasArray: MLXArray?
     private(set) var probabilities: [Float] = []
     private(set) var candidates: [Int] = []
+    /// Per token: it only spelled the word already typed.
+    private(set) var spelling: [Bool] = []
+    /// No likely token spells the word already typed: there is no suggestion.
+    private(set) var lost = false
+    /// The bytes of the typed word still to be spelled, the token before, and how a token reads after another.
+    private var required: [UInt8] = []
+    private var previous: Int?
+    private var reads: ((Int, Int?) -> String)?
+    /// The most likely tokens looked through for one that spells the word.
+    private static let spellCandidates = 256
 
     init(bias: [Int: Float], biasArray: MLXArray?, candidates: Int = 0) {
         self.bias = bias
         self.biasArray = biasArray
         wanted = candidates
+    }
+
+    /// The first tokens must spell `word` (the word the cursor is in, with the spaces before it) after the token `anchor`.
+    func spell(_ word: String, after anchor: Int?, reads: @escaping (Int, Int?) -> String) {
+        required = Array(word.utf8)
+        previous = anchor
+        self.reads = reads
     }
 
     func sample(logits: MLXArray) -> MLXArray {
@@ -322,6 +360,8 @@ private final class ConfidenceSampler: LogitSampler {
             }
             if let biasArray { scores = raw + biasArray }
         }
+        if !required.isEmpty, let reads { return spelled(raw: raw, scores: scores, reads: reads) }
+        spelling.append(false)
         let token = argMax(scores, axis: -1)
         let id = token.item(Int.self)
         // Softmax over the raw logits, for the chosen token only.
@@ -332,5 +372,40 @@ private final class ConfidenceSampler: LogitSampler {
             candidates = order.asType(.int32).asArray(Int32.self).map(Int.init)
         }
         return token
+    }
+
+    /// The most likely token that fits the word still to be spelled, with its probability among the tokens that fit.
+    private func spelled(raw: MLXArray, scores: MLXArray, reads: (Int, Int?) -> String) -> MLXArray {
+        let count = min(Self.spellCandidates, raw.dim(-1))
+        let order = argSort(-scores, axis: -1)[0, 0 ..< count].asType(.int32).asArray(Int32.self).map(Int.init)
+        var fitting: [Int] = []
+        for id in order where CompletionHealing.fits(Array(reads(id, previous).utf8), required) {
+            fitting.append(id)
+            if fitting.count == 8 { break }
+        }
+        // A name or a rare word: none of the likely tokens spells it. Look through the rest of the vocabulary rather than give
+        // up (rare: the likely tokens nearly always include a piece of the word).
+        if fitting.isEmpty, count < raw.dim(-1) {
+            let rest = argSort(-scores, axis: -1)[0, count ..< raw.dim(-1)].asType(.int32).asArray(Int32.self).map(Int.init)
+            for id in rest where CompletionHealing.fits(Array(reads(id, previous).utf8), required) {
+                fitting.append(id)
+                if fitting.count == 8 { break }
+            }
+        }
+        guard let best = fitting.first else {
+            lost = true
+            probabilities.append(0)
+            spelling.append(false)
+            return argMax(scores, axis: -1)
+        }
+        let shifted = exp(raw - raw.max(axis: -1, keepDims: true))
+        let weights = fitting.map { shifted[0, $0].item(Float.self) }
+        let total = weights.reduce(0, +)
+        probabilities.append(total > 0 ? weights[0] / total : 0)
+        let bytes = Array(reads(best, previous).utf8)
+        spelling.append(bytes.count <= required.count)
+        required.removeFirst(min(bytes.count, required.count))
+        previous = best
+        return MLXArray([UInt32(best)])
     }
 }
