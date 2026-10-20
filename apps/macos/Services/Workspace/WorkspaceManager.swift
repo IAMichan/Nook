@@ -1563,6 +1563,11 @@ final class WorkspaceManager: ObservableObject {
         timelineUse[id] = nil
         evictedTimelines.remove(id)
         evictedAnswers[id] = nil
+        // Per-session state that would otherwise stay for every session ever made, until Nook quits.
+        gitRefreshes.removeValue(forKey: id)?.cancel()
+        codexTotals[id] = nil
+        codexSubagents[id] = nil
+        openPullRequests[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
