@@ -12,6 +12,7 @@ final class WhatsAppWebTests: XCTestCase {
 
     func testOutcomes() {
         XCTAssertEqual(WhatsAppWeb.outcome(["status": "sent", "chat": "Doorsturen"]), .sent("Doorsturen"))
+        XCTAssertEqual(WhatsAppWeb.outcome(["status": "opened", "chat": "Jan"]), .opened("Jan"))
         XCTAssertEqual(WhatsAppWeb.outcome(["status": "signedOut"]), .signedOut)
         XCTAssertEqual(WhatsAppWeb.outcome(["status": "notFound"]), .notFound)
         XCTAssertEqual(WhatsAppWeb.outcome(["status": "ambiguous", "candidates": ["Doorsturen A", "Doorsturen B"]]),
@@ -32,5 +33,15 @@ final class WhatsAppWebTests: XCTestCase {
         XCTAssertTrue(WhatsAppWeb.sendScript.contains("norm(name)"))
         XCTAssertTrue(WhatsAppWeb.sendScript.contains("text.split"))
         XCTAssertFalse(WhatsAppWeb.sendScript.contains("\\("))
+    }
+
+    /// "@open chat Jan" finds the chat the same way as sending does, then stops: it never types or sends anything.
+    func testOpenScriptOnlyOpensTheChat() {
+        XCTAssertTrue(WhatsAppWeb.openScript.contains("norm(name)"))
+        XCTAssertTrue(WhatsAppWeb.openScript.contains("status: 'opened'"))
+        XCTAssertFalse(WhatsAppWeb.openScript.contains("insertText', false, line"))
+        XCTAssertFalse(WhatsAppWeb.openScript.contains("data-icon=\"send\""))
+        XCTAssertFalse(WhatsAppWeb.openScript.contains("\\("))
+        XCTAssertTrue(WhatsAppWeb.sendScript.hasPrefix(WhatsAppWeb.openScript.components(separatedBy: "return { status: 'opened'").first ?? "-"))
     }
 }
