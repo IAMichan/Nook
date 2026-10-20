@@ -2,6 +2,7 @@
 //! achtergrond en melden zich met events: `nook-stream` (tekst terwijl hij geschreven wordt) en `nook-updated`.
 
 pub mod agents;
+pub mod autocomplete;
 pub mod brain;
 pub mod chat;
 pub mod companion;

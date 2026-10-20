@@ -5,6 +5,7 @@
   import Aside from "./views/services/Aside.svelte";
   import RecordingBadge from "./views/services/RecordingBadge.svelte";
   import ScreenPart from "./views/services/ScreenPart.svelte";
+  import Ghost from "./views/services/Ghost.svelte";
   import { nook, accentCss, onAccent } from "./lib/state.svelte";
 
   // De balk bovenaan laadt index.html#bar; het hoofdvenster (en Android) de rest.
@@ -31,6 +32,8 @@
   <RecordingBadge />
 {:else if location.hash === "#screenpart"}
   <ScreenPart />
+{:else if location.hash === "#ghost"}
+  <Ghost />
 {:else}
   <Main />
 {/if}

@@ -62,7 +62,7 @@ fn top_windows() -> Vec<HWND> {
     list
 }
 
-fn title(hwnd: HWND) -> String {
+pub(super) fn title(hwnd: HWND) -> String {
     unsafe {
         let len = GetWindowTextLengthW(hwnd);
         if len <= 0 {
@@ -74,7 +74,7 @@ fn title(hwnd: HWND) -> String {
     }
 }
 
-fn exe_path(pid: u32) -> Option<String> {
+pub(super) fn exe_path(pid: u32) -> Option<String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = vec![0u16; 1024];
@@ -86,7 +86,7 @@ fn exe_path(pid: u32) -> Option<String> {
 }
 
 /// De naam uit de versie-informatie van een programma ("Google Chrome"), anders de bestandsnaam.
-fn display_name(path: &str) -> Option<String> {
+pub(super) fn display_name(path: &str) -> Option<String> {
     unsafe {
         let wide = HSTRING::from(path);
         let size = GetFileVersionInfoSizeW(&wide, None);

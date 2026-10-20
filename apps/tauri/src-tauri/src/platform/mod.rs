@@ -21,7 +21,11 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use nook_core::platform::{Capabilities, Dictation, MediaControl, ScreenReader, SpeechOutput, SystemControl, WakeWord};
+use nook_core::platform::{
+    Capabilities, Dictation, FieldSkip, FocusedField, InputEvent, MediaControl, ScreenReader, SpeechOutput, SystemControl, TextInput,
+    WakeWord,
+};
+use nook_core::services::autocomplete::prefs::KeyChord;
 use tauri::AppHandle;
 
 /// De diensten van dit platform, één keer gemaakt bij de start.
@@ -33,6 +37,8 @@ pub struct Platform {
     pub speech: Arc<dyn SpeechOutput>,
     pub dictation: Arc<dyn Dictation>,
     pub wake: Arc<dyn WakeWord>,
+    /// Autocomplete: keyboard hook, focused field, typing (Windows only).
+    pub text_input: Arc<dyn TextInput>,
 }
 
 #[cfg(target_os = "linux")]
@@ -46,6 +52,7 @@ pub fn services(app: &AppHandle) -> Platform {
             "Spraakherkenning op deze computer zelf kan op Linux met whisper.cpp; kies anders een externe dienst.",
         )),
         wake: Arc::new(Unavailable("\"Hé Nook\" kan op Linux niet: er is geen zuinige spraakherkenning op de computer zelf.")),
+        text_input: Arc::new(Unavailable("Aanvullen in elke app kan (nog) alleen op Windows.")),
     }
 }
 
@@ -58,6 +65,7 @@ pub fn services(app: &AppHandle) -> Platform {
         speech: Arc::new(windows::WindowsSpeech::new()),
         dictation: Arc::new(windows::WindowsDictation::new()),
         wake: Arc::new(windows::WindowsWake::new()),
+        text_input: Arc::new(windows::WindowsTextInput::new()),
     }
 }
 
@@ -102,6 +110,27 @@ impl WakeWord for Unavailable {
         Err(self.0.into())
     }
     fn stop(&self) {}
+}
+
+impl TextInput for Unavailable {
+    fn available(&self) -> bool {
+        false
+    }
+    fn status(&self) -> String {
+        self.0.into()
+    }
+    fn start(&self, _on_event: Arc<dyn Fn(InputEvent) + Send + Sync>) -> Result<(), String> {
+        Err(self.0.into())
+    }
+    fn stop(&self) {}
+    fn set_keys(&self, _word: Option<KeyChord>, _all: Option<KeyChord>) {}
+    fn arm(&self, _armed: bool) {}
+    fn focused_field(&self) -> Result<FocusedField, FieldSkip> {
+        Err(FieldSkip::NoField)
+    }
+    fn type_text(&self, _text: &str) -> Result<(), String> {
+        Err(self.0.into())
+    }
 }
 
 impl SpeechOutput for Unavailable {
@@ -165,6 +194,10 @@ pub fn service_capabilities(platform: &Platform, base: &mut Capabilities) {
     base.speech_output = platform.speech.available();
     base.local_speech = platform.dictation.available();
     base.wake_word = platform.wake.available();
+    base.autocomplete = platform.text_input.available();
+    if !base.autocomplete {
+        notes.insert("autocomplete".into(), platform.text_input.status());
+    }
     #[cfg(desktop)]
     {
         base.media = true;

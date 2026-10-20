@@ -1,4 +1,5 @@
 // Dezelfde vormen als de Rust-structs in nook-core (serde, camelCase).
+import type { AutocompleteSettings } from "./autocomplete";
 import type { ActionField, ChatChart, MailDraft, Recovery, RetrievalStep, SourceScope } from "./brain";
 
 export type ProviderId =
@@ -46,6 +47,8 @@ export interface Settings {
   onboardingDone: boolean;
   demoData: boolean;
   shortcuts: Record<string, string>;
+  /// Autocomplete Anywhere (Settings › Aanvullen). Off by default.
+  autocomplete: AutocompleteSettings;
 }
 
 export interface Capabilities {
@@ -69,6 +72,8 @@ export interface Capabilities {
   clipboard: boolean;
   notifications: boolean;
   files: boolean;
+  /// Autocomplete Anywhere: suggestions while typing in any app (Windows).
+  autocomplete: boolean;
   /// Uitleg per mogelijkheid die er niet (helemaal) is.
   notes: Record<string, string>;
 }

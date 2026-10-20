@@ -2,6 +2,7 @@
 //! Notetaker, Vandaag en het weekoverzicht. Eigen staat (`Services`), eigen vensters, eigen sneltoetsen; de regels
 //! staan in `nook_core::services`, het platform in `crate::platform`.
 
+pub mod autocomplete;
 pub mod flow;
 pub mod media;
 pub mod notes;
@@ -72,6 +73,7 @@ pub fn setup(app: &AppHandle) {
     // De snelle opdrachten in de chat zoeken muziek en systeem als losse diensten.
     app.manage(platform.media.clone());
     app.manage(platform.system.clone());
+    let text_input = platform.text_input.clone();
     app.manage(Services {
         platform,
         prefs: RwLock::new(ServicePrefs::load()),
@@ -88,6 +90,7 @@ pub fn setup(app: &AppHandle) {
         part: Mutex::new(None),
         started: Instant::now(),
     });
+    autocomplete::setup(app, text_input);
     #[cfg(desktop)]
     {
         windows::create(app);
