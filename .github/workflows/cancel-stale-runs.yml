@@ -1,0 +1,40 @@
+name: Cancel stale runs
+
+# Cancels pull request runs that are still queued or running although their PR is already merged or
+# closed. New PRs cancel their own run on close (see the concurrency block in build.yml); this clears
+# runs left behind from before that, or any that slipped through. Runs on ubuntu, so it never waits
+# behind the macOS queue it is clearing.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/cancel-stale-runs.yml']
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Cancel runs of closed pull requests
+        run: |
+          open="$(gh pr list --state open --limit 500 --json headRefName -q '.[].headRefName')"
+          for status in queued pending waiting requested in_progress; do
+            gh run list --status "$status" --event pull_request --limit 1000 \
+              --json databaseId,headBranch,workflowName -q '.[] | [.databaseId, .headBranch, .workflowName] | @tsv'
+          done | sort -u | while IFS=$'\t' read -r id branch workflow; do
+            if ! grep -qxF "$branch" <<<"$open"; then
+              echo "Cancel $workflow run $id ($branch)"
+              gh run cancel "$id" || true
+            fi
+          done
