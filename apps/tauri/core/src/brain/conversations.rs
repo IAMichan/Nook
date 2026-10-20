@@ -12,7 +12,7 @@ use super::{alternating, ChatTurn, LoopTool, ModelConversation, ModelTurn, OnTex
 use crate::provider::AIProvider;
 use crate::{NookError, Result};
 
-const EMIT_EVERY: Duration = Duration::from_millis(45);
+pub(super) const EMIT_EVERY: Duration = Duration::from_millis(45);
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -158,9 +158,13 @@ impl AnthropicConversation {
                 "content_block_delta" => {
                     let delta = &event["delta"];
                     let Some(block) = blocks.get_mut(&index) else { continue };
+                    // In place: copying the block's text for every delta is quadratic over a long answer or thinking block.
                     let append = |block: &mut Value, field: &str, piece: &Value| {
-                        let joined = format!("{}{}", block[field].as_str().unwrap_or(""), piece.as_str().unwrap_or(""));
-                        block[field] = Value::String(joined);
+                        let piece = piece.as_str().unwrap_or("");
+                        match &mut block[field] {
+                            Value::String(text) => text.push_str(piece),
+                            slot => *slot = Value::String(piece.to_string()),
+                        }
                     };
                     match delta["type"].as_str().unwrap_or("") {
                         "text_delta" => {
@@ -173,11 +177,10 @@ impl AnthropicConversation {
                         "input_json_delta" => partial_json.entry(index).or_default().push_str(delta["partial_json"].as_str().unwrap_or("")),
                         "thinking_delta" => append(block, "thinking", &delta["thinking"]),
                         "signature_delta" => append(block, "signature", &delta["signature"]),
-                        "citations_delta" => {
-                            let mut list = block["citations"].as_array().cloned().unwrap_or_default();
-                            list.push(delta["citation"].clone());
-                            block["citations"] = Value::Array(list);
-                        }
+                        "citations_delta" => match &mut block["citations"] {
+                            Value::Array(list) => list.push(delta["citation"].clone()),
+                            slot => *slot = Value::Array(vec![delta["citation"].clone()]),
+                        },
                         _ => {}
                     }
                 }

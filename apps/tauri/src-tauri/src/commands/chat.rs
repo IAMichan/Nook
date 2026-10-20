@@ -566,13 +566,18 @@ pub async fn answer_question(
     };
     let last = std::sync::Mutex::new((Instant::now() - Duration::from_secs(1), String::new()));
     let emit = |partial: String| {
+        // The throttle comes first: cleaning walks the whole partial text, and doing that for every token of a long
+        // answer only to drop the result costs quadratic time.
+        let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.0.elapsed() < Duration::from_millis(40) {
+            return;
+        }
         let mut visible = follow_ups::streaming_body(&partial);
         if wants_chart {
             visible = chart::hiding_chart_code(&visible);
         }
         let cleaned = suggestions::clean_reply(&visible);
-        let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
-        if cleaned == guard.1 || guard.0.elapsed() < Duration::from_millis(40) {
+        if cleaned == guard.1 {
             return;
         }
         *guard = (Instant::now(), cleaned.clone());

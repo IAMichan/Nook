@@ -26,7 +26,7 @@ use super::models::*;
 use super::parsers::{self, ClaudeEvent, CodexEvent, GeminiEvent, TokenCounts};
 use super::paths::{self, Verdict};
 use super::queue::MessageQueue;
-use super::store::{RunStore, UsageFilter, UsageReport};
+use super::store::{RunStore, UsageFilter, UsageReport, EVENT_LIMIT};
 use crate::agents::models::{
     approval_title, AgentApproval, ApprovalDecision, ApprovalOrigin, QuestionItem, QuestionOption, QuestionRequest,
 };
@@ -1055,7 +1055,13 @@ impl Manager {
 
     fn append(s: &mut Inner, id: Uuid, event: RunEvent, out: &mut Out) {
         let notable = !(event.kind == EventKind::System && event.tool.as_deref() == Some("launch"));
-        s.events.entry(id).or_default().push(event);
+        let list = s.events.entry(id).or_default();
+        list.push(event);
+        // Only the last EVENT_LIMIT events are ever saved; trimming in batches keeps a long session from growing
+        // without bound in memory, without shifting the list on every event.
+        if list.len() > 2 * EVENT_LIMIT {
+            list.drain(..list.len() - EVENT_LIMIT);
+        }
         s.dirty_events.insert(id);
         if notable {
             if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
@@ -2286,7 +2292,11 @@ impl Manager {
             let mut s = self.lock();
             let runs = std::mem::take(&mut s.dirty_runs).then(|| s.runs.clone());
             let ids: Vec<Uuid> = s.dirty_events.drain().collect();
-            let events: Vec<(Uuid, Vec<RunEvent>)> = ids.into_iter().filter_map(|id| s.events.get(&id).map(|e| (id, e.clone()))).collect();
+            // Only the part that is saved is copied under the lock, not a long session's whole timeline.
+            let events: Vec<(Uuid, Vec<RunEvent>)> = ids
+                .into_iter()
+                .filter_map(|id| s.events.get(&id).map(|e| (id, e[e.len().saturating_sub(EVENT_LIMIT)..].to_vec())))
+                .collect();
             let queues = std::mem::take(&mut s.dirty_queues).then(|| s.queues.clone());
             (runs, events, queues)
         };
