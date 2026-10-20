@@ -12,7 +12,8 @@ pub fn png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
 
 /// De vingerafdruk van een RGBA-plaatje (zie `screen::fingerprint`).
 pub fn rgba_fingerprint(rgba: &[u8], width: u32, height: u32) -> u64 {
-    let gray: Vec<u8> = rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 30 + p[1] as u32 * 59 + p[2] as u32 * 11) / 100) as u8).collect();
+    let gray: Vec<u8> =
+        rgba.as_chunks::<4>().0.iter().map(|p| ((p[0] as u32 * 30 + p[1] as u32 * 59 + p[2] as u32 * 11) / 100) as u8).collect();
     fingerprint(&gray, width as usize, height as usize)
 }
 

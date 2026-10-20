@@ -289,7 +289,6 @@ impl McpTransport for HttpTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connectors::mcp::McpClient;
 
     #[test]
     fn http_requires_https_except_on_this_computer() {
@@ -308,6 +307,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn stdio_server_round_trip() {
+        use crate::connectors::mcp::McpClient;
+
         // Een piepkleine MCP-server in shell: antwoordt op initialize en tools/list, regel voor regel.
         let script = r#"while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')

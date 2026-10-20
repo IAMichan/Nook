@@ -51,7 +51,7 @@ apps/tauri/
 
 ## Bouwen
 
-Vereisten: [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org) 22 en de
+Vereisten: [Rust](https://rustup.rs) (the version in `rust-toolchain.toml`; rustup installs it by itself), [Node.js](https://nodejs.org) 22 en de
 [Tauri-vereisten](https://tauri.app/start/prerequisites/) van je platform (Windows: WebView2 en de MSVC-buildtools;
 Linux: `libwebkit2gtk-4.1-dev` en vrienden; Android: Android Studio, de NDK en `JAVA_HOME`).
 

@@ -92,7 +92,7 @@ pub fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
 
 /// Ruwe 32-bit float little-endian (wat `parec --format=float32le` geeft) naar samples.
 pub fn f32_from_le(bytes: &[u8]) -> Vec<f32> {
-    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect()
 }
 
 #[cfg(test)]
