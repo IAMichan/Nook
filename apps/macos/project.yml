@@ -96,7 +96,7 @@ targets:
         NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions.
         NSSpeechRecognitionUsageDescription: Nook transcribes speech to text, preferably on-device.
         NSAudioCaptureUsageDescription: Nook listens to the sound of Spotify or Music (never records it) to move the equalizer with the music.
-        NSAppleEventsUsageDescription: Nook controls Spotify, Apple Music, and select system settings for you.
+        NSAppleEventsUsageDescription: Nook controls Spotify, Apple Music, Xcode (to build an update), and select system settings for you.
     entitlements:
       path: App/Nook.entitlements
       properties:

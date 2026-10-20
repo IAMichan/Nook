@@ -29,6 +29,15 @@ struct BuildSource: Equatable, Sendable {
 
     var shortCommit: String { String(commit.prefix(7)) }
 
+    /// The Xcode project the update regenerates and builds.
+    var projectPath: String { (projectDirectory as NSString).appendingPathComponent("Nook.xcodeproj") }
+
+    /// Xcode started this process (⌘R): it adds its own `__XCODE_` variables to an app it launches. An update then
+    /// brings the checkout up to date and leaves the build to Xcode, so the new version runs under its debugger again.
+    static func launchedByXcode(_ environment: [String: String]) -> Bool {
+        environment.keys.contains { $0.hasPrefix("__XCODE_") }
+    }
+
     static func isCommit(_ text: String) -> Bool {
         text.count == 40 && text.allSatisfy(\.isHexDigit)
     }
