@@ -179,6 +179,36 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(CompletionPolicy(midLine: true).shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))
     }
 
+    func testPolicyWhileEditingASentence() {
+        let policy = CompletionPolicy()
+        // Editing before the sentence's period, or inside brackets or quotes: still the end of what is written.
+        XCTAssertTrue(policy.shouldComplete(before: "Ik kom morgen", after: ".", hasSelection: false))
+        XCTAssertTrue(policy.shouldComplete(before: "Ik kom morgen ", after: "?\nVolgende regel", hasSelection: false))
+        XCTAssertTrue(policy.shouldComplete(before: "(zie de bijlage", after: ")", hasSelection: false))
+        // Inside a word, never: a suggestion would split it.
+        XCTAssertFalse(CompletionPolicy(midLine: true).shouldComplete(before: "Ik kom mor", after: "gen", hasSelection: false))
+        XCTAssertTrue(CompletionPolicy(midLine: true).shouldComplete(before: "Ik kom mor", after: " morgen", hasSelection: false))
+    }
+
+    func testSuggestionStopsBeforePunctuationAfterTheCursor() {
+        XCTAssertEqual(CompletionSuggestion.make(raw: " naar huis. Tot dan", before: "Ik ga morgen", after: ".", maxWords: 8)?.remaining,
+                       " naar huis")
+        XCTAssertEqual(CompletionSuggestion.make(raw: " de bijlage) voor", before: "(zie", after: ")", maxWords: 8)?.remaining,
+                       " de bijlage")
+        XCTAssertEqual(CompletionSuggestion.make(raw: "en naar huis", before: "Ik ga morg", after: ".", maxWords: 8)?.remaining,
+                       "en naar huis")
+        XCTAssertEqual(CompletionSuggestion.make(raw: " it's fine", before: "I think", after: "'", maxWords: 8)?.remaining, " it's fine")
+        XCTAssertNil(CompletionSuggestion.make(raw: ". Tot dan", before: "Ik ga morgen", after: ".", maxWords: 8))
+    }
+
+    func testFinishesTheWordAtTheCursor() {
+        // Mid-word the model's answer starts with the rest of the word: it is kept glued to it.
+        XCTAssertEqual(CompletionSuggestion.make(raw: "en ga ik", before: "Ik kom morg", maxWords: 8)?.remaining, "en ga ik")
+        XCTAssertEqual(CompletionSuggestion.make(raw: "en", before: "Ik kom morg", maxWords: 8)?.remaining, "en")
+        var suggestion = CompletionSuggestion("en ga ik")
+        XCTAssertEqual(suggestion.acceptNextChunk(), "en")
+    }
+
     func testOptionsFollowEagerness() {
         let careful = CompletionOptions(maxWords: 4, eagerness: 0)
         let eager = CompletionOptions(maxWords: 4, eagerness: 1)

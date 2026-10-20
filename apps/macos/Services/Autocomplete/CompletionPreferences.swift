@@ -81,7 +81,8 @@ struct CompletionPreferences: Codable, Equatable {
     /// Off: only in apps turned on one by one.
     var enabledByDefault = true
     var maxWords = 8
-    var midLine = false
+    /// Also while editing a sentence, with words after the cursor (shown as a card, not over those words).
+    var midLine = true
     /// Also in narrow fields (search boxes, address bars).
     var smallFields = false
     /// 0 only very sure suggestions … 1 eager.

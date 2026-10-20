@@ -68,6 +68,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var bias: [llama_token: Float] = [:]
+    /// Every token's bytes, read once per model when first needed: a word the model did not see coming is spelled from the
+    /// whole vocabulary (see `healed`).
+    private lazy var pieces: [[UInt8]] = (0..<self.vocabSize).map { self.piece(llama_token($0)) }
 
     /// The longest prompt, in tokens.
     static let contextLength: UInt32 = 4_096
@@ -445,6 +448,16 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         var fitting: [(llama_token, Float)] = []
         for candidate in topTokens(logits, count: 64) where !llama_vocab_is_control(vocab, candidate) {
             if CompletionHealing.fits(piece(candidate), required) { fitting.append((candidate, logits[Int(candidate)])) }
+        }
+        // A name or a rare word: none of the likely tokens spells it. Look through the whole vocabulary rather than give up, or
+        // a word would only be finished once it was common enough.
+        if fitting.isEmpty {
+            for (index, bytes) in pieces.enumerated() where CompletionHealing.fits(bytes, required) {
+                let token = llama_token(index)
+                guard !llama_vocab_is_control(vocab, token), !llama_vocab_is_eog(vocab, token) else { continue }
+                fitting.append((token, logits[index]))
+            }
+            fitting.sort { $0.1 > $1.1 }
         }
         guard let best = fitting.first else { return nil }
         let sum = fitting.reduce(Float(0)) { $0 + exp($1.1 - best.1) }

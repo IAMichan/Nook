@@ -16,7 +16,7 @@ Enable it in **Settings › Autocomplete**, which has five tabs:
 - 100% local inference on your Mac: uses either your built-in MLX brain model or a GGUF model via `llama.cpp` (Metal-accelerated). No word limits and no subscription.
 - Custom instructions globally, per app, and per website.
 - Optional context from your Nook memory, active screen text (e.g., the email you are replying to), and clipboard.
-- Mid-line completions, an emoji picker (type `:` and pick by arrow keys, number or click, or type on to search: `:smile`, `:duim`), inline typo fixes, and numbered word alternatives.
+- Finishes the word you are typing (token healing, with both the MLX and the GGUF engine) and keeps suggesting while you edit a sentence: before its period or a closing bracket always, and mid-line (on by default, shown as a card under the cursor so it never covers your text). An emoji picker (type `:` and pick by arrow keys, number or click, or type on to search: `:smile`, `:duim`), inline typo fixes, and numbered word alternatives.
 - Optionally, the number of words completed today next to Nook's icon in the menu bar.
 - Learns from your own writing locally while automatically filtering out secrets, API keys, and national ID numbers.
 - Respects macOS smart quotes and can shorten or pause completions on battery power.

@@ -37,6 +37,7 @@ struct CompletionSuggestion: Equatable {
         else if truncated, parts.count > 1, !(text.last?.isWhitespace ?? false) { parts.removeLast() }
         var result = parts.prefix(max(maxWords, 0)).joined()
         result = overlapTrimmed(result, after: after)
+        result = punctuationTrimmed(result, after: after)
         while let last = result.last, last.isWhitespace { result.removeLast() }
         guard result.contains(where: { !$0.isWhitespace }), !repeats(result, before: before) else { return nil }
         return CompletionSuggestion(result)
@@ -67,6 +68,17 @@ struct CompletionSuggestion: Equatable {
             index = text.index(after: index)
         }
         return text
+    }
+
+    /// Closing punctuation already after the cursor (the period of a sentence being edited, a closing bracket): the
+    /// suggestion stops where its own sentence or clause would end, so it never doubles that mark.
+    static func punctuationTrimmed(_ text: String, after: String) -> String {
+        let rest = after.prefix { !$0.isNewline }.trimmingCharacters(in: .whitespaces)
+        guard let first = rest.first, CompletionPolicy.closing.contains(first) else { return text }
+        // An apostrophe in the line after is no reason to cut "it's" short.
+        let stops = ".!?;:…" + ("'’".contains(first) ? "" : String(first))
+        guard let stop = text.firstIndex(where: { stops.contains($0) }) else { return text }
+        return String(text[..<stop])
     }
 
     /// The next word with the whitespace before it.
@@ -138,11 +150,17 @@ struct CompletionPolicy: Equatable {
     /// Also with text after the cursor on the same line.
     var midLine = false
 
+    /// Marks that close what is being written. Only these after the cursor still count as the end of the line: editing a
+    /// sentence before its period, or the words inside brackets or quotes, gets suggestions without `midLine`.
+    static let closing: Set<Character> = [".", ",", "!", "?", ";", ":", "…", ")", "]", "}", "\"", "'", "”", "’", "»"]
+
     func shouldComplete(before: String, after: String, hasSelection: Bool) -> Bool {
         if hasSelection { return false }
         guard before.lazy.filter({ !$0.isWhitespace }).prefix(minimumContext).count >= minimumContext else { return false }
+        // Inside a word ("mor|gen"): whatever the model writes would split it.
+        if let next = after.first, next.isLetter || next.isNumber, let last = before.last, last.isLetter || last.isNumber { return false }
         if midLine { return true }
-        return after.prefix { !$0.isNewline }.allSatisfy(\.isWhitespace)
+        return after.prefix { !$0.isNewline }.allSatisfy { $0.isWhitespace || Self.closing.contains($0) }
     }
 }
 
