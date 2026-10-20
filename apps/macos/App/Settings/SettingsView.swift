@@ -48,6 +48,7 @@ struct SettingsView: View {
     @State var connectionSearch = ""
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
+    @ObservedObject var energy = EnergyMonitor.shared
     @State var installing: String?
     @State var installFraction: Double = 0
     @State var testing = false

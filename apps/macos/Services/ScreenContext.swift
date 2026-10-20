@@ -62,6 +62,8 @@ final class ScreenContext: ObservableObject {
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
     private let failureCooldown: TimeInterval = 60
+    /// When the timer last read the screen: on battery or in saver mode it reads less often than the timer fires.
+    private var lastPeriodic: Date = .distantPast
     /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
     /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
     /// instead of a full capture and OCR every seven seconds; a question still reads it fresh (`snapshot`).
@@ -129,9 +131,14 @@ final class ScreenContext: ObservableObject {
         // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         guard idle < 180 else { return }
-        // A hot or busy Mac (a build on every core, Low Power Mode): the timer's read waits. A question still reads the
-        // screen (`snapshot`), and switching apps still reads the new window.
-        guard !SystemLoad.isConstrained else { return }
+        // A hot or busy Mac (a build on every core, Low Power Mode), or you are away: the timer's read waits. On battery or
+        // in saver mode it comes less often. A question still reads the screen (`snapshot`), and switching apps still
+        // reads the new window.
+        let plan = EnergyMonitor.shared.plan
+        guard plan.readsScreen else { return }
+        // The timer fires with a little slack; a tick that lands just short of the stretched interval still counts.
+        guard Date().timeIntervalSince(lastPeriodic) >= interval * plan.slowdown - interval * 0.25 else { return }
+        lastPeriodic = Date()
         await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }
 

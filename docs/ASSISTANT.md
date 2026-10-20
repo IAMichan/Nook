@@ -87,6 +87,17 @@ Memory is built directly into Nook—no external MCP server, Node, or `npx` requ
 
 Notch cards (Screen Peek `⌥⌘N` and Think Along) use the exact same `prepareRun` pipeline as the chat: the same source scoping, `RetrievalLedger`, `ActionGate` validation, and verified citations.
 
+### Energy: When Nook Steps Back
+
+Everything Nook does by himself—reading the screen on a timer (`ScreenContext`), thinking along, scanning for agents started outside Nook (`AgentHub`), refreshing the agent history, and watching for meetings and screen sharing (`QuietWatch`)—follows one plan instead of each worker reading the Mac on its own:
+
+- **`EnergyPolicy`** (`Core/EnergyPolicy.swift`, Foundation-only, `EnergyPolicyTests`) turns the Mac's signals (Low Power Mode, thermal state, load average per core, battery, no input for five minutes, displays asleep) and your choice into an `EnergyPlan`: **full**, **light** (the same work, half as often; Think Along at most every ten minutes) or **paused** (optional work waits; what remains runs at a sixth of its pace).
+- **`EnergyMonitor`** (`Services/EnergyMonitor.swift`) keeps the current plan for the whole app. It reads the signals every ten seconds and the moment macOS announces a change (charger, Low Power Mode, thermal state, display sleep and wake), and publishes only a changed plan.
+- **Settings › General › Energy** offers three choices: **Automatic** (steps back on battery, a hot or busy Mac, and while you are away), **Saver** (always light) and **Full power** (never slows down for the battery or a busy Mac; a hot Mac still gets a break, and Low Power Mode makes it light). A status line says what Nook is doing right now and why, and **Settings › Assistant › Currently in view** shows *Paused: your Mac is on battery* instead of an empty line. The chat can switch the mode too (`energy_mode` in `SettingsCatalog`).
+- The meeting and sharing check runs only when it has an effect: when you chose *Change nothing* for both and Settings › Notifications is closed, the window list and microphone scan are skipped altogether.
+
+Work you ask for (a question, Screen Peek, dictation) never waits for the plan.
+
 ### Brain Selection
 
 `BrainSelection` defines where Nook thinks: built-in (MLX), Ollama, LM Studio, or an external cloud provider. Fresh installs default to local on-device inference. Nook never silently falls back to another provider—if your selected model is unavailable, Nook displays a clear error explaining how to resolve it.

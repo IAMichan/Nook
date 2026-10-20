@@ -162,8 +162,19 @@ final class AgentHub: ObservableObject {
         }
         refreshDetected()
         scanTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
-            Task { @MainActor in self?.refreshDetected() }
+            Task { @MainActor in self?.scanTick() }
         }
+    }
+
+    private var lastScan: Date = .distantPast
+
+    /// The timer's scan: every ten seconds while you work, less often while you are away or the Mac saves power. An agent
+    /// that reports through its hooks shows up at once either way; this only finds the ones started without Nook.
+    private func scanTick() {
+        let slowdown = EnergyMonitor.shared.plan.slowdown
+        guard Date().timeIntervalSince(lastScan) >= 10 * slowdown - 2.5 else { return }
+        lastScan = Date()
+        refreshDetected()
     }
 
     private var linkedStateCache: [String: (linked: Bool, checkedAt: Date)] = [:]

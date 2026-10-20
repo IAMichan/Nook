@@ -9,7 +9,7 @@ extension AppModel {
     func startQuietWatch() {
         quietTick()
         Timer.scheduledCoalesced(withTimeInterval: 2) { [weak self] _ in
-            Task { @MainActor in self?.quietTick() }
+            Task { @MainActor in self?.quietTimerTick() }
         }
         // A changed choice applies right away, not on the next tick.
         settings.$quietWhileSharing.map { _ in () }
@@ -20,8 +20,29 @@ extension AppModel {
             .store(in: &bag)
     }
 
+    /// Whether what is going on matters right now: you chose to behave differently in a meeting or share, or Settings
+    /// shows the line that says what Nook notices. With "change nothing" for both and Settings closed, the read (every
+    /// window on screen, every app with the microphone open) would be for no one, so it is skipped.
+    var quietWatchNeeded: Bool {
+        settings.quietWhileSharing != .normal || settings.quietInMeetings != .normal || quietViewers > 0
+    }
+
+    /// The timer's tick: every two seconds while it matters and you are at the Mac, less often while you are away or the
+    /// Mac saves power. A changed choice still applies right away (`startQuietWatch`).
+    private func quietTimerTick() {
+        guard quietWatchNeeded else {
+            // Nook was still quiet or hidden for a choice you just changed to "change nothing": one more read puts it back.
+            if quiet.silent || quiet.excludedFromCapture || quiet.hidden { quietTick() }
+            return
+        }
+        let slowdown = EnergyMonitor.shared.plan.slowdown
+        guard Date().timeIntervalSince(lastQuietTick) >= 2 * slowdown - 0.5 else { return }
+        quietTick()
+    }
+
     /// Reads what is going on and, when that or your choice changed, tells the notch and the sounds.
     func quietTick() {
+        lastQuietTick = Date()
         let situation = demoMode
             ? QuietSituation()
             : QuietWatch.situation(events: upcoming, useCalendar: settings.quietUseCalendar, recording: NoteTaker.shared.isRecording)

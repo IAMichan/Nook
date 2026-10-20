@@ -31,6 +31,8 @@ enum SettingsSearch {
         ("settings.notch.hideWhenIdle", .general),
         ("settings.notch.openOnHover", .general),
         ("settings.notch.demoData", .general),
+        ("settings.energy.title", .general),
+        ("settings.energy.mode", .general),
         ("settings.overview.talkNook", .shortcuts),
         ("settings.overview.askTyping", .shortcuts),
         ("settings.overview.lookScreen", .shortcuts),
