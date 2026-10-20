@@ -246,6 +246,12 @@ final class CompanionServer: ObservableObject {
             return ask(request, app: app)
         case .chatStop:
             return stopChat(request, app: app)
+        case .home:
+            return home(request, app: app)
+        case .usage:
+            return usage(request, app: app)
+        case .music:
+            return music(request, app: app)
         }
     }
 

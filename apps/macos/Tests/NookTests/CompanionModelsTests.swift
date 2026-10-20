@@ -143,4 +143,20 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(CompanionPolicy.clip("  short \r "), "short")
         XCTAssertEqual(CompanionPolicy.clip(String(repeating: "a", count: 10), limit: 4), "aaaa…")
     }
+
+    func testHomeAndUsageCodable() throws {
+        let limit = UsageDigest.Limit(label: "5 hours", percent: 34, resetsAt: 100, note: nil, duration: 18_000)
+        let account = UsageDigest.Account(id: "claude", agent: "Claude", account: "Work", limits: [limit])
+        let home = HomeDigest(lines: [.init(id: "l", title: "Claude waits", subtitle: "nook", icon: "agent:Claude Code", tone: "amber")],
+                              events: [.init(id: "e", title: "Standup", start: 1, end: 2, location: "", calendar: "Work")],
+                              suggestions: ["Summarize my day"],
+                              track: .init(title: "Song", artist: "Band", album: "", app: "Music", playing: true, position: 12, duration: 200),
+                              accounts: [account])
+        let usage = UsageDigest(accounts: [account], range: "week", sessions: 3, completed: 2, failed: 0, running: 1, inputTokens: 10,
+                                outputTokens: 20, cacheTokens: 5, cost: 0.4, days: [.init(day: 0, agent: "Claude", tokens: 30)],
+                                models: [.init(agent: "Claude", model: "default", sessions: 3, tokens: 30, cost: nil)])
+        let response = CompanionResponse(id: "x", ok: true, home: home, usage: usage)
+        XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.usage))
+    }
 }

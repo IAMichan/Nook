@@ -87,6 +87,12 @@ enum CompanionOp: String, Codable, Sendable {
     /// Nook's own chats: the list, one conversation (`conversation`), a question (`text`; a new conversation when
     /// `conversation` is nil) and stopping the answer that is being written.
     case chats, chat, ask, chatStop
+    /// Nook's home: what waits, the agenda, what plays, the limits and where to start (`home` in the answer).
+    case home
+    /// Plan limits and what the sessions used over a range (`item`: "today", "week" or "month"; `usage` in the answer).
+    case usage
+    /// Play/pause, next or previous track (`text`: "playpause", "next", "previous"); answered with `home`.
+    case music
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -95,7 +101,10 @@ enum CompanionFeature {
     static let start = "start"
     static let timeline = "timeline"
     static let chat = "chat"
-    static let all = [start, timeline, chat]
+    static let home = "home"
+    static let usage = "usage"
+    static let music = "music"
+    static let all = [start, timeline, chat, home, usage, music]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -177,6 +186,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var messages: [ChatLine]?
     /// The id of what a request made: the session of `start`, the conversation of `ask`.
     var created: String?
+    var home: HomeDigest?
+    var usage: UsageDigest?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -245,6 +256,98 @@ struct ChatLine: Codable, Equatable, Identifiable, Sendable {
     var failed: Bool
     /// The answer carries a plan, a mail draft or a chart: those are handled on the Mac.
     var onMac: Bool
+}
+
+/// Nook's home on the phone, as the notch shows it on the Mac.
+struct HomeDigest: Codable, Equatable, Sendable {
+    /// A row of "For you": an agent that waits, the next meeting, a connection that needs you.
+    struct Line: Codable, Equatable, Identifiable, Sendable {
+        var id: String
+        var title: String
+        var subtitle: String
+        /// "symbol:<SF Symbol>", "agent:<agent name>" or "source:<connection id>".
+        var icon: String
+        /// "iris", "mint", "amber" or "coral".
+        var tone: String
+    }
+
+    struct Event: Codable, Equatable, Identifiable, Sendable {
+        var id: String
+        var title: String
+        var start: Double
+        var end: Double
+        var location: String
+        var calendar: String
+    }
+
+    struct Track: Codable, Equatable, Sendable {
+        var title: String
+        var artist: String
+        var album: String
+        var app: String
+        var playing: Bool
+        /// Seconds into the track when the Mac answered, and its length (0 when unknown).
+        var position: Double
+        var duration: Double
+    }
+
+    var lines: [Line]
+    var events: [Event]
+    var suggestions: [String]
+    var track: Track?
+    var accounts: [UsageDigest.Account]
+}
+
+/// What Settings › Usage shows: the limits of every account, then what Nook's sessions used.
+struct UsageDigest: Codable, Equatable, Sendable {
+    struct Limit: Codable, Equatable, Identifiable, Sendable {
+        var label: String
+        var percent: Double
+        var resetsAt: Double?
+        /// Shown instead of a reset time ("starts with your next message").
+        var note: String?
+        /// How long the window lasts in seconds, when known: with `resetsAt` it places an even pace.
+        var duration: Double?
+        var id: String { label }
+    }
+
+    struct Account: Codable, Equatable, Identifiable, Sendable {
+        var id: String
+        /// The agent's short name ("Claude", "Codex").
+        var agent: String
+        /// The account's name ("Work", "Personal").
+        var account: String
+        var limits: [Limit]
+    }
+
+    struct Day: Codable, Equatable, Identifiable, Sendable {
+        var day: Double
+        var agent: String
+        var tokens: Int
+        var id: String { "\(day)|\(agent)" }
+    }
+
+    struct Model: Codable, Equatable, Identifiable, Sendable {
+        var agent: String
+        var model: String
+        var sessions: Int
+        var tokens: Int
+        var cost: Double?
+        var id: String { agent + "|" + model }
+    }
+
+    var accounts: [Account]
+    var range: String
+    var sessions: Int
+    var completed: Int
+    var failed: Int
+    var running: Int
+    var inputTokens: Int
+    var outputTokens: Int
+    var cacheTokens: Int
+    var cost: Double?
+    var days: [Day]
+    var models: [Model]
 }
 
 // MARK: Framing

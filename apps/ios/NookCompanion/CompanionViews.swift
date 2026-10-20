@@ -4,11 +4,12 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab = Tab.sessions
+    @State private var tab = Tab.today
+    @State private var todayPath: [String] = []
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
 
-    enum Tab { case sessions, nook }
+    enum Tab { case today, sessions, nook, usage }
 
     var body: some View {
         Group {
@@ -17,10 +18,18 @@ struct RootView: View {
                 PairingView()
             case .connected, .offline:
                 TabView(selection: $tab) {
+                    NavigationStack(path: $todayPath) {
+                        TodayView(openChat: { prompt in
+                            chatPath = [.new(UUID(), prompt)]
+                            tab = .nook
+                        }, openUsage: { tab = .usage })
+                    }
+                    .tabItem { Label("Today", systemImage: "house.fill") }
+                    .tag(Tab.today)
                     NavigationStack(path: $sessionPath) {
                         SessionListView(path: $sessionPath)
                     }
-                    .tabItem { Label("Sessions", systemImage: "square.stack.3d.up.fill") }
+                    .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
                     .tag(Tab.sessions)
                     NavigationStack(path: $chatPath) {
@@ -28,6 +37,11 @@ struct RootView: View {
                     }
                     .tabItem { Label("Chat", systemImage: "sparkles") }
                     .tag(Tab.nook)
+                    NavigationStack {
+                        UsageScreen()
+                    }
+                    .tabItem { Label("Usage", systemImage: "chart.bar.fill") }
+                    .tag(Tab.usage)
                 }
             }
         }
@@ -216,7 +230,7 @@ struct SessionListView: View {
             .padding(.bottom, Theme.Spacing.xl)
         }
         .refreshable { await client.refresh() }
-        .navigationTitle("Sessions")
+        .navigationTitle("Agents")
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -250,7 +264,7 @@ struct SessionListView: View {
 }
 
 /// Which Mac this is and whether it answers.
-private struct ConnectionLine: View {
+struct ConnectionLine: View {
     @EnvironmentObject private var client: CompanionClient
 
     var body: some View {
@@ -272,7 +286,7 @@ private struct ConnectionLine: View {
     }
 }
 
-private struct OverviewTile: View {
+struct OverviewTile: View {
     let count: Int
     let title: LocalizedStringKey
     let symbol: String

@@ -35,6 +35,11 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var chatLines: [String: [ChatLine]] = [:]
     /// False when the Mac said Nook has no brain set up, so chatting cannot work yet.
     @Published private(set) var brainReady = true
+    /// Nook's home (what waits, agenda, player, limits) and the usage page, once asked.
+    @Published private(set) var home: HomeDigest?
+    @Published private(set) var usage: UsageDigest?
+    /// When `home` was read: the player's position runs on from here.
+    @Published private(set) var homeRead = Date()
     private(set) var pushToken: String?
 
     private var link: PairingLink?
@@ -82,6 +87,8 @@ final class CompanionClient: ObservableObject {
         timelines = [:]
         conversations = []
         chatLines = [:]
+        home = nil
+        usage = nil
         phase = .unpaired
     }
 
@@ -185,6 +192,25 @@ final class CompanionClient: ObservableObject {
         return response?.created
     }
 
+    // MARK: Home and usage
+
+    func loadHome() async {
+        guard can(CompanionFeature.home) else { return }
+        await perform(CompanionRequest(op: .home), quiet: true)
+    }
+
+    /// `range`: "today", "week" or "month".
+    func loadUsage(range: String) async {
+        guard can(CompanionFeature.usage) else { return }
+        await perform(CompanionRequest(op: .usage, item: range), quiet: true)
+    }
+
+    /// "playpause", "next" or "previous".
+    func music(_ command: String) async {
+        guard can(CompanionFeature.music) else { return }
+        await perform(CompanionRequest(op: .music, text: command), quiet: true)
+    }
+
     func stopChat(_ conversationID: String) async {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
     }
@@ -239,6 +265,8 @@ final class CompanionClient: ObservableObject {
         if let timeline = response.timeline, let session = req.session { timelines[session] = timeline }
         if let list = response.conversations { conversations = list }
         if let lines = response.messages, let conversation = response.created ?? req.conversation { chatLines[conversation] = lines }
+        if let home = response.home { self.home = home; homeRead = Date() }
+        if let usage = response.usage { self.usage = usage }
     }
 
     // MARK: Transport
