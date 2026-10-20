@@ -45,7 +45,8 @@ struct ChoiceSet: Equatable {
 
 /// A single row in a summary, such as "Time with agents · 6 hrs 12 mins".
 struct Fact: Equatable, Identifiable {
-    var id: String { label }
+    /// Label and value: two of today's events can share a time.
+    var id: String { label + "\u{1F}" + value }
     var label: String
     var value: String
 }
