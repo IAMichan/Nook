@@ -18,6 +18,7 @@ struct UsageView: View {
                 byModelSection(report)
             }
         }
+        .task { await app.watchQuotas() }
     }
 
     // MARK: - Plan limits
@@ -32,7 +33,11 @@ struct UsageView: View {
                 accountRow(profile)
             }
         } header: {
-            Text(tr("settings.agents.subscriptions"))
+            HStack {
+                Text(tr("settings.agents.subscriptions"))
+                Spacer()
+                UsageRefreshButton()
+            }
         } footer: {
             Text(tr("ws.usage.quotaNote"))
         }

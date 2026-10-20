@@ -36,6 +36,7 @@ struct AgentsUsagePanel: View {
                     .font(NookTheme.font(14, .semibold))
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
+                UsageRefreshButton()
             }
             .frame(height: 30)
 
@@ -68,6 +69,7 @@ struct AgentsUsagePanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { app.history.refresh() }
+        .task { await app.watchQuotas() }
     }
 
     /// One AI: its logo and name, then all its accounts on one surface, divided by hairlines. With several accounts the
@@ -407,5 +409,29 @@ struct WeekBars: View {
         }
         .frame(height: 24, alignment: .bottom)
         .accessibilityHidden(true)
+    }
+}
+
+/// Reads the limits of every account now, in the header of the usage panel and Settings › Usage. Shows a small spinner
+/// until Claude Code has answered.
+struct UsageRefreshButton: View {
+    @EnvironmentObject private var app: AppModel
+    @State private var refreshing = false
+
+    var body: some View {
+        if refreshing {
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 24, height: 24)
+                .help(tr("agents.usage.refreshing"))
+        } else {
+            ToolbarIconButton("arrow.clockwise", tr("agents.usage.refresh")) {
+                refreshing = true
+                Task {
+                    await app.refreshQuotasManually()
+                    refreshing = false
+                }
+            }
+        }
     }
 }

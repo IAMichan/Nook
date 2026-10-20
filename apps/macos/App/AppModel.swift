@@ -29,11 +29,37 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Antigravity's quota windows, read from Google.
     let antigravityUsage = AntigravityUsage()
-    /// Reads the limits of all linked accounts right away (Codex and Antigravity). Claude's limits come from Claude Code
-    /// itself: its status line and the `rate_limit_event` of sessions in Nook (`AgentHub.planUsage`).
+    /// Claude's subscription limits, asked of the `claude` CLI for every signed-in Claude account.
+    private(set) lazy var claudeUsage = ClaudeUsage(
+        hub: hub,
+        profiles: { [weak self] in
+            guard let self else { return [] }
+            return self.profiles.profiles(for: .claude).filter { self.history.profileAccounts[$0.id] != nil }
+        },
+        executable: { [weak self] in self?.history.executables[.claude] }
+    )
+
+    /// Reads the limits of all linked accounts right away (Claude, Codex and Antigravity).
     func refreshQuotas() {
+        claudeUsage.refreshNow()
         codex.refreshNow()
         antigravityUsage.refreshNow()
+    }
+
+    /// The refresh button of a usage view: reads every account now and returns when Claude's readings are in.
+    func refreshQuotasManually() async {
+        codex.refreshNow()
+        antigravityUsage.refreshNow(force: true)
+        await claudeUsage.refreshManually()
+    }
+
+    /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy
+    /// plan takes it easy), so what you look at is current. Ends when the view goes away (its task is cancelled).
+    func watchQuotas() async {
+        while !Task.isCancelled {
+            refreshQuotas()
+            try? await Task.sleep(nanoseconds: UInt64(120 * EnergyMonitor.shared.plan.slowdown * 1_000_000_000))
+        }
     }
     /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.
     let history = AgentHistory()
@@ -429,6 +455,7 @@ final class AppModel: ObservableObject {
             return (self?.profiles.profiles(for: .antigravity) ?? []).map { paths.profile($0.id) }
         }
         antigravityUsage.start()
+        claudeUsage.start()
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › General › Energy.
         EnergyMonitor.shared.start(settings: settings)

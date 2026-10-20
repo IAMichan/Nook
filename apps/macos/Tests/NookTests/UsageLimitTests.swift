@@ -20,6 +20,28 @@ final class UsageLimitTests: XCTestCase {
         XCTAssertNil(UsageLimits.planReading(["status": "allowed", "resetsAt": 1]), "no utilization: nothing to show")
     }
 
+    func testClaudeUsageReply() {
+        let reply: [String: Any] = [
+            "subscription_type": "max",
+            "rate_limits_available": true,
+            "rate_limits": [
+                "five_hour": ["utilization": 34.0, "resets_at": "2026-10-20T15:00:00.123+00:00"] as [String: Any],
+                "seven_day": ["utilization": 12, "resets_at": "2026-10-24T09:00:00Z"] as [String: Any],
+                "seven_day_opus": ["utilization": 80, "resets_at": "2026-10-24T09:00:00Z"] as [String: Any]
+            ] as [String: Any]
+        ]
+        let readings = UsageLimits.claudeUsageReply(reply)
+        XCTAssertEqual(readings?.map(\.window), ["five_hour", "seven_day"], "only the windows the status line shows")
+        XCTAssertEqual(readings?.first?.usedPercent, 34, "utilization is already a percentage")
+        XCTAssertEqual(readings?.first?.resetsAt.timeIntervalSince1970 ?? 0, 1_792_508_400.123, accuracy: 0.01)
+        XCTAssertEqual(readings?.last?.resetsAt, Date(timeIntervalSince1970: 1_792_832_400))
+
+        let week: [String: Any] = ["utilization": 5, "resets_at": "2026-10-24T09:00:00Z"]
+        let idle = UsageLimits.claudeUsageReply(["rate_limits": ["five_hour": NSNull(), "seven_day": week] as [String: Any]])
+        XCTAssertEqual(idle?.map(\.window), ["seven_day"], "a window that has not started is left out")
+        XCTAssertNil(UsageLimits.claudeUsageReply(["rate_limits_available": false, "rate_limits": NSNull()]), "API key: no plan limits")
+    }
+
     func testLatestReset() {
         let early = Date(timeIntervalSince1970: 100), late = Date(timeIntervalSince1970: 200)
         let known: [String: Date?] = ["five_hour": early, "seven_day": late]
