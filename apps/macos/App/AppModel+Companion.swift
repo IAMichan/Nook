@@ -37,6 +37,7 @@ extension AppModel {
             self.ask(tr("whatsapp.card.nookPrompt", conversation.name),
                      focus: [Prefetch.Call(tool: "whatsapp_live", input: ["chat": chat, "limit": 20])], reflects: false)
         }
+        viewModel.register("\(token)#quiet") { link.mute(chat) }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
         // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows
@@ -74,6 +75,7 @@ extension AppModel {
             input: true,
             inputPrompt: tr("whatsapp.card.answer", conversation.name),
             extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", "")),
+                    CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", "")),
                     CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""))],
             escape: CardAction(label: "", outcome: .dismiss)
         )

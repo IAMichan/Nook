@@ -27,6 +27,38 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.unread, 0)
     }
 
+    func testStatusUpdatesAndChannelsStayQuietUntilAsked() {
+        var inbox = WAInbox()
+        XCTAssertEqual(WAJID.kind("status@broadcast"), .status)
+        XCTAssertEqual(WAJID.kind("120363001@newsletter"), .channel)
+        XCTAssertEqual(WAJID.kind("31600000001@s.whatsapp.net"), .person)
+        XCTAssertEqual(inbox.add(message("s1", chat: "status@broadcast"), filters: WAFilters()), .quiet)
+        XCTAssertEqual(inbox.add(message("c1", chat: "120363001@newsletter"), filters: WAFilters()), .quiet)
+        XCTAssertTrue(inbox.visible(filters: WAFilters()).isEmpty)
+        var loud = WAFilters()
+        loud.muteStatus = false
+        loud.muteChannels = false
+        XCTAssertEqual(inbox.add(message("s2", chat: "status@broadcast", at: 1), filters: loud), .notify)
+        XCTAssertEqual(inbox.add(message("c2", chat: "120363001@newsletter", at: 1), filters: loud), .notify)
+        XCTAssertEqual(inbox.visible(filters: loud).count, 2)
+    }
+
+    func testEachChatCanBeLouderOrQuieterThanItsKind() {
+        var inbox = WAInbox()
+        var filters = WAFilters()
+        // A group you care about reaches you without a mention; a person you muted never does, even with a mention.
+        filters.setMode(.loud, for: "1@g.us")
+        filters.setMode(.muted, for: "31600000002:3@c.us")
+        XCTAssertEqual(filters.mode(for: "31600000002@s.whatsapp.net"), .muted)
+        XCTAssertEqual(inbox.add(message("g1", chat: "1@g.us", from: "316@s.whatsapp.net"), filters: filters), .notify)
+        XCTAssertEqual(inbox.add(message("p1", chat: "31600000002@s.whatsapp.net", mention: true), filters: filters), .quiet)
+        XCTAssertEqual(inbox.visible(filters: filters).map(\.id), ["1@g.us"])
+        // Back to automatic: the kind's rule applies again, and the choice leaves the table.
+        filters.setMode(.automatic, for: "1@g.us")
+        XCTAssertNil(filters.modes["1@g.us"])
+        XCTAssertEqual(inbox.add(message("g2", chat: "1@g.us", from: "316@s.whatsapp.net", at: 2), filters: filters), .quiet)
+    }
+
     func testGroupsStayQuietUnlessTheyMentionYou() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"
