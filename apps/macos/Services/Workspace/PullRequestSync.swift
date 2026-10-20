@@ -41,6 +41,22 @@ final class PullRequestSync: ObservableObject {
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
+    /// A GitHub pull request merged from Nook: the badges of its sessions turn merged at once, not at the next round.
+    func markMerged(repository: String, number: Int) {
+        func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
+            list.map { link in
+                guard link.host == .github, link.number == number, link.state.isOpen,
+                      link.repository.lowercased() == repository.lowercased() else { return link }
+                var link = link
+                link.state = .merged
+                return link
+            }
+        }
+        links = links.mapValues(settle)
+        folderLinks = folderLinks.mapValues(settle)
+        save()
+    }
+
     /// One branch to ask about: a session Nook runs, or another agent's folder.
     private enum Job {
         case run(UUID, branch: String)

@@ -164,6 +164,10 @@ final class PullRequestStore: ObservableObject {
     /// Passing failures in a row per account; the error shows from the second one, or at once without rows to show.
     private var failures: [String: Int] = [:]
     private static let staleAfter: TimeInterval = 30
+    /// Pull requests merged from Nook, with when. GitHub's search takes a while to see a merge; until it does (or for
+    /// ten minutes at most) the list shows them merged anyway, instead of open again after the next refresh.
+    private var mergedHere: [String: Date] = [:]
+    private static let mergeGrace: TimeInterval = 600
     private let file = NookPaths.supportDirectory.appendingPathComponent("pull-requests.json")
 
     private init() {
@@ -196,7 +200,9 @@ final class PullRequestStore: ObservableObject {
         loading = false
         loaded = true
         fetchedAt = Date()
-        accounts = fresh.map(merge)
+        let cutoff = Date().addingTimeInterval(-Self.mergeGrace)
+        mergedHere = mergedHere.filter { $0.value > cutoff }
+        accounts = fresh.map(merge).map(settled)
         if again {
             again = false
             await refresh(force: true)
@@ -240,4 +246,29 @@ final class PullRequestStore: ObservableObject {
 
     /// Something changed (a turn ended, a pull request opened): the next look refreshes.
     func markStale() { fetchedAt = .distantPast }
+
+    /// A pull request was merged from Nook (`repo#number`): its row shows merged at once, and keeps doing so until
+    /// GitHub's search has caught up.
+    func markMerged(_ id: String) {
+        mergedHere[id] = Date()
+        accounts = accounts.map(settled)
+        fetchedAt = .distantPast
+    }
+
+    private func settled(_ account: AccountPullRequests) -> AccountPullRequests {
+        guard !mergedHere.isEmpty else { return account }
+        func settle(_ items: [PullRequestItem]) -> [PullRequestItem] {
+            items.map { item in
+                guard item.state == .open, mergedHere[item.id] != nil else { return item }
+                var item = item
+                item.state = .merged
+                return item
+            }
+        }
+        var account = account
+        account.mine = settle(account.mine)
+        account.reviews = settle(account.reviews)
+        account.watched = settle(account.watched)
+        return account
+    }
 }

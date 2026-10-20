@@ -12,7 +12,8 @@ struct PullRequestDetail: Equatable, Sendable {
     let body: String
     let url: URL?
     let author: String
-    let state: State
+    /// Variable so the view can show a merge it just made at once, before GitHub's next answer.
+    var state: State
     let baseBranch: String
     let headBranch: String
     /// The commit the view shows. A merge is sent with it, so GitHub refuses when someone pushed in the meantime.

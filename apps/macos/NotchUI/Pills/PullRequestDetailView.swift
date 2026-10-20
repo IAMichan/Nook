@@ -20,6 +20,11 @@ struct PullRequestDetailView: View {
     @State private var confirmMerge = false
     @State private var merging = false
     @State private var mergeError: String?
+    /// Merged from this view: GitHub's answer already said so, so a load that started before the merge (or reads a
+    /// replica that has not caught up) cannot turn it back to open.
+    @State private var mergedHere = false
+    /// A load was asked for while one ran: it runs again right after, so the merge shows in the timeline too.
+    @State private var reloadAgain = false
 
     private var method: PullRequestMergeMethod {
         let chosen = PullRequestMergeMethod(rawValue: methodRaw) ?? .merge
@@ -60,6 +65,7 @@ struct PullRequestDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: item.id) {
+            mergedHere = false
             await load()
             // GitHub works out mergeability after the first ask: look again once it has.
             if let detail, detail.isOpen, detail.mergeable == nil {
@@ -539,24 +545,31 @@ struct PullRequestDetailView: View {
     }
 
     private func load() async {
-        guard !loading else { return }
+        guard !loading else {
+            reloadAgain = true
+            return
+        }
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
             error = tr("agents.pr.noToken")
             return
         }
         loading = true
         defer { loading = false }
-        do {
-            // Not tied to the view: leaving the pull request halfway must not end the load as a failed one.
-            let repo = item.repo, number = item.number
-            let fresh = try await Task { try await GitHubPullRequestDetail.load(repo: repo, number: number, token: token) }.value
-            detail = fresh
-            error = nil
-            if let path = openFile, !fresh.files.contains(where: { $0.path == path }) { openFile = nil }
-        } catch {
-            // A failed refresh keeps what was shown, quietly: the next one is half a minute away.
-            if detail == nil { self.error = error.localizedDescription }
-        }
+        repeat {
+            reloadAgain = false
+            do {
+                // Not tied to the view: leaving the pull request halfway must not end the load as a failed one.
+                let repo = item.repo, number = item.number
+                var fresh = try await Task { try await GitHubPullRequestDetail.load(repo: repo, number: number, token: token) }.value
+                if mergedHere, fresh.isOpen { fresh.state = .merged }
+                detail = fresh
+                error = nil
+                if let path = openFile, !fresh.files.contains(where: { $0.path == path }) { openFile = nil }
+            } catch {
+                // A failed refresh keeps what was shown, quietly: the next one is half a minute away.
+                if detail == nil { self.error = error.localizedDescription }
+            }
+        } while reloadAgain && !Task.isCancelled
     }
 
     /// Only after the confirmation: merges the head that is shown, and writes the outcome to the action log.
@@ -575,16 +588,32 @@ struct PullRequestDetailView: View {
                 let sha = try await GitHubPullRequestDetail.merge(repo: detail.repo, number: detail.number, method: method,
                                                                   sha: detail.headSHA, token: token)
                 app.store.audit(tool: "github_merge_pr", args: args, result: "merged" + (sha.isEmpty ? "" : " " + String(sha.prefix(7))))
-                merging = false
-                PullRequestStore.shared.markStale()
+                settle(detail)
                 await load()
                 await PullRequestStore.shared.refresh(force: true)
             } catch {
                 app.store.audit(tool: "github_merge_pr", args: args, result: "error: " + error.localizedDescription)
-                mergeError = error.localizedDescription
                 merging = false
+                // The answer can get lost (a timeout) after GitHub merged after all: look before calling it failed.
+                await load()
+                if self.detail?.state == .merged {
+                    settle(detail)
+                    await PullRequestStore.shared.refresh(force: true)
+                } else {
+                    mergeError = error.localizedDescription
+                }
             }
         }
+    }
+
+    /// Shows the merge at once, here, in the list and on the agent rows, without waiting for GitHub's next answers.
+    private func settle(_ merged: PullRequestDetail) {
+        mergedHere = true
+        merging = false
+        mergeError = nil
+        detail?.state = .merged
+        PullRequestStore.shared.markMerged(merged.id)
+        PullRequestSync.shared.markMerged(repository: merged.repo, number: merged.number)
     }
 
     // MARK: Pieces
