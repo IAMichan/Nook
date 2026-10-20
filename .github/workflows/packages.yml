@@ -5,23 +5,30 @@ on:
     branches: [main]
     paths: ['packages/**', '.github/workflows/packages.yml']
   pull_request:
+    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
     paths: ['packages/**', '.github/workflows/packages.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
+# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
+# of merges costs at most two builds instead of cancelling every build before it completes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   core:
     name: core (${{ matrix.os }})
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
     strategy:
       matrix:
         os: [ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/core

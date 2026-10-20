@@ -5,27 +5,37 @@ on:
     branches: [main]
     paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   pull_request:
+    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
     paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
+# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
+# of merges costs at most two builds instead of cancelling every build before it completes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ui-lint:
     name: UI consistency
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Colors, type, and radii come from NookTheme
         run: scripts/ui-lint.sh
 
   build:
+    # The macOS runner is the scarce one: only start it once the quick lint has passed.
+    needs: ui-lint
     runs-on: macos-15
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/macos
