@@ -172,8 +172,8 @@ enum AgentActivity: Equatable, Sendable {
             let subject = ["pattern", "query"].lazy.compactMap { input[$0] as? String }.first ?? fallback
             return .searching(ToolSummary.oneLine(subject, 80))
         case .other:
-            // An MCP tool by its own name: "search_issues" of "mcp__github__search_issues".
-            let bare = tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool
+            // An MCP tool by its own name, readable: "Search issues" of "mcp__github__search_issues".
+            let bare = McpToolName(tool)?.toolLabel ?? tool
             return .using(bare.isEmpty ? fallback : bare)
         }
     }

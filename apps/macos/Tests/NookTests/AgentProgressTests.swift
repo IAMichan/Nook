@@ -69,7 +69,7 @@ final class AgentProgressTests: XCTestCase {
         let todo = event(.tool, "TodoWrite · 3", tool: "TodoWrite", detail: #"{"todos":[]}"#, state: .running, at: 1)
         XCTAssertEqual(AgentActivity.current([user, todo]), .planning)
         let mcp = event(.tool, "mcp__github__search_issues", tool: "mcp__github__search_issues", state: .running, at: 1)
-        XCTAssertEqual(AgentActivity.current([user, mcp]), .using("search_issues"))
+        XCTAssertEqual(AgentActivity.current([user, mcp]), .using("Search issues"))
     }
 
     func testBetweenToolsSaysWhatCameLast() {

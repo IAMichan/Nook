@@ -58,7 +58,8 @@ struct RunQuestionOption: Equatable, Sendable {
 
 /// Codex asks permission for a command or a file change.
 struct CodexApprovalRequest: Equatable, Sendable {
-    enum Kind: String, Sendable { case command, fileChange, legacyCommand, legacyPatch }
+    /// `mcpTool`: an MCP server asks (`mcpServer/elicitation/request`) whether a tool may run, or to confirm something.
+    enum Kind: String, Sendable { case command, fileChange, legacyCommand, legacyPatch, mcpTool }
 
     var rpcID: RPCID
     var kind: Kind
@@ -66,6 +67,12 @@ struct CodexApprovalRequest: Equatable, Sendable {
     var command: String
     var cwd: String
     var reason: String
+    /// For `mcpTool`: the server, the tool (empty for a plain confirmation), the arguments Codex shows, and whether
+    /// Codex can remember the answer for this session.
+    var server = ""
+    var tool = ""
+    var arguments: [String: String] = [:]
+    var canRemember = false
 }
 
 /// Token counts Codex reports for the thread: the last model call, the running total, and the model's window.
@@ -187,6 +194,11 @@ enum CodexRPC {
             return ["decision": allow ? (always ? "acceptForSession" : "accept") : "decline"]
         case .legacyCommand, .legacyPatch:
             return ["decision": allow ? (always ? "approved_for_session" : "approved") : "denied"]
+        case .mcpTool:
+            guard allow else { return ["action": "decline"] }
+            var answer: [String: Any] = ["action": "accept", "content": [String: Any]()]
+            if always, request.canRemember { answer["_meta"] = ["persist": "session"] }
+            return answer
         }
     }
 
@@ -351,6 +363,8 @@ enum CodexAppServerMapper {
             return [.approval(CodexApprovalRequest(rpcID: id, kind: .legacyPatch, itemID: (params["callId"] as? String) ?? id.text,
                                                    command: "", cwd: (params["grantRoot"] as? String) ?? "",
                                                    reason: (params["reason"] as? String) ?? ""))]
+        case "mcpServer/elicitation/request":
+            return mcpApproval(id, params).map { [.approval($0)] } ?? [.unsupportedRequest(id)]
         case "item/tool/requestUserInput":
             let questions = ((params["questions"] as? [[String: Any]]) ?? []).compactMap { raw -> RunQuestion? in
                 guard let qid = raw["id"] as? String, let text = raw["question"] as? String else { return nil }
@@ -365,6 +379,50 @@ enum CodexAppServerMapper {
         default:
             return [.unsupportedRequest(id)]
         }
+    }
+
+    /// An MCP elicitation Nook can answer with Allow or Deny: Codex asking whether an MCP tool may run, or a server
+    /// asking to confirm something without fields to fill in. A form with fields (or a sign-in link) is not one.
+    static func mcpApproval(_ id: RPCID, _ params: [String: Any]) -> CodexApprovalRequest? {
+        guard let mode = params["mode"] as? String, ["form", "openai/form", "openaiForm"].contains(mode) else { return nil }
+        let schema = (params["requestedSchema"] as? [String: Any]) ?? [:]
+        guard ((schema["properties"] as? [String: Any]) ?? [:]).isEmpty else { return nil }
+        let meta = (params["_meta"] as? [String: Any]) ?? [:]
+        let isToolCall = (meta["codex_approval_kind"] as? String) == "mcp_tool_call"
+        let server = (params["serverName"] as? String) ?? ""
+        let message = (params["message"] as? String) ?? ""
+        // The tool by its title, else by the name Codex quotes in its question (`… to run tool "move_file"?`).
+        let quoted = message.split(separator: "\"", omittingEmptySubsequences: false).dropFirst().first.map(String.init)
+        let tool = isToolCall ? ((meta["tool_title"] as? String) ?? (meta["tool_name"] as? String) ?? quoted ?? "") : ""
+        // Codex offers to remember the answer as one value or a list ("session", "always").
+        let persist = (meta["persist"] as? [String]) ?? (meta["persist"] as? String).map { [$0] } ?? []
+        return CodexApprovalRequest(rpcID: id, kind: .mcpTool, itemID: id.text, command: "", cwd: "",
+                                    reason: String(message.prefix(600)),
+                                    server: server, tool: tool, arguments: mcpArguments(meta["tool_params_display"]),
+                                    canRemember: persist.contains("session"))
+    }
+
+    /// The arguments Codex shows with an MCP tool call: a list of `{name, value}` (or `display_name`), or an object.
+    private static func mcpArguments(_ raw: Any?) -> [String: String] {
+        func text(_ value: Any?) -> String {
+            switch value {
+            case let string as String: return string
+            case let number as Int: return String(number)
+            case let number as Double: return String(number)
+            case nil: return ""
+            case let other?: return ToolSummary.json(other)
+            }
+        }
+        var arguments: [String: String] = [:]
+        if let list = raw as? [[String: Any]] {
+            for entry in list {
+                guard let name = (entry["display_name"] as? String) ?? (entry["name"] as? String) else { continue }
+                arguments[name] = text(entry["value"])
+            }
+        } else if let object = raw as? [String: Any] {
+            for (name, value) in object { arguments[name] = text(value) }
+        }
+        return arguments
     }
 
     /// Codex counts cached input inside `inputTokens`; keep them apart like the other agents.

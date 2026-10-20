@@ -72,10 +72,16 @@ final class ApprovalCenter {
         let assessment = command.map { CommandRisk.assess($0) }
             ?? CommandAssessment(level: .review, title: "", note: tr("ws.approval.note"))
         let edit = AgentHub.editDiff(tool: pending.tool, input: input)
+        // An MCP tool by its readable name and server, with every argument it gets.
+        let mcp = McpToolName(pending.tool)
+        let title = mcp.map { tr("ws.approval.mcpTitle", run.provider.kind.shortName, $0.toolLabel, $0.serverLabel) }
+            ?? tr("ws.approval.title", run.provider.kind.shortName, pending.tool)
+        let arguments = mcp == nil ? "" : McpToolName.arguments(input)
         return AgentApproval(
             origin: .run(runID: run.id, requestID: pending.id), agentName: run.provider.displayName, project: run.title,
-            tool: pending.tool, title: tr("ws.approval.title", run.provider.kind.shortName, pending.tool),
-            command: command ?? pending.summary, diff: edit?.lines ?? [], note: assessment.note,
+            tool: pending.tool, title: title,
+            command: arguments.isEmpty ? command ?? pending.summary : arguments, diff: edit?.lines ?? [],
+            note: mcp == nil || assessment.level == .danger ? assessment.note : tr("ws.approval.mcpNote"),
             danger: assessment.level == .danger, canAlways: pending.canAlways, canTerminal: false, created: pending.created
         )
     }

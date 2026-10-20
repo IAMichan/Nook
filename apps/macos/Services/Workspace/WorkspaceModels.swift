@@ -707,12 +707,103 @@ enum WorkspacePathPolicy {
     }
 }
 
+/// An MCP tool as people read it: `mcp__bestanden-mappen__move_file` is "Move file" from "Bestanden mappen".
+struct McpToolName: Equatable {
+    var server: String
+    var tool: String
+
+    init(server: String, tool: String) {
+        self.server = server
+        self.tool = tool
+    }
+
+    /// The name an agent reports (`mcp__server__tool`); nil for any other tool.
+    init?(_ raw: String) {
+        guard raw.hasPrefix("mcp__") else { return nil }
+        let parts = raw.dropFirst(5).components(separatedBy: "__")
+        guard parts.count >= 2, let tool = parts.last, !tool.isEmpty else { return nil }
+        let server = parts.dropLast().joined(separator: "__")
+        guard !server.isEmpty else { return nil }
+        self.init(server: server, tool: tool)
+    }
+
+    /// The server's name; claude.ai connectors lose their `claude_ai_` prefix ("claude_ai_Google_Drive" is "Google Drive").
+    var serverLabel: String {
+        let bare = server.hasPrefix("claude_ai_") && server.count > 10 ? String(server.dropFirst(10)) : server
+        return Self.readable(bare)
+    }
+
+    var toolLabel: String { Self.readable(tool) }
+
+    /// "Bestanden mappen › Move file".
+    var label: String { "\(serverLabel) › \(toolLabel)" }
+
+    /// An identifier as words: "move_file", "move-file" and "moveFile" read as "Move file". Acronyms and words written
+    /// with a capital after a separator keep their case ("get_URL" is "Get URL", "Google_Drive" is "Google Drive"); a
+    /// name that already has spaces stays as it is.
+    static func readable(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains(" ") else { return trimmed }
+        // Each word, and whether it started at a camelCase hump rather than after a separator.
+        var words: [(text: String, hump: Bool)] = []
+        var current = ""
+        var hump = false
+        for character in trimmed {
+            if "_-./:".contains(character) {
+                if !current.isEmpty { words.append((current, hump)) }
+                current = ""
+                hump = false
+            } else if character.isUppercase, let last = current.last, last.isLowercase || last.isNumber {
+                words.append((current, hump))
+                current = String(character)
+                hump = true
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append((current, hump)) }
+        guard !words.isEmpty else { return trimmed }
+        let shaped = words.enumerated().map { index, word -> String in
+            let text = word.text
+            if text.count > 1, text == text.uppercased(), text.contains(where: \.isLetter) { return text }
+            if index == 0 { return text.prefix(1).uppercased() + text.dropFirst().lowercased() }
+            if !word.hump, text.first?.isUppercase == true { return text }
+            return text.lowercased()
+        }
+        return shaped.joined(separator: " ")
+    }
+
+    /// Every argument of a call as "name: value" lines, sorted by name and never shortened: what is approved must be
+    /// what is shown.
+    static func arguments(_ input: [String: Any]) -> String {
+        argumentLines(input).joined(separator: "\n")
+    }
+
+    static func argumentLines(_ input: [String: Any]) -> [String] {
+        input.sorted { $0.key < $1.key }.map { key, value -> String in
+            let text: String
+            switch value {
+            case let string as String: text = string
+            case let number as Int: text = String(number)
+            case let number as Double: text = String(number)
+            default: text = ToolSummary.json(value)
+            }
+            return "\(readable(key)): \(text)"
+        }
+    }
+}
+
 /// Concise, language-neutral summary of a tool call: "Bash · npm test", "Edit · Login.swift".
 enum ToolSummary {
     static func describe(tool: String, input: [String: Any]) -> String {
         // Nook's own workspace tools (`mcp__nook__terminal_run`): their label, and the command, address or title.
         if tool.hasPrefix(BridgeTool.toolPrefix), let bridge = BridgeTool.named(tool) {
             return BridgeTool.detail(input).map { "\(bridge.label) · \(oneLine($0, 120))" } ?? bridge.label
+        }
+        // Another MCP tool: "Bestanden mappen › Move file · Source: a.txt, Destination: b.txt".
+        if let mcp = McpToolName(tool) {
+            let detail = McpToolName.argumentLines(input).prefix(2).joined(separator: ", ")
+            return detail.isEmpty ? mcp.label : "\(mcp.label) · \(oneLine(detail, 100))"
         }
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
         if let path = path(input) { return "\(tool) · \(URL(fileURLWithPath: path).lastPathComponent)" }

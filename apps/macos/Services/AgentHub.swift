@@ -1100,13 +1100,15 @@ final class AgentHub: ObservableObject {
     }
 
     private static func approvalSummary(tool: String, input: [String: Any]) -> String {
+        // An MCP tool shows every argument it gets: the title names the tool and its server.
+        if let mcp = McpToolName(tool) {
+            let arguments = McpToolName.arguments(input)
+            return arguments.isEmpty ? mcp.label : arguments
+        }
         if let command = commandText(input) { return command }
         if let path = filePath(input) { return "\(tool) \(shortPath(path))" }
         if let url = input["url"] as? String { return url }
         if let query = input["query"] as? String { return "searching: \(query)" }
-        if tool.hasPrefix("mcp__") {
-            return tool.components(separatedBy: "__").dropFirst().joined(separator: " › ")
-        }
         if let data = try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8), text != "{}" {
             return "\(tool) \(shorten(text, 140))"
@@ -1134,7 +1136,7 @@ final class AgentHub: ObservableObject {
             return CommandAssessment(level: .review, title: "", note: "Fetches from \(URL(string: url)?.host ?? "the internet")")
         }
         if tool.hasPrefix("mcp__") {
-            return CommandAssessment(level: .review, title: "", note: "Uses external integration (MCP)")
+            return CommandAssessment(level: .review, title: "", note: tr("ws.approval.mcpNote"))
         }
         return CommandAssessment(level: .review, title: "", note: "Please review")
     }
@@ -1165,9 +1167,7 @@ final class AgentHub: ObservableObject {
         case "TodoWrite":
             return "Updates task list"
         default:
-            if tool.hasPrefix("mcp__") {
-                return "Integration: " + tool.components(separatedBy: "__").dropFirst().joined(separator: " › ")
-            }
+            if let mcp = McpToolName(tool) { return mcp.label }
             return tool.isEmpty ? "busy" : tool
         }
     }

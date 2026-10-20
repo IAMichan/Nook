@@ -61,6 +61,8 @@ struct MCPServerConfig: Codable, Identifiable, Equatable {
 /// A tool as an MCP server describes it.
 struct MCPTool: Equatable {
     var name: String
+    /// The name people read: the server's own title, or the name in words ("move_file" is "Move file").
+    var title: String
     var description: String
     var inputSchema: [String: Any]
     /// The server says this tool only reads. Anything else is treated as an action that needs approval.
@@ -68,8 +70,9 @@ struct MCPTool: Equatable {
 
     static func == (a: MCPTool, b: MCPTool) -> Bool { a.name == b.name && a.description == b.description && a.readOnly == b.readOnly }
 
-    init(name: String, description: String, inputSchema: [String: Any], readOnly: Bool) {
+    init(name: String, title: String? = nil, description: String, inputSchema: [String: Any], readOnly: Bool) {
         self.name = name
+        self.title = title ?? McpToolName.readable(name)
         self.description = description
         self.inputSchema = inputSchema
         self.readOnly = readOnly
@@ -81,11 +84,14 @@ struct MCPTool: Equatable {
         // Descriptions come from the server: treat them as untrusted text and keep them short.
         let raw = (object["description"] as? String) ?? (object["title"] as? String) ?? ""
         self.description = UntrustedText.neutralize(String(raw.prefix(400)))
+        let annotations = (object["annotations"] as? [String: Any]) ?? [:]
+        let title = ((object["title"] as? String) ?? (annotations["title"] as? String))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.title = title.flatMap { $0.isEmpty ? nil : String($0.prefix(80)) } ?? McpToolName.readable(name)
         var schema = (object["inputSchema"] as? [String: Any]) ?? [:]
         if schema["type"] == nil { schema["type"] = "object" }
         if schema["properties"] == nil { schema["properties"] = [String: Any]() }
         self.inputSchema = schema
-        let annotations = (object["annotations"] as? [String: Any]) ?? [:]
         self.readOnly = (annotations["readOnlyHint"] as? Bool) == true && (annotations["destructiveHint"] as? Bool) != true
     }
 

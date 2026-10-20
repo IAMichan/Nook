@@ -584,6 +584,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.tool.expandHint": "Klik om invoer en uitkomst te zien",
 
         "ws.approval.title": "%@ wil %@ gebruiken",
+        "ws.approval.mcpTitle": "%@ wil “%@” van %@ gebruiken",
+        "ws.approval.mcpNote": "Voert een tool uit van een gekoppelde MCP-server",
         "ws.approval.asks": "Vraagt om %@",
         "ws.approval.more": "nog %ld",
         "ws.approval.pending": "wacht op jou",
@@ -1421,6 +1423,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.tool.expandHint": "Click to see input and output",
 
         "ws.approval.title": "%@ wants to use %@",
+        "ws.approval.mcpTitle": "%@ wants to use “%@” from %@",
+        "ws.approval.mcpNote": "Runs a tool of a connected MCP server",
         "ws.approval.asks": "Asks for %@",
         "ws.approval.more": "%ld more",
         "ws.approval.pending": "waiting for you",
@@ -2180,6 +2184,8 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.composer.hintBusy": "⌘. zum Stoppen",
         "ws.event.thinking": "Denkschritte",
         "ws.approval.title": "%@ möchte %@ verwenden",
+        "ws.approval.mcpTitle": "%@ möchte „%@“ von %@ verwenden",
+        "ws.approval.mcpNote": "Führt ein Tool eines verbundenen MCP-Servers aus",
         "ws.approval.open": "Arbeitsbereich öffnen",
         "ws.inspector.changes": "Änderungen",
         "ws.inspector.clean": "Keine Änderungen",

@@ -266,7 +266,12 @@ extension WorkspaceManager {
     }
 
     private func approvalKind(_ request: CodexApprovalRequest) -> ApprovalKind {
-        request.kind == .command || request.kind == .legacyCommand ? .command : .fileChange
+        switch request.kind {
+        case .command, .legacyCommand: return .command
+        case .fileChange, .legacyPatch: return .fileChange
+        // "Always" for an MCP tool covers that one tool of that server, not every integration.
+        case .mcpTool: return .other("mcp:\(request.server)/\(request.tool.isEmpty ? request.reason : request.tool)")
+        }
     }
 
     private func presentCodexApproval(_ id: UUID, _ request: CodexApprovalRequest) {
@@ -278,6 +283,10 @@ extension WorkspaceManager {
             return
         }
         let requestID = "codex-" + request.rpcID.text
+        if request.kind == .mcpTool {
+            presentCodexMcpApproval(id, request, requestID: requestID)
+            return
+        }
         let isCommand = request.kind == .command || request.kind == .legacyCommand
         let tool = isCommand ? "shell" : "apply_patch"
         var input: [String: Any] = [:]
@@ -289,6 +298,26 @@ extension WorkspaceManager {
         let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
         append(id, event)
         // A non-empty suggestion list enables "Always", which Codex knows as "accept for this session".
+        let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
+                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
+        codexRequests[requestID] = request
+        approvals[id, default: []].append(pending)
+        update(id) { $0.move(to: .waitingApproval) }
+        if let run = run(id) { onApproval?(run, pending) }
+    }
+
+    /// An MCP server's request through Codex (a tool that wants to run, or something to confirm): the same approval
+    /// card as a command, titled with the tool and its server in readable words.
+    private func presentCodexMcpApproval(_ id: UUID, _ request: CodexApprovalRequest, requestID: String) {
+        let tool = "mcp__\(request.server.isEmpty ? "mcp" : request.server)__\(request.tool.isEmpty ? "confirm" : request.tool)"
+        var input: [String: Any] = request.arguments
+        // Without arguments to show, the server's own question says what is being allowed.
+        if input.isEmpty, !request.reason.isEmpty { input["message"] = request.reason }
+        let label = McpToolName(tool)?.label ?? tool
+        let summary = request.reason.isEmpty ? label : "\(label) · \(ToolSummary.oneLine(request.reason, 120))"
+        let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
+        append(id, event)
+        // Nook remembers "Always" for this tool itself, so it is offered even when Codex cannot remember it.
         let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
                                         suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
         codexRequests[requestID] = request

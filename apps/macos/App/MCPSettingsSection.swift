@@ -268,9 +268,10 @@ private struct MCPServerDetailSheet: View {
                                         .padding(.top, 2)
 
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(tool.name)
-                                            .font(NookTheme.mono(13, .semibold))
-                                        Text(tool.description)
+                                        Text(connector.title(ofTool: tool.name))
+                                            .font(NookTheme.font(13, .semibold))
+                                        // The "[Server] " prefix is for the model; the sheet already names the server.
+                                        Text(tool.description.replacingOccurrences(of: "[\(config.name)] ", with: ""))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                             .fixedSize(horizontal: false, vertical: true)
