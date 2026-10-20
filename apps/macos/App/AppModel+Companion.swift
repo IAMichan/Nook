@@ -23,7 +23,9 @@ extension AppModel {
         viewModel.register("\(token)#nook") { [weak self] in
             guard let self else { return }
             link.markRead(chat)
-            self.ask(tr("whatsapp.card.nookPrompt", conversation.name))
+            // Only this chat is read, and asking for a draft teaches memory nothing about the user.
+            self.ask(tr("whatsapp.card.nookPrompt", conversation.name),
+                     focus: [Prefetch.Call(tool: "whatsapp_live", input: ["chat": chat, "limit": 20])], reflects: false)
         }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 

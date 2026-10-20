@@ -182,6 +182,11 @@ extension AppModel {
             memory.endReflection(conversation, covered: history.filter(\.fromUser).count + 1)
             return
         }
+        // A prompt a card wrote ("propose an answer to Lisa") says nothing about the user worth keeping, now or later.
+        guard ReplyContext.reflects else {
+            memory.endReflection(conversation, covered: history.filter(\.fromUser).count + 1)
+            return
+        }
         guard settings.useMemory, settings.brainReady, !ChatIntent.detect(question).isSmallTalk else { return }
         let userTurns = history.filter(\.fromUser).map(\.text) + [question]
         guard memory.shouldReflect(conversation: conversation, userMessages: userTurns.count, latest: question) else { return }

@@ -720,4 +720,9 @@ enum ReplyContext {
     @TaskLocal static var messageID: UUID?
     /// The pictures sent with the question being answered; the brain adds them to the last message.
     @TaskLocal static var images: [ImageAttachment] = []
+    /// Lookups the caller already knows are the answer's material (a WhatsApp card's own chat): the run reads exactly
+    /// these instead of searching, so an answer about one chat is never mixed with others.
+    @TaskLocal static var focus: [Prefetch.Call] = []
+    /// False for a prompt Nook wrote itself (a card's button): there is nothing the user said to reflect on.
+    @TaskLocal static var reflects = true
 }

@@ -282,7 +282,13 @@ extension AppModel {
         var blocked: [String] = []
         var goal = ""
         let intent = ChatIntent.detect(text, history: history)
-        if prefetch, !intent.isSmallTalk {
+        // A card that knows what the question is about (one WhatsApp chat) reads exactly that, and nothing else.
+        let focus = ReplyContext.focus
+        if prefetch, !focus.isEmpty {
+            let limit = settings.brainProfile.isSmall ? 4_000 : 10_000
+            opened = await Self.runAll(focus, tools: tools, timeout: 8, limit: limit).map(\.output)
+        }
+        if prefetch, opened.isEmpty, !intent.isSmallTalk {
             let profile = settings.brainProfile
             let roomy = !profile.isSmall || profile.contextTokens >= 16_000
             let available = tools.compactMap { spec -> Prefetch.Available? in

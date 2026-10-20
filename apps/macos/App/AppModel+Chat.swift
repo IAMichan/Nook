@@ -102,8 +102,9 @@ extension AppModel {
         }
     }
 
-    /// Submits a query in chat: response streams in real-time.
-    func ask(_ text: String, images: [ImageAttachment] = []) {
+    /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
+    /// (see `ReplyContext`).
+    func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true) {
         let conversation = chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         var question = ChatMessage(role: .user, text: text)
@@ -131,8 +132,12 @@ extension AppModel {
         let replyID = reply.id
         chatTasks[conversation] = Task { [weak self] in
             await ReplyContext.$images.withValue(images) {
-                await ReplyContext.$messageID.withValue(replyID) {
-                    await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                await ReplyContext.$focus.withValue(focus) {
+                    await ReplyContext.$reflects.withValue(reflects) {
+                        await ReplyContext.$messageID.withValue(replyID) {
+                            await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                        }
+                    }
                 }
             }
         }
