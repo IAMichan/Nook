@@ -63,6 +63,7 @@ The checklist for a new or changed view:
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
+| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one global toast for a short result (saved, approved, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`), `.warning(…)`, `.info(…)`. Mint, coral, amber, iris by kind; queued, closes by itself, stays while hovered. The panel (notch and main window) and Settings host it; never build a local toast or banner for a one-off result |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
