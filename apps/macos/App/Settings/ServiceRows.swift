@@ -29,6 +29,74 @@ enum ServiceCategory: String, CaseIterable, Identifiable {
     }
 }
 
+/// How a service gets connected: the one word on every card of the catalogue, so a glance says what a click does.
+enum ConnectMethod: String {
+    /// One click opens the service's own sign-in page.
+    case signIn
+    /// A key or token, with the steps to get one.
+    case key
+    /// An MCP server that runs on this Mac or on the web.
+    case mcp
+
+    var label: String { tr("connect.method.badge.\(rawValue)") }
+}
+
+/// The small capsule on a catalogue card: filled for sign-in (the easiest way), tinted for the others. `text`
+/// replaces the method's word (Retry, Cancel); `busy` shows a spinner instead.
+struct ConnectMethodBadge: View {
+    let method: ConnectMethod
+    var text: String? = nil
+    var busy = false
+
+    var body: some View {
+        if busy {
+            ProgressView().controlSize(.small)
+        } else {
+            Text(text ?? method.label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(method == .signIn ? NookTheme.iris : NookTheme.iris.opacity(0.14)))
+                .lineLimit(1)
+        }
+    }
+}
+
+/// The category chips under the search field of Settings › Connections: All, then one per `ServiceCategory`.
+struct ServiceCategoryChips: View {
+    @Binding var selection: ServiceCategory?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                chip(nil, title: tr("connect.category.all"))
+                ForEach(ServiceCategory.allCases) { category in
+                    chip(category, title: category.title)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func chip(_ category: ServiceCategory?, title: String) -> some View {
+        let active = selection == category
+        return Button {
+            selection = category
+        } label: {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(active ? NookTheme.onIris : Color.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(active ? NookTheme.iris : Color.primary.opacity(0.07)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
 /// One of a few plain states a connection is in, the same words everywhere.
 enum ServiceStatus: Equatable {
     case notLinked, connecting, connected, expired, unreachable, off
@@ -180,16 +248,7 @@ struct OneClickServiceCard: View {
                     detail: failure ?? (connecting ? tr("connect.waiting", service.name) : service.tagline)) {
             ServiceTile(domain: service.domain, fallback: "link", tint: NookTheme.iris, size: 32)
         } accessory: {
-            if connecting {
-                ProgressView().controlSize(.small)
-            } else {
-                Text(failure == nil ? tr("settings.connections.signIn") : tr("connector.retry"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(NookTheme.onIris)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(NookTheme.iris))
-            }
+            ConnectMethodBadge(method: .signIn, text: failure == nil ? nil : tr("connector.retry"), busy: connecting)
         } action: {
             if connecting { signIn.cancel() } else { signIn.connect(service, app: app) }
         }
@@ -235,16 +294,7 @@ struct GitHubSignInCard: View {
             ServiceTile(domain: keyAlternative.iconDomain, fallback: keyAlternative.symbol, tint: keyAlternative.accent, size: 32,
                         source: keyAlternative.id)
         } accessory: {
-            if connecting {
-                ProgressView().controlSize(.small)
-            } else {
-                Text(failure == nil ? tr("settings.connections.signIn") : tr("connector.retry"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(NookTheme.onIris)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(NookTheme.iris))
-            }
+            ConnectMethodBadge(method: .signIn, text: failure == nil ? nil : tr("connector.retry"), busy: connecting)
         } action: {
             if connecting { signIn.cancel() } else { signIn.reconnect() }
         }

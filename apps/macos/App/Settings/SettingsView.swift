@@ -46,6 +46,10 @@ struct SettingsView: View {
     @State var status = ""
     @State var refreshTick = 0
     @State var connectionSearch = ""
+    /// The category chip under the connections search field; nil is All.
+    @State var connectionCategory: ServiceCategory?
+    /// The Add MCP sheet, opened from a preset card or the custom card.
+    @State var mcpAdd: MCPAddRequest?
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
     @State var installing: String?

@@ -274,12 +274,7 @@ private struct ServiceCard<C: CloudConnectorConfig>: View {
         GalleryCard(title: connector.title, detail: ServiceState.tagline(connector.id)) {
             ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34, source: connector.id)
         } accessory: {
-            Text(tr("connector.link"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(NookTheme.iris)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
+            ConnectMethodBadge(method: .key)
         } action: {
             showSetup = true
         }

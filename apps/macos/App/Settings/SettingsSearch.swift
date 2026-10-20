@@ -70,6 +70,7 @@ enum SettingsSearch {
         ("settings.voice.wakeWord", .dictation),
         ("settings.connections.onYourMac", .connections),
         ("settings.connections.oneClick", .connections),
+        ("settings.connections.add", .connections),
         ("whatsapp.settings.title", .connections),
         ("gitlab.title", .connections),
         ("mcp.add", .connections),

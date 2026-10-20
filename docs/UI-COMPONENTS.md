@@ -90,7 +90,17 @@ button, the window remembers its tab (and opens at an agent that waits for you),
 | `SettingLabel(_:detail:)` | `SettingsBlocks.swift` | The same title and caption, for rows with a button or picker |
 | `StatusRow`, `SettingsHeader`, `Keycap` | `SettingsBlocks.swift` | Status lines, section headers, keyboard keys |
 | `SettingsTile`, `HealthPill`, `SetupStep`, `GalleryCard`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
-| `ServiceRowLayout`, `MCPServiceRow`, `OneClickServiceCard` | `ServiceRows.swift` | Connection rows |
+| `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
+| `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |
+| `ServiceCategoryChips` | `ServiceRows.swift` | The category filter under the connections search field |
+| `OneClickServiceCard`, `GitHubSignInCard`, `MCPServiceRow` | `ServiceRows.swift` | Services that sign in on their own page |
+| `GitLabCard`, `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same card, row, and setup-sheet shapes |
+| `MCPPresetCard`, `MCPCustomCard`, `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
+| `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |
+
+Settings › Connections is one page in one layout: search and category chips, what needs you, your connections (rows),
+the apps on this Mac (switches), and one catalogue of everything you can add (cards). A new service gets a row and a
+card in these shapes, and a `SetupSheet` when it needs steps; it never gets a section of its own.
 
 ## File layout
 
