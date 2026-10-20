@@ -61,4 +61,12 @@ final class MarkdownBlockTests: XCTestCase {
         let chart = ChartRescue.chart(fromTable: ["Maand", "Omzet"], rows: [["jan", "10"], ["feb", "20"]], title: "")
         XCTAssertEqual(chart?.series.first?.name, "Omzet")
     }
+
+    func testNamesWithDigitsAreNotTableNumbers() {
+        XCTAssertNil(ChartRescue.tableNumber("worktrees/nook/nook-test-183d"))
+        XCTAssertNil(ChartRescue.tableNumber("1c58d13"))
+        XCTAssertEqual(ChartRescue.tableNumber("568 commits"), 568)
+        XCTAssertEqual(ChartRescue.tableNumber("€ 12,50"), 12.5)
+        XCTAssertNil(ChartRescue.chart(fromTable: ["Map", "Branch"], rows: [["a", "nook/test-183d"], ["b", "nook/test-dd40"]], title: ""))
+    }
 }

@@ -76,7 +76,7 @@ enum ChartRescue {
             let labels = rows.map { $0.first ?? "" }
             var series: [ChatChart.Series] = []
             for column in 1..<header.count {
-                let values = rows.map { $0.count > column ? number($0[column]) : nil }
+                let values = rows.map { $0.count > column ? tableNumber($0[column]) : nil }
                 guard values.allSatisfy({ $0 != nil }) else { continue }
                 let points = zip(labels, values).map { ChatChart.Point(label: $0, value: $1 ?? 0) }
                 series.append(ChatChart.Series(name: header[column], points: points))
@@ -227,6 +227,14 @@ enum ChartRescue {
     }
 
     /// Parses a number from strings like "€ 1,234.50", "12%", "3.5 hours" or simply 42.
+    /// A table cell that is a number, possibly with a sign, currency or short unit around it ("€ 12,50", "568 commits",
+    /// "+3%"). Stricter than `number`: a name with digits in it, such as "nook-test-183d" or a commit hash, is not one.
+    static func tableNumber(_ cell: String) -> Double? {
+        let text = cell.replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
+        guard text.range(of: #"^\s*[^\p{L}\d]{0,3}\d[\d.,\s]*[\p{L}\p{Sc}%°]*\s*$"#, options: .regularExpression) != nil else { return nil }
+        return number(text)
+    }
+
     static func number(_ raw: Any?) -> Double? {
         if let value = raw as? Double { return value }
         if let value = raw as? Int { return Double(value) }
