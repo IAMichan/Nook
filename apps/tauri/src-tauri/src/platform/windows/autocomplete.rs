@@ -291,8 +291,8 @@ fn rectangles(array: *mut SAFEARRAY) -> Vec<ScreenRect> {
         let mut data: *mut core::ffi::c_void = std::ptr::null_mut();
         if count >= 4 && SafeArrayAccessData(array, &mut data).is_ok() {
             let values = std::slice::from_raw_parts(data as *const f64, count);
-            for chunk in values.chunks_exact(4) {
-                result.push(ScreenRect { x: chunk[0], y: chunk[1], width: chunk[2], height: chunk[3] });
+            for &[x, y, width, height] in values.as_chunks::<4>().0 {
+                result.push(ScreenRect { x, y, width, height });
             }
             let _ = SafeArrayUnaccessData(array);
         }

@@ -140,8 +140,8 @@ impl X11 {
             return Err(format!("Dit scherm gebruikt {bpp} bits per pixel; Nook leest alleen 24/32-bits schermen."));
         }
         let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-        for px in reply.data.chunks_exact(4) {
-            rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
+        for &[b, g, r, _] in reply.data.as_chunks::<4>().0 {
+            rgba.extend_from_slice(&[r, g, b, 255]);
         }
         Ok((rgba, width as u32, height as u32))
     }
