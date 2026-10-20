@@ -74,6 +74,10 @@ extension AppModel {
     }
 
     func thinkAlongRun(bundleID: String, appName: String, window: String) async {
+        // A look every ten minutes would otherwise keep a local model's gigabytes in memory most of the time: when this run
+        // had to load it, it gives it back right after.
+        let wasLoaded = EmbeddedModel.shared.isLoaded
+        defer { if !wasLoaded { EmbeddedModel.shared.unloadIfIdle() } }
         guard let snapshot = try? await screenSnapshot() else { return }
         var request = """
         [Think along] The user is working in \(appName)\(window.isEmpty ? "" : " (window: \(window.prefix(80)))"). \
