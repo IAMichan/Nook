@@ -56,6 +56,12 @@ final class AutocompleteStore: ObservableObject {
             if prefs.delayMilliseconds == 70 { prefs.delayMilliseconds = 40 }
             defaults.set(true, forKey: "autocompleteDelayMigrated40")
         }
+        // 40 ms was the next default; now the model starts on the key itself while the field is read, so there is nothing to
+        // wait for.
+        if !defaults.bool(forKey: "autocompleteDelayMigrated0") {
+            if prefs.delayMilliseconds == 40 { prefs.delayMilliseconds = 0 }
+            defaults.set(true, forKey: "autocompleteDelayMigrated0")
+        }
         self.prefs = prefs
         stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()
         samples = Self.load(CompletionSamples.self, "samples.json") ?? CompletionSamples()

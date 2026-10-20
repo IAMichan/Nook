@@ -45,6 +45,10 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     static let contextLength: UInt32 = 4_096
 
     private static let backendReady: Void = {
+        // Metal lets the model's buffers leave GPU residency after 180 s without work by default, and the first suggestion
+        // after a pause then waits for them to come back. Keep them as long as the model stays loaded (see
+        // `AutocompleteController.idleSeconds`). A value already set in the environment wins.
+        setenv("GGML_METAL_RESIDENCY_KEEP_ALIVE_S", "900", 0)
         llama_log_set({ _, _, _ in }, nil)
         llama_backend_init()
     }()

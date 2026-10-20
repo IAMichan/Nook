@@ -401,6 +401,59 @@ struct CompletionResult: Equatable {
     var unfinished = false
 }
 
+/// The text before the cursor once the app has taken in a key, when the key alone says what it will be: a character typed, or
+/// Delete. The model can then start on the next suggestion while the field is still being read.
+enum CompletionTyping {
+    /// - Parameters:
+    ///   - delete: the Delete key without modifiers (Option-Delete takes a whole word: not predictable).
+    ///   - commandLike: Command or Control is held: a shortcut, not text.
+    static func predicted(before: String, characters: String, delete: Bool, commandLike: Bool) -> String? {
+        guard !commandLike else { return nil }
+        if delete { return before.isEmpty ? nil : String(before.dropLast()) }
+        // Return, Tab, Escape and the arrow and function keys (Apple's private-use range) do not type their characters.
+        guard !characters.isEmpty, !characters.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0) || (0xF700...0xF8FF).contains($0.value)
+        }) else { return nil }
+        return before + characters
+    }
+}
+
+/// Suggestions made recently in one field, kept by the text they continue. When the text comes back to one of them (Delete
+/// after a wrong letter, or typing on in the words it suggested after it was sent away), it is shown again at once, without
+/// asking the model.
+struct CompletionMemo {
+    private struct Entry {
+        var field: String
+        var before: String
+        var result: CompletionResult
+    }
+
+    private var entries: [Entry] = []
+    static let limit = 32
+
+    mutating func remember(_ result: CompletionResult, before: String, field: String) {
+        guard result.text.contains(where: { !$0.isWhitespace }) else { return }
+        // One field at a time: another field's suggestions do not fit this one.
+        entries.removeAll { $0.field != field || $0.before == before }
+        entries.append(Entry(field: field, before: before, result: result))
+        if entries.count > Self.limit { entries.removeFirst(entries.count - Self.limit) }
+    }
+
+    mutating func forget() { entries.removeAll() }
+
+    /// What a remembered suggestion still adds after `before` (the newest that fits), or nil when none continues this text.
+    func recall(before: String, field: String) -> CompletionResult? {
+        for entry in entries.reversed() where entry.field == field && before.hasPrefix(entry.before) {
+            let whole = entry.before + entry.result.text
+            guard whole.hasPrefix(before) else { continue }
+            let rest = String(whole.dropFirst(before.count))
+            guard rest.contains(where: { !$0.isWhitespace }) else { continue }
+            return CompletionResult(text: rest, truncated: entry.result.truncated, unfinished: entry.result.unfinished)
+        }
+        return nil
+    }
+}
+
 /// Token healing: the end of a prompt that stops in the middle of a word is taken off and written again by the model. A word
 /// cut off by the cursor ("morg") tokenizes unlike any text the model learned from; read without it, the model chooses
 /// among the tokens that spell it ("morgen", "morgens") and goes on from a whole word.

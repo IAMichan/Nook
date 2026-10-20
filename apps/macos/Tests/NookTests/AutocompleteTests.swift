@@ -597,4 +597,46 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionCatalogModel.recommended(memoryGB: 16).name, "Gemma 4 E2B Instruct")
         XCTAssertEqual(CompletionCatalogModel.recommended(memoryGB: 8).name, "Gemma 3 1B")
     }
+
+    // MARK: Instant suggestions
+
+    func testPredictsTheTextAfterTypedCharactersAndDelete() {
+        XCTAssertEqual(CompletionTyping.predicted(before: "Hoi", characters: " ", delete: false, commandLike: false), "Hoi ")
+        XCTAssertEqual(CompletionTyping.predicted(before: "Caf", characters: "é", delete: false, commandLike: false), "Café")
+        XCTAssertEqual(CompletionTyping.predicted(before: "Hoi", characters: "\u{7F}", delete: true, commandLike: false), "Ho")
+        XCTAssertNil(CompletionTyping.predicted(before: "", characters: "\u{7F}", delete: true, commandLike: false))
+        // Shortcuts, Return, Tab and the arrow keys do not type what they carry.
+        XCTAssertNil(CompletionTyping.predicted(before: "Hoi", characters: "a", delete: false, commandLike: true))
+        XCTAssertNil(CompletionTyping.predicted(before: "Hoi", characters: "\r", delete: false, commandLike: false))
+        XCTAssertNil(CompletionTyping.predicted(before: "Hoi", characters: "\t", delete: false, commandLike: false))
+        XCTAssertNil(CompletionTyping.predicted(before: "Hoi", characters: "\u{F702}", delete: false, commandLike: false))
+        // A dead key types nothing yet.
+        XCTAssertNil(CompletionTyping.predicted(before: "Hoi", characters: "", delete: false, commandLike: false))
+    }
+
+    func testMemoShowsTheRestOfARecentSuggestion() {
+        var memo = CompletionMemo()
+        memo.remember(CompletionResult(text: " see you tomorrow", truncated: true), before: "Thanks, I will", field: "mail")
+        // Typed on in its words, after it was sent away.
+        XCTAssertEqual(memo.recall(before: "Thanks, I will se", field: "mail"),
+                       CompletionResult(text: "e you tomorrow", truncated: true))
+        // Back to where it was made (Delete after a wrong letter).
+        XCTAssertEqual(memo.recall(before: "Thanks, I will", field: "mail")?.text, " see you tomorrow")
+        // Another way, another field, or the whole of it typed: nothing to show.
+        XCTAssertNil(memo.recall(before: "Thanks, I will sa", field: "mail"))
+        XCTAssertNil(memo.recall(before: "Thanks, I will", field: "chat"))
+        XCTAssertNil(memo.recall(before: "Thanks, I will see you tomorrow", field: "mail"))
+        XCTAssertNil(memo.recall(before: "Thanks, I wil", field: "mail"))
+    }
+
+    func testMemoPrefersTheNewestSuggestionAndKeepsOneField() {
+        var memo = CompletionMemo()
+        memo.remember(CompletionResult(text: " a walk", truncated: false), before: "Let's go for", field: "chat")
+        memo.remember(CompletionResult(text: " lunch", truncated: false), before: "Let's go for", field: "chat")
+        XCTAssertEqual(memo.recall(before: "Let's go for", field: "chat")?.text, " lunch")
+        memo.remember(CompletionResult(text: " regards", truncated: false), before: "Kind", field: "mail")
+        XCTAssertNil(memo.recall(before: "Let's go for", field: "chat"))
+        memo.forget()
+        XCTAssertNil(memo.recall(before: "Kind", field: "mail"))
+    }
 }
