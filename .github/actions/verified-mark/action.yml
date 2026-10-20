@@ -1,0 +1,22 @@
+name: Mark verified
+description: >-
+  Records that a job passed on the inputs verified-check fingerprinted, so a later run on the same inputs can skip it.
+  Use it as the last step of the job, after everything that has to pass.
+inputs:
+  name:
+    description: The same name that was given to verified-check.
+    required: true
+  fingerprint:
+    description: The fingerprint output of verified-check.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/verified.txt"
+    - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      with:
+        name: verified-${{ inputs.name }}-${{ inputs.fingerprint }}
+        path: ${{ runner.temp }}/verified.txt
+        retention-days: 30
+        overwrite: true

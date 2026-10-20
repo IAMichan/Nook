@@ -3,15 +3,20 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ['apps/ios/**', 'packages/protocol/**', '.github/workflows/ios.yml']
+    paths: &paths
+      - 'apps/ios/**'
+      - 'packages/protocol/**'
+      - '.github/workflows/ios.yml'
+      - '.github/actions/**'
   pull_request:
     # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
     types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: ['apps/ios/**', 'packages/protocol/**', '.github/workflows/ios.yml']
+    paths: *paths
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read # verified-check looks up the markers of earlier runs
 
 # One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
 # On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
@@ -21,15 +26,34 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  # A few seconds on ubuntu decide whether the macOS runner is needed at all.
+  gate:
     if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      fingerprint: ${{ steps.verified.outputs.fingerprint }}
+      verified: ${{ steps.verified.outputs.verified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Keep this list in sync with the paths filter above.
+      - name: Already verified on these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: ios
+          paths: apps/ios packages/protocol .github/workflows/ios.yml .github/actions
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.verified != 'true'
     runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/ios
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select newest Xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
@@ -43,7 +67,12 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project NookCompanion.xcodeproj -scheme NookCompanion -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee build.log
       - name: Errors and warnings
         if: always()
         run: grep -E "error:|warning:" build.log | sort -u || true
+      - uses: ./.github/actions/verified-mark
+        with:
+          name: ios
+          fingerprint: ${{ needs.gate.outputs.fingerprint }}

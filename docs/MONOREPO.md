@@ -35,7 +35,7 @@ scripts/     Helper scripts (including core-tests.sh and local model fine-tuning
 1. Move the required Foundation-only modules into `packages/core` and link `apps/macos` against it via Swift Package Manager.
 2. Set up the native UI project in `apps/<platform>` (see the `README.md` in each platform folder).
 3. Implement platform adapters for storage, secrets, screen reading, calendar, and global shortcuts.
-4. Add a dedicated CI workflow in `.github/workflows/` with `paths:` filters for `apps/<platform>/**` and `packages/**`. Copy the `pull_request` types, the `concurrency` block, and the `if:` on the first job from `build.yml`, so merging or closing a PR cancels its queued run and a burst of merges to `main` does not pile up builds.
+4. Add a dedicated CI workflow in `.github/workflows/` with `paths:` filters for `apps/<platform>/**` and the packages it uses. Follow [CI.md](CI.md): copy the `pull_request` types, the `concurrency` block, and the `if:` on the first job from `build.yml`, so merging or closing a PR cancels its queued run and a burst of merges to `main` does not pile up builds.
 5. Document any new dependencies in `README.md` and `THIRD-PARTY-NOTICES.md`.
 
 ## Chosen: Tauri for Windows, Linux, and Android

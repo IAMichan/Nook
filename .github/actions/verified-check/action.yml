@@ -1,0 +1,56 @@
+name: Already verified?
+description: >-
+  Fingerprints the inputs of an expensive job (the git trees of the paths it builds from) and looks for the marker that
+  verified-mark uploads when a run of this repository passed on exactly those inputs. When one exists the job can be
+  skipped. Typical hits: the push to main after merging a pull request whose checks passed against an up-to-date base,
+  and a pull request that only merged in unrelated changes from main. workflow_dispatch always builds.
+inputs:
+  name:
+    description: Short name of the check, part of the marker name (for example macos or ios).
+    required: true
+  paths:
+    description: Space-separated repository paths the job builds from. Include the workflow file and .github/actions.
+    required: true
+outputs:
+  fingerprint:
+    description: Hash of the inputs; pass it to verified-mark.
+    value: ${{ steps.check.outputs.fingerprint }}
+  verified:
+    description: "'true' when a run of this repository already passed on these inputs."
+    value: ${{ steps.check.outputs.verified }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        NAME: ${{ inputs.name }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        set -euo pipefail
+        # On a pull request HEAD is GitHub's merge of the PR into its base, which is exactly what lands on main when
+        # the base has not moved in between.
+        fingerprint="$(for path in $PATHS; do
+          printf '%s %s\n' "$path" "$(git rev-parse --verify --quiet "HEAD:$path" || echo missing)"
+        done | sha256sum | cut -c1-40)"
+        echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+        verified=false
+        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+          echo "Started by hand: always build."
+        # Only markers from runs on this repository's own branches count: a fork's pull request runs its own copy of
+        # the workflow and could upload any marker.
+        elif run="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=verified-$NAME-$fingerprint&per_page=100" --jq \
+          '[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == .workflow_run.repository_id)
+            | .workflow_run.id] | first // empty')"; then
+          if [ -n "$run" ]; then
+            verified=true
+            echo "::notice title=Already verified::$NAME passed on these exact inputs in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run; skipping."
+          else
+            echo "No earlier run passed on these inputs ($fingerprint)."
+          fi
+        else
+          echo "::warning::Could not look up earlier runs; building anyway."
+        fi
+        echo "verified=$verified" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,7 @@
+# One Rust version for local builds and CI. A new stable release brings new Clippy lints, and CI runs Clippy with
+# `-D warnings`, so a floating "stable" turned main red without a single code change. Bump this on purpose, together
+# with the fixes the new Clippy asks for (`cargo clippy --workspace --all-targets -- -D warnings`).
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

@@ -300,7 +300,7 @@ fn grab(hwnd: Option<HWND>, x: i32, y: i32, width: i32, height: i32) -> Option<(
         if !ok || lines == 0 {
             return None;
         }
-        for px in pixels.chunks_exact_mut(4) {
+        for px in pixels.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
             px[3] = 255;
         }
@@ -321,7 +321,7 @@ fn ocr(rgba: &[u8], width: u32, height: u32) -> windows::core::Result<String> {
         return Ok(String::new());
     }
     let mut bgra = rgba.to_vec();
-    for px in bgra.chunks_exact_mut(4) {
+    for px in bgra.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     let bitmap = SoftwareBitmap::CreateWithAlpha(BitmapPixelFormat::Bgra8, width as i32, height as i32, BitmapAlphaMode::Premultiplied)?;
