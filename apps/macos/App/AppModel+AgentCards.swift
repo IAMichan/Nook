@@ -106,7 +106,8 @@ extension AppModel {
             urgent: true
         )
         if index == 0 {
-            viewModel.presentUrgent(card)
+            // An open panel stays: it asks in its own compact bar (see `PanelApprovalBar`).
+            viewModel.presentUrgent(card, keepPanel: true)
             NookSound.play(.attention)
         } else {
             viewModel.show(.card(card))

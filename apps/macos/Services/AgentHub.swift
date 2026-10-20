@@ -10,6 +10,8 @@ final class AgentHub: ObservableObject {
     @Published private(set) var detected: [AgentSession] = []
     /// Pending permission requests, oldest first.
     @Published private(set) var approvals: [ApprovalRequest] = []
+    /// Multiple-choice questions waiting for an answer, oldest first.
+    @Published private(set) var questions: [AgentQuestionRequest] = []
     /// Claude subscription usage when the status line integration is connected.
     /// Persisted so it remains visible even when Claude Code is not currently running.
     @Published private(set) var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
@@ -116,7 +118,15 @@ final class AgentHub: ObservableObject {
         didSet { saveRecords() }
     }
     private var pendingApprovals: [String: PendingApproval] = [:]
-    private var pendingQuestions: [String: PendingQuestion] = [:]
+    private var pendingQuestions: [String: PendingQuestion] = [:] {
+        didSet {
+            let ids = Set(pendingQuestions.keys)
+            questions.removeAll { !ids.contains($0.id) }
+            for pending in pendingQuestions.values where !questions.contains(where: { $0.id == pending.request.id }) {
+                questions.append(pending.request)
+            }
+        }
+    }
     private let server = UnixSocketServer(path: NookPaths.socketURL.path)
     private var pruneTimer: Timer?
     /// Every agent process from the latest scan, including those reporting via hooks: to end a session from Nook.
