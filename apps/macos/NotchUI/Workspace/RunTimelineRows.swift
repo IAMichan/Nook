@@ -8,6 +8,11 @@ struct EventRow: View {
     let toggle: () -> Void
     let openFile: (String) -> Void
     let decide: (WorkspaceManager.Decision) -> Void
+    /// Shows a file the agent read or wrote in the side panel; nil where there is no side panel.
+    var showFile: ((String) -> Void)? = nil
+    /// The folder relative paths resolve in, and the file the side panel shows now.
+    var directory: String? = nil
+    var shownFile: String? = nil
 
     var body: some View {
         switch event.kind {
@@ -52,7 +57,11 @@ struct EventRow: View {
             .buttonStyle(.plain)
 
         case .tool:
-            ToolRow(event: event, expanded: expanded, toggle: toggle)
+            if let showFile, let file = ToolRow.file(event, in: directory) {
+                ToolRow(event: event, expanded: false, toggle: { showFile(file) }, file: file, reveals: file == shownFile)
+            } else {
+                ToolRow(event: event, expanded: expanded, toggle: toggle)
+            }
 
         case .fileChange:
             Button { openFile(event.detail ?? event.text) } label: {
@@ -131,11 +140,25 @@ struct EventRow: View {
     }
 }
 
-/// A tool call: single-line summary, expandable to inspect input and output.
+/// A tool call: single-line summary, expandable to inspect input and output. A call that read or wrote a file instead
+/// opens that file in the side panel (`file`), the way a step in an agent's transcript does.
 struct ToolRow: View {
     let event: RunEvent
     let expanded: Bool
     let toggle: () -> Void
+    var file: String? = nil
+    /// The side panel shows `file` now.
+    var reveals = false
+
+    /// The file a read or an edit was about, as an absolute path; nil for other tools, a folder, or a remote session.
+    static func file(_ event: RunEvent, in directory: String?) -> String? {
+        guard let directory, [.read, .edit].contains(ToolCategory.of(tool: event.tool ?? "")),
+              let raw = ToolSummary.path(AgentActivity.input(event.detail) ?? [:]) else { return nil }
+        let path = SessionOutputs.resolve(raw, in: directory)
+        var folder: ObjCBool = false
+        guard !path.isEmpty, !(FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue) else { return nil }
+        return path
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -155,15 +178,17 @@ struct ToolRow: View {
                     // A test run, build or linter says how it went.
                     if let check = Verification.check(event) { VerificationChips(checks: [check]) }
                     Spacer(minLength: 0)
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: file != nil ? "sidebar.right" : expanded ? "chevron.down" : "chevron.right")
                         .font(NookTheme.font(9, .semibold))
-                        .foregroundStyle(WS.tertiary)
+                        .foregroundStyle(reveals ? WS.text : WS.tertiary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? "")
             .accessibilityLabel(event.text)
-            .accessibilityHint(tr("ws.tool.expandHint"))
+            .accessibilityHint(file != nil ? tr("ws.file.show") : tr("ws.tool.expandHint"))
+            .accessibilityAddTraits(reveals ? .isSelected : [])
 
             // An MCP app is there to be used: shown whether or not the call is open.
             if let app = McpUI.resource(in: event.output) {
@@ -219,6 +244,9 @@ struct CodeBlock: View {
     let title: String
     let text: String
     var failed = false
+    /// The text's own height: the block is as tall as it, up to `maxHeight`, and scrolls beyond that.
+    @State private var height: CGFloat = 0
+    private let maxHeight: CGFloat = 260
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -234,14 +262,18 @@ struct CodeBlock: View {
                 .foregroundStyle(WS.tertiary)
                 .help(tr("button.copy"))
             }
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Both ways, at a fixed height: a long output (a whole file) scrolls inside the block instead of spilling
+            // over the rows around it.
+            ScrollView([.horizontal, .vertical], showsIndicators: height > maxHeight) {
                 Text(text)
                     .font(NookTheme.mono(11))
                     .foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.textStrong)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             }
-            .frame(maxHeight: 260)
+            .frame(height: min(max(height, 14), maxHeight))
+            .clipped()
         }
         .padding(10)
         .cardBackground(WS.code, stroke: WS.border, radius: 8)

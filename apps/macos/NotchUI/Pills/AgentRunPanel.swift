@@ -49,6 +49,8 @@ struct AgentRunPanel: View {
     @State private var seenOutputs: Set<String>?
     /// The terminal on the left: the command it shows; nil while it is closed.
     @State private var consoleEventID: UUID?
+    /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
+    @State private var filePreview: String?
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -61,7 +63,7 @@ struct AgentRunPanel: View {
                         withAnimation(.easeInOut(duration: 0.2)) { self.consoleEventID = nil }
                     }
                     .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: outputsOpen ? outputsWidth : nil),
+                                    available: PanelLayout.room(totalWidth, besides: outputsOpen || filePreview != nil ? outputsWidth : nil),
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
@@ -91,7 +93,16 @@ struct AgentRunPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                if outputsOpen {
+                if let filePreview {
+                    FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
+                        withAnimation(.easeInOut(duration: 0.2)) { self.filePreview = nil }
+                    }
+                    .id(filePreview)
+                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else if outputsOpen {
                     SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
                     }
@@ -106,6 +117,10 @@ struct AgentRunPanel: View {
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
+            }
+            // The outputs button asks for the outputs, also while a file is open.
+            .onChange(of: outputsOpen) { _, isOpen in
+                if isOpen { withAnimation(.easeInOut(duration: 0.2)) { filePreview = nil } }
             }
             .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
@@ -138,6 +153,7 @@ struct AgentRunPanel: View {
                 expanded = []
                 outputsOpen = false
                 outputSelection = nil
+                filePreview = nil
                 seenOutputs = nil
                 consoleEventID = nil
             }
@@ -728,8 +744,20 @@ struct AgentRunPanel: View {
             openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
             decide: { decision in
                 if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
-            }
+            },
+            showFile: showFile,
+            // A session on another machine has its files there, not on this Mac.
+            directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
+            shownFile: filePreview
         )
+    }
+
+    /// Opens a file in the side panel; the file that is open already closes again.
+    private func showFile(_ file: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            filePreview = filePreview == file ? nil : file
+            if filePreview != nil { outputsOpen = false }
+        }
     }
 
     private func toggleBlock(_ key: String) {
