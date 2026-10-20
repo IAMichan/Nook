@@ -98,10 +98,11 @@ enum FailureClassifier {
         return latestStreamedReset(e)
     }
 
+    private static let gatewayResetPattern = try? NSRegularExpression(pattern: #"\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)"#)
+
     /// "(reset after 1h2m3s)" in a gateway's 429 text.
     static func gatewayResetSeconds(_ text: String) -> TimeInterval? {
-        let pattern = #"\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = gatewayResetPattern,
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
         func part(_ i: Int) -> Double {
             guard let range = Range(match.range(at: i), in: text) else { return 0 }

@@ -119,12 +119,11 @@ enum Grounding {
         #"https?://[^\s)\]>,]+"#,
         #"(?<![\d.,:])\d{1,2}[:.]\d{2}(?!\d|[.:,]\d)"#,
         #"(?<![\d.,])\d[\d.,]*\d(?![\d])"#
-    ]
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
 
     private static func details(in text: String) -> [String] {
         var found: [String] = []
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        for regex in patterns {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range, in: text) else { continue }
                 let token = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))
