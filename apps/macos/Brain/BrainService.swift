@@ -32,6 +32,7 @@ final class BrainService {
         untrusted: String? = nil,
         images: [ChatImage] = [],
         tools allTools: [ToolSpec],
+        ownRequest: Bool = false,
         onText: ((String) -> Void)? = nil
     ) async throws -> BrainPlan {
         let started = CFAbsoluteTimeGetCurrent()
@@ -100,7 +101,9 @@ final class BrainService {
         // Bigger local models get a longer memory of the conversation, so follow-ups ("and on friday?") keep working.
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: profile.contextTokens >= 16_000 ? 10 : 6,
                                                                length: profile.contextTokens >= 16_000 ? 600 : 300) : ""
-        let request = "Request: \(userText)\n\n(\(settings.languageInstruction(for: userText)) Answer in plain sentences; never output JSON or code unless the request is about code.)"
+        // A request Nook wrote itself is in English: its language says nothing about the language to answer in.
+        let language = ownRequest ? settings.ownLanguageInstruction : settings.languageInstruction(for: userText)
+        let request = "Request: \(userText)\n\n(\(language) Answer in plain sentences; never output JSON or code unless the request is about code.)"
         // A greeting needs no calendar, mail or screen: a small model would otherwise talk about those instead of answering.
         let lean = profile.isSmall && intent.isSmallTalk && history.isEmpty && untrusted == nil
         let usedContext = lean ? (context.split(separator: "\n").first.map(String.init) ?? "") : context

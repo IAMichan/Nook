@@ -230,6 +230,14 @@ final class AppSettings: ObservableObject {
         return "Always respond in \(name), the language of the request, even if the data or tools are in a different language."
     }
 
+    /// Prompt sentence for a request Nook writes itself (looking at the screen, thinking along). Its text is English and
+    /// not the user's, so with "auto" the language comes from the app's language instead of from that text.
+    var ownLanguageInstruction: String {
+        let code = language == "auto" ? appLanguage.rawValue : language
+        let name = Locale(identifier: "en").localizedString(forLanguageCode: code) ?? appLanguage.displayName
+        return "Always respond in \(name), the user's language, even if the screen, data or tools are in a different language."
+    }
+
     /// Prompt sentence, e.g. "Always respond in English."
     var languageInstruction: String {
         if language == "auto" { return "Respond in the language the user writes in." }
