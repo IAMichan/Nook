@@ -118,11 +118,16 @@ struct AgentInboxList: View {
             }
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(sections, id: \.kind) { section in
+                    ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
                         sectionView(section, sections: sections, byID: byID, shown: shown)
                     }
                     if sections.isEmpty { emptyState }
                 }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            // What you settled sits at the foot of the list, above the footer, and opens upwards.
+            if let settled = sections.first(where: { $0.kind == .settled }) {
+                settledShelf(settled, sections: sections, byID: byID, shown: shown)
             }
             undoNotice
             if selection.isActive {
@@ -190,21 +195,41 @@ struct AgentInboxList: View {
                 shelfHeader(section, sections: sections, byID: byID)
                 if !collapsed.contains(section.kind) {
                     ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
-                    if section.kind == .settled, section.hiddenCount > 0 {
-                        Button { settledLimit += InboxLayout.settledPage } label: {
-                            Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))
-                                .font(NookTheme.font(12, .medium))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
             }
             .padding(.top, 6)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
         }
+    }
+
+    /// The settled shelf, docked at the foot of the list: its header stays put and its rows open above it, scrolling
+    /// on their own once they no longer fit.
+    private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
+                              shown: [String]) -> some View {
+        let rows = VStack(alignment: .leading, spacing: 2) {
+            ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+            if section.hiddenCount > 0 {
+                Button { settledLimit += InboxLayout.settledPage } label: {
+                    Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))
+                        .font(NookTheme.font(12, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        return VStack(alignment: .leading, spacing: 2) {
+            if !collapsed.contains(section.kind) {
+                ViewThatFits(in: .vertical) {
+                    rows
+                    ScrollView(showsIndicators: false) { rows }
+                }
+                .frame(maxHeight: 280)
+            }
+            shelfHeader(section, sections: sections, byID: byID)
+        }
+        .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
     }
 
     private func shelfHeader(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem]) -> some View {
@@ -228,9 +253,11 @@ struct AgentInboxList: View {
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
                 }
+                // The docked settled shelf opens upwards: its chevron points up while closed, down while open.
+                let docked = section.kind == .settled
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8.5, weight: .bold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .rotationEffect(.degrees(open ? 0 : (docked ? 180 : -90)))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, 12)
