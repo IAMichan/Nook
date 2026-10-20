@@ -112,6 +112,7 @@ extension SettingsView {
             } footer: {
                 Text(tr("settings.overview.howToUseFooter"))
             }
+            UpdateSettingsSection()
         }
     }
 

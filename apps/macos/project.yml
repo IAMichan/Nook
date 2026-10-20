@@ -81,6 +81,11 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconFile: AppIcon
         LSUIElement: true
+        # Where this build came from, for the update button in the Agents footer (Services/Updates). The commit and
+        # branch are stamped in by Config/stamp-source.sh after this file is processed.
+        NookSourceRoot: "$(SRCROOT)"
+        NookBuildConfiguration: "$(CONFIGURATION)"
+        NookDeveloperDir: "$(DEVELOPER_DIR)"
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]
@@ -113,6 +118,15 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
+        # The build phase below reads the git checkout, which a sandboxed script may not. It is the target's only script.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postBuildScripts:
+      - name: Stamp source commit
+        # Writes the commit this build was made from into the built Info.plist (see Config/stamp-source.sh).
+        script: sh "$SRCROOT/Config/stamp-source.sh"
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        basedOnDependencyAnalysis: false
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
   # This code relies solely on Foundation, so files are included directly in the test bundle: no app host required for testing.
   # Also tests core workspace logic (models, stream parsers, Git, storage, process handling).
@@ -277,6 +291,7 @@ targets:
       - path: Brain/Fuzzy.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift
+      - path: Services/Updates/AppUpdateCore.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests
