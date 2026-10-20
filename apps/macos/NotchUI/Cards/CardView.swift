@@ -273,8 +273,7 @@ private struct OfferChip: View {
             .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
             .overlay(Capsule().stroke(hovering ? NookTheme.iris.opacity(0.3) : NookTheme.line2, lineWidth: 1))
             .contentShape(Capsule())
-            .scaleEffect(hovering ? 1.02 : 1)
-            .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
+            .hoverLift(hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -492,8 +491,7 @@ private struct ChoiceRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 10).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
-            .scaleEffect(hovering ? 1.01 : 1)
-            .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
+            .hoverLift(hovering, scale: 1.01)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

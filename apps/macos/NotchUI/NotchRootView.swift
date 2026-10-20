@@ -277,7 +277,7 @@ struct NotchRootView: View {
         .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
         .floatingDrag(viewModel)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(artist.isEmpty ? "Nu: \(title)" : "Nu: \(title) van \(artist)")
+        .accessibilityLabel(artist.isEmpty ? tr("notch.nowPlaying", title) : tr("notch.nowPlayingBy", title, artist))
     }
 
     // MARK: Recent action

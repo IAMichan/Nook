@@ -180,7 +180,7 @@ final class PermissionMonitor: ObservableObject {
         watchers += 1
         refresh()
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 1) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
     }

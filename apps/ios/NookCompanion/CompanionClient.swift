@@ -39,7 +39,7 @@ final class CompanionClient: ObservableObject {
 
     /// Pairs with the code the Mac shows. The first request, `hello`, proves the phone holds the key; the Mac then keeps the device.
     func pair(link text: String) {
-        guard let parsed = PairingLink.parse(text) else { notice = "Dat is geen geldige koppelcode."; return }
+        guard let parsed = PairingLink.parse(text) else { notice = String(localized: "That is not a valid pairing code."); return }
         phase = .pairing
         notice = nil
         Task {
@@ -55,7 +55,7 @@ final class CompanionClient: ObservableObject {
                 await Notifications.requestAndRegister()
             } catch {
                 phase = link == nil ? .unpaired : .offline(error.localizedDescription)
-                notice = "Koppelen mislukt: \(error.localizedDescription) De code werkt vijf minuten en één keer; maak op de Mac een nieuwe."
+                notice = String(localized: "Pairing failed: \(error.localizedDescription) The code works once, for five minutes; make a new one on your Mac.")
             }
         }
     }
@@ -136,14 +136,14 @@ final class CompanionClient: ObservableObject {
                 if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
                 if let name = response.macName { macName = name }
                 phase = .connected
-                if let message = response.message { notice = message == "queued" ? "In de wachtrij: de sessie is nog bezig." : nil }
+                if let message = response.message { notice = message == "queued" ? String(localized: "Queued: the session is still busy.") : nil }
             } else {
                 switch response.error {
-                case .notAllowedFromPhone: notice = "Dat kan niet vanaf de telefoon: open het op je Mac."
-                case .unknownItem, .unknownSession: notice = "Dat is al afgehandeld."; await refresh()
-                case .stale: notice = "De klok van je telefoon en Mac loopt te ver uit elkaar."
-                case .rateLimited: notice = "Even rustig aan."
-                default: notice = "De Mac weigerde dit."
+                case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
+                case .unknownItem, .unknownSession: notice = String(localized: "That has already been handled."); await refresh()
+                case .stale: notice = String(localized: "The clocks of your phone and your Mac are too far apart.")
+                case .rateLimited: notice = String(localized: "Slow down a little.")
+                default: notice = String(localized: "Your Mac refused this.")
                 }
             }
         } catch {
@@ -174,11 +174,11 @@ enum CompanionClientError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .refused: return "De Mac weigerde de code."
-        case .storage: return "De sleutel kon niet worden bewaard."
-        case .badRequest: return "Onbegrijpelijk antwoord van de Mac."
-        case .timeout: return "De Mac antwoordt niet. Staat de companion aan en zit je op hetzelfde wifi?"
-        case .closed: return "De verbinding werd verbroken."
+        case .refused: return String(localized: "Your Mac refused the code.")
+        case .storage: return String(localized: "The key could not be saved.")
+        case .badRequest: return String(localized: "Unreadable reply from your Mac.")
+        case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
+        case .closed: return String(localized: "The connection was lost.")
         }
     }
 }
@@ -250,8 +250,8 @@ enum Notifications {
     }
 
     static func registerCategories() {
-        let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: "Weiger", options: [.destructive])
-        let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: "Sta toe", options: [])
+        let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: String(localized: "Deny"), options: [.destructive])
+        let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: String(localized: "Allow"), options: [])
         let center = UNUserNotificationCenter.current()
         center.setNotificationCategories([
             UNNotificationCategory(identifier: PushCategory.approvalDeny, actions: [deny], intentIdentifiers: [], options: []),

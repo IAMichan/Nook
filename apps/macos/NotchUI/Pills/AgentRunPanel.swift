@@ -213,7 +213,7 @@ struct AgentRunPanel: View {
             Spacer(minLength: 8)
             outputsButton(run, outputs)
             if let fraction = run.usage.contextFraction, fraction > 0.6 {
-                Text("ctx \(Int((fraction * 100).rounded()))%")
+                Text(tr("ws.header.context", Int((fraction * 100).rounded())))
                     .font(NookTheme.mono(11, .medium))
                     .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
                     .help(tr("ws.header.contextHelp"))

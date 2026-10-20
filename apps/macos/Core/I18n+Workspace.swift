@@ -547,6 +547,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.header.accountGone": "account niet meer in Nook",
         "ws.header.tokensHelp": "Tokens van deze sessie, zoals de agent ze meldde",
         "ws.header.contextHelp": "Hoe vol het contextvenster zat bij de laatste modelaanroep",
+        "ws.header.context": "ctx %lld%%",
 
         "ws.timeline.empty": "Nog niets gebeurd.",
         "ws.timeline.working": "De agent werkt…",
@@ -1386,6 +1387,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.header.accountGone": "account no longer in Nook",
         "ws.header.tokensHelp": "Tokens of this session, as reported by the agent",
         "ws.header.contextHelp": "How full the context window was at the last model call",
+        "ws.header.context": "ctx %lld%%",
 
         "ws.timeline.empty": "Nothing has happened yet.",
         "ws.timeline.working": "The agent is working…",

@@ -61,11 +61,12 @@ struct NookTabBar<Value: Hashable>: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 8, weight: .bold))
                                 .foregroundStyle(NookTheme.textSecondary)
-                                .frame(width: 12, height: 12)
+                                // A bigger target than the glyph, centered where the glyph is.
+                                .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .padding(.trailing, 8)
+                        .padding(.trailing, 4)
                         .help(tr("tab.close"))
                         .accessibilityLabel(tr("tab.close") + " " + item.title)
                     }
