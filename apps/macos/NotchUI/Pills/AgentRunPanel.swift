@@ -880,7 +880,7 @@ struct AgentRunPanel: View {
         let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
-        return ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
+        return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)

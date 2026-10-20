@@ -428,6 +428,23 @@ struct ComposerPill: View {
     private var shown: String { density == .full ? text : short ?? text }
 
     var body: some View {
+        HStack(spacing: 0) {
+            content
+            // A logo pill that gave up its words still shows them when the row has room left for them.
+            if iconOnly && hasMark {
+                RoomyText(text: shown)
+            }
+        }
+        .font(NookTheme.font(12.5, .medium))
+        .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
+        .padding(.horizontal, 7)
+        .frame(height: 26)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+
+    private var content: some View {
         HStack(spacing: 6) {
             if let agent {
                 AgentMark(agent: agent, account: account, size: 15, ring: SessionComposer<EmptyView>.surface)
@@ -446,13 +463,20 @@ struct ComposerPill: View {
                 Image(systemName: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
             }
         }
-        .font(NookTheme.font(12.5, .medium))
-        .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
-        .padding(.horizontal, 7)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+    }
+}
+
+/// A text that asks for no width of its own: it shows whole when the room it is given holds it, and not at all
+/// otherwise. The composer's row still picks its density as if the text were not there.
+private struct RoomyText: View {
+    let text: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text).lineLimit(1).padding(.leading, 6)
+            Color.clear.frame(width: 0, height: 0)
+        }
+        .frame(minWidth: 0, idealWidth: 0, alignment: .leading)
     }
 }
 
@@ -466,6 +490,9 @@ enum ComposerDensity {
     case marks
     /// Only icons.
     case icons
+
+    /// Logo pills dropped their words here, so they take what room the row has left to show them anyway.
+    var logosTakeRoom: Bool { self == .marks || self == .icons }
 }
 
 private struct ComposerDensityKey: EnvironmentKey {
