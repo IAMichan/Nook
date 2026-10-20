@@ -42,7 +42,10 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
   request a month). The Rust version lives in `apps/tauri/rust-toolchain.toml`, so a new stable release with new Clippy
   lints cannot turn `main` red on its own; bump it on purpose, together with the fixes Clippy asks for.
 - **Retries where the network is involved.** Swift package resolution retries three times; `apt-get` retries downloads.
-- **Timeouts** on every job, so a hung runner is released.
+- **Timeouts** on every job, and tighter ones on the macOS build and test steps, so a hung step is released quickly.
+- **No signing in CI.** The macOS build runs with `CODE_SIGNING_ALLOWED=NO`; `Config/local-signing.sh` creates no local
+  identity when `CI` is set, and `Config/resign-local.sh` does not re-sign an unsigned build. Otherwise `codesign` waits
+  for a keychain password prompt that never comes.
 - **Logs of a failed macOS build** (`build.log`, `test.log`, and the `.xcresult` bundle) are uploaded as an artifact for
   seven days.
 

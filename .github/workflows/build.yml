@@ -100,12 +100,16 @@ jobs:
           exit 1
       # One compile for the app and its tests: build-for-testing builds the Nook target (the scheme builds it for
       # testing too) and NookTests, and the test step runs them without building again.
+      # Cold builds take about 10 minutes; a step that hangs (a codesign prompt, a stuck compiler) fails here instead of
+      # holding the macOS runner for the whole job timeout.
       - name: Build
+        timeout-minutes: 35
         run: |
           set -o pipefail
           # shellcheck disable=SC2086 # the flags are meant to split into words
           xcodebuild build-for-testing $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" 2>&1 | tee build.log
       - name: Unit tests
+        timeout-minutes: 15
         run: |
           set -o pipefail
           # shellcheck disable=SC2086 # the flags are meant to split into words
