@@ -79,12 +79,13 @@ extension AppModel {
         if moment.kind == .breakTime { buddy.activity.restartStretch(at: now) }
     }
 
-    /// In a meeting (an event going on in your calendar), on a call, or recording one: no moments.
+    /// In a meeting (an event going on in your calendar), on a call, recording one or sharing your screen: no moments,
+    /// whatever you chose for the rest of the notch in Settings › Notifications.
     private func buddyShouldStayQuiet(at now: Date) -> Bool {
         // All-day events (a holiday, someone's birthday) are not meetings.
         let meeting = upcoming.contains { $0.start <= now && $0.end > now && $0.end.timeIntervalSince($0.start) < 12 * 3600 }
-        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map { BuddyService.callApps.contains($0) } ?? false
-        return meeting || calling || NoteTaker.shared.isRecording
+        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(QuietPolicy.isCallApp) ?? false
+        return meeting || calling || quiet.situation.meeting || quiet.situation.sharing || NoteTaker.shared.isRecording
     }
 
     /// The moment as Nook shows it: his mood, his words in your language and tone, and what he wears.
@@ -200,8 +201,9 @@ extension AppModel {
         if case .moment = viewModel.state {
             viewModel.replaceMoment(moment)
         } else if !viewModel.offerMoment(moment) {
-            viewModel.show(.idle)
-            viewModel.offerMoment(moment)
+            // Asked for: also over what is showing, and while Nook keeps quiet in a meeting.
+            viewModel.show(.moment(moment))
+            viewModel.dismissMoment(moment.id, after: moment.seconds)
         }
     }
 }

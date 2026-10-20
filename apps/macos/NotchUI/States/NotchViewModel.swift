@@ -148,6 +148,12 @@ final class NotchViewModel: ObservableObject {
     /// Coordinated multi-screen track announcement.
     var onAnnounce: ((NowPlayingInfo) -> Void)?
 
+    /// While you share your screen or sit in a meeting and chose so (`AppModel+Quiet`): no track announcements,
+    /// suggestions or moments of Nook's own.
+    var silenced = false
+    /// While the notch hides for a share or meeting: cards wait in line, also agent prompts, until it is over.
+    var holdsCards = false
+
     private var callbacks: [String: () -> Void] = [:]
     private var choiceHandlers: [String: ([String]) -> Void] = [:]
     private var pending: [NookCard] = []
@@ -199,7 +205,7 @@ final class NotchViewModel: ObservableObject {
             return
         }
         if case .idle = new {
-            if !pending.isEmpty {
+            if !pending.isEmpty, !holdsCards {
                 target = .card(pending.removeFirst())
             } else if app?.nowPlaying.current?.isPlaying == true {
                 target = .music
@@ -256,6 +262,10 @@ final class NotchViewModel: ObservableObject {
         var urgent = card
         urgent.urgent = true
         let firstNormal = pending.firstIndex { !$0.urgent } ?? pending.count
+        if holdsCards {
+            pending.insert(urgent, at: firstNormal)
+            return
+        }
         switch state {
         case .card(let current) where current.urgent:
             pending.insert(urgent, at: firstNormal)
@@ -276,6 +286,10 @@ final class NotchViewModel: ObservableObject {
 
     /// Displays a card immediately if Nook is idle, otherwise enqueues it.
     func present(_ card: NookCard) {
+        if holdsCards {
+            pending.append(card)
+            return
+        }
         switch state {
         case .idle, .music, .track, .done, .nudge, .moment:
             show(.card(card))
@@ -382,6 +396,7 @@ final class NotchViewModel: ObservableObject {
 
     /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
     func announce(_ info: NowPlayingInfo) {
+        guard !silenced else { return }
         if let onAnnounce {
             onAnnounce(info)
             return
@@ -399,7 +414,7 @@ final class NotchViewModel: ObservableObject {
     /// Dismisses automatically after a timeout (saved to Today).
     @discardableResult
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
-        guard state.isResting, pending.isEmpty else { return false }
+        guard state.isResting, pending.isEmpty, !silenced else { return false }
         show(.nudge(line, card))
         doneTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -413,7 +428,7 @@ final class NotchViewModel: ObservableObject {
     /// or something waiting in line; it goes away by itself.
     @discardableResult
     func offerMoment(_ moment: NookMoment) -> Bool {
-        guard state.isResting, pending.isEmpty else { return false }
+        guard state.isResting, pending.isEmpty, !silenced else { return false }
         show(.moment(moment))
         dismissMoment(moment.id, after: moment.seconds)
         return true

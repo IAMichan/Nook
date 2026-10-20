@@ -62,6 +62,8 @@ extension AppModel {
             var card = planCard(plan, context: context, offers: split.offers)
             card.sources = sources
             if silentIfNone {
+                // Thinking along started before a share or meeting began: the offer is not shown now.
+                guard !quiet.silent else { return }
                 viewModel.present(card)
             } else {
                 replaceThinking(with: card)

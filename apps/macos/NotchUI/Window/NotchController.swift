@@ -25,6 +25,12 @@ final class NotchController {
 
     private var settings: AppSettings { AppSettings.shared }
 
+    /// Left out of screen sharing, screenshots and recordings, or not (`applyQuiet`).
+    private var captureSharing: NSWindow.SharingType = .readOnly
+    /// While you share your screen or sit in a meeting and chose to hide Nook: the notch is gone while it rests, and
+    /// shows only for what you open yourself (a shortcut, the menu bar).
+    private var hidesWhileResting = false
+
     private var isFloating: Bool { settings.placement == "floating" }
     private var showsOnAllScreens: Bool { !isFloating && settings.notchOnAllScreens }
 
@@ -95,6 +101,8 @@ final class NotchController {
         viewModel.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
+                // Shown first: a hidden notch cannot take the keyboard.
+                self?.updateVisibility()
                 self?.stateChanged(state)
                 if state.isResting {
                     self?.refreshMirrorContent()
@@ -163,6 +171,51 @@ final class NotchController {
             panel.resignKey()
             previousApp?.activate(options: [])
             previousApp = nil
+        }
+    }
+
+    // MARK: Meetings and screen sharing
+
+    /// How the notch behaves while you share your screen or sit in a meeting (`AppModel+Quiet`, every few seconds).
+    func applyQuiet(_ state: QuietState, alwaysExcluded: Bool) {
+        let sharing: NSWindow.SharingType = alwaysExcluded || state.excludedFromCapture ? .none : .readOnly
+        if sharing != captureSharing {
+            captureSharing = sharing
+            for panel in allPanels { panel.sharingType = sharing }
+        }
+        viewModel.silenced = state.silent
+        if state.silent, case .track = viewModel.state { dismissTrackAnnouncement() }
+        guard state.hidden != hidesWhileResting else { return }
+        hidesWhileResting = state.hidden
+        viewModel.holdsCards = state.hidden
+        if state.hidden {
+            // A suggestion or moment showing when the meeting starts goes; what you opened yourself stays.
+            switch viewModel.state {
+            case .nudge, .moment, .done: viewModel.show(.idle)
+            default: break
+            }
+        } else if viewModel.state.isResting {
+            // Over: what waited in line shows now.
+            viewModel.show(.idle)
+        }
+        updateVisibility()
+        for mirror in mirrors.values {
+            if state.hidden { mirror.panel.orderOut(nil) } else { mirror.panel.orderFrontRegardless() }
+        }
+    }
+
+    private var allPanels: [NotchPanel] { [panel].compactMap { $0 } + mirrors.values.map(\.panel) }
+
+    /// Hidden for a share or meeting: the notch shows only while something you opened is on it.
+    private func updateVisibility() {
+        guard let panel else { return }
+        let visible = !hidesWhileResting || !viewModel.state.isResting
+        guard visible != panel.isVisible else { return }
+        if visible {
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil)
+            viewModel.pointerChanged(inside: false)
         }
     }
 
@@ -239,7 +292,7 @@ final class NotchController {
 
     /// A new track: notch expands briefly showing current playback synchronously on all screens.
     func announce(_ info: NowPlayingInfo) {
-        guard viewModel.state.isResting else { return }
+        guard viewModel.state.isResting, !viewModel.silenced else { return }
         announceTask?.cancel()
 
         withAnimation(NookTheme.open) {
@@ -319,7 +372,8 @@ final class NotchController {
             placeMirror(panel, on: screen.frame)
             // Display only: clicks pass through; the real Nook moves to this screen as soon as the mouse is on it.
             panel.ignoresMouseEvents = true
-            panel.orderFrontRegardless()
+            panel.sharingType = captureSharing
+            if !hidesWhileResting { panel.orderFrontRegardless() }
             mirrors[key] = (panel, mirrorModel)
         }
     }
@@ -399,7 +453,8 @@ final class NotchController {
     }
 
     private func pointerMoved(force: Bool = false) {
-        guard let panel else { return }
+        // Hidden for a share or meeting: hovering the notch area opens nothing.
+        guard let panel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation
         if !force, dragStart == nil {
             let dx = mouse.x - lastCheckedMouseLocation.x

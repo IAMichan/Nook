@@ -137,10 +137,12 @@ enum NookSound {
 
     /// Retains the currently playing sound; otherwise NSSound could be deallocated midway.
     @MainActor private static var playing: NSSound?
+    /// Silent while you share your screen or sit in a meeting, when you chose so (`AppModel+Quiet`).
+    @MainActor static var muted = false
 
     @MainActor
     static func play(_ sound: NookSound) {
-        guard AppSettings.shared.sounds else { return }
+        guard AppSettings.shared.sounds, !muted else { return }
         var effect: NSSound?
         var volume: Float = 0.35
         if let url = sound.customFile, let custom = NSSound(contentsOf: url, byReference: true) {
