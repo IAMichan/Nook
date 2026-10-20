@@ -351,6 +351,10 @@ final class NotchViewModel: ObservableObject {
     func updateCard(_ card: NookCard) {
         guard case .card(let current) = state, current.id == card.id else { return }
         state = .card(card)
+        // The card can grow (a chat whose history just arrived): the notch follows its new height.
+        if card.contentHeight != current.contentHeight {
+            withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
+        }
     }
 
     /// Dismisses a card, whether currently visible or queued.

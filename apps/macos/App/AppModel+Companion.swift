@@ -166,8 +166,8 @@ extension AppModel {
     }
 
     /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
-    /// characters per line and at most 5 lines, a file adds a row; what does not fit in the bubbles' maximum height
-    /// scrolls.
+    /// characters per line and at most 5 lines, a file adds a row. The bubbles always get room for a few messages, and
+    /// what does not fit in their maximum height scrolls.
     static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
@@ -180,7 +180,7 @@ extension AppModel {
             return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
                 + (bubble.sender.isEmpty ? 0 : 16) + 5
         }
-        return chrome + min(stack, 260)
+        return chrome + min(max(stack, 140), 320)
     }
 
     /// How tall a bubble's photo stands: fitted in 240 × 180.
