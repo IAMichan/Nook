@@ -2,12 +2,16 @@ import SwiftUI
 
 /// The expanded panel: Nook (home and chat in one), Agents, Workspace, and Music while something plays.
 /// Everything you do happens here; tasks such as a new session or reviewing changes open inside the panel, never in
-/// a separate window. Settings (the gear) is the one place for configuration.
+/// a separate window. Settings (the gear) is the one place for configuration. The main window shows this same panel
+/// (`inWindow`), with the window's own tab and task and more room.
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
     /// Room on the left of the header row for Nook, who sits there in the notch; the content below runs full width.
     var headerInset: CGFloat = 0
+    /// In the main window: the window's tab and task (`windowTab`, `windowSheet`), close closes the window, and the
+    /// chat gets the wider layout.
+    var inWindow = false
     @EnvironmentObject private var app: AppModel
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
@@ -15,15 +19,15 @@ struct PanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let sheet = viewModel.sheet {
-                NotchSheetView(sheet: sheet, headerInset: headerInset, close: { viewModel.sheet = nil }) {
-                    viewModel.sheet = nil
-                    viewModel.show(.idle)
+            if let sheet {
+                NotchSheetView(sheet: sheet, headerInset: headerInset, close: closeSheet) {
+                    closeSheet()
+                    if !inWindow { viewModel.show(.idle) }
                 }
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
                 header
-                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: viewModel.sheet, hub: app.hub, workspace: app.workspace)
+                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
                     .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
                 content
                     .id(tab)
@@ -32,13 +36,33 @@ struct PanelView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .animation(NookTheme.swap, value: viewModel.sheet)
+        .animation(NookTheme.swap, value: sheet)
+    }
+
+    /// The task open over the tab: the notch's, or the main window's.
+    private var sheet: NotchSheet? { inWindow ? viewModel.windowSheet : viewModel.sheet }
+
+    private func closeSheet() {
+        if inWindow { viewModel.windowSheet = nil } else { viewModel.sheet = nil }
+    }
+
+    private func select(_ tab: PanelTab) {
+        if inWindow {
+            viewModel.windowSheet = nil
+            viewModel.windowTab = tab
+        } else {
+            viewModel.show(.panel(tab), inNotch: true)
+        }
+    }
+
+    private func close() {
+        if inWindow { WorkspaceWindowController.shared.close() } else { viewModel.show(.idle) }
     }
 
     private var header: some View {
         HStack(spacing: 0) {
             NookTabBar(items: PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music).map { NookTabBar<PanelTab>.Item(value: $0, title: $0.title) },
-                       selected: tab) { viewModel.show(.panel($0), inNotch: true) }
+                       selected: tab) { select($0) }
             Spacer()
             HStack(spacing: 2) {
                 talkButton
@@ -51,7 +75,7 @@ struct PanelView: View {
                     NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
                         .help(tr("button.settings"))
                 }
-                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
+                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { close() }
                     .help(tr("button.close"))
             }
         }
@@ -80,7 +104,8 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .nook, .chat, .connect, .shelf: NookChatTab(viewModel: viewModel)
+        case .nook, .chat, .connect, .shelf:
+            if inWindow { NookChatView(viewModel: viewModel, chat: app.chat, compact: false) } else { NookChatTab(viewModel: viewModel) }
         case .agents: AgentsTab(viewModel: viewModel)
         case .music: MusicTab()
         }

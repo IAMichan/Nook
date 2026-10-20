@@ -37,6 +37,13 @@ Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.s
 Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge`) live in
 `NotchUI/Workspace/WorkspaceComponents.swift`.
 
+## The panel — notch and main window
+
+The main window (`WorkspaceView`) is the open notch with more room: it shows the same `PanelView` (with
+`inWindow: true`, which uses `windowTab`/`windowSheet` and lets the close button close the window) and the same
+`PanelOrb` (Nook with his task ring, next to the tabs). Change the panel once and both follow; do not build a separate
+window layout.
+
 ## Settings — `apps/macos/App/Settings`
 
 | Component | File | Use |

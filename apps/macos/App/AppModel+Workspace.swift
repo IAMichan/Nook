@@ -57,10 +57,12 @@ final class WorkspaceWindowController {
             window.appearance = NSAppearance(named: .darkAqua)
             window.title = tr("ws.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            // The sidebar runs up under the traffic lights, as in Finder or Mail; the title is in the Dock and ⌘Tab.
+            // The panel runs up under the traffic lights, as the open notch runs up under the camera; the title is in the
+            // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.backgroundColor = NSColor(red: 0x0B / 255, green: 0x0B / 255, blue: 0x0D / 255, alpha: 1)
+            // Black, as the notch.
+            window.backgroundColor = .black
             window.setContentSize(NSSize(width: 1240, height: 800))
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
@@ -71,6 +73,11 @@ final class WorkspaceWindowController {
         if let window { DockPresence.shared.track(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The panel's close button in the window.
+    func close() {
+        window?.performClose(nil)
     }
 }
 
