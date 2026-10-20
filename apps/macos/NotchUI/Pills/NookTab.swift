@@ -392,6 +392,8 @@ struct NookChatView: View {
         var config = ComposerConfig()
         // `@` lists the apps that open next to the chat: the Mac apps on this Mac and the web apps.
         config.apps = EmbeddedAppCatalog.available().map { (id: $0.id, title: $0.title, symbol: $0.symbol) }
+        // "@open chat …" lists the WhatsApp chats, so you open the one you mean.
+        config.chats = { WhatsAppLink.shared.chatChoices() }
         config.commands = AgentCommands.commands(for: .claude, hasProject: false, surface: .chat).filter { $0.action == .new }
         config.onCommand = { [app] command in
             if command.action == .new { app.newChat() }

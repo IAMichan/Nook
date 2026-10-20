@@ -40,6 +40,8 @@ struct ComposerConfig {
     var pullRequests: ((String) async -> [(number: Int, title: String)])? = nil
     /// Apps that open inside Nook, for `@` in the chat ("@open WhatsApp"): id, title and symbol.
     var apps: [(id: String, title: String, symbol: String)] = []
+    /// WhatsApp chats for "@open chat …", newest first: name and a short line about it ("2 new").
+    var chats: () -> [(name: String, detail: String)] = { [] }
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
 
@@ -94,6 +96,18 @@ final class ComposerModel: ObservableObject {
     /// Looks at the end of the text and fills the list.
     func update(for text: String, _ config: ComposerConfig) {
         search?.cancel()
+        // "@open chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
+        if let query = EmbeddedAppCatalog.chatQuery(in: text), case let chats = config.chats(), !chats.isEmpty {
+            let names = EmbeddedAppCatalog.chatMatches(query, in: chats.map(\.name))
+            guard !names.isEmpty else { return close() }
+            trigger = ComposerTrigger(kind: .mention, query: query, token: text)
+            return publish(names.map { name in
+                let insertion = "@open chat " + name
+                return ComposerSuggestion(id: "chat:" + name, title: name, detail: chats.first { $0.name == name }?.detail,
+                                          symbol: "bubble.left.and.bubble.right.fill",
+                                          payload: .command(ComposerCommand(name: "chat:" + name, insertion: insertion, action: .insert)))
+            })
+        }
         // "@open whats": the app list stays open past the space after "@open" and filters by the name typed after it.
         if !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
@@ -162,7 +176,15 @@ final class ComposerModel: ObservableObject {
         let rows = EmbeddedAppCatalog.openSuggestions(for: query).compactMap { match in
             config.apps.first { $0.id == match.app.id }.map { (app: $0, web: match.mode == .web) }
         }
-        return rows.prefix(10).map { row -> ComposerSuggestion in
+        // "@open chat" first, when there are chats to open: choosing it lists them.
+        let typed = query.lowercased()
+        var chat: [ComposerSuggestion] = []
+        if typed.isEmpty || "chat".hasPrefix(typed) || "whatsapp".hasPrefix(typed), !config.chats().isEmpty {
+            chat = [ComposerSuggestion(id: "chat", title: "@open chat", detail: tr("whatsapp.open.mentionDetail"),
+                                       symbol: "bubble.left.and.bubble.right.fill",
+                                       payload: .command(ComposerCommand(name: "chat", insertion: "@open chat", action: .insert)))]
+        }
+        return chat + rows.prefix(10).map { row -> ComposerSuggestion in
             let insertion = "@open " + row.app.title + (row.web ? " web" : "")
             let detail = row.web ? tr("embedded.mode.web") : row.app.id.hasPrefix("mac:") ? tr("embedded.mentionDetailMac") : tr("embedded.mentionDetail")
             return ComposerSuggestion(id: "app:" + row.app.id + (row.web ? ":web" : ""), title: insertion, detail: detail,

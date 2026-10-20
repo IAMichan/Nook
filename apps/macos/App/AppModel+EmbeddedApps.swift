@@ -3,9 +3,14 @@ import SwiftUI
 /// Apps inside Nook: "@open whatsapp" shows WhatsApp Web next to the chat, so you chat in the app itself and with Nook
 /// about it side by side. "@close" puts it away again (it stays signed in).
 extension AppModel {
-    /// Handles "@open …", "@whatsapp" and "@close" from the chat. False when the text is no such command.
+    /// Handles "@open …", "@whatsapp", "@open chat Jan" and "@close" from the chat. False when the text is no such command.
     func handleEmbeddedAppCommand(_ text: String) -> Bool {
         guard let command = EmbeddedAppCatalog.command(in: text) else { return false }
+        // A chat shows as its card in the notch, not in the chat.
+        if case .chat(let name) = command {
+            openWhatsAppChat(name, asked: text)
+            return true
+        }
         chat.append(ChatMessage(role: .user, text: text))
         switch command {
         case .open(let app, let mode):
@@ -15,6 +20,8 @@ extension AppModel {
             let title = EmbeddedAppStore.shared.current?.title
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
+        case .chat:
+            break
         case .unknown(let name):
             let names = EmbeddedAppCatalog.suggestions(for: name).map { "@open " + $0.title }.joined(separator: ", ")
             chat.append(ChatMessage(role: .nook, text: tr("embedded.unknown", name, names)))

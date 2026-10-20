@@ -53,6 +53,8 @@ enum EmbeddedAppCommand: Equatable, Sendable {
     /// The way asked for after the name, if any ("@open whatsapp web").
     case open(EmbeddedApp, EmbeddedAppMode?)
     case close
+    /// "@open chat Jan", "@open whatsapp Jan": one WhatsApp chat by its name, shown as the card a new message brings.
+    case chat(String)
     /// "@open something" that is no known app and no web address.
     case unknown(String)
 }
@@ -278,6 +280,7 @@ enum EmbeddedAppCatalog {
         }
         if let name = groups(#"^@(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+(.+?)[.!]?$"#)?.first {
             if case let (found, mode)? = app(name) { return .open(found, mode) }
+            if let chat = chatName(name) { return .chat(chat) }
             if let web = webApp(name) { return .open(web, nil) }
             return .unknown(name.trimmingCharacters(in: .whitespaces))
         }
@@ -285,11 +288,47 @@ enum EmbeddedAppCatalog {
         if let name = groups(#"^@([\p{L}\p{N}][\p{L}\p{N} .-]{0,30})$"#)?.first, case let (found, mode)? = app(name) {
             return .open(found, mode)
         }
+        // "@chat Jan" (after the apps, so "@chat gpt" stays ChatGPT).
+        if let name = groups(#"^@chat\s+(.+?)[.!]?$"#)?.first, let chat = chatName("chat " + name) { return .chat(chat) }
         if let name = groups(#"^(?:open|start|toon|show|öffne|ouvre|abre)\s+(.+?)\s+(?:in|bij|im|dans|en)\s+nook[.!]?$"#)?.first {
             if case let (found, mode)? = app(name) { return .open(found, mode) }
             if let web = webApp(name) { return .open(web, nil) }
         }
         return nil
+    }
+
+    /// The chat asked for after "@open": "chat Jan", "chat whatsapp Jan", "whatsapp chat Jan", "whatsapp Jan", with an
+    /// optional "with"/"met" before the name. Nil when the words name no chat ("chat" or "whatsapp" alone).
+    static func chatName(_ raw: String) -> String? {
+        let pattern = #"^(?:(?:chat|whatsapp|wa|whatsapp-chat)\s+)+(?:(?:met|with|mit|avec|con)\s+)?(.+)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+              let range = Range(match.range(at: 1), in: raw) else { return nil }
+        let name = raw[range].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return name.isEmpty || ["chat", "whatsapp", "wa"].contains(name.lowercased()) ? nil : name
+    }
+
+    /// What is typed after "@open chat " (or "@chat ", "@open whatsapp "), for the list of chats under the text; nil
+    /// when the text is no such command. Empty right after the space, so the list shows every chat.
+    static func chatQuery(in text: String) -> String? {
+        let pattern = #"^@(?:open\s+(?:chat|whatsapp)|chat)\s+(?:(?:chat|whatsapp)\s+)?(?:(?:met|with|mit|avec|con)\s+)?(.*)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
+    }
+
+    /// The chat names to offer for what was typed: those that start with it, then those that contain it, in the order
+    /// given (newest first). None once the name is typed in full, so Return opens it instead of choosing it again.
+    static func chatMatches(_ query: String, in names: [String], limit: Int = 8) -> [String] {
+        let fold = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let q = fold(query.trimmingCharacters(in: .whitespaces))
+        var unique: [String] = []
+        for name in names where !name.isEmpty && !unique.contains(name) { unique.append(name) }
+        if !q.isEmpty, unique.contains(where: { fold($0) == q }) { return [] }
+        let starts = unique.filter { q.isEmpty || fold($0).hasPrefix(q) || fold($0).split(separator: " ").contains { $0.hasPrefix(q) } }
+        let contains = unique.filter { !starts.contains($0) && fold($0).contains(q) }
+        return Array((starts + contains).prefix(limit))
     }
 
     /// The web version of an app: itself for a web app, the catalog app whose names a Mac app took over otherwise.

@@ -649,6 +649,30 @@ final class WhatsAppLink: ObservableObject {
         return WhatsAppRecipients.match(wanted, in: chats)
     }
 
+    /// The names to suggest when a name matches no chat: the chats that wrote lately, then those on the phone.
+    func chatNames() -> [String] {
+        let names = (inbox.sorted.map(\.name) + knownChats.prefix(12).map(\.name)).filter { !$0.isEmpty }
+        var unique: [String] = []
+        for name in names where !unique.contains(name) { unique.append(name) }
+        return unique
+    }
+
+    /// The chats "@open chat …" offers, newest first: those that wrote lately (with how many are new), then the
+    /// others on the phone. Never the ones you chose never to see.
+    func chatChoices() -> [(name: String, detail: String)] {
+        var seen: Set<String> = []
+        var choices: [(name: String, detail: String)] = []
+        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
+            choices.append((conversation.name, conversation.unread > 0
+                ? "WhatsApp · " + tr("whatsapp.card.unread", conversation.unread) : "WhatsApp"))
+        }
+        for chat in knownChats.sorted(by: { $0.last > $1.last })
+        where !filters.ignored.contains(chat.jid) && seen.insert(chat.jid).inserted {
+            choices.append((chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name, "WhatsApp"))
+        }
+        return choices
+    }
+
     /// Sends a text to a chat. Throws with a sentence the user can act on.
     @discardableResult
     func send(_ text: String, to recipient: String) async throws -> String {
@@ -657,10 +681,7 @@ final class WhatsAppLink: ObservableObject {
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard body.count <= WAReply.maxLength else { throw NookError(tr("whatsapp.reply.tooLong")) }
         guard let target = resolve(recipient) else {
-            let names = (inbox.sorted.map(\.name) + knownChats.prefix(12).map(\.name)).filter { !$0.isEmpty }
-            var unique: [String] = []
-            for name in names where !unique.contains(name) { unique.append(name) }
-            throw NookError(tr("whatsapp.reply.unknown", recipient, unique.prefix(12).joined(separator: ", ")))
+            throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
         }
         guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let gen = generation
