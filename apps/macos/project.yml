@@ -225,6 +225,7 @@ targets:
       - path: Services/Workspace/CommandConsole.swift
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
+      - path: Services/Workspace/UnifiedDiff.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift
