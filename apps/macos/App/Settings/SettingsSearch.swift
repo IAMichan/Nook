@@ -45,6 +45,7 @@ enum SettingsSearch {
         ("quiet.sharing", .notifications),
         ("quiet.meeting", .notifications),
         ("quiet.hideFromCaptures", .notifications),
+        ("quiet.showInScreenshots", .notifications),
         ("companion.push.enable", .notifications),
         ("companion.push.quiet", .notifications),
         ("settings.brain.apiKey", .brain),

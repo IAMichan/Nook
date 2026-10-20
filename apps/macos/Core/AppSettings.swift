@@ -341,6 +341,10 @@ final class AppSettings: ObservableObject {
     @Published var hideFromCaptures: Bool {
         didSet { UserDefaults.standard.set(hideFromCaptures, forKey: "hideFromCaptures") }
     }
+    /// macOS' screenshot tool (⇧⌘3, ⇧⌘4, ⇧⌘5) does not count as sharing your screen, so Nook appears in your screenshots.
+    @Published var showInScreenshots: Bool {
+        didSet { UserDefaults.standard.set(showInScreenshots, forKey: "showInScreenshots") }
+    }
     /// Larger panel (wider and taller) for chat and agents.
     @Published var panelLarge: Bool {
         didSet { UserDefaults.standard.set(panelLarge, forKey: "panelLarge") }
@@ -567,6 +571,7 @@ final class AppSettings: ObservableObject {
         quietInMeetings = QuietBehavior.meetingChoices.contains(meeting) ? meeting : .quiet
         quietUseCalendar = defaults.object(forKey: "quietUseCalendar") as? Bool ?? true
         hideFromCaptures = defaults.bool(forKey: "hideFromCaptures")
+        showInScreenshots = defaults.bool(forKey: "showInScreenshots")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true

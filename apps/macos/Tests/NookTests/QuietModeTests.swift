@@ -63,6 +63,14 @@ final class QuietModeTests: XCTestCase {
         XCTAssertTrue(QuietPolicy.isSharing([.init(owner: "screencaptureui", name: "", height: 24)]))
     }
 
+    func testTheScreenshotToolCanBeLeftOut() {
+        let tool = QuietPolicy.Window(owner: "screencaptureui", name: "", height: 24)
+        XCTAssertFalse(QuietPolicy.isSharing([tool], countSystemCapture: false))
+        // A real share still counts.
+        XCTAssertTrue(QuietPolicy.isSharing([tool, .init(owner: "Microsoft Teams", name: "Sharing control bar", height: 60)],
+                                            countSystemCapture: false))
+    }
+
     func testOrdinaryWindowsDoNotCount() {
         // A full browser window about sharing, a Slack channel with "sharing" in its name, an unnamed window.
         XCTAssertFalse(QuietPolicy.isSharing([.init(owner: "Safari", name: "File sharing is sharing done right", height: 900)]))

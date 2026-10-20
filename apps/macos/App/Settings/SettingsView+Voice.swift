@@ -88,6 +88,8 @@ extension SettingsView {
             }
             SettingToggle(tr("quiet.useCalendar"), detail: tr("quiet.useCalendarDetail"), isOn: $settings.quietUseCalendar)
             SettingToggle(tr("quiet.hideFromCaptures"), detail: tr("quiet.hideFromCapturesDetail"), isOn: $settings.hideFromCaptures)
+            SettingToggle(tr("quiet.showInScreenshots"), detail: tr("quiet.showInScreenshotsDetail"), isOn: $settings.showInScreenshots)
+                .disabled(settings.hideFromCaptures)
             LabeledContent(tr("quiet.now")) {
                 Text(app.quietStatusText).foregroundStyle(.secondary)
             }

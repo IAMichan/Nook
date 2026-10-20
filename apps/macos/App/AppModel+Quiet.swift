@@ -14,7 +14,7 @@ extension AppModel {
         // A changed choice applies right away, not on the next tick.
         settings.$quietWhileSharing.map { _ in () }
             .merge(with: settings.$quietInMeetings.map { _ in () }, settings.$quietUseCalendar.map { _ in () },
-                   settings.$hideFromCaptures.map { _ in () })
+                   settings.$hideFromCaptures.map { _ in () }, settings.$showInScreenshots.map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.quietTick() }
             .store(in: &bag)
@@ -46,7 +46,8 @@ extension AppModel {
         lastQuietTick = Date()
         let situation = demoMode
             ? QuietSituation()
-            : QuietWatch.situation(events: upcoming, useCalendar: settings.quietUseCalendar, recording: NoteTaker.shared.isRecording)
+            : QuietWatch.situation(events: upcoming, useCalendar: settings.quietUseCalendar, recording: NoteTaker.shared.isRecording,
+                                   countScreenshots: !settings.showInScreenshots)
         let state = QuietPolicy.state(for: situation, sharing: settings.quietWhileSharing, meeting: settings.quietInMeetings)
         let wasHidden = quiet.hidden
         if state != quiet { quiet = state }
