@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// The cards Nook can display. Each card: one sentence, one detail line, at most two buttons.
 enum CardScene: String, Equatable {
@@ -61,6 +62,8 @@ struct ChatBubble: Equatable, Identifiable {
     var fromMe: Bool = false
     /// A file that came with the message (a document's name, "photo"…): the bubble shows it as a button that opens it.
     var attachment: String? = nil
+    /// A photo that came with the message, shown in the bubble; a click opens it in full.
+    var image: NSImage? = nil
 }
 
 enum CardDetail: Equatable {

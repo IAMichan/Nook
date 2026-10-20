@@ -9,7 +9,8 @@
 import Foundation
 import CryptoKit
 
-/// What a message holds besides text: a label is shown, and the file itself is only fetched when you open it.
+/// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows a
+/// photo or you open it.
 enum WAMedia: Equatable, Sendable {
     case none
     case image
@@ -486,8 +487,8 @@ enum WAGOWA {
     }
 
     /// `./whatsapp rest` for Nook's "Start GOWA automatically": on this Mac only, on the
-    /// URL's port, and media never downloaded (Nook shows a label), so GOWA keeps no photo
-    /// or voice note on disk.
+    /// URL's port, and media not downloaded on arrival: only a file Nook asks for (a photo the
+    /// notch card shows, a file you open) is fetched.
     static func launchArguments(for url: URL) -> [String] {
         ["rest", "--host=127.0.0.1", "--port=\(url.port ?? 3000)", "--auto-download-media=false"]
     }

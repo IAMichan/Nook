@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import ImageIO
 
 // MARK: - Settings
 
@@ -143,6 +144,9 @@ final class WhatsAppLink: ObservableObject {
     private var namingGroups: Set<String> = []
     /// Chats whose older messages were fetched for the notch card: once per chat while linked.
     private var historyLoaded: Set<String> = []
+    /// Photos shown in the notch card, downscaled and kept in memory only (by message id), and those asked for.
+    private var photos: [String: NSImage] = [:]
+    private var photosAsked: Set<String> = []
     private var rateLimit = WARateLimit(limit: 6, window: 60)
     private var failures = 0
     /// Bumped at each start and stop: an answer from before a restart is dropped.
@@ -207,6 +211,8 @@ final class WhatsAppLink: ObservableObject {
     private func stop(forget: Bool) {
         generation += 1
         historyLoaded = []
+        photos = [:]
+        photosAsked = []
         refreshing = false
         polling = false
         timer?.invalidate()
@@ -455,6 +461,18 @@ final class WhatsAppLink: ObservableObject {
 
     /// Fetches a message's file from the gateway (only now, because you clicked it) and returns where it was saved.
     func download(message id: String, chat: String) async throws -> URL {
+        let (message, file) = try await fetchFile(message: id, chat: chat)
+        let name = Self.fileName(for: message.media, given: file.name, mimeType: file.mimeType)
+        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(name)
+        try file.data.write(to: url, options: .atomic)
+        Log.connectors.info("WhatsApp: opened a file")
+        return url
+    }
+
+    /// A message's file from the gateway, checked: the message is known here, holds a file, and it is not too large.
+    private func fetchFile(message id: String, chat: String) async throws -> (WAMessage, WAFile) {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let key = WAJID.normalized(chat)
         guard let message = inbox.conversations[key]?.messages.first(where: { $0.id == id }), message.media.isOpenable else {
@@ -473,13 +491,42 @@ final class WhatsAppLink: ObservableObject {
         }
         guard !file.data.isEmpty else { throw NookError(tr("whatsapp.file.failed")) }
         guard file.data.count <= WAFile.maxBytes else { throw NookError(tr("whatsapp.file.tooLarge")) }
-        let name = Self.fileName(for: message.media, given: file.name, mimeType: file.mimeType)
-        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(name)
-        try file.data.write(to: url, options: .atomic)
-        Log.connectors.info("WhatsApp: opened a file")
-        return url
+        return (message, file)
+    }
+
+    /// A photo already fetched for the notch card.
+    func photo(_ id: String) -> NSImage? { photos[id] }
+
+    /// Fetches the photos of these messages that were never asked for (each once while linked), so the card can show
+    /// them. Kept in memory only, downscaled. True when at least one new photo came in.
+    func loadPhotos(_ ids: [String], chat: String) async -> Bool {
+        let gen = generation
+        var loaded = false
+        // Memory stays small: past a few dozen photos the oldest cards start over.
+        if photos.count > 48 {
+            photos = [:]
+            photosAsked = []
+        }
+        for id in ids where !photosAsked.contains(id) {
+            photosAsked.insert(id)
+            guard let fetched = try? await fetchFile(message: id, chat: chat), gen == generation,
+                  let image = Self.thumbnail(fetched.1.data) else { continue }
+            photos[id] = image
+            loaded = true
+        }
+        return loaded
+    }
+
+    /// The photo at most `side` pixels on its longest side, decoded straight to that size so a large photo costs little.
+    nonisolated static func thumbnail(_ data: Data, side: CGFloat = 480) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: side,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the

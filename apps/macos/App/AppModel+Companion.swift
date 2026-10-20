@@ -8,6 +8,8 @@ import Combine
 /// you approve.
 extension AppModel {
     static let whatsAppCardPrefix = "whatsapp-"
+    /// How many of a chat's newest photos its card fetches to show.
+    static let whatsAppPhotos = 6
 
     func startWhatsApp() {
         WhatsAppLink.shared.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
@@ -29,15 +31,18 @@ extension AppModel {
         }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. A file is a button.
+        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. A photo shows as itself
+        // once fetched, any other file is a button.
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
-        let bubbles = conversation.messages.suffix(WAInbox.keep).map { message in
+        let messages = conversation.messages.suffix(WAInbox.keep)
+        let bubbles = messages.map { message in
             let file = Self.whatsAppFileLabel(message.media)
             return ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
                               time: time.string(from: message.date),
                               sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
-                              fromMe: message.fromMe, attachment: file)
+                              fromMe: message.fromMe, attachment: file,
+                              image: message.media == .image ? link.photo(message.id) : nil)
         }
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
         let card = NookCard(
@@ -62,6 +67,14 @@ extension AppModel {
         Task { @MainActor [weak self] in
             guard await WhatsAppLink.shared.loadHistory(chat), let self, self.viewModel.hasCard(id: token) else { return }
             self.presentWhatsApp(chat)
+        }
+        // The newest photos, fetched once each, then shown in their bubbles.
+        let photos = messages.filter { $0.media == .image && link.photo($0.id) == nil }.suffix(Self.whatsAppPhotos).map(\.id)
+        if !photos.isEmpty {
+            Task { @MainActor [weak self] in
+                guard await link.loadPhotos(photos, chat: chat), let self, self.viewModel.hasCard(id: token) else { return }
+                self.presentWhatsApp(chat)
+            }
         }
     }
 
@@ -124,11 +137,17 @@ extension AppModel {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
             let lines = bubble.text.isEmpty ? 0 : min(5, max(1, (bubble.text.count + 47) / 48))
-            let file: CGFloat = bubble.attachment == nil ? 0 : 40
+            let file: CGFloat = bubble.image.map { Self.photoHeight($0) + 4 } ?? (bubble.attachment == nil ? 0 : 40)
             return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
                 + (bubble.sender.isEmpty ? 0 : 16) + 5
         }
         return chrome + min(stack, 260)
+    }
+
+    /// How tall a bubble's photo stands: fitted in 240 × 180.
+    static func photoHeight(_ image: NSImage) -> CGFloat {
+        guard image.size.width > 0, image.size.height > 0 else { return 0 }
+        return min(180, 240 * image.size.height / image.size.width)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {

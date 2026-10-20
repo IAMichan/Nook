@@ -274,7 +274,9 @@ private struct ChatBubbleView: View {
                         .foregroundStyle(NookTheme.mint)
                         .lineLimit(1)
                 }
-                if let attachment = bubble.attachment {
+                if let image = bubble.image {
+                    PhotoButton(image: image, name: bubble.attachment ?? "", action: onOpen)
+                } else if let attachment = bubble.attachment {
                     AttachmentButton(name: attachment, action: onOpen)
                 }
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
@@ -302,6 +304,33 @@ private struct ChatBubbleView: View {
             )
             if !bubble.fromMe { Spacer(minLength: 70) }
         }
+    }
+}
+
+/// A photo in a chat bubble, as it came: a click opens it in full.
+private struct PhotoButton: View {
+    static let maxWidth: CGFloat = 240
+    static let maxHeight: CGFloat = 180
+
+    let image: NSImage
+    let name: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: Self.maxWidth, maxHeight: Self.maxHeight, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .opacity(hovering ? 0.85 : 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("card.attachment.open"))
+        .accessibilityLabel("\(tr("card.attachment.open")): \(name)")
     }
 }
 
