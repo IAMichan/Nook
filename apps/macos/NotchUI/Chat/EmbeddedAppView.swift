@@ -3,7 +3,7 @@ import WebKit
 
 /// The app open next to Nook's chat ("@open whatsapp"). Each web app keeps its own sign-in across launches in a store of
 /// its own; a Mac app is shown live by `MacAppMirror`. Nook only reads what it shows when you ask (a read tool), and
-/// never types or clicks in it itself.
+/// types in it only to send a WhatsApp message you approved (`whatsAppWebTools`).
 @MainActor
 final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
     static let shared = EmbeddedAppStore()
@@ -90,9 +90,10 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     // MARK: Tools
 
-    /// Reading the app beside the chat. Static, so offering it to the model does not start WebKit.
+    /// Reading the app beside the chat, and sending through WhatsApp Web there. Static, so offering it to the model does
+    /// not start WebKit.
     static var tools: [ToolSpec] {
-        [
+        whatsAppWebTools + [
             ToolSpec(
                 name: "read_open_app",
                 description: "Reads what the app open next to the chat shows right now (opened with @open, for example WhatsApp Web or a Mac app such as WhatsApp): its visible text. Use it when the user asks about what is in that app (\"what did Arjan write?\", \"summarize this chat\").",

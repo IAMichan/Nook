@@ -72,6 +72,10 @@ extension AppModel {
     /// For the context: which app is open next to the chat, so "what does Arjan say?" is read from it.
     var embeddedAppContextLine: String? {
         guard let app = EmbeddedAppStore.shared.current else { return nil }
-        return "Open next to the chat (inside Nook): \(app.title). Read what it shows with read_open_app when the user asks about it."
+        var line = "Open next to the chat (inside Nook): \(app.title). Read what it shows with read_open_app when the user asks about it."
+        if !EmbeddedAppStore.whatsAppWebTools.isEmpty {
+            line += " WhatsApp messages to a contact or group go through it with whatsapp_send (the user approves the exact text first)."
+        }
+        return line
     }
 }

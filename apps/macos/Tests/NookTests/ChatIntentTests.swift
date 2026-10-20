@@ -110,6 +110,16 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertTrue(ChatIntent.detect("Wat is er gezegd in de appgroep?").kinds.contains(.chats))
     }
 
+    /// A message to a group is a chat message (WhatsApp), not a mail, unless the request says mail.
+    func testMessageToAGroupIsAChatMessage() {
+        XCTAssertEqual(action("Verstuur een bericht naar de doorsturen groep"), "whatsapp_send")
+        XCTAssertEqual(action("Stuur een bericht in de appgroep Doorsturen dat ik later ben"), "whatsapp_send")
+        XCTAssertEqual(action("Send a message to the family group"), "whatsapp_send")
+        XCTAssertEqual(action("Sende eine Nachricht an die Gruppe Familie"), "whatsapp_send")
+        XCTAssertEqual(action("Stuur een mail naar de groep over de planning"), "compose_mail")
+        XCTAssertNotEqual(action("Verstuur een bericht naar Jan"), "whatsapp_send", "no group, no WhatsApp: stays as it was")
+    }
+
     func testPreparedWithoutAnActionIsCaught() {
         XCTAssertTrue(ChatIntent.claimsPrepared("Ik heb het bericht \"Vestuur\" voorbereid en klaar om te sturen naar de WhatsApp-groep genaamd \"Doosturen\"."))
         XCTAssertTrue(ChatIntent.claimsPrepared("I've prepared the WhatsApp message to Lisa."))
