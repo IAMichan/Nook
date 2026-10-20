@@ -61,6 +61,9 @@ struct NookChatView: View {
                 inputBar
                     .padding(.top, 10)
             }
+            // In the main window the conversation keeps a readable width, centered in the room beside the list.
+            .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
+            .frame(maxWidth: compact ? nil : .infinity)
             .frame(width: embedded.current == nil ? nil : EmbeddedSplit.chatWidth(chatWidth, total: totalWidth))
             if embedded.current != nil {
                 EmbeddedSplitHandle(

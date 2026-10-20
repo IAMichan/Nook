@@ -39,6 +39,7 @@ final class WorkspaceWindowController {
     private var window: NSWindow?
 
     var isKey: Bool { window?.isKeyWindow ?? false }
+    var isVisible: Bool { window?.isVisible ?? false }
 
     func show(app: AppModel) {
         if window == nil {
@@ -73,11 +74,6 @@ final class WorkspaceWindowController {
         if let window { DockPresence.shared.track(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-    }
-
-    /// The panel's close button in the window.
-    func close() {
-        window?.performClose(nil)
     }
 }
 
@@ -177,9 +173,17 @@ extension AppModel {
         viewModel.show(.panel(.agents))
     }
 
-    /// The main window: the notch's tabs with more room, opened only on request.
-    func openWindow() {
+    /// The main window: the notch's tabs with more room, opened only on request. `continuing`: the tab you were on in the
+    /// notch, which the window opens on.
+    func openWindow(continuing tab: PanelTab? = nil) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
+        if let tab {
+            viewModel.windowSheet = nil
+            viewModel.windowTab = tab == .nook ? .chat : tab
+        } else if !WorkspaceWindowController.shared.isVisible {
+            // Already open, it stays where you are.
+            viewModel.prepareWindow()
+        }
         WorkspaceWindowController.shared.show(app: self)
     }
 

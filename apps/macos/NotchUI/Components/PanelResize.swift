@@ -60,6 +60,8 @@ enum PanelLayout {
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260
+    /// The widest the chat's messages and composer get in the main window: lines stay easy to read in a wide window.
+    static let readableChat: CGFloat = 820
     /// The narrowest a list beside a conversation gets.
     static let minimumList: Double = 160
     /// The narrowest a side panel gets.

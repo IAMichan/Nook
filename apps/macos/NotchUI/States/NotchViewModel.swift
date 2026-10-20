@@ -100,8 +100,19 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`).
-    @Published var windowTab: PanelTab = .chat
+    /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`). Remembered,
+    /// so the window opens where you left it.
+    @Published var windowTab: PanelTab = NotchViewModel.savedWindowTab {
+        didSet { UserDefaults.standard.set(windowTab.rawValue, forKey: "window.lastTab") }
+    }
+
+    private nonisolated static var savedWindowTab: PanelTab {
+        switch PanelTab(rawValue: UserDefaults.standard.string(forKey: "window.lastTab") ?? "") {
+        case .agents: return .agents
+        case .music: return .music
+        default: return .chat
+        }
+    }
     /// A task open in the main window (changes, commit…): the window's counterpart of `sheet`.
     @Published var windowSheet: NotchSheet?
 
@@ -469,6 +480,18 @@ final class NotchViewModel: ObservableObject {
         // Music only exists while a player is open.
         if lastTab == .music, app?.nowPlaying.current == nil { return .chat }
         return lastTab
+    }
+
+    /// Where the main window opens: at the agent that waits for you, otherwise at the tab it showed last (Music only while
+    /// a player is open).
+    func prepareWindow() {
+        if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
+            selectedAgentID = waiting.id
+            windowSheet = nil
+            windowTab = .agents
+        } else if windowTab == .music, app?.nowPlaying.current == nil {
+            windowTab = .chat
+        }
     }
 
     /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab; in the main window while that is

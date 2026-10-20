@@ -32,7 +32,7 @@ Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.s
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |
-| `NookTabBar` | `NookTabBar.swift` | Segmented tabs |
+| `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
 
 Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge`) live in
 `NotchUI/Workspace/WorkspaceComponents.swift`.
@@ -42,7 +42,9 @@ Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge
 The main window (`WorkspaceView`) is the open notch with more room: it shows the same `PanelView` (with
 `inWindow: true`, which uses `windowTab`/`windowSheet` and lets the close button close the window) and the same
 `PanelOrb` (Nook with his task ring, next to the tabs). Change the panel once and both follow; do not build a separate
-window layout.
+window layout. In the window the header's empty space moves the window, the traffic lights replace the close
+button, the window remembers its tab (and opens at an agent that waits for you), and the chat keeps a readable width
+(`PanelLayout.readableChat`). In the notch, the window button continues on the same tab in the window.
 
 ## Settings — `apps/macos/App/Settings`
 

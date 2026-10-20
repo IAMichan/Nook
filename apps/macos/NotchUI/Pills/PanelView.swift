@@ -9,8 +9,8 @@ struct PanelView: View {
     let tab: PanelTab
     /// Room on the left of the header row for Nook, who sits there in the notch; the content below runs full width.
     var headerInset: CGFloat = 0
-    /// In the main window: the window's tab and task (`windowTab`, `windowSheet`), close closes the window, and the
-    /// chat gets the wider layout.
+    /// In the main window: the window's tab and task (`windowTab`, `windowSheet`), the chat gets the wider layout, the
+    /// header's empty space moves the window, and the traffic lights take the place of the close button.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
 
@@ -55,28 +55,54 @@ struct PanelView: View {
         }
     }
 
-    private func close() {
-        if inWindow { WorkspaceWindowController.shared.close() } else { viewModel.show(.idle) }
+    /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
+    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …).
+    private var tabItems: [NookTabBar<PanelTab>.Item] {
+        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
+        let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
+        let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
+        return tabs.enumerated().map { index, value in
+            NookTabBar<PanelTab>.Item(value: value, title: value.title,
+                                      fresh: value == .chat && unread, count: value == .agents ? waiting : 0,
+                                      help: inWindow ? "\(value.title) (⌘\(index + 1))" : nil)
+        }
     }
 
     private var header: some View {
         HStack(spacing: 0) {
-            NookTabBar(items: PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music).map { NookTabBar<PanelTab>.Item(value: $0, title: $0.title) },
-                       selected: tab) { select($0) }
-            Spacer()
+            NookTabBar(items: tabItems, selected: tab) { select($0) }
+            if inWindow {
+                // Empty header space moves the window, as a title bar does.
+                Color.clear
+                    .frame(minWidth: 8, maxWidth: .infinity, minHeight: Self.headerHeight)
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+            } else {
+                Spacer()
+            }
+            // On Agents the gear sits in the footer under the session list instead.
+            let gear = tab != .agents || app.demoMode
             HStack(spacing: 2) {
                 talkButton
-                Rectangle()
-                    .fill(NookTheme.textTertiary.opacity(0.35))
-                    .frame(width: 1, height: 14)
-                    .padding(.horizontal, 6)
-                // On Agents the gear sits in the footer under the session list instead.
-                if tab != .agents || app.demoMode {
+                if gear || !inWindow {
+                    Rectangle()
+                        .fill(NookTheme.textTertiary.opacity(0.35))
+                        .frame(width: 1, height: 14)
+                        .padding(.horizontal, 6)
+                }
+                if !inWindow {
+                    // Go on in the main window, on this tab, with more room.
+                    NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
+                        .help(tr("menu.window"))
+                }
+                if gear {
                     NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
                         .help(tr("button.settings"))
                 }
-                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { close() }
-                    .help(tr("button.close"))
+                if !inWindow {
+                    NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
+                        .help(tr("button.close"))
+                }
             }
         }
         .frame(minHeight: Self.headerHeight)
