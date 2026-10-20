@@ -197,6 +197,7 @@ extension AppModel {
         if viewModel.isShowing(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
            viewModel.sessionTool == .conversation { return }
         NookSound.play(.attention)
+        guard !quiet.silent else { return }
         let runID = run.id
         viewModel.finish(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
             self?.openWorkspace(run: runID)
@@ -213,6 +214,7 @@ extension AppModel {
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)
+        guard !quiet.silent else { return }
         switch viewModel.state {
         case .idle, .music, .track, .done: break
         default: return

@@ -45,8 +45,4 @@ final class BuddyService {
         let types: [CGEventType] = [.mouseMoved, .keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel, .flagsChanged]
         return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
     }
-
-    /// Apps you are in a call with: Nook keeps quiet while one of them is in front.
-    static let callApps: Set<String> = ["us.zoom.xos", "com.microsoft.teams", "com.microsoft.teams2", "com.cisco.webexmeetingsapp",
-                                        "com.apple.FaceTime", "com.hnc.Discord"]
 }

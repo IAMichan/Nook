@@ -441,6 +441,7 @@ final class AppModel: ObservableObject {
         }
 
         startBuddy()
+        startQuietWatch()
     }
 
     // MARK: Stored state used by the extensions
@@ -462,4 +463,6 @@ final class AppModel: ObservableObject {
     /// The value a proposed action field had before the user first edited it ("message#step#field"), so running the
     /// plan teaches Nook the user's habits.
     var editOrigins: [String: String] = [:]
+    /// How the notch behaves right now while you share your screen or sit in a meeting (`AppModel+Quiet`).
+    @Published var quiet = QuietState.normal
 }

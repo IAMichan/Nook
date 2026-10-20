@@ -47,7 +47,8 @@ extension AppModel {
 
     /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     func thinkAlongTick() {
-        guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode,
+        // Not while you share your screen or sit in a meeting and chose quiet for it.
+        guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode, !quiet.silent,
               !settings.privateSources.contains(SourceCatalog.screen),
               ScreenAccess.isUsable, viewModel.state.isResting else { return }
         // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy. With the
