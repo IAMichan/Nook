@@ -13,7 +13,20 @@
       results = null;
       return;
     }
-    api.searchNooks(q).then((r) => (results = r));
+    // Waits for a pause in typing, and drops an answer for an older query so it cannot replace a newer one.
+    let stale = false;
+    const timer = setTimeout(() => {
+      api
+        .searchNooks(q)
+        .then((r) => {
+          if (!stale) results = r;
+        })
+        .catch(() => {});
+    }, 150);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
   });
 
   const list = $derived(results ?? nook.nooks.filter((n) => n.preview || n.id === nook.activeId));

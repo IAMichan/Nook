@@ -16,7 +16,9 @@
     onchanges,
   }: { run: WorkspaceRun; onrename: () => void; ondelete: () => void; onchanges: () => void } = $props();
 
-  const key = $derived(`ws.draft.${run.id}`);
+  // The parent hands a new `run` object on every workspace update; only another run reloads the draft and takes focus.
+  const runId = $derived(run.id);
+  const key = $derived(`ws.draft.${runId}`);
   let draft = $state("");
   let editing = $state<string | null>(null);
   let savedDraft = "";
@@ -32,7 +34,7 @@
     } catch {
       draft = "";
     }
-    workspace.loadQueue(run.id);
+    workspace.loadQueue(runId);
     requestAnimationFrame(() => textarea?.focus());
   });
 
