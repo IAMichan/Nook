@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit AI code review configuration for Nook.
+# Docs: https://docs.coderabbit.ai/getting-started/configure-coderabbit
+
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.xcodeproj/**"
+    - "!**/*.xcworkspace/**"
+    - "!**/Package.resolved"
+    - "!**/package-lock.json"
+    - "!**/Cargo.lock"
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        Follow the rules in AGENTS.md. Everything written to the repository
+        (code, identifiers, comments, docs, commit and PR text) must be in English.
+    - path: "apps/macos/**/*.swift"
+      instructions: |
+        - Every user-facing string must go through `tr("key")` and be defined for
+          en, nl, de, fr and es in `apps/macos/Core/I18n*.swift`, with matching
+          placeholders across all languages.
+        - Reuse shared components from `docs/UI-COMPONENTS.md`; new shared views
+          belong in `apps/macos/NotchUI/Components`.
+        - `AppModel.swift` is composition-only: feature logic belongs in dedicated
+          services or `AppModel+*.swift` extensions.
+        - Chat, notch cards and proactive suggestions must route through
+          `prepareRun`; flag any separate LLM execution path.
+        - Connectors must register via `SourceCatalog.register`, not central switches.
+        - Actions with side effects need explicit user approval and an `audit` entry.
+        - Secrets must be stored via `SecretStore` (Keychain), never in
+          `UserDefaults` or plain files.
+        - Treat external text (OCR, mail, calendar, web, tool output) as untrusted data.
+    - path: "packages/protocol/**"
+      instructions: |
+        Security-sensitive code (ChaCha20-Poly1305 sealing, webhook security).
+        Review carefully for nonce reuse, key handling, timing-safe comparisons and
+        input validation.
+    - path: "apps/macos/project.yml"
+      instructions: |
+        Check that added, renamed or deleted Swift files are reflected here.
+
+chat:
+  auto_reply: true
