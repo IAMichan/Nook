@@ -29,11 +29,14 @@ extension AppModel {
         WhatsAppLink.shared.start()
     }
 
-    func presentWhatsApp(_ chat: String) {
+    /// - `opened`: you asked for this chat ("@open chat Jan"): it shows right away, over the panel, even when new messages
+    ///   don't bring up cards, and even when it holds only your own messages. Nothing is marked read by showing it.
+    func presentWhatsApp(_ chat: String, opened: Bool = false) {
         let link = WhatsAppLink.shared
-        guard WhatsAppSettings.notify, let conversation = link.inbox.conversations[chat],
-              conversation.messages.contains(where: { !$0.fromMe }) else { return }
         let token = Self.whatsAppCardPrefix + chat
+        let asked = opened || viewModel.hasCard(id: token)
+        guard asked || WhatsAppSettings.notify, let conversation = link.inbox.conversations[chat],
+              asked ? !conversation.messages.isEmpty : conversation.messages.contains(where: { !$0.fromMe }) else { return }
         viewModel.register("\(token)#read") { link.markRead(chat) }
         viewModel.register("\(token)#nook") { [weak self] in
             guard let self else { return }
@@ -85,7 +88,15 @@ extension AppModel {
                     CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""))],
             escape: CardAction(label: "", outcome: .dismiss)
         )
-        if viewModel.hasCard(id: token) { viewModel.updateCard(card) } else { viewModel.present(card) }
+        // A hidden notch (a full-screen app) keeps it in line until it shows again.
+        if opened, !viewModel.holdsCards {
+            viewModel.removePending(id: token)
+            viewModel.show(.card(card))
+        } else if viewModel.hasCard(id: token) {
+            viewModel.updateCard(card)
+        } else {
+            viewModel.present(card)
+        }
 
         // Older messages from the gateway, once per chat, so the card can scroll back further than what came in.
         Task { @MainActor [weak self] in
@@ -102,6 +113,34 @@ extension AppModel {
                 self.presentWhatsApp(chat)
             }
         }
+    }
+
+    /// "@open chat Jan": that chat's card, as a new message would bring it, so a chat whose card you closed can be read
+    /// and answered again. Its newest messages are fetched first; nothing is marked read (only the card's Read button
+    /// or your answer does that). An unknown name or a gateway that is not linked gets an answer in the chat instead.
+    /// `asked`: what you typed, kept in the chat only next to an answer there.
+    func openWhatsAppChat(_ name: String, asked: String) {
+        let link = WhatsAppLink.shared
+        guard let target = link.resolve(name) else {
+            answerInChat(asked, link.isConnected || !link.inbox.conversations.isEmpty
+                         ? tr("whatsapp.open.unknown", name, link.chatNames().prefix(12).joined(separator: ", "))
+                         : link.statusLine)
+            return
+        }
+        Task { @MainActor [weak self] in
+            if link.isConnected { _ = try? await link.messages(of: target.jid, limit: WAInbox.keep) }
+            guard let self else { return }
+            guard link.inbox.conversations[target.jid]?.messages.isEmpty == false else {
+                return self.answerInChat(asked, tr("whatsapp.open.empty", target.name))
+            }
+            self.presentWhatsApp(target.jid, opened: true)
+        }
+    }
+
+    private func answerInChat(_ asked: String, _ text: String) {
+        chat.append(ChatMessage(role: .user, text: asked))
+        chat.append(ChatMessage(role: .nook, text: text))
+        showChat()
     }
 
     /// Return in a WhatsApp card's field: the text goes to that chat as typed. The card says it is sending; when that

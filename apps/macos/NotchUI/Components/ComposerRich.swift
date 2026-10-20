@@ -40,6 +40,8 @@ struct ComposerConfig {
     var pullRequests: ((String) async -> [(number: Int, title: String)])? = nil
     /// Apps that open inside Nook, for `@` in the chat ("@open WhatsApp"): id, title and symbol.
     var apps: [(id: String, title: String, symbol: String)] = []
+    /// WhatsApp chats for "@open chat …", newest first: name and a short line about it ("2 new").
+    var chats: () -> [(name: String, detail: String)] = { [] }
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
 
@@ -94,6 +96,18 @@ final class ComposerModel: ObservableObject {
     /// Looks at the end of the text and fills the list.
     func update(for text: String, _ config: ComposerConfig) {
         search?.cancel()
+        // "@open chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
+        if let query = EmbeddedAppCatalog.chatQuery(in: text), case let chats = config.chats(), !chats.isEmpty {
+            let names = EmbeddedAppCatalog.chatMatches(query, in: chats.map(\.name))
+            guard !names.isEmpty else { return close() }
+            trigger = ComposerTrigger(kind: .mention, query: query, token: text)
+            return publish(names.map { name in
+                let insertion = "@open chat " + name
+                return ComposerSuggestion(id: "chat:" + name, title: name, detail: chats.first { $0.name == name }?.detail,
+                                          symbol: "bubble.left.and.bubble.right.fill",
+                                          payload: .command(ComposerCommand(name: "chat:" + name, insertion: insertion, action: .insert)))
+            })
+        }
         guard let found = ComposerTrigger.detect(in: text) else { return close() }
         trigger = found
         switch found.kind {
@@ -108,10 +122,19 @@ final class ComposerModel: ObservableObject {
                 // "@open WhatsApp" as a line to choose: Return puts it in the box, Return again opens it.
                 let matches = EmbeddedAppCatalog.matching(EmbeddedAppCatalog.mentionQuery(found.query), in: EmbeddedAppCatalog.available())
                 let rows = matches.compactMap { match in config.apps.first { $0.id == match.id } }
-                return publish(rows.prefix(10).map { app in
+                let apps = rows.prefix(10).map { app in
                     ComposerSuggestion(id: "app:" + app.id, title: "@open " + app.title, detail: app.id.hasPrefix("mac:") ? tr("embedded.mentionDetailMac") : tr("embedded.mentionDetail"), symbol: app.symbol,
                                        payload: .command(ComposerCommand(name: app.id, insertion: "@open " + app.title, action: .insert)))
-                })
+                }
+                // "@open chat" first, when there are chats to open: choosing it lists them.
+                let typed = EmbeddedAppCatalog.mentionQuery(found.query).lowercased()
+                var chat: [ComposerSuggestion] = []
+                if typed.isEmpty || "chat".hasPrefix(typed) || "whatsapp".hasPrefix(typed), !config.chats().isEmpty {
+                    chat = [ComposerSuggestion(id: "chat", title: "@open chat", detail: tr("whatsapp.open.mentionDetail"),
+                                               symbol: "bubble.left.and.bubble.right.fill",
+                                               payload: .command(ComposerCommand(name: "chat", insertion: "@open chat", action: .insert)))]
+                }
+                return publish(chat + apps)
             }
             guard config.fileRoot != nil || !config.sessions().isEmpty else { return close() }
             let query = found.query

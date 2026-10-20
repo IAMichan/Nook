@@ -38,6 +38,36 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open foo bar"), .unknown("foo bar"))
     }
 
+    func testChatsOpenByName() {
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat Jan", installed: []), .chat("Jan"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat WhatsApp Jan", installed: []), .chat("Jan"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp chat Jan de Vries", installed: []), .chat("Jan de Vries"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp Jan", installed: []), .chat("Jan"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat met Lisa!", installed: []), .chat("Lisa"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Lisa", installed: []), .chat("Lisa"))
+        XCTAssertEqual(opened("@open whatsapp web"), "whatsapp", "a way to open stays the app")
+        XCTAssertEqual(opened("@open chat gpt"), "chatgpt", "an app's name wins")
+        XCTAssertEqual(opened("@chat gpt"), "chatgpt")
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat", installed: []), .unknown("chat"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp chat", installed: []), .unknown("whatsapp chat"))
+    }
+
+    func testChatListFollowsWhatIsTyped() {
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open chat "), "")
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open chat Ja"), "Ja")
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open whatsapp Ja"), "Ja")
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@chat met Li"), "Li")
+        XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@open chat"), "no list before the space")
+        XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@open gmail"))
+
+        let names = ["Jan de Vries", "Lisa", "Family", "Jan Bakker", "Lisa"]
+        XCTAssertEqual(EmbeddedAppCatalog.chatMatches("", in: names), ["Jan de Vries", "Lisa", "Family", "Jan Bakker"])
+        XCTAssertEqual(EmbeddedAppCatalog.chatMatches("jan", in: names), ["Jan de Vries", "Jan Bakker"])
+        XCTAssertEqual(EmbeddedAppCatalog.chatMatches("bak", in: names), ["Jan Bakker"], "a word of the name")
+        XCTAssertEqual(EmbeddedAppCatalog.chatMatches("mil", in: names), ["Family"], "a part of the name")
+        XCTAssertEqual(EmbeddedAppCatalog.chatMatches("Lisa ", in: names), [], "typed in full: Return opens it")
+    }
+
     func testOtherMessagesStayQuestions() {
         XCTAssertNil(EmbeddedAppCatalog.command(in: "@Lisa wat vind jij?"))
         XCTAssertNil(EmbeddedAppCatalog.command(in: "Open WhatsApp"), "the Mac app, through open_app")
