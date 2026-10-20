@@ -30,15 +30,13 @@ struct ApprovalView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             content
-            HStack(spacing: 4) {
-                NookPrimaryButton(title: tr("button.allow")) { onDecide(.allow) }
-                if approval.canAlways {
-                    NookGhostButton(title: tr("button.always")) { onDecide(.always) }
-                }
-                NookGhostButton(title: tr("button.deny")) { onDecide(.deny) }
-                if approval.canTerminal {
-                    NookGhostButton(title: tr("approval.inTerminal")) { onDecide(.terminal) }
-                }
+            HStack(spacing: 0) {
+                NookNoticeActions(
+                    primary: NookNoticeAction(tr("button.allow")) { onDecide(.allow) },
+                    secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
+                    extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
+                        + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
+                )
                 Spacer(minLength: 0)
             }
         }

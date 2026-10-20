@@ -83,9 +83,9 @@ extension AppModel {
             contentHeight: Self.whatsAppCardHeight(bubbles),
             input: true,
             inputPrompt: tr("whatsapp.card.answer", conversation.name),
-            extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", "")),
-                    CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", "")),
-                    CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""))],
+            extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", ""), symbol: "sparkles")],
+            more: [CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", ""), symbol: "bell.slash"),
+                   CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""), symbol: "eye.slash")],
             escape: CardAction(label: "", outcome: .dismiss)
         )
         // A hidden notch (a full-screen app) keeps it in line until it shows again.

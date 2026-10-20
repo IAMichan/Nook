@@ -69,14 +69,13 @@ struct CardView: View {
             if card.input { replyField.padding(.bottom, 10) }
 
             // Buttons stay on one line each; when they do not fit side by side, they tighten up instead of wrapping.
-            ViewThatFits(in: .horizontal) {
-                if card.acknowledge != nil {
+            if card.acknowledge != nil {
+                ViewThatFits(in: .horizontal) {
                     noticeRow(compact: false)
                     noticeRow(compact: true)
-                } else {
-                    buttonRow(compact: false)
-                    buttonRow(compact: true)
                 }
+            } else {
+                actionRow
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,27 +95,20 @@ struct CardView: View {
         }
     }
 
-    private func buttonRow(compact: Bool) -> some View {
-        HStack(spacing: compact ? 0 : 4) {
-            NookPrimaryButton(title: card.primary.label, symbol: card.primary.symbol) { onAction(card.primary) }
-                .padding(.trailing, compact ? 4 : 0)
-            if !card.secondary.label.isEmpty {
-                NookGhostButton(title: card.secondary.label, symbol: card.secondary.symbol, compact: compact) {
-                    onAction(card.secondary)
-                }
-            }
-            ForEach(Array(card.extra.enumerated()), id: \.offset) { _, action in
-                NookGhostButton(title: action.label, symbol: action.symbol, compact: compact) { onAction(action) }
-            }
-            Spacer(minLength: 4)
-            NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
-        }
+    /// The card's buttons, in the row every notification shares.
+    private var actionRow: some View {
+        let act = { (action: CardAction) -> NookNoticeAction in NookNoticeAction(action.label, symbol: action.symbol) { onAction(action) } }
+        return NookNoticeActions(primary: act(card.primary),
+                                 secondary: card.secondary.label.isEmpty ? nil : act(card.secondary),
+                                 extra: card.extra.map(act),
+                                 more: card.more.map(act),
+                                 onVoice: onVoice)
     }
 
     /// A notice (a card with an OK): its actions in one bar that takes the room, and OK as the white main button with
     /// the countdown of the card closing by itself.
     private func noticeRow(compact: Bool) -> some View {
-        let actions = ([card.primary, card.secondary] + card.extra).filter { !$0.label.isEmpty }
+        let actions = ([card.primary, card.secondary] + card.extra + card.more).filter { !$0.label.isEmpty }
         return HStack(spacing: compact ? 8 : 10) {
             NookActionBar(actions: actions, compact: compact, onAction: onAction)
             if let acknowledge = card.acknowledge {

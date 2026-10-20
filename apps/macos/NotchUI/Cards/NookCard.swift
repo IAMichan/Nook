@@ -124,6 +124,8 @@ struct NookCard: Equatable, Identifiable {
     var inputPrompt: String? = nil
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
+    /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.
+    var more: [CardAction] = []
     /// An agent is waiting on this (permission or prompt): the card takes precedence and persists until answered.
     var urgent: Bool = false
     /// What Nook inspected for this answer ("3 windows", "Calendar", "GitHub"), as small chips below the context.
