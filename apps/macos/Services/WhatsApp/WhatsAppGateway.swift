@@ -9,7 +9,7 @@
 import Foundation
 import CryptoKit
 
-/// What a message holds besides text: only a label is shown, the media itself is never fetched.
+/// What a message holds besides text: a label is shown, and the file itself is only fetched when you open it.
 enum WAMedia: Equatable, Sendable {
     case none
     case image
@@ -38,6 +38,16 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var mentionsMe: Bool = false
     /// Set by the gateway when the chat name came with the message.
     var chatName: String? = nil
+}
+
+extension WAMedia {
+    /// A file Nook can fetch from the gateway and open on this Mac.
+    var isOpenable: Bool {
+        switch self {
+        case .image, .video, .audio, .voice, .document: return true
+        case .none, .sticker, .location, .contact, .other: return false
+        }
+    }
 }
 
 extension WAMessage {
@@ -110,7 +120,8 @@ enum WAJID {
 
 /// The conversations, grouped by chat: one entry per conversation, never one per message.
 struct WAInbox: Equatable, Sendable {
-    static let keep = 20
+    /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
+    static let keep = 50
 
     private(set) var conversations: [String: WAConversation] = [:]
     private var seenIds: Set<String> = []
@@ -513,6 +524,22 @@ enum WAGOWA {
             msg.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: me)
             return msg
         }
+    }
+
+    /// `GET /message/{id}/download` → `results: {filename, file_path, file_url}`. The saved file's path on the
+    /// gateway (from `file_url`, else `file_path` under /statics), to fetch from the gateway itself, and its name.
+    static func download(_ data: Data) -> (path: String, name: String?)? {
+        guard let r = results(data) as? [String: Any] else { return nil }
+        let name = nonEmpty(r["filename"])
+        if let link = r["file_url"] as? String, let comps = URLComponents(string: link),
+           comps.percentEncodedPath.count > 1 {
+            return (comps.percentEncodedPath, name)
+        }
+        if let file = r["file_path"] as? String, file.hasPrefix("statics/"), !file.contains(".."),
+           let encoded = file.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+            return ("/" + encoded, name)
+        }
+        return nil
     }
 
     /// `media_type` of a stored message: image|video|video_note|audio|document|sticker|call or "".

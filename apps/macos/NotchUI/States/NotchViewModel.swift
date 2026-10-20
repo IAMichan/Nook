@@ -7,6 +7,8 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
     @Published private(set) var pointerInside = false
+    /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
+    @Published private(set) var panelNotice: PanelNotice?
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }
@@ -111,8 +113,19 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`).
-    @Published var windowTab: PanelTab = .chat
+    /// The tab Nook's main window shows: the same tabs as the panel, with more room (see `WorkspaceView`). Remembered,
+    /// so the window opens where you left it.
+    @Published var windowTab: PanelTab = NotchViewModel.savedWindowTab {
+        didSet { UserDefaults.standard.set(windowTab.rawValue, forKey: "window.lastTab") }
+    }
+
+    private nonisolated static var savedWindowTab: PanelTab {
+        switch PanelTab(rawValue: UserDefaults.standard.string(forKey: "window.lastTab") ?? "") {
+        case .agents: return .agents
+        case .music: return .music
+        default: return .chat
+        }
+    }
     /// A task open in the main window (changes, commit…): the window's counterpart of `sheet`.
     @Published var windowSheet: NotchSheet?
 
@@ -145,6 +158,12 @@ final class NotchViewModel: ObservableObject {
     var onDragEnded: (() -> Void)?
     /// Coordinated multi-screen track announcement.
     var onAnnounce: ((NowPlayingInfo) -> Void)?
+
+    /// While you share your screen or sit in a meeting and chose so (`AppModel+Quiet`): no track announcements,
+    /// suggestions or moments of Nook's own.
+    var silenced = false
+    /// While the notch hides for a share or meeting: cards wait in line, also agent prompts, until it is over.
+    var holdsCards = false
 
     private var callbacks: [String: () -> Void] = [:]
     private var choiceHandlers: [String: ([String]) -> Void] = [:]
@@ -197,7 +216,7 @@ final class NotchViewModel: ObservableObject {
             return
         }
         if case .idle = new {
-            if !pending.isEmpty {
+            if !pending.isEmpty, !holdsCards {
                 target = .card(pending.removeFirst())
             } else if app?.nowPlaying.current?.isPlaying == true {
                 target = .music
@@ -254,6 +273,10 @@ final class NotchViewModel: ObservableObject {
         var urgent = card
         urgent.urgent = true
         let firstNormal = pending.firstIndex { !$0.urgent } ?? pending.count
+        if holdsCards {
+            pending.insert(urgent, at: firstNormal)
+            return
+        }
         switch state {
         case .card(let current) where current.urgent:
             pending.insert(urgent, at: firstNormal)
@@ -274,6 +297,10 @@ final class NotchViewModel: ObservableObject {
 
     /// Displays a card immediately if Nook is idle, otherwise enqueues it.
     func present(_ card: NookCard) {
+        if holdsCards {
+            pending.append(card)
+            return
+        }
         switch state {
         case .idle, .music, .track, .done, .nudge, .moment:
             show(.card(card))
@@ -359,8 +386,28 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A notice Nook gives by himself (not in reply to what you just did): like `finish`, but an open panel stays and
+    /// shows it in a compact bar (see `PanelApprovalBar`) instead of being replaced and then closed.
+    func notify(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {
+        guard case .panel = state else {
+            finish(message, button: button, action: action)
+            return
+        }
+        let notice = PanelNotice(message: message, button: button, action: action)
+        panelNotice = notice
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if self?.panelNotice?.id == notice.id { self?.panelNotice = nil }
+        }
+    }
+
+    func dismissPanelNotice() {
+        panelNotice = nil
+    }
+
     /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
     func announce(_ info: NowPlayingInfo) {
+        guard !silenced else { return }
         if let onAnnounce {
             onAnnounce(info)
             return
@@ -378,7 +425,7 @@ final class NotchViewModel: ObservableObject {
     /// Dismisses automatically after a timeout (saved to Today).
     @discardableResult
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
-        guard state.isResting, pending.isEmpty else { return false }
+        guard state.isResting, pending.isEmpty, !silenced else { return false }
         show(.nudge(line, card))
         doneTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -392,7 +439,7 @@ final class NotchViewModel: ObservableObject {
     /// or something waiting in line; it goes away by itself.
     @discardableResult
     func offerMoment(_ moment: NookMoment) -> Bool {
-        guard state.isResting, pending.isEmpty else { return false }
+        guard state.isResting, pending.isEmpty, !silenced else { return false }
         show(.moment(moment))
         dismissMoment(moment.id, after: moment.seconds)
         return true
@@ -480,6 +527,18 @@ final class NotchViewModel: ObservableObject {
         // Music only exists while a player is open.
         if lastTab == .music, app?.nowPlaying.current == nil { return .chat }
         return lastTab
+    }
+
+    /// Where the main window opens: at the agent that waits for you, otherwise at the tab it showed last (Music only while
+    /// a player is open).
+    func prepareWindow() {
+        if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
+            selectedAgentID = waiting.id
+            windowSheet = nil
+            windowTab = .agents
+        } else if windowTab == .music, app?.nowPlaying.current == nil {
+            windowTab = .chat
+        }
     }
 
     /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab; in the main window while that is
@@ -639,4 +698,12 @@ final class NotchViewModel: ObservableObject {
         case .music, .shelf: return .rest
         }
     }
+}
+
+/// A notice shown in the open panel's bar; see `NotchViewModel.notify`.
+struct PanelNotice: Identifiable {
+    let id = UUID()
+    let message: String
+    let button: String
+    let action: (() -> Void)?
 }

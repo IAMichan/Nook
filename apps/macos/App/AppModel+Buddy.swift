@@ -68,7 +68,7 @@ extension AppModel {
             signals.finishedWhileAway = buddy.finished(from: back.addingTimeInterval(-away), to: back)
         }
         signals.stretch = buddy.activity.stretch(at: now)
-        signals.eventsToday = upcoming.filter { $0.start > now && Calendar.current.isDate($0.start, inSameDayAs: now) }.count
+        signals.eventsToday = eventsLeftToday(at: now).count
         signals.finishedTotal = buddy.finishedTotal
         signals.birthday = NookMonthDay(stored: settings.birthday)
 
@@ -79,12 +79,13 @@ extension AppModel {
         if moment.kind == .breakTime { buddy.activity.restartStretch(at: now) }
     }
 
-    /// In a meeting (an event going on in your calendar), on a call, or recording one: no moments.
+    /// In a meeting (an event going on in your calendar), on a call, recording one or sharing your screen: no moments,
+    /// whatever you chose for the rest of the notch in Settings › Notifications.
     private func buddyShouldStayQuiet(at now: Date) -> Bool {
         // All-day events (a holiday, someone's birthday) are not meetings.
         let meeting = upcoming.contains { $0.start <= now && $0.end > now && $0.end.timeIntervalSince($0.start) < 12 * 3600 }
-        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map { BuddyService.callApps.contains($0) } ?? false
-        return meeting || calling || NoteTaker.shared.isRecording
+        let calling = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(QuietPolicy.isCallApp) ?? false
+        return meeting || calling || quiet.situation.meeting || quiet.situation.sharing || NoteTaker.shared.isRecording
     }
 
     /// The moment as Nook shows it: his mood, his words in your language and tone, and what he wears.
@@ -107,7 +108,7 @@ extension AppModel {
         case .morning:
             result.mood = .cozy
             if moment.count > 0 {
-                result.action = .openNook
+                result.action = .showToday
                 result.actionTitle = tr("buddy.action.today")
             }
         case .welcomeBack:
@@ -145,13 +146,52 @@ extension AppModel {
             buddy.activity.restartStretch(at: Date())
             viewModel.replaceMoment(NookMoment(id: "breathe-\(UUID().uuidString)", line: tr("buddy.breathe.in"), mood: .breathe,
                                                outfit: moment.outfit, seconds: NookMoment.breathLength))
-        case .openNook:
-            viewModel.show(.panel(.nook), inNotch: true)
+        case .showToday:
+            presentToday()
         case .openAgents:
             viewModel.show(.panel(.agents), inNotch: true)
         case nil:
             viewModel.show(.idle)
         }
+    }
+
+    /// The events in your calendar for the rest of today: what the morning greeting counts.
+    func eventsLeftToday(at now: Date = Date()) -> [CalEvent] {
+        upcoming.filter { $0.start > now && Calendar.current.isDate($0.start, inSameDayAs: now) }
+    }
+
+    /// The morning greeting, clicked: a card with what is on today, each with its time (and place).
+    func presentToday() {
+        let events = eventsLeftToday()
+        guard !events.isEmpty else {
+            viewModel.show(.card(answerCard(tr("buddy.today.empty"))))
+            return
+        }
+        let shown = Array(events.prefix(6))
+        var facts = shown.map { event in
+            let time = NookDates.time(event.start) + " – " + NookDates.time(event.end)
+            return Fact(label: event.location.isEmpty ? time : "\(time) · \(event.location)", value: event.title)
+        }
+        if events.count > shown.count {
+            facts.append(Fact(label: tr("buddy.today.more"), value: "+\(events.count - shown.count)"))
+        }
+        let token = "today"
+        viewModel.register("\(token)#calendar") {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+        }
+        let card = NookCard(
+            id: token,
+            mood: .cozy,
+            context: tr("buddy.action.today"),
+            title: events.count == 1 ? tr("buddy.today.one") : tr("buddy.today.many", events.count),
+            detail: .facts(facts),
+            primary: CardAction(label: tr("app.ok"), outcome: .dismiss),
+            secondary: CardAction(label: tr("buddy.today.openCalendar"), outcome: .callback("\(token)#calendar", "")),
+            contentHeight: 140 + CGFloat((facts.count + 1) / 2) * 44
+        )
+        viewModel.show(.card(card))
     }
 
     /// "Breathe with me", asked for: a minute of breathing along, also when no moment is showing.
@@ -161,8 +201,9 @@ extension AppModel {
         if case .moment = viewModel.state {
             viewModel.replaceMoment(moment)
         } else if !viewModel.offerMoment(moment) {
-            viewModel.show(.idle)
-            viewModel.offerMoment(moment)
+            // Asked for: also over what is showing, and while Nook keeps quiet in a meeting.
+            viewModel.show(.moment(moment))
+            viewModel.dismissMoment(moment.id, after: moment.seconds)
         }
     }
 }

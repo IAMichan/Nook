@@ -7,6 +7,8 @@ struct CardView: View {
     let onVoice: () -> Void
     var onReply: (String) -> Void = { _ in }
     var onChoose: (String, [String]) -> Void = { _, _ in }
+    /// A chat bubble's attachment was clicked: the card stays open while the file opens.
+    var onOpen: (ChatBubble) -> Void = { _ in }
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
@@ -48,6 +50,16 @@ struct CardView: View {
             Spacer(minLength: 12)
 
             if !card.offers.isEmpty { offerChips.padding(.bottom, 10) }
+
+            if let notice = card.notice, !notice.isEmpty {
+                Text(notice)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 6)
+            }
 
             if card.input { replyField.padding(.bottom, 10) }
 
@@ -119,23 +131,42 @@ struct CardView: View {
             .foregroundStyle(NookTheme.paper)
             .focused($replyFocused)
             .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
-            .onSubmit {
-                let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return }
-                reply = ""
-                onReply(text)
+            .onSubmit(submitReply)
+            // Return sends, and so does a click on the arrow once there is something to send.
+            let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            Button(action: submitReply) {
+                Image(systemName: ready ? "arrow.up.circle.fill" : "return")
+                    .font(.system(size: ready ? 18 : 11, weight: .medium))
+                    .foregroundStyle(ready ? NookTheme.mint : NookTheme.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            Image(systemName: "return")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NookTheme.textTertiary)
+            .buttonStyle(.plain)
+            .disabled(!ready)
+            .help(tr("card.send"))
+            .accessibilityLabel(tr("card.send"))
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
         .frame(height: 38)
         .background(Capsule().fill(NookTheme.field))
         .onAppear {
+            if let draft = card.draft { reply = draft }
             // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
+        .onChange(of: card.draft) { _, draft in
+            guard let draft else { return }
+            reply = draft
+            replyFocused = true
+        }
+    }
+
+    private func submitReply() {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        reply = ""
+        onReply(text)
     }
 
     @ViewBuilder
@@ -159,7 +190,7 @@ struct CardView: View {
         case .facts(let facts):
             FactsDetail(facts: facts)
         case .chat(let bubbles):
-            ChatDetail(bubbles: bubbles)
+            ChatDetail(bubbles: bubbles, onOpen: onOpen)
         }
     }
 }
@@ -190,23 +221,32 @@ private struct CardAppIcon: View {
     }
 }
 
-/// The last lines of a conversation as bubbles, oldest at the top: theirs on the left, yours on the right.
-/// More than fits scrolls, starting at the newest message.
+/// A conversation as bubbles, oldest at the top: theirs on the left, yours on the right.
+/// More than fits scrolls back through the history, starting at the newest message.
 private struct ChatDetail: View {
     let bubbles: [ChatBubble]
+    let onOpen: (ChatBubble) -> Void
 
     var body: some View {
         ViewThatFits(in: .vertical) {
             stack
-            ScrollView(showsIndicators: false) { stack }
-                .defaultScrollAnchor(.bottom)
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: true) { stack }
+                    .defaultScrollAnchor(.bottom)
+                    .onChange(of: bubbles.last?.id) { _, last in
+                        // A new message (or one you just sent) scrolls into view.
+                        guard let last else { return }
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
+                    }
+            }
         }
     }
 
     private var stack: some View {
         VStack(spacing: 5) {
             ForEach(bubbles) { bubble in
-                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id)
+                ChatBubbleView(bubble: bubble, newest: bubble.id == bubbles.last?.id) { onOpen(bubble) }
+                    .id(bubble.id)
             }
         }
         .frame(maxWidth: .infinity)
@@ -216,6 +256,7 @@ private struct ChatDetail: View {
 private struct ChatBubbleView: View {
     let bubble: ChatBubble
     let newest: Bool
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -227,13 +268,20 @@ private struct ChatBubbleView: View {
                         .foregroundStyle(NookTheme.mint)
                         .lineLimit(1)
                 }
+                if let attachment = bubble.attachment {
+                    AttachmentButton(name: attachment, action: onOpen)
+                }
                 HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    Text(bubble.text)
-                        .font(NookTheme.font(14, newest ? .medium : .regular))
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(5)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    if !bubble.text.isEmpty {
+                        Text(bubble.text)
+                            .font(NookTheme.font(14, newest ? .medium : .regular))
+                            .foregroundStyle(NookTheme.paper)
+                            .lineLimit(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
                     Text(bubble.time)
                         .font(NookTheme.font(10.5))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -248,6 +296,42 @@ private struct ChatBubbleView: View {
             )
             if !bubble.fromMe { Spacer(minLength: 70) }
         }
+    }
+}
+
+/// A file in a chat bubble: its icon and name, and a click opens it.
+private struct AttachmentButton: View {
+    let name: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(NookTheme.mint)
+                Text(name)
+                    .font(NookTheme.font(13.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 6)
+                Text(tr("card.attachment.open"))
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("card.attachment.open"))
+        .accessibilityLabel("\(tr("card.attachment.open")): \(name)")
     }
 }
 

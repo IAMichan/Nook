@@ -4,9 +4,6 @@ import SwiftUI
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    @State private var ringHovered: String?
-    // Redraws the ring when you mark a chat as finished.
-    @ObservedObject private var finishedMarks = FinishedSessions.shared
 
     var body: some View {
         let size = viewModel.size
@@ -182,7 +179,8 @@ struct NotchRootView: View {
                     onAction: { viewModel.perform($0) },
                     onVoice: { viewModel.startListening() },
                     onReply: { app.handleCardReply($0, card: card) },
-                    onChoose: { viewModel.choose($0, $1) }
+                    onChoose: { viewModel.choose($0, $1) },
+                    onOpen: { app.openCardAttachment($0, card: card) }
                 )
             }
         case .panel(let tab):
@@ -352,7 +350,7 @@ struct NotchRootView: View {
     // MARK: Nook's own moments
 
     /// A friendly moment below the notch: Nook in the moment's mood, the line, and at most one button. Clicking the
-    /// line puts it away; the button does what it says.
+    /// line does what the button says (the good morning shows today's events), or puts it away otherwise.
     private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -381,7 +379,10 @@ struct NotchRootView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentShape(Rectangle())
-                .onTapGesture { viewModel.show(.idle) }
+                .onTapGesture {
+                    // Breathing along is only started with the button: a click on the line never surprises you with it.
+                    if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
+                }
                 Spacer(minLength: 8)
                 if moment.action != nil, !moment.actionTitle.isEmpty {
                     NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
@@ -406,10 +407,8 @@ struct NotchRootView: View {
 
     // MARK: Expanded: Nook on the left, content on the right
 
-    /// Nook's size in the open panel, where he sits in the header row next to the tabs.
-    private static let panelOrbSize: CGFloat = 40
-    /// The room the header row leaves for Nook and his task ring.
-    private static var panelHeaderInset: CGFloat { panelOrbSize + 30 }
+    private static var panelOrbSize: CGFloat { PanelOrb.panelSize }
+    private static var panelHeaderInset: CGFloat { PanelOrb.headerInset }
 
     /// `ring`: the open panel shows Nook's task ring around him, in the header row so the panel's content runs the
     /// full width below him; a card keeps him in a column of his own.
@@ -450,13 +449,42 @@ struct NotchRootView: View {
 
     /// Nook in the expanded notch; tap him to go home. In the open panel the task ring circles him.
     private func expandedOrb(mood: NookMood, size: CGFloat, ring: Bool) -> some View {
+        PanelOrb(viewModel: viewModel, mood: mood, size: size, ring: ring, glow: viewModel.geometry.isFloating)
+    }
+}
+
+/// Nook in the open panel (in the notch or the main window); tap him to go home. With `ring`, the task ring circles him.
+struct PanelOrb: View {
+    /// Nook's size in the open panel, where he sits in the header row next to the tabs.
+    static let panelSize: CGFloat = 40
+    /// The room the header row leaves for Nook and his task ring.
+    static var headerInset: CGFloat { panelSize + 30 }
+
+    @ObservedObject var viewModel: NotchViewModel
+    let mood: NookMood
+    let size: CGFloat
+    var ring = true
+    var glow = false
+    /// In the main window: going home and opening a ring item stay in the window instead of opening the notch.
+    var inWindow = false
+    @EnvironmentObject private var app: AppModel
+    @State private var ringHovered: String?
+    // Redraws the ring when you mark a chat as finished.
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
+
+    var body: some View {
         // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
         let items = ring ? ringItems : []
         return Button {
             NookPresence.shared.poke()
-            viewModel.show(.panel(.nook), inNotch: true)
+            if inWindow {
+                viewModel.windowSheet = nil
+                viewModel.windowTab = .chat
+            } else {
+                viewModel.show(.panel(.nook), inNotch: true)
+            }
         } label: {
-            NookOrb(mood: mood, size: size, glow: viewModel.geometry.isFloating)
+            NookOrb(mood: mood, size: size, glow: glow)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tr("notch.goToHome"))
@@ -472,7 +500,7 @@ struct NotchRootView: View {
     }
 }
 
-extension NotchRootView {
+extension PanelOrb {
     /// What Nook's ring shows: every agent session that runs, waits or failed (and recently finished), and every Nook
     /// that works, waits for you or has news.
     fileprivate var ringItems: [TaskRingItem] {
@@ -519,7 +547,12 @@ extension NotchRootView {
         switch item.target {
         case .agent(let id):
             viewModel.selectedAgentID = id
-            viewModel.show(.panel(.agents), inNotch: true)
+            if inWindow {
+                viewModel.windowSheet = nil
+                viewModel.windowTab = .agents
+            } else {
+                viewModel.show(.panel(.agents), inNotch: true)
+            }
         case .nook(let id):
             app.openConversation(id)
         }

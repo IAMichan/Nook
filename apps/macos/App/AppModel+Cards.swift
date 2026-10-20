@@ -9,7 +9,7 @@ extension AppModel {
     /// A question that is answered as a notch card instead of in the chat (looking at the screen, thinking along).
     /// It goes through the same preparation as a chat answer (`prepareRun`): the same scoped, ledger-recorded tools,
     /// the same context, the same action checks and citations. Only the presentation differs.
-    func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?) async {
+    func runBrain(userText: String, snapshot: ScreenSnapshot?, silentIfNone: Bool, context: String?, ownRequest: Bool = false) async {
         var sources: [String] = []
         if let snapshot { sources.append(snapshot.windowTitle == "alle zichtbare vensters" ? "schermen" : snapshot.windowTitle) }
         let ledger = RetrievalLedger()
@@ -23,6 +23,7 @@ extension AppModel {
                 untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
                 untrusted: snapshot?.text,
                 tools: prepared.tools,
+                ownRequest: ownRequest,
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
@@ -61,6 +62,8 @@ extension AppModel {
             var card = planCard(plan, context: context, offers: split.offers)
             card.sources = sources
             if silentIfNone {
+                // Thinking along started before a share or meeting began: the offer is not shown now.
+                guard !quiet.silent else { return }
                 viewModel.present(card)
             } else {
                 replaceThinking(with: card)

@@ -230,6 +230,14 @@ final class AppSettings: ObservableObject {
         return "Always respond in \(name), the language of the request, even if the data or tools are in a different language."
     }
 
+    /// Prompt sentence for a request Nook writes itself (looking at the screen, thinking along). Its text is English and
+    /// not the user's, so with "auto" the language comes from the app's language instead of from that text.
+    var ownLanguageInstruction: String {
+        let code = language == "auto" ? appLanguage.rawValue : language
+        let name = Locale(identifier: "en").localizedString(forLanguageCode: code) ?? appLanguage.displayName
+        return "Always respond in \(name), the user's language, even if the screen, data or tools are in a different language."
+    }
+
     /// Prompt sentence, e.g. "Always respond in English."
     var languageInstruction: String {
         if language == "auto" { return "Respond in the language the user writes in." }
@@ -316,6 +324,22 @@ final class AppSettings: ObservableObject {
 
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
+    }
+    /// What Nook does while you share your screen (Settings › Notifications › Meetings and screen sharing).
+    @Published var quietWhileSharing: QuietBehavior {
+        didSet { UserDefaults.standard.set(quietWhileSharing.rawValue, forKey: "quietWhileSharing") }
+    }
+    /// What Nook does while you are in a meeting or call.
+    @Published var quietInMeetings: QuietBehavior {
+        didSet { UserDefaults.standard.set(quietInMeetings.rawValue, forKey: "quietInMeetings") }
+    }
+    /// An event going on in your calendar counts as a meeting, not only a call.
+    @Published var quietUseCalendar: Bool {
+        didSet { UserDefaults.standard.set(quietUseCalendar, forKey: "quietUseCalendar") }
+    }
+    /// The notch is always left out of screen sharing, screenshots and recordings, also before a share is noticed.
+    @Published var hideFromCaptures: Bool {
+        didSet { UserDefaults.standard.set(hideFromCaptures, forKey: "hideFromCaptures") }
     }
     /// Larger panel (wider and taller) for chat and agents.
     @Published var panelLarge: Bool {
@@ -527,6 +551,12 @@ final class AppSettings: ObservableObject {
         buddyTone = BuddyTone(rawValue: defaults.string(forKey: "buddyTone") ?? "") ?? .warm
         birthday = defaults.string(forKey: "birthday") ?? ""
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        quietWhileSharing = QuietBehavior(rawValue: defaults.string(forKey: "quietWhileSharing") ?? "") ?? .hideFromShare
+        // Leaving the notch out of a share is a choice for sharing only; a meeting knows normal, quiet and hide.
+        let meeting = QuietBehavior(rawValue: defaults.string(forKey: "quietInMeetings") ?? "") ?? .quiet
+        quietInMeetings = QuietBehavior.meetingChoices.contains(meeting) ? meeting : .quiet
+        quietUseCalendar = defaults.object(forKey: "quietUseCalendar") as? Bool ?? true
+        hideFromCaptures = defaults.bool(forKey: "hideFromCaptures")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true

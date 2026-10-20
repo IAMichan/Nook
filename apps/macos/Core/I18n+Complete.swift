@@ -606,7 +606,6 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.recovery.stopped": "Du hast diese Runde gestoppt.",
         "ws.sidebar.emptyFilter": "Keine Sitzungen in dieser Ansicht.",
         "ws.sidebar.noMatches": "Nichts gefunden.",
-        "ws.sidebar.pendingHelp": "Wartet auf deine Genehmigung",
         "ws.sidebar.projectHelp": "Nur Sitzungen eines Projekts anzeigen",
         "ws.sidebar.unreviewedHelp": "Änderungen, die du noch nicht geprüft hast",
         "ws.sidebar.clearSearch": "Suche löschen",

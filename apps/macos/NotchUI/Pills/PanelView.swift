@@ -2,12 +2,16 @@ import SwiftUI
 
 /// The expanded panel: Nook (home and chat in one), Agents, Workspace, and Music while something plays.
 /// Everything you do happens here; tasks such as a new session or reviewing changes open inside the panel, never in
-/// a separate window. Settings (the gear) is the one place for configuration.
+/// a separate window. Settings (the gear) is the one place for configuration. The main window shows this same panel
+/// (`inWindow`), with the window's own tab and task and more room.
 struct PanelView: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
     /// Room on the left of the header row for Nook, who sits there in the notch; the content below runs full width.
     var headerInset: CGFloat = 0
+    /// In the main window: the window's tab and task (`windowTab`, `windowSheet`), the chat gets the wider layout, the
+    /// header's empty space moves the window, and the traffic lights take the place of the close button.
+    var inWindow = false
     @EnvironmentObject private var app: AppModel
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
@@ -15,15 +19,15 @@ struct PanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let sheet = viewModel.sheet {
-                NotchSheetView(sheet: sheet, headerInset: headerInset, close: { viewModel.sheet = nil }) {
-                    viewModel.sheet = nil
-                    viewModel.show(.idle)
+            if let sheet {
+                NotchSheetView(sheet: sheet, headerInset: headerInset, close: closeSheet) {
+                    closeSheet()
+                    if !inWindow { viewModel.show(.idle) }
                 }
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
                 header
-                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: viewModel.sheet, hub: app.hub, workspace: app.workspace)
+                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
                     .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
                 content
                     .id(tab)
@@ -32,27 +36,73 @@ struct PanelView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .animation(NookTheme.swap, value: viewModel.sheet)
+        .animation(NookTheme.swap, value: sheet)
+    }
+
+    /// The task open over the tab: the notch's, or the main window's.
+    private var sheet: NotchSheet? { inWindow ? viewModel.windowSheet : viewModel.sheet }
+
+    private func closeSheet() {
+        if inWindow { viewModel.windowSheet = nil } else { viewModel.sheet = nil }
+    }
+
+    private func select(_ tab: PanelTab) {
+        if inWindow {
+            viewModel.windowSheet = nil
+            viewModel.windowTab = tab
+        } else {
+            viewModel.show(.panel(tab), inNotch: true)
+        }
+    }
+
+    /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
+    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …).
+    private var tabItems: [NookTabBar<PanelTab>.Item] {
+        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
+        let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
+        let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
+        return tabs.enumerated().map { index, value in
+            NookTabBar<PanelTab>.Item(value: value, title: value.title,
+                                      fresh: value == .chat && unread, count: value == .agents ? waiting : 0,
+                                      help: inWindow ? "\(value.title) (⌘\(index + 1))" : nil)
+        }
     }
 
     private var header: some View {
         HStack(spacing: 0) {
-            NookTabBar(items: PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music).map { NookTabBar<PanelTab>.Item(value: $0, title: $0.title) },
-                       selected: tab) { viewModel.show(.panel($0), inNotch: true) }
-            Spacer()
+            NookTabBar(items: tabItems, selected: tab) { select($0) }
+            if inWindow {
+                // Empty header space moves the window, as a title bar does.
+                Color.clear
+                    .frame(minWidth: 8, maxWidth: .infinity, minHeight: Self.headerHeight)
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+            } else {
+                Spacer()
+            }
+            // On Agents the gear sits in the footer under the session list instead.
+            let gear = tab != .agents || app.demoMode
             HStack(spacing: 2) {
                 talkButton
-                Rectangle()
-                    .fill(NookTheme.textTertiary.opacity(0.35))
-                    .frame(width: 1, height: 14)
-                    .padding(.horizontal, 6)
-                // On Agents the gear sits in the footer under the session list instead.
-                if tab != .agents || app.demoMode {
+                if gear || !inWindow {
+                    Rectangle()
+                        .fill(NookTheme.textTertiary.opacity(0.35))
+                        .frame(width: 1, height: 14)
+                        .padding(.horizontal, 6)
+                }
+                if !inWindow {
+                    // Go on in the main window, on this tab, with more room.
+                    NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
+                        .help(tr("menu.window"))
+                }
+                if gear {
                     NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
                         .help(tr("button.settings"))
                 }
-                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
-                    .help(tr("button.close"))
+                if !inWindow {
+                    NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
+                        .help(tr("button.close"))
+                }
             }
         }
         .frame(minHeight: Self.headerHeight)
@@ -80,16 +130,17 @@ struct PanelView: View {
     @ViewBuilder
     private var content: some View {
         switch tab {
-        case .nook, .chat, .connect, .shelf: NookChatTab(viewModel: viewModel)
+        case .nook, .chat, .connect, .shelf:
+            if inWindow { NookChatView(viewModel: viewModel, chat: app.chat, compact: false) } else { NookChatTab(viewModel: viewModel) }
         case .agents: AgentsTab(viewModel: viewModel)
         case .music: MusicTab()
         }
     }
 }
 
-/// A permission request that comes in while the panel (or the main window) is open: one compact bar under the tabs
-/// instead of a card over the whole notch. Hidden while the session that asks is on screen, which shows the whole
-/// request itself.
+/// A permission request or multiple-choice question that comes in while the panel (or the main window) is open: one
+/// compact bar under the tabs instead of a card over the whole notch. Hidden while the session that asks is on screen,
+/// which shows the whole request itself.
 struct PanelApprovalBar: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
@@ -130,7 +181,82 @@ struct PanelApprovalBar: View {
             .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
+        } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
+            questionBar(question, more: hub.questions.count - 1)
+        } else if let notice = viewModel.panelNotice {
+            noticeBar(notice)
         }
+    }
+
+    /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
+    private func noticeBar(_ notice: PanelNotice) -> some View {
+        HStack(spacing: 8) {
+            Text(notice.message)
+                .font(NookTheme.font(12.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .help(notice.message)
+            Spacer(minLength: 6)
+            if let action = notice.action {
+                NookPrimaryButton(title: notice.button) {
+                    viewModel.dismissPanelNotice()
+                    action()
+                }
+            }
+            NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .padding(.top, 10)
+        .transition(.opacity.combined(with: .offset(y: -4)))
+    }
+
+    /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).
+    private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "questionmark.bubble.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(NookTheme.amber)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(request.items.first?.question ?? "")
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                Text(subtitle(request, more: more))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+            .help(request.items.first?.question ?? "")
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("approval.inTerminal")) { answerInTerminal(request) }
+            NookPrimaryButton(title: tr("button.view")) {
+                viewModel.selectedAgentID = request.sessionKey
+                viewModel.show(.panel(.agents))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .padding(.top, 10)
+        .transition(.opacity.combined(with: .offset(y: -4)))
+    }
+
+    private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {
+        let line = tr("agents.question.asks", request.agentName) + " · " + request.project
+        return more > 0 ? line + " · " + tr("ws.approval.more", more) : line
+    }
+
+    private func answerInTerminal(_ request: AgentQuestionRequest) {
+        let host = hub.sessions.first { $0.id == request.sessionKey }?.hostBundleID
+        hub.answerQuestionInTerminal(request.id)
+        TerminalLauncher.activate(sessionBundleID: host)
+    }
+
+    /// The session's own view shows the whole question, with its options.
+    private func onScreen(_ request: AgentQuestionRequest) -> Bool {
+        tab == .agents && sheet == nil && viewModel.selectedAgentID == request.sessionKey
     }
 
     private func subtitle(_ approval: AgentApproval, more: Int) -> String {

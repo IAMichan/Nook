@@ -2,9 +2,10 @@
 import SwiftUI
 import Combine
 
-/// WhatsApp in the notch: a new message shows as a card with the last lines of the chat and a field to answer. What you
-/// type there goes to that chat when you press Return (your own words, your own click); "Let Nook answer" hands the
-/// chat to Nook, who proposes an answer as a plan you approve.
+/// WhatsApp in the notch: a new message shows as a card with the chat so far (it scrolls back) and a field to answer.
+/// What you type there goes to that chat when you press Return or click the arrow (your own words, your own click);
+/// a document or photo opens with a click; "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan
+/// you approve.
 extension AppModel {
     static let whatsAppCardPrefix = "whatsapp-"
 
@@ -26,13 +27,15 @@ extension AppModel {
         }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // The last lines of the chat as bubbles, the newest at the bottom; in a group each says who wrote it.
+        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. A file is a button.
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
-        let bubbles = conversation.messages.suffix(4).map { message in
-            ChatBubble(id: message.id, text: Self.whatsAppText(message), time: time.string(from: message.date),
-                       sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
-                       fromMe: message.fromMe)
+        let bubbles = conversation.messages.suffix(WAInbox.keep).map { message in
+            let file = Self.whatsAppFileLabel(message.media)
+            return ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
+                              time: time.string(from: message.date),
+                              sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
+                              fromMe: message.fromMe, attachment: file)
         }
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
         let card = NookCard(
@@ -52,39 +55,94 @@ extension AppModel {
             escape: CardAction(label: "", outcome: .dismiss)
         )
         if viewModel.hasCard(id: token) { viewModel.updateCard(card) } else { viewModel.present(card) }
+
+        // Older messages from the gateway, once per chat, so the card can scroll back further than what came in.
+        Task { @MainActor [weak self] in
+            guard await WhatsAppLink.shared.loadHistory(chat), let self, self.viewModel.hasCard(id: token) else { return }
+            self.presentWhatsApp(chat)
+        }
     }
 
-    /// Return in a WhatsApp card's field: the text goes to that chat as typed.
+    /// Return in a WhatsApp card's field: the text goes to that chat as typed. The card says it is sending; when that
+    /// fails it says why and puts the text back, so nothing typed is lost.
     func replyWhatsApp(_ text: String, chat: String) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }
+        let token = Self.whatsAppCardPrefix + chat
+        editShownCard(token) { $0.notice = tr("whatsapp.card.sending"); $0.draft = nil }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let name = try await WhatsAppLink.shared.send(reply, to: chat)
                 self.store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
-                self.viewModel.dismissCard(id: Self.whatsAppCardPrefix + chat)
+                self.viewModel.dismissCard(id: token)
                 self.viewModel.finish(tr("whatsapp.sent", name))
             } catch {
-                self.viewModel.present(self.errorCard(error.localizedDescription))
+                let shown = self.editShownCard(token) {
+                    $0.notice = tr("whatsapp.card.notSent", error.localizedDescription)
+                    $0.draft = reply
+                }
+                if !shown { self.viewModel.present(self.errorCard(error.localizedDescription)) }
             }
         }
     }
 
-    /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
-    /// characters per line and at most 5 lines; what does not fit in the bubbles' maximum height scrolls.
-    static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
-        let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38
-        let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
-            let lines = min(5, max(1, (bubble.text.count + 47) / 48))
-            return total + 16 + CGFloat(lines) * 18 + (bubble.sender.isEmpty ? 0 : 16) + 5
+    /// A click on a file in a card's chat bubble: for WhatsApp, the file is fetched from the gateway and opens in the
+    /// app the Mac uses for it. The card stays open and says what happens.
+    func openCardAttachment(_ bubble: ChatBubble, card: NookCard) {
+        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return }
+        let chat = String(card.id.dropFirst(Self.whatsAppCardPrefix.count))
+        editShownCard(card.id) { $0.notice = tr("whatsapp.file.opening", bubble.attachment ?? "") }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await WhatsAppLink.shared.download(message: bubble.id, chat: chat)
+                guard NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
+                self.editShownCard(card.id) { $0.notice = nil }
+            } catch {
+                let shown = self.editShownCard(card.id) { $0.notice = error.localizedDescription }
+                if !shown { self.viewModel.present(self.errorCard(error.localizedDescription)) }
+            }
         }
-        return chrome + min(stack, 230)
+    }
+
+    /// Changes the card on screen in place, if it is still the one with this id. False when it is gone.
+    @discardableResult
+    func editShownCard(_ id: String, _ change: (inout NookCard) -> Void) -> Bool {
+        guard case .card(var card) = viewModel.state, card.id == id else { return false }
+        change(&card)
+        viewModel.updateCard(card)
+        return true
+    }
+
+    /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
+    /// characters per line and at most 5 lines, a file adds a row; what does not fit in the bubbles' maximum height
+    /// scrolls.
+    static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
+        let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
+        let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
+            let lines = bubble.text.isEmpty ? 0 : min(5, max(1, (bubble.text.count + 47) / 48))
+            let file: CGFloat = bubble.attachment == nil ? 0 : 40
+            return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
+                + (bubble.sender.isEmpty ? 0 : 16) + 5
+        }
+        return chrome + min(stack, 260)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
         [WhatsAppRecipients.label(message.media), message.text.isEmpty ? nil : message.text]
             .compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// What a bubble calls a file that can be opened: a document by its name, anything else by its kind.
+    static func whatsAppFileLabel(_ media: WAMedia) -> String? {
+        switch media {
+        case .document(let name): return name ?? tr("whatsapp.file.document")
+        case .image: return tr("whatsapp.file.photo")
+        case .video: return tr("whatsapp.file.video")
+        case .audio, .voice: return tr("whatsapp.file.voice")
+        default: return nil
+        }
     }
 }
 
@@ -193,7 +251,7 @@ extension AppModel {
             if !note.todos.isEmpty { message.offers = [tr("notes.offer.reminders"), tr("notes.offer.mail")] }
         }
         chat.append(message, to: conversation)
-        viewModel.finish(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
+        viewModel.notify(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
     }
 }
 

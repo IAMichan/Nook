@@ -11,6 +11,8 @@ struct NookTabBar<Value: Hashable>: View {
         var symbol: String? = nil
         /// A small dot after the title when the tab has something you have not looked at yet.
         var fresh = false
+        /// How many things on the tab wait for you, such as agents asking for approval: a small amber count.
+        var count = 0
         var help: String? = nil
         var id: Value { value }
     }
@@ -33,7 +35,16 @@ struct NookTabBar<Value: Hashable>: View {
                     HStack(spacing: 5) {
                         if let symbol = item.symbol { Image(systemName: symbol).font(.system(size: 11, weight: .medium)) }
                         Text(item.title).lineLimit(1)
-                        if item.fresh { Circle().fill(NookTheme.iris).frame(width: 5, height: 5) }
+                        if item.count > 0 {
+                            Text("\(item.count)")
+                                .font(NookTheme.font(10, .bold))
+                                .foregroundStyle(NookTheme.ink)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(Capsule().fill(NookTheme.amber))
+                        } else if item.fresh {
+                            Circle().fill(NookTheme.iris).frame(width: 5, height: 5)
+                        }
                         // Room for the cross, so a tab keeps its width when the cross appears.
                         if closable { Color.clear.frame(width: 12, height: 12) }
                     }
@@ -53,7 +64,7 @@ struct NookTabBar<Value: Hashable>: View {
                 }
                 .buttonStyle(.plain)
                 .help(item.help ?? "")
-                .accessibilityLabel(item.title)
+                .accessibilityLabel(item.count > 0 ? item.title + ", \(item.count)" : item.title)
                 .accessibilityAddTraits(item.value == selected ? .isSelected : [])
                 .overlay(alignment: .trailing) {
                     if let onClose, item.value == selected || hovered == item.value {

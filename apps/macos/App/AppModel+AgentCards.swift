@@ -106,7 +106,8 @@ extension AppModel {
             urgent: true
         )
         if index == 0 {
-            viewModel.presentUrgent(card)
+            // An open panel stays: it asks in its own compact bar (see `PanelApprovalBar`).
+            viewModel.presentUrgent(card, keepPanel: true)
             NookSound.play(.attention)
         } else {
             viewModel.show(.card(card))
@@ -133,6 +134,8 @@ extension AppModel {
             if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
             buddyAgentFinished(last: !others)
         }
+        // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, no card pops up.
+        guard !quiet.silent else { return }
         switch viewModel.state {
         case .idle, .music, .track, .done, .nudge, .moment: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break

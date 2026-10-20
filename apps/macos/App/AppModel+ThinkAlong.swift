@@ -33,7 +33,8 @@ extension AppModel {
                     userText: "This is what the user currently has on screen. Do you see anything you can help with, such as an event, a commitment, or a task? Propose an appropriate action. If nothing relevant: NONE.",
                     snapshot: snapshot,
                     silentIfNone: !manual,
-                    context: tr("app.look.saw", snapshot.appName)
+                    context: tr("app.look.saw", snapshot.appName),
+                    ownRequest: true
                 )
             } catch {
                 if manual { replaceThinking(with: errorCard(error.localizedDescription)) }
@@ -47,7 +48,8 @@ extension AppModel {
 
     /// When actively working, Nook evaluates screen context and offers assistance when genuinely helpful.
     func thinkAlongTick() {
-        guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode,
+        // Not while you share your screen or sit in a meeting and chose quiet for it.
+        guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode, !quiet.silent,
               !settings.privateSources.contains(SourceCatalog.screen),
               ScreenAccess.isUsable, viewModel.state.isResting else { return }
         // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy. With the
@@ -96,7 +98,7 @@ extension AppModel {
         Form: when you take something over, call the tool right away and start your text with one short question of at most \
         ten words that names the concrete thing (the person, subject or date), followed by at most one sentence on why now. \
         A tip starts with "Tip:", names the concrete thing on screen, and is never combined with a question. \
-        Write in the user's language. When in doubt, answer only NONE.
+        \(settings.ownLanguageInstruction) When in doubt, answer only NONE.
         """
         let earlier = thinkAlong.recentOffers
         if !earlier.isEmpty {
@@ -110,7 +112,8 @@ extension AppModel {
             context: prepared.context,
             untrustedLabel: "\(snapshot.appName) — \(snapshot.windowTitle)",
             untrusted: snapshot.text,
-            tools: prepared.tools
+            tools: prepared.tools,
+            ownRequest: true
         ) else { return }
         plan.actions = plan.actions.compactMap { action in
             guard let spec = prepared.tools.first(where: { $0.name == action.tool }) ?? allTools.first(where: { $0.name == action.tool }) else { return nil }

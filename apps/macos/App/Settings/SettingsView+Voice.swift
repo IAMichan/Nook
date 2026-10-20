@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 
 /// Settings › Dictation and voice: dictating anywhere, speech recognition, reading aloud and "Hey Nook".
-/// Settings › Notifications and sound: agent sounds and what the iPhone is told.
+/// Settings › Notifications and sound: agent sounds, how Nook behaves in meetings and while you share your screen, and
+/// what the iPhone is told.
 extension SettingsView {
     // MARK: Dictation and voice
 
@@ -36,6 +37,7 @@ extension SettingsView {
             } footer: {
                 Text(tr("settings.voice.customSoundsHint"))
             }
+            quietSection
             Section {
                 Button { app.settingsSection = .devices } label: {
                     HStack(spacing: 12) {
@@ -56,6 +58,32 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.notifications.iphone"))
             }
+        }
+    }
+
+    // MARK: Meetings and screen sharing
+
+    var quietSection: some View {
+        Section {
+            Picker(selection: $settings.quietWhileSharing) {
+                ForEach(QuietBehavior.allCases) { Text(tr($0.titleKey)).tag($0) }
+            } label: {
+                SettingLabel(tr("quiet.sharing"), detail: tr("quiet.sharingDetail"))
+            }
+            Picker(selection: $settings.quietInMeetings) {
+                ForEach(QuietBehavior.meetingChoices) { Text(tr($0.titleKey)).tag($0) }
+            } label: {
+                SettingLabel(tr("quiet.meeting"), detail: tr("quiet.meetingDetail"))
+            }
+            SettingToggle(tr("quiet.useCalendar"), detail: tr("quiet.useCalendarDetail"), isOn: $settings.quietUseCalendar)
+            SettingToggle(tr("quiet.hideFromCaptures"), detail: tr("quiet.hideFromCapturesDetail"), isOn: $settings.hideFromCaptures)
+            LabeledContent(tr("quiet.now")) {
+                Text(app.quietStatusText).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(tr("quiet.title"))
+        } footer: {
+            Text(tr("quiet.footer"))
         }
     }
 }

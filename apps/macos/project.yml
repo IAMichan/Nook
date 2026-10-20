@@ -167,6 +167,7 @@ targets:
       - path: Core/NookLook.swift
       - path: Core/NookOutfit.swift
       - path: Services/BuddyMoments.swift
+      - path: Services/QuietMode.swift
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
       - path: Services/ResumedConversations.swift
