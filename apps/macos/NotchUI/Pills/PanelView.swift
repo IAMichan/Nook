@@ -132,7 +132,33 @@ struct PanelApprovalBar: View {
             .transition(.opacity.combined(with: .offset(y: -4)))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
+        } else if let notice = viewModel.panelNotice {
+            noticeBar(notice)
         }
+    }
+
+    /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
+    private func noticeBar(_ notice: PanelNotice) -> some View {
+        HStack(spacing: 8) {
+            Text(notice.message)
+                .font(NookTheme.font(12.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .help(notice.message)
+            Spacer(minLength: 6)
+            if let action = notice.action {
+                NookPrimaryButton(title: notice.button) {
+                    viewModel.dismissPanelNotice()
+                    action()
+                }
+            }
+            NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .padding(.top, 10)
+        .transition(.opacity.combined(with: .offset(y: -4)))
     }
 
     /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).

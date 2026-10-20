@@ -198,7 +198,7 @@ extension AppModel {
            viewModel.sessionTool == .conversation { return }
         NookSound.play(.attention)
         let runID = run.id
-        viewModel.finish(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
+        viewModel.notify(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
             self?.openWorkspace(run: runID)
         }
     }

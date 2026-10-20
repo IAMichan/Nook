@@ -7,6 +7,8 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
     @Published private(set) var pointerInside = false
+    /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
+    @Published private(set) var panelNotice: PanelNotice?
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }
@@ -348,6 +350,25 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A notice Nook gives by himself (not in reply to what you just did): like `finish`, but an open panel stays and
+    /// shows it in a compact bar (see `PanelApprovalBar`) instead of being replaced and then closed.
+    func notify(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {
+        guard case .panel = state else {
+            finish(message, button: button, action: action)
+            return
+        }
+        let notice = PanelNotice(message: message, button: button, action: action)
+        panelNotice = notice
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if self?.panelNotice?.id == notice.id { self?.panelNotice = nil }
+        }
+    }
+
+    func dismissPanelNotice() {
+        panelNotice = nil
+    }
+
     /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
     func announce(_ info: NowPlayingInfo) {
         if let onAnnounce {
@@ -628,4 +649,12 @@ final class NotchViewModel: ObservableObject {
         case .music, .shelf: return .rest
         }
     }
+}
+
+/// A notice shown in the open panel's bar; see `NotchViewModel.notify`.
+struct PanelNotice: Identifiable {
+    let id = UUID()
+    let message: String
+    let button: String
+    let action: (() -> Void)?
 }

@@ -193,7 +193,7 @@ extension AppModel {
             if !note.todos.isEmpty { message.offers = [tr("notes.offer.reminders"), tr("notes.offer.mail")] }
         }
         chat.append(message, to: conversation)
-        viewModel.finish(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
+        viewModel.notify(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
     }
 }
 
