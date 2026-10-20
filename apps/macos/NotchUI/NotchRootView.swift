@@ -271,7 +271,7 @@ struct NotchRootView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: viewModel.doneTone.symbol)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: viewModel.doneTone == .waiting ? 14 : 12, weight: .bold))
                     .foregroundStyle(viewModel.doneTone.color)
                 Text(message)
                     .font(NookTheme.font(13.5, .medium))

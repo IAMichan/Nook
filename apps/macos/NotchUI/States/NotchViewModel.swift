@@ -732,7 +732,7 @@ enum DoneTone: Equatable {
     var symbol: String {
         switch self {
         case .done: return "checkmark"
-        case .waiting: return "hourglass"
+        case .waiting: return "ellipsis.bubble.fill"
         case .failed: return "exclamationmark"
         }
     }
