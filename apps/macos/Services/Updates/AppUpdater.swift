@@ -131,11 +131,7 @@ final class AppUpdater: ObservableObject {
 
     /// Fetches main and works out what is new. Never while installing; quiet when it fails (a later check tries again).
     func check() {
-        guard let source, !checking else { return }
-        switch phase {
-        case .installing, .readyToRestart, .readyToBuildInXcode, .unavailable: return
-        default: break
-        }
+        guard let source, !checking, !isBusy, phase != .unavailable else { return }
         checking = true
         if available == nil, !isFailed { phase = .checking }
         Task { @MainActor in
@@ -154,11 +150,12 @@ final class AppUpdater: ObservableObject {
                 if update?.target != available?.target { seen = false }
                 available = update
                 if update != nil, receipt != nil { receipt = nil }
-                // A failed install keeps its message until you try again or close it.
-                if !isFailed { phase = update == nil ? .upToDate : .available }
+                // A failed install keeps its message until you try again or close it, and an install you started
+                // while this check ran keeps its steps.
+                if !isFailed, !isBusy { phase = update == nil ? .upToDate : .available }
             case .failure(let error):
                 checkProblem = error.localizedDescription
-                if !isFailed { phase = available == nil ? .idle : .available }
+                if !isFailed, !isBusy { phase = available == nil ? .idle : .available }
             }
         }
     }
@@ -166,6 +163,14 @@ final class AppUpdater: ObservableObject {
     private var isFailed: Bool {
         if case .failed = phase { return true }
         return false
+    }
+
+    /// An install runs or waits for its restart (or build in Xcode): a check must not take the phase back.
+    private var isBusy: Bool {
+        switch phase {
+        case .installing, .readyToRestart, .readyToBuildInXcode: return true
+        default: return installation != nil
+        }
     }
 
     /// Reads the checkout off the main thread. Nil when main has nothing this build lacks.
