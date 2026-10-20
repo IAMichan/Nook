@@ -369,24 +369,13 @@ enum NookAccessoryArt {
 
     // MARK: Party hat
 
-    /// A striped cardboard cone with a gold rim, a tinsel pom-pom and an elastic under his chin.
+    /// A striped cardboard cone with a gold rim and a tinsel pom-pom.
     private static func drawPartyHat(_ base: GraphicsContext, _ head: Head) {
         let R = head.R
         let shift = head.hatShift
         var shadowPath = Path()
         shadowPath.addEllipse(in: CGRect(x: -R * 0.62 + shift.width, y: -R * 0.82 + shift.height, width: R * 1.3, height: R * 0.24))
         castShadow(base, head, shadowPath, opacity: 0.35, blur: 0.06)
-
-        // The elastic, from the rim down along his cheeks to under his chin.
-        var elastic = base
-        elastic.translateBy(x: shift.width * 0.5, y: 0)
-        for side in [-1, 1] as [CGFloat] {
-            var band = Path()
-            band.move(to: CGPoint(x: side * R * 0.5, y: -R * 0.74))
-            band.addCurve(to: CGPoint(x: side * R * 0.25, y: R * 0.96),
-                          control1: CGPoint(x: side * R * 1.0, y: -R * 0.3), control2: CGPoint(x: side * R * 0.9, y: R * 0.7))
-            elastic.stroke(band, with: .color(Color.white.opacity(0.55)), style: StrokeStyle(lineWidth: head.line(0.02, minimum: 0.35), lineCap: .round))
-        }
 
         var ctx = base
         ctx.translateBy(x: shift.width, y: shift.height)
@@ -633,7 +622,7 @@ enum NookAccessoryArt {
         castShadow(base, head, shadowPath, opacity: 0.4, blur: 0.08)
 
         var ctx = base
-        ctx.translateBy(x: shift.width + R * 0.1, y: shift.height - R * 0.9)
+        ctx.translateBy(x: shift.width + R * 0.1, y: shift.height - R * 0.8)
         ctx.rotate(by: .radians(-0.2 + Double(head.yaw) * 0.12))
         let felt = Color(hex: 0xB32B45), light = Color(hex: 0xE05A70), deep = Color(hex: 0x5E1020)
 
@@ -709,7 +698,7 @@ enum NookAccessoryArt {
                 var streak = Path()
                 streak.move(to: CGPoint(x: c.x + (offset - 0.6) * r, y: c.y + r))
                 streak.addLine(to: CGPoint(x: c.x + (offset + 0.6) * r, y: c.y - r))
-                reflect.stroke(streak, with: .color(Color.white.opacity(0.32)), style: StrokeStyle(lineWidth: w * r))
+                reflect.stroke(streak, with: .color(Color.white.opacity(0.16)), style: StrokeStyle(lineWidth: w * r))
             }
         }
         let metal = GraphicsContext.Shading.linearGradient(
