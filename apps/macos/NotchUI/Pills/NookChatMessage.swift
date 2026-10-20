@@ -58,8 +58,8 @@ struct ChatMessageView: View, Equatable {
                 .id(mail.id)
             }
 
-            if !message.notices.isEmpty && !message.streaming {
-                NoticeList(notices: message.notices)
+            if !message.streaming && !message.visibleNotices.isEmpty {
+                NoticeList(notices: message.visibleNotices)
             }
 
             // Where Nook looked, folded away until you want to see it; a source that failed opens it.
