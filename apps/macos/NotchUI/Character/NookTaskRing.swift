@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// One piece of the ring around Nook: an agent session or a Nook that works for you.
+/// One piece of the ring around Nook: an agent session, a Nook that works for you, or (only in the closed notch, when
+/// nothing is running) something on today.
 struct TaskRingItem: Identifiable, Equatable {
-    enum Kind: Equatable { case running, waiting, failed, done }
-    enum Target: Equatable { case agent(String), nook(UUID) }
+    enum Kind: Equatable { case running, waiting, failed, done, today }
+    enum Target: Equatable { case agent(String), nook(UUID), panel }
 
     let id: String
     let title: String
@@ -19,6 +20,7 @@ struct TaskRingItem: Identifiable, Equatable {
         case .waiting: return NookTheme.amber
         case .failed: return NookTheme.coral
         case .done: return NookTheme.mint
+        case .today: return NookTheme.textTertiary
         }
     }
 }
@@ -162,7 +164,8 @@ struct NookTaskRing: View {
 }
 
 /// The task ring in the closed notch: the same pieces and colors as in the open panel, thin and close around Nook, so
-/// what is running or waiting reads the same whether the notch is open or closed. It only shows; a click on the notch
+/// what is running or waiting reads the same whether the notch is open or closed. When nothing runs, it quietly shows
+/// one grey piece per thing on today instead of a number. It only shows; a click on the notch
 /// opens the panel, where the full ring can be pointed at and clicked.
 struct NookTaskRingCompact: View {
     let items: [TaskRingItem]
@@ -201,7 +204,7 @@ struct NookTaskRingCompact: View {
         return ZStack {
             Circle()
                 .trim(from: span.start, to: span.end)
-                .stroke(item.color.opacity(item.state == .running ? 0.3 : pulse), style: style)
+                .stroke(item.color.opacity(item.state == .running ? 0.3 : item.state == .today ? 0.55 : pulse), style: style)
             if item.state == .running {
                 let length = min(7 / (2 * .pi * radius), (span.end - span.start) * 0.35)
                 let phase = reduceMotion ? 0.5 : (1 - cos((t * 0.45 + Double(span.start)) * 2 * .pi)) / 2

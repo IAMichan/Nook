@@ -88,8 +88,7 @@ struct NotchRootView: View {
 
     // MARK: Floating and idle: just Nook
 
-    /// Nook without a bar. A dot top-right when something is waiting; visibly thinking, in a thin task ring, while work is
-    /// running.
+    /// Nook without a bar, in the same thin ring as the closed notch: what runs, waits for you or is on today.
     private var bareOrb: some View {
         let active = app.activeAgents
         let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
@@ -105,29 +104,16 @@ struct NotchRootView: View {
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
                        frameRate: viewModel.pointerInside ? 30 : 12)
             .background {
-                let ring = busyRingItems
+                let ring = closedRingItems
                 if !ring.isEmpty { NookTaskRingCompact(items: ring, orbSize: 28, maxSide: side) }
             }
             .frame(width: side, height: side)
-            .overlay(alignment: .topTrailing) { bareBadge }
             .contentShape(Circle())
             .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
             .floatingDrag(viewModel)
             .accessibilityElement()
             .accessibilityLabel("Nook")
             .accessibilityAddTraits(.isButton)
-    }
-
-    /// Small dot next to the orb: amber when something is waiting for you, otherwise nothing.
-    @ViewBuilder
-    private var bareBadge: some View {
-        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
-        if waiting > 0 {
-            Circle()
-                .fill(NookTheme.amber)
-                .frame(width: 9, height: 9)
-                .padding(4)
-        }
     }
 
     @ViewBuilder
@@ -138,16 +124,16 @@ struct NotchRootView: View {
             if !active.isEmpty {
                 // An agent is working: Nook is thinking along inside a thin ring, one piece per session, like in the panel.
                 let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: busyRingItems) {
-                    idleBadge
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: closedRingItems) {
+                    EmptyView()
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
                 .floatingDrag(viewModel)
             } else if app.chat.anyBusy {
                 // A Nook is working on something in the background: visibly thinking along.
-                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: busyRingItems) {
-                    idleBadge
+                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: closedRingItems) {
+                    EmptyView()
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
@@ -155,8 +141,8 @@ struct NotchRootView: View {
             } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
             } else {
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, orbInset: 3) {
-                    idleBadge
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, orbInset: 3, ring: closedRingItems) {
+                    EmptyView()
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
@@ -196,27 +182,6 @@ struct NotchRootView: View {
     }
 
     // MARK: Idle and Music: Nook left of the notch, something compact on the right
-
-    /// On the right when idle: amber if an agent is waiting; otherwise, quietly, how many things are on today.
-    @ViewBuilder
-    private var idleBadge: some View {
-        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
-        // Built from every source and session: worked out once per redraw.
-        let today = waiting > 0 ? 0 : app.todayItems.count
-        if waiting > 0 {
-            HStack(spacing: 4) {
-                Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
-                Text("\(waiting)")
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.amber)
-            }
-        } else if today > 0 {
-            // Calm: what is on today is information, not an alarm. Amber is kept for things that wait for you.
-            Text("\(today)")
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
-        }
-    }
 
     private func wings<Right: View>(
         nh: CGFloat,
@@ -510,9 +475,21 @@ struct PanelOrb: View {
 }
 
 extension NotchRootView {
-    /// The closed notch's ring: only what is running or waiting for you. What finished or failed waits in the open panel.
-    fileprivate var busyRingItems: [TaskRingItem] {
-        TaskRingItem.all(app: app).filter { $0.state == .running || $0.state == .waiting }
+    /// The closed notch's ring: what is running or waiting for you, with an amber piece for anything else that waits
+    /// (an approval or a session the ring does not list). What finished or failed waits in the open panel. When nothing
+    /// runs or waits, it quietly shows what is on today, one grey piece each, instead of a number.
+    fileprivate var closedRingItems: [TaskRingItem] {
+        var items = TaskRingItem.all(app: app).filter { $0.state == .running || $0.state == .waiting }
+        let waiting = app.hub.approvals.count + app.agentSessions.filter { $0.status == .waiting && $0.approvalID == nil }.count
+        let shown = items.filter { $0.state == .waiting }.count
+        for i in 0..<max(0, min(waiting, 8) - shown) {
+            items.append(TaskRingItem(id: "waiting-\(i)", title: AgentStatus.waiting.label, detail: "", state: .waiting, target: .panel))
+        }
+        guard items.isEmpty else { return Array(items.prefix(8)) }
+        // Built from every source and session: only worked out when nothing else fills the ring.
+        return app.todayItems.prefix(8).map {
+            TaskRingItem(id: "today-\($0.id)", title: $0.title, detail: $0.subtitle, state: .today, target: .panel)
+        }
     }
 }
 
@@ -576,6 +553,8 @@ extension PanelOrb {
             }
         case .nook(let id):
             app.openConversation(id)
+        case .panel:
+            break   // only in the closed notch, which opens the panel itself
         }
     }
 }
