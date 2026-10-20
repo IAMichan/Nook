@@ -103,4 +103,18 @@ final class PullRequestFilterTests: XCTestCase {
         filter.scope = .mine
         XCTAssertEqual(filter.apply(account).watched, [])
     }
+
+    func testGroupsByRepository() {
+        var account = AccountPullRequests(id: "github", name: "Work", login: "ada",
+                                          mine: [item(1, "Mine", repo: "acme/web"), item(2, "Also mine", repo: "acme/app")],
+                                          reviews: [item(3, "Theirs", repo: "acme/app", author: "bob")], error: nil)
+        // Watched lists can repeat a pull request that is also yours: it shows once, as yours.
+        account.watched = [item(4, "Team", repo: "acme/web", author: "cleo"), item(1, "Mine", repo: "acme/web")]
+        let groups = account.byRepo
+        XCTAssertEqual(groups.map(\.repo), ["acme/app", "acme/web"])
+        XCTAssertEqual(groups[0].rows.map(\.item.number), [3, 2])
+        XCTAssertEqual(groups[0].rows.map(\.role), [.review, .mine])
+        XCTAssertEqual(groups[1].rows.map(\.item.number), [1, 4])
+        XCTAssertEqual(groups[1].rows.map(\.role), [.mine, .watched])
+    }
 }
