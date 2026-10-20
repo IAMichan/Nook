@@ -2,18 +2,22 @@
 
 [![Build](https://github.com/IAMichan/nook/actions/workflows/build.yml/badge.svg)](https://github.com/IAMichan/nook/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tauri](https://github.com/IAMichan/nook/actions/workflows/tauri.yml/badge.svg)](https://github.com/IAMichan/nook/actions/workflows/tauri.yml)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
-![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-MLX-orange)
+![iOS](https://img.shields.io/badge/iOS-Companion-lightgrey)
+![Windows](https://img.shields.io/badge/Windows-early-0078D6)
+![Linux](https://img.shields.io/badge/Linux-early-FCC624)
+![Android](https://img.shields.io/badge/Android-early-3DDC84)
 ![Local-First](https://img.shields.io/badge/AI-Local--First-2ea44f)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/IAMichan/Nook?utm_source=oss&utm_medium=github&utm_campaign=IAMichan%2FNook&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![Stars](https://img.shields.io/github/stars/IAMichan/nook?style=social)](https://github.com/IAMichan/nook/stargazers)
 
-**Your personal AI assistant and coding-agent command center in the MacBook notch.**
+**Your personal AI assistant and coding-agent command center — in the MacBook notch, at the top of your Windows or Linux screen, and on your phone.**
 
-Nook lives quietly in the notch of your Mac (or floats anywhere on any display). It keeps the text of every window across all displays updated locally via on-device OCR, so any question is answered immediately with what you are looking at—combined with your Calendar, Reminders, Mail, browser tabs, local files, and connected services (**GitHub, Notion, Linear, Stripe, Vercel, Sentry, Cal.com, n8n, Resend, WhatsApp**, custom APIs/webhooks, and **MCP servers**).
+Nook lives quietly in the notch of your Mac, in a bar at the top of your screen on Windows and Linux (or floats anywhere on any display), and comes along on your iPhone and Android phone. It keeps the text of every window up to date locally via on-device OCR, so any question is answered immediately with what you are looking at—combined with your Calendar, Reminders, Mail, browser tabs, local files, and connected services (**GitHub, Notion, Linear, Stripe, Vercel, Sentry, Cal.com, n8n, Resend, WhatsApp**, custom APIs/webhooks, and **MCP servers**).
 
-By default, Nook runs **100% locally on your Mac** (via built-in MLX models, Apple Foundation Models, Ollama, or LM Studio) at zero cost per query, or connects to external cloud models when you explicitly choose (**Claude, OpenAI, Google Gemini, Grok / xAI, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Claude Code**). It also monitors and orchestrates your **coding agents** (**Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, Hermes**, or any custom agent), complete with live diffs, inline approvals, isolated Git worktrees, a built-in terminal and browser, system-wide inline autocomplete, push-to-talk dictation, call note-taking, and media controls.
+By default, Nook runs **100% locally on your own computer** (on a Mac via built-in MLX models, Apple Foundation Models, Ollama, or LM Studio; on Windows and Linux via Ollama or LM Studio) at zero cost per query, or connects to external cloud models when you explicitly choose (**Claude, OpenAI, Google Gemini, Grok / xAI, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Claude Code**). It also monitors and orchestrates your **coding agents** (**Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, Hermes**, or any custom agent), complete with live diffs, inline approvals, isolated Git worktrees, a built-in terminal and browser, system-wide inline autocomplete, push-to-talk dictation, call note-taking, and media controls.
 
 **Nothing runs, sends, or modifies files without your explicit approval.**
 
@@ -21,10 +25,11 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 
 ## Why Nook?
 
-- **Local-first and private.** The default brain runs on your Mac. Cloud models are opt-in, per source, and never get data you marked *Only on this Mac*.
+- **Local-first and private.** The default brain runs on your own computer. Cloud models are opt-in, per source, and never get data you marked *Only on this Mac*.
 - **Always has context.** Live on-device OCR plus Calendar, Mail, Reminders, browser tabs, files, and your connected services, so you don't have to paste anything.
 - **One place for your coding agents.** See what every agent is doing, review diffs, and approve tool calls from the notch instead of hunting through terminals.
 - **You stay in control.** Every side effect goes through an approval card and is written to a local audit log.
+- **One Nook on every platform.** A native macOS app, an iPhone companion, and one Tauri app for Windows, Linux, and Android that follows the Mac app's names and behavior.
 - **Open source (MIT).** Built to be read, hacked on, and translated.
 
 > [!NOTE]
@@ -32,14 +37,15 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 >
 > **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (`Settings › General › App language`).
 >
-> **Platform status:** macOS is the primary, most complete app. The iPhone companion and the Tauri app (Windows, Linux, Android) are in earlier stages.
+> **Platform status:** macOS is the primary, most complete app and the specification the other apps follow. The iPhone companion and the Tauri app for Windows, Linux, and Android are in earlier stages; see [Platforms](#platforms).
 >
-> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Nook for **Windows, Linux, and Android** is a single Tauri app in [`apps/tauri`](apps/tauri) (Rust core, Svelte UI); see [`docs/TAURI.md`](docs/TAURI.md) for what has been ported so far (its interface is Dutch-only for now). Shared protocol and core packages live in [`packages/`](packages) (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
+> **Monorepo:** The macOS app lives in [`apps/macos`](apps/macos) and the iPhone companion app in [`apps/ios`](apps/ios). Nook for **Windows, Linux, and Android** is a single Tauri app in [`apps/tauri`](apps/tauri) (Rust core, Svelte UI). Shared protocol and core packages live in [`packages/`](packages) (see [`docs/MONOREPO.md`](docs/MONOREPO.md)).
 
 ---
 
 ## Table of Contents
 
+- [Platforms](#platforms)
 - [Highlights](#highlights)
   - [Personal Assistant & Screen Context](#personal-assistant--screen-context)
   - [Coding Agents & Workspace](#coding-agents--workspace)
@@ -47,6 +53,10 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
   - [System-Wide Autocomplete, Dictation, Notes & Media](#system-wide-autocomplete-dictation-notes--media)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+  - [macOS](#macos)
+  - [Windows & Linux](#windows--linux)
+  - [Android](#android)
+  - [iPhone Companion](#iphone-companion)
   - [First Launch & Onboarding](#first-launch--onboarding)
   - [Navigating Nook](#navigating-nook)
 - [Local Brain Quality & Evaluation](#local-brain-quality--evaluation)
@@ -60,7 +70,41 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 
 ---
 
+## Platforms
+
+| Platform | App | Where | Status |
+|---|---|---|---|
+| **macOS 15+** | Native app (Swift, SwiftUI/AppKit) in the notch or floating | [`apps/macos`](apps/macos) | Primary, most complete |
+| **iPhone** | **Nook Companion**: follow and approve your coding agents | [`apps/ios`](apps/ios) | Companion for Nook on Mac, Windows, or Linux |
+| **Windows** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys | [`apps/tauri`](apps/tauri) | Early: compiles in CI, not yet run on a real Windows PC |
+| **Linux** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys (X11) | [`apps/tauri`](apps/tauri) | Early: tested in the app |
+| **Android** | Tauri app: Nooks, chat, settings, and the phone side of the Companion | [`apps/tauri`](apps/tauri) | Early: APK built in CI only |
+
+What the Tauri app can do differs per platform:
+
+| | Windows | Linux | Android |
+|---|---|---|---|
+| Bar at the top of the screen ("notch"), or floating | ✓ | ✓ | — (full screen) |
+| Main window with Nooks, chat, and settings | ✓ | ✓ | ✓ |
+| Tray and global hotkeys | ✓ | ✓ (X11; no global hotkeys on Wayland) | — |
+| Secrets | Credential Manager | Secret Service (GNOME Keyring, KWallet) | Private app folder |
+| Brains: Ollama, LM Studio, Claude, OpenAI, Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot | ✓ | ✓ | ✓ (local via a server on your network) |
+| Claude Code as a brain, coding agents, terminals, git | ✓ | ✓ | — (approve via the Companion) |
+| GitHub, GitLab, calendars (ICS), Cal.com, Notion, Stripe, Vercel, n8n, Resend, MCP, WhatsApp | ✓ | ✓ | ✓ (no `stdio` MCP) |
+| Screen reading, Look Along, Think Along | ✓ (UI Automation, OCR) | ✓ (AT-SPI, tesseract) | — |
+| Music | ✓ (Windows media controls) | ✓ (MPRIS) | — |
+| Talk and read aloud | ✓ | ✓ (whisper.cpp or a chosen service; espeak-ng) | — |
+| "Hey Nook" | ✓ | — | — |
+| Flow dictation and Call Notetaker | ✓ | ✓ (X11; system audio via PulseAudio/PipeWire) | — |
+| Companion | Server for the iPhone app | Server for the iPhone app | Phone side |
+
+Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calendar, Reminders, Mail, and Notes) stay on the Mac. [`docs/TAURI.md`](docs/TAURI.md) tracks, part by part, what has been ported from the Mac so far. The Tauri app's interface is Dutch-only for now.
+
+---
+
 ## Highlights
+
+> The tables below describe the macOS app, which has every feature. See [Platforms](#platforms) for what is available on Windows, Linux, Android, and iPhone.
 
 ### Personal Assistant & Screen Context
 
@@ -90,7 +134,7 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 | **Built-In Terminal & Browser** | Under **Workspace**, use Nook's integrated terminal (**SwiftTerm**) and ephemeral browser (**WebKit**, zero persistent storage). Any command Nook proposes (`run_command`) is gated by `CommandRisk`, blocks destructive commands, and runs visibly in the terminal. |
 | **MCP Workspace for Agents** | Coding agents can use Nook's terminal, browser, and PR flow through a local MCP server (`~/.nook/nook-mcp`): start dev servers (`terminal_run`, `terminal_read`), inspect pages with DOM text, console errors, and screenshots (`browser_open`, `browser_read`, `browser_screenshot`), and propose pull requests (`pull_request_create`). See [`docs/WERKRUIMTE-AGENTS.md`](docs/WERKRUIMTE-AGENTS.md). |
 | **Multiple Accounts & Quotas** | Configure multiple accounts per agent (e.g., *Claude Personal* and *Claude Work* with isolated `CLAUDE_CONFIG_DIR` / `CODEX_HOME` directories) and per service (e.g., two GitHub accounts). Track live **5-hour and weekly subscription limits** (Claude Pro/Max & Codex) plus token and cost breakdowns in **Settings › Usage** and the Monday **Weekly Recap**. |
-| **iPhone Companion App** | [`apps/ios`](apps/ios) contains **Nook Companion** for iPhone: view active sessions needing attention, approve low-risk actions, answer questions, send prompts, or stop agents over local Wi-Fi with end-to-end `ChaCha20-Poly1305` encryption and direct, serverless APNs push notifications. See [`docs/COMPANION.md`](docs/COMPANION.md). |
+| **iPhone & Android Companion** | [`apps/ios`](apps/ios) contains **Nook Companion** for iPhone (the Android app in [`apps/tauri`](apps/tauri) has the same Companion tab): view active sessions needing attention, approve low-risk actions, answer questions, send prompts, or stop agents over local Wi-Fi with end-to-end `ChaCha20-Poly1305` encryption and direct, serverless APNs push notifications. See [`docs/COMPANION.md`](docs/COMPANION.md). |
 
 ### Integrations & Connected Services
 
@@ -118,15 +162,30 @@ By default, Nook runs **100% locally on your Mac** (via built-in MLX models, App
 
 ## Requirements
 
+**macOS app**
+
 - **macOS 15.0 (Sequoia)** or newer (a MacBook with a notch is ideal, or use Floating mode on any Mac / external display)
 - **Apple Silicon Mac** (M1 or newer)
 - **Xcode 26** or newer (required by the `mlx-swift-lm` packages for the built-in local model)
 - **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** (`brew install xcodegen`)
-- **No API key required:** Nook runs locally on your Mac out of the box. External cloud keys (e.g., [Anthropic](https://console.anthropic.com/), OpenAI, Gemini) are completely optional.
+
+**Windows, Linux & Android app (Tauri)**
+
+- **[Rust](https://rustup.rs)** (stable) and **[Node.js](https://nodejs.org) 22**
+- The **[Tauri prerequisites](https://tauri.app/start/prerequisites/)** for your platform: on Windows WebView2 and the MSVC build tools; on Linux `libwebkit2gtk-4.1-dev` and friends; for Android Android Studio, the Android SDK, NDK 27, `NDK_HOME`, and `JAVA_HOME`
+- For a local brain: **[Ollama](https://ollama.com)** or **[LM Studio](https://lmstudio.ai)** (Nook can install an Ollama model with one click)
+
+**iPhone Companion**
+
+- **Xcode** and **XcodeGen** on a Mac, plus Nook running on a Mac, Windows, or Linux computer on the same Wi-Fi network
+
+**No API key required:** Nook runs locally out of the box. External cloud keys (e.g., [Anthropic](https://console.anthropic.com/), OpenAI, Gemini) are completely optional.
 
 ---
 
 ## Quick Start
+
+### macOS
 
 ```sh
 brew install xcodegen
@@ -157,9 +216,49 @@ The fast Foundation-only core and localization tests also run on Linux:
 ./scripts/core-tests.sh
 ```
 
-Not on a Mac? See [`apps/tauri`](apps/tauri) and [`docs/TAURI.md`](docs/TAURI.md) for the Windows, Linux, and Android app.
+### Windows & Linux
+
+```sh
+git clone https://github.com/IAMichan/nook.git
+cd nook/apps/tauri
+npm ci
+npm run tauri dev          # run with hot reload
+npm run tauri build        # installer (Windows: .msi and .exe, Linux: .deb and .AppImage)
+```
+
+Nook appears as a bar at the top of your screen: hover over it or press **`Alt+Ctrl+Space`** to open it. **`Alt+Ctrl+W`** (or the tray icon) opens the main window. Run the same checks as CI with:
+
+```sh
+npm run check && npm test && npm run build
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+```
+
+### Android
+
+```sh
+cd nook/apps/tauri
+npm ci
+npm run tauri android dev
+npm run tauri android build -- --apk
+```
+
+The **Android** job in the [Tauri workflow](.github/workflows/tauri.yml) also produces an unsigned APK. On Android, Nook connects to a local brain on your network or a cloud provider, and pairs with Nook on your computer through the **Companion** tab.
+
+### iPhone Companion
+
+```sh
+cd nook/apps/ios
+xcodegen
+open NookCompanion.xcodeproj
+```
+
+Pair it with the QR code in **Settings › Companion** on your Mac, Windows, or Linux computer. See [`apps/ios`](apps/ios/README.md) and [`docs/COMPANION.md`](docs/COMPANION.md).
+
+More detail on the Tauri app (layout, hotkeys, where to find what): [`apps/tauri/README.md`](apps/tauri/README.md) and [`docs/TAURI.md`](docs/TAURI.md).
 
 ### First Launch & Onboarding
+
+The steps below describe the macOS app; the Tauri app has the same welcome card and a shorter three-step onboarding.
 
 On first launch, Nook shows a welcome card. Clicking **Set up** opens an onboarding flow (every step can be skipped):
 
@@ -200,10 +299,10 @@ See [`docs/ASSISTANT.md`](docs/ASSISTANT.md) and [`scripts/finetune/README.md`](
 Nook is designed around strict user control and local-first privacy:
 
 - **Explicit Approval Gate:** Nothing is executed without clicking **Run** or **Allow**. Even if you enable the optional *Immediately perform minor actions* setting (for music, volume, opening apps, or reminders you explicitly asked for), emails, messages, webhooks, shell commands, calendar events, and proactive suggestions **always** require confirmation.
-- **Local-First by Default:** With the built-in MLX model, Apple Foundation Models, Ollama, or LM Studio, no data ever leaves your Mac. When you choose an external AI provider, only your prompt, recognized window text (toggleable in **Settings › Assistant**), and relevant source snippets are sent upon request—raw screen pixels never leave your Mac.
+- **Local-First by Default:** With the built-in MLX model, Apple Foundation Models, Ollama, or LM Studio, no data ever leaves your computer. When you choose an external AI provider, only your prompt, recognized window text (toggleable in **Settings › Assistant**), and relevant source snippets are sent upon request—raw screen pixels never leave your Mac.
 - **"Only on This Mac" Source Lock:** In **Settings › Brain**, mark any source as **Only on this Mac**. External cloud providers are completely blocked from receiving context, tools, screen text, or prior answers derived from those sources—even if you ask for them in your prompt.
 - **Prompt-Injection Defenses:** Screen text, calendar titles, emails, web pages, and tool outputs are wrapped as untrusted data with explicit system instructions never to follow commands found inside them. Self-learning memory only learns from your own messages—never from screen text, emails, or web pages.
-- **Password & Secret Exclusion:** Password managers and secure input fields (`AXSecureTextField`) are never read by screen OCR or autocomplete. All API keys, bot tokens, and OAuth tokens managed by Nook are stored exclusively in the macOS **Keychain** (`SecretStore`); external coding-agent CLIs manage their own session state under their isolated profile directories.
+- **Password & Secret Exclusion:** Password managers and secure input fields (`AXSecureTextField`) are never read by screen OCR or autocomplete. All API keys, bot tokens, and OAuth tokens managed by Nook are stored exclusively in the macOS **Keychain** (`SecretStore`), Windows **Credential Manager**, or the Linux **Secret Service**; external coding-agent CLIs manage their own session state under their isolated profile directories.
 - **Hardened Runtime & Socket Security:** The Unix domain socket for agent hooks enforces `0600` file permissions and peer UID verification. The Claude Code brain runs in an empty working directory without file or web tools, and `NetworkGuard` blocks private/loopback redirects (SSRF protection).
 - **Full Audit Log & Safe Storage:** Every executed action is recorded in a local SQLite audit log (`nook.sqlite`, `audit` table, searchable in **Settings › Privacy & Security**, retained for 90 days). Unreadable user files are preserved alongside a `.unreadable-<date>.json` backup and never overwritten.
 
@@ -244,7 +343,10 @@ nook/
 │   │   ├── Demo/            # Sample data for previews and Demo Mode
 │   │   └── Tests/           # Unit test suite (NookTests)
 │   ├── ios/                 # Nook Companion for iPhone (SwiftUI, XcodeGen)
-│   ├── tauri/               # Nook for Windows, Linux & Android (Tauri 2: Rust core, Svelte UI)
+│   ├── tauri/               # Nook for Windows, Linux & Android (Tauri 2)
+│   │   ├── core/            # nook-core: Rust core without Tauri (brain, connectors, agents, workspace, companion)
+│   │   ├── src-tauri/       # The app: windows, tray, hotkeys, commands, per-platform code
+│   │   └── src/             # Svelte 5 + TypeScript interface
 │   ├── android/             # Points to tauri/
 │   ├── windows/             # Points to tauri/
 │   └── linux/               # Points to tauri/
@@ -259,10 +361,20 @@ nook/
 
 ## Known Limitations
 
+**macOS**
+
 - **First Build Time & Hardware:** The built-in local model relies on `mlx-swift-lm`, `swift-huggingface`, and `swift-transformers`, which require **Xcode 26+** and an **Apple Silicon Mac**. The initial package resolution and build can take several minutes.
 - **Code Signing:** When built from source without an Apple Developer ID certificate, `xcodegen` sets up a self-signed local signing identity once and every build is re-signed with it, so macOS keeps Accessibility/Screen Recording/Keychain permissions across rebuilds (see `apps/macos/Config/local-signing.sh`).
 - **App Sandbox:** Nook uses the Hardened Runtime without the App Sandbox because AppleScript automation and managing local coding-agent processes are not permitted inside a sandbox.
 - **System Notifications:** macOS does not provide a public API for third-party apps to read or filter notifications from other apps; however, all notifications from your connected coding agents route directly through Nook.
+
+**Windows, Linux & Android**
+
+- **Early stage:** Not every Mac feature has been ported yet; [`docs/TAURI.md`](docs/TAURI.md) lists what is done, partial, or still to do.
+- **Interface language:** The Tauri app's interface is Dutch-only for now.
+- **Testing:** The Windows build compiles in CI but has not yet been run on a real Windows PC, and the Android APK is only built in CI.
+- **Wayland:** Global hotkeys and system-wide dictation need X11 on Linux.
+- **Android secrets:** Stored in a private app folder without backup; Android Keystore support is still to do.
 
 ---
 
@@ -274,7 +386,7 @@ The short version:
 
 1. Fork the repo and create a branch (`git checkout -b fix/short-description`).
 2. Make your change. Every user-facing string goes through `tr("key")` and needs all five languages (`en`, `nl`, `de`, `fr`, `es`).
-3. Run `./scripts/core-tests.sh` before committing.
+3. Run `./scripts/core-tests.sh` before committing (and the Tauri checks from [Windows & Linux](#windows--linux) when you change `apps/tauri`).
 4. Open a pull request using the [PR template](.github/pull_request_template.md). Commits, branches, code, and docs are written in English.
 
 New here? Look for issues labeled `good first issue`, or help by adding a translation or improving the docs. Coding agents working in this repo should follow [`AGENTS.md`](AGENTS.md). Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
