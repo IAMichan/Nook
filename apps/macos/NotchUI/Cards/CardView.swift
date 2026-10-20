@@ -19,34 +19,17 @@ struct CardView: View {
     @State private var zoomed: ChatBubble?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                if let source = card.appIcon { CardAppIcon(source: source) }
-                Text(card.context)
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                if !card.sources.isEmpty {
-                    ForEach(card.sources.prefix(5), id: \.self) { source in
-                        Text(source)
-                            .font(NookTheme.font(10.5, .medium))
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(NookTheme.smoke))
-                            .lineLimit(1)
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            header
 
             if card.input, card.title.count > 140 {
                 // Long answers scroll and can be selected; they are never truncated.
                 ScrollView(showsIndicators: false) {
                     titleText.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.top, 6)
+                .padding(.top, NookTheme.Spacing.sm)
             } else {
-                titleText.padding(.top, 6)
+                titleText.padding(.top, NookTheme.Spacing.sm)
             }
 
             detail
@@ -92,6 +75,31 @@ struct CardView: View {
             // Escape first shrinks an enlarged photo back; only then does it close the card.
             if zoomed != nil { withAnimation(.easeOut(duration: 0.15)) { zoomed = nil }; return }
             onAction(card.escape ?? card.primary)
+        }
+    }
+
+    /// Who and where on the left, the card's state on the right: the context gives way first, so the state is always
+    /// readable at a glance instead of trailing off at the end of one long line.
+    private var header: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if let source = card.appIcon { CardAppIcon(source: source) }
+            Text(card.context)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            ForEach(card.sources.prefix(5), id: \.self) { source in
+                Text(source)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.vertical, NookTheme.Spacing.xxs)
+                    .background(Capsule().fill(NookTheme.smoke))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: NookTheme.Spacing.md)
+            if let changes = card.changes { CardLineChanges(changes: changes) }
+            if let status = card.status { CardStatusPill(status: status) }
         }
     }
 
@@ -247,6 +255,46 @@ struct CardView: View {
                 withAnimation(.easeOut(duration: 0.15)) { zoomed = bubble }
             }
         }
+    }
+}
+
+// MARK: Header
+
+/// The card's state as a tinted pill with its mark: "✓ Done" in mint, "Needs approval" in amber, "! Stuck" in coral.
+private struct CardStatusPill: View {
+    let status: CardStatus
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Image(systemName: status.tone.symbol)
+                .font(NookTheme.font(9, .bold))
+            Text(status.text)
+                .font(NookTheme.font(11, .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(status.tone.color)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .frame(height: 18)
+        .background(Capsule().fill(status.tone.color.opacity(0.14)))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(status.text)
+    }
+}
+
+/// The lines an agent added and removed, in the colors a diff uses.
+private struct CardLineChanges: View {
+    let changes: LineChanges
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text("+\(changes.added)").foregroundStyle(NookTheme.mint)
+            Text("−\(changes.removed)").foregroundStyle(NookTheme.coral)
+        }
+        .font(NookTheme.mono(11, .medium))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("card.changes", changes.added, changes.removed))
     }
 }
 

@@ -53,6 +53,8 @@ The checklist for a new or changed view:
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
+- A notification card says its state in `NookCard.status` (a tinted pill at the end of its header, colored by its
+  `DoneTone`) and an agent's changed lines in `NookCard.changes`; its `context` keeps only who and where.
 - Every string through `tr("key")` in all five languages, and a `.help` or accessibility label on a symbol-only control.
 
 ## Components — `apps/macos/NotchUI/Components`

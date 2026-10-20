@@ -263,7 +263,8 @@ extension AppModel {
             detail: .none,
             primary: CardAction(label: tr("app.ok"), outcome: .dismiss),
             secondary: CardAction(label: tr("app.settings"), outcome: .callback("\(token)#settings", "")),
-            contentHeight: 90 + CGFloat(lines) * 24
+            contentHeight: 90 + CGFloat(lines) * 24,
+            status: CardStatus(text: tr("card.status.error"), tone: .failed)
         )
     }
 
