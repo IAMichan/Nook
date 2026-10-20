@@ -144,6 +144,9 @@ enum ActionGate {
             if let change { problems += MailActions.problems(change, MailActions.selection(input)) }
         }
 
+        // A batch merge lists every pull request it touches, so the plan shows exactly what gets merged.
+        if tool == "github_merge_prs" { problems += PullRequestBatchMerge.problems(input["pulls"]) }
+
         // Fields with fixed semantics.
         var dates: [String: Date] = [:]
         for key in ["start", "end", "due", "from", "to", "date"] {
@@ -187,7 +190,8 @@ enum ActionGate {
         let known: [String: String] = [
             "title": "De titel", "start": "Het begin", "end": "Het einde", "due": "De datum", "name": "De naam",
             "message": "Het bericht", "body": "De tekst", "repo": "De repository", "number": "Het nummer",
-            "url": "De link", "to": "De ontvanger", "subject": "Het onderwerp", "id": "Het id", "event": "Het oordeel"
+            "url": "De link", "to": "De ontvanger", "subject": "Het onderwerp", "id": "Het id", "event": "Het oordeel",
+            "pulls": "De pull requests"
         ]
         return known[key] ?? key
     }
@@ -228,7 +232,7 @@ enum ActionGate {
             "title": "Titel", "start": "Begin", "end": "Einde", "due": "Wanneer", "location": "Plaats", "notes": "Notities",
             "name": "Bron", "message": "Bericht", "to": "Aan", "cc": "Cc", "subject": "Onderwerp", "body": "Tekst",
             "repo": "Repository", "number": "Nummer", "event": "Oordeel", "method": "Methode", "url": "Link",
-            "level": "Niveau", "action": "Actie", "id": "Id", "labels": "Labels", "state": "Status"
+            "level": "Niveau", "action": "Actie", "id": "Id", "labels": "Labels", "state": "Status", "pulls": "Pull requests"
         ]
         if let label = known[key] { return label }
         return key.prefix(1).uppercased() + key.dropFirst()

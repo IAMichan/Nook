@@ -193,4 +193,17 @@ final class ChatIntentTests: XCTestCase {
             XCTAssertEqual(ChatIntent.detect(prompt).primaryAction, "whatsapp_send", prompt)
         }
     }
+    /// "Merge alle PR's" offers the batch merge first, with the overview that lists what to merge; a question about a merge does not.
+    func testMergingPullRequestsOffersTheMergeActions() {
+        for text in ["Merge alle PR's", "merge all my pull requests", "Kun je alle open PR's samenvoegen?", "Voeg de pull requests van nook samen",
+                     "Führe alle Pull Requests zusammen"] {
+            let intent = ChatIntent.detect(text)
+            XCTAssertTrue(intent.kinds.contains(.github), text)
+            XCTAssertEqual(Array(intent.tools.prefix(2)), ["github_merge_prs", "github_overview"], text)
+        }
+        XCTAssertTrue(ChatIntent.detect("Merge alle PR's").wantsAction)
+        for text in ["Is PR 12 al gemerged?", "Which pull requests are open?", "Is this PR mergeable?"] {
+            XCTAssertFalse(ChatIntent.detect(text).tools.contains("github_merge_prs"), text)
+        }
+    }
 }

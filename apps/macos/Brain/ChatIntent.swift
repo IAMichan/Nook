@@ -23,7 +23,11 @@ struct ChatIntent: Equatable {
     /// Tools that belong to this request, most important first. Names may include tools that are not connected.
     var tools: [String] {
         var seen = Set<String>()
-        return kinds.flatMap { Self.toolsByKind[$0] ?? [] }.filter { seen.insert($0).inserted }
+        return kinds.flatMap { kind -> [String] in
+            let tools = Self.toolsByKind[kind] ?? []
+            // "Merge alle PR's": the merge actions come first, with the overview that lists what to merge.
+            return kind == .github && merges ? ["github_merge_prs", "github_overview", "github_merge_pr"] + tools : tools
+        }.filter { seen.insert($0).inserted }
     }
 
     /// The one action this request is about, when it clearly asks for one.
@@ -42,6 +46,8 @@ struct ChatIntent: Equatable {
 
     /// "Move my meeting", "verplaats de afspraak": an existing event changes.
     private(set) var moves = false
+    /// "Merge alle PR's", "voeg de pull requests samen": pull requests are to be merged, not only looked at.
+    private(set) var merges = false
     /// "Vergeet dat…": something remembered goes.
     private(set) var forgets = false
     /// "Wat weet je over mij?": a question about what Nook remembers.
@@ -100,6 +106,8 @@ struct ChatIntent: Equatable {
         // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
         // the meeting" is a mail, "remind me of the call" is a reminder.
         intent.kinds = kinds.sorted { (Self.priority.firstIndex(of: $0) ?? 99) < (Self.priority.firstIndex(of: $1) ?? 99) }
+        intent.merges = kinds.contains(.github)
+            && has(#"\bmerge(?!d|able)|samenvoeg|\bvoeg\b[^.?!]{0,60}\bsamen\b|zusammenführ|\bführ\w*\b[^.?!]{0,60}\bzusammen\b|fusionn|fusiona"#)
         intent.moves = has(#"verplaats|reschedule|\bmove (my|the)\b|verschieb|\bverzet"#)
         let makesNote = has(#"\b(zet|schrijf|sla|bewaar|voeg|put|save|add|write|speicher)[^.?!]{0,40}\b(in|als|naar|to|into|as) (een |mijn |de |a |my )?(nieuwe |new )?(notitie|notities|note|notes)\b|\bals notitie|\bas a note|(maak|create|make|nieuwe|new|erstelle) (een |a |eine )?(nieuwe |new |neue )?(notitie|note|notiz)\b|\bnoteer|schrijf (dit|het|dat) op|write (this|it|that) down|neue notiz"#)
         let readsNote = has(#"(in|uit|from|aus) (mijn|de|m'n|my|the|meine?n?) (\w+ )?(notitie|notities|notes?|notiz\w*)|(lees|zoek|vind|vat|samenvat\w*|wat staat|wat stond|read|search|find|summari[sz]e|what does|lies|such|finde)[^.?!]{0,40}(notitie|notities|notes?|notiz\w*)"#)
@@ -108,7 +116,7 @@ struct ChatIntent: Equatable {
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
-        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
+        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
         let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
         intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)

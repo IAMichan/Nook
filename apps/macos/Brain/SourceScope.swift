@@ -460,7 +460,7 @@ enum SourceCapabilities {
         "read_source": "API lezen (GET)", "send_to_source": "bericht of webhook sturen",
         "github_overview": "je PR's en reviews", "github_pr_details": "PR met diff lezen", "github_search": "issues en PR's zoeken",
         "github_issue_details": "issue lezen", "github_review_pr": "PR beoordelen", "github_comment_pr": "reageren op PR",
-        "github_merge_pr": "PR samenvoegen", "github_close_pr": "PR sluiten", "github_create_issue": "issue maken",
+        "github_merge_pr": "PR samenvoegen", "github_merge_prs": "meerdere PR's samenvoegen", "github_close_pr": "PR sluiten", "github_create_issue": "issue maken",
         "github_comment_issue": "reageren op issue", "github_update_issue": "issue bijwerken",
         "vercel_deployments": "deployments lezen", "stripe_payments": "betalingen lezen", "notion_search": "pagina's zoeken",
         "notion_read_page": "pagina lezen", "calcom_bookings": "boekingen lezen", "n8n_status": "workflows lezen",
