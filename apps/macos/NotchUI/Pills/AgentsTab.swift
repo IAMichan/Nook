@@ -45,7 +45,7 @@ struct AgentsTab: View {
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
                 if !app.demoMode {
                     PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
-                                openSettings: { app.openSettings() }, history: app.history)
+                                openSettings: { app.openSettings() })
                 }
             }
             .padding(.trailing, 4)
@@ -126,6 +126,7 @@ struct AgentsTab: View {
                 .foregroundStyle(NookTheme.paper)
             Spacer(minLength: 4)
             if !app.demoMode {
+                SessionListRefreshButton(history: app.history)
                 Button {
                     viewModel.selectedAgentID = "new"
                 } label: {
@@ -681,5 +682,28 @@ enum WorkspaceRunsSection {
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
         return Array(list.prefix(12))
+    }
+}
+
+/// Reads every session list again right away, instead of waiting for the next scheduled pass. It sits in the list
+/// header rather than the footer, where it read as a second update button beside the real one.
+private struct SessionListRefreshButton: View {
+    @ObservedObject var history: AgentHistory
+
+    var body: some View {
+        Button { history.refresh(minimumInterval: 0) } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .rotationEffect(.degrees(history.loading ? 360 : 0))
+                .animation(history.loading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                           value: history.loading)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(history.loading)
+        .help(tr("agents.refreshList"))
+        .accessibilityLabel(tr("agents.refreshList"))
     }
 }
