@@ -12,6 +12,14 @@ final class UsageLimitTests: XCTestCase {
         XCTAssertNil(UsageLimits.claudeEvent([:]))
     }
 
+    func testClaudePlanReading() {
+        let reading = UsageLimits.planReading(["rateLimitType": "seven_day", "utilization": 0.25, "resetsAt": 1_700_000_000])
+        XCTAssertEqual(reading, UsageLimits.PlanReading(window: "seven_day", usedPercent: 25, resetsAt: Date(timeIntervalSince1970: 1_700_000_000)))
+        XCTAssertNil(UsageLimits.planReading(["rateLimitType": "seven_day_opus", "utilization": 0.25, "resetsAt": 1]),
+                     "only the windows the status line shows")
+        XCTAssertNil(UsageLimits.planReading(["status": "allowed", "resetsAt": 1]), "no utilization: nothing to show")
+    }
+
     func testLatestReset() {
         let early = Date(timeIntervalSince1970: 100), late = Date(timeIntervalSince1970: 200)
         let known: [String: Date?] = ["five_hour": early, "seven_day": late]

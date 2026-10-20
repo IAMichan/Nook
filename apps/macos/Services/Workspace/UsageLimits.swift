@@ -25,6 +25,25 @@ enum UsageLimits {
                            blocked: status == "rejected" && !overage && !usingOverage, resetsAt: reset)
     }
 
+    /// How full one subscription window is: the same numbers the status line shows, read from Claude Code's own output.
+    struct PlanReading: Equatable, Sendable {
+        /// "five_hour" or "seven_day".
+        var window: String
+        var usedPercent: Double
+        var resetsAt: Date
+    }
+
+    /// `rate_limit_event.rate_limit_info` with its `utilization` (a fraction) and `resetsAt`; nil for another window or
+    /// without those numbers.
+    static func planReading(_ info: [String: Any]) -> PlanReading? {
+        let window = (info["rateLimitType"] as? String) ?? "five_hour"
+        guard window == "five_hour" || window == "seven_day",
+              let utilization = ClaudeStreamParser.number(info["utilization"]),
+              let reset = ClaudeStreamParser.number(info["resetsAt"]) else { return nil }
+        let percent = utilization <= 1 ? utilization * 100 : utilization
+        return PlanReading(window: window, usedPercent: min(100, max(0, percent)), resetsAt: Date(timeIntervalSince1970: reset))
+    }
+
     /// The latest reset of the blocked windows; nil when one of them did not say when.
     static func latestReset(_ windows: [String: Date?]) -> Date? {
         guard !windows.isEmpty, !windows.values.contains(where: { $0 == nil }) else { return nil }

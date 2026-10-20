@@ -189,7 +189,7 @@ targets:
       - path: Services/AgentSessionRegistry.swift
       - path: Services/ResumedConversations.swift
       - path: Services/LocalAgentScanner.swift
-      - path: Services/ClaudeCloudSessions.swift
+      - path: Services/ClaudeAccountFile.swift
       - path: Services/FinishedSessions.swift
       - path: Services/SessionLiveness.swift
       - path: Services/NudgeFilter.swift

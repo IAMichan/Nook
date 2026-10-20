@@ -168,7 +168,9 @@ final class AgentCoverageTests: XCTestCase {
 
     func testClaudeRateLimitEvent() {
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"rate_limit_event","rate_limit_info":{"rateLimitType":"five_hour","utilization":0.4,"resetsAt":1700000000}}"#),
-                       [.rateLimits(nil)], "without a status: only a refresh of the usage shown")
+                       [.rateLimits(nil), .planWindow(UsageLimits.PlanReading(window: "five_hour", usedPercent: 40,
+                                                                               resetsAt: Date(timeIntervalSince1970: 1700000000)))],
+                       "without a status: only how full the window is")
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour","resetsAt":1700000000}}"#),
                        [.rateLimits(UsageLimits.ClaudeEvent(window: "five_hour", blocked: false, resetsAt: Date(timeIntervalSince1970: 1700000000)))])
     }

@@ -101,6 +101,11 @@ extension AppModel {
         }
         // Codex reports new limits while it works: show them right away.
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
+        // Claude Code reports how full its subscription windows are while it works: show them right away.
+        workspace.onPlanWindow = { [weak self] reading, profileID in
+            guard let self, let profile = self.profiles.profile(id: profileID), profile.kind == .claude else { return }
+            self.hub.applyPlanReading(reading, home: profile.home.map(AgentProfile.normalize) ?? "")
+        }
         // Signed in to Antigravity (when linking it, or in a session): its limits show right away.
         workspace.onAntigravitySignedIn = { [weak self] in
             self?.antigravityUsage.refreshNow(force: true)
