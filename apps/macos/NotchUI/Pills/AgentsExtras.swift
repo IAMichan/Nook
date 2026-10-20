@@ -14,24 +14,34 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Pull requests and usage as quiet icons under the list, and Settings at the far end, with the update button beside it
-/// when main has something this build lacks. It takes the list's width, so Settings follows the line beside the list
-/// when you drag it.
+/// Settings, pull requests and usage as quiet icons under the list, and a refresh button at the far end, with the update
+/// button beside it when main has something this build lacks. It takes the list's width, so the refresh button follows
+/// the line beside the list when you drag it.
 struct AgentsFooter: View {
     let selected: String
     let open: (String) -> Void
     let openSettings: () -> Void
+    @ObservedObject var history: AgentHistory
 
     var body: some View {
         HStack(spacing: 4) {
+            FooterIcon(label: tr("agents.footer.settings"), active: false,
+                       action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
             Spacer(minLength: 0)
             UpdateFooterButton()
-            FooterIcon(label: tr("agents.footer.settings"), active: false,
-                       action: openSettings) { ToolGlyph(symbol: "gearshape") }
+            // Reads every session list again right away, instead of waiting for the next scheduled pass.
+            FooterIcon(label: tr("agents.footer.refresh"), active: false,
+                       action: { history.refresh(minimumInterval: 0) }) {
+                ToolGlyph(symbol: "arrow.triangle.2.circlepath")
+                    .rotationEffect(.degrees(history.loading ? 360 : 0))
+                    .animation(history.loading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                               value: history.loading)
+            }
+            .disabled(history.loading)
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
