@@ -218,7 +218,7 @@ private struct CalloutBlock: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: callout.kind.symbol)
-                .font(.system(size: size))
+                .font(NookTheme.font(size))
                 .foregroundStyle(callout.kind.color)
             VStack(alignment: .leading, spacing: 3) {
                 Text(callout.title)
@@ -282,7 +282,7 @@ private struct MarkdownCodeBlock: View {
             if rendered {
                 CodeRenderView(language: language, code: code)
                     .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip))
                     .padding(8)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -325,13 +325,13 @@ struct ChoiceList: View {
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
-                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                    .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card))
                 }
                 .buttonStyle(.plain)
             }

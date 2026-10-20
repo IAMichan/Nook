@@ -95,7 +95,7 @@ struct PlanReview: View {
                     if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
                 } label: {
                     Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -191,7 +191,7 @@ struct PlanReview: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(field.multiline ? 2...12 : 1...3)
                         .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(NookTheme.graphite))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.graphite))
                     } else {
                         Text(field.value)
                             .font(NookTheme.font(12.5))
@@ -242,7 +242,7 @@ struct PlanReview: View {
                 ProgressView().controlSize(.small)
                 Text(tr("chat.plan.running")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
             case .done(let result):
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(NookTheme.mint)
+                Image(systemName: "checkmark").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.mint)
                 Text(result).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.mint)
                     .fixedSize(horizontal: false, vertical: true)
             case .cancelled:

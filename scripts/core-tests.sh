@@ -94,4 +94,6 @@ done
 
 cd "$WORK"
 echo "core tests in $WORK"
+# Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
+export NOOK_MACOS_ROOT="$ROOT"
 exec swift test "$@"

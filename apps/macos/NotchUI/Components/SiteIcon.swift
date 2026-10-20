@@ -94,7 +94,7 @@ struct SiteIcon: View {
                 .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
         } else {
             Image(systemName: fallback)
-                .font(.system(size: size * 0.8, weight: .semibold))
+                .font(NookTheme.font(size * 0.8, .semibold))
                 .foregroundStyle(tint)
                 .frame(width: size, height: size)
         }

@@ -209,12 +209,12 @@ struct FolderGitButton: View {
             if model.working {
                 ProgressView().controlSize(.mini)
             } else if model.error != nil {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(NookTheme.coral)
+                Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.coral)
             } else {
-                Image(systemName: icon).font(.system(size: 10, weight: .medium))
+                Image(systemName: icon).font(NookTheme.font(10, .medium))
             }
             Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
-            Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold)).opacity(0.5)
+            Image(systemName: "chevron.down").font(NookTheme.font(7.5, .bold)).opacity(0.5)
         }
         .font(NookTheme.font(11.5, .medium))
         .foregroundStyle(NookTheme.textSecondary)
@@ -250,7 +250,7 @@ struct FolderChangesSheet: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 7).fill(selected == file.path ? NookTheme.smoke : Color.clear))
+                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected == file.path ? NookTheme.smoke : Color.clear))
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

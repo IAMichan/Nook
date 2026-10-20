@@ -127,7 +127,7 @@ private struct SessionToolIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 11.5, weight: .medium))
+            .font(NookTheme.font(11.5, .medium))
             .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: ToolbarGroup.itemHeight)
             .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
@@ -297,7 +297,7 @@ private struct BottomSplitHandle: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color(hex: 0x19191B)).frame(height: 1)
+            Rectangle().fill(NookTheme.hairline).frame(height: 1)
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 36, height: 4)
@@ -390,7 +390,7 @@ private struct SessionToolPanel: View {
             }
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(NookTheme.font(10.5, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
@@ -411,7 +411,7 @@ private struct SessionToolPanel: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
+                .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
@@ -457,7 +457,7 @@ private struct SessionToolPickerRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: tool.symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(NookTheme.font(12, .medium))
                     .frame(width: 16)
                 Text(tool.title).lineLimit(1)
                 Spacer(minLength: 0)
@@ -466,7 +466,7 @@ private struct SessionToolPickerRow: View {
             .foregroundStyle(enabled ? NookTheme.paper : NookTheme.textTertiary)
             .padding(.horizontal, 10)
             .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering && enabled ? NookTheme.smoke : Color.clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && enabled ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -483,9 +483,9 @@ struct ToolSurface<Content: View>: View {
     var body: some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.field))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.field))
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
     }
 }
 
@@ -520,7 +520,7 @@ struct DevServerStrip: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .help(tr("agents.servers.help"))
                         ForEach(servers) { server in

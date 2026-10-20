@@ -25,11 +25,11 @@ struct ConfigPreview: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(NookTheme.mono(11))
                 .textSelection(.enabled)
                 .padding(8)
             }
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(Color(nsColor: .textBackgroundColor)))
             HStack {
                 Spacer()
                 Button(tr("button.cancel"), action: onCancel)
@@ -63,7 +63,7 @@ struct SettingsHeader: View {
             if section == .start {
                 NookOrb(mood: mood, size: 30, animated: false)
                     .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.smoke))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.smoke))
             } else {
                 SettingsTile(section, size: 44)
             }
@@ -114,7 +114,7 @@ struct StatusRow<Trailing: View>: View {
                 AgentLogo(agent: agent, size: 22)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: state.symbol)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(state.color)
                             .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
                             .offset(x: 4, y: 4)
@@ -122,7 +122,7 @@ struct StatusRow<Trailing: View>: View {
                     .frame(width: 22)
             } else {
                 Image(systemName: state.symbol)
-                    .font(.system(size: 17))
+                    .font(NookTheme.font(17))
                     .foregroundStyle(state.color)
                     .frame(width: 22)
             }
@@ -185,14 +185,14 @@ struct Keycap: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .font(NookTheme.rounded(12, .medium))
             .foregroundStyle(.primary.opacity(0.85))
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.14)))
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(Color.primary.opacity(0.14)))
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }

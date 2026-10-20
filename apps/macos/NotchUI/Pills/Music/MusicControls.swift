@@ -83,7 +83,7 @@ struct MusicCoverPlaceholder: View {
                 if showsSymbol {
                     GeometryReader { geo in
                         Image(systemName: symbol)
-                            .font(.system(size: max(10, min(geo.size.width, geo.size.height) * 0.3), weight: .semibold))
+                            .font(NookTheme.font(max(10, min(geo.size.width, geo.size.height) * 0.3), .semibold))
                             .foregroundStyle(Color.white.opacity(0.6))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -229,7 +229,7 @@ struct MusicToggleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size * 0.44, weight: .semibold))
+                .font(NookTheme.font(size * 0.44, .semibold))
                 .foregroundStyle(isOn ? NookTheme.music : (hovering ? NookTheme.paper : NookTheme.textTertiary))
                 .frame(width: size, height: size)
                 .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
@@ -282,7 +282,7 @@ struct MusicVolumeControl: View {
                 }
             } label: {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: 20, height: 24, alignment: .center)
                     .contentShape(Rectangle())

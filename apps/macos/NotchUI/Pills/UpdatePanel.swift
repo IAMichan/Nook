@@ -85,14 +85,14 @@ struct UpdatePanel: View {
     private func commitRange(from: String, to: String, update: AppUpdater.Available) -> some View {
         HStack(spacing: 6) {
             Text(verbatim: from).foregroundStyle(NookTheme.textSecondary)
-            Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(verbatim: to).foregroundStyle(NookTheme.paper)
             Spacer(minLength: 0)
             if let url = update.github?.compare(from, to) {
                 Button { NSWorkspace.shared.open(url) } label: {
                     HStack(spacing: 3) {
                         Text(tr("update.viewOnGitHub"))
-                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
                     }
                     .font(NookTheme.font(11.5, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
@@ -177,7 +177,7 @@ struct UpdatePanel: View {
                     Image(systemName: "circle").foregroundStyle(NookTheme.line2)
                 }
             }
-            .font(.system(size: 13))
+            .font(NookTheme.font(13))
             .frame(width: 16, height: 16)
             Text(UpdateText.step(step))
                 .font(NookTheme.font(12.5, step == current ? .semibold : .regular))
@@ -281,7 +281,7 @@ struct UpdatePanel: View {
         HStack(alignment: .top, spacing: 10) {
             Group {
                 if let symbol {
-                    Image(systemName: symbol).font(.system(size: 20, weight: .semibold)).foregroundStyle(tint)
+                    Image(systemName: symbol).font(NookTheme.font(20, .semibold)).foregroundStyle(tint)
                 } else {
                     ProgressView().controlSize(.small).tint(tint)
                 }
@@ -301,7 +301,7 @@ struct UpdatePanel: View {
 
     private func note(_ text: String, symbol: String, tint: Color) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint).frame(width: 16)
+            Image(systemName: symbol).font(NookTheme.font(12, .semibold)).foregroundStyle(tint).frame(width: 16)
             Text(text)
                 .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.paper)
@@ -340,7 +340,7 @@ private struct ChangeRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering && url != nil ? DropdownStyle.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && url != nil ? DropdownStyle.hover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

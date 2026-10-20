@@ -144,7 +144,7 @@ struct CardView: View {
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             Button(action: submitReply) {
                 Image(systemName: ready ? "arrow.up.circle.fill" : "return")
-                    .font(.system(size: ready ? 18 : 11, weight: .medium))
+                    .font(NookTheme.font(ready ? 18 : 11, .medium))
                     .foregroundStyle(ready ? NookTheme.mint : NookTheme.textTertiary)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -219,7 +219,7 @@ private struct CardAppIcon: View {
                     .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: "app.fill")
-                    .font(.system(size: 13))
+                    .font(NookTheme.font(13))
                     .foregroundStyle(NookTheme.textSecondary)
             }
         }
@@ -305,7 +305,7 @@ private struct ChatBubbleView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
                     .fill(bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)
             )
             if !bubble.fromMe { Spacer(minLength: 70) }
@@ -344,7 +344,7 @@ private struct VideoTile: View {
                                 .aspectRatio(contentMode: .fit)
                         }
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(NookTheme.font(18, .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
                             .background(Circle().fill(Color.black.opacity(hovering ? 0.65 : 0.5)))
@@ -358,7 +358,7 @@ private struct VideoTile: View {
             if hovering || player == nil {
                 Button { enlarge() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
                         .background(Circle().fill(Color.black.opacity(0.55)))
@@ -371,7 +371,7 @@ private struct VideoTile: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
     }
@@ -431,7 +431,7 @@ private struct PhotoButton: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: Self.maxWidth, maxHeight: Self.maxHeight, alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
@@ -460,7 +460,7 @@ private struct AttachmentButton: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 } else {
                     Image(systemName: "doc.fill")
-                        .font(.system(size: 14))
+                        .font(NookTheme.font(14))
                         .foregroundStyle(NookTheme.mint)
                 }
                 Text(name)
@@ -477,7 +477,7 @@ private struct AttachmentButton: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -497,7 +497,7 @@ private struct OfferChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(NookTheme.font(10.5, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(title)
                     .font(NookTheme.font(12.5, .medium))
@@ -534,7 +534,7 @@ private struct EventDetail: View {
                     .foregroundStyle(NookTheme.paper)
             }
             .frame(width: 36, height: 36)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.card).stroke(NookTheme.line2, lineWidth: 1))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(line)
@@ -705,7 +705,7 @@ private struct ChoiceRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
@@ -725,7 +725,7 @@ private struct ChoiceRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
             .hoverLift(hovering, scale: 1.01)
         }
@@ -755,7 +755,7 @@ private struct DiffDetail: View {
             .frame(maxHeight: 150)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
 
             Text(note)
                 .font(NookTheme.font(12.5))

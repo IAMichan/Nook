@@ -206,7 +206,7 @@ private struct MessagePicture: View {
         }
         .frame(width: 120, height: 120)
         .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { if !missing { NSWorkspace.shared.open(url) } }
         .help(url.lastPathComponent)
@@ -233,7 +233,7 @@ struct ImageAttachmentStrip: View {
                         thumbnail(image)
                         Button { remove(image) } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(NookTheme.font(8, .bold))
                                 .foregroundStyle(NookTheme.paper)
                                 .frame(width: 16, height: 16)
                                 .background(Circle().fill(Color.black.opacity(0.7)))
@@ -258,7 +258,7 @@ struct ImageAttachmentStrip: View {
         }
         .frame(width: 56, height: 56)
         .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .help(image.name)
     }
 }
@@ -275,7 +275,7 @@ struct ImageMessageRow: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 96, height: 96)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                         .help(image.name)
                 }
             }

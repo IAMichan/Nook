@@ -39,7 +39,7 @@ struct ConversationMessage: View {
                         .textSelection(.enabled)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NookTheme.smoke))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.smoke))
                 }
             }
         }
@@ -72,7 +72,7 @@ struct ConversationMessage: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(NookTheme.font(10.5, .semibold))
                 .foregroundStyle(NookTheme.textTertiary)
         }
         .buttonStyle(.plain)

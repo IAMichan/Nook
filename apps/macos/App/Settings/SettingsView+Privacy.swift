@@ -42,7 +42,7 @@ extension SettingsView {
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 14))
+                .font(NookTheme.font(14))
                 .foregroundStyle(NookTheme.iris)
                 .frame(width: 22)
             SettingLabel(title, detail: detail)

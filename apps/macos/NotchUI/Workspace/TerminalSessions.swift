@@ -357,7 +357,7 @@ struct SessionTerminalActions: View {
 
     private func icon(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 11, weight: .semibold))
+            .font(NookTheme.font(11, .semibold))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
@@ -401,7 +401,7 @@ private struct TerminalTab: View {
             }
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(NookTheme.font(8, .bold))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .buttonStyle(.borderless)
@@ -411,7 +411,7 @@ private struct TerminalTab: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.white.opacity(0.10) : Color.clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(selected ? Color.white.opacity(0.10) : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }

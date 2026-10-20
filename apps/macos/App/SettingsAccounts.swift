@@ -79,7 +79,7 @@ private struct AgentAccountCardRow: View {
                 HStack(spacing: 12) {
                     AgentLogo(profile.kind, size: 28)
                         .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
@@ -325,7 +325,7 @@ private struct ManageAccountSheet: View {
                 }
             }
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
         } else {
             HStack {
                 SecureField(tr("accounts.keyPlaceholder"), text: $key)
@@ -416,7 +416,7 @@ private struct AddAccountSheet: View {
                             }
                         }
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
                     }
                 }
 

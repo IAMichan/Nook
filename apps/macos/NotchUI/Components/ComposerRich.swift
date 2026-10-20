@@ -242,7 +242,7 @@ struct ComposerSuggestionList: View {
                 Button { accept(row) } label: {
                     HStack(spacing: 8) {
                         Image(systemName: row.symbol)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(NookTheme.font(11, .medium))
                             .foregroundStyle(index == model.selection ? tint : NookTheme.textTertiary)
                             .frame(width: 16)
                         Text(row.title)
@@ -260,7 +260,7 @@ struct ComposerSuggestionList: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 28)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(index == model.selection ? tint.opacity(0.14) : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(index == model.selection ? tint.opacity(0.14) : Color.clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

@@ -38,7 +38,7 @@ struct TimelineFindBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
             TextField(tr("timeline.search.placeholder"), text: $query)
                 .textFieldStyle(.plain)
@@ -72,7 +72,7 @@ struct TimelineFindBar: View {
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 10.5, weight: .semibold))
+            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold))
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
@@ -90,7 +90,7 @@ struct TimelineToEndPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold))
+                Image(systemName: "arrow.down").font(NookTheme.font(10, .bold))
                 Text(tr("timeline.toEnd")).font(NookTheme.font(12, .medium))
             }
             .foregroundStyle(NookTheme.paper)

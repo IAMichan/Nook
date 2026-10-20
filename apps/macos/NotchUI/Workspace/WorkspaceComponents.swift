@@ -3,9 +3,9 @@ import SwiftUI
 /// Workspace colors. A neutral, near-black dark theme in the manner of a code tool: surfaces lift by a few percent of
 /// white, lines are faint white, and color always represents state.
 enum WS {
-    static let background = Color(hex: 0x0B0B0D)
+    static let background = NookTheme.canvas
     /// The sidebar and the inspector: the canvas lifted a little.
-    static let sidebar = Color(hex: 0x121214)
+    static let sidebar = NookTheme.surface
     static let surface = Color(hex: 0x141416)
     static let raised = Color(hex: 0x1A1A1D)
     static let border = Color.white.opacity(0.07)
@@ -70,7 +70,7 @@ extension GitChangeKind {
         case .deleted: return NookTheme.coral
         case .conflicted: return NookTheme.amber
         case .modified, .typeChanged: return NookTheme.iris
-        case .renamed, .copied: return Color(hex: 0x8AB4F8)
+        case .renamed, .copied: return NookTheme.blue
         }
     }
 }
@@ -90,7 +90,7 @@ struct StatusBadge: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: status.symbol)
-                .font(.system(size: compact ? 9 : 10, weight: .bold))
+                .font(NookTheme.font(compact ? 9 : 10, .bold))
                 .symbolEffect(.pulse, options: .repeating, isActive: status == .running)
             if !compact {
                 Text(status.label)
@@ -163,7 +163,7 @@ struct WSEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 26, weight: .light))
+                .font(NookTheme.font(26, .light))
                 .foregroundStyle(WS.tertiary)
             Text(title)
                 .font(NookTheme.font(15, .semibold))
@@ -212,8 +212,8 @@ struct DiffText: View {
         numberWidth = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
     }
 
-    private static let codeColor = Color(hex: 0xD9D7E0)
-    private static let hunkColor = Color(hex: 0x8AB4F8)
+    private static let codeColor = NookTheme.textStrong
+    private static let hunkColor = NookTheme.blue
     private var gutterWidth: CGFloat { numberWidth * 2 + markerWidth }
     private let markerWidth: CGFloat = 16
 
@@ -274,7 +274,7 @@ struct DiffText: View {
                     editing = index
                 } label: {
                     Image(systemName: "plus.bubble.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.paper)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -320,7 +320,7 @@ struct DiffText: View {
     private func hunkRow(_ row: UnifiedDiff.Row) -> some View {
         HStack(spacing: 0) {
             Image(systemName: "arrow.up.and.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(NookTheme.font(9, .semibold))
                 .foregroundStyle(Self.hunkColor.opacity(0.8))
                 .frame(width: numberWidth * 2)
             Text(UnifiedDiff.hunkLabel(row.raw))
@@ -347,7 +347,7 @@ struct DiffText: View {
     private func fileRow(_ row: UnifiedDiff.Row, first: Bool) -> some View {
         HStack(spacing: 7) {
             Image(systemName: "doc.text")
-                .font(.system(size: 11))
+                .font(NookTheme.font(11))
                 .foregroundStyle(WS.secondary)
             Text(row.text)
                 .font(NookTheme.mono(11.5, .semibold))
@@ -375,7 +375,7 @@ struct DiffText: View {
 
     private func commentRow(_ comment: ReviewComment) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "text.bubble.fill").font(.system(size: 10)).foregroundStyle(NookTheme.amber)
+            Image(systemName: "text.bubble.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.amber)
             Text(comment.text)
                 .font(NookTheme.font(12))
                 .foregroundStyle(NookTheme.paper)
@@ -383,14 +383,14 @@ struct DiffText: View {
             Spacer(minLength: 6)
             if let onRemoveComment {
                 Button { onRemoveComment(comment.id) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .help(tr("ws.review.remove"))
             }
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.amber.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.amber.opacity(0.08)))
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)
@@ -411,7 +411,7 @@ struct DiffText: View {
             SmallGhostButton(title: tr("ws.review.save")) { save(line: line, code: code) }
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)

@@ -309,7 +309,7 @@ struct BrowserView: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 10)
                     .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.04)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(Color.white.opacity(0.04)))
                     .onSubmit { store.go(store.address) }
                 Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
                     .help(tr("browser.openExternal"))
@@ -439,7 +439,7 @@ private struct BrowserPopupView: View {
                     AgentMark(agent: agent, account: nil, size: 14, ring: .clear)
                 } else {
                     Image(systemName: "safari")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                 }
                 VStack(alignment: .leading, spacing: 1) {

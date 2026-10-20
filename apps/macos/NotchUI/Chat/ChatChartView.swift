@@ -57,7 +57,7 @@ struct ChatChartView: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet).fill(NookTheme.field))
     }
 
     // MARK: Bar, line, area, points

@@ -5,9 +5,9 @@ import AppKit
 extension SettingsView {
     // MARK: Connectors
 
-    /// Every way to connect on one page, in the order a person needs it: what needs you, what you already have, the
-    /// services you connect by signing in on their own page (one click, sign in, done), the apps on this Mac, the services
-    /// that take a key (a step-by-step guide), and MCP for everything else. Agent accounts live under Agents.
+    /// Every way to connect on one page, in one layout: a search field with category chips, what needs you, what you
+    /// already have (one row shape for every service), the apps on this Mac (switches), and one catalogue of everything
+    /// you can add (one card shape, with a badge that says how: sign in, a key, or MCP). Agent accounts live under Agents.
     var connectionsSection: some View {
         // Collected once per redraw: every capability line below is derived from it.
         let tools: [(name: String, isAction: Bool)] = app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }
@@ -19,18 +19,37 @@ extension SettingsView {
         // A service whose sign-in is running stays a card, with its spinner, until it is connected.
         let linkedServices = Set(mcpStore.servers.filter { !mcpSignIn.isConnecting($0.id) }.compactMap(\.serviceID))
         let keyed = { (id: String) in cloud.first { $0.id == id }.map(isConnected) ?? false }
-        let connectedCloud = cloud.filter { isConnected($0) && matchesSearch($0, capabilityLine) }
+        let category = connectionCategory
+        let inCategory = { (value: ServiceCategory) in category == nil || category == value }
+
+        // Yours: every connected service, whatever way it was connected.
+        let connectedCloud = cloud.filter { isConnected($0) && matchesSearch($0, capabilityLine) && inCategory(ServiceCategory.of(sourceID: $0.id)) }
         let linkedRemote = MCPRemoteService.all.filter {
-            linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline)
+            linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline) && inCategory(ServiceCategory.of($0))
         }
+        let ownServers = mcpStore.servers.filter { $0.serviceID == nil && matchesSearch(title: $0.name) && inCategory(.automation) }
+        let gitLabHosts = inCategory(.development) && matchesSearch(title: "GitLab") ? GitLabCredentials.hosts : []
+        let hasYours = !connectedCloud.isEmpty || !linkedRemote.isEmpty || !ownServers.isEmpty || !gitLabHosts.isEmpty
+
+        // The catalogue: everything you can add, sign-in first because that is the easiest.
         let oneClick = MCPRemoteService.all.filter {
-            !linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline)
+            !linkedServices.contains($0.id) && !keyed($0.id) && matchesSearch(title: $0.name + " " + $0.tagline) && inCategory(ServiceCategory.of($0))
         }
         // GitHub signs in too (its own login page, or the GitHub CLI login): never a key you have to make first.
-        let gitHub = cloud.first { $0.id == "github" && !isConnected($0) && matchesSearch($0, capabilityLine) }
-        let withKey = cloud.filter { !isConnected($0) && !oauthIDs.contains($0.id) && $0.id != "github" && matchesSearch($0, capabilityLine) }
-        let local = localSources(capabilityLine)
+        let gitHub = cloud.first { $0.id == "github" && !isConnected($0) && matchesSearch($0, capabilityLine) && inCategory(.development) }
+        let withKey = cloud.filter {
+            !isConnected($0) && !oauthIDs.contains($0.id) && $0.id != "github" && matchesSearch($0, capabilityLine)
+                && inCategory(ServiceCategory.of(sourceID: $0.id))
+        }
+        let showGitLab = gitLabHosts.isEmpty && inCategory(.development) && matchesSearch(title: "GitLab")
+        let presets = MCPPreset.all.filter { matchesSearch(title: $0.name + " " + $0.detail + " MCP") && inCategory($0.category) }
+        let showCustomMCP = inCategory(.automation) && matchesSearch(title: tr("mcp.custom.button") + " MCP")
+        let hasCatalogue = gitHub != nil || !oneClick.isEmpty || !withKey.isEmpty || showGitLab || !presets.isEmpty || showCustomMCP
+
+        let local = inCategory(.mac) ? localSources(capabilityLine) : []
         let query = connectionSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        let whatsApp = inCategory(.mac) && (query.isEmpty || "whatsapp".contains(query) || query.contains("whats"))
+
         return Group {
             Section {
                 HStack(spacing: 8) {
@@ -40,14 +59,16 @@ extension SettingsView {
                     if !connectionSearch.isEmpty {
                         Button { connectionSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
                             .buttonStyle(.plain)
+                            .help(tr("button.close"))
                     }
                 }
+                ServiceCategoryChips(selection: $connectionCategory)
             } footer: {
                 Text(tr("connect.intro"))
             }
 
             if !expired.isEmpty {
-                Section {
+                Section(tr("settings.connections.needsYou")) {
                     ForEach(expired) { config in
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.amber)
@@ -61,7 +82,7 @@ extension SettingsView {
                 }
             }
 
-            if !connectedCloud.isEmpty || !linkedRemote.isEmpty {
+            if hasYours {
                 Section(tr("settings.connections.yours")) {
                     ForEach(connectedCloud.indices, id: \.self) { index in
                         serviceRow(connectedCloud[index], capabilityLine, refresh)
@@ -70,26 +91,12 @@ extension SettingsView {
                         MCPServiceRow(service: service, keyAlternative: cloud.first { $0.id == service.id },
                                       capabilities: capabilityLine(service.id), onChange: refresh)
                     }
-                }
-            }
-
-            if !oneClick.isEmpty || gitHub != nil {
-                Section {
-                    GalleryGrid {
-                        if let gitHub {
-                            GitHubSignInCard(keyAlternative: gitHub, capabilities: capabilityLine(gitHub.id), onChange: refresh)
-                        }
-                        ForEach(oneClick) { service in
-                            OneClickServiceCard(service: service, keyAlternative: cloud.first { $0.id == service.id },
-                                                capabilities: capabilityLine(service.id), onChange: refresh)
-                        }
+                    ForEach(gitLabHosts, id: \.self) { host in
+                        GitLabHostRow(host: host) { refreshTick += 1 }
                     }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    .listRowBackground(Color.clear)
-                } header: {
-                    Text(tr("settings.connections.oneClick"))
-                } footer: {
-                    Text(tr("settings.connections.oneClickFooter"))
+                    ForEach(ownServers) { config in
+                        MCPServerCardRow(config: config)
+                    }
                 }
             }
 
@@ -105,60 +112,77 @@ extension SettingsView {
                 }
             }
 
-            if query.isEmpty || "whatsapp".contains(query) || query.contains("whats") {
+            if whatsApp {
                 WhatsAppLinkSection()
             }
 
-            if !withKey.isEmpty {
+            if hasCatalogue {
                 Section {
                     GalleryGrid {
+                        if let gitHub {
+                            GitHubSignInCard(keyAlternative: gitHub, capabilities: capabilityLine(gitHub.id), onChange: refresh)
+                        }
+                        ForEach(oneClick) { service in
+                            OneClickServiceCard(service: service, keyAlternative: cloud.first { $0.id == service.id },
+                                                capabilities: capabilityLine(service.id), onChange: refresh)
+                        }
                         ForEach(withKey.indices, id: \.self) { index in
                             CloudConnectorViews.card(withKey[index], capabilities: capabilityLine(withKey[index].id), onChange: refresh)
+                        }
+                        if showGitLab {
+                            GitLabCard { refreshTick += 1 }
+                        }
+                        ForEach(presets) { preset in
+                            MCPPresetCard(preset: preset) { mcpAdd = $0 }
+                        }
+                        if showCustomMCP {
+                            MCPCustomCard { mcpAdd = $0 }
                         }
                     }
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
                 } header: {
-                    Text(tr("settings.connections.withKey"))
+                    Text(tr("settings.connections.add"))
                 } footer: {
-                    Text(tr("settings.connections.withKeyFooter"))
+                    Text(tr("settings.connections.addFooter"))
                 }
-            }
-
-            if query.isEmpty || "gitlab".contains(query) {
+                .sheet(item: $mcpAdd) { request in
+                    AddMCPServerWizardSheet(preset: request.preset) { mcpAdd = nil }
+                }
+            } else if !hasYours && local.isEmpty && !whatsApp {
                 Section {
-                    GitLabSettingsRows()
+                    Text(tr("settings.connections.noMatch", connectionSearch))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             }
 
-            if query.isEmpty || "mcp".contains(query) {
-                MCPSettingsSection()
-            }
-
-            Section {
-                let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
-                if !others.isEmpty {
-                    DisclosureGroup(tr("settings.connections.moreApps")) {
-                        ForEach(others, id: \.name) { item in
-                            HStack(alignment: .top, spacing: 10) {
-                                HStack(spacing: -4) {
-                                    ForEach(item.domains, id: \.self) { domain in
-                                        ServiceTile(domain: domain, fallback: "app.dashed", size: 22)
+            if category == nil {
+                Section {
+                    let others = NotYetBuiltIn.all.filter { matchesSearch(title: $0.name) }
+                    if !others.isEmpty {
+                        DisclosureGroup(tr("settings.connections.moreApps")) {
+                            ForEach(others, id: \.name) { item in
+                                HStack(alignment: .top, spacing: 10) {
+                                    HStack(spacing: -4) {
+                                        ForEach(item.domains, id: \.self) { domain in
+                                            ServiceTile(domain: domain, fallback: "app.dashed", size: 22)
+                                        }
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name)
+                                        Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name)
-                                    Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                                }
+                                .padding(.vertical, 2)
                             }
-                            .padding(.vertical, 2)
                         }
                     }
+                } header: {
+                    Text(tr("connect.notListed"))
+                } footer: {
+                    Text(tr("settings2.connections.missingDetail"))
                 }
-            } header: {
-                Text(tr("connect.notListed"))
-            } footer: {
-                Text(tr("settings2.connections.missingDetail"))
             }
         }
     }

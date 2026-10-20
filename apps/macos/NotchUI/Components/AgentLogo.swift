@@ -27,7 +27,7 @@ struct AgentLogo: View {
         let name = agent.lowercased()
         if name.contains("antigravity") { return .antigravity }
         if let brand = BrandLogo.forName(name) { return .brand(brand) }
-        let palette = [NookTheme.iris, NookTheme.mint, NookTheme.amber, NookTheme.coral, Color(hex: 0x8AB4F8)]
+        let palette = [NookTheme.iris, NookTheme.mint, NookTheme.amber, NookTheme.coral, NookTheme.blue]
         let index = abs(agent.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }) % palette.count
         return .letter(String(agent.prefix(1)).uppercased(), palette[index])
     }
@@ -47,7 +47,7 @@ struct AgentLogo: View {
         case .antigravity:
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(Color(hex: 0x17171B))
-                .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).stroke(Color(hex: 0x2A2A30), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).stroke(NookTheme.line2, lineWidth: 0.5))
                 .overlay(
                     ArchGlyph()
                         .stroke(LinearGradient(colors: [Color(hex: 0x4F8BF7), Color(hex: 0xEA4335), Color(hex: 0xFBBC04)],
@@ -60,7 +60,7 @@ struct AgentLogo: View {
                 .fill(color.opacity(0.2))
                 .overlay(
                     Text(letter)
-                        .font(.system(size: size * 0.52, weight: .bold, design: .rounded))
+                        .font(NookTheme.rounded(size * 0.52, .bold))
                         .foregroundStyle(color)
                 )
         }
@@ -111,7 +111,7 @@ struct AccountBadge: View {
             .fill(kind == .work ? Color(hex: 0x3D58D6) : Color(hex: 0x3A3A42))
             .overlay(
                 Image(systemName: kind == .work ? "briefcase.fill" : "person.fill")
-                    .font(.system(size: size * 0.52, weight: .bold))
+                    .font(NookTheme.font(size * 0.52, .bold))
                     .foregroundStyle(Color.white.opacity(0.92))
             )
             .frame(width: size, height: size)

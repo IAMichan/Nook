@@ -35,7 +35,7 @@ struct RunQuestionPanel: View {
                     if let onStop {
                         Button(action: onStop) {
                             Label(tr("ws.question.stop"), systemImage: "stop.fill").labelStyle(.iconOnly)
-                                .font(.system(size: 10, weight: .bold))
+                                .font(NookTheme.font(10, .bold))
                                 .foregroundStyle(NookTheme.textSecondary)
                                 .frame(width: 22, height: 22)
                                 .background(Circle().fill(NookTheme.smoke))
@@ -68,7 +68,7 @@ struct RunQuestionPanel: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
                 }
                 if item.multiSelect, !picks.isEmpty {
                     HStack {
@@ -115,7 +115,7 @@ struct RunQuestionPanel: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(picked ? NookTheme.smoke : NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(picked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

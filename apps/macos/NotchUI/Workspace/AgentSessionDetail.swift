@@ -243,7 +243,7 @@ struct AgentSessionDetail: View {
             .padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0x0A0A0D)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
     }
 
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
@@ -366,7 +366,7 @@ struct AgentSessionDetail: View {
 
     private var moreLabel: some View {
         Image(systemName: "ellipsis")
-            .font(.system(size: 12, weight: .bold))
+            .font(NookTheme.font(12, .bold))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
@@ -408,7 +408,7 @@ struct AgentSessionDetail: View {
                         } label: {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: item.multiSelect ? (chosen ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(NookTheme.font(12, .semibold))
                                     .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textTertiary)
                                     .frame(width: 14)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -426,8 +426,8 @@ struct AgentSessionDetail: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 9).fill(chosen ? NookTheme.iris.opacity(0.14) : NookTheme.field))
-                            .contentShape(RoundedRectangle(cornerRadius: 9))
+                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(chosen ? NookTheme.iris.opacity(0.14) : NookTheme.field))
+                            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card))
                         }
                         .buttonStyle(.plain)
                     }
@@ -474,7 +474,7 @@ struct AgentSessionDetail: View {
         if let actionError {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
+                    .font(NookTheme.font(11))
                     .foregroundStyle(NookTheme.coral)
                 Text(actionError)
                     .font(NookTheme.font(12))

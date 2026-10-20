@@ -270,7 +270,7 @@ struct NotchRootView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(NookTheme.font(12, .bold))
                     .foregroundStyle(NookTheme.mint)
                 Text(message)
                     .font(NookTheme.font(13.5, .medium))
@@ -298,7 +298,7 @@ struct NotchRootView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(line)
                     .font(NookTheme.font(13.5, .medium))
@@ -307,7 +307,7 @@ struct NotchRootView: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, 20)
@@ -363,7 +363,7 @@ struct NotchRootView: View {
                 }
                 Button { viewModel.show(.idle) } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(NookTheme.font(10, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -652,26 +652,26 @@ private struct TrackCover: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "music.note")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.music.opacity(0.6))
                 }
             } else {
                 Image(systemName: "music.note")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.music)
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
         )
     }

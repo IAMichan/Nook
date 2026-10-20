@@ -115,10 +115,10 @@ struct NookList: View {
             Spacer(minLength: 4)
             Button { app.newChat() } label: {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(NookTheme.font(13, .medium))
                     .foregroundStyle(chat.isEmpty ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(chat.isEmpty ? NookTheme.smoke : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(chat.isEmpty ? NookTheme.smoke : Color.clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -132,14 +132,14 @@ struct NookList: View {
 
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium))
+            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
             TextField(tr("nooks.search"), text: $query)
                 .textFieldStyle(.plain)
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.paper)
                 .onExitCommand { query = "" }
             if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tr("button.clear"))
             }
@@ -147,7 +147,7 @@ struct NookList: View {
         .foregroundStyle(NookTheme.textTertiary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
         .padding(.horizontal, 2)
     }
 
@@ -174,7 +174,7 @@ struct NookList: View {
                         .fixedSize()
                     Rectangle().fill(NookTheme.line2).frame(height: 1)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(showArchived ? 0 : -90))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
@@ -282,7 +282,7 @@ private struct NookRow: View {
                     .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 6)
                 slot.opacity(hovering ? 0 : 1)
@@ -295,7 +295,7 @@ private struct NookRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(background))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(background))
         .contentShape(Rectangle())
     }
 
@@ -332,7 +332,7 @@ private struct NookRow: View {
     private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())

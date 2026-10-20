@@ -92,8 +92,8 @@ struct WardrobeSettingsSection: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NookTheme.graphite))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NookTheme.line2, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.graphite))
+        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).strokeBorder(NookTheme.line2, lineWidth: 0.5))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("wardrobe.title"))
     }
@@ -233,7 +233,7 @@ private struct WardrobeTile: View {
                             .offset(y: slot == .head ? 9 : (slot == .neck ? -6 : 0))
                     } else {
                         Image(systemName: automatic ? "sparkles" : "circle.slash")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(NookTheme.font(20, .medium))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -245,9 +245,9 @@ private struct WardrobeTile: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                 .fill(NookTheme.smoke.opacity(selected ? 0.95 : (hovering ? 0.75 : 0.5))))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                 .strokeBorder(selected ? NookTheme.iris : Color.primary.opacity(hovering ? 0.2 : 0.1), lineWidth: selected ? 2 : 1))
             .overlay(alignment: .topTrailing) {
                 if selected {
@@ -263,7 +263,7 @@ private struct WardrobeTile: View {
             }
             .scaleEffect(hovering ? 1.03 : 1)
             .animation(.spring(duration: 0.25, bounce: 0.3), value: hovering)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { inside in

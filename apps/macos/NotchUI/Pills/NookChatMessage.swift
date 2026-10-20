@@ -143,7 +143,7 @@ private struct ChatErrorCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.coralSoft)
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(NookTheme.coral.opacity(0.14)))
@@ -195,7 +195,7 @@ private struct ChatErrorCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     .padding(.leading, 32)
             }
         }
@@ -256,7 +256,7 @@ private struct OfferChip: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(NookTheme.font(9.5, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                 Text(text)
                     .font(NookTheme.font(12, .medium))

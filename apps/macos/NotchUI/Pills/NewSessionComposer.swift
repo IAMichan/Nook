@@ -102,7 +102,7 @@ struct NewSessionComposer: View {
                 .font(NookTheme.mono(12))
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                 .onSubmit(clone)
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
@@ -130,7 +130,7 @@ struct NewSessionComposer: View {
                 .font(NookTheme.mono(12))
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: 8).fill(NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
         }
         .font(NookTheme.font(12.5))
@@ -278,7 +278,7 @@ struct NewSessionComposer: View {
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10.5)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
                         .font(NookTheme.font(12))
@@ -304,8 +304,8 @@ struct NewSessionComposer: View {
         .padding(.horizontal, 10)
         .padding(.top, Self.trayTuck + 4)
         .padding(.bottom, 4)
-        .background(trayShape.fill(Color(hex: 0x0E0E10)))
-        .overlay(trayShape.stroke(Color(hex: 0x222226), lineWidth: 1))
+        .background(trayShape.fill(NookTheme.field))
+        .overlay(trayShape.stroke(NookTheme.fieldStroke, lineWidth: 1))
         .padding(.top, -Self.trayTuck)
         .padding(.horizontal, 14)
     }

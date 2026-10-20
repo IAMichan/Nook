@@ -40,7 +40,7 @@ struct SessionOutputsPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "tray.full").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "tray.full").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.outputs.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
             if !outputs.isEmpty {
                 Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
@@ -63,7 +63,7 @@ struct SessionOutputsPanel: View {
                     Button { selection = output.id } label: {
                         HStack(spacing: 8) {
                             Image(systemName: OutputText.symbol(output.kind))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(NookTheme.font(11, .medium))
                                 .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
                                 .frame(width: 16)
                             Text(OutputText.title(output)).lineLimit(1).truncationMode(.middle)
@@ -74,7 +74,7 @@ struct SessionOutputsPanel: View {
                         .font(NookTheme.font(12))
                         .padding(.horizontal, 8)
                         .frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(chosen ? NookTheme.smoke : Color.clear))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(chosen ? NookTheme.smoke : Color.clear))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -220,7 +220,7 @@ struct FilePreviewPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.text").font(.system(size: 11, weight: .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "doc.text").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(URL(fileURLWithPath: path).lastPathComponent)
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.paper)
@@ -414,7 +414,7 @@ struct SessionOutputsButton: View {
         let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
         Button { withAnimation(.easeInOut(duration: 0.2)) { toggle() } } label: {
             HStack(spacing: 5) {
-                Image(systemName: "tray.full").font(.system(size: 11, weight: .medium))
+                Image(systemName: "tray.full").font(NookTheme.font(11, .medium))
                 if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }
             }
             .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
