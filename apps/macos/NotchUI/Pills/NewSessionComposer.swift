@@ -211,7 +211,7 @@ struct NewSessionComposer: View {
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
-        return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296) {
+        return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296, takesRoom: true) {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
                             + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)),

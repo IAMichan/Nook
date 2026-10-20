@@ -17,7 +17,7 @@ struct BrainChip: View {
     }
 
     var body: some View {
-        ComposerDropdown(width: 340) {
+        ComposerDropdown(width: 340, takesRoom: true) {
             ComposerPill(symbol: logo == nil ? (settings.isLocalBrain ? "cpu" : "cloud") : nil, brand: logo, text: settings.brainLabel)
         } content: {
             BrainPicker(servers: servers)

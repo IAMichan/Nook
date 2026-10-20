@@ -297,7 +297,7 @@ struct AgentSessionDetail: View {
             let account = shown.map { AccountLabel.name($0, app: app) }
             let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider)
             let providers = app.connectedProviders
-            ComposerDropdown(width: providers.count > 1 ? 340 : 296) {
+            ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
                 ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
                              text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                              short: model ?? current.provider.displayName)

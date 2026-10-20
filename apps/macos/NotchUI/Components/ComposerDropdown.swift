@@ -8,14 +8,18 @@ import SwiftUI
 /// A composer choice that opens a custom dropdown panel under its pill.
 struct ComposerDropdown<Trigger: View, Content: View>: View {
     var width: CGFloat = 264
+    /// The trigger is a logo pill that may show its text in the room a crowded composer row has left.
+    var takesRoom = false
     @ViewBuilder let trigger: () -> Trigger
     @ViewBuilder let content: () -> Content
+    @Environment(\.composerDensity) private var density
     @State private var open = false
 
     var body: some View {
+        let flexible = takesRoom && density.logosTakeRoom
         Button { open.toggle() } label: { trigger() }
             .buttonStyle(.plain)
-            .fixedSize()
+            .fixedSize(horizontal: !flexible, vertical: true)
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 0) { content() }
                     .padding(4)
@@ -23,6 +27,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
                     .background(DropdownStyle.panel)
                     .environment(\.closeDropdown, { open = false })
             }
+            // Ahead of the spacer, so the pill gets all the room left instead of half of it.
+            .layoutPriority(flexible ? 1 : 0)
     }
 }
 
