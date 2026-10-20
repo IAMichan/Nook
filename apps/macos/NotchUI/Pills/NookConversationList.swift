@@ -144,7 +144,7 @@ struct NookList: View {
                 .foregroundStyle(NookTheme.paper)
                 .onExitCommand { query = "" }
             if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tr("button.clear"))
             }
@@ -160,7 +160,7 @@ struct NookList: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.horizontal, 12)
             .padding(.bottom, 2)

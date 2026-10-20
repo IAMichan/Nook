@@ -154,7 +154,7 @@ struct LiveActivityRow: View {
                 HStack(spacing: 6) {
                     if !waiting {
                         Image(systemName: AgentActivityText.symbol(activity))
-                            .font(NookTheme.font(10.5, .medium))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     Group {
@@ -218,7 +218,7 @@ struct QueuedMessagesStrip: View {
                         .font(NookTheme.font(11.5, .semibold))
                     Spacer(minLength: 8)
                     Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(queue.isHeld ? NookTheme.amber : NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)

@@ -24,7 +24,7 @@ struct PortfolioSettings: View {
 
             HStack {
                 TextField(network.placeholder, text: $address)
-                    .font(.system(.body, design: .monospaced))
+                    .font(NookTheme.TextStyle.code)
                     .autocorrectionDisabled()
                     .onSubmit(addWallet)
                 Button(tr("button.add"), action: addWallet)
@@ -32,19 +32,19 @@ struct PortfolioSettings: View {
             }
             if let message = walletError {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(Color.red)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.coral)
             }
             Text(tr("portfolio.walletHint"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
 
             ForEach(PortfolioExchange.allCases) { exchange in
                 PortfolioExchangeFields(portfolio: portfolio, exchange: exchange)
             }
             Text(tr("portfolio.exchangeHint"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
         }
     }
 
@@ -54,8 +54,8 @@ struct PortfolioSettings: View {
                 SiteIcon(domain: wallet.network.iconDomain, fallback: "bitcoinsign.circle", size: 18)
                 Text(wallet.network.name)
                 Text(wallet.address)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.mono(11))
+                    .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -64,15 +64,15 @@ struct PortfolioSettings: View {
                     portfolio.removeWallet(wallet)
                 } label: {
                     Image(systemName: "minus.circle.fill")
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(NookTheme.coral)
                 }
                 .buttonStyle(.borderless)
                 .help(tr("portfolio.removeAddress"))
             }
             if let message = portfolio.error(for: wallet) {
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(Color.red)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.coral)
             }
         }
     }
@@ -120,12 +120,12 @@ private struct PortfolioExchangeFields: View {
                 Spacer()
             }
             Text(exchange.help)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
             if let message = saveError ?? portfolio.error(for: exchange) {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(Color.red)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.coral)
                     .textSelection(.enabled)
             }
         } label: {
@@ -135,8 +135,8 @@ private struct PortfolioExchangeFields: View {
                 Spacer()
                 if portfolio.isConfigured(exchange) {
                     Label(tr("portfolio.configured"), systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(Color.green)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.mint)
                 }
             }
         }

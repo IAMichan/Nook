@@ -52,7 +52,7 @@ extension SettingsView {
     func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
         StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
             if granted {
-                Text(tr("music.on")).foregroundStyle(.secondary)
+                Text(tr("music.on")).foregroundStyle(NookTheme.textSecondary)
             } else {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }

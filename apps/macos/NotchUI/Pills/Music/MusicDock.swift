@@ -320,7 +320,7 @@ private struct MusicUpcomingChip: View {
                         .lineLimit(1)
                     if !track.artist.isEmpty {
                         Text(track.artist)
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.paper.opacity(0.45))
                             .lineLimit(1)
                     }

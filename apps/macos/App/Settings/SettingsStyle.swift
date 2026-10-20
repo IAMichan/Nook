@@ -151,10 +151,10 @@ struct HealthPill: View {
                 Circle().fill(health.color).frame(width: 6, height: 6)
             }
             Text(text ?? health.label)
-                .font(.caption.weight(.medium))
+                .font(NookTheme.TextStyle.label)
                 .lineLimit(1)
         }
-        .foregroundStyle(health == .off || health == .notLinked ? Color.secondary : health.color)
+        .foregroundStyle(health == .off || health == .notLinked ? NookTheme.textSecondary : health.color)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(health.color.opacity(0.12)))
@@ -181,7 +181,7 @@ struct SetupStep<Content: View>: View {
             .foregroundStyle(done ? NookTheme.ink : NookTheme.onIris)
             .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.headline)
+                Text(title).font(NookTheme.TextStyle.strong)
                 content()
             }
             Spacer(minLength: 0)
@@ -209,12 +209,12 @@ struct GalleryCard<Icon: View, Accessory: View>: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.callout.weight(.semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(2, reservesSpace: true)
                         .multilineTextAlignment(.leading)
                 }
@@ -257,10 +257,10 @@ struct IntroCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.callout.weight(.semibold))
+                Text(title).font(NookTheme.TextStyle.strong)
                 Text(text)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -282,9 +282,9 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
             HStack(spacing: 14) {
                 icon()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.title2.weight(.semibold))
+                    Text(title).font(NookTheme.TextStyle.heading)
                     Text(subtitle)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)

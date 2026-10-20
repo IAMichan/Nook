@@ -12,18 +12,18 @@ struct RemoteMachinesSection: View {
     var body: some View {
         Section {
             if machines.isEmpty {
-                Text(tr("remote.empty")).font(.callout).foregroundStyle(.secondary)
+                Text(tr("remote.empty")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(machines) { machine in
                 HStack(spacing: 10) {
-                    Image(systemName: "server.rack").foregroundStyle(.secondary)
+                    Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(machine.name).font(.body.weight(.medium))
+                        Text(machine.name).font(NookTheme.font(13, .medium))
                         Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.mono(11))
+                            .foregroundStyle(NookTheme.textSecondary)
                         if let result = results[machine.id] {
-                            Text(result).font(.caption).foregroundStyle(result == tr("remote.test.ok") ? Color.green : Color.orange)
+                            Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(result == tr("remote.test.ok") ? NookTheme.mint : NookTheme.amber)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -104,14 +104,14 @@ private struct AddMachineSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tr("remote.addTitle")).font(.title2.weight(.semibold))
-            Text(tr("remote.addSubtitle")).foregroundStyle(.secondary)
+            Text(tr("remote.addTitle")).font(NookTheme.TextStyle.heading)
+            Text(tr("remote.addSubtitle")).foregroundStyle(NookTheme.textSecondary)
             TextField(tr("remote.name"), text: $name, prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
             TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+                .font(NookTheme.TextStyle.code)
             TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
             if !host.isEmpty, !RemoteMachines.isValidHost(host.trimmingCharacters(in: .whitespaces)) {
-                Text(tr("remote.badHost")).font(.caption).foregroundStyle(.orange)
+                Text(tr("remote.badHost")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
             }
             HStack {
                 Spacer()

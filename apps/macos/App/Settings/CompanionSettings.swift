@@ -14,23 +14,23 @@ struct CompanionSettingsRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(tr("companion.enable"), isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() }))
-            Text(tr("companion.hint")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(tr("companion.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             if store.enabled {
                 status
                 ForEach(store.devices) { device in
                     HStack {
-                        Image(systemName: "iphone").foregroundStyle(.secondary)
+                        Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary)
                         VStack(alignment: .leading) {
                             Text(device.name)
                             Text(device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) }
                                  ?? tr("companion.neverSeen"))
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         }
                         Spacer()
                         Button(tr("companion.remove")) { store.remove(device.id) }
                     }
                 }
-                if store.devices.isEmpty { Text(tr("companion.none")).font(.caption).foregroundStyle(.secondary) }
+                if store.devices.isEmpty { Text(tr("companion.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
                 if let link {
                     pairing(link)
                 } else {
@@ -60,7 +60,7 @@ struct CompanionSettingsRows: View {
     @ViewBuilder
     private var pushSection: some View {
         Toggle(tr("companion.push.enable"), isOn: $store.push.enabled)
-        Text(tr("companion.push.hint")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(tr("companion.push.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
         if store.push.enabled {
             Group {
                 Toggle(tr("companion.push.approval"), isOn: kindBinding(.approval))
@@ -88,15 +88,15 @@ struct CompanionSettingsRows: View {
 
     @ViewBuilder
     private var apnsSetup: some View {
-        Text(tr("companion.push.keyTitle")).font(.headline)
-        Text(tr("companion.push.keyHint")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(tr("companion.push.keyTitle")).font(NookTheme.TextStyle.strong)
+        Text(tr("companion.push.keyHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
         HStack {
             TextField(tr("companion.push.keyID"), text: $store.apnsKeyID).textFieldStyle(.roundedBorder)
             TextField(tr("companion.push.teamID"), text: $store.apnsTeamID).textFieldStyle(.roundedBorder)
         }
         HStack {
             if store.hasAPNsKey {
-                Label(tr("companion.push.keySaved"), systemImage: "checkmark.seal").foregroundStyle(.secondary)
+                Label(tr("companion.push.keySaved"), systemImage: "checkmark.seal").foregroundStyle(NookTheme.textSecondary)
                 Button(tr("companion.remove")) { store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false }
             } else {
                 Button(tr("companion.push.importKey")) { importKey() }
@@ -104,9 +104,9 @@ struct CompanionSettingsRows: View {
             Button(tr("companion.push.test")) { notifier.sendTest() }
                 .disabled(!store.canPush || !store.devices.contains { $0.pushToken != nil })
         }
-        if keyProblem { Text(tr("companion.push.keyInvalid")).font(.caption).foregroundStyle(.red) }
-        if !store.canPush { Text(tr("companion.push.notReady")).font(.caption).foregroundStyle(.secondary) }
-        if let result = notifier.lastResult { Text(result).font(.caption).foregroundStyle(.secondary) }
+        if keyProblem { Text(tr("companion.push.keyInvalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral) }
+        if !store.canPush { Text(tr("companion.push.notReady")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+        if let result = notifier.lastResult { Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
     }
 
     /// Reads the .p8 file the user downloaded from Apple; its contents go to the Keychain and are not shown.
@@ -125,8 +125,8 @@ struct CompanionSettingsRows: View {
     @ViewBuilder
     private var status: some View {
         switch server.state {
-        case .listening(let port): Text(tr("companion.listening", Int(port))).font(.caption).foregroundStyle(.secondary)
-        case .failed(let message): Text(tr("companion.failed", message)).font(.caption).foregroundStyle(.red)
+        case .listening(let port): Text(tr("companion.listening", Int(port))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+        case .failed(let message): Text(tr("companion.failed", message)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
         case .stopped: EmptyView()
         }
     }
@@ -138,7 +138,7 @@ struct CompanionSettingsRows: View {
                     .accessibilityLabel(tr("companion.qr"))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text(tr("companion.pairSteps")).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).fixedSize(horizontal: false, vertical: true)
                 Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
                     if let url = link.url {
                         Pasteboard.copy(url.absoluteString)

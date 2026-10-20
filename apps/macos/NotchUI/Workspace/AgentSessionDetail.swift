@@ -200,7 +200,7 @@ struct AgentSessionDetail: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .lineLimit(1)
             }
         }
@@ -473,7 +473,7 @@ struct AgentSessionDetail: View {
         if let actionError {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral)
                 Text(actionError)
                     .font(NookTheme.font(12))

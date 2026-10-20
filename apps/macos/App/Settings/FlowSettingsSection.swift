@@ -15,7 +15,7 @@ struct FlowSettingsSection: View {
                 }
             if store.enabled {
                 LabeledContent(tr("flow.settings.key")) {
-                    Text(store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol)).foregroundStyle(.secondary)
+                    Text(store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol)).foregroundStyle(NookTheme.textSecondary)
                 }
                 if !flow.trusted {
                     StatusRow(title: tr("flow.settings.access"), detail: tr("flow.settings.accessDetail"), state: .warning) {
@@ -28,25 +28,25 @@ struct FlowSettingsSection: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(tr("flow.settings.dictionary"))
                     TextEditor(text: $dictionary)
-                        .font(.system(.callout, design: .monospaced))
+                        .font(NookTheme.TextStyle.code)
                         .frame(minHeight: 90)
                         .onChange(of: dictionary) { _, value in store.dictionaryText = value }
                     Text(tr("flow.settings.dictionaryHint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if store.stats.totalWords > 0 {
                     LabeledContent(tr("flow.settings.stats")) {
                         Text(tr("flow.settings.statsLine", store.stats.totalWords, store.wordsPerMinute, Int(store.minutesSaved.rounded()), store.streak))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
                 if !store.history.isEmpty {
                     DisclosureGroup(tr("flow.settings.recent")) {
                         ForEach(store.history.prefix(8)) { entry in
                             HStack(alignment: .top) {
-                                Text(entry.text).lineLimit(2).font(.callout)
+                                Text(entry.text).lineLimit(2).font(NookTheme.TextStyle.body)
                                 Spacer()
                                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(entry.text, forType: .string) } label: {
                                     Image(systemName: "doc.on.doc")
@@ -79,8 +79,8 @@ struct ParakeetSettingsSection: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(tr("parakeet.title"))
                     Text(parakeet.state == .unsupported ? tr("parakeet.unsupported") : tr("parakeet.detail"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -92,14 +92,14 @@ struct ParakeetSettingsSection: View {
                 case .downloading(let fraction):
                     VStack(alignment: .trailing, spacing: 2) {
                         ProgressView(value: fraction).frame(width: 110)
-                        Text(tr("parakeet.downloading", Int(fraction * 100))).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(tr("parakeet.downloading", Int(fraction * 100))).font(NookTheme.TextStyle.detail.monospacedDigit()).foregroundStyle(NookTheme.textSecondary)
                     }
                 case .ready:
                     Button(tr("parakeet.remove"), role: .destructive) { parakeet.remove() }
                 case .failed(let why):
                     VStack(alignment: .trailing, spacing: 2) {
                         Button(tr("parakeet.download")) { parakeet.download() }
-                        Text(why).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        Text(why).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber).lineLimit(2)
                     }
                 }
             }

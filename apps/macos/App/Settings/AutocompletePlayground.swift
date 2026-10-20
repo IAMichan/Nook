@@ -22,7 +22,7 @@ struct AutocompletePlaygroundSection: View {
                     .overlay(alignment: .topLeading) {
                         if playground.isEmpty {
                             Text(tr("autocomplete.playground.placeholder"))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.leading, 9)
                                 .padding(.top, 8)
                                 .allowsHitTesting(false)
@@ -33,15 +33,15 @@ struct AutocompletePlaygroundSection: View {
                 HStack(spacing: 10) {
                     if playground.thinking {
                         ProgressView().controlSize(.small)
-                        Text(tr("autocomplete.playground.thinking")).foregroundStyle(.secondary)
+                        Text(tr("autocomplete.playground.thinking")).foregroundStyle(NookTheme.textSecondary)
                     } else if playground.suggestion != nil {
                         Text(tr("autocomplete.playground.keys", store.prefs.acceptWord.label, store.prefs.acceptAll.label))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     Button(tr("autocomplete.playground.clear")) { editor.clear() }.disabled(playground.isEmpty)
                 }
-                .font(.caption)
+                .font(NookTheme.TextStyle.detail)
             } footer: {
                 Text(tr("autocomplete.playground.footer"))
             }
@@ -54,17 +54,17 @@ struct AutocompletePlaygroundSection: View {
                     LabeledContent(tr("autocomplete.playground.time")) { Text(tr("autocomplete.playground.ms", last.milliseconds)).monospacedDigit() }
                     LabeledContent(tr("autocomplete.playground.answer")) {
                         Text(last.raw.isEmpty ? tr("autocomplete.playground.noAnswer") : "“\(last.raw)”")
-                            .foregroundStyle(last.raw.isEmpty ? Color.secondary : Color.primary)
+                            .foregroundStyle(last.raw.isEmpty ? NookTheme.textSecondary : Color.primary)
                             .textSelection(.enabled)
                     }
                     LabeledContent(tr("autocomplete.playground.shown")) {
                         Text(last.suggestion.map { "“\($0.remaining)”" } ?? tr("autocomplete.playground.nothingShown"))
-                            .foregroundStyle(last.suggestion == nil ? Color.secondary : Color.primary)
+                            .foregroundStyle(last.suggestion == nil ? NookTheme.textSecondary : Color.primary)
                     }
                     LabeledContent(tr("autocomplete.playground.taken")) { Text(tr("autocomplete.stats.words", playground.wordsTaken)).monospacedDigit() }
                     DisclosureGroup(tr("autocomplete.playground.prompt")) {
                         Text(last.prompt.document)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(NookTheme.mono(11))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 4)

@@ -64,7 +64,7 @@ struct MailDraftView: View {
             HStack(spacing: 4) {
                 if draft.state == .sent {
                     Label(tr("chat.mail.sent"), systemImage: "checkmark")
-                        .font(NookTheme.font(13, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.mint)
                 } else {
                     SmallPrimaryButton(title: draft.state == .sending ? tr("button.sending") : tr("button.send"), systemName: "paperplane.fill") {
@@ -98,11 +98,11 @@ struct MailDraftView: View {
     private var statusLabel: some View {
         switch draft.state {
         case .opened:
-            Text(tr("chat.mail.openedInMail")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+            Text(tr("chat.mail.openedInMail")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
         case .sent:
-            Text(tr("chat.mail.sent")).font(NookTheme.font(11)).foregroundStyle(NookTheme.mint)
+            Text(tr("chat.mail.sent")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
         default:
-            Text(tr("chat.mail.youSend")).font(NookTheme.font(11)).foregroundStyle(NookTheme.amber)
+            Text(tr("chat.mail.youSend")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
         }
     }
 
@@ -114,7 +114,7 @@ struct MailDraftView: View {
                 .frame(width: 70, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
                 .textFieldStyle(.plain)
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .disabled(locked)
         }

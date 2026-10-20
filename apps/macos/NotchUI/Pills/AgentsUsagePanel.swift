@@ -80,7 +80,7 @@ struct AgentsUsagePanel: View {
             HStack(spacing: 8) {
                 AgentLogo(agent: kind.name, size: 16)
                 Text(kind.name)
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 if profiles.count > 1 {
                     Text(tr("agents.usage.accounts", profiles.count))
@@ -292,7 +292,7 @@ struct AgentsUsagePanel: View {
                             .font(NookTheme.font(9, .semibold))
                             .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }

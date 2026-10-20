@@ -41,7 +41,7 @@ struct SessionOutputsPanel: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "tray.full").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.outputs.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
+            Text(tr("ws.outputs.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
             if !outputs.isEmpty {
                 Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
             }
@@ -222,7 +222,7 @@ struct FilePreviewPanel: View {
         HStack(spacing: 8) {
             Image(systemName: "doc.text").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(URL(fileURLWithPath: path).lastPathComponent)
-                .font(NookTheme.font(13, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
                 .truncationMode(.middle)

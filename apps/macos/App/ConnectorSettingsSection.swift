@@ -135,8 +135,8 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(connector.title)
                         Text(signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health))
-                            .font(.caption)
-                            .foregroundStyle(health == .broken || repairFailure != nil ? ConnectionHealth.broken.color : Color.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(health == .broken || repairFailure != nil ? ConnectionHealth.broken.color : NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
@@ -153,7 +153,7 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
             } else if health == .broken || health == .needsYou {
                 Button { repair() } label: {
                     Text(tr("settings2.fix"))
-                        .font(.caption.weight(.semibold))
+                        .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -326,8 +326,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             if configured {
                 if confirmDisconnect {
                     Text(tr("settings2.service.disconnectConfirm"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }
                     Button(tr("settings2.disconnect"), role: .destructive) { clear() }
                 } else {
@@ -360,14 +360,14 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             VStack(alignment: .leading, spacing: 10) {
                 gitHubSignInButton
                 Text(tr("settings2.github.easy"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
             DisclosureGroup(isExpanded: $showKeySteps) {
                 VStack(alignment: .leading, spacing: 20) { keySteps }
                     .padding(.top, 12)
             } label: {
-                Text(tr("settings2.github.useToken")).font(.callout)
+                Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
             }
             if configured { resultStep(number: 1) }
         } else if isGitHub {
@@ -376,7 +376,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 VStack(alignment: .leading, spacing: 20) { keySteps }
                     .padding(.top, 12)
             } label: {
-                Text(tr("settings2.github.useToken")).font(.callout)
+                Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
             }
             if configured { resultStep(number: 1) }
         } else {
@@ -398,12 +398,12 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             if gitHubSignIn.phase == .waitingForCLI {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(tr("connector.githubFinishLogin")).font(.caption)
+                    Text(tr("connector.githubFinishLogin")).font(NookTheme.TextStyle.detail)
                 }
             } else if case .failed(let message) = gitHubSignIn.phase {
-                Text(message).font(.caption).foregroundStyle(.red)
+                Text(message).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
             } else {
-                Text(tr("connector.useGitHubCLIHint")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("connector.useGitHubCLIHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
         }
     }
@@ -413,8 +413,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         SetupStep(number: 1, title: connector.signupURL != nil ? tr("settings2.step.getKey", connector.title) : tr("settings2.step.findInfo"),
                   done: configured) {
             Text(connector.helpText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let url = connector.signupURL {
                 Button {
@@ -442,21 +442,21 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         switch health {
         case .notLinked:
             Text(tr("settings2.step.checkWaiting"))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
         case .busy:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text(tr("settings2.step.checkBusy")).font(.callout)
+                Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
             }
         case .working, .needsYou:
             Label(tr("settings2.step.checkOK", connector.title), systemImage: "checkmark.seal.fill")
-                .font(.callout.weight(.medium))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(ConnectionHealth.working.color)
         case .broken, .off:
             VStack(alignment: .leading, spacing: 6) {
                 Label(ServiceState.summary(of: connector, health: health), systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(ConnectionHealth.broken.color)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(tr("connector.retry")) { refreshNow() }
@@ -484,20 +484,20 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         Divider()
 
         VStack(alignment: .leading, spacing: 10) {
-            Text(tr("settings2.service.keyTitle")).font(.headline)
+            Text(tr("settings2.service.keyTitle")).font(NookTheme.TextStyle.strong)
             if replacing && isGitHub {
                 if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton }
                 DisclosureGroup(isExpanded: $showKeySteps) {
                     fieldsAndPaste.padding(.top, 8)
                 } label: {
-                    Text(tr("settings2.github.useToken")).font(.callout)
+                    Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
                 }
             } else if replacing || connector.configFields.contains(where: { !$0.secret }) {
                 fieldsAndPaste
             } else {
                 HStack {
                     Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
                 }
@@ -514,13 +514,13 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         if !capabilities.isEmpty {
             DisclosureGroup {
                 Text(capabilities)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             } label: {
                 Label(tr("settings2.service.whatCanNook"), systemImage: "questionmark.circle")
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
             }
         }
     }
@@ -533,7 +533,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             ForEach(connector.configFields, id: \.account) { field in
                 VStack(alignment: .leading, spacing: 4) {
                     if connector.configFields.count > 1 {
-                        Text(field.label).font(.caption).foregroundStyle(.secondary)
+                        Text(field.label).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     fieldRow(field)
                 }
@@ -550,7 +550,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 Spacer()
             }
             if !note.isEmpty {
-                Text(note).font(.caption).foregroundStyle(.secondary)
+                Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
         }
     }
@@ -588,9 +588,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         case .waiting(let code, let uri):
             VStack(alignment: .leading, spacing: 6) {
                 Text(tr("connector.githubCodeHint"))
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                 Text(code)
-                    .font(.system(.title, design: .monospaced).weight(.semibold))
+                    .font(NookTheme.mono(22, .semibold))
                     .textSelection(.enabled)
                 HStack {
                     Button(tr("connector.reopenGitHub")) { NSWorkspace.shared.open(uri) }
@@ -603,8 +603,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         case .failed(let message):
             VStack(alignment: .leading, spacing: 6) {
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.coral)
                 Button(tr("button.tryAgain")) { gitHubSignIn.start() }
             }
         case .idle, .checkingCLI, .waitingForCLI, .done:
@@ -718,20 +718,20 @@ struct ExtraAccountsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text(tr("accounts.title")).font(.headline)
+            Text(tr("accounts.title")).font(NookTheme.TextStyle.strong)
             HStack {
                 TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
                 if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
-                    Text(identity).font(.caption).foregroundStyle(.secondary)
+                    Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
             ForEach(accounts) { account in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(account.label)
-                        if let identity = account.identity { Text(identity).font(.caption).foregroundStyle(.secondary) }
+                        if let identity = account.identity { Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
                     }
                     .frame(width: 120, alignment: .leading)
                     SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))
@@ -753,7 +753,7 @@ struct ExtraAccountsView: View {
                 }
                 .disabled(newLabel.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text(tr("accounts.hint")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(tr("accounts.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
         .onAppear(perform: load)
     }

@@ -128,7 +128,7 @@ struct NookChatView: View {
                         .font(NookTheme.font(22, .semibold))
                         .foregroundStyle(NookTheme.paper)
                     Text(tr("chat.emptySubtitle"))
-                        .font(NookTheme.font(13))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
 
@@ -157,7 +157,7 @@ struct NookChatView: View {
 
     private func homeSection(_ title: String) -> some View {
         Text(title)
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.leading, 2)
             .padding(.top, 22)

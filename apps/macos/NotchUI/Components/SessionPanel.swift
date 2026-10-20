@@ -198,7 +198,7 @@ struct SessionPanel: View {
                 .textFieldStyle(.roundedBorder)
             TextField(tr("agents.panel.scriptCommand"), text: $scriptCommand)
                 .textFieldStyle(.roundedBorder)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .onSubmit(saveScript)
             HStack(spacing: 6) {
                 Text(tr("agents.panel.scriptFile"))
@@ -485,7 +485,7 @@ private struct PanelRow: View {
                     .truncationMode(.middle)
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)

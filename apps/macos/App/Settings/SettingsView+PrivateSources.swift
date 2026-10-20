@@ -20,8 +20,8 @@ extension SettingsView {
             Text(settings.isLocalBrain
                  ? tr("settings.private.activeLocal")
                  : tr("settings.private.activeExternal", settings.localOnlySources.count))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
         } header: {
             Text(tr("settings.private.title"))
         } footer: {

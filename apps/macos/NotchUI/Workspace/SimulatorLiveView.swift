@@ -92,7 +92,7 @@ struct SimulatorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if chosen != nil {
                 Text(stream.inputReady ? tr("sim.hint") : tr("sim.waitingInput"))
-                    .font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
         .onAppear {
@@ -512,7 +512,7 @@ struct SimulatorActionsPanel: View {
             Divider()
             HStack {
                 Text(tr("sim.action.app")).frame(width: 110, alignment: .leading)
-                TextField("com.example.app", text: $bundleID).font(.system(.body, design: .monospaced))
+                TextField("com.example.app", text: $bundleID).font(NookTheme.TextStyle.code)
             }
             HStack {
                 Spacer().frame(width: 110)
@@ -553,7 +553,7 @@ struct SimulatorActionsPanel: View {
                 }
             }
             if let result {
-                Text(result).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .controlSize(.small)

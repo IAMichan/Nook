@@ -97,7 +97,7 @@ struct UpdatePanel: View {
                         Text(tr("update.viewOnGitHub"))
                         Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
                     }
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
@@ -147,7 +147,7 @@ struct UpdatePanel: View {
                     }
                     if updater.compiledFiles > 0 {
                         Text(tr("update.compiled", updater.compiledFiles))
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                 }
@@ -181,7 +181,7 @@ struct UpdatePanel: View {
                     Image(systemName: "circle").foregroundStyle(NookTheme.line2)
                 }
             }
-            .font(NookTheme.font(13))
+            .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
             Text(UpdateText.step(step))
                 .font(NookTheme.font(12.5, step == current ? .semibold : .regular))
@@ -356,7 +356,7 @@ private struct ChangeRow: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
                 Text(NookDates.ago(change.date))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .fixedSize()

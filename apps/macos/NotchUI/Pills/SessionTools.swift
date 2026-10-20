@@ -127,7 +127,7 @@ private struct SessionToolIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: ToolbarGroup.itemHeight)
             .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
@@ -462,7 +462,7 @@ private struct SessionToolPickerRow: View {
                 Text(tool.title).lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .font(NookTheme.font(13))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(enabled ? NookTheme.paper : NookTheme.textTertiary)
             .padding(.horizontal, 10)
             .frame(height: 30)
@@ -530,7 +530,7 @@ struct DevServerStrip: View {
                                 browser.go(server.url.absoluteString)
                             } label: {
                                 Text("\(server.command) — :\(server.port)")
-                                    .font(NookTheme.font(11.5, .medium))
+                                    .font(NookTheme.TextStyle.label)
                                     .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                                     .padding(.horizontal, 9)
                                     .frame(height: 22)

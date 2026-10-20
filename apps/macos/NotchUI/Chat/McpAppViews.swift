@@ -41,7 +41,7 @@ struct McpAppBlock: View {
                 Group {
                     if session.mode == .fullscreen {
                         HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.font(11))
+                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.TextStyle.detail)
                             Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.font(11.5))
                             Button(tr("ws.mcpApp.exitFullscreen")) { session.exitFullscreen() }.controlSize(.small)
                         }

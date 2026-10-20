@@ -113,7 +113,7 @@ extension SettingsView {
                         Text(tr(item.key))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
-                            .font(.callout.weight(selected ? .semibold : .regular))
+                            .font(NookTheme.font(13, selected ? .semibold : .regular))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 4)
                             .foregroundStyle(selected ? NookTheme.onIris : Color.primary)
@@ -158,10 +158,10 @@ extension SettingsView {
             VStack(spacing: 8) {
                 NookOrb(mood: .rest, size: 44, animated: false, glow: false, look: look)
                     .frame(width: 60, height: 56)
-                Text(Self.presetTitle(id)).font(.callout.weight(.semibold))
+                Text(Self.presetTitle(id)).font(NookTheme.TextStyle.strong)
                 Text(tr("settings.appearance.preset.\(id)"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2, reservesSpace: true)
             }

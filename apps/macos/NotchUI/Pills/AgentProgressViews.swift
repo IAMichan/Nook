@@ -73,7 +73,7 @@ struct VerificationChips: View {
                     Image(systemName: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
                     Text(Self.text(check)).lineLimit(1)
                 }
-                .font(NookTheme.font(10.5, .medium))
+                .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(Self.color(check.outcome))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

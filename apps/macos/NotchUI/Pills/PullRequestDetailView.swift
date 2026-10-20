@@ -45,7 +45,7 @@ struct PullRequestDetailView: View {
                 mergeBar(detail)
             } else if let error {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(tr("agents.pr.loadFailed")).font(NookTheme.font(15, .semibold)).foregroundStyle(NookTheme.paper)
+                    Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                     Text(error)
                         .font(NookTheme.font(12.5))
                         .foregroundStyle(NookTheme.coralSoft)
@@ -87,7 +87,7 @@ struct PullRequestDetailView: View {
             NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
                 .help(tr("agents.pr.back"))
             Text(item.id)
-                .font(NookTheme.font(13, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
             Spacer()
@@ -105,7 +105,7 @@ struct PullRequestDetailView: View {
     private func summary(_ detail: PullRequestDetail) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(detail.title)
-                .font(NookTheme.font(15, .semibold))
+                .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -246,7 +246,7 @@ struct PullRequestDetailView: View {
                 if let url = detail.url?.appendingPathComponent("commits/" + sha) { NSWorkspace.shared.open(url) }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "smallcircle.filled.circle").font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
+                    Image(systemName: "smallcircle.filled.circle").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
                     Text(String(sha.prefix(7))).font(NookTheme.mono(11.5)).foregroundStyle(NookTheme.textSecondary)
                     Text(event.body).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.paper).lineLimit(1)
                     Spacer(minLength: 4)
@@ -271,7 +271,7 @@ struct PullRequestDetailView: View {
 
     private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?, now: Date) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol).font(NookTheme.font(11)).foregroundStyle(color).frame(width: 16)
+            Image(systemName: symbol).font(NookTheme.TextStyle.detail).foregroundStyle(color).frame(width: 16)
             (Text("@" + author + " ").font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
                 + Text(sentence).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary))
                 .lineLimit(2)
@@ -388,7 +388,7 @@ struct PullRequestDetailView: View {
                     HStack(spacing: 10) {
                         fileGlyph(file.status)
                         Text(file.path)
-                            .font(NookTheme.mono(12))
+                            .font(NookTheme.TextStyle.code)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -420,7 +420,7 @@ struct PullRequestDetailView: View {
                 NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24) { openFile = nil }
                 fileGlyph(file.status)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(file.path).font(NookTheme.mono(12)).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.head)
+                    Text(file.path).font(NookTheme.TextStyle.code).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.head)
                     if let previous = file.previousPath {
                         Text(previous + " →").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.head)
                     }
@@ -480,7 +480,7 @@ struct PullRequestDetailView: View {
     private func confirmation(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.merge")
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.amber)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
@@ -503,7 +503,7 @@ struct PullRequestDetailView: View {
     private func mergeRow(_ detail: PullRequestDetail, note: String?, ready: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
             Text(tr(note ?? "agents.pr.note.ready"))
                 .font(NookTheme.font(12))

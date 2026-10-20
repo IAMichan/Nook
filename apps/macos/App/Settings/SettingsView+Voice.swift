@@ -56,12 +56,12 @@ extension SettingsView {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tr("companion.push.enable")).foregroundStyle(.primary)
                             Text(tr("settings.notifications.iphoneDetail"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -91,7 +91,7 @@ extension SettingsView {
             SettingToggle(tr("quiet.showInScreenshots"), detail: tr("quiet.showInScreenshotsDetail"), isOn: $settings.showInScreenshots)
                 .disabled(settings.hideFromCaptures)
             LabeledContent(tr("quiet.now")) {
-                Text(app.quietStatusText).foregroundStyle(.secondary)
+                Text(app.quietStatusText).foregroundStyle(NookTheme.textSecondary)
             }
             // While this line is on screen the situation is read even with "change nothing" for both.
             .onAppear { app.quietViewers += 1; app.quietTick() }

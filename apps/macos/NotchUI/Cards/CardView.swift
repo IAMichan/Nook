@@ -29,7 +29,7 @@ struct CardView: View {
                 if !card.sources.isEmpty {
                     ForEach(card.sources.prefix(5), id: \.self) { source in
                         Text(source)
-                            .font(NookTheme.font(10.5, .medium))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textSecondary)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
@@ -267,7 +267,7 @@ private struct CardAppIcon: View {
                     .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: "app.fill")
-                    .font(NookTheme.font(13))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
             }
         }
@@ -875,7 +875,7 @@ private struct ChoiceRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {

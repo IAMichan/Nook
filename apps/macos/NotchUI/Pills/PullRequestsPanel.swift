@@ -109,7 +109,7 @@ struct PullRequestsPanel: View {
                     .focused($searching)
                     .onExitCommand { filter.query = ""; searching = false }
                 if !filter.query.isEmpty {
-                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
+                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
                         .buttonStyle(.plain)
                         .accessibilityLabel(tr("button.clear"))
                 }
@@ -130,7 +130,7 @@ struct PullRequestsPanel: View {
     /// A watched organization or repository GitHub would not search: a typo, or none of your accounts has access.
     private var unreadableNote: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.font(11))
+            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail)
             Text(tr("agents.pulls.unreadable", unreadable.joined(separator: ", ")))
                 .font(NookTheme.font(12))
                 .fixedSize(horizontal: false, vertical: true)
@@ -140,7 +140,7 @@ struct PullRequestsPanel: View {
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(NookTheme.font(15, .semibold)).foregroundStyle(NookTheme.paper)
+            Text(title).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
             Text(detail)
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.textSecondary)
@@ -220,7 +220,7 @@ struct PullRequestsPanel: View {
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 0 : -90))
                         .frame(width: 10)
-                    Image(systemName: "folder").font(NookTheme.font(11))
+                    Image(systemName: "folder").font(NookTheme.TextStyle.detail)
                     Text(group.repo).font(NookTheme.font(11.5, .semibold)).lineLimit(1).truncationMode(.middle)
                     Text("\(group.rows.count)").font(NookTheme.font(11.5))
                     Spacer(minLength: 0)
@@ -308,7 +308,7 @@ private struct PullRequestRow: View {
             Image(systemName: "arrow.triangle.merge").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.violet)
                 .help(tr("agents.pulls.state.merged"))
         case .closed:
-            Image(systemName: "xmark.circle").font(NookTheme.font(13)).foregroundStyle(NookTheme.coralSoft)
+            Image(systemName: "xmark.circle").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coralSoft)
                 .help(tr("agents.pulls.state.closed"))
         case .open:
             ciMark
@@ -318,8 +318,8 @@ private struct PullRequestRow: View {
     @ViewBuilder
     private var ciMark: some View {
         switch item.ci {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(13)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(13)).foregroundStyle(NookTheme.coral)
+        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)
+        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral)
         case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
         case .unknown: Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }

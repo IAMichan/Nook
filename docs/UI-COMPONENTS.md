@@ -14,7 +14,7 @@ copying it again.
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
-| `NookTheme.TextStyle.caption`, `label`, `body`, `strong`, `title`, `code` | The type scale: the same kind of text is the same size everywhere |
+| `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
 | `NookTheme.Spacing.xxs … xxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24 |
@@ -29,8 +29,9 @@ tokens (`WS.background` is `NookTheme.canvas`, `WS.sidebar` is `NookTheme.surfac
 Nook has one visual language, and the repository guards it in three places:
 
 1. **`UIConsistencyTests`** (`apps/macos/Tests/NookTests/UIConsistencyTests.swift`) reads every source under `NotchUI`
-   and `App` and fails when a view uses `Font.system(size:)` inline, a literal `Color(hex:)` / `Color(red:)` /
-   `NSColor(white:)`, or a corner radius written as a number from the scale. It runs with the Xcode tests and with
+   and `App` and fails when a view uses `Font.system(size:)` inline, one of SwiftUI's own text styles (`.caption`,
+   `.callout`, `.headline`, `.system(.body)`), a literal `Color(hex:)` / `Color(red:)` / `NSColor(white:)`, a system
+   state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale. It runs with the Xcode tests and with
    `./scripts/core-tests.sh`.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` runs it on every pull request.
@@ -43,7 +44,9 @@ loosen the rule itself.
 The checklist for a new or changed view:
 
 - Text: a `NookTheme.TextStyle`, or `NookTheme.font` / `mono` / `rounded` for the odd size. Color from the text ramp
-  (`paper` › `textStrong` › `textSecondary` › `textTertiary` › `textMuted`).
+  (`paper` › `textStrong` › `textSecondary` › `textTertiary` › `textMuted`), never `.secondary` or `.tertiary`. Settings
+  follows the same rules as the panel: a caption under a setting is `TextStyle.detail` in `textSecondary`, a warning
+  under it `amber`, an error `coral`.
 - Surfaces: `canvas` under a window, `surface` for what lifts off it, `field` for input, `well` for code and logs,
   `rowFill(selected:hovering:)` for rows. Strokes are `line`, `line2`, `hairline`, or `fieldStroke`.
 - State color means one thing everywhere: `iris` is Nook, `mint` is done or listening, `amber` waits on you,

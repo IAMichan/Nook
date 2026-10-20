@@ -159,7 +159,7 @@ struct AgentRunPanel: View {
             }
         } else {
             Text(tr("agents.run.gone"))
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -709,7 +709,7 @@ struct AgentRunPanel: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("ws.revert.confirm"))
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
                     .font(NookTheme.font(11.5))
@@ -782,7 +782,7 @@ struct AgentRunPanel: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("agents.run.deleteConfirm", run.title))
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Text(tr("agents.run.deleteDetail"))
@@ -878,7 +878,7 @@ struct AgentRunPanel: View {
             }
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
             }
         }

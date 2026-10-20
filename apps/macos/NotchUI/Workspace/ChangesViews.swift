@@ -23,9 +23,9 @@ struct ChangesSheet: View {
         VStack(spacing: 0) {
             if !embedded {
                 HStack {
-                    Text(tr("ws.changes.title")).font(NookTheme.font(15, .semibold))
+                    Text(tr("ws.changes.title")).font(NookTheme.TextStyle.title)
                     if let run = workspace.run(runID) {
-                        Text(run.branch ?? run.projectName).font(NookTheme.mono(12)).foregroundStyle(WS.secondary)
+                        Text(run.branch ?? run.projectName).font(NookTheme.TextStyle.code).foregroundStyle(WS.secondary)
                     }
                     Spacer()
                     Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
@@ -137,7 +137,7 @@ struct CommitSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !embedded { Text(tr("ws.commit.title")).font(NookTheme.font(15, .semibold)) }
+            if !embedded { Text(tr("ws.commit.title")).font(NookTheme.TextStyle.title) }
             if let run = workspace.run(runID) {
                 Text(tr("ws.commit.where", run.branch ?? "HEAD", AgentPathFormat.tilde(run.workingDirectory)))
                     .font(NookTheme.font(12)).foregroundStyle(WS.secondary)
@@ -157,7 +157,7 @@ struct CommitSheet: View {
             .listStyle(.bordered)
             Text(tr("ws.commit.message")).font(NookTheme.font(12, .semibold))
             TextEditor(text: $message)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
                 .padding(6)
@@ -170,7 +170,7 @@ struct CommitSheet: View {
             if let error { Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft) }
             if let done { Text(tr("ws.commit.done", done)).font(NookTheme.font(12)).foregroundStyle(NookTheme.mint) }
             HStack {
-                Text(tr("ws.commit.note")).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                Text(tr("ws.commit.note")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                 Spacer()
                 Button(tr("button.cancel")) { close() }.keyboardShortcut(.cancelAction)
                 Button(tr("ws.commit.action", included.count)) { commit() }
@@ -223,7 +223,7 @@ struct PullRequestSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !embedded { Text(tr("ws.pr.title")).font(NookTheme.font(15, .semibold)) }
+            if !embedded { Text(tr("ws.pr.title")).font(NookTheme.TextStyle.title) }
             if loading {
                 ProgressView()
             } else if repo == nil {

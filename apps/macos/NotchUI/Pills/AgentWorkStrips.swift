@@ -281,7 +281,7 @@ struct TurnChangesChip: View {
                 Image(systemName: "doc.badge.ellipsis").font(NookTheme.font(10.5, .semibold))
                 Text(tr("ws.turnChanges.count", turn.files.count))
             }
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textSecondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
@@ -299,7 +299,7 @@ struct TurnChangesChip: View {
             List(turn.files, id: \.self, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { path in
                 VStack(alignment: .leading, spacing: 1) {
                     Text((path as NSString).lastPathComponent).font(NookTheme.font(12, .medium)).lineLimit(1)
-                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.head)
                 }
                 .tag(path)
             }
@@ -307,17 +307,17 @@ struct TurnChangesChip: View {
             Divider()
             Group {
                 if let failure {
-                    Text(failure).font(.callout).foregroundStyle(.secondary).padding()
+                    Text(failure).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary).padding()
                 } else if let text {
                     if text.isEmpty {
-                        Text(tr("ws.turnChanges.none")).font(.callout).foregroundStyle(.secondary).padding()
+                        Text(tr("ws.turnChanges.none")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary).padding()
                     } else {
                         DiffText(text: text)
                     }
                 } else if chosen != nil {
                     ProgressView()
                 } else {
-                    Text(tr("ws.turnChanges.pick")).font(.callout).foregroundStyle(.secondary)
+                    Text(tr("ws.turnChanges.pick")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

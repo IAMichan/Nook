@@ -28,8 +28,8 @@ struct UpdateSettingsSection: View {
                 }
                 LabeledContent(tr("update.settings.build")) {
                     Text(verbatim: [source.shortCommit, source.branch, source.configuration].compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.code)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .textSelection(.enabled)
                 }
                 SettingToggle(tr("update.settings.auto"), detail: tr("update.settings.autoDetail"), isOn: $updater.autoCheck)

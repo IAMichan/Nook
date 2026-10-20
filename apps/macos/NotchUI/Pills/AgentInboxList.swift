@@ -171,7 +171,7 @@ struct AgentInboxList: View {
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.paper)
             if !store.query.isEmpty {
-                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.font(11)) }
+                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tr("button.clear"))
             }

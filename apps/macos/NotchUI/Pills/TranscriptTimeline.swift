@@ -301,7 +301,7 @@ struct TranscriptUserBubble: View {
                                 withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
                             }
                             .buttonStyle(.plain)
-                            .font(NookTheme.font(11.5, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
@@ -435,7 +435,7 @@ struct TranscriptWorkLine: View {
     var body: some View {
         let content = HStack(spacing: 6) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.font(11.5, .medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
                 .frame(width: 20)
             if live {

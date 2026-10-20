@@ -59,7 +59,7 @@ struct RunQuestionPanel: View {
                     HStack(spacing: 8) {
                         TextField(tr("ws.question.own"), text: $own)
                             .textFieldStyle(.plain)
-                            .font(NookTheme.font(13))
+                            .font(NookTheme.TextStyle.body)
                             .focused($ownFocused)
                             .onSubmit { submitOwn(item) }
                         if !own.trimmingCharacters(in: .whitespaces).isEmpty {

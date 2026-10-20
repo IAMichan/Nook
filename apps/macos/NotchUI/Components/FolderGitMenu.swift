@@ -180,7 +180,7 @@ struct FolderGitButton: View {
                                 Text("+\(model.added)").foregroundStyle(NookTheme.mint)
                                 Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
                             }
-                            .font(NookTheme.font(11.5, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .padding(.horizontal, 6)
                             .frame(height: ToolbarGroup.itemHeight)
                             .contentShape(Rectangle())
@@ -216,7 +216,7 @@ struct FolderGitButton: View {
             Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
             Image(systemName: "chevron.down").font(NookTheme.font(7.5, .bold)).opacity(0.5)
         }
-        .font(NookTheme.font(11.5, .medium))
+        .font(NookTheme.TextStyle.label)
         .foregroundStyle(NookTheme.textSecondary)
         .padding(.horizontal, 7)
         .frame(height: ToolbarGroup.itemHeight)

@@ -105,7 +105,7 @@ struct PlanReview: View {
                 Spacer(minLength: 4)
                 if !step.tag.isEmpty {
                     Text(step.tag)
-                        .font(NookTheme.font(11.5, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(color(step.tone))
                 }
                 Button {

@@ -106,7 +106,7 @@ struct ChatMessageView: View, Equatable {
                 ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
             }
             Text(message.date.formatted(date: .omitted, time: .shortened))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .padding(.leading, 4)
         }
@@ -182,7 +182,7 @@ private struct ChatErrorCard: View {
             .padding(.leading, 32)
             Button { withAnimation(.easeOut(duration: 0.16)) { showDetails.toggle() } } label: {
                 Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .buttonStyle(.plain)

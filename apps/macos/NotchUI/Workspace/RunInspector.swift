@@ -127,7 +127,7 @@ struct RunInspector: View {
                                 .buttonStyle(.plain)
                         }
                         if files.count > 40 {
-                            Text(tr("ws.inspector.moreFiles", files.count - 40)).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                            Text(tr("ws.inspector.moreFiles", files.count - 40)).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                         }
                     }
                 }
@@ -183,7 +183,7 @@ struct RunInspector: View {
             InfoRow(label: tr("ws.usage.turns"), value: "\(usage.turns)")
             InfoRow(label: tr("ws.usage.active"), value: usage.activeSeconds > 0 ? AgentPathFormat.duration(usage.activeSeconds) : nil)
             Text(caps.reportsCost ? tr("ws.usage.note.claude") : tr("ws.usage.note.codex"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             if run.provider == .claude, let profile = app.profile(for: run), let plan = app.hub.subscriptionUsage(for: profile) {
@@ -226,7 +226,7 @@ struct RunInspector: View {
                 }
             }
             Text(tr("ws.inspector.isolationNote"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

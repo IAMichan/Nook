@@ -86,13 +86,30 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20)")
     }
 
+    /// Text sits on the type scale: SwiftUI's own styles (`.caption`, `.callout`, `.headline`, `.system(.body)`) have
+    /// sizes of their own that do not line up with `NookTheme.TextStyle`.
+    func testTextUsesTheTypeScale() {
+        let found = offenders(#"\.font\(\s*\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)"#) {
+            $0 == "NotchUI/Theme/NookTheme.swift"
+        }
+        XCTAssertEqual(found, [], "use a NookTheme.TextStyle (caption, detail, label, body, strong, title, heading, code)")
+    }
+
+    /// State keeps its meaning: an error is `coral`, a warning `amber`, done `mint`, and muted text `textSecondary`, never
+    /// the system red, orange, green, or secondary, which are a different red, orange, and gray.
+    func testStateColorsComeFromTheTheme() {
+        let system = #"\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b"#
+        let found = offenders(system) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.coral / amber / mint / textSecondary / textTertiary")
+    }
+
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
     func testThemeDefinesTheScales() {
         guard let theme = Self.sources.first(where: { $0.path == "NotchUI/Theme/NookTheme.swift" })?.text else {
             return XCTFail("NookTheme.swift not found")
         }
         for name in ["enum Radius", "enum Spacing", "enum TextStyle", "static let canvas", "static let well", "static let surface",
-                     "static let hairline", "static let fieldStroke", "static func rounded("] {
+                     "static let hairline", "static let fieldStroke", "static func rounded(", "static var detail", "static var heading"] {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }

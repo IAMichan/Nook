@@ -121,7 +121,7 @@ struct WSSectionTitle: View {
                 .foregroundStyle(WS.tertiary)
             Spacer()
             if let trailing {
-                Text(trailing).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
             }
         }
     }
@@ -166,7 +166,7 @@ struct WSEmptyState: View {
                 .font(NookTheme.font(26, .light))
                 .foregroundStyle(WS.tertiary)
             Text(title)
-                .font(NookTheme.font(15, .semibold))
+                .font(NookTheme.TextStyle.title)
                 .foregroundStyle(WS.text)
             Text(message)
                 .font(NookTheme.font(12.5))
@@ -347,7 +347,7 @@ struct DiffText: View {
     private func fileRow(_ row: UnifiedDiff.Row, first: Bool) -> some View {
         HStack(spacing: 7) {
             Image(systemName: "doc.text")
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.secondary)
             Text(row.text)
                 .font(NookTheme.mono(11.5, .semibold))

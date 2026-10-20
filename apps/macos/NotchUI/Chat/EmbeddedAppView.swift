@@ -160,7 +160,7 @@ struct EmbeddedAppPane: View {
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                     Text(current.title)
-                        .font(NookTheme.font(13, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if store.loading { ProgressView().controlSize(.small) }

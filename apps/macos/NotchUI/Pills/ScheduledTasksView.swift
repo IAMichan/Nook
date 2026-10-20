@@ -29,7 +29,7 @@ struct ScheduledTasksView: View {
             if store.tasks.isEmpty {
                 Spacer(minLength: 0)
                 Text(tr("sched.empty"))
-                    .font(NookTheme.font(13))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
@@ -123,13 +123,13 @@ private struct TaskRow: View {
                 HStack(spacing: 8) {
                     statusChip
                     Text(timing)
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
                 if let error = ScheduledTaskText.error(task), !running {
                     Text(error)
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(task.lastStatus == .failed ? NookTheme.coralSoft : NookTheme.textTertiary)
                         .lineLimit(2)
                 }
@@ -171,7 +171,7 @@ private struct TaskRow: View {
             .background(Capsule().fill(color.opacity(0.12)))
         } else {
             Text(tr("sched.never"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
         }
     }
@@ -306,7 +306,7 @@ private struct ScheduledTaskEditor: View {
                     field(tr("sched.field.name")) { TextField(tr("sched.field.namePlaceholder"), text: $title).textFieldStyle(.plain).modifier(FieldBox()) }
                     field(tr("sched.field.prompt")) {
                         TextEditor(text: $prompt)
-                            .font(NookTheme.font(13))
+                            .font(NookTheme.TextStyle.body)
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 90)
                             .padding(6)
@@ -315,7 +315,7 @@ private struct ScheduledTaskEditor: View {
                     field(tr("sched.field.project")) {
                         HStack(spacing: 8) {
                             Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
-                                .font(NookTheme.mono(12))
+                                .font(NookTheme.TextStyle.code)
                                 .foregroundStyle(path.isEmpty ? NookTheme.textTertiary : NookTheme.paper)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -335,7 +335,7 @@ private struct ScheduledTaskEditor: View {
                     if kind == .webhook {
                         webhookInfo
                         Text(tr("sched.permission.webhookNote"))
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                     } else {
                         field(tr("sched.permission")) { permissionPicker }
@@ -383,19 +383,19 @@ private struct ScheduledTaskEditor: View {
             switch kind {
             case .interval:
                 HStack(spacing: 8) {
-                    Text(tr("sched.interval.every")).font(NookTheme.font(13)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("sched.interval.every")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     TextField("", value: $minutes, format: .number)
                         .textFieldStyle(.plain)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 60)
                         .modifier(FieldBox())
                     Stepper("", value: $minutes, in: 1...100_000).labelsHidden()
-                    Text(tr("sched.interval.minutes")).font(NookTheme.font(13)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("sched.interval.minutes")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
-                Text(tr("sched.interval.hint")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                Text(tr("sched.interval.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             case .time:
                 HStack(spacing: 8) {
-                    Text(tr("sched.time.at")).font(NookTheme.font(13)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden()
                 }
                 HStack(spacing: 6) {
@@ -414,7 +414,7 @@ private struct ScheduledTaskEditor: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Text(tr("sched.weekdays.hint")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                Text(tr("sched.weekdays.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             case .webhook:
                 EmptyView()
             }
@@ -429,7 +429,7 @@ private struct ScheduledTaskEditor: View {
             .labelsHidden()
             .frame(maxWidth: 240, alignment: .leading)
             Text(permission == .bypass ? tr("sched.permission.bypassWarning") : tr("sched.permission.hint"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(permission == .bypass ? NookTheme.amber : NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -463,7 +463,7 @@ private struct ScheduledTaskEditor: View {
                 Text(tr("sched.webhook.afterSave")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
             }
             Text(tr("sched.webhook.hint"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -531,7 +531,7 @@ private struct ScheduledTaskEditor: View {
 private struct FieldBox: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .font(NookTheme.font(13))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .padding(.horizontal, 10)
             .frame(minHeight: 30)

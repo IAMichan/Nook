@@ -278,7 +278,7 @@ private struct MusicShelf: View {
                 }
                 Text(note).lineLimit(1).truncationMode(.tail)
             }
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .help(note)
             ScrollView(.vertical, showsIndicators: false) {
@@ -336,7 +336,7 @@ private struct MusicCoverCard: View {
                         .lineLimit(1)
                     if !item.subtitle.isEmpty {
                         Text(item.subtitle)
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }

@@ -242,22 +242,22 @@ private struct MCPServerDetailSheet: View {
             )
         } content: {
             VStack(alignment: .leading, spacing: 14) {
-                Text(tr("mcp.details.commandTitle")).font(.headline)
+                Text(tr("mcp.details.commandTitle")).font(NookTheme.TextStyle.strong)
                 Text(rawTransportString)
-                    .font(NookTheme.mono(12))
+                    .font(NookTheme.TextStyle.code)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color(nsColor: .textBackgroundColor)))
                     .textSelection(.enabled)
 
                 if let connector {
-                    Text(tr("mcp.details.toolsTitle", connector.tools.count)).font(.headline)
+                    Text(tr("mcp.details.toolsTitle", connector.tools.count)).font(NookTheme.TextStyle.strong)
                         .padding(.top, 6)
 
                     if connector.tools.isEmpty {
                         Text(tr("mcp.details.noToolsFound"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textSecondary)
                     } else {
                         VStack(spacing: 8) {
                             ForEach(connector.tools, id: \.name) { tool in
@@ -269,20 +269,20 @@ private struct MCPServerDetailSheet: View {
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(connector.title(ofTool: tool.name))
-                                            .font(NookTheme.font(13, .semibold))
+                                            .font(NookTheme.TextStyle.strong)
                                         // The "[Server] " prefix is for the model; the sheet already names the server.
                                         Text(tool.description.replacingOccurrences(of: "[\(config.name)] ", with: ""))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(NookTheme.TextStyle.detail)
+                                            .foregroundStyle(NookTheme.textSecondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                     Spacer()
                                     Text(tool.kind == .read ? tr("mcp.tool.read") : tr("mcp.tool.action"))
-                                        .font(.caption2.weight(.medium))
+                                        .font(NookTheme.TextStyle.label)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
                                         .background(Capsule().fill(Color.primary.opacity(0.08)))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(NookTheme.textSecondary)
                                 }
                                 .padding(10)
                                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.03)))
@@ -350,7 +350,7 @@ struct AddMCPServerWizardSheet: View {
                 if preset == nil {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text(tr("mcp.wizard.smartPasteTitle")).font(.headline)
+                            Text(tr("mcp.wizard.smartPasteTitle")).font(NookTheme.TextStyle.strong)
                             Spacer()
                             Button {
                                 pasteFromClipboard()
@@ -361,8 +361,8 @@ struct AddMCPServerWizardSheet: View {
                         }
 
                         Text(tr("mcp.wizard.smartPasteHelp"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
@@ -401,7 +401,7 @@ struct AddMCPServerWizardSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(preset.requiredEnv, id: \.self) { key in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(preset.envLabels[key] ?? key).font(.caption.weight(.medium))
+                                    Text(preset.envLabels[key] ?? key).font(NookTheme.TextStyle.label)
                                     SecureField(
                                         key,
                                         text: binding(for: key),
@@ -425,25 +425,25 @@ struct AddMCPServerWizardSheet: View {
                     // Optional environment variables for custom
                     DisclosureGroup(isExpanded: $showAdvanced) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(isRemote ? tr("mcp.headers") : tr("mcp.env")).font(.callout)
+                            Text(isRemote ? tr("mcp.headers") : tr("mcp.env")).font(NookTheme.TextStyle.body)
                             TextEditor(text: $rawSecrets)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(NookTheme.mono(11))
                                 .frame(height: 70)
-                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(Color.secondary.opacity(0.3)))
+                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(NookTheme.textSecondary.opacity(0.3)))
                             Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
                         }
                         .padding(.top, 6)
                     } label: {
-                        Text(tr("mcp.wizard.optionalEnv")).font(.callout)
+                        Text(tr("mcp.wizard.optionalEnv")).font(NookTheme.TextStyle.body)
                     }
                 }
 
                 if !problem.isEmpty {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(Color.red)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.coral)
                 }
             }
         } footer: {
