@@ -15,9 +15,26 @@ extension AppModel {
         presentApprovalCard(ApprovalCenter.make(request), context: context, open: nil)
     }
 
-    /// The notch card for a permission request, the same for terminal sessions and sessions Nook runs. The whole command
-    /// is on the card (scrolled when long), so what you allow is what you saw.
+    /// A permission request, the same for terminal sessions and sessions Nook runs: a notch card, or a macOS notification
+    /// when you chose those in Settings › Notifications (a click on it, or Show, brings up the card).
     func presentApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?) {
+        guard settings.noticeDelivery == .system else {
+            showApprovalCard(approval, context: context, open: open)
+            return
+        }
+        NookSound.play(.attention)
+        SystemNotifier.shared.approval(
+            approval, context: context,
+            decide: { [weak self] decision in self?.approvals.decide(approval, decision) },
+            show: { [weak self] in self?.showApprovalCard(approval, context: context, open: open) },
+            fallback: { [weak self] in self?.showApprovalCard(approval, context: context, open: open, sound: false) }
+        )
+    }
+
+    /// The notch card for a permission request. The whole command is on the card (scrolled when long), so what you allow
+    /// is what you saw.
+    private func showApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?,
+                                  sound: Bool = true) {
         let token = approval.cardToken
         viewModel.register("\(token)#yes") { [weak self] in self?.approvals.decide(approval, .allow) }
         viewModel.register("\(token)#always") { [weak self] in self?.approvals.decide(approval, .always) }
@@ -58,21 +75,29 @@ extension AppModel {
             urgent: true
         )
         viewModel.presentUrgent(card, keepPanel: true)
-        NookSound.play(.attention)
+        if sound { NookSound.play(.attention) }
     }
 
     /// Interactive multiple-choice prompts from an agent. Returns collected answers upon completion.
-    func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = []) {
+    func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = [], inNotch: Bool = false) {
         guard index < request.items.count else { return }
         let item = request.items[index]
         let token = "question-" + request.id
+        // As a macOS notification: the choices do not fit on a banner, so a click brings up the card.
+        if index == 0, !inNotch, settings.noticeDelivery == .system {
+            NookSound.play(.attention)
+            let show: () -> Void = { [weak self] in self?.presentQuestion(request, inNotch: true) }
+            SystemNotifier.shared.notice(id: token, title: tr("noticeDelivery.question", request.agentName),
+                                         subtitle: request.project, body: item.question, open: show, fallback: show)
+            return
+        }
         let choiceID = "\(token)#choice\(index)"
 
         viewModel.registerChoice(choiceID) { [weak self] labels in
             guard let self else { return }
             let all = selections + [labels]
             if index + 1 < request.items.count {
-                self.presentQuestion(request, index: index + 1, selections: all)
+                self.presentQuestion(request, index: index + 1, selections: all, inNotch: true)
             } else {
                 self.hub.answerQuestion(request.id, selections: all)
             }
@@ -116,6 +141,7 @@ extension AppModel {
 
     /// Agent question handled: dismisses card and provides brief confirmation if answered in Nook.
     func cardGone(_ token: String, message: String?) {
+        SystemNotifier.shared.withdraw(token)
         var visible = false
         if case .card(let shown) = viewModel.state, shown.id == token { visible = true }
         viewModel.dismissCard(id: token)
@@ -136,6 +162,23 @@ extension AppModel {
         }
         // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, no card pops up.
         guard !quiet.silent else { return }
+        if settings.noticeDelivery == .system {
+            let open: () -> Void = { [weak self] in
+                self?.viewModel.selectedAgentID = session.id
+                self?.viewModel.show(.panel(.agents))
+            }
+            SystemNotifier.shared.notice(
+                id: "agentstatus-" + UUID().uuidString, title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
+                subtitle: session.project, body: session.summary, open: open,
+                fallback: { [weak self] in self?.showAgentNotice(session) }
+            )
+            return
+        }
+        showAgentNotice(session)
+    }
+
+    /// The notch notice for an agent that is done, failed or waits: a card or one slim line (Settings › Notifications).
+    private func showAgentNotice(_ session: AgentSession) {
         switch viewModel.state {
         case .idle, .music, .track, .done, .nudge, .moment: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break

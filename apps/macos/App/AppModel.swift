@@ -314,6 +314,8 @@ final class AppModel: ObservableObject {
         AppUpdater.shared.start()
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)
+        SystemNotifier.shared.start()
+        if settings.noticeDelivery == .system { SystemNotifier.shared.requestAccess() }
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
         hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }
