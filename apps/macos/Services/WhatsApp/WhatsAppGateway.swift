@@ -24,6 +24,31 @@ enum WAMedia: Equatable, Sendable {
     case other
 }
 
+/// How far your own message got, as WhatsApp's ticks show it: one grey tick when the server has it, two when it
+/// reached the phone, two blue ones once it was read.
+enum WAReceipt: Int, Comparable, Sendable {
+    case failed = -1, pending, sent, delivered, read
+
+    static func < (a: WAReceipt, b: WAReceipt) -> Bool { a.rawValue < b.rawValue }
+
+    /// A gateway's status word: OpenWA's `pending|sent|delivered|read|played|failed`, GOWA's `delivered|read|played`.
+    init?(status: String) {
+        switch status.lowercased() {
+        case "pending": self = .pending
+        case "sent", "server": self = .sent
+        case "delivered", "delivery": self = .delivered
+        case "read", "played": self = .read
+        case "failed", "error": self = .failed
+        default: return nil
+        }
+    }
+
+    /// Ticks only move forward; a failure always shows.
+    func advanced(to new: WAReceipt) -> WAReceipt {
+        new == .failed || new > self ? new : self
+    }
+}
+
 struct WAMessage: Identifiable, Equatable, Sendable {
     var id: String
     /// The conversation: a person (…@s.whatsapp.net, …@lid, …@c.us) or a group (…@g.us).
@@ -39,6 +64,9 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var mentionsMe: Bool = false
     /// Set by the gateway when the chat name came with the message.
     var chatName: String? = nil
+    /// Your own message's ticks; nil when they are unknown (someone else's message, or older history the gateway
+    /// keeps no status for).
+    var receipt: WAReceipt? = nil
 }
 
 extension WAMedia {
@@ -186,6 +214,8 @@ struct WAInbox: Equatable, Sendable {
     private var seenIds: Set<String> = []
     /// The same ids in arrival order, so the oldest are the ones forgotten.
     private var seenOrder: [String] = []
+    /// Receipts that came before their message (the gateway's webhook can beat the answer to the send itself).
+    private var earlyReceipts: [String: WAReceipt] = [:]
 
     /// Newest activity first.
     var sorted: [WAConversation] {
@@ -225,6 +255,11 @@ struct WAInbox: Equatable, Sendable {
         else if conversation.name == number, let personName { conversation.name = personName }
         var msg = message
         msg.chat = chat
+        if msg.fromMe {
+            // Your own message that just went out has reached WhatsApp's server: one tick.
+            if msg.receipt == nil, !history { msg.receipt = .sent }
+            if let early = earlyReceipts.removeValue(forKey: msg.id) { msg.receipt = (msg.receipt ?? .sent).advanced(to: early) }
+        }
         conversation.messages.append(msg)
         conversation.messages.sort { $0.date < $1.date }
         if conversation.messages.count > Self.keep { conversation.messages.removeFirst(conversation.messages.count - Self.keep) }
@@ -243,6 +278,36 @@ struct WAInbox: Equatable, Sendable {
         }
         conversations[chat] = conversation
         return outcome
+    }
+
+    /// A delivery or read receipt for your own messages: their ticks move forward, never back. The chat whose ticks
+    /// changed, nil when none did (a receipt for an incoming message, or for one Nook doesn't keep).
+    @discardableResult
+    mutating func applyReceipt(_ status: WAReceipt, ids: [String], chat: String) -> String? {
+        let key = WAJID.normalized(chat)
+        // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
+        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        var pending = Set(ids)
+        var changed: String?
+        for chatKey in keys {
+            guard var conversation = conversations[chatKey] else { continue }
+            var touched = false
+            for index in conversation.messages.indices where pending.contains(conversation.messages[index].id) {
+                pending.remove(conversation.messages[index].id)
+                guard conversation.messages[index].fromMe else { continue }
+                let old = conversation.messages[index].receipt
+                let new = (old ?? .sent).advanced(to: status)
+                if new != old { conversation.messages[index].receipt = new; touched = true }
+            }
+            if touched { conversations[chatKey] = conversation; changed = chatKey }
+            if pending.isEmpty { break }
+        }
+        // Not here yet: kept a little while for the message itself (only ids never seen; a few hundred at most).
+        for id in pending where !seenIds.contains(id) {
+            earlyReceipts[id] = (earlyReceipts[id] ?? status).advanced(to: status)
+        }
+        if earlyReceipts.count > 500 { earlyReceipts.removeAll() }
+        return changed
     }
 
     /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
@@ -285,6 +350,7 @@ struct WAInbox: Equatable, Sendable {
         conversations = [:]
         seenIds = []
         seenOrder = []
+        earlyReceipts = [:]
     }
 
     private func nonEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }
@@ -392,7 +458,9 @@ enum WAGatewayKind: String, CaseIterable, Sendable {
 /// What one webhook delivery holds for Nook.
 enum WAWebhookEvent: Equatable, Sendable {
     case message(WAMessage)
-    /// A valid delivery Nook has no use for (receipts, reactions, a test ping…).
+    /// Your own messages reached the phone or were read: their ticks move.
+    case receipt(ids: [String], chat: String, status: WAReceipt)
+    /// A valid delivery Nook has no use for (reactions, a test ping…).
     case ignored
 }
 
@@ -423,6 +491,7 @@ enum WAWebhook {
     /// `{"event":"message","device_id":"<own JID>","payload":{id, chat_id, from, from_name,
     /// sender_display_name, timestamp (RFC3339), is_from_me, body, image|video|audio|document|…}}`
     private static func parseGOWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json) }
         guard json["event"] as? String == "message",
               let p = json["payload"] as? [String: Any],
               let id = p["id"] as? String, !id.isEmpty,
@@ -438,6 +507,18 @@ enum WAWebhook {
             fromMe: p["is_from_me"] as? Bool ?? false)
         message.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: mine)
         return .message(message)
+    }
+
+    /// `{"event":"message.ack","payload":{ids, chat_id, from, receipt_type: "delivered"|"read"|"played"|…}}`.
+    /// A group sends one per member, while WhatsApp's own ticks wait for every member: a group keeps its one tick.
+    /// The `-self` receipts are your own phone reading incoming messages, which have no ticks.
+    private static func parseGOWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
+        guard let p = json["payload"] as? [String: Any],
+              let chat = p["chat_id"] as? String, !chat.isEmpty, !WAJID.isGroup(chat),
+              let ids = (p["ids"] as? [String])?.filter({ !$0.isEmpty }), !ids.isEmpty,
+              let type = p["receipt_type"] as? String, !type.hasSuffix("-self"),
+              let status = WAReceipt(status: type), status >= .delivered else { return .ignored }
+        return .receipt(ids: ids, chat: chat, status: status)
     }
 
     /// GOWA puts each media under its own key; only the label matters to Nook.
@@ -461,6 +542,7 @@ enum WAWebhook {
     /// body, type, timestamp (epoch s), fromMe, isGroup, mentionedIds, contact{name, pushName}, media{filename}}}`
     private static func parseOpenWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         let event = json["event"] as? String
+        if event == "message.ack" || event == "message.failed" { return parseOpenWAReceipt(json) }
         guard event == "message.received" || event == "message.sent",
               let d = json["data"] as? [String: Any],
               let id = d["id"] as? String, !id.isEmpty,
@@ -484,6 +566,15 @@ enum WAWebhook {
             message.mentionsMe = ids.contains { WAJID.sameUser($0, mine) } || WAMention.textMentions(message.text, me: mine)
         }
         return .message(message)
+    }
+
+    /// `{"event":"message.ack"|"message.failed","data":{id, messageId, status, ack, chatId?}}`. OpenWA only moves a
+    /// group message past one tick when WhatsApp itself does.
+    private static func parseOpenWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
+        guard let d = json["data"] as? [String: Any],
+              let id = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"]),
+              let status = (d["status"] as? String).flatMap(WAReceipt.init(status:)) else { return .ignored }
+        return .receipt(ids: [id], chat: (d["chatId"] as? String) ?? "", status: status)
     }
 
     /// OpenWA's `type` (text|image|video|audio|voice|document|sticker|location|contact|poll|…).
@@ -739,6 +830,7 @@ enum WAOpenWA {
                 date: WADate.epoch(m["timestamp"]) ?? .distantPast,
                 fromMe: m["direction"] as? String == "outgoing")
             msg.chatName = nonEmpty(m["chatName"])
+            if msg.fromMe { msg.receipt = (m["status"] as? String).flatMap(WAReceipt.init(status:)) }
             if WAJID.isGroup(chat), let me { msg.mentionsMe = WAMention.textMentions(msg.text, me: me) }
             return msg
         }

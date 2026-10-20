@@ -178,4 +178,58 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAMedia.document(name: nil).isOpenable)
         XCTAssertFalse(WAMedia.location.isOpenable)
     }
+
+    func testReceiptsMoveYourTicksForwardOnly() {
+        var inbox = WAInbox()
+        let filters = WAFilters()
+        let chat = "31600000001@s.whatsapp.net"
+        inbox.add(message("in", chat: chat), filters: filters)
+        inbox.add(message("out", chat: chat, at: 5, fromMe: true), filters: filters)
+        func ticks(_ id: String) -> WAReceipt? { inbox.conversations[chat]?.messages.first { $0.id == id }?.receipt }
+        // A message you just sent is on the server: one tick. Theirs have none.
+        XCTAssertEqual(ticks("out"), .sent)
+        XCTAssertNil(ticks("in"))
+
+        XCTAssertEqual(inbox.applyReceipt(.delivered, ids: ["out"], chat: "31600000001@c.us"), chat)
+        XCTAssertEqual(ticks("out"), .delivered)
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["out"], chat: chat), chat)
+        XCTAssertEqual(ticks("out"), .read)
+        // A late "delivered" never takes the blue ticks back, and a receipt for their message changes nothing.
+        XCTAssertNil(inbox.applyReceipt(.delivered, ids: ["out"], chat: chat))
+        XCTAssertEqual(ticks("out"), .read)
+        XCTAssertNil(inbox.applyReceipt(.read, ids: ["in"], chat: chat))
+        XCTAssertNil(ticks("in"))
+        // A chat named another way (no chat at all) is still found by the message's id.
+        inbox.add(message("out2", chat: chat, at: 6, fromMe: true), filters: filters)
+        XCTAssertEqual(inbox.applyReceipt(.delivered, ids: ["out2"], chat: ""), chat)
+
+        // A receipt that beats its own message is kept for it.
+        XCTAssertNil(inbox.applyReceipt(.delivered, ids: ["early"], chat: chat))
+        inbox.add(message("early", chat: chat, at: 7, fromMe: true), filters: filters)
+        XCTAssertEqual(ticks("early"), .delivered)
+        // History without a status shows no ticks.
+        inbox.add(message("old", chat: chat, at: 1, fromMe: true), filters: filters, history: true)
+        XCTAssertNil(ticks("old"))
+    }
+
+    func testGatewayReceipts() {
+        let gowa = Data(#"{"event":"message.ack","device_id":"31699999999@s.whatsapp.net","payload":{"ids":["A1","A2"],"chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","receipt_type":"read"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowa),
+                       .receipt(ids: ["A1", "A2"], chat: "31600000001@s.whatsapp.net", status: .read))
+        // Your own phone reading their messages, and one group member's receipt, move no ticks.
+        let own = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"31600000001@s.whatsapp.net","receipt_type":"read-self"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: own), .ignored)
+        let group = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"delivered"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: group), .ignored)
+
+        let openwa = Data(#"{"event":"message.ack","sessionId":"s","data":{"id":"uuid-1","messageId":"B1","status":"delivered","ack":2,"chatId":"31600000001@c.us"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwa),
+                       .receipt(ids: ["B1"], chat: "31600000001@c.us", status: .delivered))
+        let failed = Data(#"{"event":"message.failed","data":{"messageId":"B2","status":"failed","ack":-1}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: failed), .receipt(ids: ["B2"], chat: "", status: .failed))
+
+        XCTAssertEqual(WAReceipt.read.advanced(to: .delivered), .read)
+        XCTAssertEqual(WAReceipt.read.advanced(to: .failed), .failed)
+        XCTAssertNil(WAReceipt(status: "retry"))
+    }
 }
